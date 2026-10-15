@@ -45,6 +45,18 @@ use super::meta::{
 };
 use super::model::ring_pair_factor;
 
+/// The last sentence of the on-screen help of every stored 3D field (spec 3.8, amendment A-7):
+/// the value is the example design's and stays fixed when the design changes. A macro, not a
+/// `const`, so that `concat!` can end a help with it: the free-space fields here, the GUI
+/// overlay's rows (`gui::plain_text`) and `gui::dashboard::STORED_3D_SENTENCE` all read this one
+/// literal.
+macro_rules! stored_3d_sentence {
+    () => {
+        "Stored 3D value for the example design; it does not follow yours."
+    };
+}
+pub(crate) use stored_3d_sentence;
+
 // =========================================================================== inputs
 inputs! {
     /// Duty and ambient inputs (Temperature design!C34:C39).
@@ -255,13 +267,13 @@ inputs! {
                 "Set to 1 once measured.", "Temperature design!C133")
                 .range(1.0, 10.0, 0.1),
             b_hub_free_T: f64 = 0.07832 => param_rust_only("T", "Opposite-ring field at an aluminium hub (fundamental, free space)",
-                "The opposite ring's field at the hub when there is no back iron, for slip heating. Stored 3D value for the example design; it does not follow yours.")
+                concat!("The opposite ring's field at the hub when there is no back iron, for slip heating. ", stored_3d_sentence!()))
                 .range(0.0, 1.0, 0.00001),
             b_cup_free_T: f64 = 0.08764 => param_rust_only("T", "Opposite-ring field at an aluminium cup (fundamental, free space)",
-                "The opposite ring's field at the cup when there is no back iron, for slip heating. Stored 3D value for the example design; it does not follow yours.")
+                concat!("The opposite ring's field at the cup when there is no back iron, for slip heating. ", stored_3d_sentence!()))
                 .range(0.0, 1.0, 0.00001),
             web_integral_free_T2m2: f64 = 6.837e-6 => param_rust_only("T²·m²", "Rear-web end field of an aluminium web, ∫B² dA (free space)",
-                "The end field on the rear web when there is no back iron, for slip heating. Stored 3D value for the example design; it does not follow yours.")
+                concat!("The end field on the rear web when there is no back iron, for slip heating. ", stored_3d_sentence!()))
                 .range(1e-8, 1e-3, 1e-9)
                 .log(),
         }

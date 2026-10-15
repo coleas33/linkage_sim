@@ -395,3 +395,25 @@ lower torque; the space claim leaves out the shaft boss; "with Auto on"; the mag
     30 mm, narrow blocks).
   - A-7 and A-23 are byte-equal to the amendments.
   - Round 1's should-fix items S-a, S-b and S-c stay open for the controller.
+
+### Task review fix round 1 (2026-10-15): S-a and S-c applied
+
+- The task code review (`task-9-review.md`: I-1, and M-2 with the coverage note) asked for two of
+  round 1's should-fix items, and the fix round applied both verbatim:
+  - S-c: `STORED_3D_NOTE` now opens "The temperature checks use the demagnetization reverse fields
+    and the slip-heating fields, ...". A new test pins the fact behind it
+    (`dashboard::tests::the_stored_3d_note_says_the_slip_fields_feed_the_checks_not_the_limits`).
+    At their slider ends, the slip-heating fields move only the temperature verdict among the
+    headline rows. The reverse fields move the governing limit and the hot-day margin. The note's
+    sentence that names the slip-heating fields must not say "limit".
+  - S-a: the `coupling.max_harmonic` help is S-a's text, and `tests/data/input_schema.json` is
+    re-blessed (one help line). A new engine test pins its claim
+    (`model::tests::higher_harmonics_matter_most_for_narrow_widely_spaced_blocks`; steel circuit,
+    1.4 mm face gap). Going from harmonic 1, or from the 1, 3, 5 set, to every harmonic up to 11
+    moves the pull-out by:
+    - 2.16 and 1.70 (relative) for 1 mm blocks at 4 magnets per ring on a 30 mm ring;
+    - 0.32 and 0.039 for 1 mm blocks at the default pitch;
+    - 1.12 and 1.11 for the default blocks on the long pitch;
+    - 0.0071 and under 0.0001 for the default blocks at the default pitch.
+- S-b stays open.
+- Still to run: a G-3 re-check of each of the two changed strings.

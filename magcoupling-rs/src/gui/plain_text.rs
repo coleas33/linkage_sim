@@ -52,10 +52,11 @@ const LABELS: &[(&str, &str)] = &[
 // not a `const`, so that `concat!` can build the rows from it: each caveat is typed once.
 
 /// The last sentence of every stored 3D field's help (amendment A-7): the value is the example
-/// design's and stays fixed when the design changes.
+/// design's and stays fixed when the design changes. The engine's sentence, which its own
+/// free-space fields end with too.
 macro_rules! stored_3d_caveat {
     () => {
-        "Stored 3D value for the example design; it does not follow yours."
+        crate::engine::temperature::stored_3d_sentence!()
     };
 }
 
@@ -1461,20 +1462,15 @@ mod batch_b_tests {
         "clamps.joint_screws",
     ];
 
-    /// The stored 3D fields: each help ends with the caveat that they do not follow the design.
-    const STORED_3D: [&str; 11] = [
-        "temperature.slip_loss.b_hub_T",
-        "temperature.slip_loss.b_cup_T",
-        "temperature.slip_loss.b_sleeve_T",
-        "temperature.slip_loss.b_liner_T",
-        "temperature.slip_loss.cap_integral_T2m4",
-        "temperature.slip_loss.web_integral_T2m2",
-        "temperature.slip_loss.b_magnet_T",
-        "temperature.demag.h_rev_aligned_kA_m",
-        "temperature.demag.h_rev_pullout_kA_m",
-        "temperature.demag.h_rev_likepole_kA_m",
-        "temperature.demag.h_rev_single_ring_kA_m",
-    ];
+    /// The stored 3D fields the overlay words: the dashboard's stored 3D inputs but the Rust-only
+    /// free-space ones, which the engine words. Each help ends with the caveat that they do not
+    /// follow the design.
+    fn stored_3d() -> Vec<&'static str> {
+        crate::gui::dashboard::STORED_3D_INPUTS
+            .into_iter()
+            .filter(|path| !InputCatalogue::get().entry(path).unwrap().meta.rust_only)
+            .collect()
+    }
 
     /// The bench-prototype inputs: each help ends with what the calibration coefficient is for.
     const PROTOTYPE: [&str; 8] = [
@@ -1807,15 +1803,11 @@ mod batch_b_tests {
 
     #[test]
     fn each_cluster_ends_with_one_shared_caveat() {
-        // Amendment A-7 fixes the stored-3D sentence word for word: the dashboard's, which the
-        // engine's free-space fields end with too.
-        assert_eq!(
-            stored_3d_caveat!(),
-            crate::gui::dashboard::STORED_3D_SENTENCE
-        );
-        // A cluster is exactly the rows whose last sentence is its caveat.
+        // A cluster is exactly the rows whose last sentence is its caveat. The stored-3D caveat
+        // is the engine's sentence (amendment A-7), typed once.
+        let stored_3d = stored_3d();
         for (cluster, caveat) in [
-            (&STORED_3D[..], stored_3d_caveat!()),
+            (&stored_3d[..], stored_3d_caveat!()),
             (&PROTOTYPE[..], prototype_caveat!()),
             (&GUESSES[..], guess_caveat!()),
             (&ADAPTER[..], adapter_caveat!()),

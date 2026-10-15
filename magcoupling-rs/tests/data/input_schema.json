@@ -183,7 +183,7 @@
         ]
       ],
       "default": 5,
-      "help": "The torque model adds the magnet field's odd harmonics up to this one, for your design and the bench prototype alike. Each higher one fades faster across the gap.",
+      "help": "The torque model sums odd field harmonics up to this one, for your design and the bench prototype. Higher ones matter most for narrow, widely spaced blocks.",
       "label": "Highest odd harmonic summed",
       "path": "coupling.max_harmonic",
       "range": null,

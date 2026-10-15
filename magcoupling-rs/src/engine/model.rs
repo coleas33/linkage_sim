@@ -184,7 +184,7 @@ inputs! {
                 .range(0.0, 0.5, 0.005)
                 .assumption(),
             max_harmonic: i64 = WORKBOOK_MAX_HARMONIC => param_rust_only("-", "Highest odd harmonic summed",
-                "The torque model adds the magnet field's odd harmonics up to this one, for your design and the bench prototype alike. Each higher one fades faster across the gap.")
+                "The torque model sums odd field harmonics up to this one, for your design and the bench prototype. Higher ones matter most for narrow, widely spaced blocks.")
                 .choices(&MAX_HARMONIC_CHOICES)
                 .assumption(),
             mu0: f64 = MU0 => param("T·m/A", "Vacuum permeability", "", "Calculator!C43")
@@ -1989,6 +1989,51 @@ mod tests {
         // The steel circuit sum (C95) is the pull-out's circuit here (both factors 0.95).
         for r in [&one, &workbook, &eleven] {
             assert!(close(r.pullout_iron_Nm, r.pullout_Nm), "{}", r.tau_Pa);
+        }
+    }
+
+    #[test]
+    fn higher_harmonics_matter_most_for_narrow_widely_spaced_blocks() {
+        // The harmonic set's help: "Higher ones matter most for narrow, widely spaced blocks."
+        // Narrow blocks (low fill) keep their higher harmonics' amplitudes near the
+        // fundamental's, and a long pole pitch lets those harmonics cross the gap. So raising
+        // the set moves the pull-out more for narrow blocks than for the default ones on the same
+        // pitch, and more on a long pitch than on the default one with the same blocks.
+        let change = |npole: i64, ring_radius_mm: f64, width_mm: f64, from: i64, to: i64| {
+            let pullout = |max_harmonic| {
+                let mut ci = CouplingInputs {
+                    npole,
+                    inner_back_apothem_mm: ring_radius_mm,
+                    max_harmonic,
+                    ..CouplingInputs::default()
+                };
+                let m = &mut ci.magnets;
+                (m.part_inner, m.part_outer) = (String::new(), String::new());
+                (m.manual_inner_width_mm, m.manual_outer_width_mm) = (width_mm, width_mm);
+                at(&ci).pullout_Nm
+            };
+            (pullout(to) / pullout(from) - 1.0).abs()
+        };
+        let d = CouplingInputs::default();
+        let (pitch, radius, width) = (
+            d.npole,
+            d.inner_back_apothem_mm,
+            d.magnets.manual_inner_width_mm,
+        );
+        // The longest pitch the sliders reach (4 magnets on a 30 mm ring) and 1 mm blocks.
+        let (long_pitch, long_radius, narrow) = (4, 30.0, 1.0);
+        // From the fundamental alone, and from the default set, to every harmonic.
+        for (from, to) in [(1, 11), (5, 11)] {
+            let narrow_long = change(long_pitch, long_radius, narrow, from, to);
+            let narrow_only = change(pitch, radius, narrow, from, to);
+            let long_only = change(long_pitch, long_radius, width, from, to);
+            let neither = change(pitch, radius, width, from, to);
+            let all = format!("{from} -> {to}: {narrow_long} {narrow_only} {long_only} {neither}");
+            assert!(
+                narrow_long > narrow_only && narrow_long > long_only,
+                "{all}"
+            );
+            assert!(narrow_only > neither && long_only > neither, "{all}");
         }
     }
 

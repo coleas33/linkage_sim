@@ -209,7 +209,7 @@ pub const STORED_3D_ROWS: [&str; 3] = [
 pub const STORED_3D_LABEL: &str = "Fixed 3D fields from the example design";
 
 /// Its hover text.
-pub const STORED_3D_NOTE: &str = "The temperature limits use the demagnetization reverse fields and the slip-heating fields, computed in 3D for the example design. Those fields stay fixed when you change the geometry, magnet count or grade; for another design, enter its own 3D fields to check the limits.";
+pub const STORED_3D_NOTE: &str = "The temperature checks use the demagnetization reverse fields and the slip-heating fields, computed in 3D for the example design. Those fields stay fixed when you change the geometry, magnet count or grade; for another design, enter its own 3D fields to check the limits.";
 
 /// The stored 3D inputs: the four reverse fields of the demagnetization check and the
 /// slip-loss fields (the steel circuit's eleven, and the three free-space ones). They are 3D
@@ -234,9 +234,9 @@ pub const STORED_3D_INPUTS: [&str; 14] = [
 
 /// The sentence the on-screen help of every stored 3D input ends with, whether the overlay
 /// (`gui::plain_text`) or the engine words it (spec 3.8 and section 8, amendment A-7: the
-/// stored fields never follow the design).
-pub const STORED_3D_SENTENCE: &str =
-    "Stored 3D value for the example design; it does not follow yours.";
+/// stored fields never follow the design). Typed once, in the engine's
+/// `engine::temperature::stored_3d_sentence!`.
+pub const STORED_3D_SENTENCE: &str = crate::engine::temperature::stored_3d_sentence!();
 
 /// The start of the banner shown when f_end ≤ 0.
 pub const END_EFFECT_BANNER: &str = END_EFFECT_OUT_OF_RANGE;
@@ -1387,6 +1387,43 @@ mod tests {
             STORED_3D_SENTENCE.contains("does not follow"),
             "{STORED_3D_SENTENCE}"
         );
+    }
+
+    #[test]
+    fn the_stored_3d_note_says_the_slip_fields_feed_the_checks_not_the_limits() {
+        // The reverse fields set the magnet limit, so the governing limit and the hot-day margin;
+        // the slip-heating fields set only the slip fault's peak, which the verdict compares with
+        // the limits. So the note's sentence that names the slip-heating fields never says they
+        // set a limit.
+        let catalogue = crate::gui::inputs::InputCatalogue::get();
+        let ends = |path: &str| {
+            let range = catalogue.entry(path).unwrap().meta.range.unwrap();
+            vec![range.min, range.max]
+        };
+        let fields = |group: &str| -> Vec<String> {
+            STORED_3D_INPUTS
+                .iter()
+                .filter(|path| path.starts_with(group))
+                .map(|path| (*path).to_owned())
+                .collect()
+        };
+        assert_eq!(
+            headline_moved_by(&fields("temperature.slip_loss."), ends),
+            BTreeSet::from([TEMPERATURE_VERDICT])
+        );
+        let by_reverse = headline_moved_by(&fields("temperature.demag."), ends);
+        for limit in [
+            "temperature.summary.governing_limit_C",
+            "temperature.summary.margin_hot_day_C",
+        ] {
+            assert!(by_reverse.contains(limit), "{limit}: {by_reverse:?}");
+        }
+        assert!(STORED_3D_NOTE.contains("slip-heating"), "{STORED_3D_NOTE}");
+        for sentence in STORED_3D_NOTE.split_inclusive(". ") {
+            if sentence.contains("slip-heating") {
+                assert!(!sentence.contains("limit"), "{sentence}");
+            }
+        }
     }
 
     #[test]

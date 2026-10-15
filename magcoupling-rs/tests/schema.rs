@@ -326,8 +326,7 @@ fn table_columns_match_the_workbook_headers() {
         let (Some(cell), true) = (row.cell.as_deref(), row.path.contains("[0].")) else {
             continue;
         };
-        // Column B of the sweeps: "Corner gap (mm)" on one sheet, "Poles" on the other.
-        if row.path.ends_with(".variable") {
+        if ENGINE_WORDED_COLUMNS.contains(&column_pattern(&row.path).as_str()) {
             continue;
         }
         let Some((label, unit, help)) = header_cells(cell) else {
@@ -395,6 +394,11 @@ fn column_pattern(path: &str) -> String {
     }
 }
 
+/// The ported table columns whose label and help the port writes itself: the sweeps' column B,
+/// "Corner gap (mm)" on one sheet and "Poles" on the other, so no one workbook header fits.
+/// `table_columns_match_the_workbook_headers` skips them and `engine_owned_text` holds them.
+const ENGINE_WORDED_COLUMNS: [&str; 2] = ["gap_sweep[*].variable", "pole_sweep[*].variable"];
+
 /// One field the engine words itself.
 struct EngineText {
     path: String,
@@ -404,10 +408,10 @@ struct EngineText {
 }
 
 /// What the engine words itself, apart from the Python port (spec ruling R1): every Rust-only
-/// input and result, and every ported result or table column whose help an applied correction
-/// rewords (Python keeps the workbook text there, so the port's text is free). A ported
-/// input's help is Python's; the GUI overlay rewords it on screen (`gui::plain_text`), so it
-/// is not here. A table column once.
+/// input and result, every ported result or table column whose help an applied correction
+/// rewords (Python keeps the workbook text there, so the port's text is free), and the
+/// [`ENGINE_WORDED_COLUMNS`]. A ported input's help is Python's; the GUI overlay rewords it on
+/// screen (`gui::plain_text`), so it is not here. A table column once.
 fn engine_owned_text() -> Vec<EngineText> {
     let reworded = reworded_help();
     let defaults = DesignInputs::default();
@@ -423,7 +427,10 @@ fn engine_owned_text() -> Vec<EngineText> {
     let results = result_rows(&compute_all(&defaults))
         .into_iter()
         .filter(|row| {
-            row.meta.rust_only || reworded.contains_key(column_pattern(&row.path).as_str())
+            let column = column_pattern(&row.path);
+            row.meta.rust_only
+                || reworded.contains_key(column.as_str())
+                || ENGINE_WORDED_COLUMNS.contains(&column.as_str())
         })
         .map(|row| EngineText {
             path: column_pattern(&row.path),
@@ -507,13 +514,15 @@ fn every_result_label_and_help_passes_the_plain_words_guard() {
 #[test]
 fn engine_owned_help_is_plain_and_short() {
     let texts = engine_owned_text();
-    // Not vacuous: a Rust-only input, a Rust-only result, a reworded result and a reworded
-    // table column are all in the set.
+    // Not vacuous: a Rust-only input, a Rust-only result, a reworded result, a reworded table
+    // column and the sweeps' swept-variable column are all in the set.
     for path in [
         "coupling.max_harmonic",
         "housing.space_claim_check",
         "metal.steel_cup_mass_g",
         "clamps.table[*].length_mm",
+        "gap_sweep[*].variable",
+        "pole_sweep[*].variable",
     ] {
         assert!(
             texts.iter().any(|t| t.path == path),
