@@ -1424,6 +1424,60 @@ Display range and edge inputs:
 - **Non-finite input from a design file:** "at least +inf mm" or "at least NaN mm", as recorded
   by re-review 1. Unchanged by this round.
 
+### Re-review: whole-branch review fix wave 1
+
+The slice-2 whole-branch review's fix wave 1 (2026-10-16; `final-review.md` MF-5) changed two
+assumption rationales of this section (`engine/assumptions.rs`): `end_effect` (the reviewed
+note's band, scope and steel case, in place of R10's literal "within 2 %", deviation D-5) and
+`calibration_factor` ("no magnetic steel ... B842SH parts"). Their G-3 re-review ran in a fresh
+context. The reviewer's report for the record follows unchanged (full answer:
+`.superpowers/sdd/2026-10-14-magcoupler-guidance-slice-2/task-21-textreview-1.md`).
+
+- Reviewer: physics reviewer (session model), fresh context, 2026-10-16; G-3 review of the two
+  assumption rationales changed by the T21 whole-branch review fix wave 1 (MF-5),
+  `task-21-textreview-1.md`.
+- Bar: plain words for engineers who are not magnetics specialists, with no cells, audit ids or
+  code names; nothing false at the default design, the five probe designs or anywhere the inputs
+  reach; agreement with the reviewed `end_effect` and `calibration` notes.
+- **`calibration_factor`: PASS.**
+  - "No magnetic steel behind the magnets, its magnets per ring, B842SH parts on both rings" is
+    the engine's rule (`select_calibration_factor`, called with the resolved circuit; a
+    non-ferromagnetic pick forces circuit 0).
+  - The 304 probe design matches and takes f_cal = `calibration.f_cal_updated` = 1.0494.
+  - "Parts" is exact: the rule compares the pick.
+  - It agrees with the `calibration` note's sentences[2].
+- **`end_effect`: MUST_FIX (MF-B).**
+  - The new band and scope are true and agree with the note: within 3 % on the example design
+    without its steel from 3.2 mm, likely high with magnetic steel.
+  - But the steel clause has no scope. It reverses at reachable short magnets on steel designs,
+    with the check "OK":
+    - the 20 mm ring probe, −84.7 % at 2.36 mm;
+    - the 8-magnet probe, −47.0 % at 2.0 mm;
+    - the example design at the 2.0 mm floor, −1.3 to −4.0 %.
+  - There the model understates the torque, which is the unsafe side for cold-high loads.
+  - The note qualifies the same clause in its watch_out[1]; the rationale, drawn on its own, does
+    not.
+  - Replacement for the last sentence: "It is least reliable for short magnets, where it can read
+    too high or too low; at or below a magnet length of coefficient × pole pitch the factor is
+    zero or negative, and the model gives no prediction."
+  - Test: the rationale names "short magnets" and "too high or too low".
+- **Plain words:** both rationales pass `every_label_and_rationale_reads_in_plain_words`, and so
+  does the replacement (nothing in `BANNED`).
+- **Verdict:** MUST_FIX (MF-B, end_effect); `calibration_factor` passes.
+
+- MF-B, applied verbatim by the implementer (session model), 2026-10-16:
+  - `end_effect` rationale, last sentence: "At or below a magnet length of coefficient × pole
+    pitch the factor is zero or negative, and the model gives no prediction." -> "It is least
+    reliable for short magnets, where it can read too high or too low; at or below a magnet
+    length of coefficient × pole pitch the factor is zero or negative, and the model gives no
+    prediction."
+  - Test: `tests/assumptions.rs`
+    `the_end_effect_and_calibration_rationales_state_what_was_checked` also asserts that the
+    rationale names "short magnets" and "too high or too low". The previous text fails it.
+    `every_label_and_rationale_reads_in_plain_words` passes.
+  - Docs: the README `tests/assumptions.rs` row, the update tracker's MF-5 sentence and the MF-5
+    commit message.
+
 ## Reachability strings (T19)
 
 - Scope: not an overlay batch. These are T19's on-screen strings outside the help overlay,

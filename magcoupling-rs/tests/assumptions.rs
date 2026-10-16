@@ -18,6 +18,7 @@ use magcoupling::engine::assumptions::{
     ASSUMPTIONS, any_modified, modified, reset_to_workbook_defaults, states,
 };
 use magcoupling::engine::deviations::Deviations;
+use magcoupling::engine::explain::probes;
 use magcoupling::engine::meta::{FieldType, InputMeta, InputSet, Value, input_rows, result_rows};
 
 /// The metadata of the input at `path`.
@@ -275,20 +276,48 @@ fn every_label_and_rationale_reads_in_plain_words() {
 
 #[test]
 fn the_end_effect_and_calibration_rationales_state_what_was_checked() {
-    // R10: the end factor's band against free-space 3D, as the end-effect note states it.
+    // R10, as the reviewed end-effect note states it (whole-branch review MF-5, deviation D-5:
+    // the note's per-note physics review replaced R10's literal "within 2 %"): the band against
+    // free-space 3D is the note's, read from the note, and the steel case the note names; and
+    // the short-magnet case the note's watch-out names (T21 text re-review 1, MF-B).
+    let band = common::end_effect_band_sentence();
+    let figure = band
+        .split_once("within ")
+        .and_then(|(_, rest)| rest.split_once(" %"))
+        .map(|(figure, _)| figure)
+        .unwrap_or_else(|| panic!("no \"within N %\" in {band:?}"));
     let end = rationale("end_effect");
     assert!(
-        end.contains("within 2 % of free-space 3D for magnets 3.2 mm and longer"),
-        "{end}"
+        end.contains(&format!("within {figure} % of free-space 3D")),
+        "the note's band {figure} %: {end}"
+    );
+    assert!(end.contains("with magnetic steel"), "the steel case: {end}");
+    assert!(
+        end.contains("short magnets") && end.contains("too high or too low"),
+        "the short-magnet case the note's watch-out names: {end}"
     );
     assert!(!end.contains("1 %"), "{end}");
     // PA-18: the measured factor goes to a design that matches the prototype's circuit, magnet
     // count and part, and nothing else is compared.
     let cal = rationale("calibration_factor");
-    for named in ["no steel", "magnets per ring", "B842SH", "not compared"] {
+    for named in [
+        "no magnetic steel",
+        "magnets per ring",
+        "B842SH",
+        "not compared",
+    ] {
         assert!(cal.contains(named), "{named:?} missing: {cal}");
     }
     assert!(!cal.contains("own rings"), "{cal}");
+    // "Magnetic" is what makes it true: a 304 stainless back iron is steel, yet the 304 probe
+    // design is on the free-space circuit and gets the measured factor.
+    let (_, stainless) = probes::probe_designs()
+        .into_iter()
+        .find(|(name, _)| *name == "304 back iron")
+        .expect("the 304 back iron probe design");
+    let results = compute_all(&stainless);
+    assert_eq!(results.materials.circuit_backiron, 0);
+    assert_eq!(results.model.f_cal, results.calibration.f_cal_updated);
 }
 
 #[test]

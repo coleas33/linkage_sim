@@ -2177,10 +2177,10 @@ fn the_end_effect_note_s_short_overlap_watch_out_names_both_directions() {
 }
 
 /// `calibration`'s three entries and its rule at the five probe designs. A prototype match
-/// (the rule's own terms: no steel behind the magnets, the prototype's magnets per ring, B842SH
-/// on both rings) ignores the assumed factor; elsewhere every torque scales with it. The two
-/// bench entries are entered from the test, so they claim no aim: the measured factor rises
-/// with a larger measurement or a warmer test, and only a match uses it.
+/// (the rule's own terms: no magnetic steel behind the magnets, the prototype's magnets per
+/// ring, B842SH on both rings) ignores the assumed factor; elsewhere every torque scales with
+/// it. The two bench entries are entered from the test, so they claim no aim: the measured
+/// factor rises with a larger measurement or a warmer test, and only a match uses it.
 #[test]
 fn the_calibration_note_s_levers_and_rule_hold_at_every_probe_design() {
     let note = notes::note("calibration").expect("the calibration note");

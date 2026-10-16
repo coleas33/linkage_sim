@@ -68,14 +68,14 @@ pub const ASSUMPTIONS: [Assumption; 14] = [
         id: "end_effect",
         label: "End-effect coefficient",
         paths: &["coupling.c_end", "calibration.c_end"],
-        rationale: "An empirical factor for the finite magnet length: end-effect factor = 1 − coefficient × pole pitch / magnet length. Your design and the bench prototype each have their own coefficient. Checked at 10 magnets per ring and a 1.4 mm gap, it is within 2 % of free-space 3D for magnets 3.2 mm and longer. Its end loss barely grows with the gap, so it reads optimistic at wider gaps. At or below a magnet length of coefficient × pole pitch the factor is zero or negative, and the model gives no prediction.",
+        rationale: "An empirical factor for the finite magnet length: end-effect factor = 1 − coefficient × pole pitch / magnet length. Your design and the bench prototype each have their own coefficient. Checked on the example design without its steel, it is within 3 % of free-space 3D for magnets 3.2 mm and longer; with magnetic steel behind the magnets it likely reads high. Its end loss barely grows with the gap, so it reads optimistic at wider gaps. It is least reliable for short magnets, where it can read too high or too low; at or below a magnet length of coefficient × pole pitch the factor is zero or negative, and the model gives no prediction.",
         source: "Workbook Calculator!C41 and Calibration!C23 (0.15); M1 audit M8 (error band against 3D) and M9 (negative for short magnets).",
     },
     Assumption {
         id: "calibration_factor",
         label: "Calibration factor",
         paths: &["calibration.f_cal_original"],
-        rationale: "The factor the torque model is multiplied by for every design that does not match the bench prototype; no bench test with steel stands behind it. A design that matches the prototype (no steel behind the magnets, its magnets per ring, B842SH blocks on both rings) takes the measured factor instead. Ring radius, gap and magnet length are not compared. The 2D model is within a few per cent of exact 2D sections.",
+        rationale: "The factor the torque model is multiplied by for every design that does not match the bench prototype; no bench test with steel stands behind it. A design that matches the prototype (no magnetic steel behind the magnets, its magnets per ring, B842SH parts on both rings) takes the measured factor instead. Ring radius, gap and magnet length are not compared. The 2D model is within a few per cent of exact 2D sections.",
         source: "Workbook Calibration!C24 (0.95); M1 audit M4 to M6.",
     },
     Assumption {
