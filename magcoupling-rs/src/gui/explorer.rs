@@ -1417,6 +1417,34 @@ mod tests {
     }
 
     #[test]
+    fn the_start_here_bar_names_every_step_it_shows() {
+        // Spec 3.3 and ruling 11: the bar walks START_HERE, the full order of fourteen steps
+        // or, while the shaft-clamp section is paused, its first thirteen (the clamp step, the
+        // last, hidden); the torque note first; each bar names its step of the steps shown and
+        // its note, and only the ferrite step says it is for ferrite rings only (TC-32).
+        assert_eq!(notes::start_here_for(false).len(), 14);
+        assert_eq!(notes::start_here_for(true).len(), 13);
+        assert_eq!(START_HERE[0].0, "torque_from_shear");
+        let steps = START_HERE.len();
+        for (step, &(id, _)) in START_HERE.iter().enumerate() {
+            let note = reviewed_note(id).unwrap_or_else(|| panic!("{id} is not reviewed"));
+            let only = if id == "ferrite_cold_demag" {
+                format!(" {FERRITE_ONLY}")
+            } else {
+                String::new()
+            };
+            assert_eq!(
+                start_here_text(step),
+                format!(
+                    "{START_HERE_BUTTON} {} of {steps}{only}: {}",
+                    step + 1,
+                    glyph_safe(note.title)
+                )
+            );
+        }
+    }
+
+    #[test]
     fn a_note_by_id_shows_only_once_reviewed() {
         use crate::engine::explain::notes::NOTES;
         for note in NOTES {

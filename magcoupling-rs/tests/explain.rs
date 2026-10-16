@@ -1038,19 +1038,39 @@ fn the_registry_is_consistent() {
     }
 }
 
-/// The A4 accuracy gate for release (the M4 hands-on checklist runs it): every note the
-/// "start here" order opens and every note an A5 warning links to has passed the physics
-/// review. Red until the notes are reviewed; drafts never reach users meanwhile (`note_for`).
+/// The A4 accuracy gate for release (spec section 4, test 7), on since slice 2: every note a
+/// user can open by id has passed the physics review: each "start here" step's, each A5
+/// warning's and, with the `gui` feature, each check guide's and each dashboard row's Why note
+/// (gate 7 runs that part, gate 4 the rest). A note hidden with the paused shaft-clamp section
+/// (`notes::shown`, ruling 11) cannot be opened, so it is out of the release. `note_for` keeps
+/// a draft off the screen; this keeps a draft out of a release.
 #[test]
-#[ignore = "the M4 release gate: red until the notes are reviewed"]
 fn release_notes_are_reviewed() {
-    let mut ids: Vec<&str> = notes::START_HERE.iter().map(|(id, _)| *id).collect();
-    ids.extend(
+    let mut linked: Vec<&str> = notes::START_HERE.iter().map(|(id, _)| *id).collect();
+    linked.extend(
         magcoupling::engine::warnings::WARNING_RULES
             .iter()
             .map(|r| r.note_id),
     );
-    let drafts: Vec<&str> = ids
+    #[cfg(feature = "gui")]
+    {
+        use magcoupling::gui::guidance::{CHECK_GUIDES, Learn, ROW_LEARN};
+        let guides = CHECK_GUIDES.iter().map(|g| g.learn);
+        let rows = ROW_LEARN.iter().map(|&(_, learn)| learn);
+        let before = linked.len();
+        linked.extend(guides.chain(rows).filter_map(|learn| match learn {
+            Learn::Note(id) => Some(id),
+            Learn::Assumption(_) | Learn::None(_) => None,
+        }));
+        assert!(
+            linked.len() > before,
+            "the guides and the rows link notes (the widened gate is not vacuous)"
+        );
+    }
+    linked.sort_unstable();
+    linked.dedup();
+    linked.retain(|id| notes::shown(id));
+    let drafts: Vec<&str> = linked
         .into_iter()
         .filter(|id| {
             !matches!(
@@ -1060,6 +1080,160 @@ fn release_notes_are_reviewed() {
         })
         .collect();
     assert!(drafts.is_empty(), "not yet reviewed: {drafts:?}");
+}
+
+/// Spec section 4 (S2-6): every note shown ships as reviewed by the slice-2 physics review, its
+/// record names its own section of the committed review report, and the report holds that
+/// section exactly once (a re-review goes under the note's section as a `###` subsection).
+#[test]
+fn every_note_names_its_committed_review_section() {
+    const REPORT: &str = "docs/analyses/2026-10-14-magcoupler-notes-review.md";
+    let report = include_str!("../../docs/analyses/2026-10-14-magcoupler-notes-review.md");
+    let iso_date = |date: &str| {
+        date.len() == 10
+            && date.bytes().enumerate().all(|(i, b)| {
+                if i == 4 || i == 7 {
+                    b == b'-'
+                } else {
+                    b.is_ascii_digit()
+                }
+            })
+    };
+    for n in notes::NOTES.iter().filter(|n| notes::shown(n.id)) {
+        let notes::Review::Reviewed {
+            reviewer,
+            date,
+            record,
+        } = n.review
+        else {
+            panic!("{}: not reviewed", n.id);
+        };
+        assert_eq!(reviewer, "physics reviewer (session model)", "{}", n.id);
+        assert!(iso_date(date), "{}: {date}", n.id);
+        assert_eq!(record, format!("{REPORT}#{}", n.id), "{}", n.id);
+        let heading = format!("## {}", n.id);
+        let sections = report
+            .lines()
+            .filter(|line| line.trim_end() == heading)
+            .count();
+        assert_eq!(sections, 1, "{}: its section of {REPORT}", n.id);
+    }
+}
+
+/// Spec 3.3 (R4), section 6 test 5 and ruling 11: the full Start here order is fourteen
+/// steps, the torque note first and the clamp note last; while the shaft-clamp section is
+/// paused `START_HERE` shows the first thirteen. Each step opens an equation its note
+/// explains, each note once; with the six warning notes that is every note shown, in both
+/// switch states.
+#[test]
+fn start_here_is_fourteen_steps_and_thirteen_while_paused() {
+    const FULL: [&str; 14] = [
+        "torque_from_shear",
+        "harmonics",
+        "back_iron_factor",
+        "pullout_angle",
+        "end_effect",
+        "calibration",
+        "br_temperature",
+        "hot_low_cold_high",
+        "when_slipping",
+        "slip_heating",
+        "thermal_time_constant",
+        "demagnetization",
+        "ferrite_cold_demag",
+        "clamp_preload",
+    ];
+    let ids = |steps: &[(&'static str, &'static str)]| -> Vec<&'static str> {
+        steps.iter().map(|&(id, _)| id).collect()
+    };
+    assert_eq!(ids(notes::START_HERE_ALL), FULL);
+    assert_eq!(ids(notes::start_here_for(false)), FULL);
+    assert_eq!(ids(notes::start_here_for(true)), FULL[..13].to_vec());
+    for &(id, path) in notes::START_HERE_ALL {
+        let note = notes::note(id).unwrap_or_else(|| panic!("no note {id}"));
+        assert!(
+            note.equations.iter().any(|e| notes::covers(e, path)),
+            "start here {id}: the note does not explain {path}"
+        );
+    }
+    let warnings: Vec<&str> = magcoupling::engine::warnings::WARNING_RULES
+        .iter()
+        .map(|r| r.note_id)
+        .collect();
+    for paused in [false, true] {
+        let order = ids(notes::start_here_for(paused));
+        let mut reached: BTreeSet<&str> = order.iter().copied().collect();
+        assert_eq!(
+            reached.len(),
+            order.len(),
+            "each note once (paused: {paused})"
+        );
+        reached.extend(warnings.iter().copied());
+        let shown: BTreeSet<&str> = notes::NOTES
+            .iter()
+            .map(|n| n.id)
+            .filter(|id| notes::shown_when(id, paused))
+            .collect();
+        assert_eq!(
+            reached, shown,
+            "every note shown is a step or a warning's (paused: {paused})"
+        );
+    }
+}
+
+/// The note, help and guide checks this slice wrote red and ignored run for good (spec section
+/// 6, tests 1, 7 and 9): in the files that hold them only the review tools stay ignored, the
+/// tests that print or write a file for a reviewer instead of checking anything.
+#[test]
+fn only_the_review_tools_are_ignored() {
+    const TOOLS: [&str; 7] = [
+        "review_sheet",
+        "guidance_strings_for_review",
+        "notes_for_review",
+        "notes_signoff_sheet",
+        "overlay_strings_for_review",
+        "help_for_review",
+        "notes_before_snapshot",
+    ];
+    let sources = [
+        (
+            "src/engine/explain/notes.rs",
+            include_str!("../src/engine/explain/notes.rs"),
+        ),
+        (
+            "src/gui/plain_text.rs",
+            include_str!("../src/gui/plain_text.rs"),
+        ),
+        (
+            "src/gui/explorer.rs",
+            include_str!("../src/gui/explorer.rs"),
+        ),
+        (
+            "src/gui/guidance.rs",
+            include_str!("../src/gui/guidance.rs"),
+        ),
+        (
+            "src/gui/dashboard.rs",
+            include_str!("../src/gui/dashboard.rs"),
+        ),
+        ("tests/explain.rs", include_str!("explain.rs")),
+    ];
+    // Spelled in two pieces, so that this file's own text does not hold the attribute.
+    let attribute = concat!("#[", "ignore");
+    let mut checks = Vec::new();
+    for (file, text) in sources {
+        for (at, _) in text.match_indices(attribute) {
+            let name = text[at..]
+                .split_once("fn ")
+                .and_then(|(_, rest)| rest.split('(').next())
+                .unwrap_or("?")
+                .trim();
+            if !TOOLS.contains(&name) {
+                checks.push(format!("{file}: {name}"));
+            }
+        }
+    }
+    assert!(checks.is_empty(), "ignored checks: {checks:?}");
 }
 
 /// The physics reviewer's sheet for a batch: every record's path, cell, symbol, rendered
@@ -4363,11 +4537,10 @@ fn the_placeholder_check_names_each_kind_of_mistake() {
 }
 
 #[test]
-#[ignore = "un-ignored in T18 when every note is rewritten"]
 fn every_note_reads_in_plain_words_at_every_probe_design() {
     let mut failures = Vec::new();
     for (name, _, results) in &probe_points() {
-        for note in notes::NOTES {
+        for note in notes::NOTES.iter().filter(|n| notes::shown(n.id)) {
             let rendered = note_text::rendered_texts(note)
                 .into_iter()
                 .map(|text| note_text::render(text, |path| engine_value(results, path)));
@@ -4383,8 +4556,8 @@ fn every_note_reads_in_plain_words_at_every_probe_design() {
                         note.id
                     ));
                 }
-                // The guard does not know audit ids (A-13, RF-5): checked here for good once
-                // the notes' own REWRITTEN list goes.
+                // The guard does not know audit ids (A-13, RF-5): this is the one check that
+                // keeps them out of the shipped notes' texts and sources.
                 for id in audit_ids(&text) {
                     failures.push(format!(
                         "{} at the {name} design: an audit id {id} in {text:?}",

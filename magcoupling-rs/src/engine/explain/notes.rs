@@ -14,8 +14,8 @@
 //! entry an input path, a [`Step`], the result it moves and which way, and its effect and
 //! trade-off; Watch out is `watch_out`. The `sources` sit under a fold that starts closed. The
 //! slice's caps (3 to 5 sentences of at most 25 words, 1 to 5 change entries, 0 to 2
-//! watch-outs of at most 30 words, a sentence 0 in plain words) are tests that stay ignored
-//! until every note is rewritten.
+//! watch-outs of at most 30 words, a sentence 0 in plain words) are tests over every note
+//! [`shown`]: while the shaft-clamp section is paused, its note keeps its slice-1 text, hidden.
 
 /// A small diagram the M4 panel paints beside a note (egui painter, no image files).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1456,7 +1456,8 @@ mod tests {
         }
     }
 
-    /// A-15's per-id form for T15's notes (A-28c item 9); `REWRITTEN` runs the same two checks.
+    /// A-15's per-id form for T15's notes (A-28c item 9); the all-notes tests run the same two
+    /// checks over every note shown.
     #[test]
     fn the_slip_notes_keep_the_caps() {
         for id in ["when_slipping", "slip_heating", "thermal_time_constant"] {
@@ -1677,24 +1678,6 @@ mod tests {
         }
     }
 
-    /// The rewritten notes keep to the slice-2 caps and each sentence 0 is plain words, ahead
-    /// of the all-notes tests that stay ignored until every note is rewritten (driven by
-    /// `REWRITTEN`, so it goes with that list).
-    #[test]
-    fn the_rewritten_notes_keep_to_the_slice_2_caps() {
-        let failures: Vec<String> = REWRITTEN
-            .iter()
-            .flat_map(|id| {
-                let note = note(id).unwrap_or_else(|| panic!("REWRITTEN names no note: {id}"));
-                let sentence_zero = sentence_zero_problems(note.sentences[0])
-                    .into_iter()
-                    .map(move |p| format!("{id}: sentence 0 has {p}"));
-                cap_problems(note).into_iter().chain(sentence_zero)
-            })
-            .collect();
-        assert!(failures.is_empty(), "{failures:#?}");
-    }
-
     #[test]
     fn a_step_reads_as_its_word_and_goes_its_way() {
         let steps = [Step::Raise, Step::Lower, Step::Choose, Step::Enter];
@@ -1874,7 +1857,7 @@ mod tests {
 
     /// What breaks the slice-2 caps in one note (words are the runs between whitespace, as
     /// `plain::word_count` counts them): its sentences, change entries and watch-outs. The one
-    /// cap rule: the ignored all-notes test and the per-note tests of the note tasks call it.
+    /// cap rule: the all-notes test and the per-note tests of the note tasks call it.
     fn cap_problems(n: &Note) -> Vec<String> {
         use super::super::plain::word_count;
         let mut problems = Vec::new();
@@ -2025,9 +2008,14 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "un-ignored in T18 when every note is rewritten"]
     fn every_note_keeps_to_the_slice_2_caps() {
-        let failures: Vec<String> = NOTES.iter().flat_map(cap_problems).collect();
+        // Every note shown (ruling 11: while the shaft-clamp section is paused, its note keeps
+        // its slice-1 text, hidden, until the section returns).
+        let failures: Vec<String> = NOTES
+            .iter()
+            .filter(|n| shown(n.id))
+            .flat_map(cap_problems)
+            .collect();
         assert!(failures.is_empty(), "{failures:#?}");
     }
 
@@ -2084,10 +2072,10 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "un-ignored in T18 when every note is rewritten"]
     fn every_sentence_zero_is_plain_words() {
         let failures: Vec<String> = NOTES
             .iter()
+            .filter(|n| shown(n.id))
             .filter_map(|n| {
                 let problems = sentence_zero_problems(n.sentences.first().copied().unwrap_or(""));
                 (!problems.is_empty()).then(|| format!("{}: {problems:?}", n.id))
@@ -2120,35 +2108,6 @@ mod tests {
         }
         problems
     }
-
-    /// The notes rewritten in plain words so far (slice-2 spec 3.4, A-13): each note task adds
-    /// its ids, which holds those notes to plain words and to the caps (A-15's per-id form,
-    /// `the_slip_notes_keep_the_caps` and `the_demagnetization_notes_keep_the_caps`, repeats the
-    /// caps check for T15's and T16's notes, A-28c item 9 and A-28d item 4);
-    /// the task that turns the all-notes tests on deletes this list and the two tests it drives,
-    /// `the_rewritten_notes_read_in_plain_words` and
-    /// `the_rewritten_notes_keep_to_the_slice_2_caps`.
-    const REWRITTEN: &[&str] = &[
-        "torque_from_shear",
-        "harmonics",
-        "back_iron_factor",
-        "pullout_angle",
-        "end_effect",
-        "calibration",
-        "br_temperature",
-        "hot_low_cold_high",
-        "when_slipping",
-        "slip_heating",
-        "thermal_time_constant",
-        "demagnetization",
-        "ferrite_cold_demag",
-        "a5.non_ferromagnetic_back_iron",
-        "a5.ferromagnetic_sleeve_or_liner",
-        "a5.high_conductivity_sleeve_or_liner",
-        "a5.low_saturation",
-        "a5.uncoated_low_alloy_steel",
-        "a5.cte_mismatch_with_magnets",
-    ];
 
     #[test]
     fn the_plain_words_rule_names_each_kind_of_mistake() {
@@ -2245,18 +2204,6 @@ mod tests {
                 "{why}: {problems:?}"
             );
         }
-    }
-
-    #[test]
-    fn the_rewritten_notes_read_in_plain_words() {
-        let failures: Vec<String> = REWRITTEN
-            .iter()
-            .flat_map(|id| {
-                let note = note(id).unwrap_or_else(|| panic!("REWRITTEN names no note: {id}"));
-                plain_words_problems(note)
-            })
-            .collect();
-        assert!(failures.is_empty(), "{failures:#?}");
     }
 
     #[test]
