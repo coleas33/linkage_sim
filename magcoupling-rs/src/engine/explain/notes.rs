@@ -165,8 +165,8 @@ pub const NOTES: &[Note] = &[
             "Twist one ring against the other and the magnets across the gap pull each other back into line, so the rings pass torque.",
             "That sideways pull, spread over the cylinder at the gap's mid radius R_g, is a shear stress σ (at its peak, here: {model.tau_Pa}).",
             "σ times the cylinder's area 2π·R_g·L, times lever arm R_g, is the endless-ring torque T_2D = σ·2π·R_g²·L (magnet ends ignored), L the overlapping magnet length.",
-            "σ grows with stronger magnet grades and magnetic steel behind the magnets; it falls as the gap widens or blocks fill less of each pole.",
             "The magnet count N keeps the gap radius R_g: blocks share one ring, each pole spanning τ_p = 2π·R_g/N; fewer flat blocks grow the cup.",
+            "σ grows with stronger magnet grades and magnetic steel behind the magnets; it falls as the gap widens or blocks fill less of each pole.",
         ],
         change: &[
             Change {
@@ -1687,6 +1687,20 @@ mod tests {
                     .all(|e| crate::engine::clamps::hides(e, true));
             assert_eq!(all_hidden, n.id == PAUSED_NOTE, "{}", n.id);
         }
+    }
+
+    #[test]
+    fn the_torque_note_glosses_each_pole_where_it_is_first_used() {
+        // R8 (ruling 10 a): Start here step 1 says what a pole spans in the sentence that first
+        // speaks of "each pole", not one sentence after it.
+        let s = note("torque_from_shear").unwrap().sentences;
+        let defines = s.iter().position(|t| t.contains("τ_p = 2π·R_g/N"));
+        let first = s.iter().position(|t| t.contains("each pole"));
+        assert!(defines.is_some(), "{s:#?}");
+        assert_eq!(
+            defines, first,
+            "each pole is glossed where it is first used"
+        );
     }
 
     #[test]
