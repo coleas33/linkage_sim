@@ -1478,6 +1478,44 @@ context. The reviewer's report for the record follows unchanged (full answer:
   - Docs: the README `tests/assumptions.rs` row, the update tracker's MF-5 sentence and the MF-5
     commit message.
 
+### Re-review: whole-branch review fix wave 1 (re-check 2)
+
+The re-review above ended on a MUST_FIX (MF-B), applied verbatim in b4ed1cf. The applied
+`end_effect` rationale had its G-3 re-review in a fresh context at HEAD f4f9624. The reviewer's
+report for the record follows unchanged (full answer:
+`.superpowers/sdd/2026-10-14-magcoupler-guidance-slice-2/task-21-textreview-2.md`).
+
+- Reviewer: physics reviewer (session model), fresh context, 2026-10-16; G-3 re-review of the
+  `end_effect` assumption rationale as applied for text re-review 1's MF-B,
+  `task-21-textreview-2.md`.
+- Bar: plain words for engineers who are not magnetics specialists, with no cells, audit ids or
+  code names; nothing false at the default design, the five probe designs or anywhere the inputs
+  reach; agreement with the reviewed `end_effect` note.
+- **`end_effect`: PASS.**
+  - The last sentence now reads "It is least reliable for short magnets, where it can read too
+    high or too low; at or below a magnet length of coefficient × pole pitch the factor is zero
+    or negative, and the model gives no prediction."
+  - It is true at every circuit checked. The largest error lies at 0.16 to 0.42 τ_p, and both
+    directions occur with the check "OK": +15.6 % at 2.5 mm on the example design with steel,
+    −20.7 % on the 304 design at the 2.0 mm floor, −84.7 % at 2.36 mm on the 20 mm ring with
+    steel.
+  - The steel clause's unsafe short-magnet exception is now stated, as in the note's watch_out[1].
+  - The band (within 3 % from 3.2 mm, the example design without its steel) is read from the note
+    by the test. The steel case ("likely reads high", ideal-steel evidence at both permeability
+    limits) and the wide-gap clause are unchanged and true.
+  - The test asserts "short magnets" and "too high or too low".
+- **Plain words:** `every_label_and_rationale_reads_in_plain_words` passes. Every draw site
+  (Assumptions view, hover, Explain's nearest assumption, spreadsheet) shows the whole text.
+- **Should-fix (for the controller):** S-1. In sentence 3, "it is within 3 %" becomes "the
+  factor is within 3 %", because the nearest antecedent is "coefficient". The exact text is in
+  `task-21-textreview-2.md`.
+- **Verdict:** PASS. MF-B is closed.
+
+- No must-fix, and no text changed in this round. S-1 ("it is within 3 %" -> "the factor is
+  within 3 %" in sentence 3) stays open for the controller, with the `end_effect` note's carried
+  should-fix items SF-A (extended), SF-1 and SF-T (texts in `task-21-textreview-1.md`, S-1 to
+  S-3).
+
 ## Reachability strings (T19)
 
 - Scope: not an overlay batch. These are T19's on-screen strings outside the help overlay,

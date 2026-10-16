@@ -323,6 +323,37 @@ answer: `.superpowers/sdd/2026-10-14-magcoupler-guidance-slice-2/task-21-textrev
     the MF-2 commit message.
   - No should-fix item of this round concerns this note.
 
+### Re-review: whole-branch review fix wave 1 (re-check 2)
+
+Text re-review 1 above ended on a MUST_FIX (MF-A), applied verbatim in 27ab254. The applied
+watch_out[0] was re-reviewed in a fresh context at HEAD f4f9624. The reviewer's report for the
+record follows unchanged (full answer:
+`.superpowers/sdd/2026-10-14-magcoupler-guidance-slice-2/task-21-textreview-2.md`).
+
+- Reviewer: physics reviewer (session model), fresh context, 2026-10-16; text re-review 2 of the
+  T21 whole-branch review fix wave 1 (HEAD f4f9624), `task-21-textreview-2.md`.
+- Scope: watch_out[0] as applied for text re-review 1's MF-A (controller ruling 13's text).
+- Dump: `target/rereview-T21-2.txt`, the five probe designs; every aim reads "moves as it says".
+- Tests: `engine::explain` 69 passed (the caps, the plain-words rule, and the pull-out gloss
+  test with "expected to pass"); `tests/explain.rs` 56 passed; the RF-1 panel test passes.
+- **watch_out[0]: PASS.**
+  - The text is ruling 13's text, verbatim.
+  - The dashboard row "Pull-out torque (nominal)" is `model.pullout_Nm`. "Expected" matches its
+    help ("not a guaranteed minimum") and `pullout_angle` sentences[0].
+  - T_pull = T_2D·f_end·f_cal, both values at the operating temperature. The rendered values
+    are reproduced at all five designs: 2.68848, 1.96836, 1.69737 (measured factor 1.0494),
+    0.207074 and 2.53926 N·m.
+  - Out of range, the pull-out renders "no prediction" (spec 5).
+  - "Pull-out" is glossed at its first use (R8).
+  - 30 words, at the cap.
+- **Traps:** none written. Nothing says pull-out is guaranteed or "can never exceed" (T-O), and
+  nothing says the coupling protects the gearbox. R_g² is said only at fixed σ.
+- **Verdict:** PASS. The note has no open must-fix.
+
+- No must-fix, and no text of this note changed in this round. The round's one should-fix item
+  (S-1) concerns the end-effect assumption's rationale and is recorded in
+  `docs/analyses/2026-10-14-magcoupler-help-review.md`, `## GUI strings and rationales (T10)`.
+
 ## harmonics
 
 Task T12. Rewrite of "Harmonic decomposition" as "Block fill and the magnet pattern (harmonics)",
