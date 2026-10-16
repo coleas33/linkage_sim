@@ -1423,3 +1423,298 @@ Display range and edge inputs:
   false safety claim.
 - **Non-finite input from a design file:** "at least +inf mm" or "at least NaN mm", as recorded
   by re-review 1. Unchanged by this round.
+
+## Reachability strings (T19)
+
+- Scope: not an overlay batch. These are T19's on-screen strings outside the help overlay,
+  reviewed under the same G-3 rule (the brief's Step 13 prompt):
+  - the Equation panel's own lines (`gui/explorer.rs`): the empty text (`EMPTY_TEXT`), the line
+    under a value with nothing better to offer (`NO_NOTE`), the Start here hint
+    (`START_HERE_HINT`) and the two leads (`NEAREST_NOTE`, `NEAREST_ASSUMPTION`);
+  - the three Why-link texts outside the dashboard rows (`dashboard::why_note_text`): under
+    Magnets per ring and Outside diameter on the Size tab (`guidance::SIZE_TAB_NOTE`), at the end
+    of the Required and Hot-low rows (`TORQUE_BAND_NOTE`) and under each copy of the end-effect
+    banner (`BANNER_NOTE`);
+  - for each dashboard row shown without a note of its own, what Explain offers
+    (`explorer::note_fallback`), judged as a sensible next read for that value whose lead does
+    not claim the note explains the value itself (the prompt's item 3). The clamp row, hidden
+    while the clamp section is paused, is not drawn and was skipped (A-28g).
+- Read: the Step 12 dump (`magcoupling-rs/target/t19-strings.txt`, 237 strings; its 17 grep
+  lines in `t19-strings-grep.txt`) and a review sheet (`t19-review-sheet.txt`: where each string
+  is drawn, each row's offer and how the walk reaches it, the offers off the dashboard, and the
+  grep verbatim); T19's brief, report and drafter notes; the amendments (Global Constraints, the
+  T19 row: A-4, A-25 T-6, A-28g; A-13, A-19 to A-24, ruling 11 and A-28); slice-2 spec 3.4, 3.7,
+  5, 6 and 8, slice-1 spec 8, `phys-new-notes.md` section 2 and synthesis decision 8; the code
+  behind every string. Each round probed from a scratch crate outside the repository:
+  - round 1: each dashboard row's offer, recomputed with `note_fallback` and an independent
+    level-by-level walk; every reachable equation without a note of its own, by offer (closest
+    note 36, assumption 10, row reason 3, `NO_NOTE` 82); the values a note discusses that still
+    drew `NO_NOTE`; the guard, the word counts and "clamp" over every line; the three must-fix
+    texts in a mirror of the crate (lib suite, release gates, dump);
+  - round 2: every place `NO_NOTE` is drawn, the no-record arm included (594 values off the
+    dashboard with no equation record); `explorer_ui` drawn headless with Explain on at three of
+    them; what they are computed from (the engine and `notes::note_for`); the record arm checked
+    sound (none of its 82 values reads a record-less term); the must-fix text in a mirror;
+  - round 3: the form checks on `NO_NOTE`; its counts per arm (82 under an equation, 594 without
+    a record, 0 on the dashboard); `explorer_ui` drawn headless under an equation, under
+    record-less values at the five probe designs, and with the Start here bar up after three term
+    clicks.
+- Round 1: 3 must-fix items, text applied verbatim (all three constants in `gui/explorer.rs`):
+  - `START_HERE_HINT`.
+    - Old: "Start here walks the teaching notes in order."
+    - New: "Start here walks the main teaching notes in a suggested order."
+    - Why: Start here has 13 steps while 19 notes are shown; the six warning notes are never
+      steps, and one of them is this task's offer for the rotating mass. "A suggested order" is
+      the Start here button's own hover wording.
+  - `EMPTY_TEXT`, the same clause.
+    - Old: "Hover a value to see its equation; click it to open it here, then click a term to
+      follow it. Start here walks the teaching notes in order; Explain shows the note under the
+      open equation."
+    - New: "Hover a value to see its equation; click it to open it here, then click a term to
+      follow it. Start here walks the main teaching notes in a suggested order; Explain shows the
+      note under the open equation."
+  - `NO_NOTE`.
+    - Old: "No teaching note covers this value."
+    - New: "No teaching note is attached to this value or to anything it is computed from."
+      (replaced again in round 2)
+    - Why: the walk looks only upstream, so "covers" was false for values a note explains from
+      downstream: slip-loss power, the operating temperature, the effective gap and Br at 20 °C.
+
+  Should-fix offered, not applied in the round: SF-1, `NO_NOTE`'s doc comment follows the new
+  text; SF-2, the Step 14 docs quote the post-review texts; SF-3, a backlog candidate: a short
+  curated path-to-note map for values the upstream walk misses.
+
+  Recorded, no change asked: the two leads, the three Why-link texts and all nine fallback offers
+  pass. `mass.total_g`'s offer, "No magnetic steel behind the magnets" (the drafter's flagged
+  risk), is accepted: it is the only reviewed note upstream (two steps, through the back iron's
+  circuit), it is the coupling's main mass trade-off, and the lead says "closest", not
+  "explains". "Closest teaching note" over a row's own Why note is accepted. The implementer's
+  decisions 1-6 change no drawn string.
+- Round 2: 1 must-fix item, applied verbatim:
+  - `NO_NOTE`.
+    - Old: "No teaching note is attached to this value or to anything it is computed from."
+    - New: "No teaching note is shown here for this value."
+    - Why: Explain also draws it under each of the 594 values off the dashboard with no equation
+      record, where nothing is known of what the value is computed from. Some of them are
+      computed from values that carry notes: the six warnings (each rule names its note), the
+      adhesive's cold-high torque copy and its tangential force, the calibration's end-effect
+      check and the model verdict. "here" anchors the claim to the Equation panel.
+
+  Passed: `EMPTY_TEXT`, `START_HERE_HINT` and the four fallback lines that end in the hint.
+  Should-fix: SF-1 restated for the new text; SF-2 extended to the review sheet; SF-3 extended
+  (a warning's path could offer its rule's note; a curated map for the record-less copies).
+- Round 3: PASS, no must-fix. It re-reviewed `NO_NOTE` and the lines drawn next to it: true under
+  the 82 equations, under the 594 values with no record and with the Start here bar up, and still
+  true if a note is ever sent back to Draft. Its should-fix items restate round 2's SF-1 to SF-3.
+
+  Recorded, outside the review: where a warning does not fire, its value line reads
+  "Non-ferromagnetic back iron = " with nothing after the "=". That is the value formatter's
+  existing behaviour, not a T19 string.
+- What happened to the should-fix items (after the PASS, before the commit):
+  - SF-1 applied: `NO_NOTE`'s doc comment is the reviewers' text, verbatim. It is a code comment,
+    not on-screen text, and it had been stale since round 1.
+  - SF-2 applied: the README's Teaching notes bullet, `docs/ai/05-update-tracker.md` and the
+    BL-056 notes quote the final texts; the sheet already did.
+  - SF-3 not built: the BL-056 notes record the curated map as a slice-3 candidate, each entry to
+    be checked against the engine first. Open for the controller.
+- Seeds: the T19 index row names none of A-24's seeds, so there was no seed to accept or reject
+  (all three rounds say so).
+- Amendments: A-4 applied (`NoteLink::Note`, which `Explorer::follow_note_link` opens;
+  `note_fallback_ui` returns `Option<NoteLink>`; `equation_body` keeps its 7 parameters, with no
+  `asked_note`; the Size-tab links are anchored after `weak_line`); A-25 T-6 applied
+  (`a_wrapped_change_entry_stays_inside_a_narrow_panel_and_its_label_links`); A-28g applied (the
+  predicate is `clamps::hides`; the guidance test asserts `notes::shown`; both explorer tests and
+  the dump skip what the paused section hides and assert that no offer is a note not shown; the
+  panel tests are unchanged). A-13: no drawn field carries a cell, a correction or audit id, or a
+  file or code name. A-19 to A-23 are other tasks' texts, and no T19 string contradicts them.
+- Traps: none of spec section 8's, slice-1 spec section 8's, `phys-new-notes.md` T-A to T-P, "more
+  magnets make the coupling stiffer", or A-28's (a shaft-joint method chosen or sized, the
+  coupling protecting the gearbox) is written in any T19 string, and none names a clamp.
+- Verdict: PASS (round 3).
+
+### Report for the record, round 1 (as returned)
+
+#### Per line (the 17 lines of Step 12's grep)
+
+| # | Line | Verdict | Reason |
+|---|---|---|---|
+| 1 | explorer/empty text | MUST-FIX 2 | "walks the teaching notes": 13 of 19 shown. The first sentence and the Explain clause are true. |
+| 2 | explorer/no note | MUST-FIX 3 | "covers" is false for values a note explains downstream (slip-loss power, the operating temperature, the effective gap, Br at 20 °C). |
+| 3 | explorer/start here hint | MUST-FIX 1 | As line 1. |
+| 4 | explorer/closest note lead | PASS | See [Line 4](#line-4-the-closest-note-lead). |
+| 5 | explorer/assumption lead | PASS | See [Line 5](#line-5-the-assumption-lead). |
+| 6 | why link/size tab, under Magnets per ring and Outside diameter | PASS | See [Line 6](#line-6-the-size-tab-link-to-torque_from_shear). |
+| 7 | why link/size tab, end of the Required and Hot-low rows | PASS | See [Line 7](#line-7-the-required-and-hot-low-link). |
+| 8 | why link/end-effect banner | PASS | See [Line 8](#line-8-the-end-effect-banner-link). |
+| 9 | explain fallback/`model.cup_od_mm` | PASS | See [Line 9](#line-9-modelcup_od_mm). |
+| 10 | explain fallback/`mass.total_g` | PASS | See [Line 10](#line-10-masstotal_g-the-drafters-flagged-risk). |
+| 11, 12 | explain fallback/the two clearance rows | PASS | Nothing upstream (28 and 30 paths); "No note covers the running-clearance stack yet." is true. |
+| 13-15 | explain fallback/the three temperature rows | PASS | See [Lines 13-15](#lines-13-15-the-three-temperature-rows). |
+| 16 | explain fallback/`housing.space_claim_check` | PASS | No record; the reason is true. |
+| 17 | explain fallback/`model.end_effect_check` | PASS | The check's own note (row link). The value has no record, so `no_equation_body`'s line sits above it. |
+
+##### Line 4: the closest-note lead
+
+- "Closest" claims nearness, not that the note explains the value (prompt item 3).
+- Where the row's own link supplies the note (the temperature rows, the end-effect check), "closest" understates but does not mislead.
+
+##### Line 5: the assumption lead
+
+- It is offered only for an assumption actually upstream.
+- No dashboard row gets it today; 10 results off the dashboard do, from four assumptions.
+- Their rationales are plain words with no "clamp", and none of the paused clamp assumptions is reachable (probe).
+
+##### Line 6: the Size-tab link to `torque_from_shear`
+
+- The note covers the magnet count and the ring radius. A-19's sentence ("The magnet count N keeps the gap radius R_g ... fewer flat blocks grow the cup") is where the 10 -> 8 confusion is answered (synthesis 8-A).
+- The "Why: " prefix keeps F11's single bare step-1 title.
+- On an odd magnet count the Outside diameter control and its link are absent; a test pins this.
+
+##### Line 7: the Required and Hot-low link
+
+- It leads to the hot minimum check's own note (`HOT_MIN_GUIDE.learn`), which compares hot-low at the operating temperature with the requirement (T-E).
+- Both rows lead to the same note.
+
+##### Line 8: the end-effect banner link
+
+- It leads to the end-effect check's note, which explains f_end = 1 − c_end·τ_p/L and why there is no prediction at or below c_end·τ_p.
+- It is drawn under both copies of the banner, and only while the banner shows.
+
+##### Line 9: `model.cup_od_mm`
+
+- Its equation reads the pocket corner radius and the wall. The 20 upstream paths are geometry and inputs, none owned by a note, with no assumption.
+- "No note covers the cup's outside diameter yet." is true. `torque_from_shear` says only that fewer blocks grow the cup.
+- I reject making `torque_from_shear` this row's link: it would put a torque note on the dashboard's cup-OD Why line.
+
+##### Line 10: `mass.total_g`, the drafter's flagged risk
+
+**Ruling: accept.**
+
+**Why it is the offer.** It is the only reviewed note anywhere upstream: `materials.circuit_backiron`, two steps up through the cup, hub and boss masses. Those masses take the steel density with a steel circuit and the body material's otherwise.
+
+**Why it is a sensible next read.** It is the coupling's main mass trade-off:
+- sentence 5: "The hub, cup and boss then become non-magnetic metal";
+- the three change entries: "steel's mass", "adds mass", "coupling grows longer and heavier".
+
+**Why the line is not false.** The lead says "closest", not "explains".
+- At the default (4140, steel circuit) the title describes the other case. Drawn as a link after "Closest teaching note:", it is a note's name, not a status line.
+- At the 304 probe design it matches the design.
+
+**No better offer exists.** There is no mass assumption, and no other note is upstream. A `ROW_LEARN` change would also rewrite the dashboard row's own "No note covers the rotating mass yet."
+
+##### Lines 13-15: the three temperature rows
+
+**What the offer is.** These rows show the row's own Why note (`TEMPERATURE_GUIDE.learn`, reviewed). It is also the nearest note upstream:
+- the governing limit reads `temperature.demag.magnet_limit_C` directly;
+- the hot-day margin reads it at two steps;
+- the verdict reads `margin_limit_C` at one step.
+
+**The limit's other operand.** The adhesive design limit has no note, so the demagnetization note is the right read for these rows.
+
+#### Traps
+
+None of the 17 lines, and none of the three replacements, writes:
+- a slice-1 spec section 8 trap;
+- a slice-2 spec section 8 trap;
+- a `phys-new-notes.md` T-A to T-P trap;
+- the added "more magnets make the coupling stiffer";
+- the A-28 trap: a joint method chosen or sized, or the coupling protecting the gearbox.
+
+The lines are navigation text and note titles, and the titles were reviewed with their notes (T11, T13, T14, T16, T17).
+
+#### Rulings on the implementer's concerns
+
+- **`mass.total_g`'s offer:** accepted, as above; no `ROW_LEARN` change.
+- **"Closest teaching note" over a row's own note:** accepted. A separate lead for a row's own link would add a constant and a branch for no gain in truth.
+- **Decisions 1-6 of the report:** none changes a drawn string, so I have no wording ruling to make.
+- **The planned one-line BL-056 entry:** fits the Global Constraints' "docs change with the code"; it should carry the post-review texts.
+
+#### For round 2
+
+Re-review only the three constants, and the dump lines that show them: lines 1-3, and the hint inside lines 9, 11, 12 and 16. The mirror run above shows the suites green with them.
+
+### Report for the record, round 2 (as returned)
+
+#### Per line (the changed lines of Step 12's grep)
+
+| # | Line | Verdict | Reason |
+|---|---|---|---|
+| 1 | explorer/empty text | PASS | See [Lines 1 and 3](#lines-1-and-3-the-start-here-clause). |
+| 2 | explorer/no note | MUST-FIX 1 | False under record-less values (594): the warnings, the cold-high copy and its tangential force, the calibration's end-effect check, the model verdict. |
+| 3 | explorer/start here hint | PASS | As line 1. 11 words, within the 12-word hint cap. |
+| 9, 11, 12, 16 | explain fallback / `model.cup_od_mm`, the two clearance rows, `housing.space_claim_check` | PASS | Each row's own reason (unchanged, passed in round 1), then the hint, which is true as line 1. |
+
+The other ten lines (4-8, 10, 13-15, 17) are byte-for-byte as in round 1, which passed them.
+
+##### Lines 1 and 3: the Start here clause
+
+- **"main teaching notes" is true.** Start here walks 13 of the 19 notes shown. The other six are the warning notes, reached from their warnings, their rows and Explain.
+- **"in a suggested order" is true.** These are the Start here button's own hover words (`START_HERE_HOVER`, "A suggested order: ...").
+- **The rest of `EMPTY_TEXT` is unchanged.** Round 1 judged it true. The ";" still ends the Start here clause, so the hint is a whole string of its own and the exact-match counts are unaffected (mirror run).
+
+##### Line 2: `NO_NOTE`
+
+See MUST-FIX 1:
+- the record arm is sound (probe 4);
+- the no-record arm is false (probes 1-3);
+- the replacement passed the mirror's suites (probe 6).
+
+#### Traps
+
+None of the changed lines, and not the replacement, writes:
+- a slice-1 or slice-2 spec section 8 trap;
+- a `phys-new-notes.md` T-A to T-P trap;
+- "more magnets make the coupling stiffer";
+- the A-28 trap: a joint method chosen or sized, or the coupling protecting the gearbox.
+
+They name no clamp.
+
+#### Tests
+
+No new test is needed for MUST-FIX 1: no test reads the words, as in round 1. These already pin the behaviour the new text describes:
+- `a_dashboard_row_s_own_link_comes_first_and_a_value_with_no_record_has_nothing_upstream`: a record-less value off the dashboard gets `NO_NOTE`;
+- `the_offered_note_is_the_nearest_upstream_and_a_note_outranks_an_assumption`: the record arm;
+- `explain_never_shows_no_teaching_note_on_a_dashboard_row`: never on a row.
+
+#### For round 3
+
+Re-review only `NO_NOTE`, which is grep line 2: the hint lines do not contain it. The mirror run above shows the suites green with the replacement.
+
+### Report for the record, round 3 (as returned)
+
+#### Per line (the changed line of Step 12's grep)
+
+| # | Line | Verdict | Reason |
+|---|---|---|---|
+| 2 | explorer/no note: "No teaching note is shown here for this value." | PASS | True in both arms and with the Start here bar up (probes 2-3); plain words, 9 words, no clamp; see "Line 2, judged". |
+
+Lines 1 and 3-17 are byte-for-byte as in round 2, which passed them. Their verdicts stand:
+- **Line 1:** PASS (round 2).
+- **Line 3:** PASS (round 2).
+- **Lines 4-8, 10, 13-15 and 17:** PASS (round 1).
+- **Lines 9, 11, 12 and 16:** PASS (round 2).
+
+#### Sheet and dump
+
+- **The dump and the grep.** Step 12's grep over `t19-strings.txt` equals `t19-strings-grep.txt` (17 lines), and section D of the sheet equals it too (checked with `diff`).
+- **The changed line.** Line 224 of the dump is the tree's constant.
+- **The counts.** The sheet's count lines (82; and round 2's 594, attributed) agree with my probe 2.
+
+#### Tests
+
+No new test is needed. No test reads the words, and these already pin the behaviour the text describes:
+- `a_dashboard_row_s_own_link_comes_first_and_a_value_with_no_record_has_nothing_upstream`: the no-record arm gets `NO_NOTE`;
+- `the_offered_note_is_the_nearest_upstream_and_a_note_outranks_an_assumption`: the arm under an equation;
+- `explain_never_shows_no_teaching_note_on_a_dashboard_row`: never on a row;
+- `the_empty_text_and_explain_s_own_lines_name_the_buttons_in_plain_words`: guard and glyphs.
+
+The implementer's round-2 reruns are green (`task-19-inreview-r2-changes.md`), and round 2's mirror run showed the same text green.
+
+#### Outside this review (for the record, not T19's text)
+
+- **An empty value.** Where a warning does not fire, its value line reads "Non-ferromagnetic back iron = " with nothing after the "=" (probe 3b, four of the five designs).
+- **Not from T19.** That is the value formatter's existing behaviour, not a T19 string. It may deserve a look in a later slice.
+
+#### For the controller
+
+The in-task review loop for T19 ends at round 3 with PASS. Next come Step 14 (docs, with SHOULD-FIX 2's texts) and the commit.

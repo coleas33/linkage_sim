@@ -14,9 +14,9 @@ use crate::engine::size_controls::{
     dimensions, dimensions_with_minimum_diameter, resize_diameter_with_minimum, resize_length,
 };
 use crate::engine::sizing::FreeVariable;
-use crate::gui::dashboard::end_effect_out_of_range;
+use crate::gui::dashboard::{end_effect_out_of_range, why_note_link};
 use crate::gui::format::{fixed, signed_percent};
-use crate::gui::guidance::Consequences;
+use crate::gui::guidance::{Consequences, SIZE_TAB_NOTE};
 use crate::gui::input_ui::{hint_line, slider, weak_line};
 use crate::gui::inputs::InputCatalogue;
 use crate::gui::plain_text::{
@@ -213,6 +213,8 @@ pub(crate) struct ControlsOutput {
     pub minimum_diameter_mm: Option<f64>,
     pub widgets: Vec<egui::Id>,
     pub error: Option<String>,
+    /// The note a Why link under Magnets per ring or Outside diameter asked for this frame.
+    pub note: Option<&'static str>,
 }
 
 /// Draw before computing the panel's results, so the readouts reflect this frame's edits.
@@ -233,6 +235,7 @@ pub(crate) fn controls_ui(
         minimum_diameter_mm,
         widgets: Vec::new(),
         error: None,
+        note: None,
     };
     let catalogue = InputCatalogue::get();
     ui.push_id("direct_size_controls", |ui| {
@@ -310,6 +313,9 @@ pub(crate) fn controls_ui(
                 if let Some(line) = line {
                     weak_line(ui, &line);
                 }
+                if label == DIAMETER && why_note_link(ui, SIZE_TAB_NOTE) {
+                    output.note = Some(SIZE_TAB_NOTE);
+                }
             }
             ui.weak(format!(
                 "Shaft and housing range floor: {:.1} mm",
@@ -358,6 +364,9 @@ pub(crate) fn controls_ui(
             }
             for line in &lines {
                 weak_line(ui, line);
+            }
+            if label == MAGNETS && why_note_link(ui, SIZE_TAB_NOTE) {
+                output.note = Some(SIZE_TAB_NOTE);
             }
         }
         if let Some(widget) = minimum_widget {

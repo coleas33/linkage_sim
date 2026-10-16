@@ -23,7 +23,10 @@
 //! equation the reviewed note that explains it ([`notes::note_for`]: only notes a physics
 //! reviewer has checked), with its diagram ([`crate::gui::diagrams`]), its "What to change"
 //! entries, its "Watch out" lines and its sources under a "Where this comes from" fold that
-//! starts closed ([`note_ui`]), so it follows what the user investigates. A `{result.path}` in a
+//! starts closed ([`note_ui`]), so it follows what the user investigates. Under an equation
+//! without one it offers the next best read ([`note_fallback`], slice-2 spec 3.7): the closest
+//! reviewed note upstream as a link, an assumption's rationale, or why there is none and where
+//! the notes are; never "No teaching note" on a dashboard row. A `{result.path}` in a
 //! note's text is drawn as that result's number on the design shown ([`live_value`]), or as
 //! "no prediction" where it has none. An entry's input is a link to its row, or plain text with
 //! the reason where the input is not free on the design shown ([`held_reason`]: Auto holds it
@@ -43,8 +46,11 @@
 //! [`Registry::term_style`]: crate::engine::explain::Registry::term_style
 //! [`Registry::modified_assumptions_upstream`]: crate::engine::explain::Registry::modified_assumptions_upstream
 
+use std::collections::{BTreeSet, VecDeque};
+
 use egui::{Color32, Sense, Vec2};
 
+use crate::engine::assumptions::{ASSUMPTIONS, Assumption};
 use crate::engine::clamps;
 use crate::engine::explain::markup::{Expr, Symbol};
 use crate::engine::explain::note_text;
@@ -58,7 +64,7 @@ use crate::gui::dashboard::{
 };
 use crate::gui::diagrams::diagram_ui;
 use crate::gui::format::with_unit;
-use crate::gui::guidance::result_text;
+use crate::gui::guidance::{Learn, result_text, row_learn};
 use crate::gui::input_ui::CHANGED_DOT;
 use crate::gui::inputs::InputCatalogue;
 use crate::gui::plain_text::label_for;
@@ -75,9 +81,9 @@ pub const EQUATION_PANEL: &str = "Equation panel";
 /// The panel's close button.
 pub const CLOSE: &str = "Close";
 
-/// What the panel says before anything is opened.
-pub const EMPTY_TEXT: &str =
-    "Hover a value to see its equation; click it to open it here, then click a term to follow it.";
+/// What the panel says before anything is opened (spec 3.7, TC-29b): how to open an equation,
+/// and the two ways to the teaching notes, by their buttons' names (a test checks).
+pub const EMPTY_TEXT: &str = "Hover a value to see its equation; click it to open it here, then click a term to follow it. Start here walks the main teaching notes in a suggested order; Explain shows the note under the open equation.";
 
 /// The heading of the term list.
 pub const TERMS: &str = "Terms";
@@ -131,8 +137,21 @@ pub const PREVIOUS: &str = "Previous";
 pub const NEXT: &str = "Next";
 pub const STOP: &str = "Stop";
 
-/// What Explain shows for an equation without a reviewed note.
-pub const NO_NOTE: &str = "No teaching note for this equation.";
+/// What Explain shows when nothing better is known ([`note_fallback`]): under an equation, no
+/// reviewed note is attached to it or to any equation upstream, and no assumption is upstream;
+/// under a value with no equation record, nothing is known of what it is computed from.
+/// Never for a dashboard row (spec section 6 test 11).
+pub const NO_NOTE: &str = "No teaching note is shown here for this value.";
+
+/// The line under a dashboard row's reason or [`NO_NOTE`]: where the notes are (TC-29a).
+pub const START_HERE_HINT: &str = "Start here walks the main teaching notes in a suggested order.";
+
+/// The start of Explain's line naming the closest note to an equation that has none (TC-29a).
+pub const NEAREST_NOTE: &str = "Closest teaching note:";
+
+/// The start of Explain's line naming the assumption behind an equation that has no note
+/// (TC-30); the assumption's rationale follows it.
+pub const NEAREST_ASSUMPTION: &str = "Assumption behind this value:";
 
 /// The heading of a note's watch-out lines.
 pub const WATCH_OUT: &str = "Watch out";
@@ -192,6 +211,75 @@ pub fn start_here_text(step: usize) -> String {
         step + 1,
         START_HERE.len()
     )
+}
+
+/// What Explain offers under an equation no reviewed note explains (spec 3.7, TC-29a, TC-30).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum NoteFallback {
+    /// A reviewed note to read instead.
+    Note(&'static Note),
+    /// An assumption whose rationale explains the value.
+    Assumption(&'static Assumption),
+    /// Neither: why (a dashboard row's own reason, or [`NO_NOTE`]).
+    Reason(&'static str),
+}
+
+/// [`NoteFallback`] for `path`, in this order: the dashboard row's Why link, when it leads to a
+/// reviewed note or an assumption (what the row itself says); else the reviewed note of the
+/// nearest result upstream (what `path` is computed from, fewest steps first, ties to the term
+/// its equation lists first); else the nearest assumption upstream; else the dashboard row's
+/// reason for having no note; else [`NO_NOTE`]. A reviewed note anywhere upstream outranks any
+/// assumption: a note explains more than a rationale. The walk runs on every frame Explain
+/// shows it: a few hundred paths at most.
+pub fn note_fallback(path: &str) -> NoteFallback {
+    let row = row_learn(path);
+    if let Some(Learn::Note(id)) = row
+        && let Some(note) = reviewed_note(id)
+    {
+        return NoteFallback::Note(note);
+    }
+    if let Some(Learn::Assumption(id)) = row
+        && let Some(assumption) = ASSUMPTIONS.iter().find(|a| a.id == id)
+    {
+        return NoteFallback::Assumption(assumption);
+    }
+    let mut nearest_assumption = None;
+    for term in upstream_nearest_first(path) {
+        if let Some(note) = notes::note_for(&term) {
+            return NoteFallback::Note(note);
+        }
+        if nearest_assumption.is_none() {
+            nearest_assumption = ASSUMPTIONS
+                .iter()
+                .find(|a| a.paths.contains(&term.as_str()));
+        }
+    }
+    match (nearest_assumption, row) {
+        (Some(assumption), _) => NoteFallback::Assumption(assumption),
+        (None, Some(Learn::None(reason))) => NoteFallback::Reason(reason),
+        (None, _) => NoteFallback::Reason(NO_NOTE),
+    }
+}
+
+/// Every path `path`'s equation reads, transitively, nearest first: breadth first over the
+/// registry's terms, each equation's terms in its own order, each path once. Empty for a path
+/// without an equation record.
+fn upstream_nearest_first(path: &str) -> Vec<String> {
+    let mut seen = BTreeSet::from([path.to_owned()]);
+    let mut order = Vec::new();
+    let mut queue = VecDeque::from([path.to_owned()]);
+    while let Some(at) = queue.pop_front() {
+        let Some(eq) = registry().equation_for(&at) else {
+            continue;
+        };
+        for term in &eq.terms {
+            if seen.insert(term.clone()) {
+                order.push(term.clone());
+                queue.push_back(term.clone());
+            }
+        }
+    }
+    order
 }
 
 /// The text size of the open equation [points].
@@ -368,11 +456,13 @@ impl Explorer {
         });
     }
 
-    /// Follows a link clicked in a teaching note: the input's row is highlighted and scrolled
-    /// to, as a leaf term's is; the note stays open.
+    /// Follows a link clicked in a teaching note or in Explain's line under an equation without
+    /// one: an input's row is highlighted and scrolled to, as a leaf term's is, and the note
+    /// stays open; a note is opened on its own ([`Explorer::open_note`]).
     pub fn follow_note_link(&mut self, link: NoteLink) {
         match link {
             NoteLink::Input(path) => self.focus_input(path),
+            NoteLink::Note(id) => self.open_note(id),
         }
     }
 
@@ -640,10 +730,12 @@ pub fn explorer_ui(
                 ),
                 None => {
                     no_equation_body(ui, &path, results, show_details);
-                    if explorer.explain {
-                        ui.weak(NO_NOTE);
-                    }
-                    (None, None)
+                    let link = if explorer.explain {
+                        note_fallback_ui(ui, &path)
+                    } else {
+                        None
+                    };
+                    (None, link)
                 }
             };
             if let Some(link) = link {
@@ -684,11 +776,14 @@ pub struct NoteView<'a> {
     pub held: &'a dyn Fn(&str) -> Option<String>,
 }
 
-/// What a click in a teaching note asks for.
+/// What a click in a teaching note, or in Explain's line under an equation without one, asks
+/// for ([`Explorer::follow_note_link`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NoteLink {
-    /// Highlight this input's row, as a leaf term does ([`Explorer::follow_note_link`]).
+    /// Highlight this input's row, as a leaf term does.
     Input(&'static str),
+    /// Open this reviewed note on its own (Explain's closest note, [`note_fallback`]).
+    Note(&'static str),
 }
 
 /// Why the input at `path` is not free on the design `inputs` shown with `sizing`, for a note's
@@ -858,9 +953,10 @@ fn note_alone_ui(
 
 /// The open equation: its label (and with `show_details` its cell), the equation large (a term
 /// clicked is followed), the value, with `show_details` the corrections it embodies (their
-/// titles on hover), with `explain` its teaching note (drawn against `view`), then the term
-/// list, its swatches faded while `others_marked`, a term's internal name on hover with
-/// `show_details`. Returns the term clicked and the note's link clicked.
+/// titles on hover), with `explain` its teaching note (drawn against `view`) or, without one,
+/// Explain's next best read ([`note_fallback_ui`]), then the term list, its swatches faded while
+/// `others_marked`, a term's internal name on hover with `show_details`. Returns the term
+/// clicked and the link clicked in the note or in the next best read.
 fn equation_body(
     ui: &mut egui::Ui,
     eq: &Equation,
@@ -922,7 +1018,7 @@ fn equation_body(
         match notes::note_for(&eq.target) {
             Some(note) => link = note_ui(ui, note, view),
             None => {
-                ui.weak(NO_NOTE);
+                link = note_fallback_ui(ui, &eq.target);
             }
         }
         ui.separator();
@@ -1043,6 +1139,34 @@ fn no_equation_body(ui: &mut egui::Ui, path: &str, results: &DesignResults, show
         ui.weak(cell);
     }
     ui.weak(NO_EQUATION);
+}
+
+/// Explain's lines under an equation no reviewed note explains ([`note_fallback`]): the closest
+/// note as a link, an assumption's label and rationale, or the reason and where the notes are.
+/// Returns the note asked for ([`NoteLink::Note`]).
+fn note_fallback_ui(ui: &mut egui::Ui, path: &str) -> Option<NoteLink> {
+    match note_fallback(path) {
+        NoteFallback::Note(note) => {
+            let mut asked = None;
+            ui.horizontal_wrapped(|ui| {
+                ui.weak(NEAREST_NOTE);
+                if ui.link(glyph_safe(note.title)).clicked() {
+                    asked = Some(NoteLink::Note(note.id));
+                }
+            });
+            asked
+        }
+        NoteFallback::Assumption(assumption) => {
+            ui.weak(format!("{NEAREST_ASSUMPTION} {}", assumption.label));
+            ui.add(egui::Label::new(glyph_safe(assumption.rationale)).wrap());
+            None
+        }
+        NoteFallback::Reason(reason) => {
+            ui.weak(reason);
+            ui.weak(START_HERE_HINT);
+            None
+        }
+    }
 }
 
 #[cfg(test)]
@@ -2406,5 +2530,224 @@ mod tests {
         );
         assert_eq!(explorer.note(), Some("a5.low_saturation"));
         assert!(explorer.open);
+    }
+
+    #[test]
+    fn the_empty_text_and_explain_s_own_lines_name_the_buttons_in_plain_words() {
+        // TC-29b: the empty panel names both ways to the notes by the buttons' own names; the
+        // fallback lines read as plain words in egui's default fonts.
+        assert!(EMPTY_TEXT.contains(START_HERE_BUTTON) && EMPTY_TEXT.contains(EXPLAIN));
+        assert!(START_HERE_HINT.contains(START_HERE_BUTTON));
+        let ctx = egui::Context::default();
+        crate::gui::test_support::sized_frame(
+            &ctx,
+            crate::gui::test_support::SCREEN,
+            Vec::new(),
+            |_| {},
+        );
+        for text in [
+            EMPTY_TEXT,
+            NO_NOTE,
+            START_HERE_HINT,
+            NEAREST_NOTE,
+            NEAREST_ASSUMPTION,
+        ] {
+            assert_eq!(
+                crate::gui::guidance::plain_text_violations(text),
+                Vec::<&str>::new(),
+                "{text:?}"
+            );
+            crate::gui::test_support::assert_glyphs(&ctx, text, "an Equation panel line");
+        }
+    }
+
+    #[test]
+    fn every_dashboard_row_without_a_note_offers_a_note_an_assumption_or_its_own_reason() {
+        // Spec section 6 test 11: "No teaching note" never shows for a dashboard row (paths the
+        // panel cannot reach while the clamp section is paused are skipped).
+        use crate::gui::dashboard::DASHBOARD;
+        let mut without = 0;
+        for &(path, _) in DASHBOARD
+            .iter()
+            .filter(|row| !clamps::hides(row.0, clamps::PAUSED))
+        {
+            if notes::note_for(path).is_some() {
+                continue;
+            }
+            without += 1;
+            match note_fallback(path) {
+                NoteFallback::Note(note) => {
+                    assert_eq!(
+                        reviewed_note(note.id).map(|n| n.id),
+                        Some(note.id),
+                        "{path}"
+                    );
+                    assert!(
+                        notes::shown(note.id),
+                        "{path}: offers {}, a note not shown",
+                        note.id
+                    );
+                }
+                NoteFallback::Assumption(assumption) => {
+                    assert!(ASSUMPTIONS.iter().any(|a| a.id == assumption.id), "{path}");
+                }
+                NoteFallback::Reason(reason) => {
+                    assert_ne!(reason, NO_NOTE, "{path}: a dead end on a dashboard row");
+                    assert_eq!(row_learn(path), Some(Learn::None(reason)), "{path}");
+                }
+            }
+        }
+        assert!(without > 0, "some dashboard rows have no note of their own");
+    }
+
+    /// The fewest steps from `path` down the registry's terms to every path upstream of it,
+    /// level by level (the test's own walk, apart from `upstream_nearest_first`'s queue).
+    fn depths(path: &str) -> std::collections::BTreeMap<String, usize> {
+        let mut depth = std::collections::BTreeMap::new();
+        let mut level = BTreeSet::from([path.to_owned()]);
+        let mut steps = 0;
+        while !level.is_empty() {
+            steps += 1;
+            let next: BTreeSet<String> = level
+                .iter()
+                .filter_map(|p| registry().equation_for(p))
+                .flat_map(|eq| eq.terms.iter().cloned())
+                .filter(|t| t != path && !depth.contains_key(t))
+                .collect();
+            for t in &next {
+                depth.insert(t.clone(), steps);
+            }
+            level = next;
+        }
+        depth
+    }
+
+    #[test]
+    fn the_offered_note_is_the_nearest_upstream_and_a_note_outranks_an_assumption() {
+        // TC-29a, TC-30, over every explained result without a note of its own and without a
+        // dashboard Why link (those lead first: the next test); paths the panel cannot reach
+        // while the clamp section is paused are skipped.
+        let assumption_paths = |p: &str| ASSUMPTIONS.iter().any(|a| a.paths.contains(&p));
+        let mut seen = [0_usize; 3];
+        for eq in registry().equations() {
+            let path = eq.target.as_str();
+            if clamps::hides(path, clamps::PAUSED)
+                || notes::note_for(path).is_some()
+                || row_learn(path).is_some()
+            {
+                continue;
+            }
+            let depth = depths(path);
+            let nearest_note = depth
+                .iter()
+                .filter(|(p, _)| notes::note_for(p).is_some())
+                .map(|(_, &d)| d)
+                .min();
+            let nearest_assumption = depth
+                .iter()
+                .filter(|(p, _)| assumption_paths(p))
+                .map(|(_, &d)| d)
+                .min();
+            match note_fallback(path) {
+                NoteFallback::Note(note) => {
+                    seen[0] += 1;
+                    assert!(
+                        notes::shown(note.id),
+                        "{path}: offers {}, a note not shown",
+                        note.id
+                    );
+                    let at = depth
+                        .iter()
+                        .filter(|(p, _)| notes::note_for(p).map(|n| n.id) == Some(note.id))
+                        .map(|(_, &d)| d)
+                        .min();
+                    assert_eq!(at, nearest_note, "{path}: {}", note.id);
+                }
+                NoteFallback::Assumption(assumption) => {
+                    seen[1] += 1;
+                    assert_eq!(
+                        nearest_note, None,
+                        "{path}: a note upstream outranks {}",
+                        assumption.id
+                    );
+                    let at = depth
+                        .iter()
+                        .filter(|(p, _)| assumption.paths.contains(&p.as_str()))
+                        .map(|(_, &d)| d)
+                        .min();
+                    assert_eq!(at, nearest_assumption, "{path}: {}", assumption.id);
+                }
+                NoteFallback::Reason(reason) => {
+                    seen[2] += 1;
+                    assert_eq!(reason, NO_NOTE, "{path}");
+                    assert_eq!((nearest_note, nearest_assumption), (None, None), "{path}");
+                }
+            }
+        }
+        assert!(
+            seen.iter().all(|&n| n > 0),
+            "each kind of offer occurs: {seen:?}"
+        );
+    }
+
+    #[test]
+    fn a_dashboard_row_s_own_link_comes_first_and_a_value_with_no_record_has_nothing_upstream() {
+        // The end-effect check has no equation record: its row's Why note is what Explain offers.
+        let check = "model.end_effect_check";
+        assert_eq!(registry().term_kind(check), Some(TermKind::CellOnly));
+        let Some(Learn::Note(id)) = row_learn(check) else {
+            panic!("the end-effect row links a note");
+        };
+        assert_eq!(
+            note_fallback(check),
+            NoteFallback::Note(reviewed_note(id).unwrap())
+        );
+        // A result off the dashboard without a record: nothing is known upstream of it.
+        let cell_only = crate::gui::results_table::table_entries()
+            .iter()
+            .map(|e| e.path.as_str())
+            .find(|p| registry().term_kind(p) == Some(TermKind::CellOnly) && row_learn(p).is_none())
+            .expect("a result without a record, off the dashboard");
+        assert_eq!(note_fallback(cell_only), NoteFallback::Reason(NO_NOTE));
+    }
+
+    #[test]
+    fn a_wrapped_change_entry_stays_inside_a_narrow_panel_and_its_label_links() {
+        // Amendment A-25 T-6 (spec section 5, a narrow window): the pull-out note opened on its
+        // own in a panel 400 points wide. Every change entry's input label is drawn inside the
+        // panel, and a click on the last character of the inner magnet part's label, laid out in
+        // a wrapped row, asks for that input's row.
+        use crate::gui::test_support::{last_characters, primary_button, sized_frame, text_rects};
+        let size = egui::vec2(400.0, 800.0);
+        let note = reviewed_note("pullout_angle").expect("the pull-out note is reviewed");
+        let (inputs, results) = design();
+        let view = NoteView {
+            inputs: &inputs,
+            results: &results,
+            held: &nothing_held,
+        };
+        let ctx = egui::Context::default();
+        let frame = |events: Vec<egui::Event>| {
+            let mut link = None;
+            let output = sized_frame(&ctx, size, events, |ui| {
+                link = note_alone_ui(ui, note, &view).1;
+            });
+            (output, link)
+        };
+        frame(Vec::new());
+        let (output, _) = frame(Vec::new());
+        let panel = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+        for change in note.change {
+            let label = glyph_safe(label_for(change.input));
+            let rects = text_rects(&output, &label);
+            assert_eq!(rects.len(), 1, "{label:?} is drawn once");
+            assert!(panel.contains_rect(rects[0]), "{label:?} at {:?}", rects[0]);
+        }
+        let part = "coupling.magnets.part_inner";
+        let at = last_characters(&output, &glyph_safe(label_for(part)))[0];
+        frame(vec![egui::Event::PointerMoved(at)]);
+        frame(vec![primary_button(at, true)]);
+        let (_, link) = frame(vec![primary_button(at, false)]);
+        assert_eq!(link, Some(NoteLink::Input(part)));
     }
 }

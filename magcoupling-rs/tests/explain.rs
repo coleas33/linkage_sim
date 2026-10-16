@@ -1053,7 +1053,9 @@ fn release_notes_are_reviewed() {
     );
     #[cfg(feature = "gui")]
     {
-        use magcoupling::gui::guidance::{CHECK_GUIDES, Learn, ROW_LEARN};
+        use magcoupling::gui::guidance::{
+            BANNER_NOTE, CHECK_GUIDES, Learn, ROW_LEARN, SIZE_TAB_NOTE, TORQUE_BAND_NOTE,
+        };
         let guides = CHECK_GUIDES.iter().map(|g| g.learn);
         let rows = ROW_LEARN.iter().map(|&(_, learn)| learn);
         let before = linked.len();
@@ -1065,6 +1067,9 @@ fn release_notes_are_reviewed() {
             linked.len() > before,
             "the guides and the rows link notes (the widened gate is not vacuous)"
         );
+        // The Size tab's and the end-effect banner's Why links (spec 3.7), after the check
+        // above, which counts the guides' and the rows' links alone.
+        linked.extend([SIZE_TAB_NOTE, TORQUE_BAND_NOTE, BANNER_NOTE]);
     }
     linked.sort_unstable();
     linked.dedup();

@@ -354,6 +354,18 @@ pub fn row_learn(path: &str) -> Option<Learn> {
         .map(|&(_, learn)| learn)
 }
 
+/// Where the Why links under Magnets per ring and Outside diameter on the Size tab lead (spec
+/// 3.7): how the coupling makes torque, Start here's first step.
+pub const SIZE_TAB_NOTE: &str = "torque_from_shear";
+
+/// Where the Why links at the end of the Size tab's Required and Hot-low rows lead: the hot
+/// minimum check's note (a test keeps it [`HOT_MIN_GUIDE`]'s).
+pub const TORQUE_BAND_NOTE: &str = "hot_low_cold_high";
+
+/// Where the Why link under the end-effect banner leads: the end-effect check's note (a test
+/// keeps it [`END_EFFECT_GUIDE`]'s).
+pub const BANNER_NOTE: &str = "end_effect";
+
 /// The guide of `check` (a dashboard check or [`FIT_CHECK`]); `None` for any other path.
 pub fn guide(check: &str) -> Option<&'static CheckGuide> {
     CHECK_GUIDES.iter().find(|guide| guide.check == check)
@@ -2393,6 +2405,23 @@ mod tests {
             }
         }
         assert_eq!(row_learn("no.such"), None);
+    }
+
+    #[test]
+    fn the_size_tab_and_banner_links_lead_where_their_checks_do() {
+        // Spec 3.7: the Size tab's Required and Hot-low links lead where the hot minimum
+        // check's Why does, the banner's where the end-effect check's does, and the links
+        // under Magnets per ring and Outside diameter to Start here's first step.
+        assert_eq!(Learn::Note(TORQUE_BAND_NOTE), guide(HOT_MIN).unwrap().learn);
+        assert_eq!(Learn::Note(BANNER_NOTE), guide(END_EFFECT).unwrap().learn);
+        assert_eq!(notes::START_HERE[0].0, SIZE_TAB_NOTE);
+        for id in [SIZE_TAB_NOTE, TORQUE_BAND_NOTE, BANNER_NOTE] {
+            assert!(
+                reviewed_note(id).is_some(),
+                "{id} is missing or not reviewed"
+            );
+            assert!(notes::shown(id), "{id} is hidden");
+        }
     }
 
     #[test]
@@ -5102,6 +5131,53 @@ mod tests {
             "size tab/requirement refusal",
             crate::gui::sizing::REQUIREMENT_NOT_POSITIVE,
         );
+
+        // Reachability (slice 2, spec 3.7): the Equation panel's own lines, the Why links of the
+        // Size tab and the banner, and what Explain offers each dashboard row without a note
+        // (a row the paused shaft-clamp section hides is not drawn: none of its offers).
+        use crate::gui::explorer as ex;
+        for (tag, text) in [
+            ("explorer/empty text", ex::EMPTY_TEXT),
+            ("explorer/no note", ex::NO_NOTE),
+            ("explorer/start here hint", ex::START_HERE_HINT),
+            ("explorer/closest note lead", ex::NEAREST_NOTE),
+            ("explorer/assumption lead", ex::NEAREST_ASSUMPTION),
+        ] {
+            emit(tag, text);
+        }
+        for (place, id) in [
+            (
+                "size tab/under Magnets per ring and Outside diameter",
+                SIZE_TAB_NOTE,
+            ),
+            (
+                "size tab/end of the Required and Hot-low rows",
+                TORQUE_BAND_NOTE,
+            ),
+            ("end-effect banner", BANNER_NOTE),
+        ] {
+            let note = reviewed_note(id).expect("a linked note is reviewed");
+            emit(
+                &format!("why link/{place}"),
+                &crate::gui::dashboard::why_note_text(note),
+            );
+        }
+        for &(path, _) in DASHBOARD
+            .iter()
+            .filter(|row| !crate::engine::clamps::hides(row.0, crate::engine::clamps::PAUSED))
+        {
+            if notes::note_for(path).is_some() {
+                continue;
+            }
+            let text = match ex::note_fallback(path) {
+                ex::NoteFallback::Note(note) => format!("{} {}", ex::NEAREST_NOTE, note.title),
+                ex::NoteFallback::Assumption(a) => {
+                    format!("{} {}: {}", ex::NEAREST_ASSUMPTION, a.label, a.rationale)
+                }
+                ex::NoteFallback::Reason(reason) => format!("{reason} {}", ex::START_HERE_HINT),
+            };
+            emit(&format!("explain fallback/{path}"), &text);
+        }
         println!("TOTAL STRINGS: {count}");
     }
 }

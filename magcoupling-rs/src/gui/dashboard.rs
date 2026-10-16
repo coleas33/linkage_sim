@@ -9,7 +9,8 @@
 //!
 //! - **End effect (audit M9).** When f_end ≤ 0 the pull-out and the numbers computed from it
 //!   ([`END_EFFECT_ROWS`]) are greyed, without a badge, under the banner "End-effect model out
-//!   of range".
+//!   of range", which carries a "Why: <note>" link to the end-effect check's note (slice-2 spec
+//!   3.7; `end_effect_banner_ui` draws it here and over the centre region).
 //! - **Stored 3D values.** The temperature rows that read the stored 3D fields
 //!   ([`STORED_3D_ROWS`]) carry the label [`STORED_3D_LABEL`]: the fields
 //!   ([`STORED_3D_INPUTS`]) are 3D results for the example design and stay fixed when the
@@ -50,8 +51,8 @@ use crate::gui::corrections::{CorrectionIndex, Mark, marker_text, marker_tooltip
 use crate::gui::explorer::reviewed_note;
 use crate::gui::format::{format_value, with_unit};
 use crate::gui::guidance::{
-    self, CHECK_GUIDES, CheckGuide, Direction, FIT_CHECK, Learn, NO_FIX, design_status,
-    design_status_text, fix_text, guide_notes, row_learn,
+    self, BANNER_NOTE, CHECK_GUIDES, CheckGuide, Direction, FIT_CHECK, Learn, NO_FIX,
+    design_status, design_status_text, fix_text, guide_notes, row_learn,
 };
 use crate::gui::plain_text::{display_label, help_for, label_for};
 use crate::gui::readouts::Readouts;
@@ -592,6 +593,39 @@ pub fn end_effect_banner(results: &DesignResults) -> Option<String> {
     })
 }
 
+/// The text of a Why link drawn outside a dashboard row: "Why: " and the note's title, one
+/// link (a warning's; the Size tab's and the end-effect banner's, spec 3.7). Not a "Why:" label
+/// and the bare title: Start here draws its step's title exactly once, and the Size tab links
+/// its first step's note.
+pub fn why_note_text(note: &notes::Note) -> String {
+    format!("{WHY}: {}", glyph_safe(note.title))
+}
+
+/// Draws the Why link to the note `id` ([`why_note_text`]); nothing for a note that has not
+/// passed review (the release gate keeps every linked note reviewed). Returns whether it was
+/// clicked.
+pub(crate) fn why_note_link(ui: &mut egui::Ui, id: &str) -> bool {
+    reviewed_note(id).is_some_and(|note| ui.link(why_note_text(note)).clicked())
+}
+
+/// The end-effect banner while f_end <= 0 ([`end_effect_banner`]), drawn over the dashboard and
+/// over the centre region (decision M42-1), with the Why link to the end-effect check's note
+/// under it (spec 3.7, CG-10), which asks for that note. Returns whether the banner shows.
+pub(crate) fn end_effect_banner_ui(
+    ui: &mut egui::Ui,
+    results: &DesignResults,
+    readouts: &mut Readouts,
+) -> bool {
+    let Some(banner) = end_effect_banner(results) else {
+        return false;
+    };
+    ui.colored_label(ui.visuals().error_fg_color, banner);
+    if why_note_link(ui, BANNER_NOTE) {
+        readouts.open_note(BANNER_NOTE);
+    }
+    true
+}
+
 /// The dashboard rows of `results`.
 pub fn dashboard_lines(results: &DesignResults) -> Vec<DashboardLine> {
     DASHBOARD
@@ -650,8 +684,7 @@ pub fn dashboard_ui(
 ) {
     status_ui(ui, inputs, results, clamps_paused);
     let lines = shown_lines(results, clamps_paused);
-    if let Some(banner) = end_effect_banner(results) {
-        ui.colored_label(ui.visuals().error_fg_color, banner);
+    if end_effect_banner_ui(ui, results, readouts) {
         ui.separator();
     }
     warnings_ui(ui, results, readouts);
@@ -933,10 +966,7 @@ fn warnings_ui(ui: &mut egui::Ui, results: &DesignResults, readouts: &mut Readou
         if let Some(note) = warning_note(rule) {
             ui.horizontal(|ui| {
                 ui.add_space(16.0);
-                if ui
-                    .link(format!("{WHY}: {}", glyph_safe(note.title)))
-                    .clicked()
-                {
+                if ui.link(why_note_text(note)).clicked() {
                     readouts.open_note(rule.note_id);
                 }
             });
@@ -2672,5 +2702,21 @@ mod tests {
             !texts.iter().any(|t| t.contains(engine_words)),
             "the engine's cell-named verdict is drawn"
         );
+    }
+
+    #[test]
+    fn a_why_link_outside_the_rows_is_one_link_naming_its_note() {
+        // Spec 3.7 and F11: "Why: <title>" as one link, never the bare title, which Start here
+        // draws exactly once while its step is open.
+        for note in notes::NOTES {
+            let text = why_note_text(note);
+            assert_eq!(
+                text,
+                format!("{WHY}: {}", glyph_safe(note.title)),
+                "{}",
+                note.id
+            );
+            assert_ne!(text, glyph_safe(note.title), "{}", note.id);
+        }
     }
 }

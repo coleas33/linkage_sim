@@ -32,13 +32,17 @@ use crate::engine::meta::{InputSet, ResultSet, SliderRange, Value};
 use crate::engine::size_controls::ring_radius_range;
 use crate::engine::sizing::{FreeVariable, SizingOutcome};
 use crate::gui::clamp_drawing::clamp_ui;
-use crate::gui::dashboard::{Level, dashboard_ui, end_effect_banner};
+use crate::gui::dashboard::{
+    Level, dashboard_ui, end_effect_banner, end_effect_banner_ui, why_note_link,
+};
 use crate::gui::explorer::{
     EQUATION_PANEL, Explorer, FOCUS_WIDTH, explorer_ui, held_reason, panel_heights,
 };
 use crate::gui::format::{format_value, search_needle, with_unit};
 use crate::gui::geometry_view::geometry_ui;
-use crate::gui::guidance::{ConsequenceCache, FixCache, SIZE_TAB_ALIASES, within_minimum_diameter};
+use crate::gui::guidance::{
+    ConsequenceCache, FixCache, SIZE_TAB_ALIASES, TORQUE_BAND_NOTE, within_minimum_diameter,
+};
 use crate::gui::history::History;
 use crate::gui::input_ui::{CHANGED_DOT, RowEdit, hint_line, input_row, slider};
 use crate::gui::inputs::{
@@ -820,9 +824,7 @@ impl MagcouplingPanel {
                 }
             });
             ui.separator();
-            if let Some(banner) = end_effect_banner(&self.results) {
-                ui.colored_label(ui.visuals().error_fg_color, banner);
-            }
+            end_effect_banner_ui(ui, &self.results, readouts);
             confined(ui, "magcoupling_centre_view", |ui| {
                 self.view_ui(ui, shown, readouts);
             });
@@ -831,9 +833,10 @@ impl MagcouplingPanel {
 
     /// The Size tab's torque readouts (spec 3.2): the requirement's slider, an ordinary design
     /// edit (undo, files, links); the hot-low torque with its gap to the requirement, red short
-    /// or green margin; the nominal pull-out at the operating temperature. Where the model makes
-    /// no prediction a torque reads [`size_controls::NO_PREDICTION`] (or `NO_TORQUE`) and the
-    /// gap is left out.
+    /// or green margin; the nominal pull-out at the operating temperature. The Required and
+    /// Hot-low rows end with the Why link to the hot minimum check's note (spec 3.7). Where the
+    /// model makes no prediction a torque reads [`size_controls::NO_PREDICTION`] (or
+    /// `NO_TORQUE`) and the gap is left out.
     fn torque_readouts_ui(&mut self, ui: &mut egui::Ui, readouts: &mut Readouts) {
         let entry = InputCatalogue::get()
             .entry(REQUIREMENT_INPUT)
@@ -865,6 +868,9 @@ impl MagcouplingPanel {
                 self.results = compute_all(&self.shown_inputs());
                 ui.ctx().request_repaint();
             }
+            if why_note_link(ui, TORQUE_BAND_NOTE) {
+                readouts.open_note(TORQUE_BAND_NOTE);
+            }
         });
         let required = self.inputs.metal.required_min_Nm;
         ui.horizontal_wrapped(|ui| {
@@ -875,6 +881,9 @@ impl MagcouplingPanel {
                 let (gap, meets) = size_controls::torque_gap_text(hot_low, required);
                 let level = if meets { Level::Good } else { Level::Bad };
                 ui.colored_label(level.color(ui.visuals()), gap);
+            }
+            if why_note_link(ui, TORQUE_BAND_NOTE) {
+                readouts.open_note(TORQUE_BAND_NOTE);
             }
         });
         ui.horizontal_wrapped(|ui| {
@@ -1138,6 +1147,11 @@ impl MagcouplingPanel {
             let shown_results = compute_all(&shown);
             let consequences = self.consequences.get(&shown, &shown_results, minimum);
             let output = size_controls::controls_ui(ui, &shown, minimum, consequences, auto);
+            // A Why link under Magnets per ring or Outside diameter (spec 3.7) opens its note.
+            if let Some(id) = output.note {
+                self.explorer.open_note(id);
+                ui.ctx().request_repaint();
+            }
             // The lines under the controls were drawn from the design before this frame's edit:
             // one more frame shows the edited design's.
             if output.inputs != shown || output.minimum_diameter_mm != minimum {
@@ -1604,9 +1618,9 @@ mod tests {
     };
     use crate::gui::sizing::DEBOUNCE_S;
     use crate::gui::test_support::{
-        SCREEN, clamp_at_its_limit, drawn_texts, hot_day, key_event, key_tap, only_the_clamp_fails,
-        primary_button, select_all, short_magnets, sized_frame, sized_frame_at, text_center,
-        text_rect, text_rects, tooltips_at_once, with_poles,
+        SCREEN, clamp_at_its_limit, drawn_texts, hot_day, key_event, key_tap, last_characters,
+        only_the_clamp_fails, primary_button, select_all, short_magnets, sized_frame,
+        sized_frame_at, text_center, text_rect, text_rects, tooltips_at_once, with_poles,
     };
     use crate::headline;
 
@@ -7862,8 +7876,10 @@ mod tests {
 
     #[test]
     fn the_explain_toggle_shows_the_open_equation_s_note_and_follows_it() {
-        use crate::engine::explain::notes::note;
-        use crate::gui::explorer::{EXPLAIN, NO_NOTE};
+        use crate::engine::explain::notes::{note, note_for};
+        use crate::gui::explorer::{
+            EXPLAIN, NO_NOTE, NoteFallback, START_HERE_HINT, note_fallback,
+        };
         let mut harness = Harness::on_screen(TALL);
         // The dashboard's Why links name notes too: the Equation panel's note is one more.
         let pullout = note("pullout_angle").unwrap();
@@ -7894,15 +7910,24 @@ mod tests {
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, end.title), end_links + 1);
         assert_eq!(count(&output, pullout.title), pullout_links);
-        // An equation no reviewed note explains.
-        harness.panel.explorer.open_path("mass.total_g");
+        // A value no reviewed note explains, with nothing upstream that has a note or an
+        // assumption (never a dashboard row, spec 3.7): the reason and where the notes are.
+        let bare = registry()
+            .equations()
+            .iter()
+            .map(|eq| eq.target.as_str())
+            .find(|p| note_for(p).is_none() && note_fallback(p) == NoteFallback::Reason(NO_NOTE))
+            .expect("an explained result with nothing upstream to read");
+        harness.panel.explorer.open_path(bare);
         harness.frame(Vec::new());
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, NO_NOTE), 1);
+        assert_eq!(count(&output, START_HERE_HINT), 1);
         // Off again: no note.
         harness.click_text(EXPLAIN);
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, NO_NOTE), 0);
+        assert_eq!(count(&output, START_HERE_HINT), 0);
     }
 
     #[test]
@@ -8477,6 +8502,163 @@ mod tests {
             let output = harness.frame(Vec::new());
             assert_eq!(count(&output, note.sentences[0]), 1, "{id}");
         }
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
+    fn the_size_tab_s_why_links_open_their_notes() {
+        // Spec 3.7 (S2-8): under Magnets per ring and Outside diameter a link to how the
+        // coupling makes torque; at the end of the Required and Hot-low rows a link to the
+        // hot minimum check's note. Each opens its note on its own in the Equation panel.
+        use crate::gui::dashboard::why_note_text;
+        use crate::gui::explorer::reviewed_note;
+        use crate::gui::guidance::{SIZE_TAB_NOTE, TORQUE_BAND_NOTE};
+        let mut harness = size_tab(SCREEN, DesignInputs::default());
+        for id in [SIZE_TAB_NOTE, TORQUE_BAND_NOTE] {
+            let text =
+                why_note_text(reviewed_note(id).expect("a Size-tab link's note is reviewed"));
+            for index in 0..2 {
+                harness.panel.explorer = Explorer::default();
+                let output = harness.frame(Vec::new());
+                // The Required and Hot-low links end wrapped rows: click their text.
+                let links = last_characters(&output, &text);
+                assert_eq!(links.len(), 2, "{text}");
+                harness.click(links[index]);
+                assert!(harness.panel.explorer.open, "{text} #{index}");
+                assert_eq!(harness.panel.explorer.note(), Some(id), "{text} #{index}");
+            }
+        }
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
+    fn without_the_diameter_control_the_size_tab_still_links_from_magnets_per_ring() {
+        // An odd magnet count has no diameter range: the Outside diameter control and its link
+        // are not drawn; the link under Magnets per ring is.
+        use crate::gui::dashboard::why_note_text;
+        use crate::gui::explorer::reviewed_note;
+        use crate::gui::guidance::SIZE_TAB_NOTE;
+        let odd = with_poles(7);
+        assert!(
+            dimensions(&odd).is_none(),
+            "an odd count has no diameter range"
+        );
+        let mut harness = size_tab(SCREEN, odd);
+        let output = harness.frame(Vec::new());
+        let text = why_note_text(reviewed_note(SIZE_TAB_NOTE).unwrap());
+        assert_eq!(text_rects(&output, &text).len(), 1);
+    }
+
+    #[test]
+    fn the_end_effect_banner_links_to_its_note_over_the_dashboard_and_the_centre() {
+        // Spec 3.7 (CG-10): the link under each copy of the banner opens the end-effect check's
+        // note; without the banner there is no link.
+        use crate::gui::dashboard::why_note_text;
+        use crate::gui::explorer::reviewed_note;
+        use crate::gui::guidance::BANNER_NOTE;
+        let text =
+            why_note_text(reviewed_note(BANNER_NOTE).expect("the banner's note is reviewed"));
+        let mut harness = Harness::new();
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, &text), 0, "no banner, no link");
+        harness.panel.inputs = short_magnets();
+        for index in 0..2 {
+            harness.panel.explorer = Explorer::default();
+            harness.frame(Vec::new());
+            let output = harness.frame(Vec::new());
+            let links = last_characters(&output, &text);
+            assert_eq!(
+                links.len(),
+                2,
+                "under the dashboard's banner and the centre region's"
+            );
+            harness.click(links[index]);
+            assert_eq!(
+                harness.panel.explorer.note(),
+                Some(BANNER_NOTE),
+                "link {index}"
+            );
+        }
+        assert_eq!(harness.panel.inputs(), &short_magnets());
+    }
+
+    #[test]
+    fn explain_never_shows_no_teaching_note_on_a_dashboard_row() {
+        // Spec section 6 test 11: each dashboard row opened with Explain on shows its note, the
+        // closest note, an assumption's rationale, or its own reason with where the notes are.
+        use crate::engine::explain::notes::note_for;
+        use crate::gui::dashboard::DASHBOARD;
+        use crate::gui::explorer::{
+            NEAREST_ASSUMPTION, NEAREST_NOTE, NO_NOTE, NoteFallback, START_HERE_HINT, note_fallback,
+        };
+        use crate::gui::typeset::glyph_safe;
+        let mut harness = Harness::on_screen(TALL);
+        harness.panel.explorer.explain = true;
+        for &(path, _) in &DASHBOARD {
+            harness.panel.explorer.open_path(path);
+            harness.frame(Vec::new());
+            let output = harness.frame(Vec::new());
+            assert_eq!(count(&output, NO_NOTE), 0, "{path}");
+            if note_for(path).is_some() {
+                continue;
+            }
+            match note_fallback(path) {
+                NoteFallback::Note(note) => {
+                    assert_eq!(count(&output, NEAREST_NOTE), 1, "{path}");
+                    assert!(count(&output, &glyph_safe(note.title)) >= 1, "{path}");
+                }
+                NoteFallback::Assumption(assumption) => assert_eq!(
+                    count(
+                        &output,
+                        &format!("{NEAREST_ASSUMPTION} {}", assumption.label)
+                    ),
+                    1,
+                    "{path}"
+                ),
+                NoteFallback::Reason(reason) => {
+                    assert_eq!(count(&output, reason), 1, "{path}");
+                    assert_eq!(count(&output, START_HERE_HINT), 1, "{path}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_closest_note_link_opens_that_note() {
+        // TC-29a: a dashboard row whose equation has no note and whose Why link leads to none
+        // offers the closest note upstream; its link opens it on its own.
+        use crate::engine::explain::notes::note_for;
+        use crate::gui::dashboard::DASHBOARD;
+        use crate::gui::explorer::{NEAREST_NOTE, NoteFallback, note_fallback};
+        use crate::gui::guidance::{Learn, row_learn};
+        use crate::gui::typeset::glyph_safe;
+        let (path, note) = DASHBOARD
+            .iter()
+            .find_map(|&(path, _)| match (note_for(path), note_fallback(path)) {
+                (None, NoteFallback::Note(note))
+                    if row_learn(path) != Some(Learn::Note(note.id)) =>
+                {
+                    Some((path, note))
+                }
+                _ => None,
+            })
+            .expect("a dashboard row offered its closest note upstream");
+        let mut harness = Harness::on_screen(TALL);
+        harness.panel.explorer.explain = true;
+        harness.panel.explorer.open_path(path);
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        let lead = text_rect(&output, NEAREST_NOTE).expect("the lead");
+        // The one copy of the title on the lead's line, clicked on its text (it ends a wrapped
+        // row); a dashboard Why link to the same note on that line would make the click
+        // ambiguous: the test says so rather than pass.
+        let beside: Vec<egui::Pos2> = last_characters(&output, &glyph_safe(note.title))
+            .into_iter()
+            .filter(|at| (at.y - lead.center().y).abs() < lead.height())
+            .collect();
+        assert_eq!(beside.len(), 1, "the link beside the lead: {beside:?}");
+        harness.click(beside[0]);
+        assert_eq!(harness.panel.explorer.note(), Some(note.id), "{path}");
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
     }
 

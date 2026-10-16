@@ -279,6 +279,29 @@ pub(crate) fn text_rects(output: &egui::FullOutput, needle: &str) -> Vec<egui::R
         .collect()
 }
 
+/// Where a click lands on the last character of every drawn text equal to `needle`, in paint
+/// order: 2 points in from the right end of its last row, at that row's middle. A text in a
+/// wrapped row is laid out from the row's start, so its rect ([`text_rects`]) covers the widgets
+/// before it on that row, while egui senses only the text: a click at the rect's centre can land
+/// on one of those widgets.
+pub(crate) fn last_characters(output: &egui::FullOutput, needle: &str) -> Vec<egui::Pos2> {
+    flat_shapes(output)
+        .into_iter()
+        .filter_map(|shape| match shape {
+            egui::Shape::Text(text) if text.galley.text() == needle => {
+                let row = text
+                    .galley
+                    .rows
+                    .last()?
+                    .rect()
+                    .translate(text.pos.to_vec2());
+                Some(egui::pos2(row.max.x - 2.0, row.center().y))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 /// Screen rect of the first drawn text equal to `needle`, e.g. a button
 /// label: lets a test click a widget whose id it cannot know.
 pub(crate) fn text_rect(output: &egui::FullOutput, needle: &str) -> Option<egui::Rect> {
