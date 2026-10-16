@@ -22,17 +22,21 @@ pub(crate) fn with_poles(npole: i64) -> crate::DesignInputs {
     inputs
 }
 
-/// A design that passes all 8 guided checks (`gui::guidance::CHECK_GUIDES`), each with room
+/// A design that passes all 9 guided checks (`gui::guidance::CHECK_GUIDES`), each with room
 /// to spare: the defaults with a 1.8 mm face gap (running clearance about 0.1 mm over its
-/// target), a 2.0 mm cup wall (the flux needs about 1.85 mm at that gap) and a 1.6 N·m
+/// target), a 2.0 mm cup wall (the flux needs about 1.85 mm at that gap), a 1.6 N·m
 /// requirement (hot-low torque about 2.0 N·m, a quarter over it: a hotter-rated grade, weaker
-/// than N42SH, still meets it). The guidance tests break one check of it at a time, so a fix
-/// that turns another check red shows.
+/// than N42SH, still meets it) and a 1.0 N·m gearbox input rating (cold-high at the gearbox
+/// input about 0.71 N·m, 29 % under it; the rating changes no other result than the
+/// workbook's gearbox reference, `model.gearbox_reference_Nm`, its only other reader). The
+/// guidance tests break one check of it at a time, so a fix that turns another check red
+/// shows.
 pub(crate) fn passing_design() -> crate::DesignInputs {
     let mut inputs = crate::DesignInputs::default();
     inputs.metal.face_gap_mm = 1.8;
     inputs.metal.cup_wall_corner_mm = 2.0;
     inputs.metal.required_min_Nm = 1.6;
+    inputs.coupling.gearbox_input_rating_Nm = 1.0;
     inputs
 }
 
@@ -53,6 +57,16 @@ pub(crate) fn small_boss(inputs: &mut crate::DesignInputs) {
 pub(crate) fn only_the_clamp_fails() -> crate::DesignInputs {
     let mut inputs = passing_design();
     small_boss(&mut inputs);
+    inputs
+}
+
+/// [`passing_design`] with the gearbox input rating back at the example design's: it fails the
+/// gearbox check alone (cold-high at the gearbox input about 0.71 N·m against 0.6 N·m).
+pub(crate) fn only_the_gearbox_fails() -> crate::DesignInputs {
+    let mut inputs = passing_design();
+    inputs.coupling.gearbox_input_rating_Nm = crate::DesignInputs::default()
+        .coupling
+        .gearbox_input_rating_Nm;
     inputs
 }
 

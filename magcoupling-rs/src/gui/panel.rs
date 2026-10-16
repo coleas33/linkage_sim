@@ -3034,7 +3034,7 @@ mod tests {
         use crate::gui::results_table::{
             FAILING_ONLY, NO_RESULT, NOTHING_FAILS, SEARCH_HINT, table_entries,
         };
-        // Manual magnets: the defaults' four red checks and two amber rating checks.
+        // Manual magnets: the defaults' five red checks and two amber rating checks.
         let mut harness = Harness::new();
         harness.panel.inputs.coupling.magnets.part_inner.clear();
         harness.panel.inputs.coupling.magnets.part_outer.clear();
@@ -3042,9 +3042,9 @@ mod tests {
         harness.click_text(FAILING_ONLY);
         let output = harness.frame(Vec::new());
         let failing = failing_checks(harness.panel.results(), false);
-        assert_eq!(failing.len(), 6);
+        assert_eq!(failing.len(), 7);
         let total = table_entries().len();
-        assert_eq!(count(&output, &format!("6 of {total} results")), 1);
+        assert_eq!(count(&output, &format!("7 of {total} results")), 1);
         // In the table, between the inputs and the dashboard: each failing check's label, and
         // no passing check's (two checks may share a label: "Verdict").
         let centre =
@@ -3061,7 +3061,7 @@ mod tests {
                 .count();
             assert_eq!(drawn, want, "{check}");
         }
-        // Four red badges and two amber in the table, in the dashboard's colours: every badge
+        // Five red badges and two amber in the table, in the dashboard's colours: every badge
         // drawn but the dashboard's own.
         let visuals = harness.ctx.style().visuals.clone();
         let lines = crate::gui::dashboard::dashboard_lines(harness.panel.results());
@@ -3078,7 +3078,7 @@ mod tests {
         };
         assert_eq!(
             (table_badges(Level::Bad), table_badges(Level::Caution)),
-            (4, 2)
+            (5, 2)
         );
         // Off again: the groups come back.
         harness.click_text(FAILING_ONLY);
@@ -3089,7 +3089,7 @@ mod tests {
         // nothing, not that no check fails.
         harness.click_text(FAILING_ONLY);
         harness.click_text(SEARCH_HINT);
-        harness.frame(vec![egui::Event::Text("gearbox".to_owned())]);
+        harness.frame(vec![egui::Event::Text("ripple".to_owned())]);
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, &format!("0 of {total} results")), 1);
         assert_eq!(count(&output, NO_RESULT), 1);
@@ -3103,9 +3103,9 @@ mod tests {
         use crate::gui::test_support::flat_shapes;
         // Short magnets (f_end < 0): the dashboard greys the rows computed from the pull-out,
         // without badges. In the table's headline (open) each check row carries exactly the
-        // dashboard's badge, so the hot minimum (red by its text) and the screw sized from the
-        // invalid pull-out (green by its text) carry none, and the failing filter leaves the hot
-        // minimum out.
+        // dashboard's badge, so the hot minimum (red by its text), the screw sized from the
+        // invalid pull-out and the gearbox check of a cold-high below zero (both green by their
+        // texts) carry none, and the failing filter leaves the hot minimum out.
         let mut harness = Harness::new();
         harness.panel.inputs = short_magnets();
         harness.click_text(CentreView::Results.label());
@@ -3138,7 +3138,7 @@ mod tests {
             .iter()
             .filter(|line| CHECKS.contains(&line.path))
             .collect();
-        assert_eq!(checks.len(), 7);
+        assert_eq!(checks.len(), 8);
         for line in checks {
             let row = text_rects(&output, line.label)
                 .into_iter()
@@ -8684,23 +8684,24 @@ mod tests {
         let mut harness = Harness::new();
         let output = harness.frame(Vec::new());
         let status = design_status(harness.panel.inputs(), harness.panel.results(), false);
-        // The workbook example fails its hot minimum, its clearance and its cup wall.
+        // The workbook example fails its hot minimum, its clearance, its cup wall and its
+        // gearbox check.
         assert_eq!(
             (status.bad, status.caution, status.total, status.is_default),
-            (3, 0, 8, true)
+            (4, 0, 9, true)
         );
         assert_eq!(count(&output, &design_status_text(&status)), 1);
         // A fix: the cup wall at 2.4 mm (its rule asks for 2.0 mm and up).
         harness.panel.inputs.metal.cup_wall_corner_mm = 2.4;
         let output = harness.frame(Vec::new());
         let status = design_status(harness.panel.inputs(), harness.panel.results(), false);
-        assert_eq!((status.bad, status.is_default), (2, false));
+        assert_eq!((status.bad, status.is_default), (3, false));
         assert_eq!(count(&output, &design_status_text(&status)), 1);
         // Reset all: the example again.
         harness.click_text(RESET_ALL);
         let output = harness.frame(Vec::new());
         let status = design_status(harness.panel.inputs(), harness.panel.results(), false);
-        assert_eq!((status.bad, status.is_default), (3, true));
+        assert_eq!((status.bad, status.is_default), (4, true));
         assert_eq!(count(&output, &design_status_text(&status)), 1);
     }
 

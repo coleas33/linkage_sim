@@ -997,7 +997,7 @@ mod tests {
     fn a_check_carries_its_level_and_a_greyed_check_none() {
         let check = column(&RESULT_COLUMNS, "Check");
         let path = column(&RESULT_COLUMNS, "Path");
-        // The default design, one with six failing checks (manual magnets) and one out of the
+        // The default design, one with seven failing checks (manual magnets) and one out of the
         // end-effect range (short magnets).
         let mut manual = DesignInputs::default();
         manual.coupling.magnets.part_inner.clear();

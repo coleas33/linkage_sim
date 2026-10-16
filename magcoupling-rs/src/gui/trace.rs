@@ -4,7 +4,7 @@
 //! `upstream_inputs`). The panel frames every traced path where it is drawn, as the Equation
 //! panel frames an equation's terms, in the selection colour (the colour of the frame a leaf
 //! term draws around its input row), under the equation's own term colours. The registry knows
-//! the dependencies of the results it explains (the A-3 scope: 392 of the 1086 results), so a
+//! the dependencies of the results it explains (the A-3 scope: 392 of the 1087 results), so a
 //! result without an equation record traces nothing, and an input whose results have none (the
 //! drive torque, the adhesive's inputs) reaches no result: its banner says so.
 
@@ -191,7 +191,7 @@ mod tests {
             .iter()
             .filter(|e| registry().equation_for(&e.path).is_some())
             .count();
-        assert_eq!((explained, table_entries().len()), (392, 1086));
+        assert_eq!((explained, table_entries().len()), (392, 1087));
         // Every input is a leaf of the registry: a click on any input's label traces it.
         for entry in crate::gui::inputs::InputCatalogue::get().all() {
             let trace = Trace::of(&entry.path).unwrap_or_else(|| panic!("{}", entry.path));

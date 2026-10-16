@@ -142,6 +142,7 @@ const CLEARANCE: &str = "metal.clearance_check";
 const CUP_WALL: &str = "materials.cup_wall_check";
 const TEMPERATURE: &str = "temperature.summary.verdict";
 const CLAMP: &str = "clamps.recommended";
+const GEARBOX: &str = "gearbox.cold_high_check";
 const SPACE_CLAIM: &str = "housing.space_claim_check";
 const END_EFFECT: &str = "model.end_effect_check";
 
@@ -209,6 +210,22 @@ const CLAMP_GUIDE: CheckGuide = CheckGuide {
         ("clamps.clamp_length_mm", Direction::Raise),
     ]),
     learn: Learn::Note("clamp_preload"),
+};
+
+const GEARBOX_GUIDE: CheckGuide = CheckGuide {
+    check: GEARBOX,
+    label: "Gearbox input torque",
+    problem: gearbox_problem,
+    why: "Up to cold-high torque reaches the gearbox output before the coupling slips, and in each swing while it slips; at the gearbox input it must stay within the rating.",
+    // Geometry only (owner decision 6A): both lower cold-high, and hot-low with it, which the
+    // trade-off and side-effect lines say where the hot minimum fails. Not the variation (an
+    // assumption), the minimum temperature (an environment fact), or the rating or ratio (no
+    // real gearbox changes one alone): the Problem names them where no geometry passes both.
+    fixes: Fixes::Static(&[
+        (MAGNET_LENGTH, Direction::Lower),
+        (FACE_GAP, Direction::Raise),
+    ]),
+    learn: Learn::Note(TORQUE_BAND_NOTE),
 };
 
 const SPACE_CLAIM_GUIDE: CheckGuide = CheckGuide {
@@ -287,15 +304,16 @@ const FIT_GUIDE: CheckGuide = CheckGuide {
     learn: Learn::None("No note covers block fit yet."),
 };
 
-/// The guides: the seven dashboard checks in the dashboard's order, then the Magnets fit row.
+/// The guides: the eight dashboard checks in the dashboard's order, then the Magnets fit row.
 /// Every Why and Problem template goes through the slice's physics review (spec G-3), and none
 /// says what spec section 8 rules out.
-pub static CHECK_GUIDES: [CheckGuide; 8] = [
+pub static CHECK_GUIDES: [CheckGuide; 9] = [
     HOT_MIN_GUIDE,
     CLEARANCE_GUIDE,
     CUP_WALL_GUIDE,
     TEMPERATURE_GUIDE,
     CLAMP_GUIDE,
+    GEARBOX_GUIDE,
     SPACE_CLAIM_GUIDE,
     END_EFFECT_GUIDE,
     FIT_GUIDE,
@@ -341,6 +359,7 @@ pub static ROW_LEARN: [(&str, Learn); DASHBOARD.len()] = [
     ),
     (TEMPERATURE, TEMPERATURE_GUIDE.learn),
     (CLAMP, CLAMP_GUIDE.learn),
+    (GEARBOX, GEARBOX_GUIDE.learn),
     (SPACE_CLAIM, SPACE_CLAIM_GUIDE.learn),
     (END_EFFECT, END_EFFECT_GUIDE.learn),
 ];
@@ -1478,10 +1497,10 @@ pub fn design_status(
     }
 }
 
-/// The design status line: "Example design: fails 3 of 8 checks", "Your design: fails
-/// 2 of 8 checks", "Your design: passes all 8 checks", each followed by ", 1 caution" or ", 2
+/// The design status line: "Example design: fails 4 of 9 checks", "Your design: fails
+/// 3 of 9 checks", "Your design: passes all 9 checks", each followed by ", 1 caution" or ", 2
 /// cautions" when a check asks for a look. The count is of the guides that count ([`counts`]):
-/// 7 while the shaft-clamp section is paused.
+/// 8 while the shaft-clamp section is paused.
 pub fn design_status_text(status: &DesignStatus) -> String {
     let design = if status.is_default {
         EXAMPLE_DESIGN
@@ -1617,6 +1636,22 @@ fn clamp_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<Strin
             input_text(inputs, "clamps.safety_factor"),
         )
     })
+}
+
+/// The gearbox check's Problem when it cannot be made (it asks for a look): a value it
+/// compares is not a number.
+const GEARBOX_UNKNOWN: &str = "The gearbox check cannot be made: cold-high at the gearbox input or the rating is not a number.";
+
+fn gearbox_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<String> {
+    match level_of(GEARBOX, inputs, results) {
+        Level::Good => None,
+        Level::Caution => Some(GEARBOX_UNKNOWN.to_owned()),
+        Level::Bad => Some(format!(
+            "Cold-high at the gearbox input is {}, above its {} input rating.",
+            result_text(results, "metal.cold_high_input_Nm"),
+            input_text(inputs, "coupling.gearbox_input_rating_Nm"),
+        )),
+    }
 }
 
 fn space_claim_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<String> {
@@ -2063,8 +2098,8 @@ mod tests {
     use crate::gui::explorer::reviewed_note;
     use crate::gui::plain_text::label_for;
     use crate::gui::test_support::{
-        assert_glyphs, clamp_at_its_limit, hot_day, only_the_clamp_fails, passing_design,
-        short_magnets, small_boss, with_poles,
+        assert_glyphs, clamp_at_its_limit, hot_day, only_the_clamp_fails, only_the_gearbox_fails,
+        passing_design, short_magnets, small_boss, with_poles,
     };
     use std::collections::BTreeSet;
 
@@ -2152,6 +2187,12 @@ mod tests {
         i.metal.max_diameter_mm = f64::NAN;
     }
 
+    /// A gearbox input rating that is not a number (set on the struct): the gearbox check asks
+    /// for a look.
+    fn unknown_rating(i: &mut DesignInputs) {
+        i.coupling.gearbox_input_rating_Nm = f64::NAN;
+    }
+
     /// True arcs instead of flat blocks.
     fn arcs(i: &mut DesignInputs) {
         i.coupling.faceted = 0;
@@ -2168,7 +2209,7 @@ mod tests {
         i.metal.liner_mm = 0.0;
     }
 
-    /// Every design the tests use: the defaults (they fail three checks), a passing design,
+    /// Every design the tests use: the defaults (they fail four checks), a passing design,
     /// and for every check designs that fail it, most of them the passing design with one
     /// check broken.
     fn designs() -> Vec<(&'static str, DesignInputs)> {
@@ -2256,7 +2297,12 @@ mod tests {
                 texts.push(fix_text(path, direction));
             }
         }
-        for fallback in [NO_FIX, TEMPERATURE_FALLBACK, SPACE_CLAIM_FALLBACK] {
+        for fallback in [
+            NO_FIX,
+            TEMPERATURE_FALLBACK,
+            SPACE_CLAIM_FALLBACK,
+            GEARBOX_UNKNOWN,
+        ] {
             texts.push(fallback.to_owned());
         }
         for (_, learn) in &ROW_LEARN {
@@ -2459,22 +2505,45 @@ mod tests {
         );
     }
 
-    /// The torque-band note's second watch-out and the slip note's first say nothing checks
-    /// cold-high at the gearbox input, or the slip swings, against the gearbox's rating. When
-    /// such a check lands (BL-059) this fails, and those watch-outs change in the same commit.
+    /// The gearbox check (BL-059, replacing the test that said nothing checks a gearbox torque):
+    /// one dashboard row of its own, after the headline's rows and before the space claim, a
+    /// design check of the results, and a guide, between the clamp's and the space claim's,
+    /// whose Why link and its row's lead to the torque-band note, which owns cold-high at the
+    /// gearbox input. The ripple row stays a value with no check.
     #[test]
-    fn nothing_checks_a_gearbox_torque_against_its_rating_yet() {
-        let gearbox_rows: Vec<(&str, Option<&str>)> = DASHBOARD
+    fn the_gearbox_check_is_a_dashboard_row_with_its_guide() {
+        let gearbox_rows: Vec<(usize, (&str, Option<&str>))> = DASHBOARD
             .iter()
             .copied()
-            .filter(|&(row, check)| {
+            .enumerate()
+            .filter(|&(_, (row, check))| {
                 row.contains("gearbox") || check.is_some_and(|c| c.contains("gearbox"))
             })
             .collect();
-        // The ripple row: a value with no check.
-        assert_eq!(gearbox_rows, [("model.gearbox_input_ripple_Nm", None)]);
-        assert!(CHECKS.iter().all(|c| !c.contains("gearbox")));
-        assert!(CHECK_GUIDES.iter().all(|g| !g.check.contains("gearbox")));
+        assert_eq!(
+            gearbox_rows,
+            [
+                (5, ("model.gearbox_input_ripple_Nm", None)),
+                (15, (GEARBOX, Some(GEARBOX))),
+            ]
+        );
+        let checks: Vec<&str> = CHECKS
+            .iter()
+            .copied()
+            .filter(|c| c.contains("gearbox"))
+            .collect();
+        assert_eq!(checks, [GEARBOX]);
+        let gearbox = guide(GEARBOX).expect("the gearbox check has a guide");
+        assert_eq!(gearbox.learn, Learn::Note(TORQUE_BAND_NOTE));
+        assert_eq!(row_learn(GEARBOX), Some(gearbox.learn));
+        let guided = CHECK_GUIDES
+            .iter()
+            .filter(|g| g.check.contains("gearbox"))
+            .count();
+        assert_eq!(guided, 1);
+        let at = |check: &str| CHECK_GUIDES.iter().position(|g| g.check == check).unwrap();
+        assert_eq!(at(GEARBOX), at(CLAMP) + 1);
+        assert_eq!(at(SPACE_CLAIM), at(GEARBOX) + 1);
     }
 
     // ------------------------------------------------------------------ the fix texts
@@ -2659,6 +2728,10 @@ mod tests {
                 at_least_zero("overall length", md.axial_reserve_mm),
                 at_least_zero("large-diameter bay", md.large_dia_reserve_mm),
             ],
+            GEARBOX => vec![at_least_zero(
+                "gearbox input torque",
+                inputs.coupling.gearbox_input_rating_Nm - md.cold_high_input_Nm,
+            )],
             END_EFFECT => vec![term("end-effect factor", m.f_end, m.f_end > 0.0)],
             // The engine's rule ring by ring; the margin is the flat's slack, or what is left
             // of the arcs' share of the circle.
@@ -2825,6 +2898,20 @@ mod tests {
                 "clamps.clamp_length_mm",
                 Direction::Raise,
                 "screw size",
+            ),
+            (
+                GEARBOX,
+                DesignInputs::default(),
+                MAGNET_LENGTH,
+                Direction::Lower,
+                "gearbox input torque",
+            ),
+            (
+                GEARBOX,
+                DesignInputs::default(),
+                FACE_GAP,
+                Direction::Raise,
+                "gearbox input torque",
             ),
             (
                 SPACE_CLAIM,
@@ -3278,11 +3365,15 @@ mod tests {
         // the hot-low torque and "raise the gap" for the clearance. A fix whose step turns a
         // passing check red is not offered, so that pair cannot show. One input still shows
         // both ways when two checks that pull it apart both fail already: here the hot-low
-        // torque against an overall-length claim the stack is over (magnet length), and the
-        // blocks against a diameter claim (Outside diameter). Each fix helps its own check, so
-        // both stay, and each of the two blocks says, in the same words, that the input pulls
-        // two ways and another input has to settle one of them (`trade_offs`).
-        let pulled_apart: [(&str, &[&str]); 2] = [
+        // torque against the gearbox check, on the example design and wherever both fail (magnet
+        // length: no magnet size passes both), and against an overall-length claim the stack is
+        // over (magnet length), and the blocks against a diameter claim (Outside diameter). Each
+        // fix helps its own check, so both stay, and each of the two blocks says, in the same
+        // words, that the input pulls two ways and another input has to settle one of them
+        // (`trade_offs`).
+        let pulled_apart: [(&str, &[&str]); 4] = [
+            ("defaults", &[MAGNET_LENGTH]),
+            ("bare_clearance", &[MAGNET_LENGTH]),
             ("length_conflict", &[MAGNET_LENGTH]),
             ("diameter_conflict", &[RING]),
         ];
@@ -3308,31 +3399,57 @@ mod tests {
                 .find(|&&(fixture, _)| fixture == name)
                 .map_or(&[][..], |&(_, paths)| paths);
             assert_eq!(both_ways, expected, "{name}");
-            // The guides that raise and lower each such input carry its note; no other does.
+            // The guides that raise and lower each such input carry its note, one for each guide
+            // that pulls it the other way; no other guide does.
+            let pulling = |path: &str, direction: Direction| -> Vec<&str> {
+                CHECK_GUIDES
+                    .iter()
+                    .zip(&all)
+                    .filter(|(_, fixes)| fixes.contains(&(path, direction)))
+                    .map(|(g, _)| g.label)
+                    .collect()
+            };
             for (index, g) in CHECK_GUIDES.iter().enumerate() {
                 let mut wanted = Vec::new();
-                for &path in &both_ways {
-                    let by = |direction| {
-                        let at = all.iter().position(|f| f.contains(&(path, direction)));
-                        CHECK_GUIDES[at.unwrap()].label
-                    };
-                    if all[index].iter().any(|&(fixed, _)| fixed == path) {
-                        wanted.push(note(path, by(Direction::Raise), by(Direction::Lower)));
+                for &(path, direction) in &all[index] {
+                    if !both_ways.contains(&path) {
+                        continue;
+                    }
+                    match direction {
+                        Direction::Raise => {
+                            for lowering in pulling(path, Direction::Lower) {
+                                wanted.push(note(path, g.label, lowering));
+                            }
+                        }
+                        Direction::Lower => {
+                            for raising in pulling(path, Direction::Raise) {
+                                wanted.push(note(path, raising, g.label));
+                            }
+                        }
+                        Direction::Change | Direction::CustomHotterGrade => {}
                     }
                 }
                 assert_eq!(trade_offs(&all, index), wanted, "{name}: {}", g.check);
             }
         }
-        // The two cases in words: the same note in both blocks.
+        // The cases in words. The overall-length claim: the space claim's note in its block and
+        // in the hot-low torque's, which also carries the gearbox check's (it lowers the
+        // magnets too).
+        let at = |check| CHECK_GUIDES.iter().position(|g| g.check == check).unwrap();
         let length = design(|i| i.metal.max_overall_axial_mm = 30.0);
         let results = compute_all(&length);
         let all = all_fixes(&length, &results, false);
-        let expected = [
-            "One input pulls two ways (Axial magnet length, both rings): Hot-low torque needs it raised and Space claim needs it lowered, so change another input to settle one of them.",
-        ];
-        let at = |check| CHECK_GUIDES.iter().position(|g| g.check == check).unwrap();
-        assert_eq!(trade_offs(&all, at(HOT_MIN)), expected);
-        assert_eq!(trade_offs(&all, at(SPACE_CLAIM)), expected);
+        let space = "One input pulls two ways (Axial magnet length, both rings): Hot-low torque needs it raised and Space claim needs it lowered, so change another input to settle one of them.";
+        let gearbox = note(MAGNET_LENGTH, HOT_MIN_GUIDE.label, GEARBOX_GUIDE.label);
+        assert_eq!(trade_offs(&all, at(HOT_MIN)), [gearbox.as_str(), space]);
+        assert_eq!(trade_offs(&all, at(GEARBOX)), [gearbox.as_str()]);
+        assert_eq!(trade_offs(&all, at(SPACE_CLAIM)), [space]);
+        // The example design: the hot-low torque against the gearbox check alone, the same note
+        // in both blocks.
+        let defaults = DesignInputs::default();
+        let all = all_fixes(&defaults, &compute_all(&defaults), false);
+        assert_eq!(trade_offs(&all, at(HOT_MIN)), [gearbox.as_str()]);
+        assert_eq!(trade_offs(&all, at(GEARBOX)), [gearbox.as_str()]);
         let crowded = with(with_poles(12), |i| i.metal.max_diameter_mm = 42.0);
         let results = compute_all(&crowded);
         let all = all_fixes(&crowded, &results, false);
@@ -3458,7 +3575,7 @@ mod tests {
                 }
             }
         }
-        // The passing design passes every guide; the defaults fail three, all red.
+        // The passing design passes every guide; the defaults fail four, all red.
         let inputs = passing_design();
         let results = compute_all(&inputs);
         for g in &CHECK_GUIDES {
@@ -3471,7 +3588,15 @@ mod tests {
             .map(|g| (g.check, level(g, &inputs, &results)))
             .filter(|&(_, badge)| badge != Good)
             .collect();
-        assert_eq!(failing, [(HOT_MIN, Bad), (CLEARANCE, Bad), (CUP_WALL, Bad)]);
+        assert_eq!(
+            failing,
+            [
+                (HOT_MIN, Bad),
+                (CLEARANCE, Bad),
+                (CUP_WALL, Bad),
+                (GEARBOX, Bad)
+            ]
+        );
         // Each failing design fails the check it was built for, at the level the dashboard gives.
         for (inputs, check, want) in [
             (breaking(hot_day), TEMPERATURE, Caution),
@@ -3550,6 +3675,12 @@ mod tests {
                 &["clamps.required_Nm", "clamps.max_torque_Nm"],
             ),
             (
+                GEARBOX,
+                DesignInputs::default(),
+                design(|i| i.metal.min_temp_C = 0.0),
+                &["metal.cold_high_input_Nm"],
+            ),
+            (
                 SPACE_CLAIM,
                 breaking(large_cap),
                 breaking(|i| i.metal.cap_od_mm = 45.0),
@@ -3625,6 +3756,21 @@ mod tests {
         let text = problem(CLEARANCE, &thinner).unwrap();
         assert!(text.starts_with("Radial running gap 0.7768 mm"), "{text}");
         assert!(text.contains("leaves -0.003174 mm"), "{text}");
+        // The gearbox check: cold-high at the gearbox input and the rating, each as its readout
+        // shows it; the rating follows an edit.
+        let results = compute_all(&defaults);
+        let quoted = [
+            result_text(&results, "metal.cold_high_input_Nm"),
+            input_text(&defaults, "coupling.gearbox_input_rating_Nm"),
+        ];
+        assert_eq!(quoted, ["0.8049 N·m", "0.6000 N·m"]);
+        let text = problem(GEARBOX, &defaults).unwrap();
+        for number in &quoted {
+            assert!(text.contains(number.as_str()), "{number} in {text}");
+        }
+        let rated = design(|i| i.coupling.gearbox_input_rating_Nm = 0.7);
+        let text = problem(GEARBOX, &rated).unwrap();
+        assert!(text.contains("0.7000 N·m"), "{text}");
     }
 
     #[test]
@@ -3999,6 +4145,46 @@ mod tests {
     }
 
     #[test]
+    fn the_gearbox_problem_is_some_exactly_when_the_check_fails_or_cannot_be_made() {
+        // Red above the rating; amber when a torque it compares is not a number (the rating,
+        // or cold-high at the gearbox input through a ratio set on the struct), with the text
+        // that says so; green at or under the rating and while the end-effect model is out of
+        // range (the row is greyed).
+        use Level::{Bad, Caution, Good};
+        let gearbox = guide(GEARBOX).unwrap();
+        for (name, inputs, want) in [
+            ("defaults", DesignInputs::default(), Bad),
+            ("passing", passing_design(), Good),
+            ("gearbox only", only_the_gearbox_fails(), Bad),
+            ("unknown rating", breaking(unknown_rating), Caution),
+            (
+                "unknown ratio",
+                breaking(|i| i.coupling.gear_ratio = f64::NAN),
+                Caution,
+            ),
+            ("short magnets", short_magnets(), Good),
+            ("40 poles", with_poles(40), Good),
+        ] {
+            let results = compute_all(&inputs);
+            assert_eq!(level(gearbox, &inputs, &results), want, "{name}");
+            let text = (gearbox.problem)(&inputs, &results);
+            match want {
+                Good => assert_eq!(text, None, "{name}"),
+                Caution => assert_eq!(text.as_deref(), Some(GEARBOX_UNKNOWN), "{name}"),
+                Bad => {
+                    let text = text.unwrap_or_else(|| panic!("{name}: no Problem"));
+                    for number in [
+                        result_text(&results, "metal.cold_high_input_Nm"),
+                        input_text(&inputs, "coupling.gearbox_input_rating_Nm"),
+                    ] {
+                        assert!(text.contains(&number), "{name}: {number} in {text}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn a_check_that_does_not_apply_gives_no_problem() {
         // Without back iron no magnetic rule sizes the cup wall: no badge, no Problem.
         let inputs = breaking(no_back_iron);
@@ -4020,30 +4206,30 @@ mod tests {
         assert_eq!(
             defaults,
             DesignStatus {
-                bad: 3,
+                bad: 4,
                 caution: 0,
-                total: 8,
+                total: 9,
                 is_default: true
             }
         );
         assert_eq!(
             design_status_text(&defaults),
-            "Example design: fails 3 of 8 checks"
+            "Example design: fails 4 of 9 checks"
         );
         // One fix: the cup wall at its suggested 2.0 mm.
         let fixed = status(&design(|i| i.metal.cup_wall_corner_mm = 2.0));
         assert_eq!(
             design_status_text(&fixed),
-            "Your design: fails 2 of 8 checks"
+            "Your design: fails 3 of 9 checks"
         );
         assert_eq!(
             design_status_text(&status(&passing_design())),
-            "Your design: passes all 8 checks"
+            "Your design: passes all 9 checks"
         );
         // Cautions are counted apart from the failures.
         assert_eq!(
             design_status_text(&status(&design(hot_day))),
-            "Your design: fails 3 of 8 checks, 1 caution"
+            "Your design: fails 4 of 9 checks, 1 caution"
         );
         let two_cautions = design(|i| {
             hot_day(i);
@@ -4051,17 +4237,17 @@ mod tests {
         });
         assert_eq!(
             design_status_text(&status(&two_cautions)),
-            "Your design: fails 3 of 8 checks, 2 cautions"
+            "Your design: fails 4 of 9 checks, 2 cautions"
         );
         // The Magnets fit row counts as a check: 40 blocks fail it, the hot-low torque and the
-        // clearance, and pass the cup wall.
+        // clearance, and pass the cup wall and the gearbox check.
         assert_eq!(
             design_status_text(&status(&with_poles(40))),
-            "Your design: fails 3 of 8 checks"
+            "Your design: fails 3 of 9 checks"
         );
         // Any edit leaves the example, even one that keeps the counts.
         let edited = status(&design(|i| i.metal.hardware_g = 7.0));
-        assert_eq!((edited.bad, edited.is_default), (3, false));
+        assert_eq!((edited.bad, edited.is_default), (4, false));
     }
 
     #[test]
@@ -4105,23 +4291,66 @@ mod tests {
         let results = compute_all(&inputs);
         assert_eq!(level(guide(CLAMP).unwrap(), &inputs, &results), Level::Bad);
         let shown = design_status(&inputs, &results, false);
-        assert_eq!((shown.bad, shown.caution, shown.total), (1, 0, 8));
+        assert_eq!((shown.bad, shown.caution, shown.total), (1, 0, 9));
         assert_eq!(
             design_status_text(&shown),
-            "Your design: fails 1 of 8 checks"
+            "Your design: fails 1 of 9 checks"
         );
         let paused = design_status(&inputs, &results, true);
-        assert_eq!((paused.bad, paused.caution, paused.total), (0, 0, 7));
+        assert_eq!((paused.bad, paused.caution, paused.total), (0, 0, 8));
         assert_eq!(
             design_status_text(&paused),
-            "Your design: passes all 7 checks"
+            "Your design: passes all 8 checks"
         );
-        // The example design fails the same three checks either way.
+        // The example design fails the same four checks either way.
         let defaults = DesignInputs::default();
         let results = compute_all(&defaults);
         assert_eq!(
             design_status_text(&design_status(&defaults, &results, true)),
-            "Example design: fails 3 of 7 checks"
+            "Example design: fails 4 of 8 checks"
+        );
+    }
+
+    #[test]
+    fn the_gearbox_check_counts_in_the_status_whether_the_clamp_section_shows_or_not() {
+        // Owner decision 3A: counted, and red above the rating. The example design fails it
+        // beside the hot minimum, the clearance and the cup wall; the passing design passes it,
+        // and with the example's rating back fails it alone; a rating that is not a number asks
+        // for a look. The clamp section's pause takes only the clamp out of the count.
+        let status = |inputs: &DesignInputs, paused: bool| {
+            design_status_text(&design_status(inputs, &compute_all(inputs), paused))
+        };
+        let defaults = DesignInputs::default();
+        assert_eq!(
+            status(&defaults, true),
+            "Example design: fails 4 of 8 checks"
+        );
+        assert_eq!(
+            status(&defaults, false),
+            "Example design: fails 4 of 9 checks"
+        );
+        let passing = passing_design();
+        assert_eq!(status(&passing, true), "Your design: passes all 8 checks");
+        assert_eq!(status(&passing, false), "Your design: passes all 9 checks");
+        let gearbox_only = only_the_gearbox_fails();
+        let results = compute_all(&gearbox_only);
+        let failing: Vec<(&str, Level)> = CHECK_GUIDES
+            .iter()
+            .map(|g| (g.check, level(g, &gearbox_only, &results)))
+            .filter(|&(_, badge)| badge != Level::Good)
+            .collect();
+        assert_eq!(failing, [(GEARBOX, Level::Bad)]);
+        assert_eq!(
+            status(&gearbox_only, true),
+            "Your design: fails 1 of 8 checks"
+        );
+        assert_eq!(
+            status(&gearbox_only, false),
+            "Your design: fails 1 of 9 checks"
+        );
+        assert_eq!(
+            status(&breaking(unknown_rating), true),
+            "Your design: passes all 8 checks, 1 caution"
         );
     }
 
@@ -4927,10 +5156,17 @@ mod tests {
         let (shown, notes) = notes_of(&only);
         assert!(shown.contains(&gap), "{shown:?}");
         assert!(notes.is_empty(), "{notes:?}");
-        // No other guide gets the note, and an index past the guides gets none.
+        // The gearbox guide's gap fix, shown at the defaults beside the failing hot-low torque,
+        // brings the same note; no other guide gets it, and an index past the guides gets none.
+        let gearbox = CHECK_GUIDES
+            .iter()
+            .position(|g| g.check == GEARBOX)
+            .unwrap();
         let results = compute_all(&defaults);
         let all = all_fixes(&defaults, &results, false);
-        for index in (0..=CHECK_GUIDES.len()).filter(|&i| i != clearance) {
+        assert!(all[gearbox].contains(&gap), "{:?}", all[gearbox]);
+        assert_eq!(side_effects(&all, gearbox, &defaults, &results), [note]);
+        for index in (0..=CHECK_GUIDES.len()).filter(|&i| i != clearance && i != gearbox) {
             assert!(side_effects(&all, index, &defaults, &results).is_empty());
         }
     }

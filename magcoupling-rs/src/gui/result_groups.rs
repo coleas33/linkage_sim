@@ -71,7 +71,7 @@ pub const CHAIN_PREFIXES: [(&str, &str); 19] = [
 
 /// The heading of each package group of the other results, by the first segment of the path
 /// (a table's index dropped: `gap_sweep[3].f_end` is in `gap_sweep`), in schema order.
-pub const PACKAGE_LABELS: [(&str, &str); 12] = [
+pub const PACKAGE_LABELS: [(&str, &str); 13] = [
     ("calibration", "Calibration"),
     ("model", "Coupling model"),
     ("mass", "Mass"),
@@ -82,6 +82,7 @@ pub const PACKAGE_LABELS: [(&str, &str); 12] = [
     ("clamps", "Shaft clamps"),
     ("warnings", "Material warnings"),
     ("housing", "Housing"),
+    ("gearbox", "Gearbox"),
     ("gap_sweep", "Gap sweep"),
     ("pole_sweep", "Pole sweep"),
 ];

@@ -1233,6 +1233,35 @@ fn only_the_review_tools_are_ignored() {
     assert!(checks.is_empty(), "ignored checks: {checks:?}");
 }
 
+/// BL-059 (the F36 lesson: counts in the docs went stale before): the README and
+/// `03-structure.yaml` state the dashboard's rows and the design checks as the code counts them.
+#[cfg(feature = "gui")]
+#[test]
+fn the_docs_count_the_dashboard_rows_and_the_checks() {
+    use magcoupling::gui::dashboard::{CHECKS, DASHBOARD};
+    let readme = include_str!("../README.md");
+    let structure = include_str!("../../docs/ai/03-structure.yaml");
+    for (doc, text, claim) in [
+        (
+            "README.md",
+            readme,
+            format!("dashboard's {} rows", DASHBOARD.len()),
+        ),
+        (
+            "README.md",
+            readme,
+            format!("every one of the {} checks", CHECKS.len()),
+        ),
+        (
+            "03-structure.yaml",
+            structure,
+            format!("CHECKS ({} design checks)", CHECKS.len()),
+        ),
+    ] {
+        assert!(text.contains(&claim), "{doc} should say {claim:?}");
+    }
+}
+
 /// The docs state the counts the code has (F36: the note count went stale before): the
 /// README's and docs/ai/03-structure.yaml's note count, the README's Start here step count
 /// and, while the shaft-clamp section is paused (ruling 11), how many notes show; once the
