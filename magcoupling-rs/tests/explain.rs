@@ -43,7 +43,7 @@ use magcoupling::engine::meta::{
     FieldType, InputMeta, InputSet, NumOrText, ResultSet, SliderRange, Value, input_rows,
     result_rows,
 };
-use magcoupling::engine::model::blocks_fit;
+use magcoupling::engine::model::{ModelResults, blocks_fit};
 use magcoupling::engine::size_controls::with_ring_radius;
 use magcoupling::engine::temperature::{NO_COLD_ONSET, RING_INNER, RING_OUTER, demag_onset_C};
 
@@ -3272,13 +3272,17 @@ fn the_ferrite_note_s_claims_hold() {
 }
 
 /// `ferrite_cold_demag`'s entries. Y30 on one ring makes the cold check apply on that ring while
-/// the library NdFeB ring keeps the hot limit (it trades the cold risk for the hot one), and the
-/// check fails though the NdFeB ring has nothing to fail: it passes only if both rings pass. The
-/// trade-off the first entry names: at every NdFeB probe design, Y30 on custom dimensions, on
-/// either ring or both, leaves far less torque (under half the pull-out) and turns the
-/// hot-minimum check red where the NdFeB design just passes it. An entered like-poles field
-/// lower than the stored one lowers the cold limit: half the stored field still fails, the
-/// slider's lowest passes.
+/// the library NdFeB ring keeps the hot limit (it trades cold risk for hot), and the check fails
+/// though the NdFeB ring has nothing to fail: it passes only if both rings pass. The trade-off
+/// the first entry names is far less torque than a same-size library NdFeB part (under half the
+/// pull-out). At every NdFeB probe design, Y30 on custom dimensions, on either ring or both,
+/// leaves under half the pull-out and turns the hot-minimum check red where the NdFeB design just
+/// passes it. At every probe design, Y30 on custom dimensions set to a library part's own size,
+/// on either ring, leaves under half that part's pull-out, for every library part. "Same-size"
+/// is needed: the manual dimensions keep their own values, so from M5045, a smaller part that
+/// fits, Y30 on the example's inner ring does not leave under half the pull-out. An entered
+/// like-poles field lower than the stored one lowers the cold limit: half the stored field still
+/// fails, the slider's lowest passes.
 #[test]
 fn the_ferrite_note_s_entries_hold() {
     assert_eq!(levers_of("ferrite_cold_demag"), DEMAG_LEVERS);
@@ -3289,6 +3293,10 @@ fn the_ferrite_note_s_entries_hold() {
     assert!(
         entry.contains("far less torque"),
         "the Y30 entry names the torque it costs: {entry:?}"
+    );
+    assert!(
+        entry.contains("same-size"),
+        "the Y30 entry compares with a same-size library part: {entry:?}"
     );
     let mut ndfeb = 0;
     for (name, design) in probes::probe_designs() {
@@ -3324,7 +3332,78 @@ fn the_ferrite_note_s_entries_hold() {
         }
     }
     assert_eq!(ndfeb, 4, "the four NdFeB probe designs");
+    // A ring's block as the model uses it: length, width and thickness.
+    let size = |m: &ModelResults, rings: Rings| match rings {
+        Rings::Inner => [m.inner_length_mm, m.inner_width_mm, m.inner_thickness_mm],
+        Rings::Outer => [m.outer_length_mm, m.outer_width_mm, m.outer_thickness_mm],
+        Rings::Both => unreachable!("one ring at a time"),
+    };
+    for (name, design) in probes::probe_designs() {
+        for part in &library::MAGNET_LIBRARY {
+            for rings in [Rings::Inner, Rings::Outer] {
+                let mut on_part = design.clone();
+                let mut same_size = on_grade(&design, rings, "Y30");
+                let (p, m) = (
+                    &mut on_part.coupling.magnets,
+                    &mut same_size.coupling.magnets,
+                );
+                match rings {
+                    Rings::Inner => {
+                        p.part_inner = part.part.to_owned();
+                        m.manual_inner_length_mm = part.length_mm;
+                        m.manual_inner_width_mm = part.width_mm;
+                        m.manual_inner_thickness_mm = part.thickness_mm;
+                    }
+                    Rings::Outer => {
+                        p.part_outer = part.part.to_owned();
+                        m.manual_outer_length_mm = part.length_mm;
+                        m.manual_outer_width_mm = part.width_mm;
+                        m.manual_outer_thickness_mm = part.thickness_mm;
+                    }
+                    Rings::Both => unreachable!("one ring at a time"),
+                }
+                let (with_part, with_y30) =
+                    (compute_all(&on_part).model, compute_all(&same_size).model);
+                let what = format!("{name}, {} on the {rings:?} ring", part.part);
+                assert_eq!(
+                    size(&with_y30, rings),
+                    size(&with_part, rings),
+                    "{what}: same size"
+                );
+                assert!(
+                    with_y30.pullout_Nm < with_part.pullout_Nm / 2.0,
+                    "{what}: far less torque: {} -> {}",
+                    with_part.pullout_Nm,
+                    with_y30.pullout_Nm
+                );
+            }
+        }
+    }
+    // Without "same-size" the entry is false: a part giving way to the grade leaves the manual
+    // dimensions at their own values, so from M5045, a smaller part that fits, Y30 on the
+    // example's inner ring does not leave under half the pull-out.
     let example = DesignInputs::default();
+    let mut m5045 = example.clone();
+    m5045.coupling.magnets.part_inner = "M5045".to_owned();
+    let (from, to) = (
+        compute_all(&m5045),
+        compute_all(&on_grade(&m5045, Rings::Inner, "Y30")),
+    );
+    assert!(blocks_fit(&m5045.coupling, &from.model), "M5045 fits");
+    let (part_mm, manual_mm) = (
+        size(&from.model, Rings::Inner),
+        size(&to.model, Rings::Inner),
+    );
+    assert!(
+        part_mm.iter().zip(manual_mm).all(|(p, m)| *p < m),
+        "the manual block is larger every way: {part_mm:?} against {manual_mm:?}"
+    );
+    assert!(
+        to.model.pullout_Nm >= from.model.pullout_Nm / 2.0,
+        "not far less torque: {} -> {}",
+        from.model.pullout_Nm,
+        to.model.pullout_Nm
+    );
     let d0 = compute_all(&example).temperature.demag;
     assert_eq!(d0.cold_limit_C, NumOrText::Text(NO_COLD_ONSET));
     let ferrite = probe_inputs("Y30 ferrite, custom dimensions");

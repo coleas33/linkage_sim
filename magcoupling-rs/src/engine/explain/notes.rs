@@ -684,7 +684,7 @@ pub const NOTES: &[Note] = &[
                 input: "coupling.magnets.part_inner",
                 step: Step::Choose,
                 aim: None,
-                text: "custom dimensions with the Y30 grade model a ferrite ring, with far less torque; a library NdFeB part trades the cold risk for the hot.",
+                text: "custom dimensions with the Y30 grade model a ferrite ring, with far less torque than same-size library NdFeB parts, which trade cold risk for hot.",
             },
             Change {
                 input: "coupling.magnets.part_outer",

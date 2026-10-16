@@ -3504,6 +3504,10 @@ Considered, no change (the reviewer's observations):
   - This is the task review's option A wording ("..., with far less torque; ..."), with the
     reviewed second clause's "a library NdFeB part" kept. Only "one" is dropped, to stay within
     25 words.
+  - Superseded by the text re-review's MF-1 below. It is now "custom dimensions with the Y30
+    grade model a ferrite ring, with far less torque than same-size library NdFeB parts, which
+    trade cold risk for hot." "Custom dimensions (manual)" keeps the manual fields' own size, so
+    "far less torque" holds only against a library part of the same size.
 - Engine (`compute_all`; each NdFeB probe design's library parts against custom dimensions with
   Y30; scratch probe outside the repo):
   - Pull-out with Y30 on one ring, inner or outer alike: 27.8 % of the NdFeB design's at the
@@ -3522,6 +3526,9 @@ Considered, no change (the reviewer's observations):
   - Y30 on custom dimensions leaves under half the NdFeB design's pull-out;
   - with the requirement at the NdFeB design's own hot-low, which passes, Y30's hot-low falls
     below it, and `metal.hot_min_check` differs from the NdFeB design's passing verdict.
+
+  The re-review's MF-1 below adds the "same-size" pin, the same-size check for every library
+  part and the M5045 check.
 - Not changed: SF-3 (the coercivity source, the task review's M-1) stays open; it was not in
   this round's fix list, and "coercivity" is not glossed along Start here. SF-1, SF-4 and SF-6
   stay open as before.
@@ -3530,3 +3537,56 @@ Considered, no change (the reviewer's observations):
   renders identically at the five probe designs, with no `{`, `}`, "no prediction" or "clamp".
 - A text re-review of this field follows (controller ruling 7). Its report goes below as
   `### Re-review: code-review fix round 1`.
+
+### Re-review: code-review fix round 1
+
+The reviewer's report for the record follows unchanged. The full answer is
+`.superpowers/sdd/2026-10-14-magcoupler-guidance-slice-2/task-16-textreview-1.md`. Its scope was
+change[0], read together with the fields whose meaning depends on it: change[1] ("the same for
+the outer ring; ..."), sentences[3] and [4], and watch_out[0].
+
+- Reviewer: physics reviewer (session model), fresh context, 2026-10-15; text re-review 1 of the fix round's change[0].
+- Read: the dump `rereview-T16-1.txt`; `git show 432c836`; `notes.rs:662-718`; `tests/explain.rs:1651` (`on_grade`) and `:3274-3330`; `model.rs:117-150`; `gui/pickers.rs:13-20`; `library.rs:157`; `grades.rs`; `temperature.rs:1062-1110`; `task-16-review.md` (I-1, M-1); the trap lists (both specs' section 8, phys-new-notes T-A to T-P, the added stiffness trap, rulings 8, 11 and 12); the caps and plain-words rules.
+- Numbers reproduced from `compute_all` (scratch probe outside the repo):
+  - Library parts to Y30 on custom dimensions, at the manual defaults (B842's size):
+    - one ring: 27.8 % of the pull-out at the default, 8-magnet and 20 mm designs (default 2.6885 to 0.7461 N·m), 25.1 % at 304;
+    - both rings: 7.7 %, and 7.0 % at 304.
+    - The record's figures hold.
+  - From smaller fitting library parts, the same move:
+    - M5045 (6.56 x 5.6 x 1.12 mm): raises the pull-out by x1.067 to x1.275 on the inner ring at the four NdFeB designs; outer ring x0.910 to x1.154;
+    - B442: x0.628 to x0.707;
+    - B822 (8 magnets) and M5044 (304): x0.526 to x0.554.
+  - Same-size Y30 (manual dimensions set to the part's own), across 15 parts, either ring and five designs (150 cases): at most 27.75 % of the part's pull-out.
+  - Y30 at the slider's 10 mm thickness: 44.6 % on one ring, 13.8 % on both (default design).
+  - Reverse move at the Y30 design (B842SH on the inner ring):
+    - pull-out 0.2071 to 0.7461 N·m; cold-high 0.3381 to 1.1369 N·m;
+    - the magnet limit 250 to 93.06 °C; the cold ring inner to outer, and the check still fails.
+- Must-fix: MF-1, change[0], becomes "custom dimensions with the Y30 grade model a ferrite ring, with far less torque than same-size library NdFeB parts, which trade cold risk for hot." (25 words). Why: "far less torque" is false for a move from a smaller fitting library part (M5045 gives x0.910 to x1.275, a rise in 7 of 8 cases; B442 keeps 63-71 %), because "Custom dimensions (manual)" keeps the manual size. This is ruling 12's same-size defect class.
+- Should-fix:
+  - SF-A: the coercivity source, carried from round 1's SF-3 and M-1;
+  - SF-B: the thermal-mismatch screen turns red with Y30 on both rings (the governing hot end rises to the adhesive's limit, swing 71.06 to 98.00 °C, and the screen uses NdFeB expansion and modulus). Engine scope, for a backlog line beside BL-062.
+- Traps: none written; "a hotter-rated grade is free" is guarded by "far less torque".
+- Form: 25 words, 1 sentence, plain words, no number, no glyph, no clamp, in both the shipped text and MF-1.
+- Verdict: MUST_FIX (1 item).
+
+- MF-1, applied verbatim by the implementer (session model), 2026-10-15:
+  - change[0] (input, step and aim unchanged): "custom dimensions with the Y30 grade model a
+    ferrite ring, with far less torque; a library NdFeB part trades the cold risk for the hot."
+    -> "custom dimensions with the Y30 grade model a ferrite ring, with far less torque than
+    same-size library NdFeB parts, which trade cold risk for hot." (25 words, 1 sentence; the
+    caps and plain-words tests pass).
+  - Test: `the_ferrite_note_s_entries_hold` (`tests/explain.rs`), computed from the engine:
+    - change[0] contains "same-size". The fix-round text fails it ("the Y30 entry compares with
+      a same-size library part").
+    - At every probe design, for every library part on either ring (150 cases), Y30 on custom
+      dimensions set to the part's own length, width and thickness: the model's block size on
+      that ring equals the part's, and the pull-out is under half the part's.
+    - At the example design, M5045 on the inner ring fits by `model::blocks_fit`, its block is
+      smaller every way than the manual defaults, and Y30 at the manual defaults does not leave
+      under half its pull-out.
+    - The doc comment says "far less torque than a same-size library NdFeB part".
+  - Docs that quoted the fix-round wording now give the new one: the fix-round subsection above
+    (a superseded line, and a pointer to the new checks), the README `tests/explain.rs` row, the
+    BL-056 notes and the update tracker.
+  - Not applied in this round (the round's list names MF-1 only): SF-A and SF-B. They stay open
+    for the controller.
