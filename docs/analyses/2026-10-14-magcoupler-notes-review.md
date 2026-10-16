@@ -3590,3 +3590,62 @@ the outer ring; ..."), sentences[3] and [4], and watch_out[0].
     BL-056 notes and the update tracker.
   - Not applied in this round (the round's list names MF-1 only): SF-A and SF-B. They stay open
     for the controller.
+
+### Re-review: code-review fix round 1 (re-check 2)
+
+The reviewer's report for the record follows unchanged. The full answer is
+`.superpowers/sdd/2026-10-14-magcoupler-guidance-slice-2/task-16-textreview-2.md`. Its scope was
+change[0] as re-review 1's MF-1 left it (`f93dbb6`), "custom dimensions with the Y30 grade model
+a ferrite ring, with far less torque than same-size library NdFeB parts, which trade cold risk
+for hot.", read together with the fields whose meaning depends on it: change[1] ("the same for
+the outer ring; ..."), sentences[3] and [4], and watch_out[0].
+
+- **Reviewer:** physics reviewer (session model), fresh context, 2026-10-15; text re-review 2 of change[0], after re-review 1's MF-1.
+- **Read:**
+  - the dump `rereview-T16-2.txt`; `git show f93dbb6` and `432c836`; `notes.rs:662-718`;
+  - `tests/explain.rs:1651` (`on_grade`) and `:3287` (`the_ferrite_note_s_entries_hold`);
+  - `model.rs:117-150`, `:445-503` (`resolve_magnets`), `:583-599` (`select_calibration_factor`) and `:901-1005` (the torque);
+  - `grades.rs:576-590`; `calibration.rs:40-42` and `:235`; `api.rs:183-192`; `sizing.rs`;
+  - `task-16-textreview-1.md`;
+  - the trap lists: both specs' section 8, `phys-new-notes.md` T-A to T-P, the added stiffness trap, and rulings 8, 11 and 12;
+  - the caps and plain-words rules.
+- **Numbers reproduced from `compute_all`** (scratch probe outside the repo):
+  - **Same-size Y30 against every library part, either ring, five probe designs (150 cases):** at most 27.75 % of the part's pull-out, 27.75 % of its hot-low and 29.74 % of its cold-high.
+  - **A wider grid** (−40 to 150 °C, shared α −0.0025 to 0, all 8 back irons, 4 to 20 magnets, 9 to 30 mm rings; 80,256 cases): at most 31.88 %.
+  - **The reverse trade at the Y30 design:** B842SH on either ring makes that ring's cold limit n/a and its hot limit 93.06 °C (from 250 °C); the other ring keeps 335.71 °C, and the check still fails.
+  - **Bench torque at the 304 design** (SF-C), Y30 inner against B842SH:
+    - x0.251 at the stored 1.8 N·m (f_cal_updated 1.0495);
+    - x0.502 at 0.90 N·m, and x1.507 at 0.30 N·m.
+    - The same class hits `demagnetization` change[0]: custom N38UH shows x1.699 at 0.90 N·m.
+  - **Mismatch screen** (SF-B), Y30 on both rings at the default, 8-magnet and 20 mm designs:
+    - the swing goes from 71.06 to 98.00 °C;
+    - the reading goes from "Below" to "Above the lap-shear strength at the block ends";
+    - one ring changes neither.
+  - **Auto (axial length, 2.5 N·m) at the default design:**
+    - NdFeB 13.77 mm; Y30 inner 46.18 mm at the same 2.9412 N·m pull-out;
+    - Y30 on both rings not reachable (50.8 mm, 0.9004 N·m).
+- **Must-fix:** none.
+- **Should-fix:**
+  - SF-A: the coercivity source (carried).
+  - SF-B: the mismatch screen with Y30 on both rings (carried, re-verified). Engine scope, beside BL-062.
+  - SF-C (new): an entered bench torque at about half the stored value or below reverses on-screen cross-part torque comparisons at prototype-matching designs, because the bench factor applies only to B842SH on both rings. This one, `demagnetization` change[0] and others are affected. For the record and a verify-first backlog line; optionally a test pin naming the dependency.
+  - SF-D: assert hot-low and cold-high in the same-size loop as well.
+- **Traps:** none written. "A hotter-rated grade is free" is guarded by "far less torque". Ruling 12's same-size class is now satisfied.
+- **Form:**
+  - 25 words (at the cap) and 1 sentence;
+  - plain words: `plain_text_violations` and `audit_ids` empty;
+  - no number apart from "Y30", no glyph, no placeholder, no typed default or label, and no clamp.
+- **Tests:** `the_ferrite_note_s_entries_hold` and `the_ferrite_note_s_claims_hold` pass; the lib `notes` suite has 33 passed and 4 ignored.
+- **Verdict:** PASS.
+
+- Recorded by the implementer (session model), 2026-10-15. The verdict is PASS, so no code, test
+  or on-screen text changed in this step; change[0] stands as re-review 1's MF-1 left it.
+  - The full answer's SF-C suggests a record line under this note. Here it is: the "far less
+    torque than same-size library NdFeB parts" comparison holds at the stored bench inputs. The
+    bench factor applies only to B842SH on both rings, in a free-space circuit (no magnetic back
+    iron, as on the 304 design) and at the prototype's magnet count, so an entered bench torque
+    near half the stored 1.8 N·m or below can reverse the on-screen comparison at such a design
+    (Y30 on the inner ring keeps x0.502 of B842SH's pull-out at 0.90 N·m on the 304 design).
+  - Left open for the controller: SF-A, SF-B, SF-C's optional test pin and its verify-first
+    backlog line (cross-part torque comparisons at prototype-matching designs depend on the
+    entered bench torque; `demagnetization` change[0] is in the same class), and SF-D.
