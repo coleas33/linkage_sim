@@ -4169,6 +4169,60 @@ and change[0], `a5.cte_mismatch_with_magnets` sentences[2]).
     `CTE_MISMATCH_LIMIT_PER_C` (`warnings.rs`) gives 304 stainless as 17.7e-6 /°C, while the
     library record is 16.9e-6; no on-screen text depends on it.
 
+### Re-review: code-review fix round 1 (re-check 2)
+
+The reviewer's report for the record follows unchanged. The full answer is
+`.superpowers/sdd/2026-10-14-magcoupler-guidance-slice-2/task-17-textreview-2.md`. Its scope was
+change[1] as re-review 1's MF-1 left it (`c8eb83b`), "416 or 17-4PH need no plating here but trip
+the low-saturation caution; 304 needs none but loses steel torque and fires the expansion
+caution.", read together with the fields whose meaning depends on it: sentences[0], watch_out[0],
+and the sibling entries that use the same terms (`a5.non_ferromagnetic_back_iron` sentences[4]
+and change[0], `a5.cte_mismatch_with_magnets` sentences[2]).
+
+- **Reviewer:** physics reviewer (session model), fresh context, 2026-10-15. Text re-review 2 of change[1], after MF-1 restored "here" (`c8eb83b`).
+- **Read:**
+  - the dump `rereview-T17-2.txt`; `git show c8eb83b` and `84ede89`; `notes.rs:1099-1135` and the sibling a5 notes;
+  - `warnings.rs:41-171` and its tests; `api.rs:335-353`; `material_library.rs` (back-iron records, `resolve`);
+  - `model.rs` (`select_calibration_factor`, `geometry_factor`, pull-out); `temperature.rs:1355-1380`; `dashboard.rs:265-350`;
+  - `task-17-textreview-1.md`; `phys-notes-c.md` sections 5 and 7;
+  - the trap lists: both specs' section 8, T-A to T-P, the added stiffness trap, and rulings 5, 8 and 11;
+  - the caps and plain-words rules.
+- **Checks:**
+  - The text equals MF-1's replacement verbatim, and the test pin "need no plating here" is in place.
+  - Tests pass: `warnings::tests` 12; `explain::notes` 27 (3 ignored); `--test explain` 49 (3 ignored).
+  - The dump renders identically at all five designs, with no leaks.
+- **Numbers from `compute_all`** (scratch probe outside the repo):
+  - **304's pull-out against 4140's**, both unplated on the steel circuit, is at most 0.637. That is over magnets per ring 4-40, ring radius 9-30 mm and face gap 0.3-5 mm (3707 layouts that fit), with the maximum where the bench factor (1.049 against 0.95) applies. Over every harmonic-count choice it is at most 0.679. "Loses steel torque" holds throughout.
+  - **From 4140, 1018 or 12L14 unplated, at all five designs, 304 also turns the "Daily-cycle screen"** from "Below the fatigue endurance" to "Above the fatigue endurance: qualify by thermal cycling" (15 of 15). This is covered by the expansion caution's "higher bond stress over temperature swings". It corrects re-review 1's "No other check turns".
+  - **304 turns the hot-day torque rows and `model.verdict` red** at the designs where they were green: the hot-day rows at the default and 304 designs, `model.verdict` also at the 20 mm design. These are covered by "loses steel torque".
+  - **416 and both 17-4PH conditions** fire only `low_saturation` (and not the plating caution). From 1018 they turn the cup-wall check to "Too thin" at the default and 304 designs, which the caution's text covers.
+- **Form:** 24 words; 1 sentence; the guard is clean; no clamp, placeholder or typed default.
+- **Must-fix:** none.
+- **Should-fix:**
+  - SF-1, carried: "usually fires", together with the open-circuit note's sentences[4] (ruling 5).
+  - SF-3: the record correction above, with an optional daily-screen assert in the cost test.
+  - SF-4: close re-review 1's ledger item on the `CTE_MISMATCH_LIMIT_PER_C` doc comment. Its 17.7e-6 is 304's mismatch, 16.9e-6 − (−0.8e-6), not its expansion coefficient, so the comment is correct.
+- **Verdict:** PASS.
+
+- Recorded by the implementer (session model), 2026-10-15. The verdict is PASS, so no code, test
+  or on-screen text changed in this step; change[1] stands as re-review 1's MF-1 left it.
+  - SF-3, the record correction, made here: re-review 1's full answer said under "Other loads"
+    that no other check turns. That is incomplete. From each unplated steel (4140, 1018 and
+    12L14), at all five probe designs, the 304 pick also turns the dashboard's "Daily-cycle
+    screen" from "Below the fatigue endurance" to "Above the fatigue endurance: qualify by
+    thermal cycling" (15 of 15). The screen scales the expansion-mismatch peak end shear (at the
+    recommended bondline) by the daily swing over the worst swing (`temperature.rs`,
+    `s2 * al.daily_swing_C / dT`). That is the bond check's mechanism, so "fires the expansion
+    caution" covers it and no text changes.
+  - SF-4, closed with no change: re-review 1's ledger observation, left open above, misread the
+    doc comment of `CTE_MISMATCH_LIMIT_PER_C` (`warnings.rs`). The comment gives mismatches, not
+    expansion coefficients: its 17.7e-6 is 304's mismatch with the magnets, 16.9e-6 - (-0.8e-6),
+    as its 4140 figure is 12.3e-6 - (-0.8e-6) = 13.1e-6. The comment is correct.
+  - Left open for the controller: SF-1 (ruling 5's "usually", to be taken only together with
+    `a5.non_ferromagnetic_back_iron` sentences[4]), SF-3's optional daily-screen assert in
+    `the_plating_note_s_back_iron_entry_names_the_cost_of_each_pick_it_offers`, and SF-4's
+    optional rewrite of the comment as "(16.9e-6 - (-0.8e-6) = 17.7e-6)".
+
 ## a5.cte_mismatch_with_magnets
 
 Task T17. Rewrite of "Expansion mismatch with the magnets" as "Hub expands much more than the
