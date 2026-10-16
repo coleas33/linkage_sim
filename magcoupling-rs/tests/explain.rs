@@ -3273,12 +3273,57 @@ fn the_ferrite_note_s_claims_hold() {
 
 /// `ferrite_cold_demag`'s entries. Y30 on one ring makes the cold check apply on that ring while
 /// the library NdFeB ring keeps the hot limit (it trades the cold risk for the hot one), and the
-/// check fails though the NdFeB ring has nothing to fail: it passes only if both rings pass. An
-/// entered like-poles field lower than the stored one lowers the cold limit: half the stored
-/// field still fails, the slider's lowest passes.
+/// check fails though the NdFeB ring has nothing to fail: it passes only if both rings pass. The
+/// trade-off the first entry names: at every NdFeB probe design, Y30 on custom dimensions, on
+/// either ring or both, leaves far less torque (under half the pull-out) and turns the
+/// hot-minimum check red where the NdFeB design just passes it. An entered like-poles field
+/// lower than the stored one lowers the cold limit: half the stored field still fails, the
+/// slider's lowest passes.
 #[test]
 fn the_ferrite_note_s_entries_hold() {
     assert_eq!(levers_of("ferrite_cold_demag"), DEMAG_LEVERS);
+    let entry = notes::note("ferrite_cold_demag")
+        .expect("the ferrite note")
+        .change[0]
+        .text;
+    assert!(
+        entry.contains("far less torque"),
+        "the Y30 entry names the torque it costs: {entry:?}"
+    );
+    let mut ndfeb = 0;
+    for (name, design) in probes::probe_designs() {
+        let r = compute_all(&design);
+        // Heat lowers an NdFeB knee (a negative coefficient); the Y30 design is skipped.
+        if r.temperature.demag.beta_used_per_C > 0.0 {
+            continue;
+        }
+        ndfeb += 1;
+        // The requirement at the design's own hot-low, so the NdFeB design just passes.
+        let mut just_passing = design.clone();
+        just_passing.metal.required_min_Nm = r.metal.torque_hot_low_Nm;
+        let required = just_passing.metal.required_min_Nm;
+        let before = compute_all(&just_passing);
+        assert!(
+            before.metal.torque_hot_low_Nm >= required,
+            "{name}: NdFeB passes"
+        );
+        for rings in [Rings::Inner, Rings::Outer, Rings::Both] {
+            let after = compute_all(&on_grade(&just_passing, rings, "Y30"));
+            assert!(
+                after.model.pullout_Nm < before.model.pullout_Nm / 2.0,
+                "{name} {rings:?}: far less torque"
+            );
+            assert!(
+                after.metal.torque_hot_low_Nm < required,
+                "{name} {rings:?}: hot-low falls below the requirement"
+            );
+            assert_ne!(
+                after.metal.hot_min_check, before.metal.hot_min_check,
+                "{name} {rings:?}: the hot-minimum check turns red"
+            );
+        }
+    }
+    assert_eq!(ndfeb, 4, "the four NdFeB probe designs");
     let example = DesignInputs::default();
     let d0 = compute_all(&example).temperature.demag;
     assert_eq!(d0.cold_limit_C, NumOrText::Text(NO_COLD_ONSET));

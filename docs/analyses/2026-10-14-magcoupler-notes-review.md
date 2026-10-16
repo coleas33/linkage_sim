@@ -3475,7 +3475,7 @@ Must-fix items applied (round 1, applied verbatim before round 2, which confirme
 Seeds (A-24): none for this note.
 
 Should-fix offered, not applied (open for the controller; no on-screen text changed after the
-round-3 PASS):
+round-3 PASS until the task review fix round 1 below, which changed change[0]):
 - SF-1 (round 1), watch_out[1], 28 words: "Y30's temperature coefficients are measured only from 20 to 120 °C; the cold check extrapolates them, both to the coldest temperature and to cold onsets outside that range." Why: the shipped text is true, but what the user sees on the Y30 design is a cold limit of 335.71 °C, from an onset of 325.71 °C extrapolated 200 °C above the tested range; the replacement covers both directions and keeps "from 20 to 120 °C", which `the_ferrite_note_s_claims_hold` reads.
 - SF-3 (round 1), change[0], 23 words: "custom dimensions with the Y30 grade, coercivity from the grade, model a ferrite ring; a library NdFeB part trades cold risk for hot." Why: with "Hcj and beta inputs" chosen as the coercivity source, a Y30 ring takes the input coefficient, which is always negative; the cold check then reads n/a and the magnet limit is 157.64 °C, computed as if the ring were NdFeB. The shipped text holds at the default source (the magnet grade) only. If "coercivity" is unwanted on screen (it is not glossed along Start here), leave the text and pin the default source in the claims test instead.
 - SF-4 (round 1), sentences[4], 13 words: "With no ferrite ring the cold check does not apply and reads n/a." Why: the check also reads n/a for SmCo and bonded NdFeB (every grade but Y30 has a negative coefficient, which `the_ferrite_note_s_claims_hold` pins); the shipped text is true but narrower than the rule.
@@ -3486,3 +3486,47 @@ Considered, no change (the reviewer's observations):
 - The calculator's Br coefficient input does not reach a Y30 ring: its cold limit is 335.71 °C either way (round 2).
 - No library part has a positive coefficient, so a ferrite ring is always Y30 on custom dimensions, and its rating is the grade's; sentence 3's "its rated maximum temperature" agrees with `demagnetization`'s "the magnet's rated maximum temperature" (round 3).
 - The engine help of the Hcj coefficient: as under `## demagnetization` (round 1).
+
+### Task review fix round 1 (2026-10-15): the Y30 entry names the torque it costs
+
+- Why: the task code review (`task-16-review.md`, I-1) applied spec 3.1: "Every entry names its
+  trade-off when the move pushes another check toward red" (ruling 9 enforced the same rule on
+  harmonics change[0]). change[0] named only the trade of the reverse move, back to a library
+  NdFeB part. A move to Y30 cuts the torque and pushes the hot-minimum check deep into red, and
+  nothing in the note said so. change[1] ("the same for the outer ring") inherited the gap. The
+  three in-task rounds passed the old text.
+- change[0]:
+  - Old: "custom dimensions with the Y30 grade model a ferrite ring; a library NdFeB part trades
+    the cold risk for the hot one."
+  - New (25 words, at the cap; no placeholder, symbol or typed default; the caps and plain-words
+    tests pass): "custom dimensions with the Y30 grade model a ferrite ring, with far less torque; a
+    library NdFeB part trades the cold risk for the hot."
+  - This is the task review's option A wording ("..., with far less torque; ..."), with the
+    reviewed second clause's "a library NdFeB part" kept. Only "one" is dropped, to stay within
+    25 words.
+- Engine (`compute_all`; each NdFeB probe design's library parts against custom dimensions with
+  Y30; scratch probe outside the repo):
+  - Pull-out with Y30 on one ring, inner or outer alike: 27.8 % of the NdFeB design's at the
+    default, 8-magnet and 20 mm designs (default 2.6885 -> 0.7461 N·m), 25.1 % at the 304 design.
+    On both rings: 7.7 % (default 0.2071 N·m), 7.0 % at the 304 design.
+  - The hot-minimum check is already red at the example's requirement (hot-low 2.2852 N·m
+    against 2.5 N·m), so the move pushes it further in (hot-low 0.6342 N·m with one Y30 ring,
+    0.1760 N·m with two). With the requirement at each design's own hot-low, the NdFeB design
+    passes and Y30 on either ring, or both, fails.
+  - The coercivity source does not enter the torque, so the new words hold with "Hcj and beta
+    inputs" chosen too.
+- Tests: `the_ferrite_note_s_entries_hold` (`tests/explain.rs`) asserts that change[0] contains
+  "far less torque". On the old text it failed ("the Y30 entry names the torque it costs"), and
+  on the new text it passes. It also checks, at every NdFeB probe design (four; the Y30 design is
+  skipped by its positive coefficient) and for the inner ring, the outer ring and both:
+  - Y30 on custom dimensions leaves under half the NdFeB design's pull-out;
+  - with the requirement at the NdFeB design's own hot-low, which passes, Y30's hot-low falls
+    below it, and `metal.hot_min_check` differs from the NdFeB design's passing verdict.
+- Not changed: SF-3 (the coercivity source, the task review's M-1) stays open; it was not in
+  this round's fix list, and "coercivity" is not glossed along Start here. SF-1, SF-4 and SF-6
+  stay open as before.
+- The dump for the re-review: `NOTES_FOR_REVIEW=ferrite_cold_demag
+  NOTES_REVIEW_OUT=target/notes-review-T16-fix1.txt` ("1 notes at 5 designs"). The new entry
+  renders identically at the five probe designs, with no `{`, `}`, "no prediction" or "clamp".
+- A text re-review of this field follows (controller ruling 7). Its report goes below as
+  `### Re-review: code-review fix round 1`.
