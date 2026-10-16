@@ -4068,6 +4068,10 @@ the sourced range in the plating input's help, not a typed default (round 1).
     304 needs none but loses steel torque and fires the expansion caution."
   - This is the task review's suggested wording, verbatim. "Steel torque" is the open-circuit
     note's own phrase (its change[0], "4140 or 1018 restore steel torque ...").
+  - Superseded by the text re-review's MF-1 below. It is now "416 or 17-4PH need no plating
+    here but trip the low-saturation caution; 304 needs none but loses steel torque and fires the
+    expansion caution." The suggested wording had also dropped "here" from the 416 and 17-4PH
+    half, which rounds 1 and 2 had passed with it.
 - Engine (`compute_all`; at each probe design, every back-iron pick on the steel circuit with zero
   plating; a temporary probe test, deleted before the commit). Pull-out in N·m; the bond check's
   peak end shear against the 15 MPa lap-shear strength:
@@ -4103,6 +4107,67 @@ the sourced range in the plating input's help, not a typed default (round 1).
   renders identically at the five probe designs, with no `{`, `}`, "no prediction" or "clamp".
 - A text re-review of this field follows (controller ruling 7). Its report goes below as
   `### Re-review: code-review fix round 1`.
+
+### Re-review: code-review fix round 1
+
+The reviewer's report for the record follows unchanged. The full answer is
+`.superpowers/sdd/2026-10-14-magcoupler-guidance-slice-2/task-17-textreview-1.md`. Its scope was
+change[1], read together with the fields whose meaning depends on it: sentences[0], watch_out[0],
+and the sibling entries that use the same terms (`a5.non_ferromagnetic_back_iron` sentences[4]
+and change[0], `a5.cte_mismatch_with_magnets` sentences[2]).
+
+- **Reviewer:** physics reviewer (session model), fresh context, 2026-10-15. Text re-review 1 of change[1], after task-review fix round 1 (I-1).
+- **Read:**
+  - the dump `rereview-T17-1.txt`; `git show 84ede89`; `notes.rs:1099-1135` and the sibling a5 notes;
+  - `warnings.rs:41-156` and its tests; `api.rs:335-353`; `material_library.rs:864-932` and the back-iron records; `temperature.rs:209-211` and `:1098-1112`; `dashboard.rs:920-943`;
+  - `task-17-review.md`; `phys-notes-c.md` section 5;
+  - the trap lists: both specs' section 8, `phys-new-notes.md` T-A to T-P, the added stiffness trap, and rulings 5, 8 and 11;
+  - the caps and plain-words rules.
+- **Numbers reproduced from `compute_all`** (scratch probe outside the repo; each back-iron pick on the steel circuit, plating 0):
+
+  | Probe design | Pull-out, 4140 / 1018 / 12L14 (N·m) | Pull-out, 304 (share) | Peak end shear, steels -> 304 (MPa, lap-shear 15.00) |
+  |---|---|---|---|
+  | default | 2.6885 | 1.6974 (63.1 %) | 11.68 / 11.41 / 10.96 -> 15.76 |
+  | 8 magnets per ring | 1.9684 | 1.0006 (50.8 %) | 11.68 / 11.41 / 10.96 -> 15.76 |
+  | 304 back iron | 2.6885 | 1.6974 (63.1 %) | 11.68 / 11.41 / 10.96 -> 15.76 |
+  | Y30 ferrite, custom dimensions | 0.2071 | 0.1183 (57.2 %; 57.152 % at full precision) | 16.11 / 15.74 / 15.12 -> 21.74 |
+  | 20 mm ring radius | 2.5393 | 1.3310 (52.4 %) | 11.87 / 11.60 / 11.15 -> 16.04 |
+
+  - At every design, 304 fires `non_ferromagnetic_back_iron` and `cte_mismatch_with_magnets`, and not the plating caution.
+  - 416 and both 17-4PH conditions fire `low_saturation` only, keep the steel pull-out and lower the peak end shear.
+  - These match the fix round's table.
+- **The expansion edge (SF-1):** 304 stops firing the expansion caution once the NdFeB in-plane expansion reaches 2.0e-6 /°C (it still fires at 1.8e-6). This holds at all five designs, and the slider reaches 6e-6.
+- **Form:**
+  - the current text has 23 words; MF-1's has 24 and SF-1's 25;
+  - 1 sentence; the guard is clean; no clamp, placeholder or typed default.
+- **Must-fix:** MF-1. Restore "here" ("416 or 17-4PH need no plating here but ..."). Fix round 1 dropped it without saying so, from a half that rounds 1 and 2 had passed. The research prescribed it because 416's rust resistance is overstated otherwise (`phys-notes-c.md` section 5(2)). The 304 half passes as written. I-1 is closed.
+- **Should-fix:**
+  - SF-1: "usually fires", together with the open-circuit note's sentences[4] (ruling 5).
+  - SF-2: pin "need no plating here" in the cost test.
+- **Verdict:** MUST_FIX.
+
+- MF-1, applied verbatim by the implementer (session model), 2026-10-15:
+  - change[1] (input, step and aim unchanged): "416 or 17-4PH need no plating but trip the
+    low-saturation caution; 304 needs none but loses steel torque and fires the expansion
+    caution." -> "416 or 17-4PH need no plating here but trip the low-saturation caution; 304
+    needs none but loses steel torque and fires the expansion caution." (24 words, 1 sentence;
+    the caps and plain-words tests pass). It is rounds 1 and 2's 416 and 17-4PH half with the fix
+    round's 304 half.
+  - Test: `the_plating_note_s_back_iron_entry_names_the_cost_of_each_pick_it_offers`
+    (`src/engine/warnings.rs`) also asserts, beside the three cost phrases and not among them,
+    that change[1] contains "need no plating here". Its comment gives the reason: 416 is the
+    least corrosion-resistant stainless offered (`phys-notes-c.md` section 5(2)). The fix-round
+    text fails it ("the entry scopes the stainless picks' plating to this caution"); the restored
+    text passes. This is the pin SF-2 suggests, added as MF-1's failing test.
+  - Docs: the fix-round subsection above (a superseded line under its New text), the update
+    tracker (its full quote of change[1], and one sentence on this re-review) and the README
+    `tests/material_links.rs` row (the new pin). The BL-056 notes quote only the 304 half and
+    are unchanged.
+  - Not applied in this round (the round's list names MF-1 only): SF-1 (ruling 5's "usually",
+    to be taken only together with `a5.non_ferromagnetic_back_iron` sentences[4]). It stays open
+    for the controller. The reviewer's ledger observation also stays open: the doc comment of
+    `CTE_MISMATCH_LIMIT_PER_C` (`warnings.rs`) gives 304 stainless as 17.7e-6 /°C, while the
+    library record is 16.9e-6; no on-screen text depends on it.
 
 ## a5.cte_mismatch_with_magnets
 

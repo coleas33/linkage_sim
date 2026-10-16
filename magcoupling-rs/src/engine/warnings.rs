@@ -527,6 +527,15 @@ mod tests {
         ] {
             assert!(entry.text.contains(cost), "the entry names {cost:?}");
         }
+        // A scope word, not a cost (text re-review 1, MF-1): "here" ties "need no plating" to this
+        // caution's rule. Without it, under sentence 0's "rust in humid air", the entry would say
+        // 416 does not rust, and 416 is the least corrosion-resistant stainless offered
+        // (phys-notes-c.md section 5(2)).
+        assert!(
+            entry.text.contains("need no plating here"),
+            "the entry scopes the stainless picks' plating to this caution: {:?}",
+            entry.text
+        );
         for (design, inputs) in probe_designs() {
             // Every pick on the steel circuit with no plating: its pull-out and the rules it fires.
             let picks: Vec<(i64, f64, Vec<&str>)> = every_back_iron()
