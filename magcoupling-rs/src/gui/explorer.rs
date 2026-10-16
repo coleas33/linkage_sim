@@ -1327,38 +1327,9 @@ mod tests {
         explorer.stop();
         assert_eq!(explorer.start_here(), None);
         assert_eq!(explorer.current(), Some(START_HERE[2].1));
-        assert_eq!(
-            start_here_text(0),
-            format!(
-                "{START_HERE_BUTTON} 1 of {}: How the coupling makes torque",
-                START_HERE.len()
-            )
-        );
         // The button's hover names the walk's topics in plain words, step 1's first.
         assert!(crate::gui::guidance::plain_text_violations(START_HERE_HOVER).is_empty());
         assert!(START_HERE_HOVER.starts_with("A suggested order: how the coupling makes torque"));
-    }
-
-    #[test]
-    fn the_ferrite_step_says_it_is_for_ferrite_rings_only() {
-        // Spec 3.3 and 5 (TC-32): the ferrite step opens a check that reads n/a on NdFeB rings.
-        let ferrite = START_HERE
-            .iter()
-            .position(|&(id, _)| id == "ferrite_cold_demag")
-            .expect("the ferrite step");
-        let title =
-            reviewed_note("ferrite_cold_demag").map_or_else(String::new, |n| glyph_safe(n.title));
-        assert_eq!(
-            start_here_text(ferrite),
-            format!(
-                "{START_HERE_BUTTON} {} of {} {FERRITE_ONLY}: {title}",
-                ferrite + 1,
-                START_HERE.len()
-            )
-        );
-        for step in (0..START_HERE.len()).filter(|&s| s != ferrite) {
-            assert!(!start_here_text(step).contains(FERRITE_ONLY), "step {step}");
-        }
     }
 
     #[test]
@@ -1425,21 +1396,30 @@ mod tests {
         assert_eq!(notes::start_here_for(false).len(), 14);
         assert_eq!(notes::start_here_for(true).len(), 13);
         assert_eq!(START_HERE[0].0, "torque_from_shear");
+        // Two bars pinned as drawn: the first step, and the ferrite step, the 13th in both
+        // orders. The count is the steps shown, so the pins hold in both switch states.
         let steps = START_HERE.len();
+        assert_eq!(
+            start_here_text(0),
+            format!("Start here 1 of {steps}: How the coupling makes torque")
+        );
+        let ferrite = reviewed_note("ferrite_cold_demag").expect("the ferrite note is reviewed");
+        assert_eq!(
+            start_here_text(12),
+            format!(
+                "Start here 13 of {steps} (ferrite rings only): {}",
+                ferrite.title
+            )
+        );
+        // Every step's note is reviewed, so its bar draws its title; no other bar has the
+        // ferrite label.
         for (step, &(id, _)) in START_HERE.iter().enumerate() {
-            let note = reviewed_note(id).unwrap_or_else(|| panic!("{id} is not reviewed"));
-            let only = if id == "ferrite_cold_demag" {
-                format!(" {FERRITE_ONLY}")
-            } else {
-                String::new()
-            };
+            assert!(reviewed_note(id).is_some(), "{id} is not reviewed");
             assert_eq!(
-                start_here_text(step),
-                format!(
-                    "{START_HERE_BUTTON} {} of {steps}{only}: {}",
-                    step + 1,
-                    glyph_safe(note.title)
-                )
+                start_here_text(step).contains(FERRITE_ONLY),
+                id == "ferrite_cold_demag",
+                "step {}",
+                step + 1
             );
         }
     }

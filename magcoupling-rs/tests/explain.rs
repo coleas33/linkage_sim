@@ -31,7 +31,6 @@ use magcoupling::engine::compat::parity_close;
 use magcoupling::engine::deviations::DeviationId;
 use magcoupling::engine::explain::markup::{Expr, Symbol};
 use magcoupling::engine::explain::notes::{Change, Sense, Step};
-use magcoupling::engine::explain::plain::{audit_ids, plain_text_violations};
 use magcoupling::engine::explain::record::Eval;
 use magcoupling::engine::explain::registry::{Design, Registry, TermKind};
 use magcoupling::engine::explain::scope::{SCOPE, Status};
@@ -1122,9 +1121,9 @@ fn every_note_names_its_committed_review_section() {
 
 /// Spec 3.3 (R4), section 6 test 5 and ruling 11: the full Start here order is fourteen
 /// steps, the torque note first and the clamp note last; while the shaft-clamp section is
-/// paused `START_HERE` shows the first thirteen. Each step opens an equation its note
-/// explains, each note once; with the six warning notes that is every note shown, in both
-/// switch states.
+/// paused `START_HERE` shows the first thirteen. Each note is a step once; with the six
+/// warning notes that is every note shown, in both switch states. (That each step's note
+/// explains its equation is `notes.rs`'s `ids_are_unique_and_every_link_resolves`.)
 #[test]
 fn start_here_is_fourteen_steps_and_thirteen_while_paused() {
     const FULL: [&str; 14] = [
@@ -1149,13 +1148,6 @@ fn start_here_is_fourteen_steps_and_thirteen_while_paused() {
     assert_eq!(ids(notes::START_HERE_ALL), FULL);
     assert_eq!(ids(notes::start_here_for(false)), FULL);
     assert_eq!(ids(notes::start_here_for(true)), FULL[..13].to_vec());
-    for &(id, path) in notes::START_HERE_ALL {
-        let note = notes::note(id).unwrap_or_else(|| panic!("no note {id}"));
-        assert!(
-            note.equations.iter().any(|e| notes::covers(e, path)),
-            "start here {id}: the note does not explain {path}"
-        );
-    }
     let warnings: Vec<&str> = magcoupling::engine::warnings::WARNING_RULES
         .iter()
         .map(|r| r.note_id)
@@ -4541,30 +4533,14 @@ fn every_note_reads_in_plain_words_at_every_probe_design() {
     let mut failures = Vec::new();
     for (name, _, results) in &probe_points() {
         for note in notes::NOTES.iter().filter(|n| notes::shown(n.id)) {
-            let rendered = note_text::rendered_texts(note)
-                .into_iter()
-                .map(|text| note_text::render(text, |path| engine_value(results, path)));
-            let fixed = [note.title]
-                .into_iter()
-                .chain(note.sources.iter().copied())
-                .map(str::to_owned);
-            for text in rendered.chain(fixed) {
-                let banned = plain_text_violations(&text);
-                if !banned.is_empty() {
-                    failures.push(format!(
-                        "{} at the {name} design: {banned:?} in {text:?}",
-                        note.id
-                    ));
-                }
-                // The guard does not know audit ids (A-13, RF-5): this is the one check that
-                // keeps them out of the shipped notes' texts and sources.
-                for id in audit_ids(&text) {
-                    failures.push(format!(
-                        "{} at the {name} design: an audit id {id} in {text:?}",
-                        note.id
-                    ));
-                }
-            }
+            // The rule's audit-id check is the one that keeps audit ids out of the shipped
+            // notes' texts and sources (A-13, RF-5): the guard does not know them.
+            let problems = notes::plain_words_problems(note, |path| engine_value(results, path));
+            failures.extend(
+                problems
+                    .into_iter()
+                    .map(|problem| format!("at the {name} design, {problem}")),
+            );
         }
     }
     assert!(failures.is_empty(), "{failures:#?}");

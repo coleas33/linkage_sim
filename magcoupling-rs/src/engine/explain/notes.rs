@@ -1270,6 +1270,34 @@ pub fn note_for(path: &str) -> Option<&'static Note> {
     note_for_any_status(path).filter(|n| matches!(n.review, Review::Reviewed { .. }))
 }
 
+/// What reads as jargon in `note` (slice-2 spec 3.4, A-13), one line per hit: a word the
+/// plain-words guard bans, or an audit id (`plain::audit_ids`), which the guard does not know.
+/// It reads the title, the sentences, change texts and watch-outs drawn with `value` (as
+/// `note_text::render` draws them) and the sources. The one plain-words rule for notes:
+/// `tests/explain.rs` holds every note shown to it at the five probe designs.
+pub fn plain_words_problems(note: &Note, value: impl Fn(&str) -> Option<String>) -> Vec<String> {
+    use super::note_text::{render, rendered_texts};
+    use super::plain::{audit_ids, plain_text_violations};
+    let texts = std::iter::once(note.title.to_owned())
+        .chain(
+            rendered_texts(note)
+                .into_iter()
+                .map(|text| render(text, &value)),
+        )
+        .chain(note.sources.iter().map(|&source| source.to_owned()));
+    let mut problems = Vec::new();
+    for text in texts {
+        let banned = plain_text_violations(&text);
+        if !banned.is_empty() {
+            problems.push(format!("{}: {banned:?} in {text:?}", note.id));
+        }
+        for id in audit_ids(&text) {
+            problems.push(format!("{}: an audit id {id} in {text:?}", note.id));
+        }
+    }
+    problems
+}
+
 /// The notes as they stood before guidance slice 2, for the owner's sign-off sheet (task T20):
 /// the format of `docs/analyses/2026-10-14-magcoupler-notes-before.txt` and its reader. A
 /// header line, then per note a heading `## <id>` and one `<field>: <text>` line per title,
@@ -2084,31 +2112,6 @@ mod tests {
         assert!(failures.is_empty(), "{failures:#?}");
     }
 
-    /// What reads as jargon in one note's text (slice-2 spec 3.4, A-13): in its title, a
-    /// sentence, a change text, a watch-out or a source, a word the plain-words guard bans (a
-    /// live value stands as the number 1) and an audit id (`plain::audit_ids`), which the guard
-    /// does not know.
-    fn plain_words_problems(n: &Note) -> Vec<String> {
-        use super::super::note_text::render;
-        use super::super::plain::{audit_ids, plain_text_violations};
-        let texts = std::iter::once(n.title)
-            .chain(n.sentences.iter().copied())
-            .chain(n.change.iter().map(|c| c.text))
-            .chain(n.watch_out.iter().copied())
-            .chain(n.sources.iter().copied());
-        let mut problems = Vec::new();
-        for text in texts {
-            let banned = plain_text_violations(&render(text, |_| Some("1".to_owned())));
-            if !banned.is_empty() {
-                problems.push(format!("{}: {banned:?} in {text:?}", n.id));
-            }
-            for id in audit_ids(text) {
-                problems.push(format!("{}: an audit id {id} in {text:?}", n.id));
-            }
-        }
-        problems
-    }
-
     #[test]
     fn the_plain_words_rule_names_each_kind_of_mistake() {
         let good = Note {
@@ -2127,7 +2130,14 @@ mod tests {
             sources: &["Math audit of 2026-09-29: the planar harmonic model"],
             review: Review::Draft,
         };
-        assert_eq!(plain_words_problems(&good), Vec::<String>::new());
+        let one = |_: &str| Some("1".to_owned());
+        assert_eq!(plain_words_problems(&good, one), Vec::<String>::new());
+        // The rule reads a live value as drawn: the caller's value stands in the text.
+        let leaked = plain_words_problems(&good, |_| Some("Calculator!C5".to_owned()));
+        assert!(
+            leaked.iter().any(|p| p.contains("Calculator!")),
+            "{leaked:?}"
+        );
         let leak = |v: Vec<&'static str>| -> &'static [&'static str] { v.leak() };
         for (bad, why) in [
             (
@@ -2198,7 +2208,7 @@ mod tests {
                 "an audit id PA-",
             ),
         ] {
-            let problems = plain_words_problems(&bad);
+            let problems = plain_words_problems(&bad, one);
             assert!(
                 problems.iter().any(|p| p.contains(why)),
                 "{why}: {problems:?}"
