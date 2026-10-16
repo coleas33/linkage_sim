@@ -598,7 +598,7 @@ pub const NOTES: &[Note] = &[
     },
     Note {
         id: "demagnetization",
-        title: "Demagnetization: knee, permeance and the onset temperatures",
+        title: "Demagnetization: permanent loss from heat and slipping",
         equations: &[
             "temperature.demag.h_ref_kA_m",
             "temperature.demag.t_ref_model_C",
@@ -611,33 +611,56 @@ pub const NOTES: &[Note] = &[
             "temperature.demag.inner_magnet_limit_C",
             "temperature.demag.outer_magnet_limit_C",
             "temperature.demag.demag_ring",
+            "temperature.magnet_life.margin_onset_C",
+            "temperature.magnet_life.margin_limit_C",
         ],
         sentences: &[
-            "Inside a magnet the demagnetizing field H points against its magnetization (B still points along it); the stronger this reverse field, the closer the magnet is to losing magnetization for good.",
-            "The loss starts at the knee of the intrinsic curve, taken as H_k = 0.9 · Hcj, and Hcj falls as NdFeB heats (β about −0.5 %/°C), so each reverse field has an onset temperature where the falling knee meets it; the reverse field itself shrinks with Br(T), which is why the onset needs both α and β.",
-            "The reverse field depends on the magnet's surroundings, its permeance: a reference magnet on the load line B = −μ0 H (permeance coefficient 1) sees Br/(2 μ0), and like poles of the other ring facing it while the coupling skips push it highest, 863 kA/m here, so the skipping onset sets the limit.",
-            "The onsets are shifted so the reference magnet reaches its knee exactly at its rated temperature, and the design limit keeps a 10 °C margin below the skipping onset.",
-            "With correction E20 each ring is checked with its own grade, and the ring with the lower limit governs.",
+            "Too much heat combined with a strong opposing field can weaken a magnet for good, unlike the loss with temperature that cooling undoes.",
+            "A field pushing against the magnet's direction, a reverse field, does no lasting harm until it passes the knee, where the magnet stops springing back.",
+            "Heat lowers an NdFeB magnet's knee, so each reverse field has an onset temperature; above it, part of the magnetization is lost for good.",
+            "Slipping passes like poles face to face, the worst reverse field; its onset, here {temperature.demag.onset_skipping_C}, sets an NdFeB ring's limit.",
+            "Onsets are shifted to match the magnet's rated maximum temperature; each NdFeB ring's limit is its slipping onset less a margin; the lower limit governs.",
         ],
-        change: &[],
+        change: &[
+            Change {
+                input: "coupling.magnets.part_inner",
+                step: Step::Choose,
+                aim: None,
+                text: "custom dimensions and an NdFeB grade rated hotter usually raise this ring's limit; those above N42SH are weaker, cutting torque, and the adhesive may govern.",
+            },
+            Change {
+                input: "coupling.magnets.part_outer",
+                step: Step::Choose,
+                aim: None,
+                text: "the same for the outer ring: the lower of the two limits governs, so a hotter grade on one ring alone may not help.",
+            },
+            Change {
+                input: "temperature.demag.h_rev_likepole_kA_m",
+                step: Step::Enter,
+                aim: None,
+                text: "enter it from a 3D field calculation of your design, which needs an outside solver; the stored value belongs to the example design.",
+            },
+        ],
         watch_out: &[
-            "The default N42SH's temperature coefficients hold over 20–150 °C only: onsets above 150 °C are extrapolations, and so is the reference magnet's model knee near 160 °C that sets the shift, so a ±20 % change of the Hcj slope above 150 °C moves even the default limit by up to about 3 °C (M1 audit M13).",
+            "The reverse fields are stored from the example design's 3D model: they ignore magnet count, ring radius, gap, block size and grade, reading low for stronger grades.",
+            "At their grade's own rating, onsets for N52, N50, N50M, N38UH, N35EH and 2:17 SmCo are shifted upward: limits may read optimistic; onsets past a grade's tested range are extrapolated.",
         ],
         diagram: Some(Diagram::DemagKnee),
         sources: &[
-            "M1 audit M13 (knee temperature outside the coefficient range)",
-            "M1 audit rulings: the onset calibration (it uses 9.83 °C of the 10 °C margin)",
-            "Addendum A decision 19 (E20: each ring's own grade)",
+            "Math audit of 2026-09-29: the knee temperature outside the coefficient range",
+            "Math audit of 2026-09-29: other calibration forms move the skipping onset by up to 9.83 °C",
+            "Design ruling: each ring checked with its own grade",
+            "Guidance audit of 2026-10-13: the stored reverse fields; the rating shift raises the onsets of grades rated above their model knee temperature",
         ],
         review: Review::Reviewed {
-            reviewer: "independent physics review 2026-10-01",
-            date: "2026-10-01",
-            record: "independent physics review 2026-10-01 of the A4 notes: commit \"docs(magcoupling-rs): apply the independent physics review to six A4 notes\" (the seven findings and their fixes)",
+            reviewer: "physics reviewer (session model)",
+            date: "2026-10-14",
+            record: "docs/analyses/2026-10-14-magcoupler-notes-review.md#demagnetization",
         },
     },
     Note {
         id: "ferrite_cold_demag",
-        title: "Ferrite: the demagnetization risk is at cold",
+        title: "Ferrite magnets: demagnetization risk at the cold end",
         equations: &[
             "temperature.demag.inner_cold_limit_C",
             "temperature.demag.outer_cold_limit_C",
@@ -650,24 +673,47 @@ pub const NOTES: &[Note] = &[
             "temperature.demag.cold_onset_single_ring_C",
         ],
         sentences: &[
-            "In hard ferrite the coercivity rises as it warms (β about +0.35 %/°C), the opposite of NdFeB, so its knee falls as the magnet cools.",
-            "Its remanence still rises as it cools, so the reverse field grows while the knee shrinks: below some temperature the reverse field passes the knee and the magnet loses magnetization.",
-            "The calculator finds that cold onset, ϑ = 20 + (H_k − H)/(H α − H_k β), and checks the minimum magnet temperature against the skipping cold onset plus the 10 °C margin; heating moves a ferrite magnet's knee away from the reverse field, so its rating is the hot limit.",
+            "Ferrite magnets risk permanent loss when cold, not hot: cooling lowers their knee while their own field, and so the reverse field, grows.",
+            "Below a cold onset the reverse field passes the knee, and the ring loses part of its magnetization for good; slipping sets that onset.",
+            "The cold limit is that onset plus a margin; the coldest the magnets get must stay at or above it, on both rings.",
+            "Heat moves a ferrite knee away from the reverse field, so a ferrite ring's hot limit is simply its rated maximum temperature.",
+            "With NdFeB on both rings the cold check does not apply and reads n/a.",
         ],
-        change: &[],
+        change: &[
+            Change {
+                input: "coupling.magnets.part_inner",
+                step: Step::Choose,
+                aim: None,
+                text: "custom dimensions with the Y30 grade model a ferrite ring; a library NdFeB part trades the cold risk for the hot one.",
+            },
+            Change {
+                input: "coupling.magnets.part_outer",
+                step: Step::Choose,
+                aim: None,
+                text: "the same for the outer ring; the cold check passes only if both rings pass.",
+            },
+            Change {
+                input: "temperature.demag.h_rev_likepole_kA_m",
+                step: Step::Enter,
+                aim: None,
+                text: "enter your ferrite design's own value from a 3D field calculation; the stored one is the NdFeB example's, and yours may still fail.",
+            },
+        ],
         watch_out: &[
-            "A ferrite ring can pass every hot check and still fail at −40 °C: read the cold check too, and enter the ferrite design's own reverse fields, since the defaults (354 to 863 kA/m) come from the NdFeB default design and put a Y30 ring's cold limit at 336 °C.",
+            "The default reverse field for slipping, from the NdFeB example design, exceeds a Y30 knee at every temperature Y30 is rated for, so the check always fails with it.",
+            "Y30's temperature coefficients are measured only from 20 to 120 °C; the cold check extrapolates them to the coldest temperature.",
         ],
-        diagram: Some(Diagram::DemagKnee),
+        diagram: None,
         sources: &[
-            "Spec A6 (ferrite's opposite-sign beta gets a teaching note)",
-            "Addendum A decisions 3 (Y30 beta +0.35 %/°C) and 19 (E20's positive-beta branch)",
-            "A-1 plan decision A13 (both rings; the cold side from the ring with the higher cold limit)",
+            "Design spec: ferrite's opposite-sign coercivity coefficient gets a teaching note",
+            "Design rulings: Y30's coefficient (+0.35 %/°C) and the positive-coefficient branch of the demagnetization check",
+            "Design ruling: both rings checked; the cold side from the ring with the higher cold limit",
+            "Guidance audit of 2026-10-13: the cold limit above room temperature; the ferrite-only step; a typed positive coefficient is held within the slider's negative range; Y30's 20 to 120 °C coefficient range",
         ],
         review: Review::Reviewed {
-            reviewer: "independent physics review 2026-10-01",
-            date: "2026-10-01",
-            record: "independent physics review 2026-10-01 of the A4 notes: commit \"docs(magcoupling-rs): apply the independent physics review to six A4 notes\" (the seven findings and their fixes)",
+            reviewer: "physics reviewer (session model)",
+            date: "2026-10-14",
+            record: "docs/analyses/2026-10-14-magcoupler-notes-review.md#ferrite_cold_demag",
         },
     },
     Note {
@@ -1306,6 +1352,98 @@ mod tests {
         }
     }
 
+    /// The text a note draws as prose: its sentences, its change entries' texts and its
+    /// watch-outs (titles and sources aside).
+    fn note_texts(n: &Note) -> Vec<&'static str> {
+        n.sentences
+            .iter()
+            .copied()
+            .chain(n.change.iter().map(|c| c.text))
+            .chain(n.watch_out.iter().copied())
+            .collect()
+    }
+
+    #[test]
+    fn the_demagnetization_notes_keep_the_caps() {
+        // The clamp note is not rewritten while its section is paused (ruling 11, A-28d).
+        for id in ["demagnetization", "ferrite_cold_demag"] {
+            assert_eq!(
+                cap_problems(note(id).unwrap()),
+                Vec::<String>::new(),
+                "{id}"
+            );
+            assert_eq!(
+                sentence_zero_problems(note(id).unwrap().sentences[0]),
+                Vec::<&str>::new(),
+                "{id}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_demagnetization_notes_own_the_rows_spec_3_3_gives_them() {
+        let owner = |path: &str| note_for_any_status(path).map(|n| n.id);
+        for path in [
+            "temperature.magnet_life.margin_onset_C",
+            "temperature.magnet_life.margin_limit_C",
+        ] {
+            assert_eq!(owner(path), Some("demagnetization"), "{path}");
+        }
+        // R7: the ferrite note drops the NdFeB knee picture, which shows the knee moving the
+        // wrong way for ferrite; the demagnetization note keeps it.
+        assert_eq!(note("ferrite_cold_demag").map(|n| n.diagram), Some(None));
+        assert_eq!(
+            note("demagnetization").map(|n| n.diagram),
+            Some(Some(Diagram::DemagKnee))
+        );
+    }
+
+    #[test]
+    fn the_rewritten_notes_type_no_editable_default() {
+        // Spec section 8 (slice 1, trap 6) and audit theme T6: a note never presents an
+        // editable default (a stored reverse field, the knee fraction, the design margin) as a
+        // fact about the design.
+        let d = crate::DesignInputs::default();
+        let demag = &d.temperature.demag;
+        let mut defaults: Vec<String> = [
+            demag.h_rev_aligned_kA_m,
+            demag.h_rev_pullout_kA_m,
+            demag.h_rev_likepole_kA_m,
+            demag.h_rev_single_ring_kA_m,
+        ]
+        .iter()
+        .map(|h| format!("{h}"))
+        .collect();
+        defaults.push(format!("{} °C", demag.design_margin_C));
+        defaults.push(format!("{}", demag.knee_fraction));
+        for id in ["demagnetization", "ferrite_cold_demag"] {
+            for text in note_texts(note(id).unwrap()) {
+                for value in &defaults {
+                    assert!(
+                        !text.contains(value.as_str()),
+                        "{id}: {value:?} in {text:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn no_note_says_the_coupling_protects_the_gearbox() {
+        // BL-059 and spec section 8: nothing checks the cold-high torque at the gearbox input
+        // against a rating, so no note may claim the coupling protects the gearbox.
+        for n in NOTES {
+            for text in note_texts(n) {
+                let lower = text.to_lowercase();
+                assert!(
+                    !(lower.contains("gearbox") && lower.contains("protect")),
+                    "{}: {text}",
+                    n.id
+                );
+            }
+        }
+    }
+
     /// Slice-2 spec 3.3: Start here's 14 steps, in this order. A step whose note a later task of
     /// the slice adds is skipped until then, so every task keeps the order (T18 asserts all 14).
     const SLICE_2_ORDER: [&str; 14] = [
@@ -1864,7 +2002,8 @@ mod tests {
 
     /// The notes rewritten in plain words so far (slice-2 spec 3.4, A-13): each note task adds
     /// its ids, which holds those notes to plain words and to the caps (A-15's per-id form,
-    /// `the_slip_notes_keep_the_caps`, repeats the caps check for T15's notes, A-28c item 9);
+    /// `the_slip_notes_keep_the_caps` and `the_demagnetization_notes_keep_the_caps`, repeats the
+    /// caps check for T15's and T16's notes, A-28c item 9 and A-28d item 4);
     /// the task that turns the all-notes tests on deletes this list and the two tests it drives,
     /// `the_rewritten_notes_read_in_plain_words` and
     /// `the_rewritten_notes_keep_to_the_slice_2_caps`.
@@ -1880,6 +2019,8 @@ mod tests {
         "when_slipping",
         "slip_heating",
         "thermal_time_constant",
+        "demagnetization",
+        "ferrite_cold_demag",
     ];
 
     #[test]

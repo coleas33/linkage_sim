@@ -3056,3 +3056,433 @@ Considered, no change (the reviewer's observations on these fields; "body parts"
 as under `## slip_heating`):
 - **"mass changes only how fast"** (`thermal_time_constant` sentences[0]). Mass still lowers the checked peak through "how fast": +100 g of hardware takes the default's peak from 65.9644 to 65.8914 °C (fault 65.2001 to 65.1272 °C), while the steady temperatures stay exact (92.513112 and 74.171037 °C). The sentence does not say mass cannot lower the peak, and sentences[3] and [4] show the finite-time terms. Consistent.
 - **"which the time constant measures."** "Which" binds to "how fast". τ_th = C/G also depends on the heat path, and change[0] says so ("shortens τ_th"). No false implication.
+
+## demagnetization
+
+Task T16. Rewrite of "Demagnetization: knee, permeance and the onset temperatures" as
+"Demagnetization: permanent loss from heat and slipping", Start here step 12. It now also owns
+the two onset margins (`temperature.magnet_life.margin_onset_C`,
+`temperature.magnet_life.margin_limit_C`), types no stored reverse field, knee fraction or design
+margin as a fact about the design (`the_rewritten_notes_type_no_editable_default` holds it), and
+keeps the DemagKnee diagram. Reviewer: physics reviewer (session model), fresh context. Date:
+2026-10-14 (the date the slice plan fixes for the note's `review` field; all three rounds ran on
+2026-10-15).
+
+Rounds: 3. Verdict: PASS. Note: "Demagnetization: permanent loss from heat and slipping" (plan
+T16).
+
+Verdict by round: 1 MUST-FIX (3 items in this note, 4 across the task's two notes); 2 MUST-FIX (1
+item, in this note); 3 PASS. The two notes were reviewed together. Each round's full answer is
+`.superpowers/sdd/2026-10-14-magcoupler-guidance-slice-2/task-16-inreview-r<N>.md`, and the fields
+that rounds 1 and 2 changed are listed with their old and new text in
+`task-16-inreview-r1-changes.md` and `task-16-inreview-r2-changes.md` beside it. Rounds 2 and 3
+re-checked only those fields and the fields whose meaning depends on them.
+
+The text reviewed in round 1 already carried A-2 (change[2], the like-poles reverse field:
+`Step::Enter`, no aim, "enter it from a 3D field calculation of your design, which needs an
+outside solver; the stored value belongs to the example design.") and A-13's plain-words
+sources. Neither note names a clamp: the `clamp_preload` rewrite is dropped while the
+shaft-clamp section is paused (A-28d, ruling 11), and that note keeps its slice-1 text and its
+2026-10-01 review. Every round confirmed them applied.
+
+The reviewer's report for the record, round by round, as returned:
+
+Round 1:
+
+- Reviewer: physics reviewer (session model), fresh context, 2026-10-15; round 1.
+- Read:
+  - the dump `notes-review-T16-r1.txt`; the `demagnetization` literal (`notes.rs:599-656`);
+  - `temperature.rs:88-121` (the inputs: the four stored fields :105-116; "once per pole pass while skipping" :112; the coercivity source :117-120);
+  - `temperature.rs:710-732` (`demag_onset_C`, `cold_onset_C`) and `:775-874` (`ring_demag`: grade or inputs; the cold-side branch; t_ref and the offset t_ref − rating; the onsets; the limit = skipping onset − margin, or the rating for a positive coefficient);
+  - `records/demagnetization.rs` (each ring's limit; the governing ring; h_ref, t_ref, offset and onsets; the cold side; the governing limit with the adhesive);
+  - `records/temperature.rs:42-57` (the summary and the verdict); `records/slip_heating.rs:295-296` (the two onset margins);
+  - `grades.rs` (all 17 grades: ratings, Br, Hcj, β, ranges); `library.rs:41-46, 339-385` (the arcs' 60 °C vendor rating under E19); `assumptions.rs:106` (the 9.83 °C);
+  - `guidance.rs:193-200` (the Temperature limits guide); `notes.rs` START_HERE_ALL (step 12, `temperature.demag.onset_skipping_C`); `diagrams.rs:404-476` (DemagKnee);
+  - spec 3.1-3.3, 5 and 8; slice-1 spec 8; phys-new-notes 2 (T-N); phys-notes-b 1 and 6; amendments A-2, A-13, A-15, A-28 and A-28d, ruling 11.
+- Numbers reproduced from `compute_all`, in design order (default, 8 magnets per ring, 304 back iron, Y30 ferrite custom dimensions, 20 mm ring radius):
+  - {temperature.demag.onset_skipping_C}: 103.0557, 103.0557, 103.0557, +inf, 103.0557 °C. The dump reads "103.1 °C" four times and "no prediction" at Y30.
+  - Behind the sentences, at the four NdFeB designs:
+    - h_ref = 517.25 kA/m; t_ref = 159.92 °C; offset = +9.92 °C (rating 150 °C);
+    - onsets: aligned 170.16, pull-out 113.35, single ring 143.36 °C. Slipping is the lowest of the four.
+    - the magnet limit is 93.0557 °C, which is the skipping onset − 10. The inner and outer limits are equal, and the magnets govern.
+  - At Y30: each ring's limit is 250 °C (its rating); offset 0; the adhesive governs at 120 °C.
+  - The owned margins:
+    - `margin_onset_C`: 37.09, 37.05, 37.74, +inf, 34.99 °C;
+    - `margin_limit_C`: 27.09, 27.05, 27.74, 184.02, 24.99 °C;
+    - the peak: 65.96, 66.00, 65.32, 65.98, 68.07 °C. Each margin is the onset or limit less the peak.
+  - Watch-out 1, offsets on custom dimensions at the default (°C):
+    - negative: N52 −9.69, N50 −6.14, N50M −7.54, N38UH −7.34, N35EH −3.57, Recoma 26 −60.21, Recoma 30 −0.45;
+    - positive: N35 +22.58, N42 +12.68, N48 +6.46, N42M +9.97, N42H +10.82, N42SH +9.92, N33AH +30.75, Recoma 20 +217.33, BCN-19 +94.28;
+    - zero: Y30 (cold side).
+    - Library arcs (N50 at 60 °C): +12.98. Library N52 blocks: −9.69.
+  - The default design's aligned onset (170.16 °C) lies past N42SH's tested range (20 to 150 °C).
+- Change directions confirmed:
+  - **change[0], Choose inner part.** Custom dimensions and the grade, at default / 8 magnets / 304 / 20 mm:
+    - **both rings:** the limit rises with N38UH, N35EH, N33AH and Recoma 26 (131.90, 155.43, 173.43, 161.95 °C against 93.06 °C), and the adhesive governs (120 °C).
+      - The pull-out falls by 11.9, 19.0, 23.1 and 37.7 % at the default, 8-magnet and 20 mm designs.
+      - At 304 it falls by 20.3, 26.7, 30.4 and 43.6 %, as the bench factor goes too (1.0495 to 0.95).
+    - **inner only:** the inner limit rises, the outer 93.06 °C still governs, and the pull-out falls (default: 2.5230, 2.4196, 2.3576, 2.1228 against 2.6885 N·m).
+    - **Counterexamples, now MF-1:**
+      - Recoma 30 (rated 250 °C): 46.27 °C, both rings or one;
+      - the Y30 design: all four grades lower the ring's limit from 250 °C and raise the pull-out;
+      - lower-rated NdFeB starts (N42 to N42SH: same Br).
+    - Under MF-1's text, the limit rises in all 55 sintered-NdFeB rated-hotter pairs. The only exception is the 8 pairs into bonded BCN-19 ("usually"). The three NdFeB grades above N42SH are weaker (1.22, 1.17, 1.14 against 1.30 T).
+  - **change[1], Choose outer part.** The mirror case: `a_hotter_rated_grade_raises_...` runs `Rings::Outer`, and the other ring governs. "The lower of the two limits governs" holds at all five designs (`magnet_limit_C = min`).
+  - **change[2], Enter like-poles field.** No direction is claimed.
+    - The four stored fields are the example's at all five designs.
+    - The onsets do not move with magnet count, ring radius, gap or block size (the claims test), nor with the 304 back iron (103.0557 °C).
+    - The limit reads only the like-poles field, so this is the input to enter.
+- Traps checked:
+  - **"the stored 3D fields follow geometry or grade":** watch-out 0 says the opposite.
+  - **"thicker magnets, a smaller gap or fewer poles raise the calculator's demagnetization limit":** not written.
+  - **"a hotter-rated grade is free":** torque and the adhesive are named; under MF-1, only for NdFeB grades, where it holds.
+  - **"the rating shift is conservative":** watch-out 1 says some onsets are shifted upward; MF-3 makes the list exact.
+  - **"pull-out is guaranteed":** not written.
+  - **"the coupling protects the gearbox":** not written; the guard test passes.
+  - **"a shaft-joint method is chosen or sized here":** not written.
+  - **"more magnets make the coupling stiffer":** not written.
+  - **slice-1 spec 8 (radius lever, fewer poles, re-lock, bench calibration, 416):** not written.
+  - **T-N:** slipping is the largest stored field and sets the limit.
+  - **No editable default is typed:** no 354, 791, 863 or 569; no "10 °C"; no 0.9. `the_rewritten_notes_type_no_editable_default` passes.
+  - **"clamp" in any field, sources included:** none.
+- Form:
+  - title 7 words; sentences 23, 25, 24, 20, 25; changes 24, 24, 23; watch-outs 27, 27;
+  - after MF-1, MF-2 and MF-3: change[0] 25, sentences[4] 25, watch_out[1] 30;
+  - sentence 0 has no symbol and no placeholder, and it answers the Temperature limits row ("too hot, and the magnets can lose strength for good");
+  - the one placeholder sits in a "here" clause with no comparison;
+  - reverse field, knee and onset are glossed in sentences 1-2, before step 13 uses them;
+  - every field passes `plain_text_violations` and `audit_ids`;
+  - the DemagKnee diagram is kept, and its knee and "H (reverse field)" match the text (SF-5: the "load lines" label).
+- Seeds: none indexed for T16.
+- Must-fix items: MF-1 (change[0]), MF-2 (sentences[4]) and MF-3 (watch_out[1]), to apply in round 2. Should-fix offered: SF-2 (back iron in watch_out[0]); SF-5 (diagram label, a GUI pass); SF-6 and SF-7 (tests, record).
+- Verdict for this note, round 1: MUST_FIX (3 items).
+
+Round 2:
+
+- Reviewer: physics reviewer (session model), fresh context, 2026-10-15; round 2. The form's fixed date is 2026-10-14; the review ran on 2026-10-15, as in round 1.
+- Read:
+  - the dump `notes-review-T16-r2.txt`, the r1 dump and the r1 to r2 diff (four fields, 20 lines);
+  - the `demagnetization` literal (`notes.rs:599-656`) and `task-16-inreview-r1-changes.md`;
+  - `temperature.rs:710-733` (`demag_onset_C`, `cold_onset_C`) and `:775-874` (`ring_demag`: offset = t_ref − the ring's `tmax_lib_C`; limit = skipping onset − margin; the rating for a positive coefficient);
+  - `api.rs:278, 319` (each ring's rating from `model.inner/outer_tmax_C`); `model.rs:400-425` (`ResolvedMagnet`: library or grade rating);
+  - `library.rs:24-56, 339-385` (E19: the arcs' 60 °C vendor rating; M5045 as N50); `grades.rs` (all 17 grades);
+  - `pickers.rs:155-157, 209` (the part's and the grade's ratings as the GUI shows them); `guidance.rs:887` ("rated hotter than the part");
+  - `tests/explain.rs:3005-3093` (the T16 claims tests);
+  - spec 8, slice-1 spec 8, phys-new-notes 2 (T-N), amendments A-2, A-13, A-15, A-28 and A-28d, ruling 11.
+- Numbers reproduced from `compute_all`, in design order (default, 8 magnets per ring, 304 back iron, Y30 ferrite custom dimensions, 20 mm ring radius):
+  - {temperature.demag.onset_skipping_C}: 103.0557, 103.0557, 103.0557, +inf, 103.0557 °C. The dump reads "103.1 °C" four times and "no prediction" at Y30.
+  - At the four NdFeB designs:
+    - h_ref 517.25 kA/m; t_ref 159.92 °C; offset +9.92 °C (rating 150 °C);
+    - onsets: aligned 170.16, pull-out 113.35, single ring 143.36 °C;
+    - ring limits 93.0557 °C both, and the magnets govern.
+  - At Y30: each ring's limit is 250 °C (its rating), the offset is 0, and the adhesive governs at 120 °C.
+  - The rating shift's target, `t_ref − offset`, equals the ring's own rating for every library part and every custom grade.
+    - For the arcs M5044, M5045 and M5026 that is 60.00 °C, the vendor's rating. Their grade N50 is rated 80 °C, and their offset is +12.98 °C. This is R2-MF-1.
+  - Offsets on custom dimensions, identical at all five designs (°C):
+    - negative: N52 −9.69, N50 −6.14, N50M −7.54, N38UH −7.34, N35EH −3.57, Recoma 26 −60.21, Recoma 30 −0.45;
+    - library: N52 parts −9.69, arcs +12.98, N42 parts +12.68, N42SH parts +9.92.
+- Change directions confirmed:
+  - **change[0], Choose inner part.**
+    - From the probe designs' N42SH, custom dimensions with N38UH, N35EH or N33AH raise the ring's limit to 131.90, 155.43 or 173.43 °C.
+    - The pull-out falls by 11.9, 19.0 and 23.1 % on both rings (20.3, 26.7 and 30.4 % at 304) and by 6.2, 10.0 and 12.3 % on the inner ring alone. The adhesive governs on both rings.
+    - Over every start (15 library parts, 17 custom grades; both rings and the inner ring only; five designs; knee fraction 0.5 and 1.0; coercivity from the inputs), 1670 of 1670 moves to a sintered NdFeB grade rated hotter raise the ring's limit.
+    - Bonded BCN-19 lowers it in 200 of 200 moves ("usually").
+    - At Y30, no NdFeB grade is rated above 250 °C.
+  - **change[1], Choose outer part.** The lower ring limit governs in 640 of 640 mixed-ring cases.
+  - **change[2], Enter like-poles field.** Unchanged this round, no direction claimed.
+- Traps checked:
+  - "a hotter-rated grade is free": torque and the adhesive are named.
+  - "the rating shift is conservative": watch_out[1] says some onsets read optimistic.
+  - "the stored 3D fields follow geometry or grade": not written.
+  - "thicker magnets, a smaller gap or fewer poles raise the demagnetization limit": not written.
+  - "pull-out is guaranteed": not written.
+  - "the coupling protects the gearbox": not written, and the guard passes.
+  - "a shaft-joint method is chosen or sized here": not written.
+  - "more magnets make the coupling stiffer": not written.
+  - slice-1 spec 8 and T-N: not contradicted.
+  - "clamp" in any field, sources included: none.
+- Form:
+  - change[0] 25 words, sentences[4] 25 words, watch_out[1] 30 words;
+  - every field passes `plain_text_violations` and `audit_ids`;
+  - no typed default; the caps test passes.
+- Must-fix items and how they were applied:
+  - Round 1's MF-1, MF-2 and MF-3 were applied verbatim and re-checked: they pass.
+  - Round 2: R2-MF-1, sentences[4]'s "the grade's rated maximum temperature" becomes "the magnet's rated maximum temperature", to apply in round 3.
+- Verdict for this note, round 2: MUST_FIX (1 item).
+
+Round 3:
+
+- Reviewer: physics reviewer (session model), fresh context, 2026-10-15; round 3. The form's fixed date is 2026-10-14; rounds 1 to 3 ran on 2026-10-15.
+- Read:
+  - the dumps `notes-review-T16-r1.txt` to `-r3.txt` and the diffs between them;
+  - the `demagnetization` literal (`notes.rs:599-656`);
+  - `temperature.rs:88-121` (the inputs: the four stored reverse fields, the coercivity source);
+  - `temperature.rs:710-733` (`demag_onset_C`, `cold_onset_C`) and `:775-874` (`ring_demag`):
+    - offset = t_ref − the ring's own rating, or 0 for a ring with no rating or a positive coefficient;
+    - limit = skipping onset − margin, or the rating for a positive coefficient;
+  - `records/demagnetization.rs` (each ring's limit, the governing ring, h_ref, t_ref, the offset, the onsets, the cold side, the governing limit);
+  - `model.rs:400-476` (`ResolvedMagnet`: the part's rating, the grade's, or none);
+  - `library.rs:36-56, 339-385` (E19: the arcs' vendor rating of 60 °C; M5045 as N50);
+  - `grades.rs` (all 17 grades); `pickers.rs:155-157, 209` (the part's and the grade's ratings as the GUI shows them);
+  - `tests/explain.rs`, the T16 claims tests;
+  - spec 3.1-3.3, 5 and 8; slice-1 spec 8; phys-new-notes 2 (T-N); phys-notes-b 1 and 6; amendments A-2, A-13, A-15, A-28 and A-28d; ruling 11.
+- Numbers reproduced from compute_all, in design order (default, 8 magnets per ring, 304 back iron, Y30 ferrite custom dimensions, 20 mm ring radius):
+  - {temperature.demag.onset_skipping_C}: 103.0557, 103.0557, 103.0557, +inf, 103.0557 °C. The note reads "103.1 °C" four times and "no prediction" at Y30.
+  - At the four NdFeB designs:
+    - h_ref 517.25 kA/m; t_ref 159.92 °C; offset +9.92 °C, so t_ref − offset = 150 °C, the N42SH rating;
+    - onsets: aligned 170.16, pull-out 113.35, single ring 143.36 °C (slipping is the lowest);
+    - each ring's limit is 93.0557 °C (the skipping onset − 10), and the magnets govern;
+    - margin_onset_C 37.09, 37.05, 37.74, 34.99 °C and margin_limit_C 27.09, 27.05, 27.74, 24.99 °C.
+  - At Y30:
+    - each ring's limit is 250 °C (its rating), with offset 0;
+    - the adhesive governs at 120 °C;
+    - margin_onset_C is +inf and margin_limit_C is 184.02 °C.
+  - The rating shift follows each ring's own rating. In 5940 ring evaluations (every library part, every custom grade and a blank magnet; both rings, the inner ring or the outer ring; five designs; the knee fraction at 0.5, 0.9 and 1.0; the coercivity from the inputs; the margin at 0, 10 and 40 °C):
+    - the ring's rating fits the engine's limit in 5390 of 5390 rated NdFeB-side rings. Only the N50 arcs M5044, M5045 and M5026 (rated 60 °C against N50's 80 °C) tell the two apart: −22.50 °C, not −2.50 °C.
+    - the 120 blank rings are unshifted;
+    - the 430 positive-coefficient rings take their rating as the hot limit.
+  - The offsets on custom dimensions (the same at all five designs) that are negative, which shifts the onsets upward: N52 −9.69, N50 −6.14, N50M −7.54, N38UH −7.34, N35EH −3.57, Recoma 26 −60.21 and Recoma 30 −0.45 °C.
+    - Library: N52 parts −9.69, arcs +12.98, N42 parts +12.68 and N42SH parts +9.92 °C.
+    - The watch-out's list matches, at the grade's own rating, in 145 of 145 cases.
+- Change directions confirmed:
+  - **Choose inner part:** custom dimensions with N38UH, N35EH or N33AH raise the ring's limit from 93.06 °C to 131.90, 155.43 or 173.43 °C.
+    - **Both rings:** the pull-out falls 11.9, 19.0 and 23.1 % (20.3, 26.7 and 30.4 % at 304), and the adhesive governs.
+    - **Inner ring only:** the pull-out falls 6.2, 10.0 and 12.3 % (15.0, 18.5 and 20.6 % at 304), and the outer ring still governs.
+    - **Every start:** 1670 of 1670 moves to a sintered NdFeB grade rated hotter than the magnet raise the ring's limit. Bonded BCN-19 lowers it in 200 of 200 ("usually").
+    - **At Y30:** no NdFeB grade is rated above 250 °C, so the entry makes no claim there.
+    - **"those above N42SH are weaker":** N38UH 1.22, N35EH 1.17 and N33AH 1.14 T, against N42SH's 1.30 T.
+  - **Choose outer part:** the lower ring limit governs in 640 of 640 mixed-ring cases. With one ring changed, the other ring's limit still governs ("may not help").
+  - **Enter like-poles field:** no direction is claimed.
+    - The four stored fields are the example's at every design.
+    - The onsets do not move with magnet count, ring radius, gap, block size or the 304 back iron.
+- Traps checked:
+  - "a hotter-rated grade is free": torque and the adhesive are named.
+  - "the rating shift is conservative": watch_out[1] says some onsets are shifted upward.
+  - "the stored 3D fields follow geometry or grade": watch_out[0] says the opposite.
+  - "thicker magnets, a smaller gap or fewer poles raise the demagnetization limit": not written.
+  - "pull-out is guaranteed": not written.
+  - "the coupling protects the gearbox": not written, and the guard test passes.
+  - "a shaft-joint method is chosen or sized here": not written.
+  - "more magnets make the coupling stiffer": not written.
+  - Slice-1 spec 8 and T-N are not contradicted.
+  - No editable default is typed.
+  - No field names a clamp (any case), sources included.
+  - Every field passes `plain_text_violations` and `audit_ids`.
+  - Sentence 0 answers the Temperature limits row with no placeholder or symbol.
+  - The DemagKnee diagram is kept and matches the text.
+- Must-fix items and how they were applied:
+  - **Round 1:**
+    - MF-1, change[0]: NdFeB, "usually", and the weakness relative to N42SH;
+    - MF-2, sentences[4]: "each NdFeB ring's limit";
+    - MF-3, watch_out[1]: "At their grade's own rating", the exact grade list.
+  - **Round 2:** R2-MF-1, sentences[4]: "the grade's rated maximum temperature" became "the magnet's rated maximum temperature", because the N50 arcs' 60 °C rating, not their grade's 80 °C, sets their shift.
+  - All four were applied verbatim by the implementer and re-checked in the next round. All pass.
+- Verdict: PASS.
+
+Must-fix items applied (rounds 1 and 2, each applied verbatim before the next round, which
+confirmed it):
+- change[0] (MF-1, round 1: "a grade rated hotter raise this ring's limit; such grades are weaker" was false for Recoma 30, a 2:17 SmCo grade rated 250 °C that lowers the ring's limit to 46.27 °C against 93.06 °C; at the Y30 probe design, where the only grade rated hotter, Recoma 26, lowers the limit from 250 to 161.95 °C and raises the pull-out; and from lower-rated NdFeB grades, such as the library's N42 block to custom N42SH at the same 1.30 T): "custom dimensions and a grade rated hotter raise this ring's limit; such grades are weaker, so torque falls, and the adhesive may then govern." -> "custom dimensions and an NdFeB grade rated hotter usually raise this ring's limit; those above N42SH are weaker, cutting torque, and the adhesive may govern."
+- sentences[4], changed twice:
+  - MF-2 (round 1: at the Y30 probe design each ring's limit is its 250 °C rating, not its slipping onset less a margin, so the clause is restricted to NdFeB, as sentences 2 and 3 are): "Onsets are shifted to match the grade's rated maximum temperature, and each ring's limit is its slipping onset less a margin; the lower limit governs." -> "Onsets are shifted to match the grade's rated maximum temperature; each NdFeB ring's limit is its slipping onset less a margin; the lower limit governs."
+  - R2-MF-1 (round 2: the library's N50 arcs M5044, M5045 and M5026 carry the vendor's 60 °C rating, not N50's 80 °C, and the engine shifts their onsets to match that 60 °C; with "the grade's" here, watch_out[1]'s "At their grade's own rating" read as always true and listed the arcs as shifted upward again): "Onsets are shifted to match the grade's rated maximum temperature; each NdFeB ring's limit is its slipping onset less a margin; the lower limit governs." -> "Onsets are shifted to match the magnet's rated maximum temperature; each NdFeB ring's limit is its slipping onset less a margin; the lower limit governs."
+- watch_out[1] (MF-3, round 1: the library's N50 arcs carry the vendor's 60 °C rating, so their onsets are shifted down, by 12.98 °C, while the text listed every N50 magnet as shifted upward; on custom dimensions the list was already exact): "Onsets for N52, N50, N50M, N38UH, N35EH and 2:17 SmCo are shifted upward, so their limits may read optimistic; onsets past a grade's tested range are extrapolated." -> "At their grade's own rating, onsets for N52, N50, N50M, N38UH, N35EH and 2:17 SmCo are shifted upward: limits may read optimistic; onsets past a grade's tested range are extrapolated."
+
+Seeds (A-24): none for this note. The amendment index row for T16 lists A-2, A-13, A-15 and
+A-28d and no seed; each round confirmed there was nothing to accept or reject.
+
+Should-fix offered, not applied (open for the controller; no on-screen text changed after the
+round-3 PASS):
+- SF-2 (round 1), watch_out[0], 29 words: "The reverse fields are stored from the example design's 3D model: they ignore magnet count, ring radius, gap, block size, back iron and grade, reading low for stronger grades." Why: the list reads as complete, and the onsets are also unchanged with the 304 back iron (103.0557 °C at both designs); pin it beside the four moves in `the_reverse_fields_are_the_example_design_s_whatever_the_design` (the 304 design's pull-out differs and its onsets are equal).
+- SF-5 (round 1), the DemagKnee diagram (`diagrams.rs:404-476`): it still draws and labels three "load lines", which the rewritten text no longer mentions (the old sentence 3 did). It does not contradict the text: the knee and "H (reverse field)" match sentences 1 to 3. A later GUI pass may draw the knee moving with heat (TC-23) in place of the load lines, or drop the label; not this task's text.
+- SF-6 (round 1; this note's MF-1 and MF-3 halves; tests in `tests/explain.rs`, computed from the engine): for MF-1, at the default design `SmCo_2_17_30` on both rings is rated above N42SH yet has a lower `magnet_limit_C` (46.27 °C), every `GradeFamily::NdFeB` grade rated above N42SH has a lower `br_T` than N42SH, and at the Y30 probe design no NdFeB grade is rated above Y30; the doc comment of `a_hotter_rated_grade_raises_its_ring_s_limit_costs_torque_and_alone_may_not_help` should say why the entry names NdFeB. For MF-3, on the example design M5044, M5045 and M5026 on both rings have `model.inner_tmax_C` below their grade's `tmax_C` and a positive `calibration_offset_C` (+12.98 °C), while B842-N52 has its grade's rating and a negative offset (−9.69 °C).
+- SF-7 (round 1, for the record, no text change): watch_out[1]'s list holds at the default knee fraction (0.9) and coercivity source, both assumption or choice inputs. At a knee fraction of 0.95, N50 and Recoma 30 leave the list; at 0.8, N42, N48 and N42M join it. BL-057 (E21: the offset clamped at 0) removes the upward shift, and the note text changes in E21's commit, as BL-057's acceptance says. The offsets line in `docs/ai/04-memory.yaml` is stale on four grades (now Recoma 26 −60.21, Recoma 30 −0.45, BCN-19 +94.28 and Recoma 20 +217.33 °C); its recompute is T20's (ruling 5).
+- SF-R2-1 (round 2; restated in round 3 as SF-R3-1, with a sharper assert), a test for R2-MF-1 beside the rating-shift assert of `the_demagnetization_note_s_claims_hold_at_every_probe_design`: with M5044, M5045 and M5026 on both rings of the example design, `model.inner_tmax_C` is 60 °C and differs from the N50 grade's 80 °C, `t_ref_model_C − calibration_offset_C` is close to 60 °C, the offset is positive (+12.98 °C) and `inner_magnet_limit_C` is close to −22.50 °C (the grade's rating would give −2.50 °C). It is the only case where "the magnet's" and "the grade's" differ, and it also pins MF-3's exclusion of the arcs.
+- SF-R2-2 (round 2; round 1's SF-6 for MF-1, restated from the round-2 probe): pin that every move to a sintered `GradeFamily::NdFeB` grade rated hotter than its start raises that ring's limit (1670 of 1670 moves over every library part and custom grade as starts), and that bonded BCN-19 is the exception "usually" covers (it lowers the limit in 200 of 200).
+
+Considered, no change (the reviewer's observations):
+- "here no prediction" at the Y30 design: sentence 3 reads "its onset, here no prediction, sets an NdFeB ring's limit". There is no hot onset there (+inf), and the sentence names NdFeB, so it still reads correctly (spec 5) (round 1).
+- "shifted to match ... rated maximum temperature": the onsets are shifted so the reference magnet (permeance coefficient 1, Br/(2μ0) = 517.25 kA/m) reaches its knee at the rating, 159.92 − 9.92 = 150 °C at the example design. The sentence does not say the onsets equal the rating (round 1).
+- "reading low for stronger grades": the engine scales the stored fields by each ring's own (1 + αΔT), never by Br at 20 °C, so for a higher-Br grade (N52, 1.45 T, against the example's 1.30 T) the field reads low, which is optimistic, and for weaker grades it reads high (round 1).
+- Both rings use the outer blocks' stored fields; the inner ring's lower values appear only in the input help. watch_out[0]'s "ignore ... grade" covers it, and the effect is conservative for the inner ring (round 1).
+- The engine help of the Hcj coefficient still says a positive value "is typed in" (`temperature.rs:94`). The GUI overlay replaces it ("ferrite needs the Y30 grade instead", `plain_text.rs:709-711`), so the trap is not on screen with the details off (round 1).
+- "cutting torque" compares with N42SH: 241 of the 780 moves to N38UH, N35EH or N33AH raise the pull-out instead, all from magnets weaker or smaller than an N42SH block (the smaller library blocks, the arcs, N35 or BCN-19). The field names N42SH as the comparison and is true at all five designs as rendered, and no 25-word wording fixes the comparison without dropping the torque trade-off that the "a hotter-rated grade is free" trap needs (round 2).
+- The SmCo grades follow the same limit rule (Recoma 26 161.95, Recoma 30 46.27, Recoma 20 101.74 °C), but sentence 4 names NdFeB only, as sentence 3 does; that narrowing is not false (round 2).
+- "the magnet's" on mixed rings reads per ring, because the next clause says "each NdFeB ring's limit"; the engine shifts each ring by its own rating (the governing ring's shift matched its own rating in 2885 of 2885 cases). "Each magnet's" would also fit the cap but is not needed (round 3).
+
+## ferrite_cold_demag
+
+Task T16. Rewrite of "Ferrite: the demagnetization risk is at cold" as "Ferrite magnets:
+demagnetization risk at the cold end", Start here step 13, the last step shown while the
+shaft-clamp section is paused. Its Start here bar now adds "(ferrite rings only)" after the step
+count (`explorer::FERRITE_ONLY`), since the check it opens reads n/a on NdFeB rings, and the note
+drops the NdFeB knee diagram, which shows the knee moving the wrong way for ferrite (R7).
+Reviewer: physics reviewer (session model), fresh context. Date: 2026-10-14 (the date the slice
+plan fixes for the note's `review` field; all three rounds ran on 2026-10-15).
+
+Rounds: 3. Verdict: PASS. Note: "Ferrite magnets: demagnetization risk at the cold end" (plan
+T16).
+
+Verdict by round: 1 MUST-FIX (1 item in this note); 2 PASS for this note (the task's other must-fix
+item was in `demagnetization`); 3 PASS. Each round's full answer and the changes files are as
+under `## demagnetization`; the two notes were reviewed together. Round 3 re-read this note's
+sentence 3 against `demagnetization`'s new sentence 4.
+
+The text reviewed in round 1 already carried A-2 (change[2], the like-poles reverse field:
+`Step::Enter`, no aim, "enter your ferrite design's own value from a 3D field calculation; the
+stored one is the NdFeB example's, and yours may still fail.") and A-13's plain-words sources,
+sources[3] as A-28d item 7 rewords it ("a typed positive coefficient is held within the slider's
+negative range", where A-13 had "clamped away"). Every round confirmed them applied.
+
+The reviewer's report for the record, round by round, as returned:
+
+Round 1:
+
+- Reviewer: physics reviewer (session model), fresh context, 2026-10-15; round 1.
+- Read:
+  - the dump `notes-review-T16-r1.txt`; the `ferrite_cold_demag` literal (`notes.rs:657-710`); `explorer.rs:175-195` (`FERRITE_ONLY`, `start_here_text`);
+  - `temperature.rs:729-732` (`cold_onset_C`) and `:793-857` (the positive-coefficient branch: no hot onset; the rating as the hot limit; the cold onsets; the cold limit = skipping cold onset + margin; the pass rule coldest ≥ limit);
+  - `records/demagnetization.rs` (each ring's cold limit; the cold ring with the higher limit; `cold_check` passing only if both rings pass);
+  - `grades.rs:576-604` (Y30: β +0.0035, α −0.002, Hcj 180 kA/m, rating 250 °C, coefficient range 20 to 120 °C at :587); `metal_design.rs:28-30` (coldest-temperature slider −60 to 20 °C);
+  - `input_ui.rs:64-72` (edits clamped to the slider); `plain_text.rs:709-711` (the overlay help: ferrite needs the Y30 grade);
+  - `notes.rs` START_HERE_ALL (step 13, `temperature.demag.cold_check`);
+  - spec 3.3, 5 and 8; slice-1 spec 8; phys-notes-b 2 and 6; amendments A-2, A-13 and A-28d item 7, ruling 11.
+- Numbers reproduced from `compute_all`:
+  - The note has no placeholder.
+  - At the Y30 design:
+    - the hot onsets are all +inf, and each ring's hot limit is 250 °C (its rating);
+    - the cold onsets are aligned 170.59, pull-out 312.69, slipping 325.71 and single ring 258.71 °C. Slipping is the highest.
+    - the cold limit is 335.71 °C (325.71 + 10) on both rings, with the cold ring inner. `cold_check` = "Below the cold demagnetization limit" at −40 °C, and the verdict is CHECK.
+  - At the four NdFeB designs: `cold_limit_C` = n/a and `cold_check` = "n/a (coercivity rises as the magnet cools)".
+  - Slider extremes, Y30 on both rings, with the coldest temperature at 20 °C and a 0 °C margin: knee fractions 0.5, 0.7, 0.9 and 1.0 give cold limits of 398.7, 360.1, 325.7 and 309.9 °C. All fail.
+  - With "Hcj and beta inputs" as the coercivity source: n/a, and a magnet limit of 157.64 °C (SF-3).
+- Change directions confirmed:
+  - **change[0], Choose inner part.** Y30 on the inner ring alone (example design):
+    - the cold check applies on that ring (cold ring inner, 335.71 °C) and fails;
+    - the NdFeB outer ring keeps the hot limit, 93.06 °C;
+    - at the Y30 design, N42SH on the inner ring gives that ring the 93.06 °C hot limit, and the check still fails on the ferrite outer ring.
+    - So the trade of the cold risk for the hot one holds ring by ring.
+  - **change[1], Choose outer part.** Y30 on the outer ring alone: cold ring outer, same limit, fails. The check passes only if both rings pass (the record's two-ring rule).
+  - **change[2], Enter like-poles field.** With Y30 on both rings, the entered field sets the cold limit:
+    - 431.5 kA/m (half the stored field): 218.46 °C, fails;
+    - 150 kA/m: 16.16 °C, fails;
+    - 100 kA/m: −50.83 °C, passes;
+    - the slider's lowest value passes.
+    - So "yours may still fail" holds.
+- Traps checked:
+  - **"model ferrite by typing a positive β":** not written. Change[0] uses the Y30 grade, and the source says a typed positive value is held within the negative slider range (true: `input_ui.rs:64-72`).
+  - **"the ferrite cold check means anything with the default reverse fields":** watch-out 0 says it always fails; MF-4 makes the reason exact.
+  - **"your own fields will make it pass":** "yours may still fail".
+  - **"the stored 3D fields follow geometry or grade":** not written ("the NdFeB example's").
+  - **"a shaft-joint method is chosen or sized here", "the coupling protects the gearbox", "more magnets make the coupling stiffer":** not written.
+  - **"clamp" in any field, sources included:** none (A-28d item 7's rewording removed "clamped away").
+  - **No editable default is typed:** the test passes.
+- Form:
+  - title 8 words; sentences 23, 24, 23, 22, 14; changes 22, 15, 23; watch-outs 26, 20, and 29 after MF-4;
+  - sentence 0 has no symbol and no placeholder, and it answers Start here step 13 (why a cold check exists);
+  - the cold limit is glossed in sentence 2; reverse field, knee and onset are glossed at step 12;
+  - no diagram (R7), pinned by `the_demagnetization_notes_own_the_rows_spec_3_3_gives_them`;
+  - the Start here bar reads "Start here 13 of 13 (ferrite rings only): <title>" (`the_ferrite_step_says_it_is_for_ferrite_rings_only` passes);
+  - every field passes `plain_text_violations` and `audit_ids`.
+- Seeds: none indexed for T16.
+- Must-fix items: MF-4 (watch_out[0]), to apply in round 2. Should-fix offered: SF-1 (watch_out[1], the extrapolated cold limit); SF-3 (change[0], the coercivity source); SF-4 (sentences[4], "no ferrite ring").
+- Verdict for this note, round 1: MUST_FIX (1 item).
+
+Round 2:
+
+- Reviewer: physics reviewer (session model), fresh context, 2026-10-15; round 2. The form's fixed date is 2026-10-14; the review ran on 2026-10-15, as in round 1.
+- Read:
+  - the dump `notes-review-T16-r2.txt` and the r1 to r2 diff;
+  - the `ferrite_cold_demag` literal (`notes.rs:657-710`);
+  - `temperature.rs:729-732` (`cold_onset_C`) and `:793-857` (the positive-coefficient branch, the cold limit and the pass rule);
+  - `grades.rs:576-604` (Y30); `model.rs:417-425` (a graded ring's own Br coefficient);
+  - the input schema ranges: coldest temperature −60 to 20 °C, margin 0 to 40 °C, knee fraction 0.5 to 1.0;
+  - `tests/explain.rs:3198` (`the_ferrite_note_s_claims_hold`).
+- Numbers reproduced from `compute_all`:
+  - The note has no placeholder.
+  - At the Y30 design:
+    - cold onsets: aligned 170.59, pull-out 312.69, slipping 325.71, single ring 258.71 °C;
+    - cold limit 335.71 °C on both rings;
+    - `cold_check` reads "Below the cold demagnetization limit".
+  - The slipping field exceeds the Y30 knee by at least 141.12 kA/m over the knee-fraction slider and from −60 to 250 °C.
+  - The aligned field's cold onset ranges from 150.04 to 278.06 °C over the knee-fraction slider.
+- Change directions confirmed:
+  - Unchanged this round.
+  - The cold check fails in all 720 combinations tried: Y30 on both rings, the inner ring or the outer ring; five designs; coldest −60, −40, 0 and 20 °C; margin 0, 10 and 40 °C; knee fraction 0.5, 0.75, 0.9 and 1.0.
+  - The calculator's Br coefficient does not move a Y30 ring's cold limit (335.71 °C).
+- Traps checked:
+  - "the ferrite cold check means anything with the default reverse fields": watch_out[0] says it always fails, and why.
+  - "your own fields will make it pass": change[2] says "yours may still fail".
+  - "model ferrite by typing a positive beta": not written.
+  - "the stored 3D fields follow geometry or grade": not written.
+  - "a shaft-joint method is chosen or sized here", "the coupling protects the gearbox", "more magnets make the coupling stiffer": not written.
+  - "clamp" in any field, sources included: none.
+- Form: watch_out[0] has 29 words; it passes `plain_text_violations` and `audit_ids`, and types no default.
+- Must-fix items and how they were applied: round 1's MF-4 (watch_out[0]) was applied verbatim and re-checked: it passes. Round 2: none.
+- Verdict for this note, round 2: PASS.
+
+Round 3:
+
+- Reviewer: physics reviewer (session model), fresh context, 2026-10-15; round 3. The form's fixed date is 2026-10-14; rounds 1 to 3 ran on 2026-10-15.
+- Read:
+  - the dumps `notes-review-T16-r1.txt` to `-r3.txt`;
+  - the `ferrite_cold_demag` literal (`notes.rs:657-710`); `explorer.rs` (`FERRITE_ONLY`, `start_here_text`);
+  - `temperature.rs:729-732` (`cold_onset_C`) and `:793-857`:
+    - for a positive coefficient there is no hot onset, and the rating is the hot limit;
+    - cold limit = skipping cold onset + margin;
+    - the check passes when the coldest temperature is at or above the limit;
+  - `records/demagnetization.rs` (each ring's cold limit, the cold ring, the two-ring check);
+  - `grades.rs:576-604` (Y30: β +0.0035 /°C, α −0.002 /°C, Hcj 180 kA/m, rated 250 °C, coefficient range 20 to 120 °C at :587);
+  - the slider ranges: coldest −60 to 20 °C, margin 0 to 40 °C, knee fraction 0.5 to 1.0; `input_ui.rs:64-72` (edits held within the slider);
+  - spec 3.3, 5 and 8; slice-1 spec 8; phys-notes-b 2 and 6; amendments A-2, A-13 and A-28d item 7; ruling 11.
+- Numbers reproduced from compute_all:
+  - The note has no placeholder.
+  - At the Y30 design:
+    - the hot onsets are +inf, and each ring's hot limit is 250 °C (its rating);
+    - cold onsets: aligned 170.59, pull-out 312.69, slipping 325.71 and single ring 258.71 °C;
+    - the cold limit is 335.71 °C on both rings;
+    - `cold_check` reads "Below the cold demagnetization limit".
+  - At the four NdFeB designs, the cold limit is n/a and the check reads "n/a (coercivity rises as the magnet cools)".
+  - The stored slipping field exceeds the Y30 knee by at least 141.12 kA/m over the knee-fraction slider, from −60 to 250 °C.
+  - The aligned field's cold onset is 150.04 to 278.06 °C, within the rating, which is why watch_out[0] names the slipping field only.
+  - In all 430 positive-coefficient ring evaluations of the round-3 probe, the hot limit is the rating.
+- Change directions confirmed:
+  - **Choose inner part:** Y30 on the inner ring alone gives that ring the cold check, and it fails; the NdFeB outer ring keeps the 93.06 °C hot limit.
+  - **Choose outer part:** the same; the check passes only if both rings pass.
+  - **Enter like-poles field:** with Y30 on both rings, the entered field sets the cold limit.
+    - 431.5 kA/m gives 218.46 °C, and the check fails; 150 kA/m gives 16.16 °C, and it fails.
+    - 100 kA/m gives −50.83 °C, and it passes.
+    - So "yours may still fail" holds.
+  - With the stored field, the check fails in 720 of 720 combinations of ring placement, design, coldest temperature, margin and knee fraction.
+- Traps checked:
+  - "model ferrite by typing a positive beta": not written; a typed value is held within the negative slider range.
+  - "the ferrite cold check means anything with the default reverse fields": watch_out[0] says it always fails, and why.
+  - "your own fields will make it pass": "yours may still fail".
+  - "the stored 3D fields follow geometry or grade": not written.
+  - "a shaft-joint method is chosen or sized here", "the coupling protects the gearbox" and "more magnets make the coupling stiffer": not written.
+  - No field names a clamp (any case), sources included.
+  - No editable default is typed.
+  - Every field passes `plain_text_violations` and `audit_ids`.
+  - There is no diagram (R7), and the Start here bar reads "(ferrite rings only)".
+  - Sentence 3's "its rated maximum temperature" agrees with the `demagnetization` note's "the magnet's rated maximum temperature".
+- Must-fix items and how they were applied:
+  - **Round 1:** MF-4, watch_out[0]: the slipping field alone exceeds a Y30 knee at every rated temperature. It was applied verbatim and re-checked in round 2: it passes.
+  - **Rounds 2 and 3:** none.
+- Verdict: PASS.
+
+Must-fix items applied (round 1, applied verbatim before round 2, which confirmed it):
+- watch_out[0] (MF-4: the rings-aligned default field, 354 kA/m, meets the Y30 knee at 170.59 °C and lies below it from there to the 250 °C rating, so "the default reverse fields ... exceed a Y30 knee at every rated temperature" was false for one of the four; the check uses only the slipping field, whose cold onset, 325.71 °C, lies above the rating): "The default reverse fields belong to the NdFeB example design and exceed a Y30 knee at every rated temperature, so with them the check always fails." -> "The default reverse field for slipping, from the NdFeB example design, exceeds a Y30 knee at every temperature Y30 is rated for, so the check always fails with it."
+
+Seeds (A-24): none for this note.
+
+Should-fix offered, not applied (open for the controller; no on-screen text changed after the
+round-3 PASS):
+- SF-1 (round 1), watch_out[1], 28 words: "Y30's temperature coefficients are measured only from 20 to 120 °C; the cold check extrapolates them, both to the coldest temperature and to cold onsets outside that range." Why: the shipped text is true, but what the user sees on the Y30 design is a cold limit of 335.71 °C, from an onset of 325.71 °C extrapolated 200 °C above the tested range; the replacement covers both directions and keeps "from 20 to 120 °C", which `the_ferrite_note_s_claims_hold` reads.
+- SF-3 (round 1), change[0], 23 words: "custom dimensions with the Y30 grade, coercivity from the grade, model a ferrite ring; a library NdFeB part trades cold risk for hot." Why: with "Hcj and beta inputs" chosen as the coercivity source, a Y30 ring takes the input coefficient, which is always negative; the cold check then reads n/a and the magnet limit is 157.64 °C, computed as if the ring were NdFeB. The shipped text holds at the default source (the magnet grade) only. If "coercivity" is unwanted on screen (it is not glossed along Start here), leave the text and pin the default source in the claims test instead.
+- SF-4 (round 1), sentences[4], 13 words: "With no ferrite ring the cold check does not apply and reads n/a." Why: the check also reads n/a for SmCo and bonded NdFeB (every grade but Y30 has a negative coefficient, which `the_ferrite_note_s_claims_hold` pins); the shipped text is true but narrower than the rule.
+- SF-6 (round 1; this note's MF-4 half, a test): at the Y30 design, `cold_onset_aligned_C` (170.59 °C) lies below Y30's `tmax_C` and `cold_onset_skipping_C` (325.71 °C) above it.
+
+Considered, no change (the reviewer's observations):
+- With "Hcj and beta inputs" chosen as the coercivity source the check reads n/a rather than failing, and there is then no Y30 knee; watch_out[0]'s subject is "a Y30 knee", so it is not contradicted (round 2). The same choice narrows sentence 3 ("a ferrite ring's hot limit is simply its rated maximum temperature") and sentence 4 ("With NdFeB on both rings ... n/a") to the default source, the magnet grade: a Y30 ring on the input coefficient is treated as NdFeB (hot limit 157.64 °C, cold check n/a). Round 1 offered SF-3 for it (round 3).
+- The calculator's Br coefficient input does not reach a Y30 ring: its cold limit is 335.71 °C either way (round 2).
+- No library part has a positive coefficient, so a ferrite ring is always Y30 on custom dimensions, and its rating is the grade's; sentence 3's "its rated maximum temperature" agrees with `demagnetization`'s "the magnet's rated maximum temperature" (round 3).
+- The engine help of the Hcj coefficient: as under `## demagnetization` (round 1).

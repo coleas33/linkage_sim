@@ -1002,7 +1002,7 @@ mod tests {
         let j = |y: f32| axis - y;
         // Hcj is where J reaches zero.
         assert!(j(curve[0].y).abs() < 1e-3, "{}", j(curve[0].y));
-        // The knee: H_k = 0.9 Hcj (the demagnetization note), on the curve.
+        // The knee: H_k = 0.9 Hcj (the knee-fraction input's default), on the curve.
         let knee = only_marker(&shapes);
         let h = |x: f32| -(right - x) / (right - left);
         assert!((h(knee.x) + 0.9).abs() < 1e-4, "{}", h(knee.x));

@@ -36,14 +36,16 @@ use magcoupling::engine::explain::record::Eval;
 use magcoupling::engine::explain::registry::{Design, Registry, TermKind};
 use magcoupling::engine::explain::scope::{SCOPE, Status};
 use magcoupling::engine::explain::{TermSource, Trace, note_text, notes, probes, render};
-use magcoupling::engine::grades::{GRADES, Grade, GradeFamily};
+use magcoupling::engine::grades::{GRADES, Grade, GradeFamily, N42SH, grade};
 use magcoupling::engine::library;
 use magcoupling::engine::material_library::{BACK_IRON_CHOICES, SLEEVE_LINER_CHOICES, chosen};
 use magcoupling::engine::meta::{
-    FieldType, InputMeta, InputSet, ResultSet, Value, input_rows, result_rows,
+    FieldType, InputMeta, InputSet, NumOrText, ResultSet, SliderRange, Value, input_rows,
+    result_rows,
 };
 use magcoupling::engine::model::blocks_fit;
 use magcoupling::engine::size_controls::with_ring_radius;
+use magcoupling::engine::temperature::{NO_COLD_ONSET, RING_INNER, RING_OUTER, demag_onset_C};
 
 /// One input set the guard evaluates at.
 struct Point {
@@ -1333,12 +1335,7 @@ fn harmonics_claims_hold_off_the_probe_designs() {
     let example = DesignInputs::default();
     let harmonics = notes::note("harmonics").expect("the harmonics note");
 
-    let fewest = input_rows(&example)
-        .into_iter()
-        .find(|row| row.path == "coupling.npole")
-        .and_then(|row| row.meta.range)
-        .expect("the magnet count has a slider")
-        .min as i64;
+    let fewest = slider("coupling.npole").min as i64;
     let mut few = example.clone();
     few.coupling.npole = fewest;
     let spaced = with_ring_radius(&few, probes::PROBE_RING_RADIUS_MM)
@@ -1632,6 +1629,39 @@ fn close(a: f64, b: f64) -> bool {
     (a / b - 1.0).abs() < 1e-12
 }
 
+/// The slider of the input at `path`, from its metadata.
+fn slider(path: &str) -> SliderRange {
+    input_rows(&DesignInputs::default())
+        .into_iter()
+        .find(|row| row.path == path)
+        .and_then(|row| row.meta.range)
+        .unwrap_or_else(|| panic!("{path} has no slider"))
+}
+
+/// Which rings a grade pick puts on custom dimensions ([`on_grade`]).
+#[derive(Clone, Copy, Debug)]
+enum Rings {
+    Inner,
+    Outer,
+    Both,
+}
+
+/// `design` with `rings` on custom dimensions and the grade `grade`, as the part and grade
+/// picks set them; a ring left out keeps its part.
+fn on_grade(design: &DesignInputs, rings: Rings, grade: &str) -> DesignInputs {
+    let mut d = design.clone();
+    let m = &mut d.coupling.magnets;
+    if matches!(rings, Rings::Inner | Rings::Both) {
+        m.part_inner.clear();
+        m.grade_inner = grade.to_owned();
+    }
+    if matches!(rings, Rings::Outer | Rings::Both) {
+        m.part_outer.clear();
+        m.grade_outer = grade.to_owned();
+    }
+    d
+}
+
 /// `end_effect`'s two entries at the five probe designs: longer magnets lose a smaller share
 /// at the ends; a larger end coefficient lowers every torque but leaves the bench prototype's
 /// own end factor. The trade-offs the entries name hold too: cold-high, and with it the
@@ -1755,12 +1785,7 @@ fn the_end_effect_note_s_length_claims_hold_at_every_probe_design() {
 fn the_end_effect_note_s_short_overlap_watch_out_names_both_directions() {
     let example = DesignInputs::default();
     let example_width = compute_all(&example).model.inner_width_mm;
-    let floor = input_rows(&example)
-        .into_iter()
-        .find(|row| row.path == "coupling.magnets.axial_length_mm")
-        .and_then(|row| row.meta.range)
-        .expect("the magnet length has a slider")
-        .min;
+    let floor = slider("coupling.magnets.axial_length_mm").min;
     let at = |design: &DesignInputs, length: f64| {
         let mut d = design.clone();
         d.coupling.magnets.axial_length_mm = Some(length);
@@ -2300,9 +2325,7 @@ fn the_temperature_note_s_levers_hold_at_every_probe_design() {
 fn only_a_ring_with_a_picked_grade_keeps_its_own_coefficient() {
     // Watch-out 1 of the temperature note, on a mixed design: the inner ring on custom
     // dimensions with Y30, the outer on its library part; the input moves the outer ring only.
-    let mut mixed = DesignInputs::default();
-    mixed.coupling.magnets.part_inner = String::new();
-    mixed.coupling.magnets.grade_inner = "Y30".to_owned();
+    let mixed = on_grade(&DesignInputs::default(), Rings::Inner, "Y30");
     let base = compute_all(&mixed);
     let moved = stepped(&mixed, "calibration.alpha_br_per_C", Step::Raise);
     let r = compute_all(&moved);
@@ -2371,15 +2394,8 @@ fn a_grade_nearer_zero_loses_a_smaller_share_when_hot_and_smco_starts_below_sint
     }
 
     // Both rings on custom dimensions with one grade.
-    let graded = |design: &DesignInputs, grade: &str| {
-        let mut d = design.clone();
-        let m = &mut d.coupling.magnets;
-        m.part_inner = String::new();
-        m.part_outer = String::new();
-        m.grade_inner = grade.to_owned();
-        m.grade_outer = grade.to_owned();
-        compute_all(&d)
-    };
+    let graded =
+        |design: &DesignInputs, grade: &str| compute_all(&on_grade(design, Rings::Both, grade));
     // The share of the 20 °C pull-out kept at the operating temperature.
     let kept = |r: &DesignResults| r.model.pullout_Nm / r.model.pullout_20C_Nm;
     let default = DesignInputs::default();
@@ -2896,6 +2912,410 @@ fn the_slip_losses_read_fields_stored_from_the_example_design() {
         y30.temperature.slip_loss.total_W,
         r.temperature.slip_loss.total_W
     );
+}
+
+// Slice 2 note claims: the demagnetization and ferrite notes (plan T16). Their entries choose a
+// part and grade or enter a reverse field from an outside 3D calculation, so none has an aim for
+// T5's aim test; what they and the sentences say is checked here, design by design.
+
+/// The like-poles reverse field input, the one both notes' Enter entries name.
+const LIKE_POLES: &str = "temperature.demag.h_rev_likepole_kA_m";
+
+/// Both notes' change entries: a part and grade on each ring, and the like-poles field entered
+/// from an outside 3D calculation.
+const DEMAG_LEVERS: [Lever; 3] = [
+    ("coupling.magnets.part_inner", Step::Choose, None),
+    ("coupling.magnets.part_outer", Step::Choose, None),
+    (LIKE_POLES, Step::Enter, None),
+];
+
+/// `design`'s four stored reverse fields [kA/m]: rings aligned, at pull-out, like poles facing
+/// (slipping), one ring alone.
+fn reverse_fields(design: &DesignInputs) -> [f64; 4] {
+    let d = &design.temperature.demag;
+    [
+        d.h_rev_aligned_kA_m,
+        d.h_rev_pullout_kA_m,
+        d.h_rev_likepole_kA_m,
+        d.h_rev_single_ring_kA_m,
+    ]
+}
+
+/// The number in a result that is a number or a text ("n/a").
+fn num(value: NumOrText) -> f64 {
+    match value {
+        NumOrText::Num(x) => x,
+        NumOrText::Text(text) => panic!("a number, not {text:?}"),
+    }
+}
+
+/// Whether `text` names `word` as a whole word (no letter or digit on either side), so "N50"
+/// is not found in "N50M".
+fn names_word(text: &str, word: &str) -> bool {
+    text.match_indices(word).any(|(at, _)| {
+        let before = text[..at].chars().next_back();
+        let after = text[at + word.len()..].chars().next();
+        !before.is_some_and(char::is_alphanumeric) && !after.is_some_and(char::is_alphanumeric)
+    })
+}
+
+#[test]
+fn names_word_finds_whole_words_only() {
+    assert!(names_word("For N52, N50 and 2:17 SmCo.", "N50"));
+    assert!(names_word("For N52, N50 and 2:17 SmCo.", "2:17 SmCo"));
+    assert!(!names_word("For N52 and N50M.", "N50"));
+    assert!(!names_word("For XN50 only.", "N50"));
+    assert!(!names_word("For N52 only.", "N42"));
+}
+
+/// `demagnetization` at the five probe designs. Like poles facing (slipping) is the worst of the
+/// stored reverse fields, so on NdFeB its onset is the lowest and sets the ring's limit, less the
+/// margin; the onsets are shifted so the reference magnet's onset is the magnet's own rating; the
+/// lower ring limit governs; the two margins the note owns read the peak against the skipping
+/// onset and the limit.
+#[test]
+fn the_demagnetization_note_s_claims_hold_at_every_probe_design() {
+    assert_eq!(levers_of("demagnetization"), DEMAG_LEVERS);
+    let [aligned, pullout, like_poles, single] = reverse_fields(&DesignInputs::default());
+    assert!(
+        like_poles > aligned.max(pullout).max(single),
+        "like poles facing is the worst stored field"
+    );
+    let mut ndfeb = 0;
+    for (name, design) in probes::probe_designs() {
+        let r = compute_all(&design);
+        let (d, life) = (&r.temperature.demag, &r.temperature.magnet_life);
+        assert_eq!(
+            d.magnet_limit_C,
+            d.inner_magnet_limit_C.min(d.outer_magnet_limit_C),
+            "{name}: the lower ring limit governs"
+        );
+        assert_eq!(
+            life.margin_onset_C,
+            d.onset_skipping_C - life.peak_C,
+            "{name}"
+        );
+        assert_eq!(
+            life.margin_limit_C,
+            d.magnet_limit_C - life.peak_C,
+            "{name}"
+        );
+        // Heat lowers an NdFeB knee (a negative coefficient): the hot side decides.
+        if d.beta_used_per_C < 0.0 {
+            ndfeb += 1;
+            for other in [d.onset_aligned_C, d.onset_pullout_C, d.onset_single_ring_C] {
+                assert!(
+                    d.onset_skipping_C < other,
+                    "{name}: slipping's onset is the lowest"
+                );
+            }
+            assert_eq!(
+                d.magnet_limit_C,
+                d.onset_skipping_C - design.temperature.demag.design_margin_C,
+                "{name}: the slipping onset less the margin"
+            );
+            assert!(
+                close(d.t_ref_model_C - d.calibration_offset_C, num(d.tmax_lib_C)),
+                "{name}: shifted so the reference magnet's onset is the rating"
+            );
+        }
+    }
+    assert_eq!(ndfeb, 4, "the four NdFeB probe designs");
+}
+
+/// `demagnetization`'s two grade entries on the example design (N42SH on both rings), at the
+/// grades rated hotter that the review probes. On both rings, custom dimensions and the grade
+/// raise the magnet limit and lower the pull-out, and the adhesive then governs; on one ring
+/// alone that ring's limit rises but the other ring's still governs. Every grade rated hotter
+/// than the example's is weaker (a lower Br).
+#[test]
+fn a_hotter_rated_grade_raises_its_ring_s_limit_costs_torque_and_alone_may_not_help() {
+    let example = DesignInputs::default();
+    let base = compute_all(&example);
+    let d0 = &base.temperature.demag;
+    assert_eq!(
+        (d0.hcj20_used_kA_m, d0.beta_used_per_C),
+        (N42SH.hcj20_kA_m, N42SH.beta_hcj_per_C),
+        "the example's rings are N42SH"
+    );
+    let rating = num(d0.tmax_lib_C);
+    assert!(
+        base.temperature.summary.governing_limit_C < base.temperature.summary.adhesive_limit_C,
+        "on the example the magnets govern"
+    );
+    for g in GRADES.iter().filter(|g| g.tmax_C > rating) {
+        assert!(g.br_T < d0.br20_T, "{} is weaker", g.id);
+    }
+    for id in ["N38UH", "N35EH", "N33AH", "SmCo_2_17_26"] {
+        let g = grade(id).unwrap_or_else(|| panic!("no grade {id}"));
+        assert!(g.tmax_C > rating, "{id} is rated hotter");
+        let r = compute_all(&on_grade(&example, Rings::Both, id));
+        let (d, summary) = (&r.temperature.demag, &r.temperature.summary);
+        assert!(
+            d.magnet_limit_C > d0.magnet_limit_C,
+            "{id}: the limit rises"
+        );
+        assert!(
+            r.model.pullout_Nm < base.model.pullout_Nm,
+            "{id}: torque falls"
+        );
+        assert_eq!(
+            summary.governing_limit_C, summary.adhesive_limit_C,
+            "{id}: the adhesive governs"
+        );
+        assert!(summary.adhesive_limit_C < d.magnet_limit_C, "{id}");
+        for rings in [Rings::Inner, Rings::Outer] {
+            let d = compute_all(&on_grade(&example, rings, id))
+                .temperature
+                .demag;
+            let own = match rings {
+                Rings::Inner => d.inner_magnet_limit_C,
+                Rings::Outer | Rings::Both => d.outer_magnet_limit_C,
+            };
+            assert!(
+                own > d0.magnet_limit_C,
+                "{id} {rings:?}: its own limit rises"
+            );
+            assert_eq!(
+                d.magnet_limit_C, d0.magnet_limit_C,
+                "{id} {rings:?}: the other ring still governs"
+            );
+        }
+    }
+}
+
+/// `demagnetization`'s second watch-out names exactly the grades whose onsets the rating shift
+/// raises on custom dimensions: a negative offset, so each onset is the uncalibrated one plus its
+/// size; the two 2:17 SmCo grades go by one name. On the example design an onset lies past its
+/// grade's tested range. When the grade data or the shift change, this fails and the watch-out
+/// changes in the same commit (BL-057).
+#[test]
+fn the_demagnetization_watch_out_names_the_grades_the_rating_shift_raises() {
+    let watch_out = notes::note("demagnetization").expect("the note").watch_out[1];
+    let example = DesignInputs::default();
+    let knee = example.temperature.demag.knee_fraction;
+    let like_poles = example.temperature.demag.h_rev_likepole_kA_m;
+    let mut raised = 0;
+    for g in &GRADES {
+        let d = compute_all(&on_grade(&example, Rings::Both, g.id))
+            .temperature
+            .demag;
+        let shifted_up = d.calibration_offset_C < 0.0;
+        if shifted_up {
+            raised += 1;
+            let uncalibrated = demag_onset_C(
+                like_poles,
+                d.hcj20_used_kA_m,
+                d.beta_used_per_C,
+                knee,
+                d.alpha_br,
+                0.0,
+            );
+            assert!(
+                d.onset_skipping_C > uncalibrated,
+                "{}: shifted upward",
+                g.id
+            );
+        }
+        let name = if g.family == GradeFamily::SmCo2_17 {
+            "2:17 SmCo"
+        } else {
+            g.id
+        };
+        assert_eq!(
+            names_word(watch_out, name),
+            shifted_up,
+            "{} (offset {} °C) in {watch_out:?}",
+            g.id,
+            d.calibration_offset_C
+        );
+    }
+    assert!(raised > 0, "some grade's onsets are raised");
+    let d = compute_all(&example).temperature.demag;
+    let [_, tested_to] = N42SH.coefficient_range_C.expect("N42SH's tested range");
+    assert!(
+        d.onset_aligned_C > tested_to,
+        "an onset past the tested range"
+    );
+}
+
+/// The demagnetization notes' stored-field claims: the four reverse fields are the example
+/// design's at every probe design, and the onsets do not follow the magnet count, ring radius,
+/// gap or block size (each move changes the pull-out, so it took effect). When the fields follow
+/// the design, this fails, and the watch-out and both notes' Enter entries change in the same
+/// commit.
+#[test]
+fn the_reverse_fields_are_the_example_design_s_whatever_the_design() {
+    let example = DesignInputs::default();
+    for (name, design) in probes::probe_designs() {
+        assert_eq!(reverse_fields(&design), reverse_fields(&example), "{name}");
+    }
+    let onsets = |r: &DesignResults| {
+        let d = &r.temperature.demag;
+        [
+            d.onset_aligned_C,
+            d.onset_pullout_C,
+            d.onset_skipping_C,
+            d.onset_single_ring_C,
+        ]
+    };
+    let custom = on_grade(&example, Rings::Both, N42SH.id);
+    for (what, from, moved) in [
+        ("magnet count", &example, probe_inputs("8 magnets per ring")),
+        ("ring radius", &example, probe_inputs("20 mm ring radius")),
+        (
+            "gap",
+            &example,
+            stepped(&example, "metal.face_gap_mm", Step::Raise),
+        ),
+        (
+            "block size",
+            &custom,
+            stepped(
+                &custom,
+                "coupling.magnets.manual_inner_thickness_mm",
+                Step::Raise,
+            ),
+        ),
+    ] {
+        let (before, after) = (compute_all(from), compute_all(&moved));
+        assert_ne!(
+            after.model.pullout_Nm, before.model.pullout_Nm,
+            "{what}: the move took effect"
+        );
+        assert_eq!(onsets(&after), onsets(&before), "{what}");
+    }
+}
+
+/// `ferrite_cold_demag`'s sentences and watch-outs. Only ferrite's coercivity rises with heat,
+/// and its Br falls: cooling lowers its knee while its field grows. At the Y30 probe design no
+/// hot onset exists, each ring's hot limit is its rating, and the cold limit is the slipping cold
+/// onset (the highest) plus the margin. With the stored fields that onset lies above the rating
+/// and the cold limit above the coldest temperature the slider allows, so the check fails. On
+/// NdFeB the check reads n/a. Y30's coefficients are measured over a range the coldest
+/// temperature lies below.
+#[test]
+fn the_ferrite_note_s_claims_hold() {
+    let note = notes::note("ferrite_cold_demag").expect("the ferrite note");
+    for g in &GRADES {
+        assert_eq!(
+            g.beta_hcj_per_C > 0.0,
+            g.family == GradeFamily::Ferrite,
+            "{}",
+            g.id
+        );
+    }
+    let y30 = grade("Y30").expect("Y30");
+    assert!(y30.alpha_br_per_C < 0.0, "its own field grows as it cools");
+    let ferrite_design = "Y30 ferrite, custom dimensions";
+    let design = probe_inputs(ferrite_design);
+    let r = compute_all(&design);
+    let d = &r.temperature.demag;
+    for onset in [
+        d.onset_aligned_C,
+        d.onset_pullout_C,
+        d.onset_skipping_C,
+        d.onset_single_ring_C,
+    ] {
+        assert_eq!(onset, f64::INFINITY, "no hot onset");
+    }
+    assert_eq!(
+        (d.inner_magnet_limit_C, d.outer_magnet_limit_C),
+        (y30.tmax_C, y30.tmax_C),
+        "the hot limit is the rating"
+    );
+    let [aligned, pullout, skipping, single] = [
+        d.cold_onset_aligned_C,
+        d.cold_onset_pullout_C,
+        d.cold_onset_skipping_C,
+        d.cold_onset_single_ring_C,
+    ]
+    .map(num);
+    assert!(
+        skipping > aligned.max(pullout).max(single),
+        "slipping sets the cold onset"
+    );
+    assert_eq!(
+        num(d.cold_limit_C),
+        skipping + design.temperature.demag.design_margin_C
+    );
+    assert!(
+        skipping > y30.tmax_C,
+        "the like-poles field passes the knee at every temperature up to the rating"
+    );
+    assert!(
+        num(d.cold_limit_C) > slider("metal.min_temp_C").max,
+        "the check fails whatever the coldest temperature"
+    );
+    assert!(
+        design.metal.min_temp_C < num(d.cold_limit_C),
+        "it fails here"
+    );
+    for (name, ndfeb) in probes::probe_designs() {
+        if name == ferrite_design {
+            continue;
+        }
+        let d = compute_all(&ndfeb).temperature.demag;
+        assert_eq!(d.cold_limit_C, NumOrText::Text(NO_COLD_ONSET), "{name}");
+        assert!(d.cold_check.starts_with(NO_COLD_ONSET), "{name}");
+    }
+    let [from, to] = y30.coefficient_range_C.expect("Y30's tested range");
+    assert!(
+        note.watch_out[1].contains(&format!("from {from} to {to} °C")),
+        "{:?}",
+        note.watch_out[1]
+    );
+    assert!(
+        design.metal.min_temp_C < from,
+        "extrapolated to the coldest"
+    );
+}
+
+/// `ferrite_cold_demag`'s entries. Y30 on one ring makes the cold check apply on that ring while
+/// the library NdFeB ring keeps the hot limit (it trades the cold risk for the hot one), and the
+/// check fails though the NdFeB ring has nothing to fail: it passes only if both rings pass. An
+/// entered like-poles field lower than the stored one lowers the cold limit: half the stored
+/// field still fails, the slider's lowest passes.
+#[test]
+fn the_ferrite_note_s_entries_hold() {
+    assert_eq!(levers_of("ferrite_cold_demag"), DEMAG_LEVERS);
+    let example = DesignInputs::default();
+    let d0 = compute_all(&example).temperature.demag;
+    assert_eq!(d0.cold_limit_C, NumOrText::Text(NO_COLD_ONSET));
+    let ferrite = probe_inputs("Y30 ferrite, custom dimensions");
+    let entered = |h: f64| {
+        let mut d = ferrite.clone();
+        d.temperature.demag.h_rev_likepole_kA_m = h;
+        compute_all(&d).temperature.demag
+    };
+    let stored = ferrite.temperature.demag.h_rev_likepole_kA_m;
+    let (at_stored, at_half, at_lowest) = (
+        entered(stored),
+        entered(stored / 2.0),
+        entered(slider(LIKE_POLES).min),
+    );
+    let coldest = ferrite.metal.min_temp_C;
+    assert!(num(at_half.cold_limit_C) < num(at_stored.cold_limit_C));
+    assert!(num(at_lowest.cold_limit_C) < num(at_half.cold_limit_C));
+    assert!(
+        coldest < num(at_half.cold_limit_C),
+        "half the stored field still fails"
+    );
+    assert!(coldest >= num(at_lowest.cold_limit_C), "the lowest passes");
+    assert_eq!(at_half.cold_check, at_stored.cold_check);
+    assert_ne!(at_lowest.cold_check, at_stored.cold_check);
+    for (rings, ring) in [(Rings::Inner, RING_INNER), (Rings::Outer, RING_OUTER)] {
+        let d = compute_all(&on_grade(&example, rings, "Y30"))
+            .temperature
+            .demag;
+        assert_eq!(d.cold_ring, ring, "{rings:?}");
+        assert_eq!(d.cold_limit_C, at_stored.cold_limit_C, "{rings:?}");
+        assert_eq!(d.cold_check, at_stored.cold_check, "{rings:?}: fails");
+        assert_eq!(
+            d.magnet_limit_C, d0.magnet_limit_C,
+            "{rings:?}: the NdFeB ring keeps the hot limit"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------------------

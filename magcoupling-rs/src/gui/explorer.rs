@@ -172,11 +172,23 @@ pub fn used_by_shown(path: &str, clamps_paused: bool) -> Vec<&'static String> {
         .collect()
 }
 
-/// The start of the start-here bar.
+/// What the start-here bar adds on the ferrite step: its check reads n/a on NdFeB rings (spec
+/// 3.3, TC-32).
+pub const FERRITE_ONLY: &str = "(ferrite rings only)";
+
+/// The start of the start-here bar: "Start here 13 of 13 (ferrite rings only): <title>" on the
+/// ferrite step while the shaft-clamp section is paused (13 of 14 with it), the step and its
+/// title alone on every other one.
 pub fn start_here_text(step: usize) -> String {
-    let title = reviewed_note(START_HERE[step].0).map_or_else(String::new, |n| glyph_safe(n.title));
+    let (id, _) = START_HERE[step];
+    let title = reviewed_note(id).map_or_else(String::new, |n| glyph_safe(n.title));
+    let only = if id == "ferrite_cold_demag" {
+        format!(" {FERRITE_ONLY}")
+    } else {
+        String::new()
+    };
     format!(
-        "{START_HERE_BUTTON} {} of {}: {title}",
+        "{START_HERE_BUTTON} {} of {}{only}: {title}",
         step + 1,
         START_HERE.len()
     )
@@ -1325,6 +1337,28 @@ mod tests {
         // The button's hover names the walk's topics in plain words, step 1's first.
         assert!(crate::gui::guidance::plain_text_violations(START_HERE_HOVER).is_empty());
         assert!(START_HERE_HOVER.starts_with("A suggested order: how the coupling makes torque"));
+    }
+
+    #[test]
+    fn the_ferrite_step_says_it_is_for_ferrite_rings_only() {
+        // Spec 3.3 and 5 (TC-32): the ferrite step opens a check that reads n/a on NdFeB rings.
+        let ferrite = START_HERE
+            .iter()
+            .position(|&(id, _)| id == "ferrite_cold_demag")
+            .expect("the ferrite step");
+        let title =
+            reviewed_note("ferrite_cold_demag").map_or_else(String::new, |n| glyph_safe(n.title));
+        assert_eq!(
+            start_here_text(ferrite),
+            format!(
+                "{START_HERE_BUTTON} {} of {} {FERRITE_ONLY}: {title}",
+                ferrite + 1,
+                START_HERE.len()
+            )
+        );
+        for step in (0..START_HERE.len()).filter(|&s| s != ferrite) {
+            assert!(!start_here_text(step).contains(FERRITE_ONLY), "step {step}");
+        }
     }
 
     #[test]
