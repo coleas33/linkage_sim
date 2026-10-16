@@ -1191,10 +1191,14 @@ mod tests {
         assert_eq!(TEMPLATE.matches(DATA_SLOT).count(), 1);
     }
 
-    /// The byte range of the JSON the page embeds after `const DATA = `.
+    /// The byte range of the JSON the page embeds after `const DATA = `, up to
+    /// the `;` that ends its line. The line ends in LF or CRLF, as the template
+    /// was checked out (`str::lines` drops either).
     fn data_span(html: &str) -> (usize, usize) {
-        let start = html.find("const DATA = ").unwrap() + "const DATA = ".len();
-        (start, start + html[start..].find(";\n").unwrap())
+        let start = html.find("const DATA = ").expect("the page declares DATA") + "const DATA = ".len();
+        let line = html[start..].lines().next().expect("the DATA line");
+        let data = line.strip_suffix(';').expect("the DATA line ends with ;");
+        (start, start + data.len())
     }
 
     #[test]
@@ -1211,6 +1215,23 @@ mod tests {
         let (start, end) = data_span(&html);
         let v: serde_json::Value = serde_json::from_str(&html[start..end]).unwrap();
         assert_eq!(v["frames"].as_array().unwrap().len(), animation_data(&state).unwrap().frames.len());
+    }
+
+    #[test]
+    fn the_data_is_found_whatever_the_line_endings() {
+        // `include_str!` embeds the template as checked out: LF on Linux, CRLF
+        // on a Windows checkout with `core.autocrlf`. The JSON holds no line
+        // break of its own (serde escapes them), so neither swap touches it.
+        let state = swept_lift();
+        let frames = animation_data(&state).unwrap().frames.len();
+        let lf = generate_animation_html(&state).unwrap().replace("\r\n", "\n");
+        for (eol, html) in [("LF", lf.clone()), ("CRLF", lf.replace('\n', "\r\n"))] {
+            let (start, end) = data_span(&html);
+            let data = &html[start..end];
+            assert!(data.starts_with('{') && data.ends_with('}'), "{eol}: the span is not the JSON object");
+            let v: serde_json::Value = serde_json::from_str(data).unwrap();
+            assert_eq!(v["frames"].as_array().unwrap().len(), frames, "{eol}");
+        }
     }
 
     #[test]
