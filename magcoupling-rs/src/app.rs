@@ -248,6 +248,25 @@ mod tests {
             script.contains(crate::gui::SHOW_DETAILS),
             "the smoke prompt names the header's toggle"
         );
+        // Spec R14 (guidance slice 2): the steps name the welcome strip, a note's What to change
+        // and its sources fold, the Geometry tab and the dashboard's last row as the page draws
+        // them, so the prompt cannot go stale unnoticed.
+        assert!(script.contains(crate::gui::WELCOME), "the welcome strip");
+        assert!(
+            script.contains(crate::gui::explorer::WHAT_TO_CHANGE),
+            "a note's What to change"
+        );
+        assert!(
+            script.contains(crate::gui::explorer::WHERE_FROM),
+            "a note's sources fold"
+        );
+        assert!(
+            script.contains(crate::gui::CentreView::Geometry.label()),
+            "the Geometry tab"
+        );
+        let fit =
+            crate::gui::guidance::guide(crate::gui::guidance::FIT_CHECK).expect("the fit guide");
+        assert!(script.contains(fit.label), "the dashboard's last row");
         // The app opens the link and the solve succeeds after its debounce.
         let ctx = egui::Context::default();
         let mut app = MagcouplingApp::new(&ctx);

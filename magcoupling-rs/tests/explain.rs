@@ -1233,6 +1233,52 @@ fn only_the_review_tools_are_ignored() {
     assert!(checks.is_empty(), "ignored checks: {checks:?}");
 }
 
+/// The docs state the counts the code has (F36: the note count went stale before): the
+/// README's and docs/ai/03-structure.yaml's note count, the README's Start here step count
+/// and, while the shaft-clamp section is paused (ruling 11), how many notes show; once the
+/// section is back the docs drop that phrase.
+#[test]
+fn the_docs_count_the_notes_and_the_steps() {
+    use magcoupling::engine::clamps;
+    const PAUSED_PHRASE: &str = "shown while the clamp section is paused";
+    let readme = include_str!("../README.md");
+    let structure = include_str!("../../docs/ai/03-structure.yaml");
+    let all = notes::NOTES.len();
+    let shown = notes::NOTES.iter().filter(|n| notes::shown(n.id)).count();
+    let notes_claim = format!("the {all} A4 teaching notes");
+    let steps_claim = format!("its {} steps", notes::START_HERE.len());
+    let structure_claim = format!("NOTES ({all} notes");
+    assert!(
+        readme.contains(&notes_claim),
+        "README.md should say {notes_claim:?}"
+    );
+    assert!(
+        readme.contains(&steps_claim),
+        "README.md should say {steps_claim:?}"
+    );
+    assert!(
+        structure.contains(&structure_claim),
+        "docs/ai/03-structure.yaml should say {structure_claim:?}"
+    );
+    let paused_claim = format!("{all} notes, {shown} {PAUSED_PHRASE}");
+    for (doc, text) in [
+        ("README.md", readme),
+        ("docs/ai/03-structure.yaml", structure),
+    ] {
+        if clamps::PAUSED {
+            assert!(
+                text.contains(&paused_claim),
+                "{doc} should say {paused_claim:?}"
+            );
+        } else {
+            assert!(
+                !text.contains(PAUSED_PHRASE),
+                "{doc} still says the clamp section is paused"
+            );
+        }
+    }
+}
+
 /// The physics reviewer's sheet for a batch: every record's path, cell, symbol, rendered
 /// formula and corrections, as a Markdown table on stdout. Run with
 /// `cargo test --test explain review_sheet -- --ignored --nocapture`.
