@@ -174,6 +174,9 @@ pub fn compute(w: &WarningInputs) -> WarningResults {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::api::{DesignInputs, compute_all};
+    use crate::engine::explain::notes::note;
+    use crate::engine::material_library::{BACK_IRON_CHOICES, SLEEVE_LINER_CHOICES, material};
     use crate::engine::meta::{ResultSet, Value};
 
     /// The default design's inputs: no rule fires.
@@ -287,5 +290,191 @@ mod tests {
         assert_eq!(fired(&w), vec![0]);
         w.circuit_backiron = 7; // an invalid code is free space, as the engine takes it
         assert_eq!(fired(&w), vec![0]);
+    }
+
+    // ---- R11 (slice 2): which library picks fire which rule, through the whole engine. The
+    // ---- warning notes name these picks, so these tests pin what the notes say.
+
+    /// The rule ids that fire on `inputs`, through the whole engine (`api::compute` feeds the rules
+    /// the materials in effect).
+    fn fired_on(inputs: &DesignInputs) -> Vec<&'static str> {
+        let results = compute_all(inputs);
+        WARNING_RULES
+            .iter()
+            .filter(|rule| {
+                results.get(&format!("warnings.{}", rule.id)) != Some(Value::Text(String::new()))
+            })
+            .map(|rule| rule.id)
+            .collect()
+    }
+
+    /// The default design with the back iron `code`, the circuit selector `circuit` (1 steel, 0
+    /// none) and `plating_mm` of plating per surface.
+    fn with_back_iron(code: i64, circuit: i64, plating_mm: f64) -> DesignInputs {
+        let mut inputs = DesignInputs::default();
+        inputs.materials.parts.back_iron = code;
+        inputs.coupling.backiron = circuit;
+        inputs.materials.nickel.thickness_mm = plating_mm;
+        inputs
+    }
+
+    /// The back-iron codes whose pick fires `rule` on the circuit `circuit` at `plating_mm`.
+    fn back_irons_firing(rule: &str, circuit: i64, plating_mm: f64) -> Vec<i64> {
+        BACK_IRON_CHOICES
+            .iter()
+            .map(|&(code, _)| code)
+            .filter(|&code| fired_on(&with_back_iron(code, circuit, plating_mm)).contains(&rule))
+            .collect()
+    }
+
+    /// The name a note gives a library back iron: its id's leading token ("12L14_cold_drawn" ->
+    /// "12L14", "17-4PH_H900" -> "17-4PH").
+    fn short_name(code: i64) -> &'static str {
+        let id = BACK_IRON_CHOICES
+            .iter()
+            .find(|&&(c, _)| c == code)
+            .map(|&(_, id)| id)
+            .unwrap();
+        id.split('_').next().unwrap()
+    }
+
+    /// The default plating per surface (above zero).
+    fn plated() -> f64 {
+        DesignInputs::default().materials.nickel.thickness_mm
+    }
+
+    #[test]
+    fn low_saturation_fires_for_12l14_416_and_both_17_4ph_conditions_only() {
+        // R11: on the steel circuit, the back irons with no design flux density of their own or a
+        // sourced saturation below LOW_SATURATION_T fire it; with the circuit off nothing can.
+        let fires = back_irons_firing("low_saturation", 1, plated());
+        assert_eq!(fires, [3, 4, 5, 6]);
+        // The same codes from the library's own data: the rule and the data agree.
+        let from_data: Vec<i64> = BACK_IRON_CHOICES
+            .iter()
+            .filter(|&&(code, id)| {
+                let m = material(id).unwrap();
+                m.ferromagnetic
+                    && (m.bsat_T.value.is_some_and(|b| b < LOW_SATURATION_T)
+                        || (code != BACK_IRON_CHOICES[0].0 && m.design_flux_density_T.is_none()))
+            })
+            .map(|&(code, _)| code)
+            .collect();
+        assert_eq!(fires, from_data);
+        let names: Vec<&str> = fires.iter().map(|&code| short_name(code)).collect();
+        assert_eq!(names, ["12L14", "416", "17-4PH", "17-4PH"]);
+        assert!(back_irons_firing("low_saturation", 0, plated()).is_empty());
+    }
+
+    #[test]
+    fn uncoated_fires_for_4140_1018_and_12l14_at_zero_plating_only() {
+        // R11: the plain and low-alloy steels, unplated, on the steel circuit.
+        assert!(plated() > 0.0);
+        let bare = back_irons_firing("uncoated_low_alloy_steel", 1, 0.0);
+        assert_eq!(bare, [1, 2, 3]);
+        let from_data: Vec<i64> = BACK_IRON_CHOICES
+            .iter()
+            .filter(|&&(_, id)| {
+                let m = material(id).unwrap();
+                m.ferromagnetic && m.needs_plating
+            })
+            .map(|&(code, _)| code)
+            .collect();
+        assert_eq!(bare, from_data);
+        let names: Vec<&str> = bare.iter().map(|&code| short_name(code)).collect();
+        assert_eq!(names, ["4140", "1018", "12L14"]);
+        assert!(back_irons_firing("uncoated_low_alloy_steel", 1, plated()).is_empty());
+        assert!(back_irons_firing("uncoated_low_alloy_steel", 0, 0.0).is_empty());
+    }
+
+    #[test]
+    fn the_open_circuit_and_expansion_rules_fire_for_304_and_6061_or_the_circuit_switched_off() {
+        // R11: a non-magnetic pick selects free space; so does the circuit selector at 0 with any
+        // pick. Either way the hub is non-magnetic metal, and its expansion is past the limit.
+        let non_magnetic: Vec<i64> = BACK_IRON_CHOICES
+            .iter()
+            .filter(|&&(_, id)| !material(id).unwrap().ferromagnetic)
+            .map(|&(code, _)| code)
+            .collect();
+        assert_eq!(non_magnetic, [7, 8]);
+        let names: Vec<&str> = non_magnetic.iter().map(|&code| short_name(code)).collect();
+        assert_eq!(names, ["304", "6061"]);
+        let every: Vec<i64> = BACK_IRON_CHOICES.iter().map(|&(code, _)| code).collect();
+        for rule in ["non_ferromagnetic_back_iron", "cte_mismatch_with_magnets"] {
+            assert_eq!(back_irons_firing(rule, 1, plated()), non_magnetic, "{rule}");
+            assert_eq!(
+                back_irons_firing(rule, 0, plated()),
+                every,
+                "{rule}: circuit off"
+            );
+        }
+    }
+
+    #[test]
+    fn with_plating_only_4140_and_1018_fire_no_warning() {
+        // R11: 416, 17-4PH and 12L14 trade the plating caution for the low-saturation one.
+        let quiet: Vec<i64> = BACK_IRON_CHOICES
+            .iter()
+            .map(|&(code, _)| code)
+            .filter(|&code| fired_on(&with_back_iron(code, 1, plated())).is_empty())
+            .collect();
+        assert_eq!(quiet, [1, 2]);
+    }
+
+    #[test]
+    fn no_sleeve_choice_fires_a_sleeve_warning_but_a_316l_conductivity_typed_above_the_threshold_does()
+     {
+        // R11: every listed sleeve and liner is non-magnetic and conducts no better than 316L.
+        for &(code, id) in &SLEEVE_LINER_CHOICES {
+            let mut inputs = DesignInputs::default();
+            inputs.materials.parts.sleeve_liner = code;
+            let fired = fired_on(&inputs);
+            assert!(fired.is_empty(), "{id}: {fired:?}");
+            assert!(!material(id).unwrap().ferromagnetic, "{id}");
+        }
+        // The threshold is a constant, not the 316L entry: 316L typed above it fires the caution;
+        // another pick, which overrides that entry, does not.
+        let mut typed = DesignInputs::default();
+        typed.temperature.slip_loss.sigma_316_S_m = SLEEVE_SIGMA_BASELINE_S_M * 1.01;
+        assert_eq!(fired_on(&typed), ["high_conductivity_sleeve_or_liner"]);
+        typed.materials.parts.sleeve_liner = SLEEVE_LINER_CHOICES[1].0;
+        assert!(fired_on(&typed).is_empty());
+    }
+
+    #[test]
+    fn each_back_iron_warning_note_names_the_library_picks_that_fire_it() {
+        // The notes list the steels by name; the library decides which fire. A library change that
+        // moves a pick in or out of a rule fails here until the note follows.
+        let cases = [
+            (
+                "low_saturation",
+                back_irons_firing("low_saturation", 1, plated()),
+            ),
+            (
+                "uncoated_low_alloy_steel",
+                back_irons_firing("uncoated_low_alloy_steel", 1, 0.0),
+            ),
+            (
+                "non_ferromagnetic_back_iron",
+                back_irons_firing("non_ferromagnetic_back_iron", 1, plated()),
+            ),
+            (
+                "cte_mismatch_with_magnets",
+                back_irons_firing("cte_mismatch_with_magnets", 1, plated()),
+            ),
+        ];
+        for (rule_id, codes) in cases {
+            let rule = WARNING_RULES.iter().find(|r| r.id == rule_id).unwrap();
+            let text = note(rule.note_id).unwrap().sentences.join(" ");
+            assert!(!codes.is_empty(), "{rule_id} fires for some pick");
+            for code in codes {
+                let name = short_name(code);
+                assert!(
+                    text.contains(name),
+                    "{}: the note names {name}",
+                    rule.note_id
+                );
+            }
+        }
     }
 }

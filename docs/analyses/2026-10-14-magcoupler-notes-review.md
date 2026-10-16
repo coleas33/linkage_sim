@@ -3649,3 +3649,500 @@ the outer ring; ..."), sentences[3] and [4], and watch_out[0].
   - Left open for the controller: SF-A, SF-B, SF-C's optional test pin and its verify-first
     backlog line (cross-part torque comparisons at prototype-matching designs depend on the
     entered bench torque; `demagnetization` change[0] is in the same class), and SF-D.
+
+## a5.non_ferromagnetic_back_iron
+
+Task T17. Rewrite of "Non-ferromagnetic back iron" as "No magnetic steel behind the magnets",
+the teaching note of the open-circuit warning (the first of `WARNING_RULES`). It keeps its
+equation, the circuit in effect (`materials.circuit_backiron`, which the panel's warning test
+clicks), and the FluxPathBackIron diagram. Reviewer: physics reviewer (session model), fresh
+context. Date: 2026-10-14 (the date the slice plan fixes for the note's `review` field; both
+rounds ran on 2026-10-15).
+
+Rounds: 2. Verdict: PASS. Note: "No magnetic steel behind the magnets" (plan T17).
+
+Verdict by round: 1 MUST-FIX (4 items in this note, 13 across the task's six notes); 2 PASS. The
+six warning notes were reviewed together. Each round's full answer is
+`.superpowers/sdd/2026-10-14-magcoupler-guidance-slice-2/task-17-inreview-r<N>.md`, and the
+fields that round 1 changed are listed with their old and new text in
+`task-17-inreview-r1-changes.md` beside it. Round 2 re-checked only those fields and the fields
+whose meaning depends on them.
+
+The text reviewed in round 1 already carried A-13's plain-words sources and A-28e item 1's
+joint-neutral change[2] (the axial magnet length: "... and shaft-joint and gearbox loads rise
+with the cold-high torque.", in place of "the cold-high torque and clamp demand rise"; no field
+names a clamp while the shaft-clamp section is paused, ruling 11). Every round confirmed them
+applied.
+
+The reviewer's report for the record, round by round, as returned:
+
+Round 1:
+
+Round 1, 2026-10-15, physics reviewer (session model).
+Checked:
+- The fields, at the five probe designs: the title; 5 sentences; 3 change entries; 1 watch-out; 4 sources.
+- The engine behind them:
+  - `warnings.rs:144-172`;
+  - `api.rs:337-353`;
+  - `material_library.rs:731-749` and `:868-909`;
+  - `model.rs:584-599` and `:1029-1030`;
+  - `materials.rs:243-249`;
+  - the `model.f_cal` and pull-out records in `explain/records/torque.rs`;
+  - the R11 tests.
+- The documents: spec 3.1-3.3 and 8; slice-1 spec 8; phys-new-notes 2; phys-notes-c 1 and 7; A-13; A-24 S-10; A-28e.
+- Sentence 0 is plain ASCII, 25 words, and answers the warning text (`warnings.rs:61`).
+- The sources are A-13's, verbatim. No field names a clamp.
+- Change[2] is A-28e's text, verbatim.
+Numbers reproduced:
+- {model.pullout_iron_Nm} = 2.688, 1.968, 2.688, 0.2071, 2.539 N·m.
+- {model.pullout_noiron_Nm} = 1.537, 1.001, 1.697, 0.1183, 1.205 N·m.
+- `model.f_cal` = 0.95, 0.95, 1.0495, 0.95, 0.95.
+- No-iron/iron = 0.57, 0.51, 0.63, 0.57, 0.47. Over fitting designs at 8 to 20 mm ring radius and 4 to 16 magnets, it is 0.45 to 0.60, so "much less" holds.
+Directions probed:
+- **change[2], axial length.** The input is blank at all five designs. It is seeded at the inner length, 12.70 mm, and stepped to 12.71 mm.
+  - Pull-out, up at all five: 2.6885 to 2.6908, 1.9684 to 1.9701, 1.6974 to 1.6989, 0.20707 to 0.20726, 2.5393 to 2.5417 N·m.
+  - Cold-high at the gearbox input, up at all five: 0.8049 to 0.8056, 0.5893 to 0.5898, 0.5082 to 0.5086, 0.07117 to 0.07124, 0.7602 to 0.7610 N·m.
+  - Mass up at all five.
+- **change[0], from the 304 design.**
+  - 4140: pull-out 2.688 N·m; cold-high input 0.508 to 0.805 N·m; the check "Too thin ... 2.0 mm"; slip loss 0.924 to 2.751 W; mass 176.48 to 173.79 g.
+  - 1018: the check OK; slip loss 3.024 W; time to the limit (high case) "never" to 735.9 s.
+  - From 6061: mass 96.81 to 173.79 g.
+- **change[1], circuit 0 to 1 with 4140.**
+  - Pull-out: 1.697 to 2.688 (default), 1.001 to 1.968 (8 magnets), 0.1183 to 0.2071 (Y30), 1.331 to 2.539 N·m (20 mm).
+  - Mass 96.81 to 173.79 g at the default, and the check returns.
+  - The entry is held at the 304 design.
+Must-fix:
+1. **sentences[2].** Current: "That model keeps much less torque: on this design the same layout gives {model.pullout_iron_Nm} with steel and {model.pullout_noiron_Nm} without." Replacement: "That model keeps much less torque: on this design the same layout gives {model.pullout_iron_Nm} with unsaturated steel and {model.pullout_noiron_Nm} without." Reason: spec 8, steel torque without the saturation caveat. `model.rs:1029` is ideal steel, and the wall check reads "Too thin" at three designs.
+2. **change[0].** Current: "4140 or 1018 restore the steel circuit; both need plating, and 12L14, 416 or 17-4PH trip the low-saturation caution." Replacement: "4140 or 1018 restore steel torque but bring back the cup-wall check, plating, steel's mass and slip heat, and higher shaft-joint and gearbox loads." Reason: spec 3.1. From 304, cold-high input goes from 0.508 to 0.805 N·m, past the 0.6 rating; the wall check returns as "Too thin"; slip loss triples. From 6061 the mass nearly doubles.
+3. **change[1].** Current: "the steel circuit, once a magnetic steel is picked; the hub, cup and boss become steel, so the coupling gets heavier." Replacement: "the steel circuit, once a magnetic steel is picked, restores torque but adds mass, brings back the cup-wall check and raises shaft-joint and gearbox loads." Reason: the loads and the returning check went unnamed (`api.rs:347-351`, `materials.rs:243-249`).
+4. **watch_out[0]** (seed S-10, amended). Current: "Only designs with the bench prototype's pole count and B842SH on both rings get its measured calibration; elsewhere the assumed factor applies, so the torque shown jumps." Replacement: "Only no-back-iron designs with the bench prototype's magnets per ring and B842SH on both rings get its measured calibration; elsewhere the assumed factor applies, so the torque shown jumps." Reason: false at the default design (f_cal 0.95; `model.rs:584-599`), which is the slice-1 bench-calibration trap.
+Should (not blocking): sentences[4], "the expansion-mismatch caution usually fires". A 304 hub stops firing with the NdFeB expansion above about +1.9e-6 (ruling 5).
+Verdict: MUST-FIX
+
+Round 2:
+
+Round 2, 2026-10-15, physics reviewer (session model).
+Checked:
+- The fields changed by round 1, at the five probe designs: sentences[2] (MF-1), change[0] (MF-2), change[1] (MF-3), watch_out[0] (MF-4); and sentence 4, which their "bring back the cup-wall check" answers. The title, sentences 0, 1, 3 and 4, change[2] (A-28e, verbatim) and the four sources are unchanged from round 1 and stand.
+- The engine behind them: `model.rs:584-599` (the calibration rule) and `:1027-1030` (the steel and no-back-iron torques); `material_library.rs:880-909` (circuit, design flux density, body material); `api.rs:337-353` (the rules' inputs); `materials.rs` and `records/dashboard.rs:64-68` (the cup-wall check and its "No back iron"); `temperature.rs:1064-1111` (the bond screen); `records/torque.rs:76-87`; the R11 tests.
+- The traps: spec 8 (steel torque without the saturation caveat; 416, 17-4PH or 12L14 clean swaps; the coupling protects the gearbox; a shaft-joint method chosen or sized here); slice-1 spec 8 (the bench calibration beyond prototype-matching designs); T-G, T-L, T-O; N1, N2. None is written.
+- Form: every field within its cap (sentences 25, 24, 20, 22, 20 words; changes 24, 25, 25; watch-out 29); `plain_text_violations` and `audit_ids` empty for every field, sources included; no field names a clamp.
+Numbers reproduced:
+- {model.pullout_iron_Nm} = 2.688, 1.968, 2.688, 0.2071, 2.539 N·m.
+- {model.pullout_noiron_Nm} = 1.537, 1.001, 1.697, 0.1183, 1.205 N·m. No-iron/iron = 0.57, 0.51, 0.63, 0.57, 0.47.
+- The steel torque does not read the wall: with the wall at 0.5 mm, or one step lower in wall or design flux density, the pull-out is unchanged at all five designs (2.688476, 1.968360, 1.697369, 0.207074, 2.539258 N·m).
+- `model.f_cal` = 0.95, 0.95, 1.0495, 0.95, 0.95. In the no-back-iron states (304, 6061, circuit off) it is 1.0495 at the default, 304 and 20 mm designs, and 0.95 at 8 magnets and at Y30 (parts cleared). The 304 default at 12 magnets gives 0.95 (pull-out 1.697 to 1.871 N·m).
+Directions probed:
+- **change[0], from 304, pick 4140** (1018 where it differs):
+  - default and 304 designs: pull-out 1.697 to 2.688; cold-high at the gearbox input 0.508 to 0.805 N·m; check "No back iron" to "Too thin ... 2.0 mm" (1018 "OK"); slip loss 0.924 to 2.751 W (1018 3.024 W, time to the limit "never" to 735.9 s); mass 176.48 to 173.79 g (1018 174.09 g); peak end shear 15.76 to 11.68 MPa.
+  - 8 magnets: pull-out 1.001 to 1.968; input 0.300 to 0.589 N·m; check to "Too thin ... 2.4 mm" (1018 2.2 mm); slip 0.826 to 2.870 W; time to the limit "never" to 1049.6 s (1018 607.9 s); mass 177.47 to 174.59 g.
+  - Y30: pull-out 0.1183 to 0.2071; input 0.041 to 0.071 N·m; check to "OK"; slip 0.924 to 2.751 W; mass 163.70 to 161.01 g.
+  - 20 mm: pull-out 1.331 to 2.539; input 0.399 to 0.760 N·m; check to "Too thin ... 3.3 mm" (1018 2.9 mm); slip 2.407 to 9.777 W; time to the limit "never" to 187.1 s; mass 354.95 to 348.64 g.
+  - From 6061 the same pull-out, input and check; mass 96.81 to 173.79, 92.05 to 174.59, 84.03 to 161.01, 168.21 to 348.64 g; slip 2.918 to 2.751, 3.050 to 2.870, 2.918 to 2.751, 13.24 to 9.78 W.
+  - At zero plating, 4140 and 1018 fire the plating caution at all five designs; 304 and 6061 do not.
+- **change[1], circuit 0 to 1** with 4140, 1018, 12L14, 416 or 17-4PH H900 picked: pull-out restored (1.697 to 2.688, 1.001 to 1.968, 0.1183 to 0.2071, 1.331 to 2.539 N·m), cold-high at the input up, the check back, mass up at every design (+74 to +180 g). Held at the 304 design (set by the pick).
+- **change[2], axial length** (unchanged, A-28e): the dump shows the pull-out up at all five (2.6885 to 2.6908 at the default).
+Must-fix: none.
+Should (not blocking): change[1] becomes "the steel circuit, with magnetic steel picked, restores torque but adds mass over aluminium, brings back the cup-wall check and raises shaft-joint and gearbox loads." (25 words): at the 304 design, where the entry is held, the path from 304 to steel lowers the mass 1.4 to 1.8 %. sentences[4]: "fires" becomes "usually fires" (ruling 5).
+Verdict: PASS
+
+Earlier rounds: 4 must-fix item(s) in round 1, applied as given (the old and new texts are in
+round 1's Must-fix above; round 2 confirmed each):
+- sentences[2]: "That model keeps much less torque: on this design the same layout gives {model.pullout_iron_Nm} with unsaturated steel ..."
+- change[0] (`materials.parts.back_iron`, Choose): "4140 or 1018 restore steel torque but bring back the cup-wall check ..."
+- change[1] (`coupling.backiron`, Choose): "the steel circuit, once a magnetic steel is picked, restores torque but adds mass ..."
+- watch_out[0] (seed S-10, amended): "Only no-back-iron designs with the bench prototype's magnets per ring ..."
+
+Seeds (A-24):
+- S-10 (watch_out[0]: "Only designs with the bench prototype's magnets per ring and B842SH on both rings get its measured calibration; elsewhere the assumed factor applies, so the torque shown jumps."): accepted in round 1 with one change and applied as MF-4; round 2 confirms it in place. Reason: the seed's "magnets per ring" is right (the on-screen count, where "pole count" is ambiguous). But as seeded, and as drafted, the line still told the default design, which has 10 magnets per ring, B842SH on both rings and steel, that it gets the measured calibration. Only no-back-iron designs do: `model.f_cal` is the assumed 0.95 at the default and the bench 1.0495 only at the 304 design (`model.rs:584-599`). That is the slice-1 trap "the bench calibration applies beyond prototype-matching designs". The applied text adds "no-back-iron" and is true at all five designs.
+
+Controller ruling 5 (T17 Q4: the reviewer may soften sentences[4]'s "the expansion-mismatch
+caution fires" to "usually"): offered as SF-1 in rounds 1 and 2 and not applied, because the
+apply step takes must-fix items only. It stays open for the controller below.
+
+Should-fix offered, not applied (open for the controller; no on-screen text changed after the
+round-2 PASS):
+- SF-1 (rounds 1 and 2; ruling 5), sentences[4], 21 words: "The hub, cup and boss then become non-magnetic metal, the cup-wall check no longer applies, and the expansion-mismatch caution usually fires." Why: with "NdFeB expansion in the bond plane" above about +1.9e-6 /°C (its slider runs to +6e-6), a 304 hub no longer fires the caution; 6061, and the circuit switched off, fire it everywhere on the slider.
+- SF-8 (round 2), change[1], 25 words: "the steel circuit, with magnetic steel picked, restores torque but adds mass over aluminium, brings back the cup-wall check and raises shaft-joint and gearbox loads." Why: at the 304 design the entry is held ("set by the Back iron material (hub, cup and boss) pick"). Its only free move, the circuit from 0 to 1 with a magnetic steel picked, starts from the aluminium body (`material_library.rs:905-909`) and adds mass at all five designs (+74 to +180 g), so the shipped entry is true for the move it offers, which is why this is not blocking. But a reader at the 304 design who reads it as the whole path from 304 meets the opposite: 176.48 to 173.79 g (4140) or 174.09 g (1018) at the default, and a 1.4 to 1.8 % fall at every design, because 304 is the denser metal. Round 1 made change[0] neutral ("steel's mass") for the same reason (MF-2).
+
+Considered, no change (the reviewer's observations):
+- "The torque shown jumps" (watch_out[0]) is vague but true; sizing the step would need a typed factor ratio (round 1).
+- At the 304 design the no-iron torque carries the bench factor while the steel torque carries the assumed one; watch_out[0] covers this (round 1).
+- Identical tails: change[0] and `a5.cte_mismatch_with_magnets` change[0] share their trade-off clauses word for word, and so do the two notes' change[1]. The two warnings fire together at every state probed (304, 6061, the circuit off). Each note opens alone from its own warning and the claims are the same physics, so the repetition is harmless; trimming one would leave that note's entry without its trade-offs (spec 3.1) (round 2).
+- "Restore steel torque" without the circuit: with the circuit switched off, a pick alone restores nothing (4140 or 1018 at circuit 0 leave every result unchanged); change[1] covers that state (rounds 1 and 2).
+- A magnetic pick other than 4140 or 1018 with the circuit switched on (change[1]'s "a magnetic steel") also fires the low-saturation caution for 12L14, 416 and 17-4PH. The entry calls no steel a clean swap, the returning cup-wall check it names is where that caution belongs, and the low-saturation and plating notes name those picks (round 2).
+- The bench factor at another size: at the 20 mm design a 304 pick gets the bench factor (1.0495), since the rule checks only the circuit, the count and the part. watch_out[0] states the rule exactly and claims no validity, so the slice-1 calibration trap is not written; the calibration note owns the caveat (round 2).
+
+## a5.ferromagnetic_sleeve_or_liner
+
+Task T17. Rewrite of "Ferromagnetic sleeve or liner" as "Magnetic sleeve or liner", the
+teaching note of the magnetic-shell warning. It got the shortest rewrite (R13): every listed
+sleeve and liner material is non-magnetic, so the warning cannot fire, and the note has no change
+entry, watch-out, equation or diagram. Reviewer: physics reviewer (session model), fresh context.
+Date: 2026-10-14 (the date the slice plan fixes for the note's `review` field; both rounds ran on
+2026-10-15).
+
+Rounds: 2. Verdict: PASS. Note: "Magnetic sleeve or liner" (plan T17).
+
+Verdict by round: 1 PASS; 2 PASS (no field of this note changed). The six warning notes were
+reviewed together; each round's full answer is as under `## a5.non_ferromagnetic_back_iron`.
+Round 2 re-checked this note only for dependence on the fields round 1 changed in the other notes
+(none) and for the form checks (all clean), and kept its round-1 section as the final-round record.
+
+The text reviewed in round 1 already carried A-13's plain-words sources. Every round confirmed
+them applied.
+
+The reviewer's report for the record, as returned (round 1; round 2 reproduced it verbatim):
+
+Round 1, 2026-10-15, physics reviewer (session model).
+Checked:
+- The fields, at the five probe designs: the title; 3 sentences; 0 change entries (R13); 0 watch-outs; 3 sources.
+- The engine behind them:
+  - `warnings.rs:148`;
+  - `api.rs:339`;
+  - the four sleeve choices (`material_library.rs:744-749`), all with `ferromagnetic: false`;
+  - the R11 sleeve test.
+- Traps N1 and N9 are not written. Sentence 2 says the warning cannot fire and the torque model has no term for a magnetic shell. Both are true: the rule reads only the library flag.
+- Sentence 0 is plain, 18 words, and sets up the warning text's gap-flux short circuit, which sentence 1 completes.
+- The sources are A-13's, verbatim. The third source's B_sat · t cap is right physics. No field names a clamp.
+Numbers reproduced: none (no placeholders). No rule fires for any sleeve choice at any of the five designs.
+Directions probed: none (no entries).
+Must-fix: none.
+Should (not blocking): none.
+Verdict: PASS
+
+Seeds (A-24): none for this note.
+
+Should-fix offered: none.
+
+Considered, no change (the reviewer's observation): sentence 0 sets the scene and sentence 1
+answers it. This is the R13 shortest form (round 1).
+
+## a5.high_conductivity_sleeve_or_liner
+
+Task T17. Rewrite of "High-conductivity sleeve or liner" as "Sleeve or liner that conducts better
+than 316L", the teaching note of the conductivity caution. Beside the sleeve and liner slip losses
+(`temperature.slip_loss.sleeve_W`, `temperature.slip_loss.liner_W`) it now also owns the sleeve
+conductivity in effect, which the caution compares (`materials.sleeve_sigma_S_m`; spec 3.3,
+`the_wall_and_sleeve_notes_own_the_rows_slice_2_gives_them`). Reviewer: physics reviewer (session
+model), fresh context. Date: 2026-10-14 (the date the slice plan fixes for the note's `review`
+field; both rounds ran on 2026-10-15).
+
+Rounds: 2. Verdict: PASS. Note: "Sleeve or liner that conducts better than 316L" (plan T17).
+
+Verdict by round: 1 PASS; 2 PASS (no field of this note changed). The six warning notes were
+reviewed together; each round's full answer is as under `## a5.non_ferromagnetic_back_iron`.
+Round 2 re-checked this note only for dependence on the fields round 1 changed in the other notes
+(none) and for the form checks (all clean), and kept its round-1 section as the final-round record.
+
+The text reviewed in round 1 already carried A-13's plain-words sources. Every round confirmed
+them applied. A-25 T-7 (`the_sleeve_entry_at_the_bottom_of_its_slider_is_plain_text_with_the_reason`,
+`src/gui/explorer.rs`) draws the sleeve entry with the sleeve at its slider minimum as plain text,
+" (at the bottom of its range)", with no link, while the liner entry beside it stays a link; it
+passed in both rounds.
+
+The reviewer's report for the record, as returned (round 1; round 2 reproduced it verbatim):
+
+Round 1, 2026-10-15, physics reviewer (session model).
+Checked:
+- The fields, at the five probe designs: the title; 5 sentences; 3 change entries; 1 watch-out; 3 sources.
+- The engine behind them:
+  - `warnings.rs:39` and `:149` (a constant 1.35e6 S/m);
+  - `api.rs:180` (the shells take the pick's conductivity);
+  - `temperature.rs:1174-1180` (the shell loss: end factor × conductivity × t × (ω r)² × B² / 2 × 2π r L), with ω the slip speed (`temperature.rs:914`);
+  - the R11 sleeve test: 316L typed above the threshold fires; another pick does not.
+- Sentence 0 glosses the eddy currents ("cut through the other ring's field ... the eddy currents this drives").
+- Traps N3 and N12 are not written.
+- The sources are A-13's, verbatim. No field names a clamp.
+Numbers reproduced:
+- {temperature.slip_loss.sleeve_W} = 0.07470, 0.07470, 0.07470, 0.07470, 0.3696 W.
+- {temperature.slip_loss.liner_W} = 0.1805, 0.1805, 0.1805, 0.1805, 0.8483 W.
+- {temperature.slip_loss.total_W} = 2.751, 2.870, 0.9240, 2.751, 9.777 W.
+- The shells make 9.3, 8.9, 27.6, 9.3 and 12.5 % of the total.
+- The conductivity in effect is 1.35e6 S/m at all five designs.
+Directions probed:
+- **change[1], sleeve 0.10 to 0.09 mm.**
+  - sleeve_W: 0.07470 to 0.06716 W at four designs; 0.3696 to 0.3324 W at 20 mm. Down at all five; the ratio 0.899 against 0.9 is "in proportion".
+  - Running clearance +0.010 mm at all five; mass down.
+- **change[2], liner 0.20 to 0.19 mm.**
+  - liner_W: 0.1805 to 0.1717 W at four designs; 0.8483 to 0.8063 W at 20 mm. Down at all five; the ratio is 0.951 against 0.95.
+  - Running clearance +0.010 mm at all five.
+- **change[0], material, at the default.**
+  - Ti, IN625, PEEK: sleeve 0.0329, 0.0429, 0 W; liner 0.0796, 0.1037, 0 W; total 2.609, 2.643, 2.496 W.
+  - Mass 169.41, 174.33, 165.61 g.
+  - No check moves toward red at any design.
+- At the slider minimum the sleeve entry draws "(at the bottom of its range)" (A-25 T-7 passes).
+Must-fix: none.
+Should (not blocking):
+- watch_out[0] becomes: "The field at each shell is an entered value from the example design's 3D model; it does not follow your gap, ring radius, magnet grade, size or count." The stored fields do not follow the ring radius either.
+- A-27: the entries that duplicate `slip_heating` stay. Each note opens alone, the claims agree, and the note needs 1 to 5 entries.
+Verdict: PASS
+
+Seeds (A-24): none for this note.
+
+Prose duplicates (A-27): no trim, in rounds 1 and 2. `slip_heating`'s sleeve-and-liner material,
+sleeve and liner entries (reviewed in T15) say what this note's three entries say, in other words.
+Both stay: each note opens alone from its own links (the slip-loss rows and Start here step 10;
+the conductivity caution), the claims agree (lower conductivity and a thinner shell heat less, and
+strength is not checked), and removing them would leave this note with no entries (spec 3.1 needs
+1 to 5). T15's record (under `## slip_heating`) suggested that this note point at those levers
+rather than restate them; the reviewer kept both for these reasons. `slip_heating` did not change.
+
+Should-fix offered, not applied (open for the controller; no on-screen text changed after the
+round-1 PASS):
+- SF-5 (rounds 1 and 2), watch_out[0], 28 words: "The field at each shell is an entered value from the example design's 3D model; it does not follow your gap, ring radius, magnet grade, size or count." Why: the stored shell fields do not follow the ring radius either (at the 20 mm design the shell loss moves only through radius and speed: 0.3696 and 0.8483 W), and "count" replaces "pole count", for the on-screen magnets per ring.
+
+Considered, no change (the reviewer's observation): Inconel 625 adds 0.54 g (174.33 against
+173.79 g at the default). That is negligible (round 1).
+
+## a5.low_saturation
+
+Task T17. Rewrite of "Low saturation" as "Back-iron wall and saturation", the teaching note of the
+low-saturation caution and now also the Why of the dashboard's Cup wall check row
+(`CUP_WALL_GUIDE`). It owns the wall rule's rows (spec 3.3): the design flux density in effect
+(`model.bsat_T`), the gap flux density (`model.gap_flux_density_T`), the wall the rule asks for
+(`model.backiron_needed_mm`), the suggested wall (`materials.cup_wall_suggested_mm`) and the check
+(`materials.cup_wall_check`). No note owns the cup's outside diameter (`model.cup_od_mm`).
+Reviewer: physics reviewer (session model), fresh context. Date: 2026-10-14 (the date the slice
+plan fixes for the note's `review` field; both rounds ran on 2026-10-15).
+
+Rounds: 2. Verdict: PASS. Note: "Back-iron wall and saturation" (plan T17).
+
+Verdict by round: 1 MUST-FIX (5 items in this note, 13 across the task's six notes); 2 PASS. The
+six warning notes were reviewed together; each round's full answer and the round-1 changes file
+are as under `## a5.non_ferromagnetic_back_iron`. Round 2 re-checked only the changed fields and
+the fields whose meaning depends on them.
+
+The text reviewed in round 1 already carried A-13's plain-words sources. Every round confirmed
+them applied. A-25 T-4 (`the_wall_note_s_design_flux_entry_names_the_pick_that_sets_it`,
+`src/gui/explorer.rs`, Review Focus RF-4): with the 1018 back iron, which brings its own design
+flux density, the entry on "Design flux density for the back-iron check" is plain text, "set by
+the Back iron material (hub, cup and boss) pick"; with 12L14 it is a link. It passed in both
+rounds, after MF-8's deletion too.
+
+The reviewer's report for the record, round by round, as returned:
+
+Round 1:
+
+Round 1, 2026-10-15, physics reviewer (session model).
+Checked:
+- The fields, at the five probe designs: the title; 5 sentences; 4 change entries; 2 watch-outs; 4 sources; 5 owned equations (the ownership test passes).
+- The engine behind them:
+  - `warnings.rs:150-153`;
+  - `api.rs:342-345`;
+  - `material_library.rs:879-886` (the design flux density in effect);
+  - `model.rs:964` (cup OD) and `:1034-1040` (B_gap, the wall rule);
+  - `materials.rs:243-249` (the check and its "No back iron");
+  - the wall records in `explain/records/dashboard.rs`;
+  - `guidance.rs:184-190` (the Cup wall guide) and `:274-275` (12 magnets do not fit the default ring).
+- The documents: the math audit M1 (`2026-09-29-magcoupling-math-audit.md:57`); phys-new-notes T-I, T-K and T-L; phys-notes-c section 4 and N4, N7, N8 and N11.
+- R11: on the steel circuit the caution fires for 12L14, 416, 17-4PH H1150 and 17-4PH H900 only.
+- Sentence 0 is plain ASCII, 25 words, and answers the Cup wall check row and the caution.
+- The sources are A-13's, verbatim. No field names a clamp.
+Numbers reproduced:
+- {model.backiron_needed_mm} = 1.919, 2.399, 1.919, 0.5326, 3.267 mm.
+- {model.bsat_T} = 1.500 T at all five designs.
+- B_gap = 1.0265 T, except 0.2849 T at Y30.
+- Pole pitch = 8.809, 11.011, 8.809, 8.809, 14.998 mm.
+- The check reads "Too thin ... 2.0 mm", "Too thin ... 2.4 mm", "No back iron", "OK", "Too thin ... 3.3 mm". The suggested wall is 2.0, 2.4, n/a, 0.6, 3.3 mm.
+Directions probed:
+- **change[0], wall 1.80 to 1.85 mm.** Cup OD +0.100 mm at all five: 41.326 to 41.426 at the default, 304 and Y30 designs; 42.436 to 42.536 at 8 magnets; 62.040 to 62.140 at 20 mm. Mass up.
+- **change[1], design flux density 1.50 to 1.49 T.** The wall needed rises at all five: 1.9189 to 1.9318, 2.3986 to 2.4147 (the suggestion goes 2.4 to 2.5), 1.9189 to 1.9318, 0.5326 to 0.5361, 3.2671 to 3.2890 mm. With 1018 the entry is plain text, "set by the ... pick" (A-25 T-4 passes).
+- **change[2], magnets +2.** The wall needed falls at all five: 1.919 to 1.599, 2.399 to 1.919, 1.919 to 1.599, 0.533 to 0.444, 3.267 to 2.723 mm.
+  - 12 magnets do not fit at the default, 304 and Y30 designs.
+  - The check flips from "Too thin" to "OK" at the default.
+  - The pull-out rises 11 to 64 %, and cold-high at the gearbox input rises at all five.
+- **change[3].** 4140 and 1018 clear the caution (R11).
+Must-fix:
+1. **sentences[1].** Current: "The needed wall grows with the gap flux density and the pole pitch, and shrinks as the design flux density, set below saturation, rises." Replacement: "The calculator's rule sizes the wall for half a pole's flux at the design flux density, a working level set below the steel's saturation." Reason: trap T-I. The rule (`model.rs:1040`) scales with the pole pitch, while the real flux follows block width (M1). Check g: the terms are unglossed.
+2. **sentences[2].** Current: "Wider poles, from fewer magnets or a larger ring, and stronger magnets need more wall; here a steel cup would need {model.backiron_needed_mm}." Replacement: "So the rule asks for more wall with stronger magnets or wider poles, from fewer magnets or a larger ring; here it gives {model.backiron_needed_mm}." Reason: T-I names this claim as the rule's; M1's flat-top need with the same blocks is 2.16 mm at any count.
+3. **sentences[4]** (seed S-11, amended). Current: "Here the cup-wall check uses {model.bsat_T}; for those steels that is the entered value, 4140's by default, which their data may not support." Replacement: "Here the rule uses {model.bsat_T}; for those steels that is the entered design flux density, which their own data may not support." Reason: false at the 304 design, where the check reads "No back iron" (`materials.rs:243-249`). "4140's" sits beside trap N4.
+4. **change[2]** (`coupling.npole`, Raise). Current: "narrower poles need a thinner wall; the pull-out torque changes too, and the blocks must still fit around the ring." Replacement: delete the entry. Reason: T-I. At the default, 12 magnets do not fit, yet the check turns OK while the real need (about 2.0 to 2.2 mm) stays above the 1.8 mm wall. The rise in pull-out and in the gearbox load is unnamed.
+5. **watch_out[0].** Current: "The torque shown assumes ideal steel: a thin or saturating wall shows only in the cup-wall check, while the real torque would fall below the prediction." Replacement: "With steel, the torque shown assumes it never saturates: a thin or saturating wall shows only in the cup-wall check, while the real torque would fall below the prediction." Reason: false at the 304 design, where the torque shown has no steel (`model.rs:1030`).
+Should (not blocking):
+- change[3] becomes: "4140 or 1018 clear the low-saturation caution but heat more when slipping than 416 or 17-4PH; both rust, so keep plating above zero." With 1018 the time to the limit goes from "never" to 735.9 s.
+- watch_out[1]: "exact 2D sections" becomes "exact 2D field solutions".
+Verdict: MUST-FIX
+
+Round 2:
+
+Round 2, 2026-10-15, physics reviewer (session model).
+Checked:
+- The fields changed by round 1, at the five probe designs: sentences[1] (MF-5), sentences[2] (MF-6), sentences[4] (MF-7), the deleted `coupling.npole` entry (MF-8), watch_out[0] (MF-9); and the fields that lean on them: sentence 3 (uses "design flux density" after sentence 1 glosses it), change[1] (the "Design flux density for the back-iron check" input), watch_out[1] ("the rule is approximate"). The title, sentence 0, change[0], change[2] (was change[3]), watch_out[1] and the four sources are unchanged from round 1 and stand.
+- The engine behind them: `model.rs:1033-1040` (B_gap and the wall rule); the record `records/dashboard.rs:53-68` ("Half a pole's flux, B_gap τ_p / π per unit length, carried by the wall at B_des"); `material_library.rs:882-886` (the design flux density in effect) and the library (12L14, 416, 17-4PH H1150 and H900 have no design flux density of their own; 1018 has 1.7 T; 4140's saturation is not sourced); `warnings.rs:150-153`; the torque path (`model.rs:1027-1030`), which never reads the wall.
+- The traps: T-I (the rule's dependence on pole pitch is the rule's, now written "the rule asks for"), T-K and N4 (no 4140 saturation; the design flux density is "a working level set below the steel's saturation"), T-L and N1 (the shown torque never falls; the real one would), N11 (watch_out[1] keeps "approximate"), T-P (no outside-diameter claim), slice-1 "fewer poles keep the same size" (sentence 2 says the rule asks for more wall with fewer magnets), and the Global Constraints trap "more magnets make the coupling stiffer" (no stiffness claim). None is written.
+- Form: sentences 25, 24, 24, 25, 22 words; changes 19, 21, 16 (three entries: within 1 to 5); watch-outs 29, 27; every field clean of banned patterns, audit ids and "clamp", sources included. Each placeholder sits in a "here" clause.
+- The ownership test `the_wall_and_sleeve_notes_own_the_rows_slice_2_gives_them` and A-25 T-4 pass after MF-8.
+Numbers reproduced:
+- {model.backiron_needed_mm} = 1.919, 2.399, 1.919, 0.5326, 3.267 mm; equal to B_gap·τ_p/(π·{model.bsat_T}) to 0 at all five (B_gap 1.0265 T, 0.2849 T at Y30; τ_p 8.809, 11.011, 8.809, 8.809, 14.998 mm).
+- {model.bsat_T} = 1.500 T at all five designs. With 1.3 T entered it reads 1.3 T for 4140, 12L14, 416, both 17-4PH conditions, 304 and 6061, and stays 1.7 T for 1018.
+- The check reads "Too thin ... 2.0 mm", "Too thin ... 2.4 mm", "No back iron", "OK", "Too thin ... 3.3 mm".
+Directions probed:
+- **Sentence 2's levers, in the rule:** magnets per ring 4, 6, 8, 10, 12, 14, 16, 20 give 4.797, 3.198, 2.399, 1.919, 1.599, 1.371, 1.199, 0.960 mm (falling); ring radius from 8 mm in 0.5 mm steps across the Size tab's reach gives 1.625 mm at 8, 3.267 at 20, 4.088 at 26 (rising, no reversal); grades N35, N42, N48, N52 give 1.727, 1.919, 2.037, 2.140 mm (rising with B_gap 0.924, 1.027, 1.090, 1.145 T).
+- **Watch-out 0:** the wall at 0.5 mm or one step thinner, or the design flux density one step lower, leaves the pull-out unchanged at all five designs while the check reads "Too thin".
+- **change[0], wall +0.05 mm:** cup OD +0.100 mm at all five (dump). **change[1], design flux density −0.01 T:** the wall needed rises at all five (dump: 1.9189 to 1.9318 mm at the default).
+Must-fix: none.
+Should (not blocking): change[2] becomes "4140 or 1018 clear the low-saturation caution but heat more when slipping than 416 or 17-4PH; both rust, so keep plating above zero." (slip loss 2.751 and 3.024 W against 2.021 and 1.832 W at the default). watch_out[1]: "exact 2D sections" becomes "exact 2D field solutions".
+Verdict: PASS
+
+Earlier rounds: 5 must-fix item(s) in round 1, applied as given (the old and new texts are in
+round 1's Must-fix above; round 2 confirmed each):
+- sentences[1]: "The calculator's rule sizes the wall for half a pole's flux at the design flux density ..."
+- sentences[2]: "So the rule asks for more wall with stronger magnets or wider poles ..."
+- sentences[4] (seed S-11, amended): "Here the rule uses {model.bsat_T}; for those steels that is the entered design flux density ..."
+- change[2] (`coupling.npole`, Raise): deleted. The note keeps three entries, and the back-iron pick moved from change[3] to change[2], its text unchanged.
+- watch_out[0]: "With steel, the torque shown assumes it never saturates ..."
+
+Seeds (A-24):
+- S-11 (sentences[4]: "Here the cup-wall check uses {model.bsat_T}; for those steels that is the entered design value, which their own data may not support."): accepted in round 1 with two changes and applied as MF-7; round 2 confirms it in place. Reason: dropping "4140's" is right, because it keeps trap N4 ("1.5 T is 4140's saturation"; 4140's saturation is not sourced, `material_library.rs:117`) away. But "the cup-wall check uses" is false at the 304 probe design, where the check reads "No back iron" and compares nothing (`materials.rs:243-249`) while the rule still uses the value (`model.rs:1040`), so it becomes "the rule uses"; and "design value" becomes "design flux density", the term sentences[1] glosses. The applied text is true at all five designs.
+
+Should-fix offered, not applied (open for the controller; no on-screen text changed after the
+round-2 PASS):
+- SF-2 (rounds 1 and 2), change[2] (change[3] before MF-8), 23 words: "4140 or 1018 clear the low-saturation caution but heat more when slipping than 416 or 17-4PH; both rust, so keep plating above zero." Why: at the default the slip loss goes from 2.021 W (416) or 1.832 W (17-4PH H900) to 2.751 W (4140) or 3.024 W (1018); with 1018 the time to the limit (high case) goes from "never" to 735.9 s. The dashboard's temperature verdict does not change at any probe design, so this is not blocking.
+- SF-3 (rounds 1 and 2), watch_out[1], 28 words: "The rule is approximate: against exact 2D field solutions it asks for about 12 to 16 % too little wall at the example design, more with more poles." Why: "2D sections" is jargon.
+
+Considered, no change (the reviewer's observations):
+- `model.bsat_T`'s locked label reads "Back-iron saturation flux density" (`tests/data/python_schema.json:2081`), while sentences[1] glosses the value as a design flux density set below saturation. The note is right (T-K); the label is Python-locked, so no change here (round 2).
+- "Half a pole's flux": the rule treats the flat-circuit gap flux density as a sine's peak (`records/dashboard.rs:56-58`). sentences[1] states what the rule sizes for, and watch_out[1] says the rule is approximate and asks for too little wall, so trap N11 ("the wall rule is exact") is not written (round 2).
+
+## a5.uncoated_low_alloy_steel
+
+Task T17. Rewrite of "Uncoated low-alloy steel" as "Unplated carbon or low-alloy steel", the
+teaching note of the plating caution. Reviewer: physics reviewer (session model), fresh context.
+Date: 2026-10-14 (the date the slice plan fixes for the note's `review` field; both rounds ran on
+2026-10-15).
+
+Rounds: 2. Verdict: PASS. Note: "Unplated carbon or low-alloy steel" (plan T17).
+
+Verdict by round: 1 PASS; 2 PASS (no field of this note changed). The six warning notes were
+reviewed together; each round's full answer is as under `## a5.non_ferromagnetic_back_iron`.
+Round 2 re-checked this note only for dependence on the fields round 1 changed in the other notes
+(none) and for the form checks (all clean), and kept its round-1 section as the final-round record.
+
+The text reviewed in round 1 already carried A-13's plain-words sources. Every round confirmed
+them applied.
+
+The reviewer's report for the record, as returned (round 1; round 2 reproduced it verbatim):
+
+Round 1, 2026-10-15, physics reviewer (session model).
+Checked:
+- The fields, at the five probe designs: the title; 3 sentences; 2 change entries; 1 watch-out; 2 sources.
+- The engine behind them:
+  - `warnings.rs:154` (steel circuit, known material, needs plating, plating <= 0);
+  - `materials.rs:258-261` (the machining allowances t, t, 2t, 2t);
+  - the plating input's help: high-phosphorus EN, typically 0.013 to 0.025 mm;
+  - the library's `needs_plating` flags;
+  - the R11 tests: 4140, 1018 and 12L14 fire at zero plating only; with plating, only 4140 and 1018 fire nothing.
+- The slice-1 trap "416 is a safe fix" and N8 are not written: change[1] names the low-saturation caution.
+- Sentence 0 is plain, 18 words, and answers the caution.
+- The sources are A-13's, verbatim. No field names a clamp.
+Numbers reproduced: none (no placeholders). At the default plating the allowances are 0.015, 0.015, 0.030 and 0.030 mm.
+Directions probed:
+- **change[0], plating 0.015 to 0.016 mm.** "Machine the hub flats under by" goes 0.015 to 0.016 mm at all five designs (up).
+- **change[1].** 416 and 17-4PH need no plating, and they fire the low-saturation caution at all five designs. 304 selects the no-back-iron circuit (R11).
+Must-fix: none.
+Should (not blocking): none.
+Verdict: PASS
+
+Seeds (A-24): none for this note.
+
+Should-fix offered: none.
+
+Considered, no change (the reviewer's observation): "typically 0.013 to 0.025 mm" (change[0]) is
+the sourced range in the plating input's help, not a typed default (round 1).
+
+## a5.cte_mismatch_with_magnets
+
+Task T17. Rewrite of "Expansion mismatch with the magnets" as "Hub expands much more than the
+magnets", the teaching note of the expansion-mismatch caution. Reviewer: physics reviewer (session
+model), fresh context. Date: 2026-10-14 (the date the slice plan fixes for the note's `review`
+field; both rounds ran on 2026-10-15).
+
+Rounds: 2. Verdict: PASS. Note: "Hub expands much more than the magnets" (plan T17).
+
+Verdict by round: 1 MUST-FIX (4 items in this note, 13 across the task's six notes); 2 PASS. The
+six warning notes were reviewed together; each round's full answer and the round-1 changes file
+are as under `## a5.non_ferromagnetic_back_iron`. Round 2 re-checked only the changed fields and
+the fields whose meaning depends on them.
+
+The text reviewed in round 1 already carried A-13's plain-words sources. Every round confirmed
+them applied.
+
+The reviewer's report for the record, round by round, as returned:
+
+Round 1:
+
+Round 1, 2026-10-15, physics reviewer (session model).
+Checked:
+- The fields, at the five probe designs: the title; 4 sentences; 4 change entries; 2 watch-outs; 3 sources.
+- The engine behind them:
+  - `warnings.rs:155` (|hub − magnet| > 15e-6);
+  - `api.rs:347-352` (the hub in effect; one NdFeB input for every grade);
+  - `temperature.rs:1070-1101` (the screen: the hub only, the swing, the bondline, the modulus);
+  - `temperature.rs:209-215` (the NdFeB input and its range; the adhesive modulus, which does not follow the pick).
+- The library expansion coefficients, in µm/m per °C: 4140 12.3, 1018 12.0, 12L14 11.5, 416 10.08, 17-4PH 11.9 and 10.8, 304 16.9, 6061 23.6.
+- R11: the caution fires for 304, 6061, or the circuit switched off.
+- Traps N5, N6 and N10 are not written.
+- Sentence 0 is 24 words, with no placeholder; its only glyphs are µ and °.
+- The sources are A-13's, verbatim. No field names a clamp.
+Numbers reproduced:
+- {temperature.mismatch.peak_shear_current_MPa} = 11.68, 11.68, 15.76, 16.11, 11.87 MPa.
+- {temperature.adhesive.lap_shear_MPa} = 15.00 MPa at all five designs.
+Directions probed:
+- **change[2], bondline 0.050 to 0.055 mm.** Peak shear falls at all five: 11.681 to 10.692, 11.681 to 10.692, 15.759 to 14.427, 16.111 to 14.747, 11.874 to 10.855 MPa. The mass falls slightly: the hub is cut.
+- **change[3], adhesive modulus 0.107 to 0.106 GPa.** Peak shear falls at all five: 11.681 to 11.580, 11.681 to 11.580, 15.759 to 15.623, 16.111 to 15.972, 11.874 to 11.770 MPa.
+- **change[0].**
+  - From 304 to 4140: 15.76 to 11.68 MPa; mass 176.48 to 173.79 g.
+  - From 6061 to 4140: 20.76 to 11.68 MPa; mass 96.81 to 173.79 g.
+- **change[1], circuit 0 to 1 with 4140.** 20.76 to 11.68 MPa.
+- **NdFeB edges.** 304 stops firing above about +1.9e-6. 4140 fires below about −2.7e-6.
+Must-fix:
+1. **sentences[2]** (seed S-12, amended). Current: "The caution fires above a 15 µm/m per °C difference: a 304 or 6061 aluminium hub, or no back iron; no listed steel does." Replacement: "The caution fires above a 15 µm/m per °C difference: 304 stainless or 6061 aluminium hubs, or no back iron; no listed magnetic steel does." Reason: 304 stainless is a listed steel that fires the caution, and "304 or 6061 aluminium" misreads. "listed" is needed because a typed 4140 expansion coefficient can fire it (`api.rs:347-351`, `warnings.rs:155`).
+2. **sentences[3].** Current: "... against {temperature.adhesive.lap_shear_MPa} lap shear." Replacement: "The caution ignores the temperature swing and the glue; the bond check counts both, here {temperature.mismatch.peak_shear_current_MPa} of peak end shear against {temperature.adhesive.lap_shear_MPa} lap-shear strength." Reason: check g, "lap shear" glossed as the adhesive's strength.
+3. **change[0].** Current: "a steel hub such as 4140 or 1018 cuts the mismatch most; it is heavier and needs plating." Replacement: "4140 or 1018 hubs cut the mismatch but bring back the cup-wall check, plating, steel's mass and slip heat, and higher shaft-joint and gearbox loads." Reason: "heavier" is false from 304 (176.48 to 173.79 g). The rise in cold-high input from 0.508 to 0.805 N·m, the returning "Too thin" check and the tripled slip loss went unnamed.
+4. **change[1].** Current: "the steel circuit, with a magnetic steel picked, bonds the magnets to steel instead of aluminium." Replacement: "the steel circuit, with magnetic steel picked, bonds magnets to steel but adds mass, brings back the cup-wall check and raises shaft-joint and gearbox loads." Reason: no trade-off was named. The mass goes from 96.81 to 173.79 g and the pull-out from 1.697 to 2.688 N·m, and the check returns.
+Should (not blocking):
+- sentences[0]: "steel grows about 12" becomes "magnetic steel grows about 12".
+- The expansion list holds at the default NdFeB input only (see the edges above).
+Verdict: MUST-FIX
+
+Round 2:
+
+Round 2, 2026-10-15, physics reviewer (session model).
+Checked:
+- The fields changed by round 1, at the five probe designs: sentences[2] (MF-10), sentences[3] (MF-11), change[0] (MF-12), change[1] (MF-13); and sentence 0, whose "steel grows about 12" sentence 2 now qualifies. The title, sentences 0 and 1, change[2], change[3], both watch-outs and the three sources are unchanged from round 1 and stand.
+- The engine behind them: `warnings.rs:155` (|hub − magnet| > 15e-6 /°C); `api.rs:347-352` (the hub in effect: steel on the steel circuit, else the body); `material_library.rs:895-909` (a non-magnetic pick is the body; otherwise the body is aluminium); `temperature.rs:1064-1111` (the screen: the worst swing from the cure, the bondline, the modulus; the reading against the adhesive's lap-shear strength).
+- The traps: spec 8 (the expansion caution counts the swing; the coupling protects the gearbox; a shaft-joint method chosen or sized here); N5, N6, N10. None is written.
+- Form: sentences 24, 24, 25, 24 words; changes 25, 25, 19, 16; watch-outs 26, 19; every field clean of banned patterns, audit ids and "clamp", sources included. Sentence 3's placeholders sit in its "here" clause beside the neutral "against".
+Numbers reproduced:
+- {temperature.mismatch.peak_shear_current_MPa} = 11.68, 11.68, 15.76, 16.11, 11.87 MPa.
+- {temperature.adhesive.lap_shear_MPa} = 15.00 MPa at all five. The reading is "Below the lap-shear strength" at the default, 8-magnet and 20 mm designs and "Above the lap-shear strength at the block ends" at the 304 and Y30 designs.
+- The caution, by pick with the circuit on: fires for 304 and 6061 only; with the circuit off: fires for every pick; the same at all five designs (at the default NdFeB expansion input).
+Directions probed:
+- **change[0], from 304 to 4140 (1018):** peak end shear 15.76 to 11.68 (11.41) MPa at the default, 8-magnet and 304 designs; 21.74 to 16.11 (15.74) at Y30; 16.04 to 11.87 (11.60) at 20 mm. From 6061: 20.76 to 11.68 (11.41), 28.63 to 16.11 at Y30, 21.75 to 11.87 at 20 mm. The cup-wall check returns, cold-high at the gearbox input rises (0.508 to 0.805 N·m at the default) and the plating caution fires at zero plating, at all five. The mass and slip loss move both ways, as in `a5.non_ferromagnetic_back_iron` (from 304 the mass falls 1.4 to 1.8 % and the slip loss rises; from 6061 the mass nearly doubles and the slip loss falls).
+- **change[1], circuit 0 to 1 with 4140:** peak shear 20.76 to 11.68 MPa (Y30 28.63 to 16.11; 20 mm 21.75 to 11.87); mass 96.81 to 173.79 g (92.05 to 174.59, 84.03 to 161.01, 168.21 to 348.64 g); the check returns; cold-high at the input rises. Held at the 304 design.
+- **change[2], bondline +0.005 mm, and change[3], adhesive modulus −0.001 GPa** (unchanged): peak shear down at all five (dump).
+Must-fix: none.
+Should (not blocking): sentences[3] ends "against {temperature.adhesive.lap_shear_MPa} room-temperature lap-shear strength." (25 words): the strength is the 22 °C data-sheet value, the shear arises at the temperature extremes. change[1] becomes "the steel circuit, with magnetic steel picked, bonds magnets to steel, adds mass over aluminium, brings back the cup-wall check, raises shaft-joint and gearbox loads." (25 words; the path from 304 lowers the mass). sentences[0]: "steel grows about 12" becomes "magnetic steel grows about 12". The list in sentence 2 holds at the default NdFeB expansion input only (4140 fires below about −2.7e-6 /°C).
+Verdict: PASS
+
+Earlier rounds: 4 must-fix item(s) in round 1, applied as given (the old and new texts are in
+round 1's Must-fix above; round 2 confirmed each):
+- sentences[2] (seed S-12, amended): "The caution fires above a 15 µm/m per °C difference: 304 stainless or 6061 aluminium hubs ..."
+- sentences[3]: "The caution ignores the temperature swing and the glue; ..." (now ending "... lap-shear strength.")
+- change[0] (`materials.parts.back_iron`, Choose): "4140 or 1018 hubs cut the mismatch but bring back the cup-wall check ..."
+- change[1] (`coupling.backiron`, Choose): "the steel circuit, with magnetic steel picked, bonds magnets to steel but adds mass ..."
+
+Seeds (A-24):
+- S-12 (sentences[2]: "The caution fires above a 15 µm/m per °C difference: a 304 stainless or 6061 aluminium hub, or no back iron; no magnetic steel does."): accepted in round 1 with one change and applied as MF-10; round 2 confirms it in place. Reason: "304 stainless" removes the misreading of the draft's "a 304 or 6061 aluminium hub" as two aluminium alloys, and the draft's "no listed steel does" was false: 304 stainless is a listed back-iron steel, and it fires the caution (mismatch 17.7 against 15; the R11 test `the_open_circuit_and_expansion_rules_fire_for_304_and_6061_or_the_circuit_switched_off`). The seed's "no magnetic steel does" becomes "no listed magnetic steel does": the rule reads the steel expansion coefficient in effect (`api.rs:347-351`, `warnings.rs:155`), and 4140's is a typed input whose slider runs to 25e-6, so a typed 4140 coefficient above about 14.2e-6 /°C fires the caution; "listed" keeps the claim to the picks the R11 tests pin. The applied text is true at all five designs (at the default NdFeB expansion input: SF-6 below).
+
+Should-fix offered, not applied (open for the controller; no on-screen text changed after the
+round-2 PASS):
+- SF-4 (rounds 1 and 2), sentences[0], 25 words: "In the plane of the glue joint NdFeB barely expands with heat, while magnetic steel grows about 12 and aluminium about 24 µm/m per °C." Why: 304 stainless is also a steel, at 16.9 µm/m per °C, and sentences[2] now names it as a hub that fires; "steel grows about 12" leaves that unexplained.
+- SF-6 (rounds 1 and 2; no text change, for the record): the expansion list holds at the default "NdFeB expansion in the bond plane" input only. 4140 fires with that input below about −2.7e-6 /°C (slider minimum −3e-6), and 304 stops firing above about +1.9e-6 /°C. So "no listed magnetic steel does" is true at the five designs but not at the slider's end. `a5.non_ferromagnetic_back_iron`'s SF-1 covers the other note.
+- SF-8 (round 2), change[1], 25 words: "the steel circuit, with magnetic steel picked, bonds magnets to steel, adds mass over aluminium, brings back the cup-wall check, raises shaft-joint and gearbox loads." Why: as under `## a5.non_ferromagnetic_back_iron` (SF-8 there): the entry is true for the move it offers, but the path from 304 lowers the mass.
+- SF-9 (round 2), sentences[3], 25 words: "The caution ignores the temperature swing and the glue; the bond check counts both, here {temperature.mismatch.peak_shear_current_MPa} of peak end shear against {temperature.adhesive.lap_shear_MPa} room-temperature lap-shear strength." Why: the bond check compares the peak end shear, which arises at the worst temperature swing from the cure (`temperature.rs:1066`), with the adhesive's lap-shear strength at 22 °C from its data sheet ("Selected adhesive lap shear at 22 °C (TDS)"). A reader may take "lap-shear strength" as the strength at temperature, which is lower when hot. The placeholders stay in the "here" clause.
+
+Considered, no change (the reviewer's observation): the identical tails shared with
+`a5.non_ferromagnetic_back_iron`'s change[0] and change[1] are harmless, as under that note
+(round 2).

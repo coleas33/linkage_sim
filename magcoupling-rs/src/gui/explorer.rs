@@ -2011,6 +2011,89 @@ mod tests {
     }
 
     #[test]
+    fn the_wall_note_s_design_flux_entry_names_the_pick_that_sets_it() {
+        // Review Focus RF-4 (amendment A-25 T-4): 1018 brings its own design flux density, so the
+        // wall note's entry on that input is plain text naming the back-iron pick; 12L14 has none
+        // of its own and leaves the input in effect, so the same entry is a link.
+        use crate::engine::material_library::BACK_IRON_CHOICES;
+        use crate::engine::picks::BACK_IRON_PICK;
+        assert_eq!(BACK_IRON_CHOICES[1], (2, "1018_hot_rolled"));
+        assert_eq!(BACK_IRON_CHOICES[2], (3, "12L14_cold_drawn"));
+        let entry = *notes::note("a5.low_saturation")
+            .and_then(|n| {
+                n.change
+                    .iter()
+                    .find(|c| c.input == "materials.steel.bsat_T")
+            })
+            .expect("the wall note has an entry on the design flux density");
+        let reason = |back_iron: i64| {
+            let mut inputs = DesignInputs::default();
+            inputs.materials.parts.back_iron = back_iron;
+            let results = compute_all(&inputs);
+            let held = |path: &str| held_reason(&SizingState::default(), &inputs, path);
+            let view = NoteView {
+                inputs: &inputs,
+                results: &results,
+                held: &held,
+            };
+            unlinked_reason(&entry, &view)
+        };
+        let set = reason(2).expect("1018 sets the design flux density");
+        assert!(set.starts_with("set by the"), "{set}");
+        assert_eq!(
+            set,
+            format!("set by the {} pick", label_for(BACK_IRON_PICK))
+        );
+        assert_eq!(reason(3), None);
+    }
+
+    #[test]
+    fn the_sleeve_entry_at_the_bottom_of_its_slider_is_plain_text_with_the_reason() {
+        // Amendment A-25 T-7: at the sleeve's slider minimum one step thinner is past the slider,
+        // so the sleeve note's entry draws its label as plain text with the reason and no link;
+        // the liner entry beside it stays a link.
+        use crate::gui::test_support::drawn_texts;
+        let sleeve = "metal.sleeve_mm";
+        let note = notes::note("a5.high_conductivity_sleeve_or_liner").unwrap();
+        let entry = note
+            .change
+            .iter()
+            .find(|c| c.input == sleeve)
+            .expect("the sleeve note has an entry on the sleeve thickness");
+        assert_eq!(entry.step, notes::Step::Lower);
+        let mut inputs = DesignInputs::default();
+        let lowest = InputCatalogue::get()
+            .entry(sleeve)
+            .unwrap()
+            .meta
+            .range
+            .unwrap()
+            .min;
+        inputs.set(sleeve, Value::Num(lowest)).unwrap();
+        let results = compute_all(&inputs);
+        let held = |path: &str| held_reason(&SizingState::default(), &inputs, path);
+        let view = NoteView {
+            inputs: &inputs,
+            results: &results,
+            held: &held,
+        };
+        let ctx = egui::Context::default();
+        let (link, output) = click_in_note(&ctx, note, &view, label_for(sleeve));
+        assert_eq!(link, None, "an input at its slider's end is no link");
+        let reason = format!(" ({AT_BOTTOM})");
+        assert_eq!(
+            drawn_texts(&output)
+                .iter()
+                .filter(|t| **t == reason)
+                .count(),
+            1
+        );
+        let liner = "metal.liner_mm";
+        let (link, _) = click_in_note(&ctx, note, &view, label_for(liner));
+        assert_eq!(link, Some(NoteLink::Input(liner)), "the liner stays a link");
+    }
+
+    #[test]
     fn a_live_value_reads_as_the_readouts_and_none_where_there_is_no_prediction() {
         use crate::engine::explain::probes::probe_designs;
         let designs = probe_designs();

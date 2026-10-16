@@ -924,144 +924,265 @@ pub const NOTES: &[Note] = &[
     },
     Note {
         id: "a5.non_ferromagnetic_back_iron",
-        title: "Non-ferromagnetic back iron",
+        title: "No magnetic steel behind the magnets",
         equations: &["materials.circuit_backiron"],
         sentences: &[
-            "Steel behind the magnets gives each ring's flux an easy return path, so the flux crosses the gap and closes through the steel instead of spreading out behind the magnets.",
-            "Stainless 304 and aluminium have a relative permeability near 1, like air, so choosing one switches the calculator to the free-space circuit: the geometry factor loses its sinh form and the torque drops by more than 40 % (2.69 to 1.54 N·m); the default design has the measured prototype's pole count and magnet part (B842SH on both rings), so the calculator also switches to the bench calibration (0.95 to 1.049) and shows 1.70 N·m.",
-            "The flux that no longer closes through steel leaks out around the coupling, so a strong stray field extends outside it and pulls in steel chips and debris.",
+            "Magnetic steel behind the rings carries flux from pole to pole; without it, flux spreads behind the magnets, less crosses the gap and torque drops.",
+            "304 stainless and 6061 aluminium are non-magnetic, like air: picking either for the back iron, or switching the circuit off, selects the no-back-iron model.",
+            "That model keeps much less torque: on this design the same layout gives {model.pullout_iron_Nm} with unsaturated steel and {model.pullout_noiron_Nm} without.",
+            "Without steel the field also spreads outside the coupling and pulls in steel chips; the calculator does not compute this stray field.",
+            "The hub, cup and boss then become non-magnetic metal, the cup-wall check no longer applies, and the expansion-mismatch caution fires.",
         ],
-        change: &[],
-        watch_out: &[],
+        change: &[
+            Change {
+                input: "materials.parts.back_iron",
+                step: Step::Choose,
+                aim: None,
+                text: "4140 or 1018 restore steel torque but bring back the cup-wall check, plating, steel's mass and slip heat, and higher shaft-joint and gearbox loads.",
+            },
+            Change {
+                input: "coupling.backiron",
+                step: Step::Choose,
+                aim: None,
+                text: "the steel circuit, once a magnetic steel is picked, restores torque but adds mass, brings back the cup-wall check and raises shaft-joint and gearbox loads.",
+            },
+            Change {
+                input: "coupling.magnets.axial_length_mm",
+                step: Step::Raise,
+                aim: Some(("model.pullout_Nm", Sense::Up)),
+                text: "if you stay non-magnetic, longer magnets win back torque; the coupling grows longer and heavier, and shaft-joint and gearbox loads rise with the cold-high torque.",
+            },
+        ],
+        watch_out: &[
+            "Only no-back-iron designs with the bench prototype's magnets per ring and B842SH on both rings get its measured calibration; elsewhere the assumed factor applies, so the torque shown jumps.",
+        ],
         diagram: Some(Diagram::FluxPathBackIron),
         sources: &[
-            "Spec A5 warning rules",
-            "M1 audit M5 (steel at the magnet backs)",
-            "Addendum A report section 5 (the no-back-iron circuit, E15 to E17)",
+            "Material warning rules",
+            "Math audit of 2026-09-29: steel at the magnet backs",
+            "Design report: the no-back-iron circuit",
+            "The one-point calibration rule (the bench factor only for the prototype's circuit, magnet count and magnet part)",
         ],
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
-            date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
+            date: "2026-10-14",
+            record: "docs/analyses/2026-10-14-magcoupler-notes-review.md#a5.non_ferromagnetic_back_iron",
         },
     },
     Note {
         id: "a5.ferromagnetic_sleeve_or_liner",
-        title: "Ferromagnetic sleeve or liner",
+        title: "Magnetic sleeve or liner",
         equations: &[],
         sentences: &[
-            "The sleeve and liner sit in the magnetic gap, the one place the flux must cross from ring to ring.",
-            "A ferromagnetic sleeve or liner offers the flux an easy path along itself, from one pole to its neighbour on the same ring, and flux that takes that short cut never crosses the gap, so it carries no torque.",
-            "Saturation caps the short cut at about B_sat · t per unit length, so the torque lost grows with the shell's thickness t and is a larger share for weaker magnets; since any ferromagnetic shell costs torque, the retainers are non-magnetic 316L, titanium, Inconel or PEEK.",
+            "The sleeve and liner sit in the gap that all torque-making flux must cross from ring to ring.",
+            "A magnetic shell would let flux short-cut from pole to pole on one ring, so less would cross the gap and make torque.",
+            "Every listed sleeve and liner material is non-magnetic, so this warning cannot fire; the torque model has no term for it.",
         ],
         change: &[],
         watch_out: &[],
         diagram: None,
         sources: &[
-            "Spec A5 warning rules",
-            "Addendum A report section 4 (the materials table: ferromagnetic or not)",
-            "Plan A-3 Task 16 physics review, the saturation cap: a shell of thickness t diverts at most about B_sat · t per unit length (default sleeve 0.1 mm, liner 0.2 mm)",
+            "Material warning rules",
+            "Design report: the materials table, magnetic or not",
+            "An earlier physics review: a shell of thickness t diverts at most about B_sat · t of flux per unit length",
         ],
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
-            date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
+            date: "2026-10-14",
+            record: "docs/analyses/2026-10-14-magcoupler-notes-review.md#a5.ferromagnetic_sleeve_or_liner",
         },
     },
     Note {
         id: "a5.high_conductivity_sleeve_or_liner",
-        title: "High-conductivity sleeve or liner",
+        title: "Sleeve or liner that conducts better than 316L",
         equations: &[
             "temperature.slip_loss.sleeve_W",
             "temperature.slip_loss.liner_W",
+            "materials.sleeve_sigma_S_m",
         ],
         sentences: &[
-            "The sleeve and liner sit in the strongest alternating field during slip, and as thin shells their eddy loss is proportional to their conductivity: σ t (ω_s r B)²/2 per unit area, with ω_s the slip speed, times an end factor of 0.7 for the shell's finite length.",
-            "A material that conducts better than 316L (1.35 × 10⁶ S/m) therefore heats more for the same slip, raising the steady temperature and shortening the time to the limit.",
-            "Titanium and Inconel conduct less than 316L and PEEK almost not at all, so none of the listed choices fires this warning; a typed conductivity can.",
+            "When the coupling slips, the sleeve and liner cut through the other ring's field, and the eddy currents this drives heat them.",
+            "Their heat rises in proportion to conductivity and thickness, and with the square of the slip speed and of the field they see.",
+            "The caution fires above 316L's 1.35 million S/m; no listed material conducts more, but a higher value typed for 316L fires it.",
+            "On this design the sleeve and liner make {temperature.slip_loss.sleeve_W} and {temperature.slip_loss.liner_W} of the {temperature.slip_loss.total_W} slip loss estimate.",
+            "More heat raises the steady temperature while slipping and shortens the time to the limit.",
         ],
-        change: &[],
-        watch_out: &[],
+        change: &[
+            Change {
+                input: "materials.parts.sleeve_liner",
+                step: Step::Choose,
+                aim: None,
+                text: "titanium, Inconel 625 or PEEK conduct less and heat less; titanium and Inconel cost more, PEEK is weaker, and strength is not checked here.",
+            },
+            Change {
+                input: "metal.sleeve_mm",
+                step: Step::Lower,
+                aim: Some(("temperature.slip_loss.sleeve_W", Sense::Down)),
+                text: "a thinner sleeve heats less in proportion and opens the running clearance; its strength as a retainer is not checked here.",
+            },
+            Change {
+                input: "metal.liner_mm",
+                step: Step::Lower,
+                aim: Some(("temperature.slip_loss.liner_W", Sense::Down)),
+                text: "a thinner liner heats less in proportion and opens the running clearance; its strength as a keeper is not checked here.",
+            },
+        ],
+        watch_out: &[
+            "The field at each shell is an entered value from the example design's 3D model; it does not follow your gap, magnets or pole count.",
+        ],
         diagram: None,
         sources: &[
-            "Spec A5 warning rules",
-            "M1 audit P1 (the shell loss and its end factor)",
-            "Addendum A report section 4 (the conductivities)",
+            "Material warning rules",
+            "Math audit of 2026-09-29: the shell loss and its end factor",
+            "Design report: the conductivities",
         ],
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
-            date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
+            date: "2026-10-14",
+            record: "docs/analyses/2026-10-14-magcoupler-notes-review.md#a5.high_conductivity_sleeve_or_liner",
         },
     },
     Note {
         id: "a5.low_saturation",
-        title: "Low saturation",
-        equations: &["model.bsat_T", "model.backiron_needed_mm"],
-        sentences: &[
-            "The back-iron wall carries each pole's flux around to its neighbour, and the wall it needs is t = B_gap τ_p / (π B_des): the lower the flux density the steel is allowed, the thicker the wall.",
-            "The design value B_des sits below saturation, 1.5 T for annealed 4140; a steel whose saturation is below 1.7 T (1018's design value, the highest the workbook names) is flagged, and so is a steel with no design value of its own, for which the wall check uses the design flux density input (1.5 T by default).",
-            "Past saturation the steel's permeability collapses, flux leaks out of the circuit and the torque falls, so such a back iron needs thicker walls.",
+        title: "Back-iron wall and saturation",
+        equations: &[
+            "model.bsat_T",
+            "model.gap_flux_density_T",
+            "model.backiron_needed_mm",
+            "materials.cup_wall_suggested_mm",
+            "materials.cup_wall_check",
         ],
-        change: &[],
+        sentences: &[
+            "The steel cup behind the outer magnets carries each pole's flux round to its neighbours, so its wall must be thick enough not to saturate.",
+            "The calculator's rule sizes the wall for half a pole's flux at the design flux density, a working level set below the steel's saturation.",
+            "So the rule asks for more wall with stronger magnets or wider poles, from fewer magnets or a larger ring; here it gives {model.backiron_needed_mm}.",
+            "The low-saturation caution fires for back irons with no design flux density of their own, or a known saturation below 1.7 T: 12L14, 416, 17-4PH.",
+            "Here the rule uses {model.bsat_T}; for those steels that is the entered design flux density, which their own data may not support.",
+        ],
+        change: &[
+            Change {
+                input: "metal.cup_wall_corner_mm",
+                step: Step::Raise,
+                aim: Some(("model.cup_od_mm", Sense::Up)),
+                text: "until the cup-wall check passes; the cup's outside diameter grows by twice the change, and the coupling gets heavier.",
+            },
+            Change {
+                input: "materials.steel.bsat_T",
+                step: Step::Lower,
+                aim: Some(("model.backiron_needed_mm", Sense::Up)),
+                text: "to the level your steel's data support; the wall needed rises as it falls, so the cup-wall check may then fail.",
+            },
+            Change {
+                input: "materials.parts.back_iron",
+                step: Step::Choose,
+                aim: None,
+                text: "4140 or 1018 clear the low-saturation caution; both rust, so keep a plating thickness above zero.",
+            },
+        ],
         watch_out: &[
-            "The wall formula itself reads 12 to 16 % thin against exact 2D sections (M1 audit M1), so walls near the limit deserve margin.",
+            "With steel, the torque shown assumes it never saturates: a thin or saturating wall shows only in the cup-wall check, while the real torque would fall below the prediction.",
+            "The rule is approximate: against exact 2D sections it asks for about 12 to 16 % too little wall at the example design, more with more poles.",
         ],
         diagram: None,
         sources: &[
-            "Spec A5 warning rules",
-            "Addendum A decision 20 (the design flux density feeds the wall check)",
-            "M1 audit M1 and M2 (the back-iron requirement)",
+            "Material warning rules",
+            "Design ruling: the design flux density feeds the wall check",
+            "Design ruling: the suggested wall is the rule's wall rounded up to 0.1 mm",
+            "Math audit of 2026-09-29: the back-iron requirement, 12 to 16 % thin against exact 2D sections",
         ],
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
-            date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
+            date: "2026-10-14",
+            record: "docs/analyses/2026-10-14-magcoupler-notes-review.md#a5.low_saturation",
         },
     },
     Note {
         id: "a5.uncoated_low_alloy_steel",
-        title: "Uncoated low-alloy steel",
+        title: "Unplated carbon or low-alloy steel",
         equations: &[],
         sentences: &[
-            "Plain and low-alloy steels such as 4140, 1018 and 12L14 rust in humid air; the stainless grades in the list (416, 17-4PH, 304) resist it.",
-            "The workbook therefore plans a high-phosphorus electroless nickel plating, which is non-magnetic as plated and adds about 0.015 mm per surface.",
-            "With no plating thickness entered, a plain or low-alloy steel back iron is flagged, because it needs a coating.",
+            "4140, 1018 and 12L14 rust in humid air, so a back iron made of them needs a coating.",
+            "The calculator assumes a high-phosphorus electroless nickel plating, and this caution flags a plating thickness of zero.",
+            "That thickness also sets the machining allowances: surfaces are cut under or over by it, twice on diameters, so plated parts fit.",
         ],
-        change: &[],
-        watch_out: &[],
+        change: &[
+            Change {
+                input: "materials.nickel.thickness_mm",
+                step: Step::Raise,
+                aim: Some(("materials.hub_flats_under_mm", Sense::Up)),
+                text: "to the coating you will specify, typically 0.013 to 0.025 mm; the machining allowances grow with it.",
+            },
+            Change {
+                input: "materials.parts.back_iron",
+                step: Step::Choose,
+                aim: None,
+                text: "416 or 17-4PH need no plating here but trip the low-saturation caution; 304 removes the steel circuit altogether.",
+            },
+        ],
+        watch_out: &[
+            "This caution checks only that some thickness is entered; it does not judge whether the coating suits your environment.",
+        ],
         diagram: None,
         sources: &[
-            "Spec A5 warning rules",
-            "Workbook Materials C26 (electroless nickel, 0.013–0.025 mm)",
+            "Material warning rules",
+            "The original spreadsheet's plating note (electroless nickel, 0.013–0.025 mm)",
         ],
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
-            date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
+            date: "2026-10-14",
+            record: "docs/analyses/2026-10-14-magcoupler-notes-review.md#a5.uncoated_low_alloy_steel",
         },
     },
     Note {
         id: "a5.cte_mismatch_with_magnets",
-        title: "Expansion mismatch with the magnets",
+        title: "Hub expands much more than the magnets",
         equations: &[],
         sentences: &[
-            "Heating changes a part's length by α ΔT per unit length; NdFeB barely changes across its magnetization (about −0.8 × 10⁻⁶ /°C), while steel expands about 12 × 10⁻⁶ /°C and aluminium about 24 × 10⁻⁶ /°C.",
-            "Where a magnet is glued to the hub, that difference is forced through the thin glue line as shear, largest at the block ends.",
-            "The larger the mismatch and the temperature swing, the higher that shear, so a hub whose expansion differs from the magnets' by more than 15 × 10⁻⁶ /°C is flagged; the Volkersen screen puts a number on it.",
+            "In the plane of the glue joint NdFeB barely expands with heat, while steel grows about 12 and aluminium about 24 µm/m per °C.",
+            "The glue line between inner magnets and hub takes that difference as shear, highest at the block ends; the outer magnets are not screened.",
+            "The caution fires above a 15 µm/m per °C difference: 304 stainless or 6061 aluminium hubs, or no back iron; no listed magnetic steel does.",
+            "The caution ignores the temperature swing and the glue; the bond check counts both, here {temperature.mismatch.peak_shear_current_MPa} of peak end shear against {temperature.adhesive.lap_shear_MPa} lap-shear strength.",
         ],
-        change: &[],
-        watch_out: &[],
+        change: &[
+            Change {
+                input: "materials.parts.back_iron",
+                step: Step::Choose,
+                aim: None,
+                text: "4140 or 1018 hubs cut the mismatch but bring back the cup-wall check, plating, steel's mass and slip heat, and higher shaft-joint and gearbox loads.",
+            },
+            Change {
+                input: "coupling.backiron",
+                step: Step::Choose,
+                aim: None,
+                text: "the steel circuit, with magnetic steel picked, bonds magnets to steel but adds mass, brings back the cup-wall check and raises shaft-joint and gearbox loads.",
+            },
+            Change {
+                input: "metal.bond_inner_mm",
+                step: Step::Raise,
+                aim: Some(("temperature.mismatch.peak_shear_current_MPa", Sense::Down)),
+                text: "a thicker glue line spreads the shear and lowers its peak; the hub is cut smaller to make room.",
+            },
+            Change {
+                input: "temperature.mismatch.adhesive_shear_modulus_GPa",
+                step: Step::Lower,
+                aim: Some(("temperature.mismatch.peak_shear_current_MPa", Sense::Down)),
+                text: "for a softer adhesive the peak shear falls; softer adhesives are often weaker or rated cooler.",
+            },
+        ],
+        watch_out: &[
+            "The screen uses one NdFeB expansion for every grade, so ferrite and SmCo rings, which expand more in that plane, get overstated shear and false cautions.",
+            "The adhesive's shear modulus does not follow the adhesive picked: enter the new one's value when you change adhesive.",
+        ],
         diagram: None,
         sources: &[
-            "Spec A5 warning rules",
-            "M1 audit E1 (the Volkersen shear-lag screen)",
-            "Addendum A decision 16 (E18: the aluminium hub's expansion)",
+            "Material warning rules",
+            "Math audit of 2026-09-29: the Volkersen shear-lag screen",
+            "Design ruling: the aluminium hub's expansion",
         ],
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
-            date: "2026-10-01",
-            record: "plan A-3 Task 16 physics review of the A4 notes against the cited M1 derivations: commit ee11bfd (what was checked, the ten fixes)",
+            date: "2026-10-14",
+            record: "docs/analyses/2026-10-14-magcoupler-notes-review.md#a5.cte_mismatch_with_magnets",
         },
     },
 ];
@@ -2021,6 +2142,12 @@ mod tests {
         "thermal_time_constant",
         "demagnetization",
         "ferrite_cold_demag",
+        "a5.non_ferromagnetic_back_iron",
+        "a5.ferromagnetic_sleeve_or_liner",
+        "a5.high_conductivity_sleeve_or_liner",
+        "a5.low_saturation",
+        "a5.uncoated_low_alloy_steel",
+        "a5.cte_mismatch_with_magnets",
     ];
 
     #[test]
@@ -2181,6 +2308,38 @@ mod tests {
                 "{id}: no other field"
             );
             assert!(lines.iter().all(|(_, text)| !text.is_empty()), "{id}");
+        }
+    }
+
+    #[test]
+    fn the_wall_and_sleeve_notes_own_the_rows_slice_2_gives_them() {
+        // Slice-2 spec 3.3: the back-iron wall note owns the cup-wall rule's rows beside the design
+        // flux density; the sleeve note owns the conductivity its caution compares; the
+        // open-circuit note keeps the circuit in effect (the panel's warning test clicks it).
+        for (path, id) in [
+            ("model.bsat_T", "a5.low_saturation"),
+            ("model.gap_flux_density_T", "a5.low_saturation"),
+            ("model.backiron_needed_mm", "a5.low_saturation"),
+            ("materials.cup_wall_suggested_mm", "a5.low_saturation"),
+            ("materials.cup_wall_check", "a5.low_saturation"),
+            (
+                "temperature.slip_loss.sleeve_W",
+                "a5.high_conductivity_sleeve_or_liner",
+            ),
+            (
+                "temperature.slip_loss.liner_W",
+                "a5.high_conductivity_sleeve_or_liner",
+            ),
+            (
+                "materials.sleeve_sigma_S_m",
+                "a5.high_conductivity_sleeve_or_liner",
+            ),
+            (
+                "materials.circuit_backiron",
+                "a5.non_ferromagnetic_back_iron",
+            ),
+        ] {
+            assert_eq!(note_for_any_status(path).map(|n| n.id), Some(id), "{path}");
         }
     }
 }
