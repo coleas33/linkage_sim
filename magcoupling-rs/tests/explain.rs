@@ -2052,6 +2052,30 @@ fn the_end_effect_note_s_length_claims_hold_at_every_probe_design() {
     }
 }
 
+/// `end_effect`'s 3D band sentence (whole-branch review MF-4; SF-S of the T13 text re-reviews).
+/// The band was measured in free space, without steel, but the example design, the one every
+/// user starts from, has magnetic steel behind both rings. With ideal steel two independent 3D
+/// checks read the model about 6.65 % high at its 12.7 mm and about 20 % high from 2.9 to
+/// 4.25 mm (the record's `## end_effect`). So the sentence that quotes the steel-free band also
+/// names the steel case, in the words the circuit follows: magnetic steel (a 304 back iron is
+/// steel but leaves the model in free space). The engine has no 3D model: this pins the engine
+/// side, that the example design is on the steel circuit, and the sentence's scope.
+#[test]
+fn the_end_effect_note_s_3d_band_names_the_steel_case() {
+    let example = compute_all(&DesignInputs::default());
+    assert_eq!(
+        example.materials.circuit_backiron, 1,
+        "the example design has magnetic steel behind the magnets"
+    );
+    let band = common::end_effect_band_sentence();
+    let lower = band.to_lowercase();
+    assert!(lower.contains("steel-free"), "the band's scope: {band:?}");
+    assert!(
+        lower.contains("with magnetic steel"),
+        "names the steel case: {band:?}"
+    );
+}
+
 /// `end_effect`'s second watch-out says that at short overlap f_end is least reliable and can
 /// read too high or too low, draws no pole-pitch boundary and names no design (T13 text
 /// re-reviews 1 and 2, MF-1 each). Against 3D, no single direction holds across designs the

@@ -287,6 +287,19 @@ pub fn plain_problems(text: &str) -> Option<String> {
     }
 }
 
+/// The `end_effect` note's sentence that quotes its 3D band ("within N %"): the band the
+/// end-effect assumption's rationale repeats (`tests/assumptions.rs`) and the sentence that
+/// names the steel case (`tests/explain.rs`).
+pub fn end_effect_band_sentence() -> &'static str {
+    magcoupling::engine::explain::notes::note("end_effect")
+        .expect("the end-effect note")
+        .sentences
+        .iter()
+        .copied()
+        .find(|s| s.contains("within ") && s.contains(" %"))
+        .expect("the end-effect sentence that quotes the 3D band")
+}
+
 /// The data file whose cases vary every input group and compare every result.
 pub const FULL: &str = "full";
 

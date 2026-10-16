@@ -86,6 +86,15 @@
   priority: 2
   status: open
   notes: "Opened by slice 2 T12b (ruling 11 4A). While paused the clamp math, Python parity, design files, share links and the exports keep every clamp input and result; the screen shows none and the clamp counts toward no verdict. BL-060 (the clamp's boss against the drawn boss) is paused with it. Un-pausing (engine::clamps::PAUSED = false) needs no other code edit, but turns the slice-2 note gates on for clamp_preload (caps, plain words, its review record) and the docs-count test: the note's rewrite and per-note physics review, dropped from slice-2 T16 (A-28), and the docs come first."
+- id: BL-065
+  title: "The end factor is unchecked against 3D with magnetic steel behind the magnets, the example design's circuit (ideal-steel checks read it high)"
+  dimension: physics
+  risk: physics
+  evidence: "magcoupling-rs/src/engine/model.rs: f_end = 1 - c_end * tau_p / L has no circuit term, and every 3D check behind it (the math audit's end-effect rows, slice-2 T13 rounds 1 to 3) is free space. The example design has magnetic steel behind both rings (coupling.backiron 1, 4140; materials.circuit_backiron 1). Slice-2 T13 text re-reviews 1 and 2 (docs/analyses/2026-10-14-magcoupler-notes-review.md, ## end_effect; two independent planar 3D methods, ideal steel plates): the model reads about +6.65 % high at the default 12.7 mm and about +20 % high from 2.9 to 4.25 mm (+21.5 % at 3.66 mm), optimistic; the long-overlap end loss is about 1.98 mm with steel against 1.44 mm without and 1.32 mm in the model. Ideal steel only: no finite permeability, saturation or measured overhang"
+  acceptance: "a 3D check of the end factor with permeable steel (finite permeability, saturating) behind the magnets, on the example design and the five probe designs by magnet length, reproduced by an independent method; then either a steel-circuit end factor (a registered Rust-only correction with its probes, Python parity and the workbook deviation recorded) or the end_effect note and the end-effect assumption's rationale state the checked steel figure; until then no note states a steel figure (the note says only that f_end likely reads high with magnetic steel); physics review; GATE PASS"
+  priority: 2
+  status: open
+  notes: "Filed by the slice-2 whole-branch review fix wave (MF-4, SF-S of the T13 text re-reviews 1 and 2, 2026-10-16). The end_effect note's 3D band sentence names the steel case meanwhile."
 - id: BL-055
   title: "Magcoupler gives no cause, remedy or consequence on screen: two unlinked torque targets, an invisible size model, red checks without guidance"
   dimension: gui

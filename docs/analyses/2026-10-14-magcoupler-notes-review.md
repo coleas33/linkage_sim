@@ -1850,6 +1850,72 @@ rounds 1 to 3 or with text re-review 1; and its table of ten circuits.
   - Not applied in this round (the round's list names MF-1 only): SF-S, SF-T, W0 and the rest
     of SF-C, SF-1, SF-A and SF-4. They stay open for the controller.
 
+### Re-review: whole-branch review fix wave 1
+
+The slice-2 whole-branch review's fix wave 1 (2026-10-16; `final-review.md` MF-4) rewrote
+sentences[4] to name the steel case (SF-S of the re-reviews above) and asked for a confirming
+round on watch_out[1] as committed in 13b34f5, whose record above ends on a MUST_FIX. Both were
+re-reviewed in a fresh context. The reviewer's report for the record follows unchanged (full
+answer: `.superpowers/sdd/2026-10-14-magcoupler-guidance-slice-2/task-21-textreview-1.md`).
+
+- Reviewer: physics reviewer (session model), fresh context, 2026-10-16; text re-review 1 of the
+  T21 whole-branch review fix wave 1, `task-21-textreview-1.md`.
+- Scope:
+  - (a) watch_out[1] as committed in 13b34f5 (its record ended on a MUST_FIX with no confirming
+    round);
+  - (b) sentences[4], now "Steel-free 3D puts the example design's f_end within 3 % from 3.2 mm;
+    with magnetic steel behind the magnets, the default, f_end likely reads high.";
+  - the fields that depend on them: sentences[1] to [3], watch_out[0] and sources[1].
+- Dump: `target/rereview-T21-1-end_effect.txt`.
+  - f_end 0.8960, 0.8699, 0.8960, 0.8960 and 0.8229; τ_p 8.809, 11.01, 8.809, 8.809 and
+    15.00 mm; L 12.70 mm.
+  - Both aims read "moves as it says" at all five designs.
+- Tests: the four end-effect tests in `tests/explain.rs` pass, the new
+  `the_end_effect_note_s_3d_band_names_the_steel_case` among them.
+- **(b) sentences[4]: PASS.**
+  - The model's f_end has no circuit term, so the sentence compares one number with two 3D
+    references.
+  - Steel-free, rings (T13 rounds 1 to 3): +0.94 % at 3.2 mm, the worst +2.70 % at 4.25 mm,
+    +0.05 % at 50.8 mm. This is within 3 % on the example design.
+  - With ideal steel (text re-reviews 1 and 2): high from 2.02 mm, +21.4 % at 3.2 mm and +6.65 % at
+    12.7 mm.
+  - The model reads high from 3.2 mm at both limits, so "likely reads high" holds whatever the
+    steel's permeability or saturation.
+  - "The default" is true: the default design is on circuit 1.
+  - The other steel probe designs read high at their rendered 12.7 mm. Below their crossovers
+    they read low, which watch_out[1] covers.
+  - Dropping "below 3D with fewer magnets or larger rings" states nothing false.
+  - The trap "the end factor is accurate" is removed. 25 words.
+- **(a) watch_out[1]: PASS, confirming 13b34f5.**
+  - All ten circuits of text re-review 2 have their largest error at short overlap (0.16 to
+    0.42 τ_p): too high on the example design with steel (+15.6 % at 2.5 mm), too low on the 304
+    design at the floor (−20.7 %).
+  - At L <= c_end·τ_p, `end_effect_in_range` is false and the check reads "End-effect model out of
+    range". 29 words.
+- **Dependent fields:** sentences[1] to [3] are unchanged and read with the new sentences[4].
+  watch_out[0] and sources[1] are unchanged; their should-fix items are carried.
+- **Should-fix (carried, for the controller):**
+  - SF-A extended: scope sources[1] to the example design, and add a source for the ideal-steel
+    checks (texts in `task-21-textreview-1.md` S-1).
+  - SF-1: watch_out[0]'s opening "Its" (text in S-2).
+  - SF-T: the 304 design at the floor as the test's low side.
+- **Traps:** none written.
+  - "The end factor is accurate": the steel case now reads high.
+  - T-B: no magnet-count lever.
+  - Nothing says more magnets make the coupling stiffer.
+  - No torque is called guaranteed.
+  - Nothing says the coupling protects the gearbox.
+  - No "clamp".
+- **Verdict:** PASS. No must-fix in this note.
+  - The steel clause's short-magnet exception is missing only from the assumption rationale.
+    That is MF-B, recorded with the help review.
+
+- No must-fix for this note, and no text of it changed in this round. The round's must-fix
+  MF-B (the short-magnet qualifier in the end-effect assumption's rationale) is applied and
+  recorded in `docs/analyses/2026-10-14-magcoupler-help-review.md`, `## GUI strings and
+  rationales (T10)`. The should-fix items SF-A (extended), SF-1 and SF-T stay open for the
+  controller (texts in the full answer, S-1 to S-3).
+
 ## calibration
 
 Task T13. Rewrite of "The one-point calibration" as "Calibration: what scales the torque

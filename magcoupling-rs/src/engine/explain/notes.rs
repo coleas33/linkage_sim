@@ -379,7 +379,7 @@ pub const NOTES: &[Note] = &[
             "The model counts this as missing length: f_end = 1 − c_end·τ_p/L, with c_end an empirical coefficient, τ_p the pole pitch, L the magnet overlap.",
             "It takes c_end·τ_p, half at each end, off L; here f_end is {model.f_end}, τ_p {model.pole_pitch_mm} and L {model.active_length_mm}.",
             "So torque grows in step with L − c_end·τ_p: every extra millimetre of overlap adds the same torque, and the share lost shrinks.",
-            "Steel-free 3D checks of the example design put f_end within 3 % at 3.2 mm or longer, below 3D with fewer magnets or larger rings.",
+            "Steel-free 3D puts the example design's f_end within 3 % from 3.2 mm; with magnetic steel behind the magnets, the default, f_end likely reads high.",
         ],
         change: &[
             Change {
