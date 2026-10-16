@@ -174,7 +174,7 @@ pub fn compute(w: &WarningInputs) -> WarningResults {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::api::{DesignInputs, compute_all};
+    use crate::engine::api::{DesignInputs, DesignResults, compute_all};
     use crate::engine::explain::notes::note;
     use crate::engine::material_library::{BACK_IRON_CHOICES, SLEEVE_LINER_CHOICES, material};
     use crate::engine::meta::{ResultSet, Value};
@@ -298,7 +298,11 @@ mod tests {
     /// The rule ids that fire on `inputs`, through the whole engine (`api::compute` feeds the rules
     /// the materials in effect).
     fn fired_on(inputs: &DesignInputs) -> Vec<&'static str> {
-        let results = compute_all(inputs);
+        fired_in(&compute_all(inputs))
+    }
+
+    /// The rule ids that fire in `results`.
+    fn fired_in(results: &DesignResults) -> Vec<&'static str> {
         WARNING_RULES
             .iter()
             .filter(|rule| {
@@ -311,7 +315,18 @@ mod tests {
     /// The default design with the back iron `code`, the circuit selector `circuit` (1 steel, 0
     /// none) and `plating_mm` of plating per surface.
     fn with_back_iron(code: i64, circuit: i64, plating_mm: f64) -> DesignInputs {
-        let mut inputs = DesignInputs::default();
+        with_back_iron_on(&DesignInputs::default(), code, circuit, plating_mm)
+    }
+
+    /// `design` with the back iron `code`, the circuit selector `circuit` and `plating_mm` of
+    /// plating per surface.
+    fn with_back_iron_on(
+        design: &DesignInputs,
+        code: i64,
+        circuit: i64,
+        plating_mm: f64,
+    ) -> DesignInputs {
+        let mut inputs = design.clone();
         inputs.materials.parts.back_iron = code;
         inputs.coupling.backiron = circuit;
         inputs.materials.nickel.thickness_mm = plating_mm;
@@ -320,9 +335,8 @@ mod tests {
 
     /// The back-iron codes whose pick fires `rule` on the circuit `circuit` at `plating_mm`.
     fn back_irons_firing(rule: &str, circuit: i64, plating_mm: f64) -> Vec<i64> {
-        BACK_IRON_CHOICES
-            .iter()
-            .map(|&(code, _)| code)
+        every_back_iron()
+            .into_iter()
             .filter(|&code| fired_on(&with_back_iron(code, circuit, plating_mm)).contains(&rule))
             .collect()
     }
@@ -336,6 +350,16 @@ mod tests {
             .map(|&(_, id)| id)
             .unwrap();
         id.split('_').next().unwrap()
+    }
+
+    /// The names a note gives `codes`, in order ([`short_name`]).
+    fn names(codes: &[i64]) -> Vec<&'static str> {
+        codes.iter().map(|&code| short_name(code)).collect()
+    }
+
+    /// Every back-iron code, in the library's order.
+    fn every_back_iron() -> Vec<i64> {
+        BACK_IRON_CHOICES.iter().map(|&(code, _)| code).collect()
     }
 
     /// The default plating per surface (above zero).
@@ -361,8 +385,7 @@ mod tests {
             .map(|&(code, _)| code)
             .collect();
         assert_eq!(fires, from_data);
-        let names: Vec<&str> = fires.iter().map(|&code| short_name(code)).collect();
-        assert_eq!(names, ["12L14", "416", "17-4PH", "17-4PH"]);
+        assert_eq!(names(&fires), ["12L14", "416", "17-4PH", "17-4PH"]);
         assert!(back_irons_firing("low_saturation", 0, plated()).is_empty());
     }
 
@@ -381,8 +404,7 @@ mod tests {
             .map(|&(code, _)| code)
             .collect();
         assert_eq!(bare, from_data);
-        let names: Vec<&str> = bare.iter().map(|&code| short_name(code)).collect();
-        assert_eq!(names, ["4140", "1018", "12L14"]);
+        assert_eq!(names(&bare), ["4140", "1018", "12L14"]);
         assert!(back_irons_firing("uncoated_low_alloy_steel", 1, plated()).is_empty());
         assert!(back_irons_firing("uncoated_low_alloy_steel", 0, 0.0).is_empty());
     }
@@ -397,14 +419,12 @@ mod tests {
             .map(|&(code, _)| code)
             .collect();
         assert_eq!(non_magnetic, [7, 8]);
-        let names: Vec<&str> = non_magnetic.iter().map(|&code| short_name(code)).collect();
-        assert_eq!(names, ["304", "6061"]);
-        let every: Vec<i64> = BACK_IRON_CHOICES.iter().map(|&(code, _)| code).collect();
+        assert_eq!(names(&non_magnetic), ["304", "6061"]);
         for rule in ["non_ferromagnetic_back_iron", "cte_mismatch_with_magnets"] {
             assert_eq!(back_irons_firing(rule, 1, plated()), non_magnetic, "{rule}");
             assert_eq!(
                 back_irons_firing(rule, 0, plated()),
-                every,
+                every_back_iron(),
                 "{rule}: circuit off"
             );
         }
@@ -413,9 +433,8 @@ mod tests {
     #[test]
     fn with_plating_only_4140_and_1018_fire_no_warning() {
         // R11: 416, 17-4PH and 12L14 trade the plating caution for the low-saturation one.
-        let quiet: Vec<i64> = BACK_IRON_CHOICES
-            .iter()
-            .map(|&(code, _)| code)
+        let quiet: Vec<i64> = every_back_iron()
+            .into_iter()
             .filter(|&code| fired_on(&with_back_iron(code, 1, plated())).is_empty())
             .collect();
         assert_eq!(quiet, [1, 2]);
@@ -443,8 +462,9 @@ mod tests {
 
     #[test]
     fn each_back_iron_warning_note_names_the_library_picks_that_fire_it() {
-        // The notes list the steels by name; the library decides which fire. A library change that
-        // moves a pick in or out of a rule fails here until the note follows.
+        // The notes list the steels by name; the library decides which fire. Each note names every
+        // pick that fires its rule and no pick that does not, so a library change that moves a
+        // pick in or out of a rule fails here until the note follows.
         let cases = [
             (
                 "low_saturation",
@@ -467,13 +487,93 @@ mod tests {
             let rule = WARNING_RULES.iter().find(|r| r.id == rule_id).unwrap();
             let text = note(rule.note_id).unwrap().sentences.join(" ");
             assert!(!codes.is_empty(), "{rule_id} fires for some pick");
-            for code in codes {
-                let name = short_name(code);
+            let firing = names(&codes);
+            for name in &firing {
                 assert!(
                     text.contains(name),
-                    "{}: the note names {name}",
+                    "{}: the note names {name}, which fires it",
                     rule.note_id
                 );
+            }
+            // A pick that does not fire goes unnamed, unless it shares its name with one that does
+            // (the two 17-4PH conditions).
+            for name in names(&every_back_iron()) {
+                assert!(
+                    firing.contains(&name) || !text.contains(name),
+                    "{}: the note names {name}, which does not fire it",
+                    rule.note_id
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_plating_note_s_back_iron_entry_names_the_cost_of_each_pick_it_offers() {
+        // Spec 3.1 (every entry names its trade-off; task review I-1): from an unplated steel that
+        // fires the plating caution, at every probe design, each pick the entry offers clears it
+        // at the cost the entry names: 416 and 17-4PH trip the low-saturation caution; 304 loses
+        // the torque the steel adds and fires the expansion caution.
+        use crate::engine::explain::probes::probe_designs;
+        let entry = note("a5.uncoated_low_alloy_steel")
+            .unwrap()
+            .change
+            .iter()
+            .find(|c| c.input == "materials.parts.back_iron")
+            .expect("the plating note has an entry on the back-iron pick");
+        for cost in [
+            "trip the low-saturation caution",
+            "loses steel torque",
+            "fires the expansion caution",
+        ] {
+            assert!(entry.text.contains(cost), "the entry names {cost:?}");
+        }
+        for (design, inputs) in probe_designs() {
+            // Every pick on the steel circuit with no plating: its pull-out and the rules it fires.
+            let picks: Vec<(i64, f64, Vec<&str>)> = every_back_iron()
+                .into_iter()
+                .map(|code| {
+                    let results = compute_all(&with_back_iron_on(&inputs, code, 1, 0.0));
+                    let pullout = match results.get("model.pullout_Nm") {
+                        Some(Value::Num(x)) => x,
+                        other => panic!("{design}: pull-out {other:?}"),
+                    };
+                    (code, pullout, fired_in(&results))
+                })
+                .collect();
+            let unplated = |fired: &[&str]| fired.contains(&"uncoated_low_alloy_steel");
+            let steels: Vec<&(i64, f64, Vec<&str>)> = picks
+                .iter()
+                .filter(|(_, _, fired)| unplated(fired))
+                .collect();
+            assert!(!steels.is_empty(), "{design}: a pick fires the caution");
+            for name in ["416", "17-4PH", "304"] {
+                let offered: Vec<&(i64, f64, Vec<&str>)> = picks
+                    .iter()
+                    .filter(|(code, _, _)| short_name(*code) == name)
+                    .collect();
+                assert!(!offered.is_empty(), "{name} is a back-iron choice");
+                for (_, pullout, fired) in offered {
+                    assert!(!unplated(fired), "{design}: {name} needs no plating");
+                    if name == "304" {
+                        assert!(
+                            fired.contains(&"cte_mismatch_with_magnets"),
+                            "{design}: 304 fires the expansion caution: {fired:?}"
+                        );
+                        for (steel, steel_pullout, _) in &steels {
+                            assert!(
+                                pullout < steel_pullout,
+                                "{design}: 304 loses torque against {}: {pullout} against \
+                                 {steel_pullout}",
+                                short_name(*steel)
+                            );
+                        }
+                    } else {
+                        assert!(
+                            fired.contains(&"low_saturation"),
+                            "{design}: {name} trips the low-saturation caution: {fired:?}"
+                        );
+                    }
+                }
             }
         }
     }

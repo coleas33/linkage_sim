@@ -1116,7 +1116,7 @@ pub const NOTES: &[Note] = &[
                 input: "materials.parts.back_iron",
                 step: Step::Choose,
                 aim: None,
-                text: "416 or 17-4PH need no plating here but trip the low-saturation caution; 304 removes the steel circuit altogether.",
+                text: "416 or 17-4PH need no plating but trip the low-saturation caution; 304 needs none but loses steel torque and fires the expansion caution.",
             },
         ],
         watch_out: &[

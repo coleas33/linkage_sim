@@ -1731,6 +1731,63 @@ mod tests {
         (link, output)
     }
 
+    /// Asserts that `note`'s entry on `input` draws its label as plain text: a click on it asks
+    /// for no link, and " (<reason>)" is drawn once. The entry on `still_linked` stays a link.
+    fn assert_entry_plain_with_reason(
+        ctx: &egui::Context,
+        note: &Note,
+        view: &NoteView<'_>,
+        input: &str,
+        reason: &str,
+        still_linked: &'static str,
+    ) {
+        use crate::gui::test_support::drawn_count;
+        let (link, output) = click_in_note(ctx, note, view, label_for(input));
+        assert_eq!(link, None, "{input}: an unlinked input is no link");
+        assert_eq!(drawn_count(&output, &format!(" ({reason})")), 1, "{input}");
+        let (link, _) = click_in_note(ctx, note, view, label_for(still_linked));
+        assert_eq!(
+            link,
+            Some(NoteLink::Input(still_linked)),
+            "{still_linked} stays a link"
+        );
+    }
+
+    /// The slider of the input at `path`.
+    fn slider(path: &str) -> crate::engine::meta::SliderRange {
+        InputCatalogue::get()
+            .entry(path)
+            .unwrap()
+            .meta
+            .range
+            .unwrap()
+    }
+
+    /// The panel's `held` with Auto off: only a pick holds an input of `inputs`.
+    fn auto_off(inputs: &DesignInputs) -> impl Fn(&str) -> Option<String> + '_ {
+        move |path| held_reason(&SizingState::default(), inputs, path)
+    }
+
+    /// Why `change` draws its input as plain text on `inputs`, with `held` naming held inputs.
+    fn unlinked_with(
+        inputs: &DesignInputs,
+        change: &Change,
+        held: &dyn Fn(&str) -> Option<String>,
+    ) -> Option<String> {
+        let results = compute_all(inputs);
+        let view = NoteView {
+            inputs,
+            results: &results,
+            held,
+        };
+        unlinked_reason(change, &view)
+    }
+
+    /// Why `change` draws its input as plain text on `inputs` with Auto off ([`auto_off`]).
+    fn unlinked_on(inputs: &DesignInputs, change: &Change) -> Option<String> {
+        unlinked_with(inputs, change, &auto_off(inputs))
+    }
+
     #[test]
     fn a_note_draws_its_parts_in_order_with_its_sources_folded_until_clicked() {
         use crate::gui::test_support::{drawn_texts, text_color, text_rect};
@@ -1815,7 +1872,6 @@ mod tests {
 
     #[test]
     fn an_input_that_is_not_free_is_plain_text_with_the_reason() {
-        use crate::gui::test_support::drawn_texts;
         let ctx = egui::Context::default();
         let (inputs, results) = design();
         let held_entry = &RENDER_NOTE.change[0];
@@ -1825,53 +1881,30 @@ mod tests {
             results: &results,
             held: &held,
         };
-        let (link, output) = click_in_note(&ctx, &RENDER_NOTE, &view, label_for(held_entry.input));
-        assert_eq!(link, None, "a held input is no link");
-        let reason = format!(" ({HELD_BY_AUTO})");
-        assert_eq!(
-            drawn_texts(&output)
-                .iter()
-                .filter(|t| **t == reason)
-                .count(),
-            1
-        );
-        let free = &RENDER_NOTE.change[1];
-        let (link, _) = click_in_note(&ctx, &RENDER_NOTE, &view, label_for(free.input));
-        assert_eq!(
-            link,
-            Some(NoteLink::Input(free.input)),
-            "the others stay links"
+        let free = RENDER_NOTE.change[1].input;
+        assert_entry_plain_with_reason(
+            &ctx,
+            &RENDER_NOTE,
+            &view,
+            held_entry.input,
+            HELD_BY_AUTO,
+            free,
         );
     }
 
     #[test]
     fn an_entry_whose_input_cannot_move_its_way_names_why() {
         use crate::engine::explain::notes::Step;
-        let range = |path: &str| {
-            InputCatalogue::get()
-                .entry(path)
-                .unwrap()
-                .meta
-                .range
-                .unwrap()
-        };
         let entry = |input, step| Change {
             input,
             step,
             aim: None,
             text: "",
         };
-        let reason = |inputs: &DesignInputs, change: &Change| {
-            let results = compute_all(inputs);
-            let view = NoteView {
-                inputs,
-                results: &results,
-                held: &nothing_held,
-            };
-            unlinked_reason(change, &view)
-        };
+        let reason =
+            |inputs: &DesignInputs, change: &Change| unlinked_with(inputs, change, &nothing_held);
         let gap = "metal.face_gap_mm";
-        let (lowest, highest) = (range(gap).min, range(gap).max);
+        let (lowest, highest) = (slider(gap).min, slider(gap).max);
         let mut inputs = DesignInputs::default();
         assert_eq!(reason(&inputs, &entry(gap, Step::Raise)), None);
         assert_eq!(reason(&inputs, &entry(gap, Step::Lower)), None);
@@ -1889,7 +1922,7 @@ mod tests {
         assert_eq!(reason(&inputs, &entry(gap, Step::Raise)), None);
         // A count at its end; a choice and a blank optional number are never at an end.
         let mut poles = DesignInputs::default();
-        poles.coupling.npole = range("coupling.npole").max as i64;
+        poles.coupling.npole = slider("coupling.npole").max as i64;
         assert_eq!(
             reason(&poles, &entry("coupling.npole", Step::Raise)).as_deref(),
             Some(AT_TOP)
@@ -1908,14 +1941,8 @@ mod tests {
         );
         // A held input names why it is held, whatever its slider says.
         let held = |_: &str| Some(HELD_BY_AUTO.to_owned());
-        let results = compute_all(&inputs);
-        let view = NoteView {
-            inputs: &inputs,
-            results: &results,
-            held: &held,
-        };
         assert_eq!(
-            unlinked_reason(&entry(gap, Step::Lower), &view).as_deref(),
+            unlinked_with(&inputs, &entry(gap, Step::Lower), &held).as_deref(),
             Some(HELD_BY_AUTO)
         );
     }
@@ -1985,29 +2012,19 @@ mod tests {
             "back_iron_factor",
             "coupling.magnets.manual_outer_thickness_mm",
         );
-        let reason = |inputs: &DesignInputs, change: &Change| {
-            let results = compute_all(inputs);
-            let held = |path: &str| held_reason(&SizingState::default(), inputs, path);
-            let view = NoteView {
-                inputs,
-                results: &results,
-                held: &held,
-            };
-            unlinked_reason(change, &view)
-        };
         let pick = format!(
             "set by the {} pick",
             label_for("coupling.magnets.part_outer")
         );
         let defaults = DesignInputs::default();
-        assert_eq!(reason(&defaults, &width), Some(pick.clone()));
-        assert_eq!(reason(&defaults, &thickness), Some(pick));
+        assert_eq!(unlinked_on(&defaults, &width), Some(pick.clone()));
+        assert_eq!(unlinked_on(&defaults, &thickness), Some(pick));
         let (_, custom) = probe_designs()
             .into_iter()
             .find(|(name, _)| *name == "Y30 ferrite, custom dimensions")
             .expect("the custom-dimensions probe design");
-        assert_eq!(reason(&custom, &width), None);
-        assert_eq!(reason(&custom, &thickness), None);
+        assert_eq!(unlinked_on(&custom, &width), None);
+        assert_eq!(unlinked_on(&custom, &thickness), None);
     }
 
     #[test]
@@ -2029,14 +2046,7 @@ mod tests {
         let reason = |back_iron: i64| {
             let mut inputs = DesignInputs::default();
             inputs.materials.parts.back_iron = back_iron;
-            let results = compute_all(&inputs);
-            let held = |path: &str| held_reason(&SizingState::default(), &inputs, path);
-            let view = NoteView {
-                inputs: &inputs,
-                results: &results,
-                held: &held,
-            };
-            unlinked_reason(&entry, &view)
+            unlinked_on(&inputs, &entry)
         };
         let set = reason(2).expect("1018 sets the design flux density");
         assert!(set.starts_with("set by the"), "{set}");
@@ -2052,7 +2062,6 @@ mod tests {
         // Amendment A-25 T-7: at the sleeve's slider minimum one step thinner is past the slider,
         // so the sleeve note's entry draws its label as plain text with the reason and no link;
         // the liner entry beside it stays a link.
-        use crate::gui::test_support::drawn_texts;
         let sleeve = "metal.sleeve_mm";
         let note = notes::note("a5.high_conductivity_sleeve_or_liner").unwrap();
         let entry = note
@@ -2062,35 +2071,17 @@ mod tests {
             .expect("the sleeve note has an entry on the sleeve thickness");
         assert_eq!(entry.step, notes::Step::Lower);
         let mut inputs = DesignInputs::default();
-        let lowest = InputCatalogue::get()
-            .entry(sleeve)
-            .unwrap()
-            .meta
-            .range
-            .unwrap()
-            .min;
-        inputs.set(sleeve, Value::Num(lowest)).unwrap();
+        inputs.set(sleeve, Value::Num(slider(sleeve).min)).unwrap();
         let results = compute_all(&inputs);
-        let held = |path: &str| held_reason(&SizingState::default(), &inputs, path);
+        let held = auto_off(&inputs);
         let view = NoteView {
             inputs: &inputs,
             results: &results,
             held: &held,
         };
         let ctx = egui::Context::default();
-        let (link, output) = click_in_note(&ctx, note, &view, label_for(sleeve));
-        assert_eq!(link, None, "an input at its slider's end is no link");
-        let reason = format!(" ({AT_BOTTOM})");
-        assert_eq!(
-            drawn_texts(&output)
-                .iter()
-                .filter(|t| **t == reason)
-                .count(),
-            1
-        );
         let liner = "metal.liner_mm";
-        let (link, _) = click_in_note(&ctx, note, &view, label_for(liner));
-        assert_eq!(link, Some(NoteLink::Input(liner)), "the liner stays a link");
+        assert_entry_plain_with_reason(&ctx, note, &view, sleeve, AT_BOTTOM, liner);
     }
 
     #[test]

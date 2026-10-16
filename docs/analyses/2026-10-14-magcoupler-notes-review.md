@@ -4051,6 +4051,59 @@ Should-fix offered: none.
 Considered, no change (the reviewer's observation): "typically 0.013 to 0.025 mm" (change[0]) is
 the sourced range in the plating input's help, not a typed default (round 1).
 
+### Task review fix round 1 (2026-10-15): the 304 option names what it costs
+
+- Why: the task code review (`task-17-review.md`, I-1) applied spec 3.1: "Every entry names its
+  trade-off when the move pushes another check toward red". change[1]'s 416 and 17-4PH half named
+  its cost (the low-saturation caution); its 304 half named only the mechanism ("removes the
+  steel circuit altogether"). From an unplated steel the 304 pick lowers the pull-out, fires the
+  open-circuit and expansion cautions and, at four of the five probe designs, turns the bond
+  check from "Below the lap-shear strength" to "Above the lap-shear strength at the block ends".
+  Round 1 checked this entry for truth only, not for its trade-off.
+- change[1] (input, step and aim unchanged):
+  - Old: "416 or 17-4PH need no plating here but trip the low-saturation caution; 304 removes the
+    steel circuit altogether."
+  - New (23 words by `word_count`; no placeholder, symbol or typed default; the caps and
+    plain-words tests pass): "416 or 17-4PH need no plating but trip the low-saturation caution;
+    304 needs none but loses steel torque and fires the expansion caution."
+  - This is the task review's suggested wording, verbatim. "Steel torque" is the open-circuit
+    note's own phrase (its change[0], "4140 or 1018 restore steel torque ...").
+- Engine (`compute_all`; at each probe design, every back-iron pick on the steel circuit with zero
+  plating; a temporary probe test, deleted before the commit). Pull-out in N·m; the bond check's
+  peak end shear against the 15 MPa lap-shear strength:
+
+  | Probe design | Pull-out, 4140 / 1018 / 12L14 | Pull-out, 304 | Peak end shear, 4140 / 1018 / 12L14 -> 304 (MPa) |
+  |---|---|---|---|
+  | default | 2.6885 | 1.6974 (63.1 %) | 11.68 / 11.41 / 10.96 -> 15.76 |
+  | 8 magnets per ring | 1.9684 | 1.0006 (50.8 %) | 11.68 / 11.41 / 10.96 -> 15.76 |
+  | 304 back iron (the pick set to each steel) | 2.6885 | 1.6974 (63.1 %) | 11.68 / 11.41 / 10.96 -> 15.76 |
+  | Y30 ferrite, custom dimensions | 0.2071 | 0.1183 (57.2 %) | 16.11 / 15.74 / 15.12 -> 21.74 (already above) |
+  | 20 mm ring radius | 2.5393 | 1.3310 (52.4 %) | 11.87 / 11.60 / 11.15 -> 16.04 |
+
+  - At all five designs 304 fires the open-circuit and expansion cautions and not the plating
+    caution; 416 and both 17-4PH conditions fire the low-saturation caution and not the plating
+    caution.
+- Tests: `the_plating_note_s_back_iron_entry_names_the_cost_of_each_pick_it_offers`
+  (`src/engine/warnings.rs`) asserts that change[1] contains "trip the low-saturation caution",
+  "loses steel torque" and "fires the expansion caution". On the old text it failed ("the entry
+  names \"loses steel torque\""); on the new text it passes. It also checks, at every probe
+  design, from each unplated steel that fires the plating caution (4140, 1018 and 12L14):
+  - 416 and both 17-4PH conditions need no plating and fire the low-saturation caution;
+  - 304 needs no plating, fires the expansion caution and has a lower pull-out than each of them.
+- Left for the re-reviewer (not changed here):
+  - The entry names neither the bond check nor the open-circuit caution. The expansion caution's
+    own note names the bond check, and the open-circuit caution opens its own note. The entry
+    has 2 words left under the cap.
+  - "Fires the expansion caution" carries the open SF-1 edge (ruling 5; task review M-2): a 304
+    hub stops firing it once "NdFeB expansion in the bond plane" passes about +1.9e-6 /°C, inside
+    its slider. It holds at the five probe designs. The open-circuit note's sentences[4] says the
+    same without "usually", so the two notes agree; ruling 5 lets the reviewer soften both.
+- The dump for the re-review: `NOTES_FOR_REVIEW=a5.uncoated_low_alloy_steel
+  NOTES_REVIEW_OUT=target/notes-review-T17-fix1.txt` ("1 notes at 5 designs"). The new entry
+  renders identically at the five probe designs, with no `{`, `}`, "no prediction" or "clamp".
+- A text re-review of this field follows (controller ruling 7). Its report goes below as
+  `### Re-review: code-review fix round 1`.
+
 ## a5.cte_mismatch_with_magnets
 
 Task T17. Rewrite of "Expansion mismatch with the magnets" as "Hub expands much more than the
