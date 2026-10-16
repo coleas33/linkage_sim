@@ -189,8 +189,8 @@ pub const NOTES: &[Note] = &[
             },
         ],
         watch_out: &[
+            "The dashboard's pull-out torque, the most the rings are expected to pass before slipping, is T_2D corrected for the magnet ends and by a calibration factor (here: {model.torque_2d_Nm} becomes {model.pullout_Nm}).",
             "T_2D grows as R_g² only at fixed σ: a larger ring with the same magnet count fills each pole less, so the pull-out can even fall.",
-            "The dashboard's pull-out torque is T_2D corrected for the magnet ends and by a calibration factor (here: {model.torque_2d_Nm} becomes {model.pullout_Nm}).",
         ],
         diagram: None,
         sources: &[
@@ -1718,6 +1718,28 @@ mod tests {
                 "{path}"
             );
         }
+    }
+
+    #[test]
+    fn the_torque_note_glosses_pull_out_where_it_is_first_used() {
+        // R8 (ruling 10 b): the note draws its sentences, then What to change, then Watch out.
+        // "Pull-out" first appears in the watch-outs, so the first watch-out glosses it.
+        let n = note("torque_from_shear").unwrap();
+        let texts: Vec<&str> = n
+            .sentences
+            .iter()
+            .copied()
+            .chain(n.change.iter().map(|c| c.text))
+            .collect();
+        assert!(texts.iter().all(|t| !t.contains("pull-out")), "{texts:#?}");
+        let w = n.watch_out;
+        assert!(
+            w[0].starts_with("The dashboard's pull-out torque, the most the rings"),
+            "{w:?}"
+        );
+        // Ruling 13: the dashboard's number is a nominal estimate, not a bound.
+        assert!(w[0].contains("expected to pass"), "{w:?}");
+        assert_eq!(w.iter().position(|t| t.contains("pull-out")), Some(0));
     }
 
     #[test]

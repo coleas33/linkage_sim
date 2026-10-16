@@ -254,6 +254,75 @@ T12b text re-review 1 (2026-10-15, fresh-context physics reviewer, session model
 - **Rules:** none says a joint method is chosen or sized, or that the coupling protects the
   gearbox. Every cap holds.
 
+### Re-review: whole-branch review fix wave 1
+
+The slice-2 whole-branch review's fix wave 1 (2026-10-16; `final-review.md` MF-1 to MF-3,
+controller ruling 10) applied three of the should-fix items left open above: round 1 S-1
+(sentences[3] and [4] swapped, words unchanged), S-3 (the pull-out gloss, now watch_out[0],
+moved first) and S-2 (the four engine pins in `tests/explain.rs`). Round 2 S-2
+("infinite-length") is not taken: ruling 10 keeps "endless-ring". The changed texts were
+re-reviewed in a fresh context. The reviewer's report for the record follows unchanged (full
+answer: `.superpowers/sdd/2026-10-14-magcoupler-guidance-slice-2/task-21-textreview-1.md`).
+
+- Reviewer: physics reviewer (session model), fresh context, 2026-10-16; text re-review 1 of the
+  T21 whole-branch review fix wave 1 (working tree on 47bdcd7), `task-21-textreview-1.md`.
+- Scope:
+  - sentences[3] and [4], swapped with the words unchanged (ruling 10 a);
+  - watch_out[0], ruling 10 b's pull-out gloss, moved first;
+  - watch_out[1], the R_g² line, moved second;
+  - the fields that depend on them: sentences[1], [2] and change[2].
+- Dump: `target/rereview-T21-1-torque_from_shear.txt`, the five probe designs; every aim reads
+  "moves as it says".
+- Tests: `notes.rs` 29 passed; the RF-1 panel test passes; `tests/explain.rs` 56 passed, MF-3's
+  four engine pins among them, at all five designs.
+- **sentences[3]: PASS.**
+  - The engine has no N in R_g (`model.rs:918-971`). τ_p = 2π·R_g/N.
+  - The cup grows with fewer magnets only for flat blocks (r_pocket = (A_back + bond)/cos(π/N)).
+  - Pin (i) holds at all five designs.
+  - "Each pole" is now first used where a pole's span is given (R8).
+- **sentences[4]: PASS.** The words are unchanged and true (T11 round 2). Pins (ii) and (iii)
+  hold at all five designs. "It" is σ.
+- **watch_out[1]: PASS.** It is unchanged; the 8-magnet dip is pinned, and "pull-out" is now
+  glossed before it.
+- **watch_out[0]: MUST_FIX (MF-A).**
+  - The appositive equates the dashboard's nominal number with the most the rings pass. Read as
+    capacity, that is the slice-1 trap "pull-out is guaranteed"; read as a ceiling, it is T-O's
+    "can never exceed".
+  - That contradicts the result's own help ("not a guaranteed minimum"), its label "(nominal)"
+    and `pullout_angle` sentences[0].
+  - On the default design the end factor likely reads high (end_effect sentences[4]; +6.65 % at
+    12.7 mm with ideal steel). When the magnets are cold the rings pass more (cold-high 3.823 N·m
+    against 2.688 N·m).
+  - Replacement, ruling 13's text verbatim (30 words): "The dashboard's pull-out torque, the most
+    the rings are expected to pass before slipping, is T_2D corrected for the magnet ends and by
+    a calibration factor (here: {model.torque_2d_Nm} becomes {model.pullout_Nm})."
+  - T_pull = T_2D·f_end·f_cal reproduced at all five designs: 2.68848, 1.96835, 1.69737, 0.207075
+    and 2.53926 N·m.
+  - Test: MF-2's test also asserts "expected to pass".
+  - Docs that quote the gloss follow: the tracker and the MF-2 commit message.
+- **Traps:** none written once MF-A is applied.
+  - R_g² is said only at fixed σ.
+  - Fewer magnets grow the cup and do not keep it (T-P).
+  - Nothing says fewer poles reach across the gap better, that fill is w/τ_p, or that more magnets
+    make the coupling stiffer.
+  - Nothing says the coupling protects the gearbox.
+- **Form:** sentences 23, 23, 25, 25 and 25 words; watch-outs 30 (after MF-A) and 20. Plain
+  words; no audit id; no input label typed.
+- **Verdict:** MUST_FIX (MF-A). Everything else passes.
+
+- MF-A, applied verbatim by the implementer (session model), 2026-10-16:
+  - watch_out[0]: "The dashboard's pull-out torque, the most the rings pass before slipping, is
+    T_2D corrected for the magnet ends and by a calibration factor (here: {model.torque_2d_Nm}
+    becomes {model.pullout_Nm})." -> "The dashboard's pull-out torque, the most the rings are
+    expected to pass before slipping, is T_2D corrected for the magnet ends and by a calibration
+    factor (here: {model.torque_2d_Nm} becomes {model.pullout_Nm})." (controller ruling 13's
+    text; 30 words, 1 sentence; the caps and plain-words tests pass).
+  - Test: `notes.rs` `the_torque_note_glosses_pull_out_where_it_is_first_used` also asserts
+    that watch_out[0] contains "expected to pass". The text without "expected" fails it.
+  - Docs that quote the gloss now give the new one: the update tracker's fix-wave bullet and
+    the MF-2 commit message.
+  - No should-fix item of this round concerns this note.
+
 ## harmonics
 
 Task T12. Rewrite of "Harmonic decomposition" as "Block fill and the magnet pattern (harmonics)",

@@ -7988,11 +7988,11 @@ mod tests {
         let step_1 = note(id).unwrap();
         let drawn = note_text::render(step_1.sentences[1], |p| live_value(&shown, p));
         assert_eq!(count(&output, &drawn), 1, "{drawn:?}");
-        // σ takes no magnet length, so sentence 1 reads alike on both designs. The second
+        // σ takes no magnet length, so sentence 1 reads alike on both designs. The first
         // watch-out's T_2D and pull-out move with the length: the design shown's copy is drawn,
         // the stored inputs' is not.
         let watch_out = |results: &DesignResults| {
-            note_text::render(step_1.watch_out[1], |p| live_value(results, p))
+            note_text::render(step_1.watch_out[0], |p| live_value(results, p))
         };
         let (drawn, not_drawn) = (watch_out(&shown), watch_out(&stored));
         assert_eq!(count(&output, &drawn), 1, "{drawn:?}");
