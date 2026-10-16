@@ -4,7 +4,7 @@
 
 active_issues:
   - "Agentic loop queue: see docs/ai/backlog.yaml (open items tracked there, not here)"
-  - "Magcoupler guidance slice 2 (spec docs/superpowers/specs/2026-10-14-magcoupler-guidance-2-design.md, branch magcoupling/guidance-2, BL-056; decisions S2-1 to S2-10 and rulings R1-R14 in the spec): built (T1-T20, with T12b: the shaft-clamp section paused, owner 2026-10-15, BL-064). Before release (S2-10, T21): the whole-branch review on the session model, gate.sh GATE PASS with gate 12 running (oracle venv reference/magcoupling-py/.venv), the web build and gui-smoke with the R14 steps, then the owner's sign-off of docs/analyses/2026-10-14-magcoupler-notes-signoff.md; only then merge, push and the deploy check. Slice 1 (BL-055) is merged and deployed (5a1126a)."
+  - "Magcoupler guidance slice 2 (BL-056): released 2026-10-16 after the owner's sign-off of docs/analyses/2026-10-14-magcoupler-notes-signoff.md. Open from it: BL-057..BL-065 (BL-059: the gearbox check, cold-high at the output against the 3 N·m rating; BL-064: the shaft-to-hub joint, the shaft-clamp section paused; BL-065: the end factor with magnetic steel behind the magnets)."
   - "Payload weights Track 2: before merge the user runs the hands-on checklist at the end of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md (its section 0 is the gate and gui-smoke)."
 
 open_questions:
