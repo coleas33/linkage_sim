@@ -1464,10 +1464,14 @@ fn probe_inputs(name: &str) -> DesignInputs {
         .unwrap_or_else(|| panic!("no probe design {name:?}"))
 }
 
-/// `torque_from_shear` states two things about the engine. Its length entry: on the example
-/// design a millimetre of magnet length adds more pull-out than a millimetre of ring radius.
-/// Its first watch-out: a larger ring at the same magnet count can lower the pull-out (the
-/// 8-magnet probe design, 1 mm larger).
+/// `torque_from_shear`'s claims about the engine. Its length entry: on the example design a
+/// millimetre of magnet length adds more pull-out than a millimetre of ring radius. Its R_g²
+/// watch-out: a larger ring at the same magnet count can lower the pull-out (the 8-magnet probe
+/// design, 1 mm larger). At all five probe designs (ruling 10 c): two fewer magnets keep the gap
+/// radius R_g and grow the cup (the magnet-count sentence); one slider step of a wider gap lowers
+/// σ, and magnetic steel behind the magnets (4140) gives a higher σ than 304 on the same design
+/// (the σ sentence); the 2D torque rises with each two more magnets while the blocks still fit
+/// (the magnet-count entry).
 #[test]
 fn torque_from_shear_claims_hold_on_the_engine() {
     let example = DesignInputs::default();
@@ -1488,6 +1492,79 @@ fn torque_from_shear_claims_hold_on_the_engine() {
         after < before,
         "8 magnets, ring radius +1 mm: {before} -> {after}"
     );
+
+    let back_iron = |id: &str| {
+        BACK_IRON_CHOICES
+            .iter()
+            .find(|&&(_, choice)| choice == id)
+            .map(|&(code, _)| code)
+            .unwrap_or_else(|| panic!("{id} is a back-iron choice"))
+    };
+    let (steel, stainless) = (
+        back_iron("4140_annealed"),
+        back_iron(probes::PROBE_BACK_IRON),
+    );
+    let most_magnets = slider("coupling.npole").max as i64;
+    let mut rises = 0;
+    for (name, design) in probes::probe_designs() {
+        let base = compute_all(&design).model;
+        // Two fewer magnets keep the gap radius and grow the cup.
+        let mut fewer = design.clone();
+        fewer.coupling.npole -= 2;
+        let fewer = compute_all(&fewer).model;
+        assert!(
+            close(fewer.gap_radius_mm, base.gap_radius_mm),
+            "{name}: R_g {} -> {}",
+            base.gap_radius_mm,
+            fewer.gap_radius_mm
+        );
+        assert!(
+            fewer.cup_od_mm > base.cup_od_mm,
+            "{name}: cup {} -> {}",
+            base.cup_od_mm,
+            fewer.cup_od_mm
+        );
+        // A wider gap lowers σ.
+        let wider = compute_all(&stepped(&design, "metal.face_gap_mm", Step::Raise)).model;
+        assert!(
+            wider.tau_Pa < base.tau_Pa,
+            "{name}: σ {} -> {} one gap step wider",
+            base.tau_Pa,
+            wider.tau_Pa
+        );
+        // Magnetic steel behind the magnets gives a higher σ than 304 on the same design.
+        let tau_with = |code: i64| {
+            let mut d = design.clone();
+            d.materials.parts.back_iron = code;
+            d.coupling.backiron = 1;
+            compute_all(&d).model.tau_Pa
+        };
+        let (with_steel, with_304) = (tau_with(steel), tau_with(stainless));
+        assert!(
+            with_steel > with_304,
+            "{name}: σ {with_steel} with 4140 against {with_304} with 304"
+        );
+        // The 2D torque rises with each two more magnets while the blocks still fit.
+        let mut previous = base.torque_2d_Nm;
+        let mut count = design.coupling.npole + 2;
+        while count <= most_magnets {
+            let mut more = design.clone();
+            more.coupling.npole = count;
+            let model = compute_all(&more).model;
+            if !blocks_fit(&more.coupling, &model) {
+                break;
+            }
+            assert!(
+                model.torque_2d_Nm > previous,
+                "{name}: T_2D {previous} -> {} at {count} magnets",
+                model.torque_2d_Nm
+            );
+            previous = model.torque_2d_Nm;
+            rises += 1;
+            count += 2;
+        }
+    }
+    assert!(rises >= 1, "the magnet-count pin compares no fitting count");
 }
 
 /// `harmonics` states two things about the engine. Its harmonic-set entry, "keep at least 1, 3,
