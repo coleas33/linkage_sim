@@ -16,14 +16,15 @@ use std::sync::OnceLock;
 
 use serde_json::{Map, Value as Json};
 
+use crate::engine::clamps;
 use crate::engine::meta::{ResultSet, Value, result_rows};
 use crate::gui::corrections::{CorrectionIndex, marker_text};
 use crate::gui::dashboard::{
     CHECKS, Level, ResultInfo, badge, check_level, failing_checks, hover_text, result_info,
+    shown_text,
 };
-use crate::gui::format::{
-    format_value, non_finite_text, search_haystack, search_needle, with_unit,
-};
+use crate::gui::format::{non_finite_text, search_haystack, search_needle, with_unit};
+use crate::gui::plain_text::display_label;
 use crate::gui::readouts::Readouts;
 use crate::gui::result_groups::{OTHER_RESULTS, result_groups};
 use crate::gui::session::{Design, design_json, json_value};
@@ -65,7 +66,7 @@ pub const TRACED_ONLY: &str = "Traced only";
 /// through ([`empty_text`]): the trace reaches only results with an equation record, and an input
 /// may reach none of them.
 pub const NOTHING_TRACED: &str =
-    "The trace marks no result shown here (only results with an equation record are traced).";
+    "The trace marks no result shown here (only results with an equation are traced).";
 
 /// What the table says when the failing filter finds no check to show.
 pub const NOTHING_FAILS: &str = "No check fails or asks for a look.";
@@ -91,15 +92,30 @@ pub const LABEL_MIN_WIDTH: f32 = 120.0;
 /// The widths of the label, value, cell and marker columns of a table `available` points wide
 /// with `spacing` points between columns (decision M42-8): the label column flexes, at least
 /// [`LABEL_MIN_WIDTH`], so a narrow centre region (a ~930 px window, where the M4-1 table showed
-/// only its labels) still shows the label and the value without scrolling.
-pub fn column_widths(available: f32, spacing: f32) -> [f32; 4] {
-    let fixed = VALUE_WIDTH + CELL_WIDTH + MARKER_WIDTH + 3.0 * spacing;
+/// only its labels) still shows the label and the value without scrolling. Without the
+/// spreadsheet details (`show_details`, spec S2-5) the cell and marker columns are not drawn:
+/// their widths are 0 and the label takes their room.
+pub fn column_widths(available: f32, spacing: f32, show_details: bool) -> [f32; 4] {
+    let (cell, marker) = if show_details {
+        (CELL_WIDTH, MARKER_WIDTH)
+    } else {
+        (0.0, 0.0)
+    };
+    let gaps = if show_details { 3.0 } else { 1.0 };
+    let fixed = VALUE_WIDTH + cell + marker + gaps * spacing;
     [
         (available - fixed).max(LABEL_MIN_WIDTH),
         VALUE_WIDTH,
-        CELL_WIDTH,
-        MARKER_WIDTH,
+        cell,
+        marker,
     ]
+}
+
+/// The width of a row of columns `widths` ([`column_widths`]) with `spacing` points between
+/// the columns drawn (a column 0 wide is not drawn).
+pub fn row_width(widths: [f32; 4], spacing: f32) -> f32 {
+    let drawn = widths.iter().filter(|&&width| width > 0.0).count();
+    widths.iter().sum::<f32>() + spacing * drawn.saturating_sub(1) as f32
 }
 
 /// One row of the table: what does not change with the inputs.
@@ -111,7 +127,7 @@ pub struct TableEntry {
     pub marker: String,
     /// One of the design's checks ([`CHECKS`]): its row carries a badge.
     pub check: bool,
-    /// Label, path and cell, lowercase: what the search matches.
+    /// Display label, catalogue label, path and cell, lowercase: what the search matches.
     haystack: String,
 }
 
@@ -123,7 +139,12 @@ pub fn table_entries() -> &'static [TableEntry] {
             .into_iter()
             .map(|row| {
                 let info = result_info(&row.path).expect("every result has its info");
-                let haystack = search_haystack(info.meta.label, &row.path, info.cell.as_deref());
+                let haystack = search_haystack(
+                    display_label(&row.path, info.meta.label),
+                    info.meta.label,
+                    &row.path,
+                    info.cell.as_deref(),
+                );
                 TableEntry {
                     marker: marker_text(CorrectionIndex::get().marks(info.cell.as_deref())),
                     check: CHECKS.contains(&row.path.as_str()),
@@ -259,10 +280,12 @@ pub fn entry_level(results: &DesignResults, entry: &TableEntry) -> Option<Level>
 
 /// The worst level of the checks among `rows` (indices into [`table_entries`]) for `results`: a
 /// group heading's badge in the table and the spreadsheet; `None` when none of them is a check
-/// with a level.
-pub fn worst_level(results: &DesignResults, rows: &[usize]) -> Option<Level> {
+/// with a level. While the shaft-clamp section is paused (`clamps_paused`) its rows do not
+/// count ([`clamps::hides`]): the table does not show them.
+pub fn worst_level(results: &DesignResults, rows: &[usize], clamps_paused: bool) -> Option<Level> {
     let entries = table_entries();
     rows.iter()
+        .filter(|&&index| !clamps::hides(&entries[index].path, clamps_paused))
         .filter_map(|&index| entry_level(results, &entries[index]))
         .max()
 }
@@ -280,10 +303,12 @@ pub fn empty_text(trace_marks_none: bool, failing_only: bool, searching: bool) -
 }
 
 /// The indices of the rows whose label, path or cell contains `query`, ignoring case and the
-/// surrounding blanks; every row for a blank query.
-pub fn search(entries: &[TableEntry], query: &str) -> Vec<usize> {
+/// surrounding blanks; every row for a blank query. While the shaft-clamp section is paused
+/// (`clamps_paused`) its rows are never matched ([`clamps::hides`]).
+pub fn search(entries: &[TableEntry], query: &str, clamps_paused: bool) -> Vec<usize> {
     let needle = search_needle(query);
     (0..entries.len())
+        .filter(|&i| !clamps::hides(&entries[i].path, clamps_paused))
         .filter(|&i| needle.is_empty() || entries[i].haystack.contains(&needle))
         .collect()
 }
@@ -366,9 +391,11 @@ pub fn results_json(design: &Design, results: &DesignResults) -> String {
 #[derive(Clone, Debug, Default)]
 pub struct ResultsTable {
     query: String,
-    /// The rows matching `matched_query`; `None` until the first frame.
+    /// The rows matching `matched_query` with the pause `matched_paused`; `None` until the
+    /// first frame.
     matches: Option<Vec<usize>>,
     matched_query: String,
+    matched_paused: bool,
     order: ResultOrder,
     /// The failing checks alone (decision O-7).
     failing_only: bool,
@@ -439,12 +466,15 @@ impl ResultsTable {
     /// centre region's, over every view: decision M42-1), each row a readout (`readouts`, which
     /// frame the rows `trace` marks), each group heading a button that opens or closes it (not
     /// while the search holds more than blanks: every group is open then), with the worst level
-    /// of its checks and the rows the trace marks among those shown. Returns an export asked for.
+    /// of its checks and the rows the trace marks among those shown. While the shaft-clamp
+    /// section is paused (`clamps_paused`) its rows are left out of every line, count, filter
+    /// and heading badge. Returns an export asked for.
     pub fn ui(
         &mut self,
         ui: &mut egui::Ui,
         results: &DesignResults,
         trace: Option<&Trace>,
+        clamps_paused: bool,
         readouts: &mut Readouts,
     ) -> Option<TableAction> {
         self.sync_trace_filter(trace);
@@ -473,14 +503,18 @@ impl ResultsTable {
                 egui::Checkbox::new(&mut self.traced_only, TRACED_ONLY),
             )
             .on_hover_text("The results an input's trace marks: click the input's label");
-            if self.matches.is_none() || self.query != self.matched_query {
-                self.matches = Some(search(entries, &self.query));
+            if self.matches.is_none()
+                || self.query != self.matched_query
+                || self.matched_paused != clamps_paused
+            {
+                self.matches = Some(search(entries, &self.query, clamps_paused));
                 self.matched_query = self.query.clone();
+                self.matched_paused = clamps_paused;
             }
             traced = self.traced(trace);
             let matches = self.shown(&traced);
             failing = self.failing_only.then(|| {
-                failing_checks(results)
+                failing_checks(results, clamps_paused)
                     .iter()
                     .filter_map(|(path, _)| entry_index(path))
                     .collect()
@@ -492,7 +526,11 @@ impl ResultsTable {
                     .count(),
                 None => matches.len(),
             };
-            ui.weak(format!("{shown} of {} results", entries.len()));
+            let total = entries
+                .iter()
+                .filter(|entry| !clamps::hides(&entry.path, clamps_paused))
+                .count();
+            ui.weak(format!("{shown} of {total} results"));
             if ui.button(EXPORT_CSV).clicked() {
                 action = Some(TableAction::ExportCsv);
             }
@@ -517,7 +555,10 @@ impl ResultsTable {
             // The trace's text only when the trace itself marks none of the rows the failing
             // filter lets through (an input's trace may reach no result); a search that hides
             // the traced rows is the search's doing.
-            let marked = |index: usize| trace.is_some_and(|t| t.marks(&entries[index].path));
+            let marked = |index: usize| {
+                !clamps::hides(&entries[index].path, clamps_paused)
+                    && trace.is_some_and(|t| t.marks(&entries[index].path))
+            };
             let trace_marks_none = self.traced_only
                 && match &failing {
                     Some(rows) => !rows.iter().any(|&index| marked(index)),
@@ -527,8 +568,8 @@ impl ResultsTable {
         }
         let row_height = ui.text_style_height(&egui::TextStyle::Body) + 4.0;
         let spacing = ui.spacing().item_spacing.x;
-        let widths = column_widths(ui.available_width(), spacing);
-        let row_width = widths.iter().sum::<f32>() + 3.0 * spacing;
+        let widths = column_widths(ui.available_width(), spacing, readouts.show_details());
+        let row_width = row_width(widths, spacing);
         let mut clicked = None;
         // In the height left, however short (egui's 64-point floor lowered to none).
         egui::ScrollArea::both()
@@ -572,7 +613,7 @@ impl ResultsTable {
                             };
                             // The worst level of the group's checks: a closed group shows that
                             // one of them fails.
-                            let level = worst_level(results, &heading.rows);
+                            let level = worst_level(results, &heading.rows, clamps_paused);
                             let line = HeadingLine {
                                 text: &text,
                                 open,
@@ -688,19 +729,20 @@ fn group_heading_ui(ui: &mut egui::Ui, line: &HeadingLine, size: egui::Vec2) -> 
         .clicked()
 }
 
-/// A row's hover text: the hover hook's ([`hover_text`]) with the exact value.
-pub fn row_tooltip(entry: &TableEntry, value: &Value) -> String {
-    let mut tooltip = hover_text(&entry.path).expect("every table row is a result");
+/// A row's hover text: the hover hook's ([`hover_text`], with the spreadsheet details when
+/// `show_details`) with the exact value.
+pub fn row_tooltip(entry: &TableEntry, value: &Value, show_details: bool) -> String {
+    let mut tooltip = hover_text(&entry.path, show_details).expect("every table row is a result");
     if let Value::Num(x) = value {
         tooltip.push_str(&format!("\nExact value: {}", exact_number(*x)));
     }
     tooltip
 }
 
-/// One table row: label, value with unit (after the badge of a check's `level`), workbook
-/// cell, marker, in columns `widths` wide ([`column_widths`]; the path is in the hover text,
-/// which is built only while the row is hovered). The whole row is a readout: hover it for its
-/// equation, click it to open it.
+/// One table row: label, value with unit (after the badge of a check's `level`), and with the
+/// spreadsheet details the workbook cell and the marker, in columns `widths` wide
+/// ([`column_widths`]; the path is in the hover text, which is built only while the row is
+/// hovered). The whole row is a readout: hover it for its equation, click it to open it.
 fn row_ui(
     ui: &mut egui::Ui,
     entry: &TableEntry,
@@ -711,6 +753,8 @@ fn row_ui(
     readouts: &mut Readouts,
 ) {
     let value = results.get(&entry.path).unwrap_or(Value::None);
+    // The cell and marker columns only with the spreadsheet details (spec S2-5).
+    let show_details = readouts.show_details();
     let row = ui.horizontal(|ui| {
         // Left-aligned columns of fixed width (add_sized would centre the text).
         let cell = |ui: &mut egui::Ui, width: f32, text: &str, level: Option<Level>| {
@@ -725,28 +769,33 @@ fn row_ui(
         };
         let [label, number, workbook, marker] = widths;
         cell(ui, label, entry.info.meta.label, None);
+        // The cup wall's failing verdict with its input's label (ruling R9); the exports keep
+        // the engine text.
         cell(
             ui,
             number,
-            &with_unit(format_value(&value), entry.info.meta.unit),
+            &with_unit(shown_text(&entry.path, &value), entry.info.meta.unit),
             level,
         );
-        cell(
-            ui,
-            workbook,
-            entry.info.cell.as_deref().unwrap_or(RUST_ONLY),
-            None,
-        );
-        cell(ui, marker, &entry.marker, None);
+        if show_details {
+            cell(
+                ui,
+                workbook,
+                entry.info.cell.as_deref().unwrap_or(RUST_ONLY),
+                None,
+            );
+            cell(ui, marker, &entry.marker, None);
+        }
     });
-    readouts.show_over(ui, row.response.rect, &entry.path, || {
-        row_tooltip(entry, &value)
+    readouts.show_over(ui, row.response.rect, &entry.path, |show_details| {
+        row_tooltip(entry, &value, show_details)
     });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::gui::format::format_value;
 
     /// A positive beta typed in for manual magnets with no grade (E20): no hot limit, +inf, and
     /// no torque at it, NaN (`tests/robustness.rs`).
@@ -778,19 +827,103 @@ mod tests {
     #[test]
     fn the_label_column_flexes_down_to_its_minimum() {
         // The 1280 x 800 default window: the label column widens past the M4-1 260 points.
-        assert_eq!(column_widths(644.0, 8.0), [300.0, 130.0, 130.0, 60.0]);
+        assert_eq!(column_widths(644.0, 8.0, true), [300.0, 130.0, 130.0, 60.0]);
         // A ~930 px window leaves about 294 points: the label shrinks to its minimum, so the
         // value column ends at 120 + 8 + 130 = 258 points, on screen.
-        assert_eq!(column_widths(294.0, 8.0), [120.0, 130.0, 130.0, 60.0]);
-        assert_eq!(column_widths(0.0, 8.0)[0], LABEL_MIN_WIDTH);
-        assert_eq!(column_widths(f32::NAN, 8.0)[0], LABEL_MIN_WIDTH);
+        assert_eq!(column_widths(294.0, 8.0, true), [120.0, 130.0, 130.0, 60.0]);
+        assert_eq!(column_widths(0.0, 8.0, true)[0], LABEL_MIN_WIDTH);
+        assert_eq!(column_widths(f32::NAN, 8.0, true)[0], LABEL_MIN_WIDTH);
+        // Without the spreadsheet details (spec S2-5) the cell and marker columns are not
+        // drawn: the label takes their room, and a row is the label, one gap and the value.
+        assert_eq!(
+            column_widths(644.0, 8.0, false),
+            [644.0 - VALUE_WIDTH - 8.0, VALUE_WIDTH, 0.0, 0.0]
+        );
+        assert_eq!(column_widths(0.0, 8.0, false)[0], LABEL_MIN_WIDTH);
+        assert_eq!(column_widths(f32::NAN, 8.0, false)[0], LABEL_MIN_WIDTH);
+        for show_details in [false, true] {
+            assert_eq!(
+                row_width(column_widths(644.0, 8.0, show_details), 8.0),
+                644.0,
+                "{show_details}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_cell_and_marker_columns_show_only_with_the_spreadsheet_details() {
+        use crate::gui::test_support::{SCREEN, drawn_texts, sized_frame};
+        use crate::gui::typeset::TermColors;
+        let results = compute_all(&DesignInputs::default());
+        let pullout = table_entries()
+            .iter()
+            .find(|entry| entry.path == "model.pullout_Nm")
+            .expect("the pull-out's row");
+        let cell = pullout.info.cell.clone().expect("the pull-out has a cell");
+        assert!(
+            !pullout.marker.is_empty(),
+            "the pull-out carries correction ids"
+        );
+        let value = with_unit(
+            format_value(&results.get("model.pullout_Nm").unwrap()),
+            pullout.info.meta.unit,
+        );
+        for show_details in [false, true] {
+            let ctx = egui::Context::default();
+            let mut table = ResultsTable::default();
+            let mut output = None;
+            // The headline group is open: the pull-out's row is on screen.
+            for _ in 0..2 {
+                output = Some(sized_frame(&ctx, SCREEN, Vec::new(), |ui| {
+                    let mut readouts = Readouts::new(TermColors::default(), show_details);
+                    table.ui(ui, &results, None, false, &mut readouts);
+                }));
+            }
+            let texts = drawn_texts(&output.unwrap());
+            let count = |text: &str| texts.iter().filter(|t| *t == text).count();
+            assert_eq!(count(&cell), usize::from(show_details), "{show_details}");
+            assert_eq!(count(&pullout.marker) > 0, show_details, "{show_details}");
+            // The value shows either way, and the search still matches the cell.
+            assert!(count(&value) > 0, "{value}");
+            assert!(
+                search(table_entries(), &cell, false)
+                    .contains(&entry_index("model.pullout_Nm").expect("the pull-out's row"))
+            );
+        }
+    }
+
+    #[test]
+    fn a_row_s_hover_names_its_path_cell_and_corrections_only_with_the_spreadsheet_details() {
+        use crate::gui::test_support::{SCREEN, assert_hover_names_path_only_with_details};
+        // The headline group is open: the pull-out's row is on screen, its label hovered.
+        let results = compute_all(&DesignInputs::default());
+        let path = "model.pullout_Nm";
+        let entry = &table_entries()[entry_index(path).expect("the pull-out's row")];
+        let value = results.get(path).expect("a result");
+        let cell = entry.info.cell.clone().expect("the pull-out has a cell");
+        let heading = format!("{}:", crate::gui::corrections::MARKER_HEADING);
+        for show_details in [false, true] {
+            let text = row_tooltip(entry, &value, show_details);
+            assert_eq!(text.contains(&cell), show_details, "{text}");
+            assert_eq!(text.contains(&heading), show_details, "{text}");
+        }
+        let mut table = ResultsTable::default();
+        assert_hover_names_path_only_with_details(
+            SCREEN,
+            path,
+            entry.info.meta.label,
+            |show_details| row_tooltip(entry, &value, show_details),
+            |ui, readouts| {
+                table.ui(ui, &results, None, false, readouts);
+            },
+        );
     }
 
     #[test]
     fn the_search_matches_label_path_and_cell_ignoring_case() {
         let entries = table_entries();
         let paths = |query: &str| -> Vec<&str> {
-            search(entries, query)
+            search(entries, query, false)
                 .into_iter()
                 .map(|i| entries[i].path.as_str())
                 .collect()
@@ -804,9 +937,31 @@ mod tests {
             .filter(|r| r.path.starts_with("gap_sweep[3]."))
             .count();
         assert_eq!(row3.len(), columns);
-        assert_eq!(search(entries, "").len(), entries.len());
-        assert_eq!(search(entries, "   ").len(), entries.len());
-        assert!(search(entries, "no such result anywhere").is_empty());
+        assert_eq!(search(entries, "", false).len(), entries.len());
+        assert_eq!(search(entries, "   ", false).len(), entries.len());
+        assert!(search(entries, "no such result anywhere", false).is_empty());
+    }
+
+    #[test]
+    fn the_search_matches_the_display_label_and_the_catalogue_label() {
+        use crate::gui::plain_text::label_for;
+        let entries = table_entries();
+        for path in [
+            "model.pullout_Nm",
+            "model.gap_radius_mm",
+            "metal.torque_hot_low_Nm",
+            "metal.torque_cold_high_Nm",
+        ] {
+            let index = entry_index(path).unwrap();
+            let catalogue = entries[index].info.meta.label;
+            assert_ne!(label_for(path), catalogue, "{path}");
+            for query in [label_for(path), catalogue] {
+                assert!(
+                    search(entries, query, false).contains(&index),
+                    "{path} by {query:?}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -817,21 +972,35 @@ mod tests {
             .find(|e| e.path == "model.pullout_Nm")
             .unwrap();
         let value = Value::Num(2.6884762950539796);
-        let tooltip = row_tooltip(pullout, &value);
+        let tooltip = row_tooltip(pullout, &value, true);
+        let label = crate::gui::plain_text::label_for("model.pullout_Nm");
+        assert!(tooltip.starts_with(&format!("{label}\n")), "{tooltip}");
         assert!(
-            tooltip.starts_with("Pull-out torque at operating temperature\n"),
+            tooltip.contains(&format!("{}:", crate::gui::corrections::MARKER_HEADING)),
             "{tooltip}"
         );
-        assert!(tooltip.contains("Corrected vs workbook:"), "{tooltip}");
         assert!(
             tooltip.ends_with("\nExact value: 2.6884762950539796"),
             "{tooltip}"
+        );
+        // Without the spreadsheet details: the hover hook's shorter text, the exact value kept.
+        let plain = row_tooltip(pullout, &value, false);
+        assert_eq!(
+            plain,
+            format!(
+                "{}\nExact value: 2.6884762950539796",
+                hover_text("model.pullout_Nm", false).unwrap()
+            )
         );
         let claim = entries
             .iter()
             .find(|e| e.path == "housing.space_claim_check")
             .unwrap();
-        let text = row_tooltip(claim, &Value::Text("Inside the space claim".to_owned()));
+        let text = row_tooltip(
+            claim,
+            &Value::Text("Inside the space claim".to_owned()),
+            true,
+        );
         assert!(!text.contains("Exact value"), "{text}");
     }
 
@@ -892,6 +1061,46 @@ mod tests {
             .find(|l| l.starts_with("housing.space_claim_check,"))
             .unwrap();
         assert!(claim.ends_with(",Inside the space claim,,"), "{claim}");
+    }
+
+    #[test]
+    fn the_cup_wall_verdict_is_drawn_with_the_wall_input_s_label_and_exported_as_the_engine_s() {
+        use crate::engine::materials::CUP_WALL_TOO_THIN;
+        use crate::gui::dashboard::verdict_display;
+        use crate::gui::test_support::{SCREEN, drawn_texts, sized_frame};
+        // Ruling R9 (amendment A-9): the default design's cup wall fails. The table draws its
+        // verdict as the dashboard does, once, and nowhere the engine's cell-named words; the
+        // exports keep the engine text.
+        let results = compute_all(&DesignInputs::default());
+        let engine = &results.materials.cup_wall_check;
+        let shown = verdict_display("materials.cup_wall_check", engine)
+            .expect("the default cup wall fails");
+        // The failing filter lists the checks flat: the cup wall's row is on screen.
+        let ctx = egui::Context::default();
+        let mut table = ResultsTable {
+            failing_only: true,
+            ..ResultsTable::default()
+        };
+        let mut output = None;
+        for _ in 0..2 {
+            output = Some(sized_frame(&ctx, SCREEN, Vec::new(), |ui| {
+                table.ui(ui, &results, None, false, &mut Readouts::default());
+            }));
+        }
+        let texts = drawn_texts(&output.unwrap());
+        assert_eq!(texts.iter().filter(|t| **t == shown).count(), 1, "{shown}");
+        let engine_words = CUP_WALL_TOO_THIN.trim_end();
+        assert!(
+            !texts.iter().any(|t| t.contains(engine_words)),
+            "the engine's cell-named verdict is drawn"
+        );
+        let csv = results_csv(&results);
+        let row = csv
+            .split("\r\n")
+            .find(|line| line.starts_with("materials.cup_wall_check,"))
+            .expect("the cup wall's CSV line");
+        assert!(row.contains(&format!(",{engine},")), "{row}");
+        assert!(!row.contains(&shown), "{row}");
     }
 
     #[test]
@@ -1016,7 +1225,7 @@ mod tests {
         let groups = result_groups();
         let pullout = entry_index("model.pullout_Nm").unwrap();
         assert_eq!(entries[pullout].path, "model.pullout_Nm");
-        let matches = search(entries, "calculator!c93");
+        let matches = search(entries, "calculator!c93", false);
         let lines = table_lines(&matches, ResultOrder::Grouped, None, &|_| true);
         assert_eq!(
             lines,
@@ -1030,7 +1239,7 @@ mod tests {
             ]
         );
         // A sweep row's columns: the Other results heading, the gap sweep's heading, the rows.
-        let matches = search(entries, "gap_sweep[3].");
+        let matches = search(entries, "gap_sweep[3].", false);
         let lines = table_lines(&matches, ResultOrder::Grouped, None, &|_| true);
         let gap_sweep = groups.iter().position(|g| g.id == "gap_sweep").unwrap();
         assert_eq!(lines[0], Line::OtherResults);
@@ -1066,7 +1275,7 @@ mod tests {
         inputs.coupling.magnets.part_inner.clear();
         inputs.coupling.magnets.part_outer.clear();
         let results = compute_all(&inputs);
-        let failing: Vec<usize> = failing_checks(&results)
+        let failing: Vec<usize> = failing_checks(&results, false)
             .iter()
             .map(|(path, _)| entry_index(path).unwrap())
             .collect();
@@ -1079,7 +1288,7 @@ mod tests {
             );
         }
         // And only those the search matches: the two amber rating checks.
-        let matches = search(entries, "temperature check");
+        let matches = search(entries, "temperature check", false);
         let lines = table_lines(&matches, ResultOrder::Grouped, Some(&failing), &|_| true);
         assert_eq!(
             lines,
@@ -1127,7 +1336,7 @@ mod tests {
                     .iter()
                     .filter_map(|&i| entry_level(results, &entries[i]));
                 assert_eq!(
-                    worst_level(results, &group.rows),
+                    worst_level(results, &group.rows, false),
                     levels.max(),
                     "{}",
                     group.label
@@ -1138,9 +1347,93 @@ mod tests {
             entry_index("model.pullout_Nm").unwrap(),
             entry_index("metal.hot_min_check").unwrap(),
         ];
-        assert_eq!(worst_level(&results, &pair), Some(Level::Bad));
-        assert_eq!(worst_level(&results, &pair[..1]), None);
-        assert_eq!(worst_level(&results, &[]), None);
+        assert_eq!(worst_level(&results, &pair, false), Some(Level::Bad));
+        assert_eq!(worst_level(&results, &pair[..1], false), None);
+        assert_eq!(worst_level(&results, &[], false), None);
+    }
+
+    #[test]
+    fn while_the_clamp_section_is_paused_the_table_leaves_out_its_rows() {
+        use crate::gui::result_groups::HEADLINE_LABEL;
+        use crate::gui::test_support::{drawn_texts, only_the_clamp_fails, sized_frame};
+        let entries = table_entries();
+        let hidden = entries
+            .iter()
+            .filter(|entry| clamps::hides(&entry.path, true))
+            .count();
+        assert!(hidden > 0);
+        // The search: every row, less the section's while paused; "clamp" finds only those.
+        assert_eq!(search(entries, "", false).len(), entries.len());
+        assert_eq!(search(entries, "", true).len(), entries.len() - hidden);
+        assert!(!search(entries, "clamp", false).is_empty());
+        assert_eq!(search(entries, "clamp", true), Vec::<usize>::new());
+        // A design that fails only the clamp: the headline's badge is red only while the
+        // clamp shows.
+        let results = compute_all(&only_the_clamp_fails());
+        let headline = &result_groups()[0];
+        assert_eq!(headline.label, HEADLINE_LABEL);
+        assert_eq!(
+            worst_level(&results, &headline.rows, false),
+            Some(Level::Bad)
+        );
+        assert_eq!(
+            worst_level(&results, &headline.rows, true),
+            Some(Level::Good)
+        );
+        // Drawn: the count, and the clamp chain and package headings only with the section.
+        for (paused, total) in [(false, entries.len()), (true, entries.len() - hidden)] {
+            let ctx = egui::Context::default();
+            let mut table = ResultsTable::default();
+            let mut output = None;
+            for _ in 0..2 {
+                output = Some(sized_frame(
+                    &ctx,
+                    egui::vec2(1280.0, 3000.0),
+                    Vec::new(),
+                    |ui| {
+                        table.ui(ui, &results, None, paused, &mut Readouts::default());
+                    },
+                ));
+            }
+            let texts = drawn_texts(&output.unwrap());
+            assert!(
+                texts.contains(&format!("{total} of {total} results")),
+                "paused {paused}"
+            );
+            let clamp_headings = texts
+                .iter()
+                .filter(|t| t.starts_with("Clamps (") || t.starts_with("Shaft clamps ("))
+                .count();
+            assert_eq!(
+                clamp_headings,
+                if paused { 0 } else { 2 },
+                "paused {paused}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_correction_of_the_paused_section_alone_marks_nothing_shown() {
+        // Ruling 11: the correction rows that concern only the clamp leave with it. E2 (the
+        // screw length) marks only the section's cells: while it is paused no shown row
+        // carries its marker and no shown equation embodies it.
+        use crate::engine::deviations::DeviationId;
+        use crate::gui::readouts::registry;
+        let marked = |paused: bool| -> BTreeSet<String> {
+            table_entries()
+                .iter()
+                .filter(|entry| !clamps::hides(&entry.path, paused))
+                .flat_map(|entry| entry.marker.split_whitespace().map(str::to_owned))
+                .collect()
+        };
+        assert!(marked(false).contains("E2"));
+        assert!(!marked(true).contains("E2"));
+        for eq in registry().equations() {
+            if !clamps::hides(&eq.target, true) {
+                let upstream = registry().corrections_upstream(&eq.target);
+                assert!(!upstream.contains(&DeviationId::E2), "{}", eq.target);
+            }
+        }
     }
 
     #[test]
@@ -1172,7 +1465,7 @@ mod tests {
                 egui::Rect::from_min_size(egui::pos2(20.0, 30.0), egui::vec2(700.0, height));
             for _ in 0..2 {
                 let (_, used) = crate::gui::test_support::region_frame(&ctx, size, region, |ui| {
-                    table.ui(ui, &results, None, &mut Readouts::default());
+                    table.ui(ui, &results, None, false, &mut Readouts::default());
                 });
                 assert!(
                     used.bottom() <= region.bottom() + 0.01,

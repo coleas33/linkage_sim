@@ -131,7 +131,7 @@ inputs! {
     pub struct PartMaterialInputs {
         fields {
             back_iron: i64 = 1 => param_rust_only("-", "Back iron material (hub, cup and boss)",
-                "Addendum A5. 1 = the workbook's 4140: the steel inputs above. Another choice supplies its library conductivity, density, specific heat, expansion and modulus, and its design flux density where the library has one (else C13 stays). A non-ferromagnetic choice selects the free-space circuit and becomes the hub, cup and boss material; with a ferromagnetic one, Calculator C6 = 0 still selects the free-space circuit (the override).")
+                "The hub, cup and boss material. 4140 uses the steel inputs; other steels bring library values, some tripping the saturation caution; 304 or aluminium drops the steel path, losing torque.")
                 .choices(&[
                     (1, "4140 annealed"),
                     (2, "1018 hot rolled"),
@@ -143,7 +143,7 @@ inputs! {
                     (8, "6061-T6 aluminium"),
                 ]),
             sleeve_liner: i64 = 1 => param_rust_only("-", "Sleeve and liner material",
-                "Addendum A5. 1 = the workbook's 316L (Temperature design C111 and C139, Metal design C44). Another choice supplies its conductivity, density and specific heat; the endplates follow it, as C44 prices them.")
+                "The material of the thin sleeve and liner in the gap. 316L uses the inputs; another choice brings its library conductivity, density and specific heat, changing slip heating and mass.")
                 .choices(&[
                     (1, "316L annealed"),
                     (2, "Ti-6Al-4V grade 5"),
@@ -151,7 +151,7 @@ inputs! {
                     (4, "PEEK"),
                 ]),
             cap_housing: i64 = 1 => param_rust_only("-", "Cap and housing material",
-                "Addendum A5. 1 = the workbook's 6061-T6 (Materials C43, Temperature design C140, Metal design C42). Another choice supplies the cap's conductivity, density and specific heat; the aluminium adapter and the clamp alloy keep their own inputs.")
+                "The cap material: 6061-T6 uses the inputs, another choice its library conductivity, density and specific heat. The aluminium adapter keeps its own inputs.")
                 .choices(&[
                     (1, "6061-T6 aluminium"),
                     (2, "7075-T6 aluminium"),
@@ -184,35 +184,35 @@ results! {
             cup_wall_check: String => out("", "Cup wall check",
                 "A thicker corner wall grows the cup OD by twice the change; recheck the cap thread and envelope.",
                 "Materials!C22"),
-            cup_wall_suggested_mm: NumOrText => out_rust_only("mm", "Suggested cup wall at the pocket corners (autofit)",
-                "Addendum A1 autofit, decision 27: the wall check's rule, the back-iron thickness needed rounded up to 0.1 mm (the number the check's advice quotes). The wall stays an input (Metal design C122). 'n/a' when the check reads 'No back iron'."),
+            cup_wall_suggested_mm: NumOrText => out_rust_only("mm", "Cup wall the rule asks for at the pocket corners",
+                "The thickness the back iron needs at its design flux density, rounded up to 0.1 mm. The cup wall check asks for it; n/a without back iron."),
             hub_flats_under_mm: f64 => out("mm", "Machine the hub flats under by", "On the apothem.", "Materials!C27"),
             cup_pockets_over_mm: f64 => out("mm", "Machine the cup pockets over by", "On the apothem.", "Materials!C28"),
             bores_over_dia_mm: f64 => out("mm", "Machine bores over (on diameter)", "", "Materials!C29"),
             ods_under_dia_mm: f64 => out("mm", "Machine outside diameters under (on diameter)", "", "Materials!C30"),
             circuit_backiron: i64 => out_rust_only("-", "Back-iron circuit in effect",
-                "1 = steel circuit, 0 = free space: Calculator C6, or 0 for a non-ferromagnetic back iron (Addendum A5)."),
+                "1 = steel circuit, 0 = free space: free space when back iron is switched off or its material is non-ferromagnetic."),
             back_iron_material: String => out_rust_only("", "Back iron material", ""),
             sleeve_liner_material: String => out_rust_only("", "Sleeve and liner material", ""),
             cap_material: String => out_rust_only("", "Cap and housing material", ""),
             steel_density_g_mm3: f64 => out_rust_only("g/mm³", "Back-iron steel density in effect",
-                "Plan A-3 (a term of the equation explorer): Metal design C132, or a ferromagnetic back-iron pick's library density (Addendum A5); the mass model prices the steel parts with it."),
+                "The steel density input, or a picked steel back iron's library density; the mass of the steel parts uses it."),
             body_sigma_S_m: f64 => out_rust_only("S/m", "Hub, cup and boss conductivity without back iron",
-                "The workbook's 6061-T6 (Materials C43), or a non-ferromagnetic back-iron pick's (Addendum A5); correction E17 prices the aluminium parts' slip losses with it."),
+                "6061-T6 aluminium's conductivity, or a picked non-magnetic back iron's: with no back iron, the slip heating of the hub, cup and web uses it."),
             body_density_g_mm3: f64 => out_rust_only("g/mm³", "Hub, cup and boss density without back iron",
-                "Metal design C42, or a non-ferromagnetic back-iron pick's (Addendum A5): the aluminium hub, cup and boss (E9)."),
+                "The aluminium density input, or a picked non-magnetic back iron's: the hub, cup and boss mass with no back iron."),
             body_c_J_kgK: f64 => out_rust_only("J/(kg·K)", "Hub, cup and boss specific heat without back iron",
-                "Temperature design C140, or a non-ferromagnetic back-iron pick's (Addendum A5): correction E15's heat capacity."),
+                "The aluminium specific heat input, or a picked non-magnetic back iron's: the hub, cup and boss heat capacity with no back iron."),
             sleeve_sigma_S_m: f64 => out_rust_only("S/m", "Sleeve and liner conductivity in effect",
-                "Temperature design C111, or the sleeve and liner pick's (Addendum A5)."),
+                "The 316L conductivity input, or the picked sleeve and liner material's."),
             sleeve_density_g_mm3: f64 => out_rust_only("g/mm³", "Sleeve, liner and endplate density in effect",
-                "Metal design C44, or the sleeve and liner pick's (Addendum A5)."),
+                "The sleeve density input, or the picked sleeve and liner material's."),
             sleeve_c_J_kgK: f64 => out_rust_only("J/(kg·K)", "Sleeve, liner and endplate specific heat in effect",
-                "Temperature design C139, or the sleeve and liner pick's (Addendum A5)."),
+                "The 316L specific heat input, or the picked sleeve and liner material's."),
             cap_density_g_mm3: f64 => out_rust_only("g/mm³", "Cap density in effect",
-                "Metal design C42, or the cap pick's (Addendum A5)."),
+                "The aluminium density input, or the picked cap material's."),
             cap_c_J_kgK: f64 => out_rust_only("J/(kg·K)", "Cap specific heat in effect",
-                "Temperature design C140, or the cap pick's (Addendum A5)."),
+                "The aluminium specific heat input, or the picked cap material's."),
         }
     }
 }
@@ -220,6 +220,12 @@ results! {
 /// Text of `materials.cup_wall_suggested_mm` when the wall check reads "No back iron":
 /// no magnetic rule sizes an aluminium cup's wall.
 pub const NO_WALL_RULE: &str = "n/a";
+
+/// The start of the cup wall check's failing verdict, before the wall the rule asks for. The
+/// text is the Python port's and the differential data pin it; the dashboard, the results table,
+/// the Equation panel and every readout's hover draw it with the wall input's on-screen name
+/// instead (`gui::plain_text::shown_literal`, which `gui::dashboard::verdict_display` builds on).
+pub const CUP_WALL_TOO_THIN: &str = "Too thin: raise Metal design C122 to at least ";
 
 /// Cup wall check against the back-iron need, and electroless-nickel pre-plate offsets.
 /// `backiron` is the Calculator selector C6 in effect (1 steel, 0 none); only E9
@@ -240,10 +246,7 @@ pub fn compute(
     } else if wall_corner_mm >= t_bi_req_mm {
         "OK".to_owned()
     } else {
-        format!(
-            "Too thin: raise Metal design C122 to at least {} mm",
-            fmt_fixed(suggested, 1)
-        )
+        format!("{CUP_WALL_TOO_THIN}{} mm", fmt_fixed(suggested, 1))
     };
     let t = mat.nickel.thickness_mm;
     MaterialsResults {

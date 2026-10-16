@@ -43,32 +43,44 @@ pub struct Assumption {
     pub source: &'static str,
 }
 
+impl Assumption {
+    /// Whether the panel shows this assumption while the shaft-clamp section is paused
+    /// (`clamps_paused`) or not: not when the section hides one of its inputs
+    /// ([`super::clamps::hides`]: the clamp friction and the preload fraction while paused).
+    pub fn shown(&self, clamps_paused: bool) -> bool {
+        !self
+            .paths
+            .iter()
+            .any(|path| super::clamps::hides(path, clamps_paused))
+    }
+}
+
 /// The spec's v1 set, in the spec's order.
 pub const ASSUMPTIONS: [Assumption; 14] = [
     Assumption {
         id: "harmonics",
         label: "Harmonics included",
         paths: &["coupling.max_harmonic"],
-        rationale: "Each ring's alternating magnetization is a square wave whose odd space harmonics 1, 3, 5, ... add to the torque; the workbook sums 1, 3 and 5. A harmonic's wave number grows with its order, so its field decays faster across the gap: higher harmonics add little at the default gap and more at small gaps or low fill.",
+        rationale: "Each ring's alternating magnetization is a square wave made of odd harmonics 1, 3, 5, ..., each contributing to the torque. By default the model sums 1, 3 and 5. A higher harmonic's field decays faster across the gap, so it matters little at the default gap and more at small gaps or low fill.",
         source: "Spec Addendum A3 (workbook 1, 3, 5; selectable up to 11); workbook Calculator rows 71 to 88; M2 decision D7 and Addendum A decision 29 (the peak search for any set).",
     },
     Assumption {
         id: "end_effect",
         label: "End-effect coefficient",
         paths: &["coupling.c_end", "calibration.c_end"],
-        rationale: "Empirical factor for the finite axial length, f_end = 1 − c_end · pole pitch / L, on the Calculator and on the Calibration prototype (each keeps its own input). Within 1 % of 3D for magnets longer than about 3 mm; at or below L = c_end · pole pitch the factor is 0 or negative and the end-effect model is out of range (end_effect_check).",
+        rationale: "An empirical factor for the finite magnet length: end-effect factor = 1 − coefficient × pole pitch / magnet length. Your design and the bench prototype each have their own coefficient. Checked on the example design without its steel, it is within 3 % of free-space 3D for magnets 3.2 mm and longer; with magnetic steel behind the magnets it likely reads high. Its end loss barely grows with the gap, so it reads optimistic at wider gaps. It is least reliable for short magnets, where it can read too high or too low; at or below a magnet length of coefficient × pole pitch the factor is zero or negative, and the model gives no prediction.",
         source: "Workbook Calculator!C41 and Calibration!C23 (0.15); M1 audit M8 (error band against 3D) and M9 (negative for short magnets).",
     },
     Assumption {
         id: "calibration_factor",
         label: "Calibration factor",
         paths: &["calibration.f_cal_original"],
-        rationale: "The model's calibration coefficient for every design but the measured prototype: the bench correction (Calibration C9) applies only to the prototype's own rings, pole count and circuit (Calculator C42). The audit found the 2D model within a few per cent of exact 2D sections.",
+        rationale: "The factor the torque model is multiplied by for every design that does not match the bench prototype; no bench test with steel stands behind it. A design that matches the prototype (no magnetic steel behind the magnets, its magnets per ring, B842SH parts on both rings) takes the measured factor instead. Ring radius, gap and magnet length are not compared. The 2D model is within a few per cent of exact 2D sections.",
         source: "Workbook Calibration!C24 (0.95); M1 audit M4 to M6.",
     },
     Assumption {
         id: "production_variation",
-        label: "Production variation",
+        label: "Production variation allowance",
         paths: &["metal.variation"],
         rationale: "Symmetric allowance on the pull-out for magnet, gap and assembly scatter: the hot low torque is the pull-out at the operating temperature times (1 − variation), the cold high torque the cold pull-out times (1 + variation). An engineering allowance, not measured.",
         source: "Workbook Metal design!C18 (±15 %).",
@@ -77,28 +89,28 @@ pub const ASSUMPTIONS: [Assumption; 14] = [
         id: "br_temperature_coefficient",
         label: "Br temperature coefficient",
         paths: &["calibration.alpha_br_per_C"],
-        rationale: "Reversible remanence coefficient: Br(T) = Br(20 °C) · (1 + α (T − 20 °C)), and torque scales with Br², on every sheet. −0.12 %/°C is the sintered NdFeB value of every library part's grade; a ring in the grade mode (manual dimensions with a grade) takes its grade's own coefficient (decision A2-7).",
+        rationale: "Reversible remanence coefficient: Br(T) = Br(20 °C) · (1 + α (T − 20 °C)), and torque scales with the inner Br times the outer Br. Its default is the sintered NdFeB value shared by every library part's grade. A ring on manual dimensions with a picked grade uses that grade's own coefficient instead.",
         source: "Workbook Calibration!C22 (−0.0012 /°C); Addendum A grade table (K&J, sintered NdFeB).",
     },
     Assumption {
         id: "hcj_temperature_coefficient",
         label: "Hcj temperature coefficient",
         paths: &["temperature.demag.beta_hcj_per_C"],
-        rationale: "Effective coefficient of the intrinsic coercivity over 20 to 150 °C, for the knee Hk(T) = knee · Hcj(20 °C) · (1 + β (T − 20 °C)). With correction E20 a magnet with a grade (every library part) uses its grade's β unless the coercivity source is set to the inputs; this value acts for a magnet without a grade or with that source.",
+        rationale: "Effective coefficient of the intrinsic coercivity over 20 to 150 °C, for the knee Hk(T) = knee · Hcj(20 °C) · (1 + β (T − 20 °C)). A magnet with a grade (every library part) uses its grade's β, unless the coercivity source is set to the inputs. This value acts for a magnet without a grade, or for both rings with that source.",
         source: "Workbook Temperature design!C45 (−0.50 %/°C, N42SH); Addendum A decisions 18 (Arnold's −0.55 %/°C is the reference, not the default) and 19 (E20).",
     },
     Assumption {
         id: "knee_fraction",
         label: "Demagnetization knee fraction",
         paths: &["temperature.demag.knee_fraction"],
-        rationale: "The knee of the demagnetization curve as a fraction of Hcj: the reverse field at which irreversible loss starts. The onsets are calibrated to the magnet's rating; the audit found that calibration uses 9.83 °C of the 10 °C design margin, so the margin left for model-form uncertainty is thin.",
+        rationale: "The knee of the demagnetization curve as a fraction of Hcj: the reverse field at which irreversible loss starts. For a rated magnet the onsets reached on heating are calibrated to its rating; a hard ferrite's cold onsets are not. Other reasonable calibration forms move the example design's skipping onset by up to 9.83 °C, nearly all of the default demagnetization margin, so little is left for model uncertainty.",
         source: "Workbook Temperature design!C46 (0.9); M1 audit rulings (onset calibration) and M13.",
     },
     Assumption {
         id: "demag_margin",
         label: "Demagnetization margin",
         paths: &["temperature.demag.design_margin_C"],
-        rationale: "Margin kept from the skipping onset (like poles facing, the largest reverse field): the magnet design limit is that onset minus this margin, and with E20 a positive-beta magnet's cold limit is its cold onset plus it.",
+        rationale: "Margin kept from the skipping onset (like poles facing, the largest reverse field): the magnet design limit is that onset minus this margin. A positive-beta magnet (hard ferrite) has no hot onset, so its rating is its hot limit; its cold limit is its cold onset plus this margin.",
         source: "Workbook Temperature design!C51 (10 °C); M1 audit rulings (onset calibration).",
     },
     Assumption {
@@ -133,7 +145,7 @@ pub const ASSUMPTIONS: [Assumption; 14] = [
         id: "clamp_friction",
         label: "Clamp friction coefficient",
         paths: &["clamps.friction"],
-        rationale: "Friction between the shaft and the clamp bore in the clamp capacity µ · preload · d · factor: degreased; 0.10 if the bore could be oily. The adapter joint's friction (Shaft clamps C66) is a design input, not this assumption.",
+        rationale: "Friction between the shaft and the clamp bore in the clamp capacity µ · preload · d · factor, for a degreased bore; use 0.10 if it could be oily. The adapter joint's friction is a separate design input, not this assumption.",
         source: "Workbook Shaft clamps!C18 (0.15); Addendum A report section 6.5 (which input the assumption names).",
     },
     Assumption {

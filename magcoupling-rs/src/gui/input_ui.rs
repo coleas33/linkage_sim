@@ -1,6 +1,7 @@
 //! One input row of the left side (spec M4 "Sliders"): live recompute while dragging, a value
 //! box for typed entry, arrow-key nudges, step snapping, logarithmic scale, per-field reset, a
-//! dot when changed from default, a tooltip with help text and workbook cell; selectors as
+//! dot when changed from default, a tooltip with help text (and, with the spreadsheet details,
+//! path and workbook cell); selectors as
 //! drop-downs, an optional input as a checkbox and a slider, a text input as a text field.
 //!
 //! [`input_row`] draws a row from its [`InputEntry`] and the current value and returns the
@@ -8,11 +9,15 @@
 //! same way. The material, magnet-part and grade rows add their pickers
 //! ([`crate::gui::pickers`]): a material choice's properties on hover, a part or grade picked
 //! from the library tables.
+//!
+//! [`hint_line`] draws the short always-visible hint under a Key design row or a Size-tab control
+//! (slice 2 spec 3.5), as a [`weak_line`].
 
 use crate::engine::meta::{FieldType, InputMeta, SliderRange, Value};
 use crate::gui::format::{format_value, with_unit};
 use crate::gui::inputs::{InputEntry, input_tooltip, outside_range, step_decimals, text_hint};
 use crate::gui::pickers::{choice_hover, picker_ui};
+use crate::gui::plain_text::{hint_for, label_for};
 
 /// The changed-from-default dot.
 pub const CHANGED_DOT: &str = "\u{2022}";
@@ -28,7 +33,14 @@ pub const BLANK_TEXT: &str = "blank";
 
 /// The line the label's hover text ends with: a click on the label traces the input
 /// (decision O-8).
-pub const TRACE_HINT: &str = "Click the label to trace the explained results it drives";
+pub const TRACE_HINT: &str =
+    "Click the label to highlight the results it drives that have an equation";
+
+/// The hover text of the changed-from-default dot, on an input row and an assumption alike.
+pub const CHANGED_FROM_DEFAULT: &str = "Changed from the default";
+
+/// The hover text of [`OUTSIDE_RANGE_NOTE`].
+pub const OUTSIDE_RANGE_HINT: &str = "Kept until you edit it. Outside the slider range the calculator is not checked against the original spreadsheet.";
 
 /// What the user asked of an input row this frame.
 #[derive(Clone, Debug, PartialEq)]
@@ -94,15 +106,18 @@ fn typed(meta: &InputMeta, x: f64) -> Value {
 /// reset button) and the widget under it. `seed` is where an optional input starts when the
 /// user enters a value (`inputs::OPTIONAL_SEEDS`). A `locked` row (Torque -> Magnets' free
 /// variable) disables everything but its dot and label: the label still traces the input.
+/// `show_details` (the header's Show spreadsheet details) adds the path, the cell and the
+/// original spreadsheet note to the tooltip.
 pub fn input_row(
     ui: &mut egui::Ui,
     entry: &InputEntry,
     current: &Value,
     seed: Option<f64>,
     locked: bool,
+    show_details: bool,
 ) -> RowOutput {
     let meta = entry.meta;
-    let tooltip = input_tooltip(entry);
+    let tooltip = input_tooltip(entry, show_details);
     let changed = *current != entry.default;
     let mut edit = None;
     let mut label_clicked = false;
@@ -110,17 +125,15 @@ pub fn input_row(
         ui.horizontal(|ui| {
             let dot = if changed { CHANGED_DOT } else { " " };
             ui.colored_label(ui.visuals().selection.stroke.color, dot)
-                .on_hover_text("Changed from the default");
+                .on_hover_text(CHANGED_FROM_DEFAULT);
             label_clicked = ui
-                .add(egui::Label::new(meta.label).sense(egui::Sense::click()))
+                .add(egui::Label::new(label_for(&entry.path)).sense(egui::Sense::click()))
                 .on_hover_text(format!("{tooltip}\n{TRACE_HINT}"))
                 .clicked();
             ui.add_enabled_ui(!locked, |ui| {
                 if outside_range(meta.range, current) {
                     ui.colored_label(ui.visuals().warn_fg_color, OUTSIDE_RANGE_NOTE)
-                        .on_hover_text(
-                            "Kept until edited. The differential tests cover the slider range only.",
-                        );
+                        .on_hover_text(OUTSIDE_RANGE_HINT);
                 }
                 if changed
                     && ui
@@ -258,5 +271,20 @@ fn widget(
             }
             _ => ui.label(format_value(current)),
         },
+    }
+}
+
+/// A line of weak text under a control, wrapped to the side's width: an input's hint line
+/// ([`hint_line`]) and the Size tab's what-moves-what lines.
+pub(crate) fn weak_line(ui: &mut egui::Ui, text: &str) {
+    ui.add(egui::Label::new(egui::RichText::new(text).weak()).wrap());
+}
+
+/// The hint line under a control (slice 2 spec 3.5): the [`hint_for`] text of `key` (an input
+/// path, or one of the Size tab's `plain_text::SIZE_TAB_HINT_KEYS`) as a [`weak_line`];
+/// nothing for a key without a hint.
+pub(crate) fn hint_line(ui: &mut egui::Ui, key: &str) {
+    if let Some(hint) = hint_for(key) {
+        weak_line(ui, hint);
     }
 }

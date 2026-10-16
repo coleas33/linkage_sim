@@ -6,10 +6,13 @@
 //! [`diagram_ui`] allocates [`DIAGRAM_SIZE`] and paints them. Each diagram is a schematic of
 //! the idea its note explains, not a plot of the design's numbers: the square wave of fill 0.85
 //! and the sum of its harmonics 1, 3 and 5 (amplitudes 4/(nπ) sin(nπλ/2)); the flux closing
-//! through steel against spreading behind the magnets; torque against electrical angle with
-//! a third harmonic and its peak; the field fringing at a magnet's ends; the intrinsic
+//! through steel against spreading behind the magnets, each block lettered N or S; torque
+//! against electrical angle, the fundamental alone dashed (its peak at 90°) beside a sum with a
+//! strong third harmonic and its peak; the field fringing at a magnet's ends, the length the end
+//! factor takes off bracketed at each end; the intrinsic
 //! demagnetization curve with its knee and three load lines; first-order heating with the time
-//! constant at 63 %.
+//! constant at 63 %, a limit below the steady temperature and the time the rise takes to reach
+//! it.
 
 use std::f32::consts::PI;
 
@@ -33,6 +36,19 @@ const FILL: f32 = 0.85;
 /// The torque-angle diagram's third harmonic against its fundamental, A3/A1: above 1/9 the
 /// summed curve dips at 90° and peaks on either side (correction E7).
 const TORQUE_THIRD: f32 = 0.15;
+
+/// The torque-angle diagram's names for its two curves (TC-22), each label in its curve's
+/// colour: the fundamental alone, dashed, and the sum with a strong third harmonic, solid.
+const FUNDAMENTAL_ALONE: &str = "fundamental alone";
+const STRONG_THIRD: &str = "strong third harmonic";
+
+/// The end-fringing diagram's label under the magnet (TC-24), in the colour of the brackets
+/// under the magnet's ends: the length the end factor takes off.
+const END_LOSS_LABEL: &str = "magnet length L, c_end·τ_p/2 lost per end";
+
+/// The share of the magnet's length each end bracket marks: a schematic share, not the
+/// design's (f_end = 1 − c_end·τ_p/L takes c_end·τ_p/2 off each end).
+const END_LOSS: f32 = 0.08;
 
 /// The colours a diagram draws with.
 struct Pens {
@@ -117,7 +133,7 @@ pub fn diagram_shapes(
     }
 }
 
-/// The magnetization of two pole pairs at fill [`FILL`] (blocks and gaps), the fundamental and
+/// The magnetization of two pole pairs at fill [`FILL`] (blocks and spaces), the fundamental and
 /// the sum of harmonics 1, 3 and 5.
 fn square_wave(fonts: &Fonts, r: Rect, pens: &Pens) -> Vec<Shape> {
     let poles = 4.0;
@@ -161,7 +177,7 @@ fn square_wave(fonts: &Fonts, r: Rect, pens: &Pens) -> Vec<Shape> {
         fonts,
         pos2(r.left(), r.bottom()),
         Align2::LEFT_BOTTOM,
-        &format!("blocks and gaps (fill {FILL})"),
+        &format!("blocks and spaces (fill {FILL})"),
         pens.ink,
     ));
     shapes.push(label(
@@ -182,7 +198,7 @@ fn square_wave(fonts: &Fonts, r: Rect, pens: &Pens) -> Vec<Shape> {
 }
 
 /// One panel of the flux-path diagram: a ring of four blocks above the gap and one below,
-/// with steel behind both (`steel`) or not, and two flux loops.
+/// with steel behind both (`steel`) or not, each block lettered N or S, and two flux loops.
 fn flux_panel(fonts: &Fonts, r: Rect, steel: bool, pens: &Pens, title: &str) -> Vec<Shape> {
     let mut shapes = Vec::new();
     let block_w = r.width() / 4.0;
@@ -198,16 +214,20 @@ fn flux_panel(fonts: &Fonts, r: Rect, steel: bool, pens: &Pens, title: &str) -> 
         } else {
             (pens.south, pens.north)
         };
-        shapes.push(Shape::rect_filled(
-            Rect::from_min_size(pos2(x + 1.0, top), vec2(block_w - 2.0, block_h)),
-            1.0,
-            upper,
-        ));
-        shapes.push(Shape::rect_filled(
-            Rect::from_min_size(pos2(x + 1.0, bottom), vec2(block_w - 2.0, block_h)),
-            1.0,
-            lower,
-        ));
+        for (y, color) in [(top, upper), (bottom, lower)] {
+            let block = Rect::from_min_size(pos2(x + 1.0, y), vec2(block_w - 2.0, block_h));
+            shapes.push(Shape::rect_filled(block, 1.0, color));
+            // TC-24: each block names its pole, so the two colours cannot read as the inner
+            // and the outer ring.
+            let pole = if color == pens.north { "N" } else { "S" };
+            shapes.push(label(
+                fonts,
+                block.center(),
+                Align2::CENTER_CENTER,
+                pole,
+                Color32::WHITE,
+            ));
+        }
     }
     if steel {
         for y in [top - 8.0, bottom + block_h] {
@@ -251,7 +271,9 @@ fn flux_paths(fonts: &Fonts, r: Rect, pens: &Pens) -> Vec<Shape> {
     shapes
 }
 
-/// Torque against electrical angle over 0 to π with a third harmonic, its peak marked.
+/// Torque against electrical angle over 0 to π (TC-22): the fundamental alone, dashed, its peak
+/// at 90° (half a pole pitch, the tick "90°"), and the sum with a strong third harmonic, solid,
+/// its peak marked.
 fn torque_angle(fonts: &Fonts, r: Rect, pens: &Pens) -> Vec<Shape> {
     let plot = Rect::from_min_max(
         pos2(r.left() + 14.0, r.top()),
@@ -259,12 +281,16 @@ fn torque_angle(fonts: &Fonts, r: Rect, pens: &Pens) -> Vec<Shape> {
     );
     let torque = |t: f32| (t * PI).sin() + TORQUE_THIRD * (3.0 * t * PI).sin();
     let points = curve(plot, 0.0, 1.2, 181, torque);
+    let fundamental = curve(plot, 0.0, 1.2, 181, |t| (t * PI).sin());
+    // The fundamental's top: its middle sample, t = 0.5.
+    let fundamental_top = fundamental[90];
     let peak = points
         .iter()
         .copied()
         .min_by(|a, b| a.y.total_cmp(&b.y))
         .unwrap_or(plot.center());
-    vec![
+    let half_pitch = pos2(plot.center().x, plot.bottom());
+    let mut shapes = vec![
         Shape::line_segment(
             [plot.left_bottom(), plot.right_bottom()],
             Stroke::new(1.0, pens.weak),
@@ -273,15 +299,34 @@ fn torque_angle(fonts: &Fonts, r: Rect, pens: &Pens) -> Vec<Shape> {
             [plot.left_bottom(), plot.left_top()],
             Stroke::new(1.0, pens.weak),
         ),
+        Shape::line_segment(
+            [half_pitch, half_pitch - vec2(0.0, 4.0)],
+            Stroke::new(1.0, pens.weak),
+        ),
         Shape::line(points, Stroke::new(1.5, pens.first)),
         Shape::circle_filled(peak, 3.5, pens.second),
         label(
             fonts,
-            peak + vec2(6.0, 0.0),
-            Align2::LEFT_CENTER,
+            peak - vec2(6.0, 0.0),
+            Align2::RIGHT_CENTER,
             "pull-out",
             pens.second,
         ),
+        label(
+            fonts,
+            fundamental_top - vec2(0.0, 2.0),
+            Align2::CENTER_BOTTOM,
+            FUNDAMENTAL_ALONE,
+            pens.ink,
+        ),
+        label(
+            fonts,
+            plot.left_bottom(),
+            Align2::LEFT_TOP,
+            STRONG_THIRD,
+            pens.first,
+        ),
+        label(fonts, half_pitch, Align2::CENTER_TOP, "90°", pens.weak),
         label(
             fonts,
             plot.right_bottom(),
@@ -290,10 +335,18 @@ fn torque_angle(fonts: &Fonts, r: Rect, pens: &Pens) -> Vec<Shape> {
             pens.ink,
         ),
         label(fonts, plot.left_top(), Align2::RIGHT_TOP, "T", pens.ink),
-    ]
+    ];
+    shapes.extend(Shape::dashed_line(
+        &fundamental,
+        Stroke::new(1.0, pens.ink),
+        4.0,
+        3.0,
+    ));
+    shapes
 }
 
-/// A magnet block with straight field lines over its middle and lines bulging out at its ends.
+/// A magnet block with straight field lines over its middle and lines bulging out at its ends,
+/// the length the end factor takes off bracketed under each end.
 fn end_fringing(fonts: &Fonts, r: Rect, pens: &Pens) -> Vec<Shape> {
     let block = Rect::from_center_size(
         pos2(r.center().x, r.bottom() - 22.0),
@@ -318,12 +371,25 @@ fn end_fringing(fonts: &Fonts, r: Rect, pens: &Pens) -> Vec<Shape> {
             .collect();
         shapes.push(Shape::line(points, Stroke::new(1.0, pens.first)));
     }
+    // TC-24: the length the end factor takes off, c_end·τ_p/2 at each end, bracketed under the
+    // magnet's ends in the colour of the label that names it.
+    let lost = END_LOSS * block.width();
+    let y = block.bottom() + 2.0;
+    for (from, to) in [
+        (block.left(), block.left() + lost),
+        (block.right() - lost, block.right()),
+    ] {
+        shapes.push(Shape::line_segment(
+            [pos2(from, y), pos2(to, y)],
+            Stroke::new(2.0, pens.second),
+        ));
+    }
     shapes.push(label(
         fonts,
-        pos2(block.center().x, block.bottom() + 2.0),
+        pos2(block.center().x, block.bottom() + 4.0),
         Align2::CENTER_TOP,
-        "magnet length L",
-        pens.ink,
+        END_LOSS_LABEL,
+        pens.second,
     ));
     shapes.push(label(
         fonts,
@@ -409,7 +475,13 @@ fn demag_knee(fonts: &Fonts, r: Rect, pens: &Pens) -> Vec<Shape> {
     shapes
 }
 
-/// First-order heating toward a steady temperature over five time constants, τ at 63 %.
+/// The heating curve's temperature limit as a share of its steady rise: below the steady
+/// temperature, so the rise crosses it (the case "time to the limit" names), and late enough
+/// (2.66 time constants) that the crossing's guide clears the τ_th label.
+const LIMIT_SHARE: f32 = 0.93;
+
+/// First-order heating toward a steady temperature over five time constants: τ_th at 63 %, a
+/// temperature limit below the steady level, and the time the rise takes to reach it.
 fn heating_curve(fonts: &Fonts, r: Rect, pens: &Pens) -> Vec<Shape> {
     let plot = Rect::from_min_max(
         pos2(r.left() + 14.0, r.top() + 4.0),
@@ -422,6 +494,10 @@ fn heating_curve(fonts: &Fonts, r: Rect, pens: &Pens) -> Vec<Shape> {
         plot.bottom() - rise(1.0 / span) / 1.1 * plot.height(),
     );
     let steady = plot.bottom() - plot.height() / 1.1;
+    let limit = plot.bottom() - LIMIT_SHARE / 1.1 * plot.height();
+    // The rise reaches LIMIT_SHARE of the steady rise after -ln(1 - LIMIT_SHARE) time
+    // constants, five of which span the plot.
+    let reach = plot.left() - (1.0 - LIMIT_SHARE).ln() / span * plot.width();
     let mut shapes = vec![
         Shape::line_segment(
             [plot.left_bottom(), plot.right_bottom()],
@@ -440,7 +516,7 @@ fn heating_curve(fonts: &Fonts, r: Rect, pens: &Pens) -> Vec<Shape> {
             fonts,
             tau + vec2(6.0, 2.0),
             Align2::LEFT_TOP,
-            "τ: 63 %",
+            "τ_th: 63 %",
             pens.second,
         ),
         label(
@@ -462,6 +538,32 @@ fn heating_curve(fonts: &Fonts, r: Rect, pens: &Pens) -> Vec<Shape> {
         pos2(plot.right(), steady - 2.0),
         Align2::RIGHT_BOTTOM,
         "steady temperature",
+        pens.weak,
+    ));
+    shapes.extend(Shape::dashed_line(
+        &[pos2(plot.left(), limit), pos2(plot.right(), limit)],
+        Stroke::new(1.0, pens.north),
+        4.0,
+        3.0,
+    ));
+    shapes.push(label(
+        fonts,
+        pos2(plot.left() + 3.0, limit + 2.0),
+        Align2::LEFT_TOP,
+        "limit",
+        pens.north,
+    ));
+    shapes.extend(Shape::dashed_line(
+        &[pos2(reach, limit), pos2(reach, plot.bottom())],
+        Stroke::new(1.0, pens.weak),
+        3.0,
+        3.0,
+    ));
+    shapes.push(label(
+        fonts,
+        pos2(reach, plot.bottom() + 1.0),
+        Align2::CENTER_TOP,
+        "time to the limit",
         pens.weak,
     ));
     shapes
@@ -549,6 +651,35 @@ mod tests {
         for (i, a) in signatures.iter().enumerate() {
             for b in &signatures[i + 1..] {
                 assert_ne!(a, b);
+            }
+        }
+    }
+
+    #[test]
+    fn no_two_labels_of_a_diagram_overlap() {
+        // Each label reads on its own: the torque-angle diagram's curve names, its 90° tick and
+        // its pull-out mark, and the flux diagram's pole letters, share their rect with no
+        // other label.
+        let rect = Rect::from_min_size(pos2(40.0, 30.0), DIAGRAM_SIZE);
+        for kind in KINDS {
+            let (shapes, _) = shapes_of(kind, rect);
+            let labels: Vec<(String, Rect)> = shapes
+                .iter()
+                .filter_map(|s| match s {
+                    Shape::Text(t) => Some((
+                        t.galley.text().to_owned(),
+                        t.galley.rect.translate(t.pos.to_vec2()),
+                    )),
+                    _ => None,
+                })
+                .collect();
+            for (i, (a, a_rect)) in labels.iter().enumerate() {
+                for (b, b_rect) in &labels[i + 1..] {
+                    assert!(
+                        !a_rect.intersects(*b_rect),
+                        "{kind:?}: {a:?} {a_rect:?} overlaps {b:?} {b_rect:?}"
+                    );
+                }
             }
         }
     }
@@ -695,7 +826,7 @@ mod tests {
         let rect = Rect::from_min_size(pos2(40.0, 30.0), DIAGRAM_SIZE);
         let (shapes, _) = shapes_of(Diagram::SquareWaveHarmonics, rect);
         // Each curve found by its label's colour, as a reader matches them.
-        let wave_label = format!("blocks and gaps (fill {FILL})");
+        let wave_label = format!("blocks and spaces (fill {FILL})");
         let wave = path_in(&shapes, label_color(&shapes, &wave_label));
         let fundamental = path_in(&shapes, label_color(&shapes, "n = 1"));
         let sum = path_in(&shapes, label_color(&shapes, "1 + 3 + 5"));
@@ -757,11 +888,13 @@ mod tests {
         let (left, right, bottom) = (curve[0].x, curve[curve.len() - 1].x, curve[0].y);
         let lines = horizontal_lines(&shapes);
         assert!(lines.contains(&bottom), "the time axis: {lines:?}");
-        // The steady temperature: the dashed level above the axis.
+        // The steady temperature: the topmost dashed level above the axis (the limit, the
+        // other level, lies below it).
         let steady = lines
             .iter()
             .copied()
-            .find(|y| *y < bottom - 1.0)
+            .filter(|y| *y < bottom - 1.0)
+            .reduce(f32::min)
             .expect("the steady temperature");
         let rise = |y: f32| (bottom - y) / (bottom - steady);
         let tau = only_marker(&shapes);
@@ -784,6 +917,78 @@ mod tests {
     }
 
     #[test]
+    fn the_heating_curve_marks_the_limit_and_the_time_to_reach_it() {
+        // The thermal note's "time to the limit" (TC-24): how long unbroken slip takes to heat
+        // the coupling to its limit, a level below the steady temperature that the rise crosses.
+        // Five labels, the time constant's named as the panel names it; no two overlap
+        // (`no_two_labels_of_a_diagram_overlap`).
+        let rect = Rect::from_min_size(pos2(40.0, 30.0), DIAGRAM_SIZE);
+        let (shapes, texts) = shapes_of(Diagram::HeatingCurve, rect);
+        assert_eq!(
+            texts,
+            [
+                "\u{3c4}_th: 63 %",
+                "time slipping",
+                "steady temperature",
+                "limit",
+                "time to the limit",
+            ]
+        );
+        let curve = only_path(&shapes);
+        let (left, right, bottom) = (curve[0].x, curve[curve.len() - 1].x, curve[0].y);
+        let levels: Vec<f32> = horizontal_lines(&shapes)
+            .into_iter()
+            .filter(|y| *y < bottom - 1.0)
+            .collect();
+        let steady = levels
+            .iter()
+            .copied()
+            .reduce(f32::min)
+            .expect("the steady level");
+        let limit = levels.iter().copied().reduce(f32::max).expect("the limit");
+        assert!(
+            limit > steady + 1.0,
+            "a limit below the steady level: {levels:?}"
+        );
+        let rise = |y: f32| (bottom - y) / (bottom - steady);
+        assert!((rise(limit) - LIMIT_SHARE).abs() < 1e-4, "{}", rise(limit));
+        // One dashed guide from the limit down to the time axis, where the curve reaches the
+        // limit: rise = 1 - e^(-t/τ_th), five time constants across the plot.
+        let guides: Vec<[Pos2; 2]> = shapes
+            .iter()
+            .filter_map(|s| match s {
+                Shape::LineSegment { points: [a, b], .. }
+                    if a.x == b.x && a.y != b.y && (a.x - left).abs() > 1.0 =>
+                {
+                    Some([*a, *b])
+                }
+                _ => None,
+            })
+            .collect();
+        assert!(!guides.is_empty(), "the time-to-the-limit guide");
+        let x = guides[0][0].x;
+        assert!(
+            guides.iter().all(|[a, _]| (a.x - x).abs() < 1e-3),
+            "{guides:?}"
+        );
+        let ys = || guides.iter().flat_map(|g| g.iter().map(|p| p.y));
+        let top = ys().fold(f32::INFINITY, f32::min);
+        let foot = ys().fold(f32::NEG_INFINITY, f32::max);
+        assert!((top - limit).abs() < 1e-3, "{top} {limit}");
+        assert!(bottom - foot <= 6.5, "{foot} {bottom}");
+        let time_constants = (x - left) / (right - left) * 5.0;
+        assert!(
+            (time_constants + (1.0 - LIMIT_SHARE).ln()).abs() < 1e-3,
+            "{time_constants}"
+        );
+        assert!(
+            (y_at(curve, x) - limit).abs() < 0.5,
+            "{} {limit}",
+            y_at(curve, x)
+        );
+    }
+
+    #[test]
     fn the_demag_knee_sits_at_0_9_hcj_on_the_intrinsic_curve() {
         let rect = Rect::from_min_size(pos2(40.0, 30.0), DIAGRAM_SIZE);
         let (shapes, _) = shapes_of(Diagram::DemagKnee, rect);
@@ -797,7 +1002,7 @@ mod tests {
         let j = |y: f32| axis - y;
         // Hcj is where J reaches zero.
         assert!(j(curve[0].y).abs() < 1e-3, "{}", j(curve[0].y));
-        // The knee: H_k = 0.9 Hcj (the demagnetization note), on the curve.
+        // The knee: H_k = 0.9 Hcj (the knee-fraction input's default), on the curve.
         let knee = only_marker(&shapes);
         let h = |x: f32| -(right - x) / (right - left);
         assert!((h(knee.x) + 0.9).abs() < 1e-4, "{}", h(knee.x));
@@ -840,5 +1045,139 @@ mod tests {
             "{}",
             y_at(curve, middle)
         );
+    }
+
+    #[test]
+    fn the_torque_angle_diagram_dashes_the_fundamental_alone_peaking_at_90_degrees() {
+        // TC-22: the summed curve with a strong third harmonic is the unusual case (the test
+        // above keeps its E7 peak); beside it the fundamental alone, dashed, peaks at 90°, half
+        // a pole pitch, where a tick and its label sit. Each curve is named in its colour.
+        let rect = Rect::from_min_size(pos2(40.0, 30.0), DIAGRAM_SIZE);
+        let (shapes, _) = shapes_of(Diagram::TorqueAngle, rect);
+        let summed = path_in(&shapes, label_color(&shapes, STRONG_THIRD));
+        let (left, right) = (summed[0].x, summed[summed.len() - 1].x);
+        let degrees = |x: f32| (x - left) / (right - left) * 180.0;
+        let dashed = label_color(&shapes, FUNDAMENTAL_ALONE);
+        let dashes: Vec<Pos2> = shapes
+            .iter()
+            .filter_map(|s| match s {
+                Shape::LineSegment { points, stroke } if stroke.color == dashed => Some(*points),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        assert!(
+            dashes.len() >= 40,
+            "a dashed curve: {} points",
+            dashes.len()
+        );
+        let top = dashes
+            .iter()
+            .copied()
+            .min_by(|a, b| a.y.total_cmp(&b.y))
+            .expect("the dashes");
+        assert!(
+            (degrees(top.x) - 90.0).abs() < 5.0,
+            "peak at {}°",
+            degrees(top.x)
+        );
+        // It rises from the axis at 0° and comes back to it near 180°, as the summed curve does.
+        let axis = summed[0].y;
+        assert!(
+            dashes
+                .iter()
+                .any(|p| degrees(p.x).abs() < 1e-3 && (p.y - axis).abs() < 1e-3)
+        );
+        assert!(dashes.iter().any(|p| (degrees(p.x) - 180.0).abs() < 5.0));
+        assert!(dashes.iter().all(|p| p.y <= axis + 1e-3), "above the axis");
+        // The 90° label sits under 90°.
+        let tick = shapes
+            .iter()
+            .find_map(|s| match s {
+                Shape::Text(t) if t.galley.text() == "90°" => {
+                    Some(t.galley.rect.translate(t.pos.to_vec2()))
+                }
+                _ => None,
+            })
+            .expect("the 90° label");
+        assert!(
+            (degrees(tick.center().x) - 90.0).abs() < 0.5,
+            "{}",
+            degrees(tick.center().x)
+        );
+    }
+
+    #[test]
+    fn the_flux_path_blocks_are_lettered_n_and_s() {
+        // TC-24: red and blue alone read as the inner and the outer ring; each block carries
+        // its pole's letter, centred on it.
+        let rect = Rect::from_min_size(pos2(40.0, 30.0), DIAGRAM_SIZE);
+        let (shapes, _) = shapes_of(Diagram::FluxPathBackIron, rect);
+        let pens = Pens::of(&egui::Visuals::dark());
+        for (fill, letter) in [(pens.north, "N"), (pens.south, "S")] {
+            let blocks: Vec<Rect> = shapes
+                .iter()
+                .filter_map(|s| match s {
+                    Shape::Rect(r) if r.fill == fill => Some(r.rect),
+                    _ => None,
+                })
+                .collect();
+            let letters: Vec<Pos2> = shapes
+                .iter()
+                .filter_map(|s| match s {
+                    Shape::Text(t) if t.galley.text() == letter => {
+                        Some(t.galley.rect.translate(t.pos.to_vec2()).center())
+                    }
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(blocks.len(), 8, "{letter}: four blocks a panel, two panels");
+            assert_eq!(letters.len(), blocks.len(), "{letter}");
+            for block in &blocks {
+                assert_eq!(
+                    letters.iter().filter(|c| block.contains(**c)).count(),
+                    1,
+                    "{letter} on {block:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_end_fringing_brackets_the_length_lost_at_each_end() {
+        // TC-24: f_end = 1 − c_end·τ_p/L takes c_end·τ_p/2 off each end of the magnet; a bracket
+        // under each end marks that share, in the colour of the label that names it.
+        let rect = Rect::from_min_size(pos2(40.0, 30.0), DIAGRAM_SIZE);
+        let (shapes, _) = shapes_of(Diagram::EndFringing, rect);
+        let pens = Pens::of(&egui::Visuals::dark());
+        let block = shapes
+            .iter()
+            .find_map(|s| match s {
+                Shape::Rect(r) if r.fill == pens.north => Some(r.rect),
+                _ => None,
+            })
+            .expect("the magnet");
+        let color = label_color(&shapes, END_LOSS_LABEL);
+        let mut brackets: Vec<(f32, f32, f32, f32)> = shapes
+            .iter()
+            .filter_map(|s| match s {
+                Shape::LineSegment {
+                    points: [a, b],
+                    stroke,
+                } if stroke.color == color => Some((a.x.min(b.x), a.x.max(b.x), a.y, b.y)),
+                _ => None,
+            })
+            .collect();
+        brackets.sort_by(|p, q| p.0.total_cmp(&q.0));
+        let [(l0, l1, ly0, ly1), (r0, r1, ry0, ry1)] = brackets[..] else {
+            panic!("two brackets: {brackets:?}")
+        };
+        let lost = END_LOSS * block.width();
+        assert!((l0 - block.left()).abs() < 1e-3 && (l1 - l0 - lost).abs() < 1e-3);
+        assert!((r1 - block.right()).abs() < 1e-3 && (r1 - r0 - lost).abs() < 1e-3);
+        for y in [ly1, ry0, ry1] {
+            assert_eq!(y, ly0, "level, at one height");
+        }
+        assert!(ly0 > block.bottom(), "under the magnet: {ly0} {block:?}");
     }
 }

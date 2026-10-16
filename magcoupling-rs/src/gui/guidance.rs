@@ -60,6 +60,7 @@ use crate::gui::dashboard::{DASHBOARD, Level, check_level, result_info};
 use crate::gui::format::{fixed, format_value, signed_percent, with_unit};
 use crate::gui::inputs::{InputCatalogue, optional_seed, section_label};
 use crate::gui::pickers::{CUSTOM, GRADE_PATHS, PART_PATHS};
+use crate::gui::plain_text::display_label;
 use crate::gui::size_controls;
 use crate::{DesignInputs, DesignResults, compute_all};
 
@@ -108,8 +109,9 @@ pub enum Fixes {
     /// One list, whatever fails.
     Static(&'static [(&'static str, Direction)]),
     /// A list built from the terms of the check's verdict that fail, each fix checked against
-    /// the term it serves (the temperature and space-claim guides).
-    PerTerm(fn(&DesignInputs, &DesignResults) -> Vec<(&'static str, Direction)>),
+    /// the term it serves (the temperature and space-claim guides), with the shaft-clamp
+    /// section's pause ([`helps`]).
+    PerTerm(fn(&DesignInputs, &DesignResults, bool) -> Vec<(&'static str, Direction)>),
 }
 
 /// One check's guide.
@@ -161,7 +163,7 @@ const HOT_MIN_GUIDE: CheckGuide = CheckGuide {
     // Not the gap: a smaller gap raises the torque but takes running clearance, whose own fix
     // opens the gap (both fail on the default design).
     fixes: Fixes::Static(&[(MAGNET_LENGTH, Direction::Raise)]),
-    learn: Learn::Assumption("production_variation"),
+    learn: Learn::Note("hot_low_cold_high"),
 };
 
 const CLEARANCE_GUIDE: CheckGuide = CheckGuide {
@@ -247,6 +249,7 @@ fn axis_reserves(results: &DesignResults) -> [f64; 3] {
 fn space_claim_fixes(
     inputs: &DesignInputs,
     results: &DesignResults,
+    clamps_paused: bool,
 ) -> Vec<(&'static str, Direction)> {
     let mut shown: Vec<(&'static str, Direction)> = Vec::new();
     for (axis, axis_fixes) in SPACE_CLAIM_AXES.iter().enumerate() {
@@ -256,7 +259,7 @@ fn space_claim_fixes(
         }
         let reserve = |_: &DesignInputs, after: &DesignResults| axis_reserves(after)[axis];
         for &fix in *axis_fixes {
-            if !shown.contains(&fix) && helps(inputs, results, fix, Some(&reserve)) {
+            if !shown.contains(&fix) && helps(inputs, results, fix, Some(&reserve), clamps_paused) {
                 shown.push(fix);
             }
         }
@@ -279,7 +282,7 @@ const FIT_GUIDE: CheckGuide = CheckGuide {
     check: FIT_CHECK,
     label: "Magnets fit",
     problem: fit_problem,
-    why: "Each ring holds one block per pole; at a given ring size, more blocks leave each a narrower place, and a block wider than its place does not fit.",
+    why: "Each ring holds one block per pole; at a given ring radius, more blocks leave each a narrower place, and a block wider than its place does not fit.",
     fixes: Fixes::Static(&[(RING, Direction::Raise), (POLES, Direction::Lower)]),
     learn: Learn::None("No note covers block fit yet."),
 };
@@ -306,16 +309,16 @@ pub static ROW_LEARN: [(&str, Learn); DASHBOARD.len()] = [
     ("model.pullout_20C_Nm", Learn::Note("br_temperature")),
     ("metal.torque_hot_low_Nm", HOT_MIN_GUIDE.learn),
     ("metal.hot_min_check", HOT_MIN_GUIDE.learn),
-    // The cold pull-out with the variation allowance added, as the hot-low torque has it taken
-    // off: the allowance's rationale states both.
+    // The cold pull-out with the variation allowance added: the torque-band note explains it
+    // beside hot-low (a value row a reviewed note covers links to that note).
     (
         "metal.torque_cold_high_Nm",
-        Learn::Assumption("production_variation"),
+        Learn::Note("hot_low_cold_high"),
     ),
-    // The pull-out through the gearbox: the torque-angle curve's amplitude.
+    // The torque swings that reach the gearbox input while the coupling slips.
     (
         "model.gearbox_input_ripple_Nm",
-        Learn::Note("pullout_angle"),
+        Learn::Note("when_slipping"),
     ),
     (
         "model.cup_od_mm",
@@ -351,9 +354,37 @@ pub fn row_learn(path: &str) -> Option<Learn> {
         .map(|&(_, learn)| learn)
 }
 
+/// Where the Why links under Magnets per ring and Outside diameter on the Size tab lead (spec
+/// 3.7): how the coupling makes torque, Start here's first step.
+pub const SIZE_TAB_NOTE: &str = "torque_from_shear";
+
+/// Where the Why links at the end of the Size tab's Required and Hot-low rows lead: the hot
+/// minimum check's note (a test keeps it [`HOT_MIN_GUIDE`]'s).
+pub const TORQUE_BAND_NOTE: &str = "hot_low_cold_high";
+
+/// Where the Why link under the end-effect banner leads: the end-effect check's note (a test
+/// keeps it [`END_EFFECT_GUIDE`]'s).
+pub const BANNER_NOTE: &str = "end_effect";
+
 /// The guide of `check` (a dashboard check or [`FIT_CHECK`]); `None` for any other path.
 pub fn guide(check: &str) -> Option<&'static CheckGuide> {
     CHECK_GUIDES.iter().find(|guide| guide.check == check)
+}
+
+/// Whether `guide`'s check counts while the shaft-clamp section is paused (`clamps_paused`) or
+/// not: every guide but the clamp's while paused ([`crate::engine::clamps::hides`] its check).
+/// A guide that does not count is not drawn, shows no fix, holds back no other guide's fix and
+/// is not in the design status.
+pub fn counts(guide: &CheckGuide, clamps_paused: bool) -> bool {
+    !crate::engine::clamps::hides(guide.check, clamps_paused)
+}
+
+/// The guides that count while the shaft-clamp section is paused (`clamps_paused`) or not
+/// ([`counts`]), in [`CHECK_GUIDES`]' order.
+pub fn counted_guides(clamps_paused: bool) -> impl Iterator<Item = &'static CheckGuide> {
+    CHECK_GUIDES
+        .iter()
+        .filter(move |guide| counts(guide, clamps_paused))
 }
 
 /// The level of `guide`'s check in this design: the dashboard's badge of the check
@@ -384,18 +415,21 @@ fn failing(check: &str, inputs: &DesignInputs, results: &DesignResults) -> bool 
 
 // ------------------------------------------------------------------ the fixes
 
-/// The fixes of `guide` to show for this design, in order; none while its check passes. Of a
-/// static list, each fix that can still move and whose move turns no passing guided check red
-/// ([`helps`]); a list built per failing term ([`Fixes::PerTerm`]) is checked by its builder,
-/// against the term each fix serves. Each check runs `compute_all` on the design a move
-/// reaches, so the panel asks through a [`FixCache`]. The fit guide also leaves out "Raise
-/// Outside diameter" where no diameter on its slider fits the magnets ([`fits_on_the_slider`]).
+/// The fixes of `guide` to show for this design, in order; none while its check passes, and
+/// none for a guide that does not count while the shaft-clamp section is paused
+/// (`clamps_paused`, [`counts`]). Of a static list, each fix that can still move and whose
+/// move turns no passing guided check red ([`helps`]); a list built per failing term
+/// ([`Fixes::PerTerm`]) is checked by its builder, against the term each fix serves. Each
+/// check runs `compute_all` on the design a move reaches, so the panel asks through a
+/// [`FixCache`]. The fit guide also leaves out "Raise Outside diameter" where no diameter on
+/// its slider fits the magnets ([`fits_on_the_slider`]).
 pub fn fixes(
     guide: &CheckGuide,
     inputs: &DesignInputs,
     results: &DesignResults,
+    clamps_paused: bool,
 ) -> Vec<(&'static str, Direction)> {
-    if level(guide, inputs, results) == Level::Good {
+    if !counts(guide, clamps_paused) || level(guide, inputs, results) == Level::Good {
         return Vec::new();
     }
     match guide.fixes {
@@ -409,9 +443,9 @@ pub fn fixes(
                     guide.check == FIT_CHECK && fix == (RING, Direction::Raise);
                 !raises_the_fit_diameter || fits_on_the_slider(inputs)
             })
-            .filter(|&fix| helps(inputs, results, fix, None))
+            .filter(|&fix| helps(inputs, results, fix, None, clamps_paused))
             .collect(),
-        Fixes::PerTerm(build) => build(inputs, results),
+        Fixes::PerTerm(build) => build(inputs, results, clamps_paused),
     }
 }
 
@@ -495,8 +529,8 @@ const SIDE_EFFECTS: [SideEffect; 1] = [SideEffect {
 
 /// The notes to draw under the fixes of the guide at `index` (in `all`, every guide's
 /// [`fixes`] as [`FixCache::get`] gives them) for each shown fix that sets back another check
-/// that is not passing in this design ([`SIDE_EFFECTS`]), for example "Raising Candidate
-/// flat-face magnetic gap also lowers the pull-out, so Hot-low torque falls further."
+/// that is not passing in this design ([`SIDE_EFFECTS`]), for example "Raising Magnet
+/// face gap also lowers the pull-out, so Hot-low torque falls further."
 pub fn side_effects(
     all: &[Vec<(&'static str, Direction)>],
     index: usize,
@@ -570,7 +604,8 @@ pub fn guide_notes(
 
 /// Every guide's [`fixes`] for the design they were built for (spec 4.1, as for the
 /// consequences): the panel asks every frame, and each fix runs `compute_all` on the design
-/// its move reaches. They are computed again only when the inputs change.
+/// its move reaches. They are computed again only when the inputs or the shaft-clamp
+/// section's pause change.
 #[derive(Default)]
 pub struct FixCache {
     last: Option<CachedFixes>,
@@ -579,41 +614,52 @@ pub struct FixCache {
     pub(crate) computed: usize,
 }
 
-/// What a [`FixCache`] holds: the inputs and every guide's fixes for them.
+/// What a [`FixCache`] holds: the inputs, the shaft-clamp section's pause and every guide's
+/// fixes for them.
 struct CachedFixes {
     inputs: DesignInputs,
+    clamps_paused: bool,
     fixes: Vec<Vec<(&'static str, Direction)>>,
 }
 
 impl FixCache {
-    /// Each guide's [`fixes`] for `inputs` (whose results are `results`), in
-    /// [`CHECK_GUIDES`]' order, none for a check that passes; computed only when the inputs
-    /// differ from the last call's.
+    /// Each guide's [`fixes`] for `inputs` (whose results are `results`) with the shaft-clamp
+    /// section's pause (`clamps_paused`), in [`CHECK_GUIDES`]' order, none for a check that
+    /// passes or does not count; computed only when the inputs or the pause differ from the
+    /// last call's.
     pub fn get(
         &mut self,
         inputs: &DesignInputs,
         results: &DesignResults,
+        clamps_paused: bool,
     ) -> &[Vec<(&'static str, Direction)>] {
-        if self.last.as_ref().is_none_or(|last| last.inputs != *inputs) {
+        if self
+            .last
+            .as_ref()
+            .is_none_or(|last| last.inputs != *inputs || last.clamps_paused != clamps_paused)
+        {
             self.computed += 1;
             self.last = Some(CachedFixes {
                 inputs: inputs.clone(),
-                fixes: all_fixes(inputs, results),
+                clamps_paused,
+                fixes: all_fixes(inputs, results, clamps_paused),
             });
         }
         &self.last.as_ref().expect("filled above").fixes
     }
 }
 
-/// Each guide's [`fixes`] for `inputs` (whose results are `results`), in [`CHECK_GUIDES`]'
-/// order, none for a check that passes: what [`FixCache::get`] holds, computed every call.
+/// Each guide's [`fixes`] for `inputs` (whose results are `results`) with the shaft-clamp
+/// section's pause (`clamps_paused`), in [`CHECK_GUIDES`]' order, none for a check that passes
+/// or does not count: what [`FixCache::get`] holds, computed every call.
 pub fn all_fixes(
     inputs: &DesignInputs,
     results: &DesignResults,
+    clamps_paused: bool,
 ) -> Vec<Vec<(&'static str, Direction)>> {
     CHECK_GUIDES
         .iter()
-        .map(|guide| fixes(guide, inputs, results))
+        .map(|guide| fixes(guide, inputs, results, clamps_paused))
         .collect()
 }
 
@@ -645,14 +691,17 @@ type Margin<'a> = &'a dyn Fn(&DesignInputs, &DesignResults) -> f64;
 
 /// Whether `fix` is worth showing for `inputs` (whose results are `results`): one of the
 /// designs its move reaches ([`moves`]) turns no guided check that passes here red (review
-/// focus 3) and, given a `margin`, raises it.
+/// focus 3) and, given a `margin`, raises it. Only the checks that count with the shaft-clamp
+/// section's pause (`clamps_paused`, [`counts`]) hold a fix back: a hidden check never does.
 fn helps(
     inputs: &DesignInputs,
     results: &DesignResults,
     (path, direction): (&str, Direction),
     margin: Option<Margin>,
+    clamps_paused: bool,
 ) -> bool {
-    let before: Vec<Level> = CHECK_GUIDES
+    let counted: Vec<&CheckGuide> = counted_guides(clamps_paused).collect();
+    let before: Vec<Level> = counted
         .iter()
         .map(|guide| level(guide, inputs, results))
         .collect();
@@ -660,7 +709,7 @@ fn helps(
         .iter()
         .any(|design| {
             let after = compute_all(design);
-            let reddens = CHECK_GUIDES.iter().zip(&before).any(|(guide, &was)| {
+            let reddens = counted.iter().zip(&before).any(|(guide, &was)| {
                 was == Level::Good && level(guide, design, &after) == Level::Bad
             });
             let raises = margin.is_none_or(|margin| {
@@ -789,14 +838,14 @@ fn custom_hotter_grade(inputs: &DesignInputs, path: &str) -> Vec<DesignInputs> {
 
 /// `x` one step of the slider `range` up (Raise) or down (Lower), kept on the slider: `None`
 /// at the slider's end that way, for a number that is not one, and for a choice. A value
-/// typed past the slider's end comes back onto it.
+/// typed past the slider's end comes back onto it ([`SliderRange::step_from`], the step a
+/// teaching note's change entry takes too).
 fn step(x: f64, range: SliderRange, direction: Direction) -> Option<f64> {
-    let next = match direction {
-        Direction::Raise if x < range.max => x + range.step,
-        Direction::Lower if x > range.min => x - range.step,
-        _ => return None,
-    };
-    Some(next.clamp(range.min, range.max))
+    match direction {
+        Direction::Raise => range.step_from(x, true),
+        Direction::Lower => range.step_from(x, false),
+        Direction::Change | Direction::CustomHotterGrade => None,
+    }
 }
 
 /// `inputs` with the input at `path` set to `value`; `None` where the inputs refuse it.
@@ -833,8 +882,9 @@ fn current_number(inputs: &DesignInputs, results: &DesignResults, path: &str) ->
     }
 }
 
-/// A fix's text: its direction, then the input's label as the inputs side shows it ("Raise
-/// Minimum outer return ring wall"), or the Size tab's name for it ([`SIZE_TAB_ALIASES`]). A
+/// A fix's text: its direction, then the input's label as the inputs side shows it (its display
+/// label, `gui::plain_text`: "Raise Magnets per ring"), or the Size tab's name for it
+/// ([`SIZE_TAB_ALIASES`], which wins over the display label in fix text only). A
 /// label that another input's label equals or ends with ("Boss outside diameter" against
 /// "Shaft boss outside diameter") is followed by its group's heading, so the fix names one
 /// input: "Raise Boss outside diameter (Shaft clamps)". A [`Direction::CustomHotterGrade`] fix
@@ -865,10 +915,11 @@ fn fix_label(path: &str) -> String {
     let Some(entry) = catalogue.entry(path) else {
         return path.to_owned();
     };
-    let label = entry.meta.label;
-    let shared = catalogue
-        .all()
-        .any(|other| other.path != path && ends_with_label(other.meta.label, label));
+    // C-3 compares the labels drawn on screen: the display labels (spec 3.5).
+    let label = display_label(path, entry.meta.label);
+    let shared = catalogue.all().any(|other| {
+        other.path != path && ends_with_label(display_label(&other.path, other.meta.label), label)
+    });
     let heading = path
         .rsplit_once('.')
         .and_then(|(group, _)| section_label(group));
@@ -1351,6 +1402,7 @@ fn listed(items: &[String]) -> String {
 fn temperature_fixes(
     inputs: &DesignInputs,
     results: &DesignResults,
+    clamps_paused: bool,
 ) -> Vec<(&'static str, Direction)> {
     let mut shown: Vec<(&'static str, Direction)> = Vec::new();
     for term in failing_terms(inputs, results) {
@@ -1367,7 +1419,10 @@ fn temperature_fixes(
             let (path, direction) = fix;
             let part_shown = direction == Direction::CustomHotterGrade
                 && shown.contains(&(path, Direction::Change));
-            if !shown.contains(&fix) && !part_shown && helps(inputs, results, fix, Some(&margin)) {
+            if !shown.contains(&fix)
+                && !part_shown
+                && helps(inputs, results, fix, Some(&margin), clamps_paused)
+            {
                 shown.push(fix);
             }
         }
@@ -1377,8 +1432,11 @@ fn temperature_fixes(
 
 // ------------------------------------------------------------------ the design status
 
-/// The design status line's start for the defaults (spec G-6: they stay the workbook's example).
-pub const WORKBOOK_EXAMPLE: &str = "Workbook example design";
+/// The design status line's start for the defaults (spec G-6 as slice 2 amends it, S2-5).
+pub const EXAMPLE_DESIGN: &str = "Example design";
+
+/// The hover text of the status line at the defaults: where the example's values come from.
+pub const EXAMPLE_DESIGN_HOVER: &str = "The starting values from the original spreadsheet.";
 
 /// The design status line's start for any other design.
 pub const YOUR_DESIGN: &str = "Your design";
@@ -1390,16 +1448,24 @@ pub struct DesignStatus {
     pub bad: usize,
     /// The checks that ask for a look (amber), counted apart from the failures.
     pub caution: usize,
-    /// Every guide's check: [`CHECK_GUIDES`]'s length.
+    /// Every guide's check that counts ([`counts`]): [`CHECK_GUIDES`]'s length, less the
+    /// clamp's while the shaft-clamp section is paused.
     pub total: usize,
-    /// Whether the inputs are the defaults (the workbook's example design).
+    /// Whether the inputs are the defaults (the example design).
     pub is_default: bool,
 }
 
-/// The design status of `inputs` and their `results`, counted live from the guides' levels.
-pub fn design_status(inputs: &DesignInputs, results: &DesignResults) -> DesignStatus {
+/// The design status of `inputs` and their `results`, counted live from the levels of the
+/// guides that count while the shaft-clamp section is paused (`clamps_paused`) or not
+/// ([`counts`]): a failing clamp moves no count while paused.
+pub fn design_status(
+    inputs: &DesignInputs,
+    results: &DesignResults,
+    clamps_paused: bool,
+) -> DesignStatus {
+    let counted: Vec<&CheckGuide> = counted_guides(clamps_paused).collect();
     let count = |wanted: Level| {
-        CHECK_GUIDES
+        counted
             .iter()
             .filter(|guide| level(guide, inputs, results) == wanted)
             .count()
@@ -1407,17 +1473,18 @@ pub fn design_status(inputs: &DesignInputs, results: &DesignResults) -> DesignSt
     DesignStatus {
         bad: count(Level::Bad),
         caution: count(Level::Caution),
-        total: CHECK_GUIDES.len(),
+        total: counted.len(),
         is_default: *inputs == DesignInputs::default(),
     }
 }
 
-/// The design status line: "Workbook example design: fails 3 of 8 checks", "Your design: fails
+/// The design status line: "Example design: fails 3 of 8 checks", "Your design: fails
 /// 2 of 8 checks", "Your design: passes all 8 checks", each followed by ", 1 caution" or ", 2
-/// cautions" when a check asks for a look.
+/// cautions" when a check asks for a look. The count is of the guides that count ([`counts`]):
+/// 7 while the shaft-clamp section is paused.
 pub fn design_status_text(status: &DesignStatus) -> String {
     let design = if status.is_default {
-        WORKBOOK_EXAMPLE
+        EXAMPLE_DESIGN
     } else {
         YOUR_DESIGN
     };
@@ -1436,67 +1503,14 @@ pub fn design_status_text(status: &DesignStatus) -> String {
 
 // ------------------------------------------------------------------ plain words
 
-/// What [`plain_text_violations`] looks for, in its order: a workbook cell reference
-/// (`C\d{2,3}`), a correction id (`E\d{1,2}` as a whole id), the word "workbook" in any case
-/// (but in [`WORKBOOK_EXAMPLE`]'s exact phrase), and three names of the engine's provenance.
-pub const BANNED: [&str; 6] = [
-    "C\\d{2,3}",
-    "E\\d{1,2}",
-    "workbook",
-    "Addendum",
-    "Rust-only",
-    "Calculator!",
-];
-
-/// The phrase that may say "workbook": the design status line's.
-const ALLOWED_WORKBOOK: &str = "Workbook example";
-
-/// The [`BANNED`] patterns `text` contains, in [`BANNED`]'s order, each once. The guidance
-/// text is for engineers who are not reading the workbook: the tests of every task of the
-/// slice hold its strings to an empty list.
-pub fn plain_text_violations(text: &str) -> Vec<&'static str> {
-    let chars: Vec<char> = text.chars().collect();
-    let digits_after = |i: usize| {
-        chars[i + 1..]
-            .iter()
-            .take_while(|c| c.is_ascii_digit())
-            .count()
-    };
-    // C followed by two or more digits holds C\d{2,3}; E with one or two digits and then no
-    // letter, digit or underscore is E\d{1,2}\b.
-    let cell = chars
-        .iter()
-        .enumerate()
-        .any(|(i, &c)| c == 'C' && digits_after(i) >= 2);
-    let correction = chars.iter().enumerate().any(|(i, &c)| {
-        let digits = digits_after(i);
-        c == 'E'
-            && (1..=2).contains(&digits)
-            && chars
-                .get(i + 1 + digits)
-                .is_none_or(|&next| !next.is_alphanumeric() && next != '_')
-    });
-    let workbook =
-        text.to_lowercase().matches("workbook").count() > text.matches(ALLOWED_WORKBOOK).count();
-    let hits = [
-        cell,
-        correction,
-        workbook,
-        text.contains("Addendum"),
-        text.contains("Rust-only"),
-        text.contains("Calculator!"),
-    ];
-    BANNED
-        .iter()
-        .zip(hits)
-        .filter_map(|(&pattern, hit)| hit.then_some(pattern))
-        .collect()
-}
+// The plain-words guard lives in the engine (engine::explain::plain, pure std) so the engine's
+// tests hold the teaching notes to it; the GUI's texts use it from here.
+pub use crate::engine::explain::plain::{BANNED, plain_text_violations};
 
 // ------------------------------------------------------------------ the Problem builders
 
 /// The result at `path` as the readouts show it: four significant digits, then its unit.
-fn result_text(results: &DesignResults, path: &str) -> String {
+pub(crate) fn result_text(results: &DesignResults, path: &str) -> String {
     let unit = result_info(path).map_or("", |info| info.meta.unit);
     with_unit(
         format_value(&results.get(path).unwrap_or(Value::None)),
@@ -1694,7 +1708,9 @@ const FIT_RINGS: [(&str, &str, &str, &str); 2] = [
 fn fit_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<String> {
     failing(FIT_CHECK, inputs, results).then(|| {
         let n = inputs.coupling.npole;
-        let mut sentences = vec![format!("{n} blocks per ring do not fit at this ring size.")];
+        let mut sentences = vec![format!(
+            "{n} blocks per ring do not fit at this ring radius."
+        )];
         // The engine's rule, ring by ring: the rings it fails, each in its own terms.
         let rings = ring_fits(&inputs.coupling, &results.model);
         for (ring, (start, name, width, flat)) in rings.into_iter().zip(FIT_RINGS) {
@@ -1728,7 +1744,7 @@ pub const RING_SIZE_STAYS: &str = "The ring radius stays the same when you chang
 /// The first line under Magnets per ring with Auto on the ring size (physics review 3, N4): a
 /// new count changes the solve, so Auto solves the ring radius again, while the neighbour
 /// lines are built at the present ring.
-pub const AUTO_RESIZES_RING: &str = "Auto resizes the ring when you change the magnet count; the lines below keep the present ring size.";
+pub const AUTO_RESIZES_RING: &str = "Auto resizes the ring when you change the magnet count; the lines below keep the present ring radius.";
 
 /// The first line under Magnets per ring with Auto on the magnet length (physics review 3,
 /// N4): the ring stays, but Auto solves the length again, while the neighbour lines are built
@@ -2045,7 +2061,11 @@ mod tests {
     use crate::engine::model::ring_fits;
     use crate::gui::dashboard::{CHECKS, DASHBOARD};
     use crate::gui::explorer::reviewed_note;
-    use crate::gui::test_support::{assert_glyphs, passing_design, short_magnets, with_poles};
+    use crate::gui::plain_text::label_for;
+    use crate::gui::test_support::{
+        assert_glyphs, clamp_at_its_limit, hot_day, only_the_clamp_fails, passing_design,
+        short_magnets, small_boss, with_poles,
+    };
     use std::collections::BTreeSet;
 
     // ------------------------------------------------------------------ the test designs
@@ -2065,13 +2085,6 @@ mod tests {
     /// another check red shows.
     fn breaking(edit: impl Fn(&mut DesignInputs)) -> DesignInputs {
         with(passing_design(), edit)
-    }
-
-    /// A hot day: 80 °C ambient and a 60 °C driving rise start the magnets at 140 °C, above
-    /// both the magnet and the adhesive limit, with the hottest-rated library part in use.
-    fn hot_day(i: &mut DesignInputs) {
-        i.temperature.duty.hot_ambient_C = 80.0;
-        i.temperature.duty.driving_rise_C = 60.0;
     }
 
     /// A hot day with the inner ring on manual dimensions and a blank grade: no library part
@@ -2112,11 +2125,6 @@ mod tests {
         i.coupling.magnets.part_outer.clear();
         i.coupling.magnets.grade_inner = "Y30".to_owned();
         i.coupling.magnets.grade_outer = "Y30".to_owned();
-    }
-
-    /// No screw fits a 12 mm boss.
-    fn small_boss(i: &mut DesignInputs) {
-        i.clamps.boss_od_mm = 12.0;
     }
 
     /// No screw fits a 3 mm clamp.
@@ -2258,12 +2266,12 @@ mod tests {
         }
         for (_, inputs) in designs() {
             let results = compute_all(&inputs);
-            let all = all_fixes(&inputs, &results);
+            let all = all_fixes(&inputs, &results, false);
             for (index, g) in CHECK_GUIDES.iter().enumerate() {
                 texts.extend((g.problem)(&inputs, &results));
                 texts.extend(guide_notes(&all, index, &inputs, &results));
             }
-            texts.push(design_status_text(&design_status(&inputs, &results)));
+            texts.push(design_status_text(&design_status(&inputs, &results, false)));
         }
         texts
     }
@@ -2399,6 +2407,76 @@ mod tests {
         assert_eq!(row_learn("no.such"), None);
     }
 
+    #[test]
+    fn the_size_tab_and_banner_links_lead_where_their_checks_do() {
+        // Spec 3.7: the Size tab's Required and Hot-low links lead where the hot minimum
+        // check's Why does, the banner's where the end-effect check's does, and the links
+        // under Magnets per ring and Outside diameter to Start here's first step.
+        assert_eq!(Learn::Note(TORQUE_BAND_NOTE), guide(HOT_MIN).unwrap().learn);
+        assert_eq!(Learn::Note(BANNER_NOTE), guide(END_EFFECT).unwrap().learn);
+        assert_eq!(notes::START_HERE[0].0, SIZE_TAB_NOTE);
+        for id in [SIZE_TAB_NOTE, TORQUE_BAND_NOTE, BANNER_NOTE] {
+            assert!(
+                reviewed_note(id).is_some(),
+                "{id} is missing or not reviewed"
+            );
+            assert!(notes::shown(id), "{id} is hidden");
+        }
+    }
+
+    #[test]
+    fn the_hot_low_hot_minimum_and_cold_high_rows_lead_to_the_torque_band_note() {
+        // Spec 6 test 6: the hot-minimum guide and the three rows of the band link the note
+        // that explains their equations, and it has passed review.
+        let band = Learn::Note("hot_low_cold_high");
+        assert_eq!(guide(HOT_MIN).map(|g| g.learn), Some(band));
+        for path in [
+            "metal.torque_hot_low_Nm",
+            "metal.hot_min_check",
+            "metal.torque_cold_high_Nm",
+        ] {
+            assert_eq!(row_learn(path), Some(band), "{path}");
+            assert_eq!(
+                notes::note_for(path).map(|n| n.id),
+                Some("hot_low_cold_high"),
+                "{path}"
+            );
+        }
+        assert!(reviewed_note("hot_low_cold_high").is_some());
+    }
+
+    #[test]
+    fn the_ripple_row_leads_to_the_slip_note() {
+        // Spec 3.3: the gearbox ripple row's Why link moves from the pull-out note to the note
+        // that owns its equation, what happens when the coupling slips.
+        assert_eq!(
+            row_learn("model.gearbox_input_ripple_Nm"),
+            Some(Learn::Note("when_slipping"))
+        );
+        assert_eq!(
+            notes::note_for("model.gearbox_input_ripple_Nm").map(|n| n.id),
+            Some("when_slipping")
+        );
+    }
+
+    /// The torque-band note's second watch-out and the slip note's first say nothing checks
+    /// cold-high at the gearbox input, or the slip swings, against the gearbox's rating. When
+    /// such a check lands (BL-059) this fails, and those watch-outs change in the same commit.
+    #[test]
+    fn nothing_checks_a_gearbox_torque_against_its_rating_yet() {
+        let gearbox_rows: Vec<(&str, Option<&str>)> = DASHBOARD
+            .iter()
+            .copied()
+            .filter(|&(row, check)| {
+                row.contains("gearbox") || check.is_some_and(|c| c.contains("gearbox"))
+            })
+            .collect();
+        // The ripple row: a value with no check.
+        assert_eq!(gearbox_rows, [("model.gearbox_input_ripple_Nm", None)]);
+        assert!(CHECKS.iter().all(|c| !c.contains("gearbox")));
+        assert!(CHECK_GUIDES.iter().all(|g| !g.check.contains("gearbox")));
+    }
+
     // ------------------------------------------------------------------ the fix texts
 
     #[test]
@@ -2409,7 +2487,7 @@ mod tests {
         );
         assert_eq!(
             fix_text("coupling.npole", Direction::Lower),
-            "Lower Number of poles per ring"
+            "Lower Magnets per ring"
         );
         assert_eq!(
             fix_text("coupling.magnets.part_inner", Direction::Change),
@@ -2443,15 +2521,12 @@ mod tests {
             "Lower Vacuum permeability (Calibration)"
         );
         // Every fix: its direction, then its input's label (the alias, or with its group).
-        let catalogue = InputCatalogue::get();
         for g in &CHECK_GUIDES {
             for (path, direction) in possible_fixes(g) {
                 let label = SIZE_TAB_ALIASES
                     .iter()
                     .find(|&&(aliased, _)| aliased == path)
-                    .map_or(catalogue.entry(path).unwrap().meta.label, |&(_, alias)| {
-                        alias
-                    });
+                    .map_or(label_for(path), |&(_, alias)| alias);
                 let text = fix_text(path, direction);
                 assert!(
                     text.starts_with(&format!("{} {label}", direction.word())),
@@ -2473,6 +2548,41 @@ mod tests {
             let text = fix_text(&entry.path, Direction::Raise);
             assert!(seen.insert(text.clone()), "{}: {text} twice", entry.path);
         }
+    }
+
+    #[test]
+    fn the_fix_label_is_the_display_label_and_still_names_one_input() {
+        // Spec 3.5: the overlay's names reach the fix text ...
+        assert_eq!(
+            fix_text(FACE_GAP, Direction::Raise),
+            format!("Raise {}", label_for(FACE_GAP))
+        );
+        // ... but a fix on the ring radius names the Size-tab control a user moves it with.
+        assert_eq!(
+            fix_text(RING, Direction::Raise),
+            format!("Raise {}", size_controls::DIAMETER)
+        );
+        assert_ne!(label_for(RING), size_controls::DIAMETER);
+        // C-3 runs on the display labels: the inputs whose fix text adds a group heading are
+        // still the seven whose label another input's equals or ends with (map-help 3.5).
+        let headed: Vec<&str> = InputCatalogue::get()
+            .all()
+            .map(|e| e.path.as_str())
+            .filter(|p| !SIZE_TAB_ALIASES.iter().any(|&(aliased, _)| aliased == *p))
+            .filter(|p| fix_text(p, Direction::Raise) != format!("Raise {}", label_for(p)))
+            .collect();
+        assert_eq!(
+            headed,
+            [
+                "coupling.c_end",
+                "coupling.mu0",
+                "calibration.mu0",
+                "materials.steel.modulus_GPa",
+                "materials.steel.density_g_cm3",
+                "clamps.alloy",
+                "clamps.boss_od_mm",
+            ]
+        );
     }
 
     // ------------------------------------------------------------------ the fixes help
@@ -2608,7 +2718,7 @@ mod tests {
                     .filter(|t| !t.passes && !t.margin.is_nan() && !reached.contains(&t.name))
                     .map(|t| t.name.as_str())
                     .collect();
-                let shown = fixes(g, &inputs, &results);
+                let shown = fixes(g, &inputs, &results, false);
                 let mut moved: BTreeSet<&str> = BTreeSet::new();
                 for &(path, direction) in &shown {
                     let text = fix_text(path, direction);
@@ -2825,7 +2935,8 @@ mod tests {
         let trip = ("temperature.duty.fault_trip_s", Lower);
         let conductance = ("temperature.thermal.conductance_W_K", Raise);
         let temperature = guide(TEMPERATURE).unwrap();
-        let shown = |inputs: DesignInputs| fixes(temperature, &inputs, &compute_all(&inputs));
+        let shown =
+            |inputs: DesignInputs| fixes(temperature, &inputs, &compute_all(&inputs), false);
         // Above both rings' limits and the adhesive's. No library part is rated above the
         // N42SH parts in use, and a grade does nothing to a ring with a library part. Custom
         // dimensions with a blank grade has no rating, so its limit is not calibrated: no fix.
@@ -3003,7 +3114,7 @@ mod tests {
         assert_eq!(hot_low(&unrated_results), hot_low(&results));
         // What the guide shows: each ring's two picks. The start is above the magnet limit,
         // so no cooling can bring the peak under it (review 2, N1).
-        let shown = fixes(guide(TEMPERATURE).unwrap(), &warm, &results);
+        let shown = fixes(guide(TEMPERATURE).unwrap(), &warm, &results, false);
         assert_eq!(
             shown,
             [
@@ -3040,7 +3151,7 @@ mod tests {
         // the Outside diameter, whose slider moves the cap with the cup. An axis whose claim is
         // not a number has no fix: its Problem asks for the number.
         let space = guide(SPACE_CLAIM).unwrap();
-        let shown = |inputs: DesignInputs| fixes(space, &inputs, &compute_all(&inputs));
+        let shown = |inputs: DesignInputs| fixes(space, &inputs, &compute_all(&inputs), false);
         let magnets = (MAGNET_LENGTH, Direction::Lower);
         let cap = ("metal.cap_od_mm", Direction::Lower);
         let diameter = (RING, Direction::Lower);
@@ -3064,7 +3175,7 @@ mod tests {
         // larger ring is offered. On the passing design at 12 poles the same step only returns
         // to a passing design, so both fixes are offered.
         let fit = guide(FIT_CHECK).unwrap();
-        let shown = |inputs: &DesignInputs| fixes(fit, inputs, &compute_all(inputs));
+        let shown = |inputs: &DesignInputs| fixes(fit, inputs, &compute_all(inputs), false);
         let crowded = with_poles(12);
         let results = compute_all(&crowded);
         for check in [HOT_MIN, CUP_WALL] {
@@ -3090,7 +3201,7 @@ mod tests {
         // up to ..."). Only fewer poles is offered. Where a larger diameter does fit, the
         // larger diameter is offered.
         let fit = guide(FIT_CHECK).unwrap();
-        let shown = |inputs: &DesignInputs| fixes(fit, inputs, &compute_all(inputs));
+        let shown = |inputs: &DesignInputs| fixes(fit, inputs, &compute_all(inputs), false);
         let nowhere = |inputs: &DesignInputs| {
             matches!(
                 smallest_fitting_diameter(inputs, inputs.coupling.npole, None),
@@ -3108,7 +3219,13 @@ mod tests {
             // One step up would still widen each place and turn nothing red: the slider's
             // reach, not the step, rules the fix out.
             assert!(
-                helps(inputs, &compute_all(inputs), (RING, Direction::Raise), None),
+                helps(
+                    inputs,
+                    &compute_all(inputs),
+                    (RING, Direction::Raise),
+                    None,
+                    false
+                ),
                 "{name}"
             );
             assert_eq!(shown(inputs), [(POLES, Direction::Lower)], "{name}");
@@ -3129,7 +3246,7 @@ mod tests {
     #[test]
     fn a_fix_at_its_slider_end_is_not_offered() {
         let shown = |check: &str, inputs: &DesignInputs| {
-            fixes(guide(check).unwrap(), inputs, &compute_all(inputs))
+            fixes(guide(check).unwrap(), inputs, &compute_all(inputs), false)
         };
         // No sleeve and no liner to thin: only the gap can still open.
         assert_eq!(
@@ -3177,7 +3294,7 @@ mod tests {
         };
         for (name, inputs) in designs() {
             let results = compute_all(&inputs);
-            let all = all_fixes(&inputs, &results);
+            let all = all_fixes(&inputs, &results, false);
             let shown: Vec<(&str, Direction)> = all.iter().flatten().copied().collect();
             let both_ways: Vec<&str> = shown
                 .iter()
@@ -3209,7 +3326,7 @@ mod tests {
         // The two cases in words: the same note in both blocks.
         let length = design(|i| i.metal.max_overall_axial_mm = 30.0);
         let results = compute_all(&length);
-        let all = all_fixes(&length, &results);
+        let all = all_fixes(&length, &results, false);
         let expected = [
             "One input pulls two ways (Axial magnet length, both rings): Hot-low torque needs it raised and Space claim needs it lowered, so change another input to settle one of them.",
         ];
@@ -3218,7 +3335,7 @@ mod tests {
         assert_eq!(trade_offs(&all, at(SPACE_CLAIM)), expected);
         let crowded = with(with_poles(12), |i| i.metal.max_diameter_mm = 42.0);
         let results = compute_all(&crowded);
-        let all = all_fixes(&crowded, &results);
+        let all = all_fixes(&crowded, &results, false);
         let expected = [
             "One input pulls two ways (Outside diameter): Magnets fit needs it raised and Space claim needs it lowered, so change another input to settle one of them.",
         ];
@@ -3233,19 +3350,19 @@ mod tests {
     fn all_fixes_lists_each_guide_s_fixes_in_the_guides_order() {
         for (name, inputs) in designs() {
             let results = compute_all(&inputs);
-            let all = all_fixes(&inputs, &results);
+            let all = all_fixes(&inputs, &results, false);
             assert_eq!(all.len(), CHECK_GUIDES.len(), "{name}");
             for (guide, shown) in CHECK_GUIDES.iter().zip(&all) {
                 assert_eq!(
                     *shown,
-                    fixes(guide, &inputs, &results),
+                    fixes(guide, &inputs, &results, false),
                     "{name}: {}",
                     guide.check
                 );
             }
         }
         let passing = passing_design();
-        let all = all_fixes(&passing, &compute_all(&passing));
+        let all = all_fixes(&passing, &compute_all(&passing), false);
         assert!(all.iter().all(Vec::is_empty), "{all:?}");
     }
 
@@ -3253,12 +3370,15 @@ mod tests {
     fn the_fix_cache_computes_once_per_design_and_follows_an_edit() {
         // Every guide's fixes, in the guides' order (none for a passing check), computed once
         // per design: each fix runs `compute_all` on the design its move reaches.
-        let all = |inputs: &DesignInputs| all_fixes(inputs, &compute_all(inputs));
+        let all = |inputs: &DesignInputs| all_fixes(inputs, &compute_all(inputs), false);
         let mut cache = FixCache::default();
         let defaults = DesignInputs::default();
         let results = compute_all(&defaults);
         for _ in 0..3 {
-            assert_eq!(cache.get(&defaults, &results), all(&defaults).as_slice());
+            assert_eq!(
+                cache.get(&defaults, &results, false),
+                all(&defaults).as_slice()
+            );
         }
         assert_eq!(
             cache.computed, 1,
@@ -3267,7 +3387,7 @@ mod tests {
         let crowded = with_poles(12);
         let crowded_results = compute_all(&crowded);
         assert_eq!(
-            cache.get(&crowded, &crowded_results),
+            cache.get(&crowded, &crowded_results, false),
             all(&crowded).as_slice()
         );
         assert_eq!(cache.computed, 2);
@@ -3275,7 +3395,7 @@ mod tests {
         let passing_results = compute_all(&passing);
         assert!(
             cache
-                .get(&passing, &passing_results)
+                .get(&passing, &passing_results, false)
                 .iter()
                 .all(Vec::is_empty)
         );
@@ -3283,44 +3403,7 @@ mod tests {
     }
 
     // ------------------------------------------------------------------ plain words
-
-    #[test]
-    fn plain_text_violations_names_each_banned_pattern() {
-        assert_eq!(
-            plain_text_violations("Too thin: raise Metal design C122 to at least 2.0 mm"),
-            ["C\\d{2,3}"]
-        );
-        assert_eq!(plain_text_violations("E3 E7 E8"), ["E\\d{1,2}"]);
-        assert_eq!(plain_text_violations("corrections E20."), ["E\\d{1,2}"]);
-        assert_eq!(
-            plain_text_violations("Calculator!C93"),
-            ["C\\d{2,3}", "Calculator!"]
-        );
-        assert_eq!(
-            plain_text_violations("Rust-only result (no workbook cell)"),
-            ["workbook", "Rust-only"]
-        );
-        assert_eq!(plain_text_violations("Spec Addendum A5"), ["Addendum"]);
-        assert_eq!(plain_text_violations("WORKBOOK"), ["workbook"]);
-        // The status line's phrase excuses itself only, and only as written.
-        assert_eq!(
-            plain_text_violations("Workbook example design from the workbook"),
-            ["workbook"]
-        );
-        assert_eq!(plain_text_violations("workbook example"), ["workbook"]);
-        for clean in [
-            "Workbook example design: fails 3 of 8 checks",
-            "2.000e7 mm",
-            "E123",
-            "C1",
-            "50.00 °C",
-            "ISO 4762 M4 x 14, class 12.9",
-            "Raise Minimum outer return ring wall",
-            "",
-        ] {
-            assert!(plain_text_violations(clean).is_empty(), "{clean:?}");
-        }
-    }
+    // (The guard's own examples are in engine::explain::plain, where gate 4 runs them.)
 
     #[test]
     fn no_guide_text_carries_workbook_jargon() {
@@ -3335,6 +3418,17 @@ mod tests {
         let _ = ctx.run(egui::RawInput::default(), |_| {});
         for text in every_text() {
             assert_glyphs(&ctx, &text, "guidance");
+        }
+    }
+
+    #[test]
+    fn no_guide_text_calls_the_ring_radius_ring_size() {
+        // One name per quantity (spec 3.5): the input row says Ring radius, so no guide, fix,
+        // problem or consequence line says "ring size".
+        let mut texts = every_text();
+        texts.extend([RING_SIZE_STAYS, AUTO_RESIZES_RING, AUTO_RESETS_LENGTH].map(str::to_owned));
+        for text in texts {
+            assert!(!text.to_lowercase().contains("ring size"), "{text:?}");
         }
     }
 
@@ -3680,7 +3774,7 @@ mod tests {
                 .unwrap()
                 .contains("is not a number")
         );
-        assert_eq!(fixes(space, &inputs, &results), []);
+        assert_eq!(fixes(space, &inputs, &results, false), []);
         assert!(NO_FIX.contains("not a number"), "{NO_FIX}");
     }
 
@@ -3697,7 +3791,7 @@ mod tests {
             (with_poles(12), FIT_CHECK, raise_ring),
         ] {
             let results = compute_all(&inputs);
-            let all = all_fixes(&inputs, &results);
+            let all = all_fixes(&inputs, &results, false);
             assert!(all[index(check)].contains(&fix), "{check}: {all:?}");
             let diameter = dimensions(&inputs).unwrap().diameter_mm;
             // No floor, or one below the diameter: the slider can still go down.
@@ -3757,7 +3851,7 @@ mod tests {
                 results.temperature.summary.verdict
             );
             assert_eq!(
-                temperature_fixes(&inputs, &results).is_empty(),
+                temperature_fixes(&inputs, &results, false).is_empty(),
                 passes,
                 "{name}"
             );
@@ -3766,7 +3860,7 @@ mod tests {
             // limit the start already reaches, so the cooling is not offered (review 2, N1).
             // Each peak whose limit the start reaches fails beside its hot-day term, whose
             // fixes clear both.
-            let shown = temperature_fixes(&inputs, &results);
+            let shown = temperature_fixes(&inputs, &results, false);
             let conductance = ("temperature.thermal.conductance_W_K", Direction::Raise);
             let trip = ("temperature.duty.fault_trip_s", Direction::Lower);
             for ring in Ring::BOTH {
@@ -3847,16 +3941,16 @@ mod tests {
     fn the_fit_problem_names_the_rings_that_do_not_fit() {
         assert_eq!(
             problem(FIT_CHECK, &with_poles(40)).unwrap(),
-            "40 blocks per ring do not fit at this ring size. Inner blocks are 6.350 mm wide on 1.598 mm flats. Outer blocks are 6.350 mm wide on 2.317 mm flats."
+            "40 blocks per ring do not fit at this ring radius. Inner blocks are 6.350 mm wide on 1.598 mm flats. Outer blocks are 6.350 mm wide on 2.317 mm flats."
         );
         assert_eq!(
             problem(FIT_CHECK, &with(with_poles(40), arcs)).unwrap(),
-            "40 blocks per ring do not fit at this ring size. The 40 inner blocks together need 344.5 % of the circle at their mid-radius. The 40 outer blocks together need 247.9 % of the circle at their mid-radius."
+            "40 blocks per ring do not fit at this ring radius. The 40 inner blocks together need 344.5 % of the circle at their mid-radius. The 40 outer blocks together need 247.9 % of the circle at their mid-radius."
         );
         // 12 flat blocks: the inner flats are too narrow, the outer ones are not.
         assert_eq!(
             problem(FIT_CHECK, &with_poles(12)).unwrap(),
-            "12 blocks per ring do not fit at this ring size. Inner blocks are 6.350 mm wide on 5.439 mm flats."
+            "12 blocks per ring do not fit at this ring radius. Inner blocks are 6.350 mm wide on 5.439 mm flats."
         );
         // The level follows the engine's fit rule, the one inverse sizing counts.
         for (name, inputs) in designs() {
@@ -3921,7 +4015,7 @@ mod tests {
 
     #[test]
     fn the_design_status_counts_the_failing_checks() {
-        let status = |inputs: &DesignInputs| design_status(inputs, &compute_all(inputs));
+        let status = |inputs: &DesignInputs| design_status(inputs, &compute_all(inputs), false);
         let defaults = status(&DesignInputs::default());
         assert_eq!(
             defaults,
@@ -3934,7 +4028,7 @@ mod tests {
         );
         assert_eq!(
             design_status_text(&defaults),
-            "Workbook example design: fails 3 of 8 checks"
+            "Example design: fails 3 of 8 checks"
         );
         // One fix: the cup wall at its suggested 2.0 mm.
         let fixed = status(&design(|i| i.metal.cup_wall_corner_mm = 2.0));
@@ -3980,10 +4074,7 @@ mod tests {
                 is_default,
             })
         };
-        assert_eq!(
-            text(0, 0, true),
-            "Workbook example design: passes all 8 checks"
-        );
+        assert_eq!(text(0, 0, true), "Example design: passes all 8 checks");
         assert_eq!(
             text(0, 1, false),
             "Your design: passes all 8 checks, 1 caution"
@@ -3991,10 +4082,87 @@ mod tests {
         assert_eq!(text(1, 0, false), "Your design: fails 1 of 8 checks");
         assert_eq!(
             text(8, 3, true),
-            "Workbook example design: fails 8 of 8 checks, 3 cautions"
+            "Example design: fails 8 of 8 checks, 3 cautions"
         );
-        assert!(text(1, 0, true).starts_with(WORKBOOK_EXAMPLE));
+        assert!(text(1, 0, true).starts_with(EXAMPLE_DESIGN));
         assert!(text(1, 0, false).starts_with(YOUR_DESIGN));
+    }
+
+    // ------------------------------------------------------------------ the paused clamp section
+
+    #[test]
+    fn only_the_clamp_guide_stops_counting_and_only_while_the_section_is_paused() {
+        for guide in CHECK_GUIDES.iter() {
+            assert!(counts(guide, false), "{}", guide.check);
+            assert_eq!(counts(guide, true), guide.check != CLAMP, "{}", guide.check);
+        }
+    }
+
+    #[test]
+    fn a_design_failing_only_the_clamp_passes_while_the_section_is_paused() {
+        // Ruling 11: the clamp counts toward no verdict while it is paused.
+        let inputs = only_the_clamp_fails();
+        let results = compute_all(&inputs);
+        assert_eq!(level(guide(CLAMP).unwrap(), &inputs, &results), Level::Bad);
+        let shown = design_status(&inputs, &results, false);
+        assert_eq!((shown.bad, shown.caution, shown.total), (1, 0, 8));
+        assert_eq!(
+            design_status_text(&shown),
+            "Your design: fails 1 of 8 checks"
+        );
+        let paused = design_status(&inputs, &results, true);
+        assert_eq!((paused.bad, paused.caution, paused.total), (0, 0, 7));
+        assert_eq!(
+            design_status_text(&paused),
+            "Your design: passes all 7 checks"
+        );
+        // The example design fails the same three checks either way.
+        let defaults = DesignInputs::default();
+        let results = compute_all(&defaults);
+        assert_eq!(
+            design_status_text(&design_status(&defaults, &results, true)),
+            "Example design: fails 3 of 7 checks"
+        );
+    }
+
+    #[test]
+    fn a_paused_clamp_offers_no_fix_and_holds_back_no_other_guide_s_fix() {
+        let (clamp, hot) = (guide(CLAMP).unwrap(), guide(HOT_MIN).unwrap());
+        let index = CHECK_GUIDES.iter().position(|g| g.check == CLAMP).unwrap();
+        // Its own fixes: shown while the section shows, none while it is paused.
+        let inputs = only_the_clamp_fails();
+        let results = compute_all(&inputs);
+        let shown = fixes(clamp, &inputs, &results, false);
+        assert!(!shown.is_empty(), "the clamp's fixes show with the section");
+        assert_eq!(fixes(clamp, &inputs, &results, true), []);
+        assert!(all_fixes(&inputs, &results, true)[index].is_empty());
+        // At the clamp's limit one step of longer magnets fails the clamp: the hot-low guide's
+        // one fix is held back while the clamp shows, and offered while it is paused.
+        let at_limit = clamp_at_its_limit();
+        let results = compute_all(&at_limit);
+        assert_eq!(level(clamp, &at_limit, &results), Level::Good);
+        assert_eq!(level(hot, &at_limit, &results), Level::Bad);
+        assert_eq!(fixes(hot, &at_limit, &results, false), []);
+        assert_eq!(
+            fixes(hot, &at_limit, &results, true),
+            [(MAGNET_LENGTH, Direction::Raise)]
+        );
+    }
+
+    #[test]
+    fn the_fix_cache_computes_again_when_the_pause_changes() {
+        let inputs = only_the_clamp_fails();
+        let results = compute_all(&inputs);
+        let mut cache = FixCache::default();
+        let index = CHECK_GUIDES.iter().position(|g| g.check == CLAMP).unwrap();
+        assert!(!cache.get(&inputs, &results, false)[index].is_empty());
+        assert!(cache.get(&inputs, &results, true)[index].is_empty());
+        assert_eq!(cache.computed, 2);
+        cache.get(&inputs, &results, true);
+        assert_eq!(
+            cache.computed, 2,
+            "the same inputs and pause: nothing computed"
+        );
     }
 
     // What moves what (spec 3.3, test 5): every number is recomputed here with compute_all.
@@ -4534,7 +4702,7 @@ mod tests {
             (
                 Some(FreeVariable::RingRadius),
                 Some(
-                    "Auto resizes the ring when you change the magnet count; the lines below keep the present ring size.",
+                    "Auto resizes the ring when you change the magnet count; the lines below keep the present ring radius.",
                 ),
             ),
             (
@@ -4641,7 +4809,7 @@ mod tests {
                 t.adhesive_life.peak_C >= t.summary.hot_day_start_C,
                 "{name}"
             );
-            let shown = fixes(temperature, &inputs, &results);
+            let shown = fixes(temperature, &inputs, &results, false);
             assert!(!shown.contains(&trip), "{name}: {shown:?}");
             assert!(!shown.contains(&conductance), "{name}: {shown:?}");
             assert!(!shown.is_empty(), "{name}: the hot-day fixes stay");
@@ -4656,7 +4824,10 @@ mod tests {
             .peak_start_and_limit(&results)
             .unwrap();
         assert!(start < limit);
-        assert_eq!(fixes(temperature, &inputs, &results), [trip, conductance]);
+        assert_eq!(
+            fixes(temperature, &inputs, &results, false),
+            [trip, conductance]
+        );
         // A limit that is not a number is not "reached": its peak sentence stays.
         let mut unknown = results.clone();
         unknown.temperature.summary.magnet_limit_C = f64::NAN;
@@ -4716,7 +4887,8 @@ mod tests {
         // Physics review 2, N2: a larger face gap opens the running clearance but lowers the
         // pull-out. The thinner sleeve and liner come first, at no torque cost, and while the
         // gap fix is shown beside a hot-low torque that is not passing, a note says so.
-        let note = "Raising Candidate flat-face magnetic gap also lowers the pull-out, so Hot-low torque falls further.";
+        let note =
+            "Raising Magnet face gap also lowers the pull-out, so Hot-low torque falls further.";
         let clearance = CHECK_GUIDES
             .iter()
             .position(|g| g.check == CLEARANCE)
@@ -4724,7 +4896,7 @@ mod tests {
         let gap = (FACE_GAP, Direction::Raise);
         let notes_of = |inputs: &DesignInputs| {
             let results = compute_all(inputs);
-            let all = all_fixes(inputs, &results);
+            let all = all_fixes(inputs, &results, false);
             let notes = side_effects(&all, clearance, inputs, &results);
             (all[clearance].clone(), notes)
         };
@@ -4757,7 +4929,7 @@ mod tests {
         assert!(notes.is_empty(), "{notes:?}");
         // No other guide gets the note, and an index past the guides gets none.
         let results = compute_all(&defaults);
-        let all = all_fixes(&defaults, &results);
+        let all = all_fixes(&defaults, &results, false);
         for index in (0..=CHECK_GUIDES.len()).filter(|&i| i != clearance) {
             assert!(side_effects(&all, index, &defaults, &results).is_empty());
         }
@@ -4770,14 +4942,15 @@ mod tests {
         // shown the note says so, once, after the side-effect note; with neither shown (no
         // sleeve or liner left to thin) it is gone.
         let retention = "A thinner sleeve or liner holds the magnets less securely; no check here covers that, so confirm it separately.";
-        let gap_note = "Raising Candidate flat-face magnetic gap also lowers the pull-out, so Hot-low torque falls further.";
+        let gap_note =
+            "Raising Magnet face gap also lowers the pull-out, so Hot-low torque falls further.";
         let clearance = CHECK_GUIDES
             .iter()
             .position(|g| g.check == CLEARANCE)
             .unwrap();
         let notes_of = |inputs: &DesignInputs| {
             let results = compute_all(inputs);
-            let all = all_fixes(inputs, &results);
+            let all = all_fixes(inputs, &results, false);
             guide_notes(&all, clearance, inputs, &results)
         };
         assert_eq!(notes_of(&DesignInputs::default()), [gap_note, retention]);
@@ -4785,7 +4958,7 @@ mod tests {
         // The liner alone left to thin still brings it.
         let liner_only = design(|i| i.metal.sleeve_mm = 0.0);
         let results = compute_all(&liner_only);
-        let shown = &all_fixes(&liner_only, &results)[clearance];
+        let shown = &all_fixes(&liner_only, &results, false)[clearance];
         assert!(
             !shown.contains(&("metal.sleeve_mm", Direction::Lower)),
             "{shown:?}"
@@ -4799,7 +4972,7 @@ mod tests {
         // design.
         for (name, inputs) in designs() {
             let results = compute_all(&inputs);
-            let all = all_fixes(&inputs, &results);
+            let all = all_fixes(&inputs, &results, false);
             for index in (0..CHECK_GUIDES.len()).filter(|&i| i != clearance) {
                 let notes = guide_notes(&all, index, &inputs, &results);
                 assert!(!notes.contains(&retention.to_owned()), "{name}: {notes:?}");
@@ -4831,7 +5004,7 @@ mod tests {
         }
         for (name, inputs) in designs() {
             let results = compute_all(&inputs);
-            let all = all_fixes(&inputs, &results);
+            let all = all_fixes(&inputs, &results, false);
             for (index, g) in CHECK_GUIDES.iter().enumerate() {
                 for &(path, direction) in &all[index] {
                     emit(
@@ -4890,6 +5063,41 @@ mod tests {
         emit("size tab/locked slider", sc::SET_BY_AUTO);
         emit("size tab/Auto label", sc::AUTO);
         emit("size tab/Auto suffix", sc::AUTO_SUFFIX);
+        emit("size tab/Auto hover", sc::AUTO_HOVER);
+        for variable in FreeVariable::ALL {
+            emit(
+                &format!("size tab/Auto choice/{variable:?}"),
+                crate::gui::sizing::auto_choice(variable),
+            );
+        }
+        emit("size tab/Required label", sc::REQUIRED);
+        emit("size tab/Hot-low label", sc::HOT_LOW);
+        emit("size tab/Outside diameter hover", sc::DIAMETER_HOVER);
+        emit("size tab/Overall length hover", sc::LENGTH_HOVER);
+        emit("size tab/footnote", sc::LINKED_HOUSING);
+        {
+            use crate::gui::plots as pl;
+            for (tag, text) in [
+                ("pull-out", pl::PULL_OUT),
+                ("torque-rotation curve", pl::TORQUE_CURVE),
+                ("pole sweep line", pl::PULL_OUT_SMALLEST_APOTHEM),
+                ("low band", pl::LOW_BAND),
+                ("high band", pl::HIGH_BAND),
+                ("required", pl::REQUIRED),
+                ("below the floor", pl::BELOW_MINIMUM),
+                ("sweep y axis", pl::SWEEP_Y_AXIS),
+            ] {
+                emit(&format!("plots/{tag}"), text);
+            }
+        }
+        emit(
+            "assumptions/production variation",
+            ASSUMPTIONS
+                .iter()
+                .find(|a| a.id == "production_variation")
+                .unwrap()
+                .label,
+        );
         emit("panel/welcome strip", crate::gui::panel::WELCOME);
 
         // The solved change of each free variable, from the default to each end of its slider,
@@ -4911,7 +5119,7 @@ mod tests {
             let results = compute_all(&inputs);
             emit(
                 &format!("dashboard/status/{name}"),
-                &design_status_text(&design_status(&inputs, &results)),
+                &design_status_text(&design_status(&inputs, &results, false)),
             );
         }
 
@@ -4923,6 +5131,53 @@ mod tests {
             "size tab/requirement refusal",
             crate::gui::sizing::REQUIREMENT_NOT_POSITIVE,
         );
+
+        // Reachability (slice 2, spec 3.7): the Equation panel's own lines, the Why links of the
+        // Size tab and the banner, and what Explain offers each dashboard row without a note
+        // (a row the paused shaft-clamp section hides is not drawn: none of its offers).
+        use crate::gui::explorer as ex;
+        for (tag, text) in [
+            ("explorer/empty text", ex::EMPTY_TEXT),
+            ("explorer/no note", ex::NO_NOTE),
+            ("explorer/start here hint", ex::START_HERE_HINT),
+            ("explorer/closest note lead", ex::NEAREST_NOTE),
+            ("explorer/assumption lead", ex::NEAREST_ASSUMPTION),
+        ] {
+            emit(tag, text);
+        }
+        for (place, id) in [
+            (
+                "size tab/under Magnets per ring and Outside diameter",
+                SIZE_TAB_NOTE,
+            ),
+            (
+                "size tab/end of the Required and Hot-low rows",
+                TORQUE_BAND_NOTE,
+            ),
+            ("end-effect banner", BANNER_NOTE),
+        ] {
+            let note = reviewed_note(id).expect("a linked note is reviewed");
+            emit(
+                &format!("why link/{place}"),
+                &crate::gui::dashboard::why_note_text(note),
+            );
+        }
+        for &(path, _) in DASHBOARD
+            .iter()
+            .filter(|row| !crate::engine::clamps::hides(row.0, crate::engine::clamps::PAUSED))
+        {
+            if notes::note_for(path).is_some() {
+                continue;
+            }
+            let text = match ex::note_fallback(path) {
+                ex::NoteFallback::Note(note) => format!("{} {}", ex::NEAREST_NOTE, note.title),
+                ex::NoteFallback::Assumption(a) => {
+                    format!("{} {}: {}", ex::NEAREST_ASSUMPTION, a.label, a.rationale)
+                }
+                ex::NoteFallback::Reason(reason) => format!("{reason} {}", ex::START_HERE_HINT),
+            };
+            emit(&format!("explain fallback/{path}"), &text);
+        }
         println!("TOTAL STRINGS: {count}");
     }
 }

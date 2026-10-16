@@ -153,14 +153,16 @@ pub(crate) fn arrowhead(painter: &egui::Painter, tip: Pos2, dir: Vec2, stroke: S
 }
 
 /// Draws the geometry of the design shown (`inputs` and the `results` computed from them),
-/// each callout a readout (`readouts`), and returns what it drew.
+/// without the paused shaft-clamp section's parts while `clamps_paused` ([`geometry`]), each
+/// callout a readout (`readouts`), and returns what it drew.
 pub fn geometry_ui(
     ui: &mut egui::Ui,
     inputs: &DesignInputs,
     results: &DesignResults,
+    clamps_paused: bool,
     readouts: &mut Readouts,
 ) -> GeometryLayout {
-    let g = geometry(inputs, results);
+    let g = geometry(inputs, results, clamps_paused);
     let row = ui.text_style_height(&egui::TextStyle::Body) + ui.spacing().item_spacing.y;
     let rows = g.end.callouts.len() + g.side.callouts.len() + g.notes.len();
     let list = rows as f32 * row * 1.5;
@@ -297,7 +299,9 @@ fn paint_view(
             ui.id().with(("geometry_dimension", callout.tag)),
             Sense::click(),
         );
-        readouts.show(ui, response, callout.path, || callout_text(callout));
+        readouts.show(ui, response, callout.path, |show_details| {
+            callout_text(callout, show_details)
+        });
         dimensions.push((callout.tag, rect));
     }
 }
@@ -348,9 +352,9 @@ pub(crate) fn plated_text(
     painter.galley(rect.min, galley, color);
 }
 
-/// The hover text of the callout's result.
-fn callout_text(callout: &Callout) -> String {
-    hover_text(callout.path).unwrap_or_else(|| callout.path.to_owned())
+/// The hover text of the callout's result, with the spreadsheet details when `show_details`.
+fn callout_text(callout: &Callout, show_details: bool) -> String {
+    hover_text(callout.path, show_details).unwrap_or_else(|| callout.path.to_owned())
 }
 
 /// The callouts (tag and text, in their colours, each a readout) and the notes, scrolling in
@@ -374,7 +378,9 @@ fn list_ui(ui: &mut egui::Ui, g: &Geometry, readouts: &mut Readouts) {
                     })
                     .response
                     .rect;
-                readouts.show_over(ui, rect, callout.path, || callout_text(callout));
+                readouts.show_over(ui, rect, callout.path, |show_details| {
+                    callout_text(callout, show_details)
+                });
             }
             for note in &g.notes {
                 let text = egui::RichText::new(&note.text);
@@ -393,7 +399,7 @@ mod tests {
     use crate::compute_all;
     use crate::gui::geometry::{NOT_DRAWN, mm};
     use crate::gui::test_support::{
-        drawn_texts, flat_shapes, sized_frame, sized_frame_at, text_color, text_rects,
+        drawn_texts, flat_shapes, hover_frames, sized_frame, text_color, text_rects,
     };
 
     /// One frame of the geometry view of `inputs` on a `size` screen, with `events`.
@@ -406,7 +412,13 @@ mod tests {
         let results = compute_all(inputs);
         let mut layout = None;
         let output = sized_frame(ctx, size, events, |ui| {
-            layout = Some(geometry_ui(ui, inputs, &results, &mut Readouts::default()));
+            layout = Some(geometry_ui(
+                ui,
+                inputs,
+                &results,
+                false,
+                &mut Readouts::default(),
+            ));
         });
         (output, layout.expect("drawn"))
     }
@@ -442,7 +454,7 @@ mod tests {
         let ctx = egui::Context::default();
         let inputs = DesignInputs::default();
         let (_, layout) = frame(&ctx, &inputs, egui::vec2(1000.0, 700.0), Vec::new());
-        let g = geometry(&inputs, &compute_all(&inputs));
+        let g = geometry(&inputs, &compute_all(&inputs), false);
         let end = layout.end.expect("the end view is drawn");
         let side = layout.side.expect("the side view is drawn");
         assert_eq!(end.scale, side.scale);
@@ -473,7 +485,7 @@ mod tests {
         assert!(has_radius(&radii, 5.0 * s), "{radii:?}");
         // The face gap's dimension spans 1.4 mm at the scale.
         let end = layout.end.unwrap();
-        let g = geometry(&inputs, &r);
+        let g = geometry(&inputs, &r, false);
         let face = g.callouts().find(|c| c.tag == 1).unwrap();
         let span = (end.to_px(face.to) - end.to_px(face.from)).length();
         assert!((span - 1.4 * s).abs() < 1e-2, "{span} vs {}", 1.4 * s);
@@ -517,12 +529,13 @@ mod tests {
         let red = Level::Bad.color(&ctx.style().visuals);
         assert_eq!(text_color(&output, run), Some(red));
         assert!(segment_colors(&output).contains(&red));
-        assert!(
-            texts
-                .iter()
-                .any(|t| t.starts_with("Design check: the boss OD"))
+        let boss_check = format!(
+            "Design check: {}",
+            crate::gui::plain_text::label_for("metal.boss_od_mm")
         );
-        assert!(texts.iter().any(|t| t.starts_with("Autofit:")));
+        assert!(texts.iter().any(|t| t.starts_with(&boss_check)));
+        let wall_rule = format!("{}:", crate::gui::geometry::WALL_RULE);
+        assert!(texts.iter().any(|t| t.starts_with(&wall_rule)));
     }
 
     /// The stroke colour of every line segment.
@@ -591,40 +604,67 @@ mod tests {
 
     #[test]
     fn hovering_a_dimension_shows_its_result_s_hover_text() {
-        let ctx = egui::Context::default();
-        ctx.style_mut(|s| {
-            s.interaction.tooltip_delay = 0.0;
-            s.interaction.show_tooltips_only_when_still = false;
-        });
+        use crate::gui::typeset::TermColors;
         let inputs = DesignInputs::default();
         let size = egui::vec2(1000.0, 700.0);
-        let (_, layout) = frame(&ctx, &inputs, size, Vec::new());
-        let (_, rect) = layout
-            .dimensions
-            .iter()
-            .find(|(tag, _)| *tag == 1)
-            .copied()
-            .expect("the face gap is drawn");
-        let at = rect.center();
-        let want = hover_text("model.face_gap_mm").unwrap();
-        let (before, _) = frame(&ctx, &inputs, size, vec![egui::Event::PointerMoved(at)]);
-        assert!(
-            !drawn_texts(&before).contains(&want),
-            "not before the pointer is there"
-        );
         let results = compute_all(&inputs);
-        let mut output = None;
-        for dt in [0.1, 0.2] {
-            output = Some(sized_frame_at(&ctx, size, Some(dt), Vec::new(), |ui| {
-                geometry_ui(ui, &inputs, &results, &mut Readouts::default());
-            }));
+        // With and without the spreadsheet details (spec S2-5): the path only with them.
+        for show_details in [false, true] {
+            // The face gap's dimension line (tag 1) where the last frame laid it out.
+            let face_gap = std::cell::Cell::<Option<Rect>>::new(None);
+            let (before, output) = hover_frames(
+                &egui::Context::default(),
+                size,
+                |_| face_gap.get().expect("the face gap is drawn").center(),
+                |ui| {
+                    let mut readouts = Readouts::new(TermColors::default(), show_details);
+                    let layout = geometry_ui(ui, &inputs, &results, false, &mut readouts);
+                    face_gap.set(
+                        layout
+                            .dimensions
+                            .iter()
+                            .find(|(tag, _)| *tag == 1)
+                            .map(|(_, rect)| *rect),
+                    );
+                },
+            );
+            let want = hover_text("model.face_gap_mm", show_details).unwrap();
+            assert_eq!(
+                want.lines().any(|line| line == "model.face_gap_mm"),
+                show_details,
+                "{want}"
+            );
+            assert!(
+                !drawn_texts(&before).contains(&want),
+                "not before the pointer is there"
+            );
+            assert_eq!(
+                want.lines().next(),
+                Some("Gap at the flat centres (effective gap)"),
+                "{want}"
+            );
+            let texts = drawn_texts(&output);
+            assert!(texts.contains(&want), "no hover text in {texts:?}");
         }
-        assert!(
-            want.starts_with("Gap at the flat centres (effective gap)\n"),
-            "{want}"
+    }
+
+    #[test]
+    fn hovering_a_callout_in_the_list_names_its_path_only_with_the_spreadsheet_details() {
+        use crate::gui::test_support::assert_hover_names_path_only_with_details;
+        // The list under the drawing repeats each callout's text: the first one's, hovered.
+        let inputs = DesignInputs::default();
+        let results = compute_all(&inputs);
+        let g = geometry(&inputs, &results, false);
+        let callout = g.callouts().next().expect("a callout");
+        assert_hover_names_path_only_with_details(
+            egui::vec2(1000.0, 700.0),
+            callout.path,
+            &callout.text,
+            |show_details| hover_text(callout.path, show_details).expect("a result"),
+            |ui, readouts| {
+                geometry_ui(ui, &inputs, &results, false, readouts);
+            },
         );
-        let texts = drawn_texts(&output.unwrap());
-        assert!(texts.contains(&want), "no hover text in {texts:?}");
     }
 
     #[test]
@@ -708,7 +748,13 @@ mod tests {
             let mut layout = None;
             for _ in 0..2 {
                 let (_, used) = crate::gui::test_support::region_frame(&ctx, size, region, |ui| {
-                    layout = Some(geometry_ui(ui, &inputs, &results, &mut Readouts::default()));
+                    layout = Some(geometry_ui(
+                        ui,
+                        &inputs,
+                        &results,
+                        false,
+                        &mut Readouts::default(),
+                    ));
                 });
                 assert!(
                     used.bottom() <= region.bottom() + 0.01,
@@ -745,7 +791,7 @@ mod tests {
         inputs.metal.max_diameter_mm = 1e300;
         let (output, layout) = frame(&ctx, &inputs, egui::vec2(1000.0, 700.0), Vec::new());
         assert!(layout.end.is_some() && layout.side.is_some());
-        let g = geometry(&inputs, &compute_all(&inputs));
+        let g = geometry(&inputs, &compute_all(&inputs), false);
         let tall = (g.end.max[1] - g.end.min[1]) as f32 * layout.scale;
         assert!(
             layout.scale > 0.0 && tall > 0.5 * layout.rect.height(),

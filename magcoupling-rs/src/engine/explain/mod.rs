@@ -24,12 +24,21 @@
 //! - [`registry`]: `Registry::build`, `equation_for`, `used_by`, the dependency graph, term styles;
 //! - [`symbols`]: display symbols of inputs and other leaf terms;
 //! - [`scope`]: the v1 scope (decision 31) and which chains are written;
-//! - [`notes`]: the A4 teaching notes, the "start here" order and the accuracy gate;
+//! - [`notes`]: the A4 teaching notes, the "start here" order, the accuracy gate and the
+//!   plain-words rule for a note's texts;
+//! - [`note_text`]: live values in note text (`{result.path}`), parsed and rendered;
+//! - [`probes`]: the five probe designs the note tests and reviews read, and one slider step
+//!   of an input;
+//! - [`plain`]: the plain-words guard over every text on screen (guidance slice 2, spec 3.4),
+//!   shared with the GUI;
 //! - [`render`]: a plain-text rendering (tooltips fallback, export, tests).
 
 pub mod eval;
 pub mod markup;
+pub mod note_text;
 pub mod notes;
+pub mod plain;
+pub mod probes;
 pub mod record;
 pub mod records;
 pub mod registry;

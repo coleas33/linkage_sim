@@ -25,6 +25,7 @@ pub mod materials;
 pub mod meta;
 pub mod metal_design;
 pub mod model;
+pub mod picks;
 pub mod size_controls;
 pub mod sizing;
 pub mod sweeps;

@@ -753,7 +753,10 @@ impl Setter<'_> {
     fn expr(&self, e: &Expr, size: f32) -> Laid {
         match e {
             Expr::Num { text, .. } => self.plain(text, size),
-            Expr::Text(t) => self.plain(&format!("\"{t}\""), size),
+            Expr::Text(t) => self.plain(
+                &format!("\"{}\"", crate::gui::plain_text::shown_literal(t)),
+                size,
+            ),
             Expr::NoneLit => self.plain("none", size),
             Expr::Pi => self.plain("π", size),
             Expr::Term(r) => self.term(&r.path, false, size, None),
@@ -1291,7 +1294,7 @@ mod tests {
         let texts: Vec<String> = laid.texts().into_iter().map(|(t, _)| t).collect();
         assert!(texts.iter().any(|t| t == "\"steel circuit\""), "{texts:?}");
         // σ_5 = A_5 · sin(5 φ_pull) if 5 ≤ N_h: an ordering keeps its number, though N_h is a
-        // selector whose code 5 reads "1, 3, 5 (workbook)" (the index 5 is no code). The tau
+        // selector whose code 5 reads "1, 3, 5 (default)" (the index 5 is no code). The tau
         // records hold no text literal, so no run is quoted.
         let tau = registry().equation_for("model.tau5_Pa").unwrap();
         let laid = with_fonts(|f| {
@@ -1377,6 +1380,10 @@ mod tests {
                         sources.push(name);
                     }
                 }
+                Expr::Text(t) => sources.push(glyph_safe(&format!(
+                    "\"{}\"",
+                    crate::gui::plain_text::shown_literal(t)
+                ))),
                 _ => {}
             });
             let laid = ctx.fonts(|f| {
@@ -1545,7 +1552,10 @@ mod tests {
         fn expr(&mut self, e: &Expr) {
             match e {
                 Expr::Num { text, .. } => self.push(None, text),
-                Expr::Text(t) => self.push(None, &format!("\"{t}\"")),
+                Expr::Text(t) => self.push(
+                    None,
+                    &format!("\"{}\"", crate::gui::plain_text::shown_literal(t)),
+                ),
                 Expr::NoneLit => self.push(None, "none"),
                 Expr::Pi => self.push(None, "π"),
                 Expr::Index => self.push(None, "n"),
@@ -2040,5 +2050,37 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn the_cup_wall_equation_names_the_wall_input_by_its_label() {
+        // Ruling R9 (amendment A-9, Review Focus RF-3): the Equation panel and every readout's
+        // hover draw this equation; its verdict literal names the wall input by its on-screen
+        // label, never the spreadsheet cell, while the record keeps the engine text.
+        use crate::engine::materials::CUP_WALL_TOO_THIN;
+        use crate::gui::plain_text::{CUP_WALL_INPUT, label_for};
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |_| {});
+        let eq = registry()
+            .equation_for("materials.cup_wall_check")
+            .expect("the cup wall's equation");
+        let laid = ctx.fonts(|f| {
+            layout_equation(f, registry(), eq, &TermColors::none(), 14.0, Color32::WHITE)
+        });
+        let texts: Vec<String> = laid.texts().into_iter().map(|(text, _)| text).collect();
+        assert!(
+            !texts
+                .iter()
+                .any(|t| t.contains(CUP_WALL_TOO_THIN.trim_end())),
+            "{texts:?}"
+        );
+        assert!(
+            texts.iter().any(|t| t.contains(label_for(CUP_WALL_INPUT))),
+            "{texts:?}"
+        );
+        assert!(
+            render::plain(registry(), &eq.symbol, &eq.formula).contains(CUP_WALL_TOO_THIN),
+            "the record and the exports keep the engine text"
+        );
     }
 }

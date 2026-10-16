@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 use magcoupling::engine::api::{DesignInputs, compute_all_with};
 use magcoupling::engine::deviations::{DeviationStatus, Deviations, REGISTRY};
+use magcoupling::engine::explain::plain::plain_text_violations;
 use magcoupling::engine::meta::{Value, input_rows, result_rows};
 
 /// A ported input group of `DesignInputs` and its workbook input cells
@@ -217,6 +218,86 @@ pub fn report(failures: &[String]) -> String {
         String::new()
     };
     format!("{} failure(s):\n{}{tail}", failures.len(), shown.join("\n"))
+}
+
+/// Words of the engine's own provenance a reader of the screen never needs, beyond what the
+/// plain-words guard holds (`engine::explain::plain`): the audit and its decisions, the plans,
+/// the explorer's code name, the autofit and the 3D milestone (any case), and a bare workbook
+/// cell such as "C6" or "C9" (the guard holds cells of two or three digits). The listed words
+/// first, in the list's order, then the cells in text order.
+pub fn provenance_words(text: &str) -> Vec<String> {
+    const WORDS: [&str; 6] = [
+        "decision",
+        "audit",
+        "plan a-",
+        "equation explorer",
+        "autofit",
+        "until m3",
+    ];
+    let lower = text.to_lowercase();
+    let mut hits: Vec<String> = WORDS
+        .iter()
+        .filter(|word| lower.contains(*word))
+        .map(|word| (*word).to_owned())
+        .collect();
+    hits.extend(
+        text.split_whitespace()
+            .map(|word| word.trim_matches(|c: char| "()[],.;:'\"".contains(c)))
+            .filter(|word| {
+                word.len() > 1
+                    && word.starts_with('C')
+                    && word[1..].chars().all(|c| c.is_ascii_digit())
+            })
+            .map(str::to_owned),
+    );
+    hits
+}
+
+/// The places `text` names code rather than a quantity, each as its three characters: a
+/// snake_case identifier (an ASCII lowercase letter or digit, an underscore, an ASCII letter or
+/// digit: `f_end`, `tau7_Pa`) or a dotted path (ASCII lowercase letters each side of a dot:
+/// `coupling.npole`). A symbol such as B_i,1, S_1 or τ_n starts with a capital or a Greek
+/// letter and is no code.
+pub fn code_names(text: &str) -> Vec<String> {
+    let chars: Vec<char> = text.chars().collect();
+    chars
+        .windows(3)
+        .filter(|w| {
+            let identifier = w[1] == '_'
+                && (w[0].is_ascii_lowercase() || w[0].is_ascii_digit())
+                && w[2].is_ascii_alphanumeric();
+            let path = w[1] == '.' && w[0].is_ascii_lowercase() && w[2].is_ascii_lowercase();
+            identifier || path
+        })
+        .map(|w| w.iter().collect())
+        .collect()
+}
+
+/// What keeps `text` from reading in plain words on screen, as every plain-words test reports
+/// it: the plain-words guard's hits (`engine::explain::plain::plain_text_violations`), then
+/// [`provenance_words`], then [`code_names`], each as a list. `None` when all three are empty.
+pub fn plain_problems(text: &str) -> Option<String> {
+    let guard = plain_text_violations(text);
+    let provenance = provenance_words(text);
+    let code = code_names(text);
+    if guard.is_empty() && provenance.is_empty() && code.is_empty() {
+        None
+    } else {
+        Some(format!("{guard:?} {provenance:?} {code:?}"))
+    }
+}
+
+/// The `end_effect` note's sentence that quotes its 3D band ("within N %"): the band the
+/// end-effect assumption's rationale repeats (`tests/assumptions.rs`) and the sentence that
+/// names the steel case (`tests/explain.rs`).
+pub fn end_effect_band_sentence() -> &'static str {
+    magcoupling::engine::explain::notes::note("end_effect")
+        .expect("the end-effect note")
+        .sentences
+        .iter()
+        .copied()
+        .find(|s| s.contains("within ") && s.contains(" %"))
+        .expect("the end-effect sentence that quotes the 3D band")
 }
 
 /// The data file whose cases vary every input group and compare every result.

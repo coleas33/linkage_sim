@@ -1,6 +1,6 @@
 export const meta = {
   name: 'gui-smoke',
-  description: 'Smoke-test the locally served web build (the hub page at /tools/, the linkage app at /tools/linkage/, the calculator at /tools/magcoupler/): loads, canvas present, console clean',
+  description: 'Smoke-test the locally served web build (the hub page at /tools/, the linkage app at /tools/linkage/, the calculator at /tools/magcoupler/): loads, canvas present, console clean; on the calculator a Why link opens a note, an input tooltip shows no spreadsheet details, and the dashboard scrolls at 1280x800',
   whenToUse: 'Before merging a batch that touched src/gui/ or magcoupling-rs/src/gui/, and during Phase 1 audit',
   phases: [{ title: 'Smoke' }],
 }
@@ -19,7 +19,7 @@ const SMOKE_SCHEMA = {
 }
 
 const MAGCOUPLING_SCHEMA = {
-  type: 'object', required: ['passed', 'canvas_present', 'console_errors', 'share_link_loaded', 'sizing_solved', 'design_file_loaded', 'first_view', 'explorer_ready'],
+  type: 'object', required: ['passed', 'canvas_present', 'console_errors', 'share_link_loaded', 'sizing_solved', 'design_file_loaded', 'first_view', 'explorer_ready', 'details_toggle', 'why_link_opened', 'tooltip_plain', 'dashboard_scrolls'],
   properties: {
     passed: { type: 'boolean' },
     canvas_present: { type: 'boolean' },
@@ -29,6 +29,10 @@ const MAGCOUPLING_SCHEMA = {
     share_link_loaded: { type: 'boolean' },
     sizing_solved: { type: 'boolean' },
     design_file_loaded: { type: 'boolean' },
+    details_toggle: { type: 'boolean' },
+    why_link_opened: { type: 'boolean' },
+    tooltip_plain: { type: 'boolean' },
+    dashboard_scrolls: { type: 'boolean' },
     screenshot_note: { type: 'string' },
     notes: { type: 'string' },
   },
@@ -49,8 +53,9 @@ const MAGCOUPLING_SMOKE_DESIGN_FILE = '{"format": "magcoupling-design", "version
 
 const PLAYWRIGHT_TOOLS = 'load them via ToolSearch, e.g. "select:mcp__plugin_playwright_playwright__browser_navigate,mcp__plugin_playwright_playwright__browser_snapshot,mcp__plugin_playwright_playwright__browser_console_messages,mcp__plugin_playwright_playwright__browser_take_screenshot,mcp__plugin_playwright_playwright__browser_wait_for,mcp__plugin_playwright_playwright__browser_close"'
 
-// The calculator's step also clicks the canvas once and uploads a file.
-const MAGCOUPLING_TOOLS = 'load them via ToolSearch, e.g. "select:mcp__plugin_playwright_playwright__browser_navigate,mcp__plugin_playwright_playwright__browser_snapshot,mcp__plugin_playwright_playwright__browser_console_messages,mcp__plugin_playwright_playwright__browser_take_screenshot,mcp__plugin_playwright_playwright__browser_wait_for,mcp__plugin_playwright_playwright__browser_run_code_unsafe,mcp__plugin_playwright_playwright__browser_click,mcp__plugin_playwright_playwright__browser_file_upload,mcp__plugin_playwright_playwright__browser_close"'
+// The calculator's step also sets the window to 1280 x 800, clicks the canvas (the Load design
+// button, a Why link, the Geometry tab), uploads a file and moves the mouse (a tooltip, a scroll).
+const MAGCOUPLING_TOOLS = 'load them via ToolSearch, e.g. "select:mcp__plugin_playwright_playwright__browser_navigate,mcp__plugin_playwright_playwright__browser_resize,mcp__plugin_playwright_playwright__browser_snapshot,mcp__plugin_playwright_playwright__browser_console_messages,mcp__plugin_playwright_playwright__browser_take_screenshot,mcp__plugin_playwright_playwright__browser_wait_for,mcp__plugin_playwright_playwright__browser_run_code_unsafe,mcp__plugin_playwright_playwright__browser_click,mcp__plugin_playwright_playwright__browser_file_upload,mcp__plugin_playwright_playwright__browser_close"'
 
 const ARGS = typeof args === 'string' ? JSON.parse(args || '{}') : (args || {})
 if (ARGS.selftest) { return { ok: true } }
@@ -73,21 +78,28 @@ passed=true only if: both pages loaded, hub_page, canvas present, title_warning=
 // the console (the page is one canvas). A new page opens on Size and torque under the welcome
 // strip (decision G-5), so the first screenshot shows both with no click. One click on the
 // canvas, on the "Load design" button found in a screenshot, checks the web file picker (rfd's
-// HTML overlay) and the file load.
+// HTML overlay) and the file load. Then (spec R14, guidance slice 2) a dashboard Why link opens
+// a teaching note, an input row's tooltip shows no spreadsheet details while the toggle is
+// off, and the dashboard scrolls to its last row at 1280 x 800. src/app.rs checks that the
+// prompt names the strip, the toggle, the note's parts, the tab and the row as the page does.
 let magcoupling = null
 if (ARGS.magcoupling !== false) {
   const page = `${url}/tools/magcoupler/?m=${MAGCOUPLING_SMOKE_PAYLOAD}`
   magcoupling = await agent(
     `Smoke-test the WASM magnetic coupling calculator using Playwright MCP tools (${MAGCOUPLING_TOOLS}).
-Steps: navigate to this exact URL (copy it whole; it carries a share link): ${page}
-Wait 8 seconds (WASM init, then the sizing solve after its 0.25 s debounce). Snapshot the page and confirm a <canvas> element with id "magcoupling_canvas" exists. Collect the console messages at level "info" (it includes errors and warnings). Take a screenshot and judge whether it shows the calculator rendered in a dark theme (the size controls on the left, dashboard on the right, the Size and torque view in the middle) vs a blank page. first_view=true only if the middle region shows the first view with no click: at its top the line "Set the size -> read the torque -> open any red check to see why and what to change." with a "Hide" button, under it a row of tabs starting "Size and torque" (the selected tab), and under the tabs the torque readouts above a drawing of two rings of coloured magnet blocks inside a grey cup around a shaft.
-Then the design file picker, the only click on the canvas: write this text, exactly, to the file .playwright-mcp/magcoupling-smoke-design.json under the repository root (gitignored; the Playwright MCP uploads only files under the repository) and note its absolute path: ${MAGCOUPLING_SMOKE_DESIGN_FILE}
+Steps: first set the window to 1280 x 800 CSS pixels with browser_resize (the laptop size the dashboard must scroll at). Then navigate to this exact URL (copy it whole; it carries a share link): ${page}
+Wait 8 seconds (WASM init, then the sizing solve after its 0.25 s debounce). Snapshot the page and confirm a <canvas> element with id "magcoupling_canvas" exists. Collect the console messages at level "info" (it includes errors and warnings). Take a screenshot and judge whether it shows the calculator rendered in a dark theme (the size controls on the left, dashboard on the right, the Size and torque view in the middle) vs a blank page. first_view=true only if the middle region shows the first view with no click: at its top the line "Set the size -> read the torque -> open any red check to see why and what to change." with a "Hide" button, under it a row of tabs starting "Size and torque" (the selected tab), and under the tabs the torque readouts above a drawing of two rings of coloured magnet blocks inside a grey cup around a shaft. details_toggle=true only if the header row at the top of the page (it may wrap to a second line) shows, after the "Equation panel" button, a checkbox labelled "Show spreadsheet details", unticked.
+Then the design file picker: write this text, exactly, to the file .playwright-mcp/magcoupling-smoke-design.json under the repository root (gitignored; the Playwright MCP uploads only files under the repository) and note its absolute path: ${MAGCOUPLING_SMOKE_DESIGN_FILE}
 In the screenshot, find the "Load design" button in the header row at the top of the page (between "Save design" and "Copy share link") and click its centre with browser_run_code_unsafe, code: async (page) => { await page.mouse.click(X, Y); } (X and Y in CSS pixels of the screenshot; the canvas fills the page). rfd shows its overlay (#rfd-overlay: a file input #rfd-input shown as a "Choose File" button, and the buttons "Ok" and "Cancel") and opens the browser's file chooser at once (the tool output reports a "File chooser" modal state); if a snapshot shows the overlay but no chooser opened, click the "Choose File" button. Upload the file with browser_file_upload, click the overlay's "Ok" button, wait 2 seconds and collect the console messages again; delete the file.
-design_file_loaded=true only if a console message contains "magcoupling: loaded a design file". If the button cannot be found or the overlay does not appear after two attempts (each with a fresh screenshot), design_file_loaded=false and say why in notes: the canvas click is the fragile part of this step, and the share-link checks do not depend on it. Close the browser.
+design_file_loaded=true only if a console message contains "magcoupling: loaded a design file". If the button cannot be found or the overlay does not appear after two attempts (each with a fresh screenshot), design_file_loaded=false and say why in notes: the canvas click is the fragile part of this step, and the share-link checks do not depend on it.
+Then a teaching note through a Why link (every click and mouse move below as above: browser_run_code_unsafe with page.mouse at X, Y read off a fresh screenshot): on the dashboard (the right side), under its first row (the nominal pull-out torque), find the line that starts "Why:" and click the link text right of "Why:". Wait 1 second and take a screenshot. why_link_opened=true only if the Equation panel is now open, docked at the bottom of the middle region, and shows a teaching note: a bold title, a few sentences, the heading "What to change" with lines that start with Raise, Lower, Choose or Enter, and a closed fold "Where this comes from".
+Then an input tooltip: click the "Geometry" tab in the row of tabs at the top of the middle region and wait 1 second. On the left the first group, Key design, lists inputs; in a fresh screenshot move the mouse onto the label of its first row with code: async (page) => { await page.mouse.move(X, Y); await page.waitForTimeout(1500); }, then take a screenshot. tooltip_plain=true only if a tooltip shows beside that label with at least one sentence about the input and a line that starts "Default:", and no line that is a dotted name such as "metal.face_gap_mm" and no spreadsheet cell such as "Metal design!C119" (the "Show spreadsheet details" toggle is off).
+Then the dashboard's scrolling: in a fresh screenshot move the mouse to the middle of the dashboard and scroll down with code: async (page) => { await page.mouse.move(X, Y); await page.mouse.wheel(0, 4000); await page.waitForTimeout(1000); }, then take a screenshot. dashboard_scrolls=true only if the dashboard's last row, "Magnets fit", and the "Why:" line under it are in view and its first row has scrolled out of view.
+If a target of these last three checks cannot be found after two attempts (each with a fresh screenshot), set that field false and say why in notes. Collect the console messages at level "info" once more, then close the browser.
 share_link_loaded=true only if a console message contains "magcoupling: loaded the design from the share link". sizing_solved=true only if a console message contains "magcoupling sizing: Solved at". explorer_ready=true only if a console message contains "magcoupling explorer: " (the equation registry, built when the page starts).
-passed=true only if: page loaded, canvas present, first_view, share_link_loaded, sizing_solved, design_file_loaded, explorer_ready, and zero console messages of type error (warnings are OK — put them in notes). List every console error string verbatim in console_errors. If navigation fails entirely, passed=false with the failure in notes — the server may not be running (serve linkage-sim-rs/web/ after running scripts/build_magcoupling_web.sh).`,
+passed=true only if: page loaded, canvas present, first_view, details_toggle, share_link_loaded, sizing_solved, design_file_loaded, explorer_ready, why_link_opened, tooltip_plain, dashboard_scrolls, and zero console messages of type error (warnings are OK — put them in notes). List every console error string verbatim in console_errors. If navigation fails entirely, passed=false with the failure in notes — the server may not be running (serve linkage-sim-rs/web/ after running scripts/build_magcoupling_web.sh).`,
     { label: 'gui-smoke-magcoupling', phase: 'Smoke', schema: MAGCOUPLING_SCHEMA, model: 'sonnet' },
-  ) || { passed: false, canvas_present: false, console_errors: [], first_view: false, explorer_ready: false, share_link_loaded: false, sizing_solved: false, design_file_loaded: false, notes: 'smoke agent returned no result (agent error)' }
+  ) || { passed: false, canvas_present: false, console_errors: [], first_view: false, explorer_ready: false, share_link_loaded: false, sizing_solved: false, design_file_loaded: false, details_toggle: false, why_link_opened: false, tooltip_plain: false, dashboard_scrolls: false, notes: 'smoke agent returned no result (agent error)' }
 }
 
 // The linkage app's fields at the top level, as before, with the calculator's beside them.

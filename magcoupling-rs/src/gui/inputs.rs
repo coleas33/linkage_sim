@@ -14,10 +14,12 @@
 use std::sync::OnceLock;
 
 use crate::DesignInputs;
+use crate::engine::clamps;
 use crate::engine::grades;
 use crate::engine::library;
 use crate::engine::meta::{FieldType, InputMeta, SliderRange, Value, input_rows};
 use crate::gui::format::{search_haystack, search_needle};
+use crate::gui::plain_text::{display_label, help_for, original_help};
 
 /// The Key design group, in order (spec M4 "Layout": face gap, pole count, magnet part, axial
 /// length, operating temperature, back iron, cup wall, conductance, measured drag). The axial
@@ -77,7 +79,7 @@ impl InputOrder {
     pub const fn label(self) -> &'static str {
         match self {
             InputOrder::Workflow => "By workflow",
-            InputOrder::Workbook => "Workbook groups",
+            InputOrder::Workbook => "By original sheet",
         }
     }
 }
@@ -324,11 +326,11 @@ pub const WORKFLOW: [WorkflowGroup; 8] = [
     },
     WorkflowGroup {
         id: "shaft",
-        label: "Shaft, key and clamps",
+        label: "Shaft and hub joint",
         sections: &[
             WorkflowSection {
                 id: "shaft",
-                label: "Shaft, key and clamps",
+                label: "Shaft and hub joint",
                 advanced: false,
                 paths: &[
                     "coupling.bore_mm",
@@ -531,13 +533,13 @@ pub const WORKFLOW: [WorkflowGroup; 8] = [
             },
             WorkflowSection {
                 id: "calibration.fea",
-                label: "3D results: reference torques",
+                label: "3D reference torques",
                 advanced: false,
                 paths: &["calibration.fea_torque1_Nm", "calibration.fea_torque2_Nm"],
             },
             WorkflowSection {
                 id: "calibration.stored_demag",
-                label: "3D results: stored reverse fields (refresh after a 3D run)",
+                label: "Reverse fields from 3D analysis (example design)",
                 advanced: false,
                 paths: &[
                     "temperature.demag.h_rev_aligned_kA_m",
@@ -548,7 +550,7 @@ pub const WORKFLOW: [WorkflowGroup; 8] = [
             },
             WorkflowSection {
                 id: "calibration.stored_slip",
-                label: "3D results: stored slip-loss fields (refresh after a 3D run)",
+                label: "Slip-loss fields from 3D analysis (example design)",
                 advanced: false,
                 paths: &[
                     "temperature.slip_loss.b_hub_T",
@@ -581,16 +583,9 @@ pub const WORKFLOW: [WorkflowGroup; 8] = [
     },
 ];
 
-/// Where an optional input starts when the user enters a value (decision M41-12): the result
-/// it overrides, unrounded. The axial length override enters at the inner ring's length in
-/// use (both rings take it), so nothing moves. The measured drag enters at the model's
-/// equivalent mean drag torque; entering any measured drag switches the thermal summary from
-/// the not-measured high estimate to the measured branch, so the slip loss and the steady
-/// temperatures move (the drag torque itself is the model's).
-pub const OPTIONAL_SEEDS: [(&str, &str); 2] = [
-    ("coupling.magnets.axial_length_mm", "model.inner_length_mm"),
-    ("metal.measured_drag_Nm", "temperature.slip_loss.drag_Nm"),
-];
+/// Where an optional input starts when the user enters a value: the engine's table (decision
+/// M41-12), which a teaching note's change entry steps from too.
+pub use crate::engine::api::OPTIONAL_SEEDS;
 
 /// One input: its path, metadata and default value.
 #[derive(Clone, Debug, PartialEq)]
@@ -598,8 +593,8 @@ pub struct InputEntry {
     pub path: String,
     pub meta: &'static InputMeta,
     pub default: Value,
-    /// Label, path and cell, lowercase: what the inputs filter matches ([`search_haystack`],
-    /// built once, as the results table's).
+    /// Display label, catalogue label, path and cell, lowercase: what the inputs filter matches
+    /// ([`search_haystack`], built once, as the results table's).
     haystack: String,
 }
 
@@ -682,7 +677,12 @@ impl InputCatalogue {
             path: row.path.clone(),
             meta: row.meta,
             default: row.value.clone(),
-            haystack: search_haystack(row.meta.label, &row.path, row.meta.cell),
+            haystack: search_haystack(
+                display_label(&row.path, row.meta.label),
+                row.meta.label,
+                &row.path,
+                row.meta.cell,
+            ),
         };
         let key_design = KEY_DESIGN
             .iter()
@@ -778,6 +778,60 @@ impl InputCatalogue {
         CATALOGUE.get_or_init(InputCatalogue::new)
     }
 
+    /// This catalogue less the inputs the paused shaft-clamp section hides
+    /// ([`clamps::hides`] with `clamps_paused`): each group and section keeps its other inputs,
+    /// in order, and a section or group left with none is dropped. The whole catalogue when
+    /// `clamps_paused` is false.
+    pub fn without_hidden(&self, clamps_paused: bool) -> InputCatalogue {
+        let shown = |entry: &InputEntry| !clamps::hides(&entry.path, clamps_paused);
+        let keep = |groups: &[InputGroup]| -> Vec<InputGroup> {
+            groups
+                .iter()
+                .map(|group| InputGroup {
+                    name: group.name.clone(),
+                    label: group.label,
+                    sections: group
+                        .sections
+                        .iter()
+                        .map(|section| InputSection {
+                            entries: section
+                                .entries
+                                .iter()
+                                .filter(|e| shown(e))
+                                .cloned()
+                                .collect(),
+                            ..section.clone()
+                        })
+                        .filter(|section| !section.entries.is_empty())
+                        .collect(),
+                })
+                .filter(|group| !group.sections.is_empty())
+                .collect()
+        };
+        InputCatalogue {
+            key_design: self
+                .key_design
+                .iter()
+                .filter(|e| shown(e))
+                .cloned()
+                .collect(),
+            groups: keep(&self.groups),
+            workflow: keep(&self.workflow),
+        }
+    }
+
+    /// What the inputs side draws and filters: [`InputCatalogue::get`] less the inputs the
+    /// shaft-clamp section hides while `clamps_paused` ([`InputCatalogue::without_hidden`]),
+    /// built once. Metadata lookups keep using [`InputCatalogue::get`], which finds every input.
+    pub fn shown(clamps_paused: bool) -> &'static InputCatalogue {
+        static WITHOUT_THE_SECTION: OnceLock<InputCatalogue> = OnceLock::new();
+        if clamps_paused {
+            WITHOUT_THE_SECTION.get_or_init(|| Self::get().without_hidden(true))
+        } else {
+            Self::get()
+        }
+    }
+
     /// Every entry of the package groups, in schema order.
     pub fn all(&self) -> impl Iterator<Item = &InputEntry> {
         self.groups
@@ -820,9 +874,10 @@ impl SectionMatches<'_> {
     }
 }
 
-/// The inputs of `groups` whose label, path or workbook cell contains `query`, ignoring case
-/// and the surrounding blanks (as the results search), by section in the order of `groups`;
-/// a section without a match is left out. Every input of `groups` for a blank query.
+/// The inputs of `groups` whose display label, catalogue label, path or workbook cell contains
+/// `query`, ignoring case and the surrounding blanks (as the results search), by section in the
+/// order of `groups`; a section without a match is left out. Every input of `groups` for a
+/// blank query.
 pub fn filter_inputs<'a>(groups: &'a [InputGroup], query: &str) -> Vec<SectionMatches<'a>> {
     let needle = search_needle(query);
     let mut matches = Vec::new();
@@ -878,6 +933,10 @@ pub fn optional_seed(path: &str) -> Option<&'static str> {
         .map(|(_, result)| *result)
 }
 
+/// The start of the tooltip line that, with the spreadsheet details on, shows the original
+/// spreadsheet's note under a help the GUI's overlay replaced (spec 3.5; [`input_tooltip`]).
+pub const ORIGINAL_NOTE: &str = "Original spreadsheet note";
+
 /// A short note under a text input saying what the engine makes of the text: whether a part
 /// name is a library part, whether a grade name is in the grade table.
 pub fn text_hint(path: &str, text: &str) -> Option<&'static str> {
@@ -902,19 +961,32 @@ pub fn text_hint(path: &str, text: &str) -> Option<&'static str> {
     }
 }
 
-/// The hover text of an input: help, path, workbook cell, slider range, default, and whether
-/// it is a model assumption.
-pub fn input_tooltip(entry: &InputEntry) -> String {
+/// The last line of a model assumption's hover text (map-locks J2).
+pub const ASSUMPTION_LINE: &str = "Model assumption: see Assumptions for why it has this value";
+
+/// The hover text of an input: its help (the overlay's, else the engine's:
+/// [`help_for`]), path, workbook cell, slider range, default, and whether it is a model
+/// assumption.
+///
+/// The original spreadsheet note ([`ORIGINAL_NOTE`]), the path and the workbook cell only with
+/// `show_details` (the header's Show spreadsheet details, spec S2-5), after the help.
+pub fn input_tooltip(entry: &InputEntry, show_details: bool) -> String {
     let meta = entry.meta;
     let mut lines = Vec::new();
-    if !meta.help.is_empty() {
-        lines.push(meta.help.to_owned());
+    let help = help_for(&entry.path);
+    if !help.is_empty() {
+        lines.push(help.to_owned());
     }
-    lines.push(entry.path.clone());
-    lines.push(meta.cell.map_or_else(
-        || "Rust-only input (no workbook cell)".to_owned(),
-        str::to_owned,
-    ));
+    if show_details {
+        if let Some(original) = original_help(&entry.path) {
+            lines.push(format!("{ORIGINAL_NOTE}: {original}"));
+        }
+        lines.push(entry.path.clone());
+        lines.push(meta.cell.map_or_else(
+            || crate::gui::plain_text::NO_SPREADSHEET_CELL.to_owned(),
+            str::to_owned,
+        ));
+    }
     if let Some(r) = meta.range {
         let unit = crate::gui::format::with_unit(String::new(), meta.unit);
         let scale = if r.log { ", logarithmic" } else { "" };
@@ -934,7 +1006,7 @@ pub fn input_tooltip(entry: &InputEntry) -> String {
     };
     lines.push(format!("Default: {default}"));
     if meta.assumption {
-        lines.push("Model assumption (Addendum A3)".to_owned());
+        lines.push(ASSUMPTION_LINE.to_owned());
     }
     lines.join("\n")
 }
@@ -944,6 +1016,65 @@ mod tests {
     use super::*;
     use crate::compute_all;
     use crate::engine::meta::{InputSet, ResultSet};
+
+    #[test]
+    fn the_shown_catalogue_leaves_out_the_paused_section_s_inputs() {
+        use crate::engine::clamps::hides;
+        let all = InputCatalogue::get();
+        assert_eq!(all.without_hidden(false), *all);
+        assert!(std::ptr::eq(InputCatalogue::shown(false), all));
+        let shown = InputCatalogue::shown(true);
+        assert_eq!(*shown, all.without_hidden(true));
+        // Each order keeps every other input, in the same order.
+        let paths = |groups: &[InputGroup]| -> Vec<String> {
+            groups
+                .iter()
+                .flat_map(|g| g.sections.iter())
+                .flat_map(|s| s.entries.iter())
+                .map(|e| e.path.clone())
+                .collect()
+        };
+        for order in InputOrder::ALL {
+            let want: Vec<String> = paths(all.groups_in(order))
+                .into_iter()
+                .filter(|path| !hides(path, true))
+                .collect();
+            assert_eq!(paths(shown.groups_in(order)), want, "{order:?}");
+            for group in shown.groups_in(order) {
+                for section in &group.sections {
+                    assert!(!section.entries.is_empty(), "{}", section.id);
+                }
+            }
+        }
+        assert_eq!(shown.key_design, all.key_design);
+        // The clamp's own group goes; the shaft group keeps the bore and the keyway depth.
+        let names: Vec<&str> = shown.groups.iter().map(|g| g.name.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "coupling",
+                "metal",
+                "calibration",
+                "materials",
+                "temperature"
+            ]
+        );
+        let shaft = shown.workflow.iter().find(|g| g.name == "shaft").unwrap();
+        assert_eq!(shaft.label, "Shaft and hub joint");
+        let rows: Vec<&str> = shaft
+            .sections
+            .iter()
+            .flat_map(|s| s.entries.iter())
+            .map(|e| e.path.as_str())
+            .collect();
+        assert_eq!(rows, ["coupling.bore_mm", "coupling.keyway_depth_mm"]);
+        // The screw classes only the clamp reads go with it.
+        assert!(
+            shown
+                .section_of(InputOrder::Workflow, "materials.screws.proof_12_9_MPa")
+                .is_none()
+        );
+    }
 
     #[test]
     fn every_input_is_in_exactly_one_section_in_schema_order() {
@@ -1053,7 +1184,7 @@ mod tests {
                 "Magnets and rings",
                 "Gap and clearances",
                 "Housing and retainers",
-                "Shaft, key and clamps",
+                "Shaft and hub joint",
                 "Materials",
                 "Thermal and demagnetization",
                 "Calibration and model",
@@ -1379,30 +1510,74 @@ mod tests {
 
     #[test]
     fn tooltips_carry_help_path_cell_range_and_default() {
+        // With the spreadsheet details on (spec S2-5): the path and the cell too.
         let catalogue = InputCatalogue::new();
-        assert_eq!(
-            input_tooltip(catalogue.entry("metal.face_gap_mm").unwrap()),
-            "Same as the measured prototype.\nmetal.face_gap_mm\nMetal design!C119\n\
-             Slider 0.3 to 5 mm, step 0.01\nDefault: 1.400"
+        let help = help_for("metal.face_gap_mm");
+        let original =
+            original_help("metal.face_gap_mm").expect("the overlay replaces the workbook help");
+        assert_ne!(
+            help, original,
+            "the face gap's terse workbook note is replaced on screen"
         );
-        let backiron = input_tooltip(catalogue.entry("coupling.backiron").unwrap());
+        assert_eq!(
+            input_tooltip(catalogue.entry("metal.face_gap_mm").unwrap(), true),
+            format!(
+                "{help}\nOriginal spreadsheet note: {original}\nmetal.face_gap_mm\n\
+                 Metal design!C119\nSlider 0.3 to 5 mm, step 0.01\nDefault: 1.400"
+            )
+        );
+        let backiron = input_tooltip(catalogue.entry("coupling.backiron").unwrap(), true);
         assert!(
             backiron.ends_with("Default: 1 = steel circuit"),
             "{backiron}"
         );
-        let drag = input_tooltip(catalogue.entry("metal.measured_drag_Nm").unwrap());
+        let drag = input_tooltip(catalogue.entry("metal.measured_drag_Nm").unwrap(), true);
         assert!(
             drag.contains("logarithmic") && drag.ends_with("Default: blank"),
             "{drag}"
         );
-        let harmonic = input_tooltip(catalogue.entry("coupling.max_harmonic").unwrap());
+        let harmonic = input_tooltip(catalogue.entry("coupling.max_harmonic").unwrap(), true);
         assert!(
-            harmonic.contains("Rust-only input (no workbook cell)")
-                && harmonic.ends_with("Model assumption (Addendum A3)"),
+            harmonic.contains(crate::gui::plain_text::NO_SPREADSHEET_CELL)
+                && harmonic.ends_with(ASSUMPTION_LINE),
             "{harmonic}"
         );
-        let npole = input_tooltip(catalogue.entry("coupling.npole").unwrap());
+        let npole = input_tooltip(catalogue.entry("coupling.npole").unwrap(), true);
         assert!(npole.contains("Slider 4 to 40, step 2"), "{npole}");
+    }
+
+    #[test]
+    fn tooltips_name_the_path_cell_and_original_note_only_with_the_spreadsheet_details() {
+        // Spec S2-5 and 3.5: with Show spreadsheet details the tooltip adds, after the help,
+        // the original spreadsheet's note where the GUI's help replaced it, the path and the
+        // cell (or the line that says there is none); without them exactly those lines go.
+        let catalogue = InputCatalogue::new();
+        for entry in catalogue.all() {
+            let path = entry.path.as_str();
+            let on = input_tooltip(entry, true);
+            let off = input_tooltip(entry, false);
+            let original = original_help(path).map(|note| format!("{ORIGINAL_NOTE}: {note}"));
+            let added = 2 + usize::from(original.is_some());
+            assert_eq!(
+                on.lines().count(),
+                off.lines().count() + added,
+                "{path}: {on:?} against {off:?}"
+            );
+            assert!(on.lines().any(|line| line == path), "{on:?}");
+            assert!(!off.lines().any(|line| line == path), "{off:?}");
+            if let Some(cell) = entry.meta.cell {
+                assert!(on.lines().any(|line| line == cell), "{on:?}");
+                assert!(!off.lines().any(|line| line == cell), "{off:?}");
+            }
+            if let Some(original) = &original {
+                assert!(on.lines().any(|line| line == original), "{on:?}");
+            }
+            assert!(!off.contains(ORIGINAL_NOTE), "{off:?}");
+            assert!(
+                off.lines().all(|line| on.lines().any(|o| o == line)),
+                "{path}: {off:?} is not part of {on:?}"
+            );
+        }
     }
 
     #[test]
@@ -1507,5 +1682,59 @@ mod tests {
         assert!(
             filter_inputs(catalogue.groups_in(InputOrder::Workflow), "no such input").is_empty()
         );
+    }
+
+    #[test]
+    fn the_filter_matches_the_display_label_and_still_the_catalogue_label() {
+        use crate::gui::plain_text::label_for;
+        let catalogue = InputCatalogue::new();
+        let paths = |query: &str| -> Vec<String> {
+            filter_inputs(catalogue.groups_in(InputOrder::Workflow), query)
+                .iter()
+                .flat_map(|m| m.entries.iter().map(|e| e.path.clone()))
+                .collect()
+        };
+        for path in [
+            "metal.face_gap_mm",
+            "coupling.npole",
+            "coupling.inner_back_apothem_mm",
+            "metal.required_min_Nm",
+            "metal.variation",
+        ] {
+            let entry = catalogue.entry(path).unwrap();
+            // The overlay renames it (else this test proves nothing) ...
+            assert_ne!(label_for(path), entry.meta.label, "{path}");
+            // ... and it is found by its name on screen, its old label, its path and its cell.
+            for query in [
+                label_for(path),
+                entry.meta.label,
+                path,
+                entry.meta.cell.unwrap(),
+            ] {
+                assert!(
+                    paths(query).contains(&path.to_owned()),
+                    "{path} by {query:?}"
+                );
+            }
+        }
+        // The display label's words alone find it: no catalogue label says "ring radius".
+        assert_eq!(paths("ring radius"), ["coupling.inner_back_apothem_mm"]);
+    }
+
+    #[test]
+    fn a_tooltip_opens_with_the_help_the_overlay_gives() {
+        // F19's first help site. It passes before HELP has rows (help_for is then the engine's
+        // help); it is the guard that bites if an overlay row is not shown.
+        for entry in InputCatalogue::get().all() {
+            // With the spreadsheet details, so that a path with no help opens the tooltip.
+            let tooltip = input_tooltip(entry, true);
+            match help_for(&entry.path) {
+                "" => assert!(
+                    tooltip.starts_with(&format!("{}\n", entry.path)),
+                    "{tooltip}"
+                ),
+                help => assert!(tooltip.starts_with(&format!("{help}\n")), "{tooltip}"),
+            }
+        }
     }
 }

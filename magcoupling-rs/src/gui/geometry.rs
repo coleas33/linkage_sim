@@ -41,7 +41,8 @@ use std::f64::consts::PI;
 
 use crate::engine::meta::{NumOrText, Value};
 use crate::gui::dashboard::{Level, verdict_level};
-use crate::gui::format::{format_value, with_unit};
+use crate::gui::format::{SIGNIFICANT_DIGITS, format_value, with_unit};
+use crate::gui::plain_text::{CUP_WALL_INPUT, label_for};
 use crate::{DesignInputs, DesignResults};
 
 /// A point [mm]: x right, y up.
@@ -212,7 +213,7 @@ impl View {
     }
 }
 
-/// A line of text under the views: the autofit hint, a design check, or why something is not
+/// A line of text under the views: the wall-rule line, a design check, or why something is not
 /// drawn.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Note {
@@ -246,8 +247,8 @@ pub const NOT_DRAWN: &str = "Not drawn";
 /// user's decision of 2026-10-01: flagged in the GUI, no engine change).
 pub const DESIGN_CHECK: &str = "Design check";
 
-/// The start of the autofit hint.
-pub const AUTOFIT: &str = "Autofit";
+/// The start of the wall-rule line: what the cup wall check asks for at the pocket corners.
+pub const WALL_RULE: &str = "Wall rule";
 
 /// Whether both coordinates of `p` are finite.
 pub(crate) fn finite(p: Mm) -> bool {
@@ -257,6 +258,17 @@ pub(crate) fn finite(p: Mm) -> bool {
 /// A length as the callouts show it: four significant digits and the unit.
 pub fn mm(x: f64) -> String {
     with_unit(format_value(&Value::Num(x)), "mm")
+}
+
+/// A minimum length as [`mm`] shows it, rounded up at the last digit shown rather than to the
+/// nearest, so a wall shown equal to it meets it. A number that is not finite or not positive
+/// is shown as it is.
+pub fn mm_at_least(x: f64) -> String {
+    if !x.is_finite() || x <= 0.0 {
+        return mm(x);
+    }
+    let step = 10f64.powi(x.log10().floor() as i32 - (SIGNIFICANT_DIGITS - 1));
+    mm((x / step).ceil() * step)
 }
 
 /// The unit vector at angle `a` [rad].
@@ -356,6 +368,7 @@ fn end_view(
     inputs: &DesignInputs,
     results: &DesignResults,
     diameter: Option<f64>,
+    clamps_paused: bool,
     notes: &mut Vec<Note>,
 ) -> View {
     let (c, m, ret) = (&inputs.coupling, &results.model, &results.retainers);
@@ -433,14 +446,17 @@ fn end_view(
         outline: Outline::Disc { r: bore },
     });
     // The key in the hub's keyway, at 0°: from where its sides cross the bore to the keyway's
-    // depth past the bore (Calculator C40), the key's width (Shaft clamps C58).
-    let w = inputs.clamps.key_width_mm / 2.0;
-    let seat = (bore * bore - w * w).max(0.0).sqrt();
-    let tip = bore + c.keyway_depth_mm;
-    pieces.push(Piece {
-        part: Part::Key,
-        outline: Outline::Polygon(vec![[seat, -w], [tip, -w], [tip, w], [seat, w]]),
-    });
+    // depth past the bore (Calculator C40), the key's width (Shaft clamps C58). The key is the
+    // shaft-clamp section's: not drawn while it is paused.
+    if !clamps_paused {
+        let w = inputs.clamps.key_width_mm / 2.0;
+        let seat = (bore * bore - w * w).max(0.0).sqrt();
+        let tip = bore + c.keyway_depth_mm;
+        pieces.push(Piece {
+            part: Part::Key,
+            outline: Outline::Polygon(vec![[seat, -w], [tip, -w], [tip, w], [seat, w]]),
+        });
+    }
 
     // Dimensions: the face gap at face 0; the corner gap along face 1's normal, from the circle
     // its inner block's corners sweep to its outer block's flat (the corner gap is the outer
@@ -776,16 +792,23 @@ fn side_view(
     }
 }
 
-/// The notes under the views: the autofit wall (Addendum A1, decision 27) and the two design
-/// checks (decision 28, flagged only), each while it applies (decision M42-9).
-fn notes(inputs: &DesignInputs, results: &DesignResults) -> Vec<Note> {
+/// The notes under the views: the wall the cup wall check compares the wall input with
+/// (Addendum A1, decision 27) and the two design checks (decision 28, flagged only), each while
+/// it applies (decision M42-9); the boss check compares the clamp inputs' boss, so not while the
+/// shaft-clamp section is paused (`clamps_paused`).
+fn notes(inputs: &DesignInputs, results: &DesignResults, clamps_paused: bool) -> Vec<Note> {
     let md = &inputs.metal;
     let mut notes = Vec::new();
-    if let NumOrText::Num(wall) = results.materials.cup_wall_suggested_mm {
+    // The rule's own wall, not the failing verdict's suggestion (that wall rounded up to
+    // 0.1 mm): a wall between the two passes the check. It is a minimum, so it is rounded up
+    // at its last shown digit: a wall shown equal to it passes. The suggestion reads n/a
+    // exactly when there is no back iron, and then there is no rule.
+    if matches!(results.materials.cup_wall_suggested_mm, NumOrText::Num(_)) {
         notes.push(Note {
             text: format!(
-                "{AUTOFIT}: the wall rule asks for at least {} at the pocket corners (input {})",
-                mm(wall),
+                "{WALL_RULE}: at least {} of cup wall at the pocket corners; {} is {}",
+                mm_at_least(results.materials.backiron_thickness_needed_mm),
+                label_for(CUP_WALL_INPUT),
                 mm(md.cup_wall_corner_mm)
             ),
             level: None,
@@ -795,18 +818,22 @@ fn notes(inputs: &DesignInputs, results: &DesignResults) -> Vec<Note> {
     if md.cap_thread_dia_mm < cup_body {
         notes.push(Note {
             text: format!(
-                "{DESIGN_CHECK}: the cap thread diameter {} (Metal design C169) is below the cup body OD {} (C165)",
+                "{DESIGN_CHECK}: {} {} is below {} {}",
+                label_for("metal.cap_thread_dia_mm"),
                 mm(md.cap_thread_dia_mm),
+                label_for("metal.cup_body_od_mm"),
                 mm(cup_body)
             ),
             level: Some(Level::Caution),
         });
     }
-    if md.boss_od_mm != inputs.clamps.boss_od_mm {
+    if !clamps_paused && md.boss_od_mm != inputs.clamps.boss_od_mm {
         notes.push(Note {
             text: format!(
-                "{DESIGN_CHECK}: the boss OD is {} in Metal design (C127) and {} in Shaft clamps (C35)",
+                "{DESIGN_CHECK}: {} {} differs from {} {} in the clamp inputs",
+                label_for("metal.boss_od_mm"),
                 mm(md.boss_od_mm),
+                label_for("clamps.boss_od_mm"),
                 mm(inputs.clamps.boss_od_mm)
             ),
             level: Some(Level::Caution),
@@ -826,8 +853,9 @@ fn parts_not_drawn(dropped: usize, name: &str) -> String {
     }
 }
 
-/// The geometry of the design shown: its inputs and the results computed from them.
-pub fn geometry(inputs: &DesignInputs, results: &DesignResults) -> Geometry {
+/// The geometry of the design shown: its inputs and the results computed from them; while
+/// the shaft-clamp section is paused (`clamps_paused`) without its key and its boss check.
+pub fn geometry(inputs: &DesignInputs, results: &DesignResults, clamps_paused: bool) -> Geometry {
     let mut all_notes = Vec::new();
     // The diameter claim is decided once, for both views, against the body's largest OD.
     let diameter = drawn_claim(
@@ -836,7 +864,7 @@ pub fn geometry(inputs: &DesignInputs, results: &DesignResults) -> Geometry {
         body_od(inputs, results),
         &mut all_notes,
     );
-    let mut end = end_view(inputs, results, diameter, &mut all_notes);
+    let mut end = end_view(inputs, results, diameter, clamps_paused, &mut all_notes);
     let mut side = side_view(inputs, results, diameter, &mut all_notes);
     for (view, name) in [(&mut end, "end"), (&mut side, "side")] {
         let dropped = view.retain_finite();
@@ -852,7 +880,7 @@ pub fn geometry(inputs: &DesignInputs, results: &DesignResults) -> Geometry {
             });
         }
     }
-    all_notes.extend(notes(inputs, results));
+    all_notes.extend(notes(inputs, results, clamps_paused));
     Geometry {
         end,
         side,
@@ -872,7 +900,7 @@ mod tests {
     }
 
     fn of(inputs: &DesignInputs) -> Geometry {
-        geometry(inputs, &compute_all(inputs))
+        geometry(inputs, &compute_all(inputs), false)
     }
 
     fn callout(g: &Geometry, tag: usize) -> &Callout {
@@ -887,7 +915,7 @@ mod tests {
     fn the_end_view_draws_every_part_from_the_results() {
         let inputs = DesignInputs::default();
         let r = compute_all(&inputs);
-        let g = geometry(&inputs, &r);
+        let g = geometry(&inputs, &r, false);
         let n = inputs.coupling.npole as usize;
         let magnets = g
             .end
@@ -947,6 +975,30 @@ mod tests {
         // From where its 4 mm sides cross the 10 mm bore to 1.7 mm past the bore.
         assert_eq!(key[1], [6.7, -2.0]);
         assert!((key[0][0] - 21.0_f64.sqrt()).abs() < 1e-12);
+    }
+
+    #[test]
+    fn the_key_and_the_clamp_boss_check_are_drawn_only_while_the_clamp_section_shows() {
+        // Ruling 11: the key (its width is a clamp input) and the check against the clamp
+        // inputs' boss go with the paused section; the wall rule and the cap check stay.
+        let defaults = DesignInputs::default();
+        let results = compute_all(&defaults);
+        for (paused, keys, notes) in [(false, 1, 3), (true, 0, 2)] {
+            let g = geometry(&defaults, &results, paused);
+            let drawn = g.end.pieces.iter().chain(&g.side.pieces);
+            assert_eq!(
+                drawn.filter(|p| p.part == Part::Key).count(),
+                keys,
+                "paused {paused}"
+            );
+            assert_eq!(g.notes.len(), notes, "paused {paused}");
+            assert_eq!(
+                g.notes
+                    .iter()
+                    .any(|n| n.text.ends_with("in the clamp inputs")),
+                !paused
+            );
+        }
     }
 
     #[test]
@@ -1042,7 +1094,7 @@ mod tests {
     fn the_side_view_uses_the_housing_in_effect() {
         let inputs = design(|i| i.coupling.magnets.axial_length_mm = Some(50.8));
         let r = compute_all(&inputs);
-        let g = geometry(&inputs, &r);
+        let g = geometry(&inputs, &r, false);
         let rects: Vec<(Part, Mm, Mm)> = g
             .side
             .pieces
@@ -1159,14 +1211,37 @@ mod tests {
                 .map(|n| n.text)
                 .collect()
         };
-        // The workbook's defaults hold both (decision 28).
+        // The defaults hold both (decision 28): each names its inputs by their on-screen labels,
+        // with the numbers of the design.
+        let defaults = DesignInputs::default();
+        let results = compute_all(&defaults);
+        let found = checks(&defaults);
         assert_eq!(
-            checks(&DesignInputs::default()),
+            found,
             [
-                "Design check: the cap thread diameter 41.00 mm (Metal design C169) is below the cup body OD 41.33 mm (C165)",
-                "Design check: the boss OD is 22.00 mm in Metal design (C127) and 25.00 mm in Shaft clamps (C35)",
+                format!(
+                    "Design check: {} {} is below {} {}",
+                    label_for("metal.cap_thread_dia_mm"),
+                    mm(defaults.metal.cap_thread_dia_mm),
+                    label_for("metal.cup_body_od_mm"),
+                    mm(results.metal.cup_body_od_mm)
+                ),
+                format!(
+                    "Design check: {} {} differs from {} {} in the clamp inputs",
+                    label_for("metal.boss_od_mm"),
+                    mm(defaults.metal.boss_od_mm),
+                    label_for("clamps.boss_od_mm"),
+                    mm(defaults.clamps.boss_od_mm)
+                ),
             ]
         );
+        for check in &found {
+            assert_eq!(
+                crate::gui::guidance::plain_text_violations(check),
+                Vec::<&str>::new(),
+                "{check}"
+            );
+        }
         let fixed = design(|i| {
             i.metal.cap_thread_dia_mm = 42.0;
             i.metal.boss_od_mm = 25.0;
@@ -1179,20 +1254,107 @@ mod tests {
     }
 
     #[test]
-    fn the_autofit_hint_shows_the_wall_rule_unless_there_is_no_back_iron() {
-        let hint = |inputs: &DesignInputs| {
-            of(inputs)
-                .notes
-                .into_iter()
-                .find(|n| n.text.starts_with(AUTOFIT))
-        };
-        let note = hint(&DesignInputs::default()).expect("a steel circuit has a wall rule");
+    fn a_minimum_length_is_rounded_up_at_its_last_shown_digit() {
+        // Above the nearest digit, below it, past a power of ten, and exactly on a digit.
+        assert_eq!(mm_at_least(1.9501155), "1.951 mm");
+        assert_eq!(mm_at_least(1.9189136565), "1.919 mm");
+        assert_eq!(mm_at_least(0.532555), "0.5326 mm");
+        assert_eq!(mm_at_least(9.99996), "10.00 mm");
+        assert_eq!(mm_at_least(1.9), "1.900 mm");
+        // A number that is not finite or not positive is shown as it is.
+        for x in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 0.0, -1.25] {
+            assert_eq!(mm_at_least(x), mm(x), "{x}");
+        }
+    }
+
+    /// The wall-rule line under the views of `inputs`, if one is drawn.
+    fn wall_rule_line(inputs: &DesignInputs) -> Option<Note> {
+        of(inputs)
+            .notes
+            .into_iter()
+            .find(|n| n.text.starts_with(WALL_RULE))
+    }
+
+    /// The wall-rule line `inputs` draws: the wall the cup wall check compares with, rounded up
+    /// at its last shown digit, then the wall input by its label and its value.
+    fn expected_wall_rule(inputs: &DesignInputs) -> String {
+        format!(
+            "Wall rule: at least {} of cup wall at the pocket corners; {} is {}",
+            mm_at_least(compute_all(inputs).materials.backiron_thickness_needed_mm),
+            label_for(CUP_WALL_INPUT),
+            mm(inputs.metal.cup_wall_corner_mm)
+        )
+    }
+
+    #[test]
+    fn the_wall_rule_line_shows_unless_there_is_no_back_iron() {
+        let defaults = DesignInputs::default();
+        let note = wall_rule_line(&defaults).expect("a steel circuit has a wall rule");
+        assert_eq!(note.text, expected_wall_rule(&defaults));
         assert_eq!(
-            note.text,
-            "Autofit: the wall rule asks for at least 2.000 mm at the pocket corners (input 1.800 mm)"
+            crate::gui::guidance::plain_text_violations(&note.text),
+            Vec::<&str>::new()
         );
         assert_eq!(note.level, None);
-        assert_eq!(hint(&design(|i| i.coupling.backiron = 0)), None);
+        assert_eq!(wall_rule_line(&design(|i| i.coupling.backiron = 0)), None);
+    }
+
+    #[test]
+    fn the_wall_rule_line_asks_for_the_wall_the_check_compares_with() {
+        // The cup wall check compares the wall with the rule's own wall; the failing verdict's
+        // suggestion rounds that up to 0.1 mm. Stepping the wall's slider up from the defaults,
+        // the first wall the check passes lies below that rounding: the line must not ask for
+        // more than the check does.
+        let range = crate::gui::inputs::InputCatalogue::get()
+            .entry(CUP_WALL_INPUT)
+            .and_then(|entry| entry.meta.range)
+            .expect("the cup wall has a slider");
+        let mut inputs = DesignInputs::default();
+        let mut results = compute_all(&inputs);
+        while results.materials.cup_wall_check != "OK" {
+            inputs.metal.cup_wall_corner_mm = range
+                .step_from(inputs.metal.cup_wall_corner_mm, true)
+                .expect("the slider reaches a wall the check passes");
+            results = compute_all(&inputs);
+        }
+        let need = results.materials.backiron_thickness_needed_mm;
+        let wall = inputs.metal.cup_wall_corner_mm;
+        let NumOrText::Num(suggested) = results.materials.cup_wall_suggested_mm else {
+            panic!("a steel circuit has a wall rule")
+        };
+        // Not vacuous: the passing wall lies between the rule's wall and its rounding.
+        assert!(
+            need <= wall && wall < suggested,
+            "{need} {wall} {suggested}"
+        );
+        let note = wall_rule_line(&inputs).expect("a steel circuit has a wall rule");
+        assert_eq!(note.text, expected_wall_rule(&inputs));
+        assert!(!note.text.contains(&mm(suggested)), "{}", note.text);
+    }
+
+    #[test]
+    fn a_wall_shown_equal_to_the_wall_rule_passes_the_check() {
+        // A minimum is rounded up, never to the nearest digit. At 12 poles and a 1.23 T design
+        // flux density (slider values) the rule's wall lies a tenth of a micron above the 1.95 mm
+        // slider step: rounded to the nearest digit both read alike while the check fails.
+        let inputs = design(|i| {
+            i.coupling.npole = 12;
+            i.materials.steel.bsat_T = 1.23;
+            i.metal.cup_wall_corner_mm = 1.95;
+        });
+        let results = compute_all(&inputs);
+        let need = results.materials.backiron_thickness_needed_mm;
+        let wall = inputs.metal.cup_wall_corner_mm;
+        // Not vacuous: the wall fails, yet shows as the need does when rounded to the nearest.
+        assert_ne!(results.materials.cup_wall_check, "OK");
+        assert!(wall < need && mm(need) == mm(wall), "{need} {wall}");
+        let note = wall_rule_line(&inputs).expect("a steel circuit has a wall rule");
+        assert_eq!(note.text, expected_wall_rule(&inputs));
+        assert!(
+            !note.text.contains(&format!("at least {}", mm(wall))),
+            "{}",
+            note.text
+        );
     }
 
     #[test]
@@ -1227,7 +1389,7 @@ mod tests {
         // poles the pocket and the hub are drawn round, and the blocks still on their flats.
         let inputs = design(|i| i.coupling.npole = 2);
         let r = compute_all(&inputs);
-        let g = geometry(&inputs, &r);
+        let g = geometry(&inputs, &r, false);
         let magnets: Vec<&Piece> = g
             .end
             .pieces

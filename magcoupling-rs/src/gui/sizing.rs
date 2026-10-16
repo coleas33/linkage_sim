@@ -91,7 +91,7 @@ pub const fn auto_choice(variable: FreeVariable) -> &'static str {
     match variable {
         FreeVariable::AxialLength => "magnet length",
         FreeVariable::MagnetsPerRing => "magnet count",
-        FreeVariable::RingRadius => "ring size",
+        FreeVariable::RingRadius => "ring radius",
     }
 }
 
@@ -122,6 +122,13 @@ pub(crate) fn set_by_auto(variable: FreeVariable) -> impl Iterator<Item = &'stat
         _ => &[],
     };
     std::iter::once(variable.path()).chain(followers.iter().copied())
+}
+
+/// Whether Auto holds the input at `path` on `state`: in Torque -> Magnets, one of the inputs
+/// the design shown sets ([`set_by_auto`]). Its row is locked at the value shown, and a teaching
+/// note's change entry draws it as plain text, "held by Auto".
+pub(crate) fn held_by_auto(state: &SizingState, path: &str) -> bool {
+    state.mode == SizingMode::TorqueToMagnets && set_by_auto(state.variable).any(|p| p == path)
 }
 
 /// `edited`, a Size-tab edit of the design shown ([`sized`]), with the inputs Auto set back at
@@ -382,6 +389,36 @@ mod tests {
     use super::*;
     use crate::compute_all;
     use crate::engine::sizing::solve;
+
+    #[test]
+    fn auto_holds_exactly_the_inputs_it_sets_and_only_in_torque_to_magnets() {
+        use std::collections::BTreeSet;
+        let paths: Vec<String> = crate::engine::meta::input_rows(&DesignInputs::default())
+            .into_iter()
+            .map(|r| r.path)
+            .collect();
+        for variable in FreeVariable::ALL {
+            for mode in SizingMode::ALL {
+                let state = SizingState { mode, variable };
+                let held: BTreeSet<&str> = paths
+                    .iter()
+                    .map(String::as_str)
+                    .filter(|p| held_by_auto(&state, p))
+                    .collect();
+                let want: BTreeSet<&str> = match mode {
+                    SizingMode::TorqueToMagnets => set_by_auto(variable).collect(),
+                    SizingMode::MagnetsToTorque => BTreeSet::new(),
+                };
+                assert_eq!(held, want, "{mode:?} {variable:?}");
+            }
+        }
+        // Ring size holds the cap OD and thread too, which follow the cup.
+        let ring = SizingState {
+            mode: SizingMode::TorqueToMagnets,
+            variable: FreeVariable::RingRadius,
+        };
+        assert!(held_by_auto(&ring, "metal.cap_od_mm"));
+    }
 
     #[test]
     fn every_mode_and_free_variable_round_trips_through_its_key() {
@@ -777,7 +814,7 @@ mod tests {
     fn each_auto_choice_names_the_size_it_sets() {
         assert_eq!(auto_choice(FreeVariable::AxialLength), "magnet length");
         assert_eq!(auto_choice(FreeVariable::MagnetsPerRing), "magnet count");
-        assert_eq!(auto_choice(FreeVariable::RingRadius), "ring size");
+        assert_eq!(auto_choice(FreeVariable::RingRadius), "ring radius");
     }
 
     #[test]
@@ -794,7 +831,7 @@ mod tests {
         );
         assert_eq!(
             runner.status(&inputs, &state, range),
-            "No valid value of ring size in range"
+            "No valid value of ring radius in range"
         );
         assert_eq!(runner.shown(&inputs, &state, range), inputs);
     }
@@ -905,6 +942,25 @@ mod tests {
         assert_eq!(
             runner.status(&bad, &state, range),
             "Sizing refused: invalid inputs (coupling.backiron)"
+        );
+    }
+
+    #[test]
+    fn the_ring_radius_and_magnet_count_read_by_their_inputs_display_labels() {
+        use crate::gui::plain_text::label_for;
+        // The spreadsheet's free-variable cell and the Size tab's fallback line name the ring
+        // radius and the magnet count as their input rows do (spec 3.5).
+        for variable in [FreeVariable::RingRadius, FreeVariable::MagnetsPerRing] {
+            assert_eq!(
+                variable_label(variable),
+                label_for(variable.path()),
+                "{variable:?}"
+            );
+        }
+        // The Auto dropdown says the ring radius in a sentence's lowercase.
+        assert_eq!(
+            auto_choice(FreeVariable::RingRadius),
+            label_for(FreeVariable::RingRadius.path()).to_lowercase()
         );
     }
 }

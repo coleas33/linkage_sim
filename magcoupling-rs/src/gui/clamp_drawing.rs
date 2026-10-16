@@ -36,7 +36,7 @@ pub const NO_SCREW_FITS: &str = "No screw size fits; enlarge the boss or the cla
 /// The note under the drawing when the two-piece clamp is selected: drawing.py draws only the
 /// one-piece layout.
 pub const ONE_PIECE_ONLY: &str =
-    "The drawing shows the one-piece slotted clamp (drawing.py's only layout).";
+    "Only the one-piece slotted clamp is drawn; the two-piece clamp has no drawing.";
 
 /// The most screws the top view draws (a design file can hold any clamp).
 pub const MAX_DRAWN_SCREWS: i64 = 50;
@@ -829,7 +829,9 @@ pub fn clamp_ui(
                     })
                     .response
                     .rect;
-                readouts.show_over(ui, rect, path, || hover_text(path).unwrap_or_default());
+                readouts.show_over(ui, rect, path, |show_details| {
+                    hover_text(path, show_details).unwrap_or_default()
+                });
             }
             ui.add_space(4.0);
             for step in MACHINING_STEPS {
@@ -868,8 +870,8 @@ fn screw_table_ui(ui: &mut egui::Ui, results: &DesignResults, readouts: &mut Rea
                                 rich
                             };
                             let rect = ui.label(rich).rect;
-                            readouts.show_over(ui, rect, &path, || {
-                                hover_text(&path).unwrap_or_else(|| path.clone())
+                            readouts.show_over(ui, rect, &path, |show_details| {
+                                hover_text(&path, show_details).unwrap_or_else(|| path.clone())
                             });
                         }
                         ui.end_row();
@@ -882,7 +884,47 @@ fn screw_table_ui(ui: &mut egui::Ui, results: &DesignResults, readouts: &mut Rea
 mod tests {
     use super::*;
     use crate::compute_all;
-    use crate::gui::test_support::{drawn_texts, flat_shapes, sized_frame, text_rects};
+    use crate::gui::test_support::{
+        assert_hover_names_path_only_with_details, drawn_texts, flat_shapes, sized_frame,
+        text_rects,
+    };
+
+    /// The clamp tests' screen: tall enough for the whole tab.
+    const TAB: egui::Vec2 = egui::vec2(1000.0, 1400.0);
+
+    #[test]
+    fn a_summary_line_s_hover_names_its_path_only_with_the_spreadsheet_details() {
+        let inputs = DesignInputs::default();
+        let results = compute_all(&inputs);
+        let path = "clamps.recommended";
+        let label = crate::gui::dashboard::result_info(path)
+            .expect("a summary line is a result")
+            .meta
+            .label;
+        assert_hover_names_path_only_with_details(
+            TAB,
+            path,
+            label,
+            |show_details| hover_text(path, show_details).expect("a result"),
+            |ui, readouts| clamp_ui(ui, &inputs, &results, readouts),
+        );
+    }
+
+    #[test]
+    fn a_screw_table_cell_s_hover_names_its_path_only_with_the_spreadsheet_details() {
+        // The table its heading opens (closed at the start), drawn open: the first size's
+        // name, hovered.
+        let results = compute_all(&DesignInputs::default());
+        let path = "clamps.table[0].size";
+        let text = format_value(&results.get(path).expect("a screw table cell"));
+        assert_hover_names_path_only_with_details(
+            TAB,
+            path,
+            &text,
+            |show_details| hover_text(path, show_details).expect("a result"),
+            |ui, readouts| screw_table_ui(ui, &results, readouts),
+        );
+    }
 
     fn texts(view: &DrawingView) -> Vec<String> {
         view.marks
@@ -1188,7 +1230,7 @@ mod tests {
             );
         }
         // The whole tab: the summary and the machining steps; no fit shows the message.
-        let output = sized_frame(&ctx, egui::vec2(1000.0, 1400.0), Vec::new(), |ui| {
+        let output = sized_frame(&ctx, TAB, Vec::new(), |ui| {
             clamp_ui(ui, &inputs, &r, &mut Readouts::default())
         });
         let texts = drawn_texts(&output);
@@ -1199,7 +1241,7 @@ mod tests {
         tight.clamps.boss_od_mm = 12.0;
         tight.clamps.clamp_length_mm = 3.0;
         tight.clamps.clamp_type = 2;
-        let output = sized_frame(&ctx, egui::vec2(1000.0, 1400.0), Vec::new(), |ui| {
+        let output = sized_frame(&ctx, TAB, Vec::new(), |ui| {
             clamp_ui(ui, &tight, &compute_all(&tight), &mut Readouts::default())
         });
         let texts = drawn_texts(&output);
@@ -1293,7 +1335,7 @@ mod tests {
         let (sender, receiver) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let ctx = egui::Context::default();
-            let output = sized_frame(&ctx, egui::vec2(1000.0, 1400.0), Vec::new(), |ui| {
+            let output = sized_frame(&ctx, TAB, Vec::new(), |ui| {
                 clamp_ui(ui, &inputs, &results, &mut Readouts::default())
             });
             let shapes = flat_shapes(&output);

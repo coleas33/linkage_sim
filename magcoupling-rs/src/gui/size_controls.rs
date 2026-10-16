@@ -3,21 +3,26 @@
 //! Auto (spec guidance 3.5) runs the inverse sizing from here: it locks the slider of the size it
 //! sets ([`variable_slider`]) at the value shown and names the change ([`change_text`]).
 //!
-//! Under each control, its what-moves-what lines (spec 3.3: [`Consequences`], computed by the
-//! guidance layer). The panel's centre view draws the torque readouts (spec 3.2) with the
-//! texts here: [`REQUIRED`], [`HOT_LOW`] with [`torque_gap_text`], [`pullout_label`], and
-//! [`NO_PREDICTION`] or [`NO_TORQUE`] where the model makes none ([`predicts`]).
+//! Under each control, its hint line ([`hint_line`], slice 2 spec 3.5) and its what-moves-what
+//! lines (spec 3.3: [`Consequences`], computed by the guidance layer). The panel's centre view
+//! draws the torque readouts (spec 3.2) with the texts here: [`REQUIRED`], [`HOT_LOW`] with
+//! [`torque_gap_text`], [`pullout_label`], and [`NO_PREDICTION`] or [`NO_TORQUE`] where the model
+//! makes none ([`predicts`]).
 
 use crate::engine::meta::{InputMeta, InputSet, SliderRange, Value};
 use crate::engine::size_controls::{
     dimensions, dimensions_with_minimum_diameter, resize_diameter_with_minimum, resize_length,
 };
 use crate::engine::sizing::FreeVariable;
-use crate::gui::dashboard::end_effect_out_of_range;
+use crate::gui::dashboard::{end_effect_out_of_range, why_note_link};
 use crate::gui::format::{fixed, signed_percent};
-use crate::gui::guidance::Consequences;
-use crate::gui::input_ui::slider;
+use crate::gui::guidance::{Consequences, SIZE_TAB_NOTE};
+use crate::gui::input_ui::{hint_line, slider, weak_line};
 use crate::gui::inputs::InputCatalogue;
+use crate::gui::plain_text::{
+    DIAMETER_HINT_KEY, HOT_LOW_TORQUE, LENGTH_HINT_KEY, MINIMUM_OD_HINT_KEY, REQUIRED_TORQUE,
+    help_for,
+};
 use crate::gui::sizing::{SizingMode, SizingState, auto_choice, variable_label};
 use crate::{DesignInputs, DesignResults, compute_all};
 
@@ -27,13 +32,24 @@ pub const DIAMETER: &str = "Outside diameter";
 pub const LENGTH: &str = "Overall length";
 pub const GAP: &str = "Magnet face gap";
 pub const MAGNETS: &str = "Magnets per ring";
-pub const LINKED_HOUSING: &str = "Diameter and length edits resize the associated housing, keeping its allowances. Gap and magnet count remain your choices.";
+/// The Size tab's footnote (O-7): what the diameter and length sliders move
+/// ([`crate::engine::size_controls`]).
+pub const LINKED_HOUSING: &str = "Outside diameter moves the ring radius; the cap and its thread follow the cup. Overall length sets both rings' magnet length, and the housing follows. Gap and magnet count stay as you set them.";
 
-/// The Auto row (spec guidance 3.5): "Auto: smallest [size] that meets the torque requirement".
+/// The hover text of the Outside diameter control (R-3): what it is (the largest of the cup,
+/// the cap and the shaft boss) and what moving it changes (the ring radius; the cap and its
+/// thread by the cup's change).
+pub const DIAMETER_HOVER: &str = "The largest of the cup, cap and shaft boss diameters. Moving it changes the ring radius; the cap and its thread follow the cup.";
+
+/// The hover text of the Overall length control: what it is and what moving it changes (the
+/// axial magnet length override of both rings; the housing follows, `engine::housing`).
+pub const LENGTH_HOVER: &str = "The axial length of the coupling: the magnets and the housing around them. Moving it sets both rings' magnet length, and the housing follows.";
+
+/// The Auto row (spec guidance 3.5): "Auto: smallest [size] that meets the required torque".
 pub const AUTO: &str = "Auto: smallest";
-pub const AUTO_SUFFIX: &str = "that meets the torque requirement";
+pub const AUTO_SUFFIX: &str = "that meets the required torque";
 /// The hover text of the Auto toggle.
-pub const AUTO_HOVER: &str = "On: the solver sets the chosen size to the smallest value whose hot-low torque meets the requirement, skipping layouts whose magnets do not fit, whose keyway breaks through the hub or that the end-effect model cannot predict; its slider locks. Off: the design keeps the value shown.";
+pub const AUTO_HOVER: &str = "On: the solver sets the chosen size to the smallest value whose hot-low torque meets the required torque, skipping layouts whose magnets do not fit, whose keyway breaks through the hub or that the end-effect model cannot predict; its slider locks. Off: the design keeps the value shown.";
 /// Under the slider Auto sets, and its hover text.
 pub const SET_BY_AUTO: &str = "Set by Auto; turn Auto off to edit";
 /// The start of the Key design group's line while Auto is on ([`auto_status`]).
@@ -129,12 +145,12 @@ pub(crate) fn auto_ui(ui: &mut egui::Ui, state: SizingState) -> SizingState {
     asked
 }
 
-/// The label of the requirement's slider (`metal.required_min_Nm`).
-pub const REQUIRED: &str = "Required";
+/// The label of the requirement's slider (`metal.required_min_Nm`): the input's display label.
+pub const REQUIRED: &str = REQUIRED_TORQUE;
 
 /// The label of the hot-low torque (`metal.torque_hot_low_Nm`), its gap to the requirement
-/// beside it ([`torque_gap_text`]).
-pub const HOT_LOW: &str = "Hot-low";
+/// beside it ([`torque_gap_text`]): the dashboard row's display label.
+pub const HOT_LOW: &str = HOT_LOW_TORQUE;
 
 /// What a torque readout shows, the gap left out, where the end effect is outside the model's
 /// range ([`predicts`]).
@@ -197,6 +213,8 @@ pub(crate) struct ControlsOutput {
     pub minimum_diameter_mm: Option<f64>,
     pub widgets: Vec<egui::Id>,
     pub error: Option<String>,
+    /// The note a Why link under Magnets per ring or Outside diameter asked for this frame.
+    pub note: Option<&'static str>,
 }
 
 /// Draw before computing the panel's results, so the readouts reflect this frame's edits.
@@ -217,6 +235,7 @@ pub(crate) fn controls_ui(
         minimum_diameter_mm,
         widgets: Vec::new(),
         error: None,
+        note: None,
     };
     let catalogue = InputCatalogue::get();
     ui.push_id("direct_size_controls", |ui| {
@@ -238,6 +257,7 @@ pub(crate) fn controls_ui(
                 })
                 .inner;
             minimum_widget = Some(response.id);
+            hint_line(ui, MINIMUM_OD_HINT_KEY);
             if response.changed() {
                 output.minimum_diameter_mm = Some(minimum);
             } else if minimum_diameter_mm.is_none()
@@ -251,29 +271,34 @@ pub(crate) fn controls_ui(
             // preference itself is local to this view, like the input ordering preference.
             let size = dimensions_with_minimum_diameter(inputs, minimum)
                 .expect("a bounded minimum defines a diameter range");
-            for (label, path, mut value, range, line) in [
+            for (label, hover, path, hint, mut value, range, line) in [
                 (
                     DIAMETER,
+                    DIAMETER_HOVER,
                     "coupling.inner_back_apothem_mm",
+                    DIAMETER_HINT_KEY,
                     size.diameter_mm,
                     size.diameter_range,
                     consequences.diameter_line(),
                 ),
                 (
                     LENGTH,
+                    LENGTH_HOVER,
                     "coupling.magnets.axial_length_mm",
+                    LENGTH_HINT_KEY,
                     size.overall_length_mm,
                     size.length_range,
                     consequences.length_line(),
                 ),
             ] {
-                ui.label(label);
+                ui.label(label).on_hover_text(hover);
                 let entry = catalogue
                     .entry(path)
                     .expect("a size control has input metadata");
                 let response =
                     size_slider(ui, path, &mut value, entry.meta, range, is_locked(label));
                 output.widgets.push(response.id);
+                hint_line(ui, hint);
                 if response.changed() {
                     let resized = if path == "coupling.inner_back_apothem_mm" {
                         resize_diameter_with_minimum(&output.inputs, value, minimum)
@@ -286,7 +311,10 @@ pub(crate) fn controls_ui(
                     }
                 }
                 if let Some(line) = line {
-                    consequence_line(ui, &line);
+                    weak_line(ui, &line);
+                }
+                if label == DIAMETER && why_note_link(ui, SIZE_TAB_NOTE) {
+                    output.note = Some(SIZE_TAB_NOTE);
                 }
             }
             ui.weak(format!(
@@ -319,10 +347,11 @@ pub(crate) fn controls_ui(
                 Value::Int(value) => value as f64,
                 _ => unreachable!("the gap and magnet count are numbers"),
             };
-            ui.label(label).on_hover_text(entry.meta.help);
+            ui.label(label).on_hover_text(help_for(path));
             let range: SliderRange = entry.meta.range.expect("a size control has a slider");
             let response = size_slider(ui, path, &mut value, entry.meta, range, is_locked(label));
             output.widgets.push(response.id);
+            hint_line(ui, path);
             if response.changed() {
                 let value = if path == "coupling.npole" {
                     Value::Int(value as i64)
@@ -334,13 +363,15 @@ pub(crate) fn controls_ui(
                 }
             }
             for line in &lines {
-                consequence_line(ui, line);
+                weak_line(ui, line);
+            }
+            if label == MAGNETS && why_note_link(ui, SIZE_TAB_NOTE) {
+                output.note = Some(SIZE_TAB_NOTE);
             }
         }
         if let Some(widget) = minimum_widget {
             output.widgets.push(widget);
         }
-        ui.label("Minimum OD changes the slider limit; your current diameter stays unchanged.");
         ui.label(LINKED_HOUSING);
     });
     output
@@ -366,11 +397,6 @@ fn size_slider(
         ui.weak(SET_BY_AUTO);
     }
     response
-}
-
-/// One what-moves-what line under its control: weak text, wrapped to the side's width.
-fn consequence_line(ui: &mut egui::Ui, text: &str) {
-    ui.add(egui::Label::new(egui::RichText::new(text).weak()).wrap());
 }
 
 #[cfg(test)]
@@ -460,11 +486,62 @@ mod tests {
             torque_gap_text(2.21, 2.5).0,
             torque_gap_text(2.9, 2.5).0,
             torque_gap_text(2.0, 0.0).0,
+            DIAMETER_HOVER.to_owned(),
+            LENGTH_HOVER.to_owned(),
+            LINKED_HOUSING.to_owned(),
         ];
         for text in &texts {
             assert_glyphs(&ctx, text, "a Size tab readout");
             let violations = plain_text_violations(text);
             assert!(violations.is_empty(), "{text:?}: {violations:?}");
+        }
+    }
+
+    #[test]
+    fn the_size_tab_names_each_quantity_as_the_rest_of_the_panel_does() {
+        use crate::gui::plain_text::label_for;
+        // Spec 3.5, one name per quantity: the requirement's slider and the hot-low readout
+        // read as the input row and the dashboard row name them.
+        assert_eq!(REQUIRED, label_for("metal.required_min_Nm"));
+        assert_eq!(HOT_LOW, label_for("metal.torque_hot_low_Nm"));
+        // The Auto row and its hover name the required torque; the hover the hot-low torque.
+        let required = label_for("metal.required_min_Nm").to_lowercase();
+        assert!(AUTO_SUFFIX.contains(&required), "{AUTO_SUFFIX}");
+        assert!(AUTO_HOVER.contains(&required), "{AUTO_HOVER}");
+        assert!(
+            AUTO_HOVER.contains(&label_for("metal.torque_hot_low_Nm").to_lowercase()),
+            "{AUTO_HOVER}"
+        );
+        // O-7: the footnote says the Outside diameter moves the ring radius, so the slider and
+        // the input row are seen to be one quantity.
+        let ring = label_for("coupling.inner_back_apothem_mm").to_lowercase();
+        assert!(LINKED_HOUSING.contains(&ring), "{LINKED_HOUSING}");
+    }
+
+    #[test]
+    fn the_diameter_and_length_hovers_say_what_they_move_within_the_help_caps() {
+        use crate::engine::explain::plain::{sentence_count, word_count};
+        use crate::gui::plain_text::label_for;
+        // R-3: the Outside diameter control says it moves the ring radius (the input row's
+        // name), and Overall length the magnet length of both rings.
+        let ring = label_for("coupling.inner_back_apothem_mm").to_lowercase();
+        assert!(DIAMETER_HOVER.contains(&ring), "{DIAMETER_HOVER}");
+        assert!(LENGTH_HOVER.contains("magnet length"), "{LENGTH_HOVER}");
+        // The Outside diameter counts the shaft boss, so it is not the space claim's rotating
+        // diameter (the cup and the cap only, `engine::metal_design`): the hover never uses
+        // that name.
+        assert!(DIAMETER_HOVER.contains("shaft boss"), "{DIAMETER_HOVER}");
+        assert!(
+            !DIAMETER_HOVER.to_lowercase().contains("rotating"),
+            "{DIAMETER_HOVER}"
+        );
+        // Spec 3.5's help caps: 1-2 sentences, at most 30 words.
+        for hover in [DIAMETER_HOVER, LENGTH_HOVER] {
+            assert!(word_count(hover) <= 30, "{hover}");
+            assert!(
+                hover.ends_with('.') && (1..=2).contains(&sentence_count(hover)),
+                "{hover}"
+            );
         }
     }
 }

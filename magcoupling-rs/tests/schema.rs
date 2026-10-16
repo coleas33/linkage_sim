@@ -19,9 +19,13 @@ mod common;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 
-use common::{data_path, read_text, report, reworded_help, snapshot, value_to_json};
+use common::{
+    code_names, data_path, plain_problems, provenance_words, read_text, report, reworded_help,
+    snapshot, value_to_json,
+};
 use magcoupling::engine::api::{DesignInputs, compute_all};
 use magcoupling::engine::deviations::Deviations;
+use magcoupling::engine::explain::plain::{plain_text_violations, sentence_count, word_count};
 use magcoupling::engine::meta::{FieldType, Value, input_rows, result_rows};
 use serde_json::json;
 
@@ -322,8 +326,7 @@ fn table_columns_match_the_workbook_headers() {
         let (Some(cell), true) = (row.cell.as_deref(), row.path.contains("[0].")) else {
             continue;
         };
-        // Column B of the sweeps: "Corner gap (mm)" on one sheet, "Poles" on the other.
-        if row.path.ends_with(".variable") {
+        if ENGINE_WORDED_COLUMNS.contains(&column_pattern(&row.path).as_str()) {
             continue;
         }
         let Some((label, unit, help)) = header_cells(cell) else {
@@ -375,4 +378,216 @@ fn table_columns_match_the_workbook_headers() {
         .expect("the screw table");
     assert_eq!(size.meta.label, text_at("Clamp screw sizes!B5"));
     assert!(failures.is_empty(), "{}", report(&failures));
+}
+
+// ------------------------------------------------------------------ plain words (slice 2, T9)
+
+/// A table row's path with its row index as `[*]` (`clamps.table[3].length_mm` becomes
+/// `clamps.table[*].length_mm`), the form `workbook_help` names a column by; any other path as
+/// it is.
+fn column_pattern(path: &str) -> String {
+    match (path.find('['), path.find(']')) {
+        (Some(open), Some(close)) if open < close => {
+            format!("{}[*]{}", &path[..open], &path[close + 1..])
+        }
+        _ => path.to_owned(),
+    }
+}
+
+/// The ported table columns whose label and help the port writes itself: the sweeps' column B,
+/// "Corner gap (mm)" on one sheet and "Poles" on the other, so no one workbook header fits.
+/// `table_columns_match_the_workbook_headers` skips them and `engine_owned_text` holds them.
+const ENGINE_WORDED_COLUMNS: [&str; 2] = ["gap_sweep[*].variable", "pole_sweep[*].variable"];
+
+/// One field the engine words itself.
+struct EngineText {
+    path: String,
+    label: &'static str,
+    help: &'static str,
+    choices: Vec<&'static str>,
+}
+
+/// What the engine words itself, apart from the Python port (spec ruling R1): every Rust-only
+/// input and result, every ported result or table column whose help an applied correction
+/// rewords (Python keeps the workbook text there, so the port's text is free), and the
+/// [`ENGINE_WORDED_COLUMNS`]. A ported input's help is Python's; the GUI overlay rewords it on
+/// screen (`gui::plain_text`), so it is not here. A table column once.
+fn engine_owned_text() -> Vec<EngineText> {
+    let reworded = reworded_help();
+    let defaults = DesignInputs::default();
+    let inputs = input_rows(&defaults)
+        .into_iter()
+        .filter(|row| row.meta.rust_only)
+        .map(|row| EngineText {
+            path: row.path,
+            label: row.meta.label,
+            help: row.meta.help,
+            choices: row.meta.choices.iter().map(|&(_, text)| text).collect(),
+        });
+    let results = result_rows(&compute_all(&defaults))
+        .into_iter()
+        .filter(|row| {
+            let column = column_pattern(&row.path);
+            row.meta.rust_only
+                || reworded.contains_key(column.as_str())
+                || ENGINE_WORDED_COLUMNS.contains(&column.as_str())
+        })
+        .map(|row| EngineText {
+            path: column_pattern(&row.path),
+            label: row.meta.label,
+            help: row.meta.help,
+            choices: Vec::new(),
+        });
+    let mut seen = BTreeSet::new();
+    inputs
+        .chain(results)
+        .filter(|text| seen.insert(text.path.clone()))
+        .collect()
+}
+
+#[test]
+fn the_text_helpers_find_what_they_name() {
+    // Provenance: the audit, its decisions, the plans, the explorer's code name, the autofit,
+    // the 3D milestone and bare cells; never a plain sentence.
+    assert_eq!(
+        provenance_words("Audit M9 (the user's decision: a flag)"),
+        ["decision", "audit"]
+    );
+    assert_eq!(
+        provenance_words("plan A-3: a term of the equation explorer"),
+        ["plan a-", "equation explorer"]
+    );
+    assert_eq!(
+        provenance_words("Calculator C6 = 0 still selects it"),
+        ["C6"]
+    );
+    assert_eq!(
+        provenance_words("Addendum A1 autofit, until M3 computes it"),
+        ["autofit", "until m3"]
+    );
+    for clean in [
+        "The cup wall check asks for it; n/a without back iron.",
+        "20 °C, 1.35e6 S/m",
+        "Cold (C) and hot",
+        "B842SH blocks",
+        "",
+    ] {
+        assert!(provenance_words(clean).is_empty(), "{clean:?}");
+    }
+    // Code: snake_case identifiers and dotted paths; never a symbol.
+    assert_eq!(code_names("when f_end is 0"), ["f_e"]);
+    assert_eq!(code_names("tau7_Pa"), ["7_P"]);
+    assert_eq!(code_names("(coupling.max_harmonic)"), ["g.m", "x_h"]);
+    for clean in [
+        "B_i,1 B_o,1 S_1 / (2 μ0)",
+        "τ_n and R_g",
+        "0.1 mm",
+        "Hk(T) = knee · Hcj",
+        "B_gap",
+    ] {
+        assert!(code_names(clean).is_empty(), "{clean:?}");
+    }
+    // The three together, as every plain-words test reports a text: the guard's hits, then the
+    // provenance words, then the code names; nothing for plain words.
+    assert_eq!(
+        plain_problems("the workbook's value").as_deref(),
+        Some(r#"["workbook"] [] []"#)
+    );
+    assert_eq!(
+        plain_problems("an audit finding").as_deref(),
+        Some(r#"[] ["audit"] []"#)
+    );
+    assert_eq!(
+        plain_problems("when f_end is 0").as_deref(),
+        Some(r#"[] [] ["f_e"]"#)
+    );
+    assert_eq!(plain_problems("The cup wall check asks for it."), None);
+    // The word and sentence counters are the plain-words module's, tested there (A-16).
+}
+
+#[test]
+fn every_result_label_and_help_passes_the_plain_words_guard() {
+    // Spec 3.4 and 3.5: a result's hover shows its label and help. The Python port's wording and
+    // the engine's own both pass the guard; a table column is checked once.
+    let mut failures = Vec::new();
+    let mut seen = BTreeSet::new();
+    for row in result_rows(&compute_all(&DesignInputs::default())) {
+        let column = column_pattern(&row.path);
+        if !seen.insert(column.clone()) {
+            continue;
+        }
+        for (what, text) in [("label", row.meta.label), ("help", row.meta.help)] {
+            let hits = plain_text_violations(text);
+            if !hits.is_empty() {
+                failures.push(format!("{column}: {what} {hits:?}: {text:?}"));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", report(&failures));
+}
+
+#[test]
+fn engine_owned_help_is_plain_and_short() {
+    let texts = engine_owned_text();
+    // Not vacuous: a Rust-only input, a Rust-only result, a reworded result, a reworded table
+    // column and the sweeps' swept-variable column are all in the set.
+    for path in [
+        "coupling.max_harmonic",
+        "housing.space_claim_check",
+        "metal.steel_cup_mass_g",
+        "clamps.table[*].length_mm",
+        "gap_sweep[*].variable",
+        "pole_sweep[*].variable",
+    ] {
+        assert!(
+            texts.iter().any(|t| t.path == path),
+            "{path} is not engine-owned"
+        );
+    }
+    let mut failures = Vec::new();
+    for t in &texts {
+        let mut strings = vec![("label", t.label), ("help", t.help)];
+        strings.extend(t.choices.iter().map(|&choice| ("choice", choice)));
+        for (what, text) in strings {
+            if let Some(problems) = plain_problems(text) {
+                failures.push(format!("{}: {what} {problems}: {text:?}", t.path));
+            }
+        }
+        // Help style (spec 3.5): at most 30 words, in one or two sentences.
+        let (words, sentences) = (word_count(t.help), sentence_count(t.help));
+        if words > 30 || sentences > 2 {
+            failures.push(format!(
+                "{}: help of {words} words in {sentences} sentences: {:?}",
+                t.path, t.help
+            ));
+        }
+    }
+    assert!(failures.is_empty(), "{}", report(&failures));
+}
+
+#[test]
+fn the_default_harmonic_set_reads_as_the_default() {
+    // Spec 3.8: the choice the harmonic set starts at says "(default)", not the workbook's.
+    let row = input_rows(&DesignInputs::default())
+        .into_iter()
+        .find(|r| r.path == "coupling.max_harmonic")
+        .expect("the harmonic set");
+    let Value::Int(code) = row.value else {
+        panic!("a selector: {:?}", row.value)
+    };
+    let (_, text) = row
+        .meta
+        .choices
+        .iter()
+        .find(|(c, _)| *c == code)
+        .expect("the default is a choice");
+    assert!(text.ends_with(" (default)"), "{text}");
+    assert_eq!(
+        row.meta
+            .choices
+            .iter()
+            .filter(|(_, t)| t.contains("(default)"))
+            .count(),
+        1
+    );
 }

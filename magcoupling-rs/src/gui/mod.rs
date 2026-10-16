@@ -20,6 +20,7 @@ pub mod input_ui;
 pub mod inputs;
 mod panel;
 pub mod pickers;
+pub mod plain_text;
 pub mod plots;
 pub mod readouts;
 pub mod result_groups;
@@ -36,4 +37,6 @@ pub mod xlsx;
 
 pub use format::{SIGNIFICANT_DIGITS, format_value, with_unit};
 pub use inputs::KEY_DESIGN;
-pub use panel::{CentreView, MagcouplingPanel, PanelRequest, SIZING_LOG_PREFIX};
+pub use panel::{
+    CentreView, MagcouplingPanel, PanelRequest, SHOW_DETAILS, SIZING_LOG_PREFIX, WELCOME,
+};

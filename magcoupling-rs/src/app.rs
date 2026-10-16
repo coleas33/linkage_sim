@@ -151,7 +151,11 @@ mod tests {
         // The design status line tops the dashboard: it was laid out (its lower rows scroll on
         // this screen, under the check guides).
         let defaults = DesignInputs::default();
-        let status = design_status_text(&design_status(&defaults, &compute_all(&defaults)));
+        let status = design_status_text(&design_status(
+            &defaults,
+            &compute_all(&defaults),
+            crate::engine::clamps::PAUSED,
+        ));
         assert!(texts.contains(&status), "missing {status:?} in {texts:?}");
         assert_eq!(ctx.style().visuals, theme::cad_dark_visuals());
     }
@@ -239,6 +243,30 @@ mod tests {
         assert!(script.contains(DESIGN_FILE_LOADED));
         // The equation registry's log line, built when the panel starts.
         assert!(script.contains(crate::gui::readouts::REGISTRY_LOG_PREFIX));
+        // The header's Show spreadsheet details toggle (spec S2-5), which the first view shows.
+        assert!(
+            script.contains(crate::gui::SHOW_DETAILS),
+            "the smoke prompt names the header's toggle"
+        );
+        // Spec R14 (guidance slice 2): the steps name the welcome strip, a note's What to change
+        // and its sources fold, the Geometry tab and the dashboard's last row as the page draws
+        // them, so the prompt cannot go stale unnoticed.
+        assert!(script.contains(crate::gui::WELCOME), "the welcome strip");
+        assert!(
+            script.contains(crate::gui::explorer::WHAT_TO_CHANGE),
+            "a note's What to change"
+        );
+        assert!(
+            script.contains(crate::gui::explorer::WHERE_FROM),
+            "a note's sources fold"
+        );
+        assert!(
+            script.contains(crate::gui::CentreView::Geometry.label()),
+            "the Geometry tab"
+        );
+        let fit =
+            crate::gui::guidance::guide(crate::gui::guidance::FIT_CHECK).expect("the fit guide");
+        assert!(script.contains(fit.label), "the dashboard's last row");
         // The app opens the link and the solve succeeds after its debounce.
         let ctx = egui::Context::default();
         let mut app = MagcouplingApp::new(&ctx);

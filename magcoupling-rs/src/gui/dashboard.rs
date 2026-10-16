@@ -9,10 +9,12 @@
 //!
 //! - **End effect (audit M9).** When f_end ≤ 0 the pull-out and the numbers computed from it
 //!   ([`END_EFFECT_ROWS`]) are greyed, without a badge, under the banner "End-effect model out
-//!   of range".
-//! - **Stored 3D values.** M3 (the live 3D field model) comes after M4, so the temperature
-//!   rows that read the workbook's stored 3D fields ([`STORED_3D_ROWS`]) carry the label
-//!   "3D values from the workbook" instead of a "3D updating" badge.
+//!   of range", which carries a "Why: <note>" link to the end-effect check's note (slice-2 spec
+//!   3.7; `end_effect_banner_ui` draws it here and over the centre region).
+//! - **Stored 3D values.** The temperature rows that read the stored 3D fields
+//!   ([`STORED_3D_ROWS`]) carry the label [`STORED_3D_LABEL`]: the fields
+//!   ([`STORED_3D_INPUTS`]) are 3D results for the example design and stay fixed when the
+//!   design changes; no live 3D model runs.
 //!
 //! Over the rows, the material warnings that fire (spec Addendum A5: "plain language,
 //! colour-coded, linked to their teaching note"): each rule's text in its severity's colour (a
@@ -39,7 +41,9 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use crate::engine::assumptions::ASSUMPTIONS;
+use crate::engine::clamps;
 use crate::engine::explain::notes;
+use crate::engine::materials::CUP_WALL_TOO_THIN;
 use crate::engine::meta::{ResultMeta, ResultSet, Value, result_rows};
 use crate::engine::model::END_EFFECT_OUT_OF_RANGE;
 use crate::engine::warnings::{Severity, WARNING_RULES, WarningRule};
@@ -47,9 +51,10 @@ use crate::gui::corrections::{CorrectionIndex, Mark, marker_text, marker_tooltip
 use crate::gui::explorer::reviewed_note;
 use crate::gui::format::{format_value, with_unit};
 use crate::gui::guidance::{
-    self, CHECK_GUIDES, CheckGuide, Direction, FIT_CHECK, Learn, NO_FIX, design_status,
-    design_status_text, fix_text, guide_notes, row_learn,
+    self, BANNER_NOTE, CHECK_GUIDES, CheckGuide, Direction, FIT_CHECK, Learn, NO_FIX,
+    design_status, design_status_text, fix_text, guide_notes, row_learn,
 };
+use crate::gui::plain_text::{display_label, help_for, label_for};
 use crate::gui::readouts::Readouts;
 use crate::gui::typeset::glyph_safe;
 use crate::{DesignInputs, DesignResults, compute_all};
@@ -204,13 +209,47 @@ pub const STORED_3D_ROWS: [&str; 3] = [
 ];
 
 /// The label of the stored-3D rows.
-pub const STORED_3D_LABEL: &str = "3D values from the workbook";
+pub const STORED_3D_LABEL: &str = "Fixed 3D fields from the example design";
 
 /// Its hover text.
-pub const STORED_3D_NOTE: &str = "The demagnetization reverse fields and the slip-loss fields are the workbook's stored 3D values: they do not follow geometry changes until M3 computes them live.";
+pub const STORED_3D_NOTE: &str = "The temperature checks use the demagnetization reverse fields and the slip-heating fields, computed in 3D for the example design. Those fields stay fixed when you change the geometry, magnet count or grade; for another design, enter its own 3D fields to check the limits.";
+
+/// The stored 3D inputs: the four reverse fields of the demagnetization check and the
+/// slip-loss fields (the steel circuit's eleven, and the three free-space ones). They are 3D
+/// results for the example design and stay fixed when the design changes
+/// ([`STORED_3D_SENTENCE`]); [`STORED_3D_ROWS`] are the headline rows that move with them.
+pub const STORED_3D_INPUTS: [&str; 14] = [
+    "temperature.demag.h_rev_aligned_kA_m",
+    "temperature.demag.h_rev_pullout_kA_m",
+    "temperature.demag.h_rev_likepole_kA_m",
+    "temperature.demag.h_rev_single_ring_kA_m",
+    "temperature.slip_loss.b_hub_T",
+    "temperature.slip_loss.b_cup_T",
+    "temperature.slip_loss.b_sleeve_T",
+    "temperature.slip_loss.b_liner_T",
+    "temperature.slip_loss.cap_integral_T2m4",
+    "temperature.slip_loss.web_integral_T2m2",
+    "temperature.slip_loss.b_magnet_T",
+    "temperature.slip_loss.b_hub_free_T",
+    "temperature.slip_loss.b_cup_free_T",
+    "temperature.slip_loss.web_integral_free_T2m2",
+];
+
+/// The sentence the on-screen help of every stored 3D input ends with, whether the overlay
+/// (`gui::plain_text`) or the engine words it (spec 3.8 and section 8, amendment A-7: the
+/// stored fields never follow the design). Typed once, in the engine's
+/// `engine::temperature::stored_3d_sentence!`.
+pub const STORED_3D_SENTENCE: &str = crate::engine::temperature::stored_3d_sentence!();
 
 /// The start of the banner shown when f_end ≤ 0.
 pub const END_EFFECT_BANNER: &str = END_EFFECT_OUT_OF_RANGE;
+
+/// What a greyed row's hover text says after [`END_EFFECT_OUT_OF_RANGE`].
+pub const END_EFFECT_GREYED: &str = "the pull-out and every number computed from it are not valid while the end-effect factor is zero or below.";
+
+/// The line over the dashboard's rows while the spreadsheet details show (spec S2-5): what the
+/// ids beside the values are.
+pub const MARKER_LEGEND: &str = "E-numbers beside a value are corrections to the original spreadsheet that change it; hover the value to see each one.";
 
 /// Every design-level check of the results, in schema order (decision O-3): the dashboard's
 /// verdicts, the coupling model's, the temperature design's and the clamp's checks and
@@ -335,6 +374,34 @@ pub fn verdict_level(path: &str, text: &str) -> Option<Level> {
     }
 }
 
+/// What the screen draws for a check's verdict in place of the engine's text (ruling R9): the
+/// cup wall's "Too thin" verdict names the wall by its input's on-screen label instead of the
+/// original spreadsheet's cell. [`verdict_level`] has already read the engine text, and the
+/// number is the engine's own, kept as written. `None` for any other path or text, and for a
+/// number that is not a finite number: the engine text is then drawn.
+pub fn verdict_display(path: &str, text: &str) -> Option<String> {
+    if path != "materials.cup_wall_check" || verdict_level(path, text) != Some(Level::Bad) {
+        return None;
+    }
+    let number = text.strip_prefix(CUP_WALL_TOO_THIN)?.strip_suffix(" mm")?;
+    number.parse::<f64>().ok().filter(|x| x.is_finite())?;
+    Some(format!(
+        "{}{number} mm",
+        crate::gui::plain_text::shown_literal(CUP_WALL_TOO_THIN)
+    ))
+}
+
+/// A result's value as the screen draws it, before its unit: [`format_value`]'s text, with
+/// [`verdict_display`]'s words in place of the cup wall's failing verdict. The results table and
+/// the Equation panel draw it (the dashboard, [`DashboardLine::shown_value`]); the exports keep
+/// the engine's text.
+pub fn shown_text(path: &str, value: &Value) -> String {
+    match value {
+        Value::Text(text) => verdict_display(path, text).unwrap_or_else(|| text.clone()),
+        other => format_value(other),
+    }
+}
+
 /// The badge level of the check at `path` for `results`: [`verdict_level`] of its text; `None`
 /// for a path that is no check or holds no text, a verdict that gives no badge, or a check
 /// computed from an invalid pull-out ([`greyed_by_end_effect`]: the dashboard greys its row).
@@ -349,10 +416,12 @@ pub fn check_level(results: &DesignResults, path: &str) -> Option<Level> {
 }
 
 /// The checks of `results` that fail (red) or ask for a look (amber), the red first, each in
-/// [`CHECKS`] order: what the results table's failing filter shows.
-pub fn failing_checks(results: &DesignResults) -> Vec<(&'static str, Level)> {
+/// [`CHECKS`] order: what the results table's failing filter shows. While the shaft-clamp
+/// section is paused (`clamps_paused`) its checks are left out ([`clamps::hides`]).
+pub fn failing_checks(results: &DesignResults, clamps_paused: bool) -> Vec<(&'static str, Level)> {
     let mut failing: Vec<(&'static str, Level)> = CHECKS
         .iter()
+        .filter(|&&path| !clamps::hides(path, clamps_paused))
         .filter_map(|&path| match check_level(results, path) {
             Some(level @ (Level::Bad | Level::Caution)) => Some((path, level)),
             _ => None,
@@ -401,38 +470,50 @@ pub struct ResultNotes<'a> {
     pub stored_3d: bool,
 }
 
-/// The hover text of a displayed result: label, help, path, workbook cell, then the notes.
-/// The text every readout shows (`Readouts::show` adds the equation under it).
-pub fn result_tooltip(path: &str, info: &ResultInfo, notes: ResultNotes<'_>) -> String {
-    let meta = info.meta;
-    let mut lines = vec![meta.label.to_owned()];
-    if !meta.help.is_empty() {
-        lines.push(meta.help.to_owned());
+/// The hover text of a displayed result: its on-screen name and help (`gui::plain_text`: the
+/// overlay's, else the metadata's), path, workbook cell, then the notes. The text every readout
+/// shows (`Readouts::show` adds the equation under it).
+///
+/// The path, the workbook cell and the corrections' lines only with `show_details` (the
+/// header's Show spreadsheet details, spec S2-5).
+pub fn result_tooltip(
+    path: &str,
+    info: &ResultInfo,
+    notes: ResultNotes<'_>,
+    show_details: bool,
+) -> String {
+    let mut lines = vec![display_label(path, info.meta.label).to_owned()];
+    let help = help_for(path);
+    if !help.is_empty() {
+        lines.push(help.to_owned());
     }
-    lines.push(path.to_owned());
-    lines.push(
-        info.cell
-            .clone()
-            .unwrap_or_else(|| "Rust-only result (no workbook cell)".to_owned()),
-    );
+    if show_details {
+        if let Some(original) = crate::gui::plain_text::original_help(path) {
+            lines.push(format!("{}: {original}", crate::gui::inputs::ORIGINAL_NOTE));
+        }
+        lines.push(path.to_owned());
+        lines.push(
+            info.cell
+                .clone()
+                .unwrap_or_else(|| crate::gui::plain_text::NO_SPREADSHEET_CELL.to_owned()),
+        );
+    }
     if notes.greyed {
-        lines.push(format!(
-            "{END_EFFECT_OUT_OF_RANGE}: computed from the pull-out, which is not valid while f_end <= 0."
-        ));
+        lines.push(format!("{END_EFFECT_OUT_OF_RANGE}: {END_EFFECT_GREYED}"));
     }
     if notes.stored_3d {
         lines.push(format!("{STORED_3D_LABEL}: {STORED_3D_NOTE}"));
     }
-    if !notes.marks.is_empty() {
+    if show_details && !notes.marks.is_empty() {
         lines.push(marker_tooltip(notes.marks));
     }
     lines.join("\n")
 }
 
-/// The hover text of the result at `path` with its corrections' marks: the hook's text for a
-/// readout outside the dashboard (a results-table row, a geometry callout); `None` for a path
-/// that is no result.
-pub fn hover_text(path: &str) -> Option<String> {
+/// The hover text of the result at `path` with its corrections' marks, with the spreadsheet
+/// details when `show_details`: the hook's text for a readout outside the dashboard (a
+/// results-table row, a geometry callout); `None` for a path that is no result.
+pub fn hover_text(path: &str, show_details: bool) -> Option<String> {
     let info = result_info(path)?;
     let marks = CorrectionIndex::get().marks(info.cell.as_deref());
     Some(result_tooltip(
@@ -442,6 +523,7 @@ pub fn hover_text(path: &str) -> Option<String> {
             marks,
             ..ResultNotes::default()
         },
+        show_details,
     ))
 }
 
@@ -449,6 +531,8 @@ pub fn hover_text(path: &str) -> Option<String> {
 #[derive(Clone, Debug, PartialEq)]
 pub struct DashboardLine {
     pub path: &'static str,
+    /// The result's catalogue label: the spreadsheet's Summary writes it. The dashboard draws
+    /// the path's on-screen name, [`label_for`].
     pub label: &'static str,
     /// The value with its unit.
     pub value: String,
@@ -463,8 +547,9 @@ pub struct DashboardLine {
 }
 
 impl DashboardLine {
-    /// The row's hover text (built only while the row is hovered).
-    pub fn tooltip(&self) -> String {
+    /// The row's hover text (built only while the row is hovered), with the spreadsheet
+    /// details when `show_details`.
+    pub fn tooltip(&self, show_details: bool) -> String {
         let info = result_info(self.path).expect("a dashboard row is a result");
         result_tooltip(
             self.path,
@@ -474,7 +559,14 @@ impl DashboardLine {
                 greyed: self.greyed,
                 stored_3d: self.stored_3d,
             },
+            show_details,
         )
+    }
+
+    /// The value as the dashboard draws it: [`verdict_display`]'s words for the cup wall's
+    /// failing verdict, else the value as the engine gives it (the exports keep that).
+    pub fn shown_value(&self) -> String {
+        verdict_display(self.path, &self.value).unwrap_or_else(|| self.value.clone())
     }
 }
 
@@ -495,10 +587,43 @@ pub fn greyed_by_end_effect(results: &DesignResults, path: &str) -> bool {
 pub fn end_effect_banner(results: &DesignResults) -> Option<String> {
     end_effect_out_of_range(results).map(|f_end| {
         format!(
-            "{END_EFFECT_BANNER} (f_end = {}): the pull-out and the numbers computed from it are greyed.",
+            "{END_EFFECT_BANNER} (end-effect factor {}): the pull-out and the numbers computed from it are greyed.",
             format_value(&Value::Num(f_end))
         )
     })
+}
+
+/// The text of a Why link drawn outside a dashboard row: "Why: " and the note's title, one
+/// link (a warning's; the Size tab's and the end-effect banner's, spec 3.7). Not a "Why:" label
+/// and the bare title: Start here draws its step's title exactly once, and the Size tab links
+/// its first step's note.
+pub fn why_note_text(note: &notes::Note) -> String {
+    format!("{WHY}: {}", glyph_safe(note.title))
+}
+
+/// Draws the Why link to the note `id` ([`why_note_text`]); nothing for a note that has not
+/// passed review (the release gate keeps every linked note reviewed). Returns whether it was
+/// clicked.
+pub(crate) fn why_note_link(ui: &mut egui::Ui, id: &str) -> bool {
+    reviewed_note(id).is_some_and(|note| ui.link(why_note_text(note)).clicked())
+}
+
+/// The end-effect banner while f_end <= 0 ([`end_effect_banner`]), drawn over the dashboard and
+/// over the centre region (decision M42-1), with the Why link to the end-effect check's note
+/// under it (spec 3.7, CG-10), which asks for that note. Returns whether the banner shows.
+pub(crate) fn end_effect_banner_ui(
+    ui: &mut egui::Ui,
+    results: &DesignResults,
+    readouts: &mut Readouts,
+) -> bool {
+    let Some(banner) = end_effect_banner(results) else {
+        return false;
+    };
+    ui.colored_label(ui.visuals().error_fg_color, banner);
+    if why_note_link(ui, BANNER_NOTE) {
+        readouts.open_note(BANNER_NOTE);
+    }
+    true
 }
 
 /// The dashboard rows of `results`.
@@ -531,44 +656,69 @@ pub fn dashboard_lines(results: &DesignResults) -> Vec<DashboardLine> {
         .collect()
 }
 
+/// The dashboard rows drawn while the shaft-clamp section is paused (`clamps_paused`) or not.
+pub fn shown_lines(results: &DesignResults, clamps_paused: bool) -> Vec<DashboardLine> {
+    dashboard_lines(results)
+        .into_iter()
+        .filter(|line| !clamps::hides(line.path, clamps_paused))
+        .collect()
+}
+
 /// Draws the dashboard of `results`, computed from `inputs`: the design status line, the
-/// end-effect banner when f_end <= 0, then a row per line (badge and label, then the value and
-/// the marker under them, so a narrow side still reads) with its Why line, a guided check's
+/// end-effect banner when f_end <= 0, then a row per line (badge and label, then the value and,
+/// with the spreadsheet details, its correction ids under a one-line legend, so a narrow side
+/// still reads) with its Why line, a guided check's
 /// block over its Why line, the stored-3D label after the last temperature row, and the
 /// Magnets fit row last. `fixes` holds every guide's fixes in [`CHECK_GUIDES`]' order
 /// (`guidance::FixCache`). Each result row is a readout (`readouts`): its hover text and
-/// equation while hovered, a click opens it in the Equation panel.
+/// equation while hovered, a click opens it in the Equation panel. While the shaft-clamp
+/// section is paused (`clamps_paused`) its rows, their guide and their Why links are left out
+/// and the status line does not count its check.
 pub fn dashboard_ui(
     ui: &mut egui::Ui,
     inputs: &DesignInputs,
     results: &DesignResults,
     fixes: &[Vec<(&'static str, Direction)>],
+    clamps_paused: bool,
     readouts: &mut Readouts,
 ) {
-    status_ui(ui, inputs, results);
-    let lines = dashboard_lines(results);
-    if let Some(banner) = end_effect_banner(results) {
-        ui.colored_label(ui.visuals().error_fg_color, banner);
+    status_ui(ui, inputs, results, clamps_paused);
+    let lines = shown_lines(results, clamps_paused);
+    if end_effect_banner_ui(ui, results, readouts) {
         ui.separator();
     }
     warnings_ui(ui, results, readouts);
+    // The correction ids beside the values, and what they are, only with the spreadsheet
+    // details (spec S2-5).
+    let show_details = readouts.show_details();
+    if show_details {
+        ui.add(egui::Label::new(egui::RichText::new(MARKER_LEGEND).small().weak()).wrap());
+    }
     let last_3d = lines.iter().rposition(|line| line.stored_3d);
     for (index, line) in lines.iter().enumerate() {
         let weak = ui.visuals().weak_text_color();
         let tint = |rich: egui::RichText| if line.greyed { rich.color(weak) } else { rich };
         let title = ui.horizontal(|ui| {
             badge(ui, line.level);
-            ui.add(egui::Label::new(tint(egui::RichText::new(line.label))).wrap());
+            ui.add(egui::Label::new(tint(egui::RichText::new(label_for(line.path)))).wrap());
         });
         let value = ui.horizontal(|ui| {
             ui.add_space(16.0);
-            ui.add(egui::Label::new(tint(egui::RichText::new(&line.value).strong())).wrap());
-            if !line.marker.is_empty() {
-                ui.small(&line.marker);
-            }
+            // One wrapped flow, indented: the correction ids follow the value on its last line
+            // or the next. Beside a value wrapped to the full width they would run past the row,
+            // and the resizable dashboard would widen every frame.
+            ui.horizontal_wrapped(|ui| {
+                let value = egui::RichText::new(line.shown_value()).strong();
+                ui.add(egui::Label::new(tint(value)).wrap());
+                if show_details && !line.marker.is_empty() {
+                    ui.add(egui::Label::new(egui::RichText::new(&line.marker).small()).extend());
+                }
+            });
         });
         let rect = title.response.rect.union(value.response.rect);
-        readouts.show_over(ui, rect, line.path, || line.tooltip());
+        readouts.show_over(ui, rect, line.path, |show_details| {
+            line.tooltip(show_details)
+        });
         // A check's block under its own row (the rows its verdict only badges have none), then
         // every row's Why line.
         match CHECK_GUIDES.iter().position(|g| g.check == line.path) {
@@ -590,9 +740,16 @@ pub fn dashboard_ui(
 }
 
 /// The design status line (guidance spec 3.1): whose design it is and how many guided checks
-/// fail, in the colour of the worst level, over a separator.
-fn status_ui(ui: &mut egui::Ui, inputs: &DesignInputs, results: &DesignResults) {
-    let status = design_status(inputs, results);
+/// fail (those that count with the shaft-clamp section's pause, `clamps_paused`), in the colour
+/// of the worst level, over a separator; at the defaults its hover says where the example's
+/// values come from (spec S2-5).
+fn status_ui(
+    ui: &mut egui::Ui,
+    inputs: &DesignInputs,
+    results: &DesignResults,
+    clamps_paused: bool,
+) {
+    let status = design_status(inputs, results, clamps_paused);
     let level = if status.bad > 0 {
         Level::Bad
     } else if status.caution > 0 {
@@ -603,7 +760,10 @@ fn status_ui(ui: &mut egui::Ui, inputs: &DesignInputs, results: &DesignResults) 
     let text = egui::RichText::new(design_status_text(&status))
         .strong()
         .color(level.color(ui.visuals()));
-    ui.add(egui::Label::new(text).wrap());
+    let line = ui.add(egui::Label::new(text).wrap());
+    if status.is_default {
+        line.on_hover_text(guidance::EXAMPLE_DESIGN_HOVER);
+    }
     ui.separator();
 }
 
@@ -806,10 +966,7 @@ fn warnings_ui(ui: &mut egui::Ui, results: &DesignResults, readouts: &mut Readou
         if let Some(note) = warning_note(rule) {
             ui.horizontal(|ui| {
                 ui.add_space(16.0);
-                if ui
-                    .link(format!("{WHY}: {}", glyph_safe(note.title)))
-                    .clicked()
-                {
+                if ui.link(why_note_text(note)).clicked() {
                     readouts.open_note(rule.note_id);
                 }
             });
@@ -834,11 +991,13 @@ mod tests {
     use super::*;
     use crate::engine::api::HEADLINE;
     use crate::engine::meta::InputSet;
+    use crate::gui::corrections::MARKER_HEADING;
     use crate::gui::guidance::{CHECK_GUIDES, Direction, Fixes, ROW_LEARN, all_fixes, trade_offs};
     use crate::gui::readouts::ReadoutEvents;
     use crate::gui::test_support::{
-        assert_glyphs, drawn_texts, passing_design, primary_button, short_magnets, sized_frame,
-        text_color, text_rect, with_poles,
+        assert_glyphs, drawn_texts, hover_frames, only_the_clamp_fails, passing_design,
+        primary_button, short_magnets, sized_frame, text_center, text_color, text_rect,
+        tooltips_at_once, with_poles,
     };
     use std::collections::BTreeSet;
 
@@ -886,14 +1045,7 @@ mod tests {
                 Good,
             ),
             (TEMPERATURE_VERDICT, DesignInputs::default(), Good),
-            (
-                TEMPERATURE_VERDICT,
-                design(|i| {
-                    i.temperature.duty.hot_ambient_C = 80.0;
-                    i.temperature.duty.driving_rise_C = 60.0;
-                }),
-                Caution,
-            ),
+            (TEMPERATURE_VERDICT, hot_day(), Caution),
             ("clamps.recommended", DesignInputs::default(), Good),
             (
                 "clamps.recommended",
@@ -1214,7 +1366,7 @@ mod tests {
         // The defaults fail four checks, all red.
         let defaults = compute_all(&DesignInputs::default());
         assert_eq!(
-            failing_checks(&defaults),
+            failing_checks(&defaults, false),
             [
                 ("model.cup_ring_check", Bad),
                 ("metal.hot_min_check", Bad),
@@ -1228,7 +1380,7 @@ mod tests {
             i.coupling.magnets.part_outer.clear();
         }));
         assert_eq!(
-            failing_checks(&manual),
+            failing_checks(&manual, false),
             [
                 ("model.cup_ring_check", Bad),
                 ("metal.hot_min_check", Bad),
@@ -1241,7 +1393,10 @@ mod tests {
         // Exactly the checks whose level is red or amber, each once.
         for inputs in [DesignInputs::default(), short_magnets(), design(ferrite)] {
             let results = compute_all(&inputs);
-            let failing: Vec<&str> = failing_checks(&results).iter().map(|(p, _)| *p).collect();
+            let failing: Vec<&str> = failing_checks(&results, false)
+                .iter()
+                .map(|(p, _)| *p)
+                .collect();
             let want: Vec<&str> = CHECKS
                 .iter()
                 .copied()
@@ -1292,32 +1447,89 @@ mod tests {
 
     #[test]
     fn the_stored_3d_rows_are_the_headline_rows_that_move_with_the_stored_3d_inputs() {
-        // The stored 3D inputs: the four reverse fields of the demagnetization check and the
-        // slip-loss fields (steel circuit, and E17's free-space ones), which M3 computes live.
-        let inputs: Vec<String> = [
-            "temperature.demag.h_rev_aligned_kA_m",
-            "temperature.demag.h_rev_pullout_kA_m",
-            "temperature.demag.h_rev_likepole_kA_m",
-            "temperature.demag.h_rev_single_ring_kA_m",
-            "temperature.slip_loss.b_hub_T",
-            "temperature.slip_loss.b_cup_T",
-            "temperature.slip_loss.b_sleeve_T",
-            "temperature.slip_loss.b_liner_T",
-            "temperature.slip_loss.cap_integral_T2m4",
-            "temperature.slip_loss.web_integral_T2m2",
-            "temperature.slip_loss.b_magnet_T",
-            "temperature.slip_loss.b_hub_free_T",
-            "temperature.slip_loss.b_cup_free_T",
-            "temperature.slip_loss.web_integral_free_T2m2",
-        ]
-        .map(str::to_owned)
-        .to_vec();
+        let inputs: Vec<String> = STORED_3D_INPUTS.map(str::to_owned).to_vec();
         let catalogue = crate::gui::inputs::InputCatalogue::get();
         let moved = headline_moved_by(&inputs, |path| {
             let range = catalogue.entry(path).unwrap().meta.range.unwrap();
             vec![range.min, range.max]
         });
         assert_eq!(moved, STORED_3D_ROWS.into_iter().collect());
+    }
+
+    #[test]
+    fn the_stored_3d_label_and_note_say_the_fields_are_fixed_in_plain_words() {
+        // Spec 3.8: "3D values from the workbook ... until M3" becomes a plain statement that
+        // the values are the example design's and do not follow the design; no live 3D model is
+        // promised (section 8, slice-1 trap 6). Amendment A-7: "example design", the name the
+        // screen gives the defaults.
+        for text in [STORED_3D_LABEL, STORED_3D_NOTE, STORED_3D_SENTENCE] {
+            assert_eq!(
+                guidance::plain_text_violations(text),
+                Vec::<&str>::new(),
+                "{text}"
+            );
+            assert!(text.contains("example design"), "{text}");
+            assert!(!text.contains("live"), "{text}");
+        }
+        assert!(STORED_3D_NOTE.contains("stay fixed"), "{STORED_3D_NOTE}");
+        assert!(
+            STORED_3D_SENTENCE.contains("does not follow"),
+            "{STORED_3D_SENTENCE}"
+        );
+    }
+
+    #[test]
+    fn the_stored_3d_note_says_the_slip_fields_feed_the_checks_not_the_limits() {
+        // The reverse fields set the magnet limit, so the governing limit and the hot-day margin;
+        // the slip-heating fields set only the slip fault's peak, which the verdict compares with
+        // the limits. So the note's sentence that names the slip-heating fields never says they
+        // set a limit.
+        let catalogue = crate::gui::inputs::InputCatalogue::get();
+        let ends = |path: &str| {
+            let range = catalogue.entry(path).unwrap().meta.range.unwrap();
+            vec![range.min, range.max]
+        };
+        let fields = |group: &str| -> Vec<String> {
+            STORED_3D_INPUTS
+                .iter()
+                .filter(|path| path.starts_with(group))
+                .map(|path| (*path).to_owned())
+                .collect()
+        };
+        assert_eq!(
+            headline_moved_by(&fields("temperature.slip_loss."), ends),
+            BTreeSet::from([TEMPERATURE_VERDICT])
+        );
+        let by_reverse = headline_moved_by(&fields("temperature.demag."), ends);
+        for limit in [
+            "temperature.summary.governing_limit_C",
+            "temperature.summary.margin_hot_day_C",
+        ] {
+            assert!(by_reverse.contains(limit), "{limit}: {by_reverse:?}");
+        }
+        assert!(STORED_3D_NOTE.contains("slip-heating"), "{STORED_3D_NOTE}");
+        for sentence in STORED_3D_NOTE.split_inclusive(". ") {
+            if sentence.contains("slip-heating") {
+                assert!(!sentence.contains("limit"), "{sentence}");
+            }
+        }
+    }
+
+    #[test]
+    fn every_stored_3d_input_says_it_is_the_example_design_s_and_stays_fixed() {
+        // The help on screen of every stored 3D input ends with one sentence, whether the
+        // overlay or the engine words it.
+        let catalogue = crate::gui::inputs::InputCatalogue::get();
+        for path in STORED_3D_INPUTS {
+            assert!(catalogue.entry(path).is_some(), "{path}: not an input");
+            let help = help_for(path);
+            assert!(help.ends_with(STORED_3D_SENTENCE), "{path}: {help:?}");
+            assert_eq!(
+                guidance::plain_text_violations(help),
+                Vec::<&str>::new(),
+                "{path}: {help:?}"
+            );
+        }
     }
 
     #[test]
@@ -1328,11 +1540,15 @@ mod tests {
         assert_eq!(line("model.pullout_Nm").value, "2.688 N·m");
         assert_eq!(line("model.pullout_Nm").level, None);
         assert_eq!(line("model.pullout_Nm").marker, "E3 E7 E8");
+        // With the spreadsheet details the hover says what differs from the original
+        // spreadsheet (corrections.rs tests the values); without them it does not.
+        let pullout = line("model.pullout_Nm");
         assert!(
-            line("model.pullout_Nm")
-                .tooltip()
-                .contains("with E3 alone: workbook 2.647, corrected 2.688")
+            pullout
+                .tooltip(true)
+                .contains(&format!("{MARKER_HEADING}:"))
         );
+        assert!(!pullout.tooltip(false).contains(MARKER_HEADING));
         assert_eq!(line("metal.torque_hot_low_Nm").level, Some(Level::Bad));
         assert_eq!(line("materials.cup_wall_check").level, Some(Level::Bad));
         assert_eq!(line(TEMPERATURE_VERDICT).level, Some(Level::Good));
@@ -1350,7 +1566,7 @@ mod tests {
         assert!(lines.iter().all(|l| !l.greyed));
         for path in STORED_3D_ROWS {
             assert!(line(path).stored_3d);
-            assert!(line(path).tooltip().contains(STORED_3D_LABEL));
+            assert!(line(path).tooltip(false).contains(STORED_3D_LABEL));
         }
         assert_eq!(lines.iter().filter(|l| l.stored_3d).count(), 3);
     }
@@ -1366,7 +1582,7 @@ mod tests {
             if derived {
                 assert_eq!(line.level, None, "{}", line.path);
                 assert!(
-                    line.tooltip().contains(END_EFFECT_OUT_OF_RANGE),
+                    line.tooltip(false).contains(END_EFFECT_OUT_OF_RANGE),
                     "{}",
                     line.path
                 );
@@ -1406,7 +1622,7 @@ mod tests {
             assert_eq!(check_level(&results, path), None, "{path}");
         }
         assert_eq!(
-            failing_checks(&results),
+            failing_checks(&results, false),
             [
                 ("model.end_effect_check", Bad),
                 ("model.verdict", Bad),
@@ -1463,13 +1679,48 @@ mod tests {
     }
 
     #[test]
+    fn the_correction_ids_and_their_legend_show_only_with_the_spreadsheet_details() {
+        use crate::gui::typeset::TermColors;
+        let inputs = DesignInputs::default();
+        let results = compute_all(&inputs);
+        let fixes = all_fixes(&inputs, &results, false);
+        let markers: Vec<String> = dashboard_lines(&results)
+            .into_iter()
+            .map(|line| line.marker)
+            .filter(|marker| !marker.is_empty())
+            .collect();
+        assert!(!markers.is_empty(), "the defaults carry correction ids");
+        let status = design_status_text(&design_status(&inputs, &results, false));
+        for show_details in [false, true] {
+            let ctx = egui::Context::default();
+            let output = sized_frame(&ctx, egui::vec2(1280.0, 4000.0), Vec::new(), |ui| {
+                let mut readouts = Readouts::new(TermColors::default(), show_details);
+                dashboard_ui(ui, &inputs, &results, &fixes, false, &mut readouts);
+            });
+            let texts = drawn_texts(&output);
+            for marker in &markers {
+                assert_eq!(texts.contains(marker), show_details, "{marker}");
+            }
+            let legends = texts.iter().filter(|t| *t == MARKER_LEGEND).count();
+            assert_eq!(legends, usize::from(show_details));
+            // The status line still tops the dashboard.
+            assert_eq!(texts.first(), Some(&status));
+        }
+    }
+
+    #[test]
     fn the_result_tooltip_names_the_path_cell_and_notes() {
         let info = result_info("model.pullout_Nm").unwrap();
-        let tooltip = result_tooltip("model.pullout_Nm", info, ResultNotes::default());
-        assert!(
-            tooltip.starts_with("Pull-out torque at operating temperature\n"),
-            "{tooltip}"
+        // With the spreadsheet details (spec S2-5).
+        let tooltip = result_tooltip("model.pullout_Nm", info, ResultNotes::default(), true);
+        // The on-screen name and the help first (gui::plain_text).
+        let first = format!(
+            "{}\n{}\n",
+            label_for("model.pullout_Nm"),
+            help_for("model.pullout_Nm")
         );
+        assert!(!help_for("model.pullout_Nm").is_empty());
+        assert!(tooltip.starts_with(&first), "{tooltip}");
         assert!(
             tooltip.contains("\nmodel.pullout_Nm\nCalculator!C93"),
             "{tooltip}"
@@ -1479,9 +1730,10 @@ mod tests {
             result_tooltip(
                 "housing.space_claim_check",
                 rust_only,
-                ResultNotes::default()
+                ResultNotes::default(),
+                true
             )
-            .contains("Rust-only result (no workbook cell)")
+            .contains(crate::gui::plain_text::NO_SPREADSHEET_CELL)
         );
         assert!(result_info("no.such").is_none());
         assert_eq!(
@@ -1492,18 +1744,117 @@ mod tests {
 
     #[test]
     fn the_hover_text_carries_the_marks_and_needs_a_result() {
-        let text = hover_text("model.pullout_Nm").unwrap();
+        let text = hover_text("model.pullout_Nm", true).unwrap();
         assert!(
-            text.starts_with("Pull-out torque at operating temperature\n"),
+            text.starts_with(&format!("{}\n", label_for("model.pullout_Nm"))),
             "{text}"
         );
-        assert!(text.contains("Corrected vs workbook:"), "{text}");
+        assert!(text.contains(&format!("{MARKER_HEADING}:")), "{text}");
         assert!(
-            hover_text("housing.length_overshoot_mm")
+            hover_text("housing.length_overshoot_mm", true)
                 .unwrap()
-                .contains("Rust-only result (no workbook cell)")
+                .contains(crate::gui::plain_text::NO_SPREADSHEET_CELL)
         );
-        assert_eq!(hover_text("no.such"), None);
+        assert_eq!(hover_text("no.such", true), None);
+        assert_eq!(hover_text("no.such", false), None);
+    }
+
+    #[test]
+    fn every_result_s_hover_names_its_path_cell_and_corrections_only_with_the_details() {
+        // Spec S2-5: the path, the original spreadsheet cell (or the line that says there is
+        // none) and the corrections that change the value show with Show spreadsheet details;
+        // without them the hover is the same text with exactly those lines left out.
+        for entry in crate::gui::results_table::table_entries() {
+            let path = entry.path.as_str();
+            let on = hover_text(path, true).expect("every table row is a result");
+            let off = hover_text(path, false).expect("every table row is a result");
+            let marks = CorrectionIndex::get().marks(entry.info.cell.as_deref());
+            let marker_lines = if marks.is_empty() {
+                0
+            } else {
+                marker_tooltip(marks).lines().count()
+            };
+            // Where the overlay replaced the engine's help, the original note is one more line.
+            let original_lines = usize::from(crate::gui::plain_text::original_help(path).is_some());
+            assert_eq!(
+                on.lines().count(),
+                off.lines().count() + 2 + marker_lines + original_lines,
+                "{path}: {on:?} against {off:?}"
+            );
+            assert!(on.lines().any(|line| line == path), "{path}: {on:?}");
+            assert!(!off.lines().any(|line| line == path), "{path}: {off:?}");
+            if let Some(cell) = entry.info.cell.as_deref() {
+                assert!(on.lines().any(|line| line == cell), "{path}: {on:?}");
+                assert!(!off.lines().any(|line| line == cell), "{path}: {off:?}");
+            }
+            assert_eq!(on.contains(MARKER_HEADING), !marks.is_empty(), "{path}");
+            assert!(!off.contains(MARKER_HEADING), "{path}");
+            assert!(
+                off.lines().all(|line| on.lines().any(|o| o == line)),
+                "{path}: {off:?} is not part of {on:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn each_row_is_drawn_under_its_display_label_and_exported_under_its_catalogue_label() {
+        let ctx = egui::Context::default();
+        let texts = drawn_texts(&dashboard_frame(&ctx, &DesignInputs::default()));
+        let lines = dashboard_lines(&compute_all(&DesignInputs::default()));
+        for line in &lines {
+            assert!(
+                texts.iter().any(|t| t == label_for(line.path)),
+                "{}",
+                line.path
+            );
+            // The line keeps the catalogue label: the spreadsheet's Summary writes it.
+            assert_eq!(line.label, result_info(line.path).unwrap().meta.label);
+        }
+        // The overlay renames three rows (spec 3.5); their catalogue labels are not drawn.
+        let renamed: Vec<&str> = lines
+            .iter()
+            .filter(|line| label_for(line.path) != line.label)
+            .map(|line| line.path)
+            .collect();
+        assert_eq!(
+            renamed,
+            [
+                "model.pullout_Nm",
+                "metal.torque_hot_low_Nm",
+                "metal.torque_cold_high_Nm"
+            ]
+        );
+        for line in lines.iter().filter(|line| renamed.contains(&line.path)) {
+            assert!(!texts.iter().any(|t| t == line.label), "{}", line.path);
+        }
+    }
+
+    #[test]
+    fn every_hover_text_with_the_details_off_is_in_plain_words() {
+        // Spec 3.4: every drawn tooltip with Show spreadsheet details off passes the guard:
+        // every input's, every result's and every dashboard row's (in range and with the end
+        // effect out of range).
+        let mut texts: Vec<String> = crate::gui::inputs::InputCatalogue::get()
+            .all()
+            .map(|entry| crate::gui::inputs::input_tooltip(entry, false))
+            .collect();
+        for entry in crate::gui::results_table::table_entries() {
+            texts.push(hover_text(&entry.path, false).expect("every table row is a result"));
+        }
+        for inputs in [DesignInputs::default(), short_magnets()] {
+            texts.extend(
+                dashboard_lines(&compute_all(&inputs))
+                    .iter()
+                    .map(|line| line.tooltip(false)),
+            );
+        }
+        for text in &texts {
+            assert_eq!(
+                guidance::plain_text_violations(text),
+                Vec::<&str>::new(),
+                "{text:?}"
+            );
+        }
     }
 
     #[test]
@@ -1543,10 +1894,7 @@ mod tests {
 
     /// The defaults with a hot day past the temperature limits: the verdict asks for a look.
     fn hot_day() -> DesignInputs {
-        design(|i| {
-            i.temperature.duty.hot_ambient_C = 80.0;
-            i.temperature.duty.driving_rise_C = 60.0;
-        })
+        design(crate::gui::test_support::hot_day)
     }
 
     /// The defaults at 40 poles: the blocks no longer fit around the ring.
@@ -1563,11 +1911,74 @@ mod tests {
     /// One frame of the dashboard of `inputs` at full width on a screen tall enough for every
     /// row: what it drew.
     fn dashboard_frame(ctx: &egui::Context, inputs: &DesignInputs) -> egui::FullOutput {
+        dashboard_frame_with(ctx, inputs, false)
+    }
+
+    /// [`dashboard_frame`] with the shaft-clamp section paused (`clamps_paused`) or not.
+    fn dashboard_frame_with(
+        ctx: &egui::Context,
+        inputs: &DesignInputs,
+        clamps_paused: bool,
+    ) -> egui::FullOutput {
         let results = compute_all(inputs);
-        let fixes = all_fixes(inputs, &results);
+        let fixes = all_fixes(inputs, &results, clamps_paused);
         sized_frame(ctx, egui::vec2(1280.0, 4000.0), Vec::new(), |ui| {
-            dashboard_ui(ui, inputs, &results, &fixes, &mut Readouts::default());
+            dashboard_ui(
+                ui,
+                inputs,
+                &results,
+                &fixes,
+                clamps_paused,
+                &mut Readouts::default(),
+            );
         })
+    }
+
+    #[test]
+    fn while_the_clamp_section_is_paused_its_row_and_guide_leave_the_dashboard() {
+        // Ruling 11: a design that fails only the clamp reads as passing while it is paused;
+        // with the section shown its row, its Problem and its Why sentence are drawn.
+        let ctx = egui::Context::default();
+        let inputs = only_the_clamp_fails();
+        let results = compute_all(&inputs);
+        let clamp = guidance::guide("clamps.recommended").expect("the clamp's guide");
+        let problem = (clamp.problem)(&inputs, &results).expect("the clamp fails");
+        for paused in [false, true] {
+            let output = dashboard_frame_with(&ctx, &inputs, paused);
+            let texts = drawn_texts(&output);
+            let count = |text: &str| texts.iter().filter(|t| *t == text).count();
+            let status = design_status_text(&design_status(&inputs, &results, paused));
+            assert_eq!(texts.first(), Some(&status), "paused {paused}");
+            let shown = usize::from(!paused);
+            assert_eq!(
+                count(label_for("clamps.recommended")),
+                shown,
+                "paused {paused}"
+            );
+            assert_eq!(count(&problem), shown, "paused {paused}");
+            assert_eq!(count(clamp.why), shown, "paused {paused}");
+        }
+        assert_eq!(
+            design_status_text(&design_status(&inputs, &results, true)),
+            "Your design: passes all 7 checks"
+        );
+    }
+
+    #[test]
+    fn while_the_clamp_section_is_paused_its_checks_leave_the_failing_list() {
+        let results = compute_all(&only_the_clamp_fails());
+        let shown = failing_checks(&results, false);
+        assert!(
+            shown.contains(&("clamps.recommended", Level::Bad)),
+            "{shown:?}"
+        );
+        let want: Vec<(&str, Level)> = shown
+            .iter()
+            .copied()
+            .filter(|&(path, _)| !clamps::hides(path, true))
+            .collect();
+        assert_eq!(failing_checks(&results, true), want);
+        assert!(want.len() < shown.len());
     }
 
     /// The text of the Why link to `learn`, as a reader would name it: a reviewed note's title,
@@ -1655,7 +2066,7 @@ mod tests {
             design(|i| i.metal.max_diameter_mm = f64::NAN),
         ] {
             let results = compute_all(&inputs);
-            let fixes = all_fixes(&inputs, &results);
+            let fixes = all_fixes(&inputs, &results, false);
             fix_texts.extend(
                 fixes
                     .iter()
@@ -1750,10 +2161,43 @@ mod tests {
         assert_eq!(red, BTreeSet::from(want));
         // The designs above reach a trade-off note and an amber header.
         let conflict = length_conflict();
-        let fixes = all_fixes(&conflict, &compute_all(&conflict));
+        let fixes = all_fixes(&conflict, &compute_all(&conflict), false);
         assert!((0..CHECK_GUIDES.len()).any(|i| !trade_offs(&fixes, i).is_empty()));
         let texts = drawn_texts(&dashboard_frame(&ctx, &hot_day()));
         assert_eq!(count(&texts, CAUTION_DETAILS), 1);
+    }
+
+    #[test]
+    fn the_example_design_s_status_line_says_on_hover_where_its_values_come_from() {
+        // Spec S2-5: "Example design" at the defaults, its hover the original spreadsheet;
+        // "Your design" has no hover.
+        for (inputs, example) in [(DesignInputs::default(), true), (passing_design(), false)] {
+            let results = compute_all(&inputs);
+            let fixes = all_fixes(&inputs, &results, false);
+            let text = design_status_text(&design_status(&inputs, &results, false));
+            assert_eq!(
+                text.starts_with(guidance::EXAMPLE_DESIGN),
+                example,
+                "{text}"
+            );
+            let (_, output) = hover_frames(
+                &egui::Context::default(),
+                egui::vec2(1280.0, 4000.0),
+                |output| text_center(output, &text),
+                |ui| {
+                    dashboard_ui(
+                        ui,
+                        &inputs,
+                        &results,
+                        &fixes,
+                        false,
+                        &mut Readouts::default(),
+                    )
+                },
+            );
+            let hover = guidance::EXAMPLE_DESIGN_HOVER.to_owned();
+            assert_eq!(drawn_texts(&output).contains(&hover), example, "{text}");
+        }
     }
 
     #[test]
@@ -1780,7 +2224,7 @@ mod tests {
         ];
         for (inputs, bad, caution, colour) in cases {
             let results = compute_all(&inputs);
-            let status = design_status(&inputs, &results);
+            let status = design_status(&inputs, &results, false);
             assert_eq!((status.bad, status.caution), (bad, caution));
             assert_eq!(status.total, CHECK_GUIDES.len());
             assert_eq!(status.is_default, inputs == DesignInputs::default());
@@ -1909,10 +2353,7 @@ mod tests {
     /// (no delay, the pointer need not rest): its hover text among them.
     fn hover_in_guide(guide: &CheckGuide, block: &GuideShown, text: &str) -> Vec<String> {
         let ctx = egui::Context::default();
-        ctx.style_mut(|s| {
-            s.interaction.tooltip_delay = 0.0;
-            s.interaction.show_tooltips_only_when_still = false;
-        });
+        tooltips_at_once(&ctx);
         let at = guide_text_at(&ctx, guide, block, text);
         let hover = vec![vec![egui::Event::PointerMoved(at)], Vec::new()];
         drawn_texts(&guide_frames(&ctx, guide, block, hover).0)
@@ -2081,10 +2522,10 @@ mod tests {
             design(|i| i.coupling.magnets.axial_length_mm = Some(50.8)),
         ] {
             let results = compute_all(&inputs);
-            let fixes = all_fixes(&inputs, &results);
+            let fixes = all_fixes(&inputs, &results, false);
             let output = sized_frame(&ctx, egui::vec2(600.0, 8000.0), Vec::new(), |ui| {
                 let mut readouts = Readouts::default();
-                status_ui(ui, &inputs, &results);
+                status_ui(ui, &inputs, &results, false);
                 fit_ui(ui, &inputs, &results, &fixes, &mut readouts);
                 for &(_, learn) in &ROW_LEARN {
                     why_line(ui, None, learn, &mut readouts);
@@ -2117,20 +2558,25 @@ mod tests {
             ]
             .map(str::to_owned),
         );
-        // An assumption's rationale is the Assumptions view's own text, which may cite cells:
-        // glyphs only.
-        let mut rationales: Vec<&str> = Vec::new();
+        // An assumption's rationale is the hover text of its Why link: plain words too (spec
+        // 3.4, ruling R10; the slice-1 exemption for cells is gone). The branch stays even while
+        // no row links an assumption: it covers a row linked to one again.
         let fit = guidance::guide(FIT_CHECK).unwrap().learn;
         for learn in ROW_LEARN.iter().map(|&(_, learn)| learn).chain([fit]) {
             match learn {
                 Learn::None(reason) => plain.push(reason.to_owned()),
-                Learn::Assumption(id) => {
-                    rationales.push(ASSUMPTIONS.iter().find(|a| a.id == id).unwrap().rationale)
-                }
+                Learn::Assumption(id) => plain.push(
+                    ASSUMPTIONS
+                        .iter()
+                        .find(|a| a.id == id)
+                        .unwrap()
+                        .rationale
+                        .to_owned(),
+                ),
                 Learn::Note(_) => {}
             }
         }
-        for text in plain.iter().map(String::as_str).chain(rationales) {
+        for text in &plain {
             assert_glyphs(&ctx, text, "the check guides");
         }
         for text in &plain {
@@ -2139,6 +2585,138 @@ mod tests {
                 "{text:?}: {:?}",
                 guidance::plain_text_violations(text)
             );
+        }
+    }
+
+    #[test]
+    fn the_production_variation_assumption_is_named_as_its_input() {
+        // Map-jargon T-15: the Assumptions view's heading and the input row name the allowance
+        // alike (spec 3.5).
+        let assumption = ASSUMPTIONS
+            .iter()
+            .find(|a| a.id == "production_variation")
+            .unwrap();
+        assert_eq!(assumption.paths, ["metal.variation"]);
+        assert_eq!(assumption.label, label_for("metal.variation"));
+    }
+
+    #[test]
+    fn the_cup_wall_verdict_is_shown_with_the_wall_input_s_label() {
+        use crate::engine::compat::fmt_fixed;
+        use crate::engine::meta::NumOrText;
+        // Ruling R9: the default design's cup wall fails; the screen names the wall by its
+        // input's label, with the engine's own number.
+        let results = compute_all(&DesignInputs::default());
+        let engine = &results.materials.cup_wall_check;
+        let NumOrText::Num(wall) = results.materials.cup_wall_suggested_mm else {
+            panic!("a steel circuit has a wall rule")
+        };
+        let want = format!(
+            "Too thin: raise {} to at least {} mm",
+            label_for("metal.cup_wall_corner_mm"),
+            fmt_fixed(wall, 1)
+        );
+        assert_eq!(
+            verdict_display("materials.cup_wall_check", engine).as_deref(),
+            Some(want.as_str())
+        );
+        assert_eq!(
+            guidance::plain_text_violations(&want),
+            Vec::<&str>::new(),
+            "{want}"
+        );
+        // The engine text is unchanged: the badge reads it, the line keeps it, and the
+        // exports, which read the results, write it.
+        assert!(engine.starts_with(CUP_WALL_TOO_THIN), "{engine}");
+        assert_eq!(
+            verdict_level("materials.cup_wall_check", engine),
+            Some(Level::Bad)
+        );
+        let line = |results: &DesignResults| {
+            dashboard_lines(results)
+                .into_iter()
+                .find(|l| l.path == "materials.cup_wall_check")
+                .expect("the cup wall row")
+        };
+        assert_eq!(&line(&results).value, engine);
+        assert_eq!(line(&results).shown_value(), want);
+        assert_eq!(
+            shown_text("materials.cup_wall_check", &Value::Text(engine.clone())),
+            want
+        );
+        // Every other row of the default design draws its value as the line holds it.
+        for other in dashboard_lines(&results)
+            .iter()
+            .filter(|l| l.path != "materials.cup_wall_check")
+        {
+            assert_eq!(other.shown_value(), other.value, "{}", other.path);
+        }
+        // A passing wall and a design without back iron draw the engine text.
+        for inputs in [passing_design(), design(|i| i.coupling.backiron = 0)] {
+            let results = compute_all(&inputs);
+            let row = line(&results);
+            assert_eq!(row.shown_value(), row.value, "{}", row.value);
+        }
+        // Not that verdict, or its number not a finite number: no display text (the engine text
+        // is drawn), never a panic.
+        let nan = format!("{CUP_WALL_TOO_THIN}nan mm");
+        let inches = format!("{CUP_WALL_TOO_THIN}2.0 inches");
+        let words = format!("{CUP_WALL_TOO_THIN}two mm");
+        for (path, text) in [
+            ("materials.cup_wall_check", "OK"),
+            ("materials.cup_wall_check", "No back iron"),
+            ("materials.cup_wall_check", nan.as_str()),
+            ("materials.cup_wall_check", inches.as_str()),
+            ("materials.cup_wall_check", words.as_str()),
+            ("metal.hot_min_check", engine.as_str()),
+        ] {
+            assert_eq!(verdict_display(path, text), None, "{path}: {text}");
+            assert_eq!(
+                shown_text(path, &Value::Text(text.to_owned())),
+                text,
+                "{path}"
+            );
+        }
+        // A value that is no text reads as the readouts format it.
+        for value in [Value::Num(2.5), Value::Int(3), Value::None] {
+            assert_eq!(
+                shown_text("materials.cup_wall_check", &value),
+                format_value(&value)
+            );
+        }
+    }
+
+    #[test]
+    fn the_dashboard_draws_the_cup_wall_verdict_in_plain_words() {
+        let ctx = egui::Context::default();
+        let results = compute_all(&DesignInputs::default());
+        let shown = verdict_display(
+            "materials.cup_wall_check",
+            &results.materials.cup_wall_check,
+        )
+        .expect("the default cup wall fails");
+        let texts = drawn_texts(&dashboard_frame(&ctx, &DesignInputs::default()));
+        assert_eq!(texts.iter().filter(|t| **t == shown).count(), 1, "{shown}");
+        let engine_words = CUP_WALL_TOO_THIN.trim_end();
+        assert!(
+            !texts.iter().any(|t| t.contains(engine_words)),
+            "the engine's cell-named verdict is drawn"
+        );
+    }
+
+    #[test]
+    fn a_why_link_outside_the_rows_is_one_link_naming_its_note() {
+        // Spec 3.7 and F11: "Why: <title>" as one link, never the bare title, which Start here
+        // draws exactly once while its step is open.
+        for note in notes::NOTES {
+            let text = why_note_text(note);
+            assert_eq!(
+                text,
+                format!("{WHY}: {}", glyph_safe(note.title)),
+                "{}",
+                note.id
+            );
+            assert_ne!(text, glyph_safe(note.title), "{}", note.id);
         }
     }
 }

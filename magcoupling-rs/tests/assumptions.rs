@@ -8,13 +8,17 @@
 //! overrides (`src/engine/assumptions.rs`), only C45's shows at the default design: its
 //! library parts still read C22, and it has no 1018 back iron.
 
+mod common;
+
 use std::collections::BTreeSet;
 
+use common::plain_problems;
 use magcoupling::engine::api::{DesignInputs, compute_all};
 use magcoupling::engine::assumptions::{
     ASSUMPTIONS, any_modified, modified, reset_to_workbook_defaults, states,
 };
 use magcoupling::engine::deviations::Deviations;
+use magcoupling::engine::explain::probes;
 use magcoupling::engine::meta::{FieldType, InputMeta, InputSet, Value, input_rows, result_rows};
 
 /// The metadata of the input at `path`.
@@ -242,4 +246,88 @@ fn each_assumption_moves_a_result_at_the_default_design() {
             assert!(matches!(m.ty, FieldType::F64 | FieldType::I64), "{path}");
         }
     }
+}
+
+/// The rationale of the assumption `id`.
+fn rationale(id: &str) -> &'static str {
+    ASSUMPTIONS
+        .iter()
+        .find(|a| a.id == id)
+        .unwrap_or_else(|| panic!("{id}: no assumption"))
+        .rationale
+}
+
+#[test]
+fn every_label_and_rationale_reads_in_plain_words() {
+    // Spec 3.4 and R10: the rationale is drawn under each assumption and is the hover text of a
+    // dashboard Why link, so it names no spreadsheet cell, correction, audit, decision or code
+    // name. The source keeps its cells (the test above) and is drawn only with Show spreadsheet
+    // details on.
+    let mut failures = Vec::new();
+    for a in &ASSUMPTIONS {
+        for (what, text) in [("label", a.label), ("rationale", a.rationale)] {
+            if let Some(problems) = plain_problems(text) {
+                failures.push(format!("{}: {what} {problems}: {text:?}", a.id));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{failures:#?}");
+}
+
+#[test]
+fn the_end_effect_and_calibration_rationales_state_what_was_checked() {
+    // R10, as the reviewed end-effect note states it (whole-branch review MF-5, deviation D-5:
+    // the note's per-note physics review replaced R10's literal "within 2 %"): the band against
+    // free-space 3D is the note's, read from the note, and the steel case the note names; and
+    // the short-magnet case the note's watch-out names (T21 text re-review 1, MF-B).
+    let band = common::end_effect_band_sentence();
+    let figure = band
+        .split_once("within ")
+        .and_then(|(_, rest)| rest.split_once(" %"))
+        .map(|(figure, _)| figure)
+        .unwrap_or_else(|| panic!("no \"within N %\" in {band:?}"));
+    let end = rationale("end_effect");
+    assert!(
+        end.contains(&format!("within {figure} % of free-space 3D")),
+        "the note's band {figure} %: {end}"
+    );
+    assert!(end.contains("with magnetic steel"), "the steel case: {end}");
+    assert!(
+        end.contains("short magnets") && end.contains("too high or too low"),
+        "the short-magnet case the note's watch-out names: {end}"
+    );
+    assert!(!end.contains("1 %"), "{end}");
+    // PA-18: the measured factor goes to a design that matches the prototype's circuit, magnet
+    // count and part, and nothing else is compared.
+    let cal = rationale("calibration_factor");
+    for named in [
+        "no magnetic steel",
+        "magnets per ring",
+        "B842SH",
+        "not compared",
+    ] {
+        assert!(cal.contains(named), "{named:?} missing: {cal}");
+    }
+    assert!(!cal.contains("own rings"), "{cal}");
+    // "Magnetic" is what makes it true: a 304 stainless back iron is steel, yet the 304 probe
+    // design is on the free-space circuit and gets the measured factor.
+    let (_, stainless) = probes::probe_designs()
+        .into_iter()
+        .find(|(name, _)| *name == "304 back iron")
+        .expect("the 304 back iron probe design");
+    let results = compute_all(&stainless);
+    assert_eq!(results.materials.circuit_backiron, 0);
+    assert_eq!(results.model.f_cal, results.calibration.f_cal_updated);
+}
+
+#[test]
+fn only_the_clamp_assumptions_are_hidden_and_only_while_the_clamp_section_is_paused() {
+    // Ruling 11: the paused shaft-clamp section takes its two assumptions with it.
+    let hidden: Vec<&str> = ASSUMPTIONS
+        .iter()
+        .filter(|a| !a.shown(true))
+        .map(|a| a.id)
+        .collect();
+    assert_eq!(hidden, ["clamp_friction", "preload_fraction"]);
+    assert!(ASSUMPTIONS.iter().all(|a| a.shown(false)));
 }
