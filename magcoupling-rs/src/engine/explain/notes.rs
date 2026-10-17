@@ -1584,9 +1584,8 @@ mod tests {
         // against a rating, so no note may claim the coupling protects the gearbox.
         for n in NOTES {
             for text in note_texts(n) {
-                let lower = text.to_lowercase();
                 assert!(
-                    !(lower.contains("gearbox") && lower.contains("protect")),
+                    !crate::engine::explain::plain::mentions_gearbox_protection(text),
                     "{}: {text}",
                     n.id
                 );

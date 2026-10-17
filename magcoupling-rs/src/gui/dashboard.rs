@@ -1925,7 +1925,8 @@ mod tests {
             // The line keeps the catalogue label: the spreadsheet's Summary writes it.
             assert_eq!(line.label, result_info(line.path).unwrap().meta.label);
         }
-        // The overlay renames three rows (spec 3.5); their catalogue labels are not drawn.
+        // The overlay renames four rows (spec 3.5's three and BL-059's ripple row); their
+        // catalogue labels are not drawn.
         let renamed: Vec<&str> = lines
             .iter()
             .filter(|line| label_for(line.path) != line.label)
@@ -1936,7 +1937,8 @@ mod tests {
             [
                 "model.pullout_Nm",
                 "metal.torque_hot_low_Nm",
-                "metal.torque_cold_high_Nm"
+                "metal.torque_cold_high_Nm",
+                "model.gearbox_input_ripple_Nm"
             ]
         );
         for line in lines.iter().filter(|line| renamed.contains(&line.path)) {

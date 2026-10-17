@@ -56,9 +56,11 @@ pub fn shown_literal(text: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
-/// The display label of an input or a result, by path: spec 3.5's canonical names. A row is
-/// never longer than the catalogue label it replaces and names one quantity only (tests). A
-/// name other modules draw too is a constant above, so it is typed once.
+/// The display label of an input or a result, by path: spec 3.5's canonical names, and the
+/// gearbox ripple row's (BL-059: the nominal slip swing, beside the gearbox check, which
+/// compares cold-high). A row is never longer than the catalogue label it replaces and names one
+/// quantity only (tests). A name other modules draw too is a constant above, so it is typed
+/// once.
 const LABELS: &[(&str, &str)] = &[
     ("coupling.inner_back_apothem_mm", "Ring radius"),
     ("coupling.npole", "Magnets per ring"),
@@ -69,6 +71,10 @@ const LABELS: &[(&str, &str)] = &[
     ("model.pullout_Nm", PULL_OUT_NOMINAL),
     ("metal.torque_hot_low_Nm", HOT_LOW_TORQUE),
     ("metal.torque_cold_high_Nm", "Cold-high torque"),
+    (
+        "model.gearbox_input_ripple_Nm",
+        "Nominal slip swing at the gearbox input",
+    ),
 ];
 
 // The caveats that end the help of every row in four clusters of `HELP` rows. Each is a macro,
@@ -148,7 +154,7 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "coupling.gearbox_input_rating_Nm",
-        "Peak torque the gearbox input is rated for. Only an informational reference uses it: no check compares the coupling's torques with it.",
+        "The gearbox's input torque rating. The gearbox check compares the cold-high torque at the gearbox input with it.",
     ),
     (
         "temperature.duty.hot_ambient_C",
@@ -737,6 +743,12 @@ const HELP: &[(&str, &str)] = &[
         "clamps.joint_screws",
         "Number of M3 screws in the optional adapter's joint, beside its pilot and dowel; the joint's slip torque rises in proportion.",
     ),
+    // BL-059: the ripple row, read beside the gearbox check (G-3 review
+    // docs/analyses/2026-10-14-magcoupler-help-review.md, BL-059 section).
+    (
+        "model.gearbox_input_ripple_Nm",
+        "Torque swing while slipping: the pull-out at the operating temperature, without the production allowance, divided by the ratio and efficiency. The gearbox check compares cold-high at the gearbox input instead.",
+    ),
 ];
 
 /// The hint key of the Size tab's Minimum OD control: it edits no input, so its hint line is
@@ -897,7 +909,9 @@ fn spreadsheet_help(path: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::explain::plain::{plain_text_violations, sentence_count, word_count};
+    use crate::engine::explain::plain::{
+        mentions_gearbox_protection, plain_text_violations, sentence_count, word_count,
+    };
     use crate::gui::results_table::table_entries;
     use crate::gui::size_controls::{GAP, MAGNETS};
     use crate::gui::test_support::assert_glyphs;
@@ -960,7 +974,8 @@ mod tests {
     fn the_canonical_names_are_the_spec_s() {
         // Spec 3.5's table: one name per quantity. The spec writes the ring radius's meaning
         // in parentheses ("the shaft centre to the back of the inner magnets"); that is help
-        // (T7), the name is "Ring radius".
+        // (T7), the name is "Ring radius". BL-059 adds the gearbox ripple row's: the nominal
+        // slip swing, read beside the gearbox check, which compares cold-high instead.
         let want = [
             ("coupling.inner_back_apothem_mm", "Ring radius"),
             ("coupling.npole", "Magnets per ring"),
@@ -971,11 +986,15 @@ mod tests {
             ("model.pullout_Nm", "Pull-out torque (nominal)"),
             ("metal.torque_hot_low_Nm", "Hot-low torque"),
             ("metal.torque_cold_high_Nm", "Cold-high torque"),
+            (
+                "model.gearbox_input_ripple_Nm",
+                "Nominal slip swing at the gearbox input",
+            ),
         ];
         for (path, label) in want {
             assert_eq!(label_for(path), label, "{path}");
         }
-        assert_eq!(LABELS.len(), want.len(), "no row beyond the spec's table");
+        assert_eq!(LABELS.len(), want.len(), "no row beyond these");
         // The Size tab names its gap and magnet-count controls as the input rows do.
         assert_eq!(GAP, label_for("metal.face_gap_mm"));
         assert_eq!(MAGNETS, label_for("coupling.npole"));
@@ -1145,6 +1164,23 @@ mod tests {
                     assert_eq!(sentences, 1, "{what}: {sentences} sentences");
                 }
             }
+        }
+    }
+
+    #[test]
+    fn no_label_help_or_hint_says_the_coupling_protects_the_gearbox() {
+        // BL-059 and slice-2 spec section 8: a pass of the gearbox check means only that the
+        // modelled cold-high peak is within the gearbox input rating. Every overlay row, and
+        // every engine label and help shown where the overlay has none (the gearbox check's
+        // own among them), keeps to the rule the notes and the guides keep.
+        let inputs = InputCatalogue::get().all().map(|entry| entry.path.as_str());
+        let results = table_entries().iter().map(|entry| entry.path.as_str());
+        let shown = inputs
+            .chain(results)
+            .flat_map(|path| [label_for(path), help_for(path)]);
+        let overlay = every_row().into_iter().map(|(_, _, text)| text);
+        for text in overlay.chain(shown) {
+            assert!(!mentions_gearbox_protection(text), "{text:?}");
         }
     }
 
@@ -2037,6 +2073,110 @@ mod batch_b_tests {
                 number(&widest, wall) > 0.0,
                 "keyway {keyway} mm: {wall} at the widest bore"
             );
+        }
+    }
+
+    /// BL-059: the gearbox rating's help names the check that now reads the rating, and the
+    /// ripple row's label and help name the nominal slip swing, apart from the cold-high torque
+    /// the check compares. The rating's type is open (owner decision 2A), so no text calls it a
+    /// peak; the operating-temperature slider reaches below the minimum, so no text calls the
+    /// swing warm. Each claim holds on the engine: at the five probe designs the swing is the
+    /// nominal pull-out divided by the ratio and efficiency, one slider step of the operating
+    /// temperature moves it and one of the minimum temperature or the variation does not; and
+    /// with the rating halfway between the swing and cold-high at the gearbox input, the check
+    /// follows cold-high on either side of the swing.
+    #[test]
+    fn the_gearbox_texts_claim_what_the_engine_does() {
+        use crate::engine::explain::notes::Step;
+        use crate::engine::explain::probes::{probe_designs, step_input};
+        use crate::engine::gearbox::{ABOVE_THE_GEARBOX_RATING, WITHIN_THE_GEARBOX_RATING};
+        const RATING: &str = "coupling.gearbox_input_rating_Nm";
+        const RIPPLE: &str = "model.gearbox_input_ripple_Nm";
+        // The words: what each text must name, then what none may say ("no check" was the
+        // rating's help until the check landed).
+        let names = |path: &str, text: &str, words: &[&str]| {
+            let lower = text.to_lowercase();
+            for word in words {
+                assert!(lower.contains(word), "{path}: {word:?} in {text:?}");
+            }
+        };
+        names(
+            RATING,
+            help_for(RATING),
+            &["gearbox check", "cold-high", "gearbox input"],
+        );
+        names(
+            RIPPLE,
+            help_for(RIPPLE),
+            &[
+                "operating temperature",
+                "without the production allowance",
+                "ratio and efficiency",
+                "cold-high at the gearbox input",
+            ],
+        );
+        for text in [help_for(RATING), label_for(RIPPLE), help_for(RIPPLE)] {
+            let lower = text.to_lowercase();
+            for word in ["no check", "peak", "warm"] {
+                assert!(!lower.contains(word), "{word:?} in {text:?}");
+            }
+        }
+        // Under the spreadsheet-details toggle the rating keeps the spreadsheet's own note; the
+        // ripple row's engine help is empty, so it shows none.
+        assert!(original_help(RATING).is_some());
+        assert_eq!(
+            original_help(RATING),
+            metadata(RATING).map(|(_, help)| help)
+        );
+        assert_eq!(original_help(RIPPLE), None);
+        // The swing, on the engine.
+        let number = |inputs: &DesignInputs, path: &str| match compute_all(inputs).get(path) {
+            Some(Value::Num(x)) => x,
+            other => panic!("{path}: {other:?}"),
+        };
+        for (name, design) in probe_designs() {
+            let ripple = number(&design, RIPPLE);
+            let ratio_and_efficiency = design.coupling.gear_ratio * design.coupling.gear_efficiency;
+            let through = number(&design, "model.pullout_Nm") / ratio_and_efficiency;
+            assert!(
+                (ripple - through).abs() <= 1e-12 * through.abs(),
+                "{name}: {ripple} against {through}"
+            );
+            for (input, moves) in [
+                ("coupling.op_temp_C", true),
+                ("metal.min_temp_C", false),
+                ("metal.variation", false),
+            ] {
+                let stepped = step_input(&design, input, Step::Raise)
+                    .unwrap_or_else(|e| panic!("{name}: {input}: {e:?}"));
+                assert_eq!(
+                    number(&stepped, RIPPLE) != ripple,
+                    moves,
+                    "{name}: {input} one step up"
+                );
+            }
+        }
+        // The check compares cold-high at the gearbox input, not the swing: with the rating
+        // halfway between them it follows cold-high, above the swing at the defaults and below
+        // it with the operating temperature under the minimum (-40 against 20 °C, variation
+        // 0.1: both temperatures on their sliders).
+        let mut colder_running = DesignInputs::default();
+        colder_running.coupling.op_temp_C = -40.0;
+        colder_running.metal.min_temp_C = 20.0;
+        colder_running.metal.variation = 0.1;
+        for (design, passes) in [(DesignInputs::default(), false), (colder_running, true)] {
+            let results = compute_all(&design);
+            let ripple = results.model.gearbox_input_ripple_Nm;
+            let cold_high = results.metal.cold_high_input_Nm;
+            assert_eq!(cold_high < ripple, passes, "{cold_high} against {ripple}");
+            let mut between = design.clone();
+            between.coupling.gearbox_input_rating_Nm = (ripple + cold_high) / 2.0;
+            let verdict = compute_all(&between).gearbox.cold_high_check;
+            if passes {
+                assert_eq!(verdict, WITHIN_THE_GEARBOX_RATING);
+            } else {
+                assert!(verdict.starts_with(ABOVE_THE_GEARBOX_RATING), "{verdict}");
+            }
         }
     }
 

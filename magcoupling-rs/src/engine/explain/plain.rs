@@ -117,6 +117,17 @@ pub fn audit_ids(text: &str) -> Vec<&'static str> {
         .collect()
 }
 
+/// Whether `text` names the gearbox and any form of "protect", in any case: the trap of the
+/// slice-2 spec's section 8 that BL-059's check makes tempting. A pass of the gearbox check
+/// means only that the modelled cold-high peak is within the gearbox input rating; backlash,
+/// the ring-down at re-lock, resonance and the drive line's stored energy can exceed it. Not in
+/// [`BANNED`]: the notes' ban (`notes::no_note_says_the_coupling_protects_the_gearbox`), the
+/// guides' and the overlay's call this, so the rule is typed once.
+pub fn mentions_gearbox_protection(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    lower.contains("gearbox") && lower.contains("protect")
+}
+
 /// Whether `c` continues a word: a letter, a digit or an underscore.
 fn is_word(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
@@ -406,5 +417,25 @@ mod tests {
             plain_text_violations("TC-1, PA-8 and CG-3"),
             Vec::<&str>::new()
         );
+    }
+
+    #[test]
+    fn the_gearbox_protection_rule_flags_both_words_in_any_case() {
+        // BL-059: any text naming the gearbox beside any form of "protect" is flagged; either
+        // word alone is not.
+        for text in [
+            "The coupling protects the gearbox.",
+            "Gearbox protection up to its rating",
+            "It PROTECTS the GEARBOX",
+        ] {
+            assert!(mentions_gearbox_protection(text), "{text}");
+        }
+        for text in [
+            "The gearbox check compares cold-high at the gearbox input with its rating.",
+            "The sleeve protects the magnets.",
+            "",
+        ] {
+            assert!(!mentions_gearbox_protection(text), "{text}");
+        }
     }
 }

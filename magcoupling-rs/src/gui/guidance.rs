@@ -4204,6 +4204,16 @@ mod tests {
         }
     }
 
+    #[test]
+    fn no_guide_text_says_the_coupling_protects_the_gearbox() {
+        // BL-059 and slice-2 spec section 8: the gearbox check's Problem, Why and fixes, and
+        // every other guide text, say what the check compares; a pass is no protection.
+        use crate::engine::explain::plain::mentions_gearbox_protection;
+        for text in every_text() {
+            assert!(!mentions_gearbox_protection(&text), "{text:?}");
+        }
+    }
+
     // ------------------------------------------------------------------ the Problems
 
     #[test]
