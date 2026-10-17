@@ -925,6 +925,14 @@ mod tests {
             .collect()
     }
 
+    /// Every input's path, then every results-table row's: each path a label and a help are
+    /// shown for.
+    fn every_path() -> impl Iterator<Item = &'static str> {
+        let inputs = InputCatalogue::get().all().map(|entry| entry.path.as_str());
+        let results = table_entries().iter().map(|entry| entry.path.as_str());
+        inputs.chain(results)
+    }
+
     fn is_input(path: &str) -> bool {
         InputCatalogue::get().entry(path).is_some()
     }
@@ -1173,11 +1181,7 @@ mod tests {
         // modelled cold-high peak is within the gearbox input rating. Every overlay row, and
         // every engine label and help shown where the overlay has none (the gearbox check's
         // own among them), keeps to the rule the notes and the guides keep.
-        let inputs = InputCatalogue::get().all().map(|entry| entry.path.as_str());
-        let results = table_entries().iter().map(|entry| entry.path.as_str());
-        let shown = inputs
-            .chain(results)
-            .flat_map(|path| [label_for(path), help_for(path)]);
+        let shown = every_path().flat_map(|path| [label_for(path), help_for(path)]);
         let overlay = every_row().into_iter().map(|(_, _, text)| text);
         for text in overlay.chain(shown) {
             assert!(!mentions_gearbox_protection(text), "{text:?}");
@@ -1187,9 +1191,7 @@ mod tests {
     #[test]
     fn each_display_label_names_one_quantity() {
         // No overlay label is any other input's or result's name on screen, ignoring case.
-        let inputs = InputCatalogue::get().all().map(|e| e.path.as_str());
-        let results = table_entries().iter().map(|e| e.path.as_str());
-        let all: Vec<&str> = inputs.chain(results).collect();
+        let all: Vec<&str> = every_path().collect();
         for &(path, label) in LABELS {
             for &other in all.iter().filter(|&&other| other != path) {
                 assert!(
@@ -1609,6 +1611,14 @@ mod batch_b_tests {
         inputs
     }
 
+    /// The numeric result at `path` on `inputs`; any other value fails the test.
+    fn number(inputs: &DesignInputs, path: &str) -> f64 {
+        match compute_all(inputs).get(path) {
+            Some(Value::Num(x)) => x,
+            other => panic!("{path}: {other:?}"),
+        }
+    }
+
     /// Every direction a batch-B help states, as (input, design, result, how the result moves
     /// when the input rises one slider step on that design). `Stays` pins "only", "not",
     /// "unused" and "replaces it" claims bit for bit.
@@ -1928,11 +1938,7 @@ mod batch_b_tests {
             after
                 .set(input, raised)
                 .unwrap_or_else(|e| panic!("{input}: {e:?}"));
-            let value = |inputs: &DesignInputs| match compute_all(inputs).get(result) {
-                Some(Value::Num(x)) => x,
-                other => panic!("{result}: {other:?}"),
-            };
-            let (was, now) = (value(&before), value(&after));
+            let (was, now) = (number(&before, result), number(&after, result));
             let seen = if now > was {
                 Up
             } else if now < was {
@@ -1972,10 +1978,6 @@ mod batch_b_tests {
         use crate::engine::explain::probes::{probe_designs, step_input};
         use crate::engine::size_controls::dimensions;
         use crate::gui::dashboard::{Level, check_level};
-        let number = |inputs: &DesignInputs, path: &str| match compute_all(inputs).get(path) {
-            Some(Value::Num(x)) => x,
-            other => panic!("{path}: {other:?}"),
-        };
         let raised = |design: &DesignInputs, input: &str| {
             step_input(design, input, Step::Raise).unwrap_or_else(|e| panic!("{input}: {e:?}"))
         };
@@ -2130,10 +2132,6 @@ mod batch_b_tests {
         );
         assert_eq!(original_help(RIPPLE), None);
         // The swing, on the engine.
-        let number = |inputs: &DesignInputs, path: &str| match compute_all(inputs).get(path) {
-            Some(Value::Num(x)) => x,
-            other => panic!("{path}: {other:?}"),
-        };
         for (name, design) in probe_designs() {
             let ripple = number(&design, RIPPLE);
             let ratio_and_efficiency = design.coupling.gear_ratio * design.coupling.gear_efficiency;
@@ -2183,10 +2181,6 @@ mod batch_b_tests {
     #[test]
     fn the_batch_b_claims_beyond_one_result_hold() {
         let example = DesignInputs::default();
-        let number = |inputs: &DesignInputs, path: &str| match compute_all(inputs).get(path) {
-            Some(Value::Num(x)) => x,
-            other => panic!("{path}: {other:?}"),
-        };
         // metal.boss_od_mm: the boss sets the outside diameter only when it is the largest part.
         let outside = dimensions(&example).expect("a size").diameter_mm;
         assert!(example.metal.boss_od_mm < outside);
