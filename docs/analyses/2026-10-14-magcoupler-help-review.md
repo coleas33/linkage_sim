@@ -1810,3 +1810,575 @@ The implementer's round-2 reruns are green (`task-19-inreview-r2-changes.md`), a
 #### For the controller
 
 The in-task review loop for T19 ends at round 3 with PASS. Next come Step 14 (docs, with SHOULD-FIX 2's texts) and the commit.
+
+## BL-059 gearbox check
+
+- Scope: not an overlay batch alone. These are BL-059's new and changed on-screen strings
+  (spec `docs/superpowers/specs/2026-10-16-bl059-gearbox-check-design.md`, section 6), reviewed
+  under the same G-3 rule:
+  - the gearbox guide (`gui/guidance.rs`): its label (`GEARBOX_GUIDE.label`), its Why
+    (`GEARBOX_GUIDE.why`), and its Problem: sentence 1 (`gearbox_problem`), the conflict sentence
+    2 (`gearbox_conflict`) and the text when the check cannot be made (`GEARBOX_UNKNOWN`);
+  - the engine (`engine/gearbox.rs`): the three verdict texts (`WITHIN_THE_GEARBOX_RATING`,
+    `ABOVE_THE_GEARBOX_RATING` with its ": {q} N·m against {r} N·m" tail,
+    `GEARBOX_CHECK_UNKNOWN`), and the label and help of `gearbox.cold_high_check`, the
+    dashboard row's label;
+  - the overlay (`gui/plain_text.rs`): the help of the gearbox input torque rating
+    (`coupling.gearbox_input_rating_Nm`), and the label and help of the ripple row
+    (`model.gearbox_input_ripple_Nm`);
+  - read in context, judged only for how the new words read there: the trade-off and face-gap
+    side-effect lines in the gearbox block at the defaults and the status line ("Example design:
+    fails 4 of 8 checks").
+- Read: the sheets `magcoupling-rs/target/g3/BL059-guidance.txt` (`guidance_strings_for_review`),
+  `BL059-overlay.txt` (`overlay_strings_for_review`) and `BL059-strings.diff` (`git diff -U0
+  main` of the source files); the spec, sections 1 to 6; the plan's trap list; the two notes'
+  gearbox watch-outs as Task 6 shipped them, for consistency only; the engine and GUI code behind
+  every string. Each round probed the engine from a scratch crate outside the repository:
+  - round 1 (2026-10-17):
+    - the defaults: cold-high at the gearbox input 0.804907 against 0.6; the verdict "Above the
+      gearbox input rating: 0.80 N·m against 0.60 N·m"; the Problem quotes 0.8049, 0.6000, 1.673,
+      2.500, 0.8806 (0.880564), 1.703 (1.703454) and 1.140, with sentence 2;
+    - the five probe designs, cold-high at the gearbox input: the defaults 0.8049, above; 8
+      magnets 0.5893, within; 304 back iron 0.5082, within; Y30 0.07117, within (band 1.9207);
+      a 20 mm ring radius 0.7602, above, with sentence 2;
+    - the rating: at 0.80, "0.81 N·m against 0.80 N·m" with sentence 2 (at most 2.271 N·m, band
+      1.520); at 0.81, within; at 0.05, the second form (at most 0.1419 N·m, the requirement
+      alone 0.5264); at 5.0, within;
+    - the passing design: within, no Problem; the "gearbox only" design: 0.7070, above,
+      R·B/(i·η) = 0.5636, so no sentence 2;
+    - Auto on length: 13.7695 mm at the defaults (hot-low 2.5000, 0.8806 at the input, red, with
+      sentence 2); 11.9023 mm with the minimum temperature at 20 °C and no variation allowance
+      (0.5664, within, no Problem);
+    - a NaN rating: "Gearbox check unknown: a torque is not a number", Caution, and the unknown
+      Problem;
+    - short magnets: hot-low -0.4829, at the input -0.1701, the engine text "Within the gearbox
+      input rating", greyed, no Problem;
+    - the operating temperature below the minimum (sentence 1 only): op -40 °C, min 20 °C,
+      variation 0, cold-high 2.8930 below hot-low 3.3246 and at the input 0.6091 against a
+      ripple of 0.6999; variation 0.05, 0.6395 against 0.6999; op 0 °C, 0.6091 against 0.6386;
+      variation 0.15, 0.7004 against 0.6999;
+    - ratio and efficiency: 7.647 at ratio 1 and efficiency 0.5 (ripple 5.377); 3.823 at ratio
+      1 and efficiency 1; 0.7647 at ratio 5 and efficiency 1; 1.529 at ratio 5 and efficiency
+      0.5; 0.1912 at ratio 20 and efficiency 1, within;
+    - each band lever alone at the defaults: no variation allowance 0.6509, the minimum at 20 °C
+      0.7663, SmCo 2:17 (Recoma 26) on both rings 0.7581; none passes;
+    - the second form: at ratio 1, at most 0.3406 N·m and the requirement alone 2.632 N·m; at
+      efficiency 0.5, 0.8965 and 1.000; at ratio 1 with the requirement at 0.3406 N·m no
+      sentence 2 (0.59984), at 0.3407 N·m sentence 2 (0.6001);
+    - "meeting the requirement puts": twelve poles (hot-low 2.5415) reads "is 0.8952 N·m" beside
+      "puts 0.8806 N·m"; at an axial length of 20 mm, 1.321 against the same 0.8806; a sweep of
+      6,720 designs shows sentence 2 in 2,342, of which 982 meet the requirement and put more
+      than the quoted figure and none puts less than R·B/(i·η); Auto on length at 60
+      requirements (1.80-2.39 N·m): in 27, sentence 1 reads one last digit below sentence 2's
+      figure (0.6340 against 0.6341 at 1.800 N·m);
+    - equal readouts on the slider grids: axial length 8.01 mm, face gap 1.00 mm and rating
+      0.54 N·m read "Cold-high at the gearbox input is 0.5400 N·m, above its 0.5400 N·m input
+      rating." (0.5400404 at the input; the badge "0.55 N·m against 0.54 N·m"); also 8.01 / 1.42
+      / 0.47 and 8.02 / 1.49 / 0.46; a design file with a rating of 0.80487 reads "0.8049 ...
+      0.8049";
+    - the band over geometry (4-16 magnets, 4-40 mm length, 0.5-4 mm gap, 4140, 304 or 6061 back
+      iron): largest relative change 2.2e-16;
+    - the caps of every proposed text, with the crate's own `word_count`, `sentence_count`,
+      `plain_text_violations` and `mentions_gearbox_protection`;
+  - round 2 (2026-10-17):
+    - at every design probed, cold-high at the gearbox input equals cold-high at the output over
+      ratio × efficiency, and the ripple the nominal pull-out over ratio × efficiency, exactly;
+    - round 1's probes again, with the same numbers, now reading the new sentence 2: at the
+      defaults "so even just meeting the 2.500 N·m requirement at the gearbox output puts 0.8806
+      N·m on the gearbox input"; at ratio 1, 4.403 N·m on the gearbox input, at most 0.3406 N·m,
+      the requirement alone 2.632 N·m; at ratio 1 with the requirement at 0.3407 N·m, 0.6001 N·m,
+      at most 0.3406 N·m or a band of at most 1.672 times; Auto on length at the defaults reads
+      0.8806 in both sentences;
+    - twelve poles: "is 0.8952 N·m" beside "even just meeting ... puts 0.8806 N·m"; at 20 mm
+      axial length, 1.459 against the same 0.8806;
+    - a sweep of 15,120 designs (rating 0.05-5.0, ratio and efficiency including both slider
+      ends, five temperature pairs including the operating temperature below and equal to the
+      minimum, variation 0, 0.15 and 0.5, requirement 0.1-10 N·m, four geometries): sentence 2 in
+      5,499, each with the minimum at or below the operating temperature and each naming the
+      "requirement at the gearbox output"; in all 2,301 that meet the requirement, sentence 1
+      reads above sentence 2's quoted load and cold-high at the input is at least R·B/(i·η);
+    - Auto on length at 60 requirements: the same 27 one-last-digit differences (0.6340 against
+      0.6341 at 1.800 N·m, unrounded 0.634017);
+    - the band reads 1.6731 at every NdFeB design probed (the defaults, 8 magnets, 304 back iron,
+      12 poles, 12 poles at 20 mm, the 20 mm ring radius, Auto at 13.77 mm);
+    - the counters on the changed texts: the engine help 29 words in 2 sentences, the ripple help
+      30 words in 2 sentences, the ripple label 39 characters, the defaults' Problem 3 sentences;
+      the guard empty and no protection wording; the crate's gearbox, conflict, problems-quote,
+      canonical-names, help, plain-words and sentence tests pass.
+- Round 1: 3 must-fix items, text applied verbatim (constants first, tests through the
+  constants):
+  - `gearbox_conflict` (`gui/guidance.rs`), the final `format!`: Problem sentence 2.
+    - Old: "No magnet size, gap or count passes both this and the hot minimum: cold-high is
+      {band_text} times hot-low here, so meeting the {} requirement puts {} on the gearbox input.
+      {remedy}"
+    - New: "No magnet size, gap or count passes both this and the hot minimum: cold-high is
+      {band_text} times hot-low here, so even just meeting the {} requirement at the gearbox
+      output puts {} on the gearbox input. {remedy}"
+    - Why: the requirement is a torque at the gearbox output (hot-low must reach it, and the
+      coupling sits on the output), and it was quoted without its side beside two torques on the
+      gearbox input; naming it once covers the remedy's "a requirement of at most ..." in the next
+      sentence. "Meeting the requirement puts X" stated one load, but X is what a design that just
+      meets the requirement puts there, and one that meets it with room puts more: twelve poles
+      reads "is 0.8952 N·m" beside "puts 0.8806 N·m", as do 982 of the 2,342 sweep designs that
+      show sentence 2. Not "puts at least": X is quoted rounded up (Task 3 review I-2), and under
+      Auto sentence 1 reads one last digit below it in 27 of 60 requirements (0.6340 against
+      0.6341 at 1.800 N·m), where "at least 0.6341" would read false. "Even just meeting" is true
+      at every design and makes that difference read as rounding.
+  - The `HELP` row of `model.gearbox_input_ripple_Nm` (`gui/plain_text.rs`).
+    - Old: "Torque swing while slipping: the pull-out at the operating temperature, without the
+      production allowance, divided by the ratio and efficiency. The gearbox check compares
+      cold-high at the gearbox input instead."
+    - New: "Slip swing: the pull-out at the gearbox output at operating temperature, without the
+      production allowance, divided by ratio and efficiency. The gearbox check compares cold-high
+      at the gearbox input instead."
+    - Why: the pull-out it divides is a torque at the gearbox output (`gearbox_input_ripple_Nm =
+      T_pull / (gear_ratio × gear_efficiency)`, `engine/model.rs`), named without its side. The
+      new text holds at the defaults (2.688 / 4.75 = 0.5660), with the operating temperature
+      below the minimum (3.3246 / 4.75 = 0.6999) and at ratio 1 with efficiency 0.5 (5.377). It
+      adds no "amplitude": the row is the forward-drive half's T/(i·η), and with an efficiency
+      below one the back-driven half at the input is smaller.
+  - The help of `gearbox.cold_high_check` (`engine/gearbox.rs`, its `out_rust_only` row).
+    - Old: "Compares the cold-high torque at the gearbox input, cold-high divided by the ratio and
+      efficiency, with the gearbox input torque rating. A peak check only."
+    - New: "Compares cold-high at the gearbox input (cold-high at the gearbox output divided by
+      ratio and efficiency) with the gearbox input torque rating. Fatigue from repeated slips is
+      not checked."
+    - Why: the cold-high it divides is the torque at the gearbox output (`cold_high_input_Nm =
+      cold_high / (gear_ratio * gear_eff)`, `engine/metal_design.rs`), named without its side;
+      since BL-059 a bare "cold-high" has two sides on screen (the dashboard's "Cold-high torque"
+      row at the output, this check at the input). "A peak check only." was the one place in
+      these texts where "peak" stood beside the rating: it can read as a check against a peak
+      rating, which owner decision 2A leaves open, and the spreadsheet's "GAM 5:1 peak input
+      rating." under the same input (with Show spreadsheet details on) invites that reading. What
+      it meant (decision 8A) is now said plainly, as the slipping note's watch-out says it.
+
+  Should-fix offered, not applied (open for the controller):
+  - S-1, Problem sentence 1 (`gearbox_problem`): where the two readouts are equal, both numbers
+    get as many more decimals as tell them apart, the way `band_quotes` separates the band from
+    the widest band near one ("Cold-high at the gearbox input is 0.54004 N·m, above its 0.54000
+    N·m input rating."); every other case is unchanged. Why: the badge never shows two equal
+    numbers, but the Problem can, within 5e-5 N·m above a rating (three designs on the slider
+    grids, and a rating of 0.80487 from a design file). Nothing is false, it is rare, and the
+    badge beside it separates the numbers.
+  - S-2, `SMALLER_VARIATION` (`gui/guidance.rs`): "a smaller measured variation" -> "a smaller
+    variation allowance backed by measurement". Why: the input's row reads "Production variation
+    allowance" and the hot minimum's Problem says "the 15 % variation allowance", so "measured
+    variation" names no row; "backed by measurement" keeps the point that the allowance is lowered
+    only on evidence. Not false today.
+  - S-3, the `HELP` row of `coupling.gear_ratio` (`gui/plain_text.rs`): "... such as the slip
+    ripple." -> "... such as the slip swing." Why: the dashboard row now reads "Nominal slip swing
+    at the gearbox input", so "the slip ripple" names a row the dashboard no longer shows. Not
+    false (decision 7A allows leaving it); round 2 found the case slightly stronger, since the
+    ripple help itself now opens with "Slip swing:".
+
+  Recorded, no change asked:
+  - strings 1-3, 5-9, 11 and 12 pass as drafted or as Task 2 reworded them (the Why's "Cold-high
+    torque can reach" is true at every probe, including the operating temperature below the
+    minimum, where "up to" would be false);
+  - "a warmer minimum temperature" with the minimum at its slider's top, and a largest
+    requirement below the requirement slider's 0.1 N·m bottom, are true statements of what would
+    have to change (the minimum temperature is an environment fact, not a slider move);
+  - "swing" read as peak to peak needs no change: the help's definition says what the number is;
+  - no overlay label for the check row: an engineer finds "the gearbox check" on the dashboard
+    (the rating's help and the row's label use the same words, the verdict starts "Within" or
+    "Above the gearbox input rating", the guide's block is "Gearbox input torque", and the results
+    table's search matches "gearbox"); the engine label also names the verdict's first number,
+    and the dashboard wraps it instead of truncating it;
+  - at a rating of 0.80 the badge quotes 0.81 beside the Problem's 0.8049: spec 4's rule against
+    two equal numbers;
+  - under Auto, sentence 1 (rounded to the nearest) and sentence 2 (rounded up) can differ in the
+    last digit: numbers, not text (Task 3 review I-2, ruling B-6);
+  - the context lines are fine: "One input pulls two ways (Axial magnet length, both rings):
+    Hot-low torque needs it raised and Gearbox input torque needs it lowered, so change another
+    input to settle one of them."; "Raising Magnet face gap also lowers the pull-out, so Hot-low
+    torque falls further." (true in the gearbox block at the defaults, where the hot minimum
+    fails); "Example design: fails 4 of 8 checks" while the clamp section is paused ("4 of 9" on
+    the sheet, unpaused).
+- Round 2: PASS, no must-fix. It re-reviewed the changed strings and every string whose meaning
+  depends on them; round 1's findings on the unchanged strings stand. The three changed strings
+  pass: the requirement is named at the gearbox output and each load on the gearbox input, "even
+  just meeting" holds at every design (none that meets the requirement puts less than R·B/(i·η),
+  over 2,301 designs), the engine help names both sides and nothing calls the rating a peak or a
+  nominal rating, and the ripple help names the pull-out at the gearbox output and claims no
+  ordering with cold-high (the swing is above cold-high at the input in three of the four designs
+  with the operating temperature below the minimum). No new should-fix; round 1's S-1 to S-3
+  stand as offered.
+
+  Recorded, no change asked: under Auto the design just meets the requirement, and sentence 1 can
+  read one last digit below sentence 2's quoted load (27 of 60 sampled requirements; 0.6340
+  against 0.6341, unrounded 0.634017). It is the deliberate rounding of Task 3 review I-2 (the
+  load is rounded up, so that a gearbox rated for the quoted torque takes it), it changes numbers,
+  not text, and "even just meeting" makes it no worse than "meeting"; no design that meets the
+  requirement with room reads below the load (2,301 of 2,301).
+- What happened to the should-fix items: S-1, S-2 and S-3 were left open, not applied. Each would
+  change reviewed on-screen text, and the brief applies a should-fix only when the controller asks
+  for it.
+- Tests that followed the changes (each new assertion was seen failing on the old text first):
+  - `gui::guidance` `assert_gearbox_problem_consistent`: wherever sentence 2 exists it names the
+    "requirement at the gearbox output", and wherever hot-low is at or above the requirement,
+    cold-high at the gearbox input is at least what just meeting the requirement puts there
+    (requirement × band / (ratio × efficiency), less 1e-12 of float noise) (the first item);
+  - `at_the_defaults_the_gearbox_problem_says_no_geometry_passes_both_checks`: the defaults' sentence
+    2 contains "so even just meeting the 2.500 N·m requirement at the gearbox output puts 0.8806
+    N·m on the gearbox input." (the first item);
+  - `the_conflict_sentence_shows_exactly_when_no_geometry_passes_both_checks`: twelve poles shows
+    sentence 2 while meeting the requirement with room, so the bound is checked where it is not an
+    equality (the first item);
+  - `gui::plain_text` `the_gearbox_texts_claim_what_the_engine_does`: the ripple help names the
+    "pull-out at the gearbox output" (the second item); the check row's help, the engine's (the
+    overlay has no row for it), names "gearbox output", "gearbox input" and "fatigue from repeated
+    slips is not checked", and joins the ban on "no check", "peak" and "warm" (the third item).
+
+  No test held an old text as a literal: every other test reads the strings through
+  `gearbox_conflict`, the `HELP` table and the engine metadata. The doc lines that describe the
+  changed texts follow them: `magcoupling-rs/README.md` (the `guidance.rs` and `plain_text.rs`
+  test rows) and `docs/ai/02-system.yaml` (the ripple help).
+- Traps: none of the plan's is written in any string: each torque names its side of the
+  gearbox; efficiency raises the input torque; cold-high is an expectation; nothing says the
+  coupling protects the gearbox; "peak" names the compared torque only; the ripple row is the
+  nominal swing at the operating temperature; geometry does not narrow the band; no "hot-day";
+  no path, id, "BL-059", "Rust-only" or "clamp"; glyph-safe. Round 1 found the first trap three
+  times (the requirement in sentence 2, the pull-out in the ripple help and the divided cold-high
+  in the engine help were named without their side of the gearbox) and "peak" beside the rating
+  once (the engine help's "A peak check only."); its three must-fix items fixed them, and round 2
+  found none.
+- Verdict: PASS (round 2).
+
+### Report for the record, round 1 (as returned)
+
+**1.** Reviewer: physics reviewer (session model), fresh context, 2026-10-17; round 1.
+
+**2. Read.**
+- The brief (task-8-inreview-brief-r1.md), rulings.md (B-1 to B-10) and the plan's head up to its Tasks heading: Global Constraints, Review Focus, R-1 to R-13, plan review 1A-8A, PD-1 to PD-4. Spec sections 1-6.
+- Code:
+  - engine/gearbox.rs (whole);
+  - engine/api.rs `gearbox::compute`;
+  - engine/metal_design.rs `cold_high_input_Nm` (:509);
+  - engine/model.rs `gearbox_input_ripple_Nm` and `gearbox_reference_Nm` (:349-352, :1156-1157);
+  - gui/guidance.rs: GEARBOX_GUIDE, gearbox_problem, gearbox_conflict, band_levers, quoted_limit, quoted_load, band_quotes, level_of, fixes, helps, trade_offs, side_effects, and the sentence-2 test helpers (assert_conflict_quotes, assert_gearbox_problem_consistent, the B-6 pins, the lever-list test);
+  - gui/dashboard.rs: DASHBOARD, END_EFFECT_ROWS, verdict_level, check_level, greyed_by_end_effect, and the row label `.wrap()` at :716;
+  - gui/plain_text.rs: LABELS, the rating, ripple, gear ratio and efficiency HELP rows, display_label, the_gearbox_texts_claim_what_the_engine_does, and the protect ban;
+  - gui/results_table.rs (the table draws the catalogue label, truncated);
+  - gui/input_ui.rs (sliders round to their step);
+  - engine/explain/plain.rs (the guard);
+  - engine/explain/notes.rs: GEARBOX_CHECK_SOURCE and the two gearbox watch-outs, for consistency only.
+- Sheets: BL059-guidance.txt, BL059-overlay.txt and BL059-strings.diff.
+
+Probes: a scratch crate (bl059g3) in my scratchpad with its own CARGO_TARGET_DIR, depending on magcoupling-rs by path with `gui`. It calls `compute_all` and the gearbox guide's `(g.problem)`. Nothing in the repo was changed.
+- (1) Defaults:
+  - cold-high at the input is 0.804907 against 0.6;
+  - the verdict reads "Above the gearbox input rating: 0.80 N·m against 0.60 N·m";
+  - the Problem quotes 0.8049, 0.6000, 1.673, 2.500, 0.8806 (0.880564), 1.703 (1.703454) and 1.140, with sentence 2.
+- (2) The probe designs, cold-high at the input:
+  - default: 0.8049, above;
+  - 8 magnets: 0.5893, within;
+  - 304 back iron: 0.5082, within;
+  - Y30: 0.07117, within (band 1.9207);
+  - 20 mm ring radius: 0.7602, above, with sentence 2.
+- (3) The rating:
+  - at 0.80: "Above the gearbox input rating: 0.81 N·m against 0.80 N·m". Sentence 2 shows (0.8806 > 0.80; at most 2.271 N·m, band 1.520). The Problem reads "0.8049 N·m, above its 0.8000 N·m".
+  - at 0.81: within.
+  - at 0.05: "0.80 N·m against 0.05 N·m", with sentence 2's second form (at most 0.1419 N·m; the requirement alone 0.5264).
+  - at 5.0: within.
+- (4) The passing design is within, with no Problem. The gearbox-only design reads 0.7070, above; R·B/(i·η) = 0.5636, so no sentence 2.
+- (5) Auto on length:
+  - at the defaults it solves 13.7695 mm: hot-low 2.5000, 0.8806 at the input, red, with sentence 2;
+  - with the minimum temperature at 20 °C and variation 0 it solves 11.9023 mm: 0.5664, within, no Problem.
+- (6) A NaN rating gives "Gearbox check unknown: a torque is not a number", Caution, and Problem 5.
+- (7) Short magnets:
+  - hot-low is -0.4829 and cold-high at the input -0.1701;
+  - the engine text reads "Within the gearbox input rating";
+  - check_level is None (greyed), and there is no Problem.
+- (8) The operating temperature below the minimum (sentence 1 only in every case):
+  - op -40 °C, min 20 °C, v 0: cold-high 2.8930 below hot-low 3.3246, and at the input 0.6091 against a ripple of 0.6999;
+  - v 0.05: 0.6395 against 0.6999;
+  - op 0 °C, min 20 °C, v 0: 0.6091 against 0.6386;
+  - op -40 °C, min 20 °C, v 0.15: 0.7004 against 0.6999.
+- (9) Ratio and efficiency (efficiency raises the input torque):
+  - ratio 1, efficiency 0.5: 7.647, ripple 5.377, second form;
+  - ratio 1, efficiency 1: 3.823;
+  - ratio 5, efficiency 1: 0.7647;
+  - ratio 5, efficiency 0.5: 1.529;
+  - ratio 20, efficiency 1: 0.1912, within.
+- (10) Each lever alone at the defaults: variation 0 gives 0.6509 (and the lever list drops the variation), minimum 20 °C gives 0.7663, and SmCo 2:17 (Recoma 26) on both rings gives 0.7581. None passes.
+- (11) The second form:
+  - ratio 1 gives "...a requirement of at most 0.3406 N·m: the requirement alone puts 2.632 N·m on the gearbox input...";
+  - efficiency 0.5 gives 0.8965 and 1.000;
+  - ratio 1 with the requirement at 0.3406 shows no sentence 2 (0.59984); at 0.3407 sentence 2 shows (0.6001).
+- (12) twelve_poles (`with_poles(12)`):
+  - hot-low is 2.5415, so the design meets the 2.5 requirement with room ("Estimate covers hot min");
+  - sentence 1 reads "is 0.8952 N·m", but sentence 2 says "meeting the 2.500 N·m requirement puts 0.8806 N·m";
+  - axial length 20 mm: 1.321 against the same 0.8806.
+  - A sweep of 6,720 designs (rating 0.05-5, ratio 1-20, efficiency 0.5-1, five temperature pairs including op < min, variation 0-0.5, requirement 0.1-10) shows sentence 2 in 2,342.
+    - In 982 of those, the design meets the requirement and puts more than the figure quoted.
+    - No design meeting the requirement puts less than R·B/(i·η).
+  - Auto on length at 60 requirements (1.80-2.39 N·m) showing sentence 2: in 27, sentence 1 reads one last digit below sentence 2's figure (0.6340 against 0.6341 at 1.800 N·m). Sentence 1 rounds to the nearest; sentence 2 rounds up (Task 3 I-2).
+- (a) Equal reading on the slider grids:
+  - axial length 8.01 mm, face gap 1.00 mm, rating 0.54 N·m: cold-high at the input is 0.5400404, and the Problem reads "Cold-high at the gearbox input is 0.5400 N·m, above its 0.5400 N·m input rating." The badge beside it reads "0.55 N·m against 0.54 N·m";
+  - also 8.01 / 1.42 / 0.47 and 8.02 / 1.49 / 0.46: the first three found scanning 8.00-12.00 mm by 0.90-1.50 mm;
+  - a design file with a rating of 0.80487 at the defaults reads "0.8049 ... 0.8049".
+- The band does not depend on geometry: over 4-16 magnets, 4-40 mm length, 0.5-4 mm gap and 4140, 304 or 6061 back iron, its largest relative change is 2.2e-16.
+- Caps of every proposed text were checked with the crate's own word_count, sentence_count, plain_text_violations and mentions_gearbox_protection.
+
+**3. Strings.**
+
+| # | String | Verdict | Reason |
+|---|---|---|---|
+| 1 | Guide label "Gearbox input torque" | PASS | Distinct from the other guides' labels. It reads well in the trade-off line ("Gearbox input torque needs it lowered"). |
+| 2 | Why | PASS | One sentence of 28 words. "Can reach" is true at every probe, including (8), where cold-high is below hot-low and "up to" would be false. Both sides are named. It makes no protection claim. |
+| 3 | Problem sentence 1 | PASS (S-1 offered) | Live numbers, and true at every probe. Two equal readouts are possible in a window of 5e-5 N·m above the rating (routed point (a)); see S-1. |
+| 4 | Problem sentence 2 (the conflict) | MUST-FIX (M-1) | The requirement, an output-side torque, is quoted without its side. "Meeting the requirement puts X" is contradicted by sentence 1 wherever the design meets the requirement with room (twelve_poles; 982 of 2,342 sweep designs). |
+| 5 | Problem when the check cannot be made | PASS | True for a NaN rating (6); both values named with their side. |
+| 6 | "Within the gearbox input rating" | PASS | Equality passes. Where the engine reads Within on a negative torque (7), the row greys with no badge and no Problem. |
+| 7 | "Above the gearbox input rating" + ": {q} N·m against {r} N·m" | PASS | True at (1), (3) and (9). Never two equal numbers (0.81 against 0.80). The rule that inflates q is spec 4's, so it is recorded, not changed. |
+| 8 | "Gearbox check unknown: a torque is not a number" | PASS | Unreachable from the UI (R-12). "A torque" quotes no value, so no side is needed. |
+| 9 | Engine label "Cold-high torque at the gearbox input against its rating" | PASS | Names the quantity the verdict's first number is. See (13). |
+| 10 | Engine help | MUST-FIX (M-3) | The cold-high it divides is named without its side. "A peak check only." can be read as a check against a peak rating (2A). |
+| 11 | Rating help | PASS | True; no peak or nominal. The spreadsheet note shown under Show spreadsheet details reads as the spreadsheet's own labelled note (R-11). |
+| 12 | Ripple label "Nominal slip swing at the gearbox input" | PASS | 39 characters, one quantity, side named, no "warm". |
+| 13 | Ripple help | MUST-FIX (M-2) | The pull-out it divides, an output-side torque, is named without its side (routed point (d)). |
+
+Routed points:
+- (a): SHOULD-FIX S-1. Every number is the correct readout and "above" is true, so nothing is false; the case is rare, and the badge beside it shows two different numbers.
+- (b), first point (the requirement's side): MUST-FIX, in M-1. Second point (the variation's name): SHOULD-FIX S-2. Third point ("puts"): probe (12), in M-1.
+- (c): PASS, recorded.
+  - "A warmer minimum temperature" with the minimum at its slider's top (20 °C), below the operating temperature, is true. Sentence 2 names what would have to change, and the minimum temperature is an environment fact (spec 5), not a slider move.
+  - A largest requirement below the requirement slider's 0.1 N·m bottom is likewise a true statement of what the application would need.
+- (d), the side: MUST-FIX, in M-2.
+  - "Swing" read as peak to peak needs no change: the help's definition (the pull-out divided by ratio and efficiency) says what the number is.
+  - "Amplitude" would be less exact. The row is the forward-drive half's T/(i·η), and with efficiency below one the back-driven half at the input is smaller.
+- (e): SHOULD-FIX S-3. Decision 7A allows leaving it, since the help is not false.
+- (f) and probe (13): no overlay label is asked for. An engineer finds "the gearbox check" on the dashboard:
+  - The rating help says it "compares the cold-high torque at the gearbox input with it", and the row reads "Cold-high torque at the gearbox input against its rating": the same words.
+  - Its verdict starts with "Within" or "Above the gearbox input rating", and the guide block is "Gearbox input torque".
+  - The results table's search matches "gearbox".
+  - The engine label also names the verdict's first number, which a "Gearbox check ..." overlay label would drop. On the dashboard the label wraps instead of truncating.
+
+**4. MUST-FIX.**
+
+**M-1.** Problem sentence 2 (string 4), `gui/guidance.rs` `gearbox_conflict`: the final `format!`.
+- Old: `"No magnet size, gap or count passes both this and the hot minimum: cold-high is {band_text} times hot-low here, so meeting the {} requirement puts {} on the gearbox input. {remedy}"`
+- New: `"No magnet size, gap or count passes both this and the hot minimum: cold-high is {band_text} times hot-low here, so even just meeting the {} requirement at the gearbox output puts {} on the gearbox input. {remedy}"`
+- At the defaults it reads: "No magnet size, gap or count passes both this and the hot minimum: cold-high is 1.673 times hot-low here, so even just meeting the 2.500 N·m requirement at the gearbox output puts 0.8806 N·m on the gearbox input. It takes a gearbox rated for that, a requirement of at most 1.703 N·m, or a band of at most 1.140 times (a warmer minimum temperature, a smaller measured variation or SmCo magnets narrow it)."
+- At ratio 1: "... so even just meeting the 2.500 N·m requirement at the gearbox output puts 4.403 N·m on the gearbox input. It takes a gearbox rated for that or a requirement of at most 0.3406 N·m: the requirement alone puts 2.632 N·m on the gearbox input, so no narrower band settles it."
+- Still two sentences, as before. The numbers, their order and the remedy forms are unchanged, so the B-6 pins and `assert_conflict_quotes` hold.
+- Why:
+  - (i) Trap: the requirement is a torque at the gearbox output. It is the coupling's torque, hot-low must reach it, and the coupling sits on the output. The sentence quotes it without its side, right beside two input-side torques ("2.500 N·m requirement ... 0.8806 N·m on the gearbox input"). Naming the side once covers the remedy's "a requirement of at most 1.703 N·m", the same quantity, in the next sentence.
+  - (ii) Probe (12): "meeting the requirement puts X" states one load, but X is the load of a design that just meets the requirement. One that meets it with room puts more.
+    - twelve_poles, a test design (hot-low 2.5415 against 2.5), reads "Cold-high at the gearbox input is 0.8952 N·m ... meeting the 2.500 N·m requirement puts 0.8806 N·m on the gearbox input".
+    - The sweep finds 982 such designs among 2,342.
+  - Why not "puts at least": X is quoted rounded up (quoted_load, Task 3 I-2, so that a gearbox rated for X takes it). An Auto-sized design meets the requirement exactly, yet sentence 1 reads one last digit below X in 27 of 60 sampled requirements (0.6340 against 0.6341 at 1.800 N·m). "At least 0.6341" would read false beside "is 0.6340".
+  - "Even just meeting" is true at every design, says that the quoted torque is the least a compliant design puts on the input, and makes that last-digit difference read as rounding.
+- Test assertion:
+  - in `at_the_defaults_the_gearbox_problem_says_no_geometry_passes_both_checks`: `conflict.contains("so even just meeting the 2.500 N·m requirement at the gearbox output puts 0.8806 N·m on the gearbox input.")`;
+  - in `assert_gearbox_problem_consistent`, wherever sentence 2 shows: it contains `"requirement at the gearbox output"`. Where `metal.torque_hot_low_Nm >= required`, `metal.cold_high_input_Nm >= required * band / (ratio * efficiency) * (1.0 - 1e-12)`: a design meeting the requirement puts at least what just meeting it puts;
+  - `with_poles(12)` is among the designs it runs on.
+
+**M-2.** The ripple help (string 13), `gui/plain_text.rs` HELP row `"model.gearbox_input_ripple_Nm"`.
+- Old: "Torque swing while slipping: the pull-out at the operating temperature, without the production allowance, divided by the ratio and efficiency. The gearbox check compares cold-high at the gearbox input instead."
+- New: "Slip swing: the pull-out at the gearbox output at operating temperature, without the production allowance, divided by ratio and efficiency. The gearbox check compares cold-high at the gearbox input instead."
+- 30 words in 2 sentences, with no braces and no "guarantee", "peak" or "warm". It keeps the four phrases `the_gearbox_texts_claim_what_the_engine_does` requires. It claims no inequality with cold-high (PD-2).
+- Why:
+  - Trap: the pull-out it divides is a torque at the gearbox output, named without its side. The engine computes `gearbox_input_ripple_Nm = T_pull / (gear_ratio × gear_efficiency)` (model.rs:1156), from the coupling's pull-out on the output.
+  - The new text holds at every probe: (1) 2.688 / 4.75 = 0.5660; (8) 3.3246 / 4.75 = 0.6999, with the operating temperature below the minimum; (9) 2.688 / 0.5 = 5.377.
+  - It does not add "amplitude", for the reason under routed point (d).
+- Test assertion: in `the_gearbox_texts_claim_what_the_engine_does`, the RIPPLE `names` gain `"pull-out at the gearbox output"`.
+
+**M-3.** The engine help (string 10), `engine/gearbox.rs`: the `out_rust_only` help of `cold_high_check`.
+- Old: "Compares the cold-high torque at the gearbox input, cold-high divided by the ratio and efficiency, with the gearbox input torque rating. A peak check only."
+- New: "Compares cold-high at the gearbox input (cold-high at the gearbox output divided by ratio and efficiency) with the gearbox input torque rating. Fatigue from repeated slips is not checked."
+- 29 words in 2 sentences; the plain-words guard is empty.
+- Why:
+  - (i) Trap: the cold-high it divides is the output-side torque (`cold_high_input_Nm = cold_high / (gear_ratio * gear_eff)`, metal_design.rs:509), named without its side. Since BL-059, bare "cold-high" has two sides on screen: the dashboard's "Cold-high torque" row at the output, and this check at the input.
+  - (ii) "A peak check only." is the only place in these texts where "peak" stands beside the rating. An engineer can read "a peak check" as a check against a peak rating, which decision 2A leaves open. The spreadsheet note "GAM 5:1 peak input rating." shows under the same input with spreadsheet details on, which invites that reading.
+  - What the sentence means (decision 8A) is said plainly instead: fatigue from repeated slips is not checked, as the slipping note's watch-out also says.
+- Test assertion: `help_for("gearbox.cold_high_check")` (the engine help, since the overlay has no row for it) is added to the loop in `the_gearbox_texts_claim_what_the_engine_does` that bans "no check", "peak" and "warm". It is also checked by `names` with `"gearbox output"`, `"gearbox input"` and `"fatigue from repeated slips is not checked"`.
+
+**5. SHOULD-FIX.**
+
+**S-1.** Routed point (a): Problem sentence 1 (string 3), `gui/guidance.rs` `gearbox_problem`.
+- Old: `"Cold-high at the gearbox input is {}, above its {} input rating."`, from `result_text(cold_high_input)` and `input_text(rating)`. It reads "Cold-high at the gearbox input is 0.5400 N·m, above its 0.5400 N·m input rating." at an axial length of 8.01 mm, face gap 1.00 mm and rating 0.54 N·m.
+- New: the same words. Where the two readouts are equal, both numbers get as many more decimals as tell them apart, the way band_quotes separates the band from the widest band near one. The example then reads: "Cold-high at the gearbox input is 0.54004 N·m, above its 0.54000 N·m input rating."
+  - Every other case is unchanged: "0.8049 N·m, above its 0.6000 N·m" at the defaults, so the B-6 pins hold.
+- Why: the badge beside it never shows two equal numbers (spec 4, Review Focus 1), but the Problem can. It happens within 5e-5 N·m above a rating: on the slider grids (three designs found) and from a design file (0.80487 at the defaults). It is a should, not a must: nothing is false, it is rare, and the badge separates the two numbers.
+- Test assertion:
+  - with the defaults and the rating at cold-high at the gearbox input minus 1e-6 N·m, sentence 1's two numbers parse to different values, the first larger;
+  - at the defaults, sentence 1 still contains "0.8049 N·m, above its 0.6000 N·m".
+
+**S-2.** Routed point (b), second point: `gui/guidance.rs` `SMALLER_VARIATION`.
+- Old: "a smaller measured variation"
+- New: "a smaller variation allowance backed by measurement"
+- It reads at the defaults: "(a warmer minimum temperature, a smaller variation allowance backed by measurement or SmCo magnets narrow it)". Last in the list: "... or a smaller variation allowance backed by measurement narrows it".
+- Why:
+  - The input's row reads "Production variation allowance", and the hot minimum's Problem one block up says "the 15 % variation allowance". "Measured variation" names no row.
+  - "Backed by measurement" keeps the point that the allowance is an assumption, lowered only on evidence (spec 5: not a fix).
+  - Not false today.
+- Test assertion: the lever-list test reads the constant, so it follows. Add the defaults' parenthetical above as a literal.
+
+**S-3.** Routed point (e): `gui/plain_text.rs` HELP row `"coupling.gear_ratio"`.
+- Old: "Reduction ratio of the gearbox; the coupling sits on its wheel side. A higher ratio lowers the coupling torques referred to the gearbox input, such as the slip ripple."
+- New: "Reduction ratio of the gearbox; the coupling sits on its wheel side. A higher ratio lowers the coupling torques referred to the gearbox input, such as the slip swing."
+- 29 words in 2 sentences.
+- Why: LABELS gives each quantity one name on screen, and since BL-059 the dashboard row reads "Nominal slip swing at the gearbox input". "The slip ripple" now names a row the dashboard no longer shows. The results table and exports keep the catalogue label "Estimated gearbox input torque ripple amplitude", and the slipping note says "torque ripple"; neither is in scope here. Decision 7A allows leaving the help, since it is not false; the change is one word.
+- Test assertion: `help_for("coupling.gear_ratio").contains("the slip swing")`.
+
+**6. Traps checked.**
+- Side of the gearbox: every torque has its side after M-1, M-2 and M-3. String 8's "a torque" quotes no value.
+- Efficiency: no text says it reduces the load. "Divided by ... efficiency" raises the input torque: 7.647 at efficiency 0.5 against 3.823 at 1, both at ratio 1.
+- Cold-high as an expectation: the Why says "can reach". "At most" bounds only the requirement and the band, never cold-high. Sentence 1 states the model's value, not what every unit reaches.
+- Protect: mentions_gearbox_protection is false for all 13 strings and every new text.
+- Peak: no text names the rating a peak or a nominal rating. M-3 removes the ambiguous "A peak check only.". The spreadsheet's "GAM 5:1 peak input rating." is shown as the spreadsheet's labelled note (R-11).
+- Ripple row: it is the nominal swing at the gearbox input, with no "warm". The help says "at operating temperature", which holds with the operating temperature below the minimum (probe (8)).
+- Band and geometry: no text says geometry narrows the band. Sentence 2 says no size, gap or count passes both checks, and the band is the same over geometry to 2.2e-16.
+- Forbidden words: no "hot-day", internal path, id, cell, "BL-059", "Rust-only" or "clamp" in strings 1-13 or the new texts.
+- Glyphs: no glyph beyond the "N·m" already drawn.
+- plain_text_violations is empty for every string and every new text.
+- Caps:
+  - Why: 28 words, one sentence, no ". " inside;
+  - M-2: 30 words, 2 sentences;
+  - M-3: 29 words, 2 sentences;
+  - S-3: 29 words;
+  - overlay label: 39 characters;
+  - each Problem sentence keeps its sentence count.
+- Typed numbers: none in strings 1-13 or in the new texts. Every number is formatted from the results or inputs, and the verdict's 0.01 is a formatting rule. The "5:1" in the spreadsheet note is Python-locked and not ours.
+
+**7. Context lines.**
+- Trade-off line: fine. "One input pulls two ways (Axial magnet length, both rings): Hot-low torque needs it raised and Gearbox input torque needs it lowered, so change another input to settle one of them."
+- Face-gap side effect: true in the gearbox block at the defaults, where the hot minimum fails. "Raising Magnet face gap also lowers the pull-out, so Hot-low torque falls further."
+- Status line: "Example design: fails 4 of 8 checks" while the clamp section is paused, and "4 of 9" unpaused on the sheet. Fine.
+- Recorded, no action:
+  - At a rating of 0.80, the badge quotes 0.81 beside the Problem's 0.8049. This is spec 4's rule against two equal numbers.
+  - Under Auto, sentence 1 (nearest) and sentence 2 (rounded up) can differ in the last digit. These are numbers, not text (Task 3 I-2, B-6), and M-1's wording makes the difference read as rounding.
+
+**8. Verdict:** MUST_FIX (M-1, M-2, M-3; S-1 to S-3 offered).
+
+### Report for the record, round 2 (as returned)
+
+**1.** Reviewer: physics reviewer (session model), fresh context, 2026-10-17; round 2.
+
+**2. Read.**
+- The round-2 brief (task-8-inreview-brief-r2.md), round 1's answer (t8-g3-r1.md), rulings.md (B-1 to B-10), the plan's head up to its Tasks heading (Global Constraints, Review Focus, R-1 to R-13, plan review 1A-8A, PD-1 to PD-4) and spec sections 1-6.
+- The round's source diff (`git diff` of the working tree: the three strings, the tests that pin them and the three doc lines) and the round-2 sheets: BL059-guidance.txt, BL059-overlay.txt and BL059-strings.diff.
+- Code behind the changed strings and their dependents:
+  - engine/gearbox.rs (whole);
+  - engine/metal_design.rs `cold_high_input_Nm` (:509);
+  - engine/model.rs `gearbox_input_ripple_Nm` and `gearbox_reference_Nm` (:349-352, :1156-1157);
+  - gui/guidance.rs: gearbox_problem, gearbox_conflict, band_levers, quoted_value, quoted_limit, quoted_load, band_quotes, and the round's test changes (assert_gearbox_problem_consistent, the defaults' pin, the twelve_poles assertion);
+  - gui/plain_text.rs: the LABELS and HELP rows of the ripple, the rating, the gear ratio, the efficiency and the requirement; label_for, help_for; the_gearbox_texts_claim_what_the_engine_does;
+  - gui/dashboard.rs: DASHBOARD, END_EFFECT_ROWS, and result_tooltip, which draws the engine help under the engine label on the gearbox row's hover (the overlay has no row for it);
+  - engine/explain/notes.rs: GEARBOX_CHECK_SOURCE and the two gearbox watch-outs, for consistency only.
+
+Probes: a new scratch crate (bl059g3) in my own scratchpad folder with its own CARGO_TARGET_DIR there, depending on magcoupling-rs by path with `gui`. It calls `compute_all`, the gearbox guide's `(g.problem)`, `guidance::level`, `check_level` and `greyed_by_end_effect`, and runs the crate's own `word_count`, `sentence_count`, `plain_text_violations` and `mentions_gearbox_protection` on every changed text. Nothing in the repo was changed (`git status --short` is the same before and after).
+- At every design below, cold-high at the gearbox input equals cold-high at the output over ratio x efficiency, and the ripple equals the nominal pull-out over ratio x efficiency, both exactly (difference 0).
+- (1) Defaults:
+  - cold-high at the input is 0.804907 against 0.6;
+  - the verdict reads "Above the gearbox input rating: 0.80 N·m against 0.60 N·m";
+  - the Problem reads: "Cold-high at the gearbox input is 0.8049 N·m, above its 0.6000 N·m input rating. No magnet size, gap or count passes both this and the hot minimum: cold-high is 1.673 times hot-low here, so even just meeting the 2.500 N·m requirement at the gearbox output puts 0.8806 N·m on the gearbox input. It takes a gearbox rated for that, a requirement of at most 1.703 N·m, or a band of at most 1.140 times (a warmer minimum temperature, a smaller measured variation or SmCo magnets narrow it)." (R·B/(i·η) = 0.880564.)
+- (2) The probe designs, cold-high at the input:
+  - default: 0.804907, above, with sentence 2;
+  - 8 magnets: 0.589311, within;
+  - 304 back iron: 0.508178, within;
+  - Y30: 0.071172, within (band 1.9207);
+  - 20 mm ring radius: 0.760233, above, with the defaults' sentence 2 (0.8806).
+- (3) The rating:
+  - at 0.80: "Above the gearbox input rating: 0.81 N·m against 0.80 N·m". Sentence 2 shows (0.8806 > 0.80; at most 2.271 N·m, band 1.520);
+  - at 0.81: within;
+  - at 0.05: "0.80 N·m against 0.05 N·m"; the second form, "a requirement of at most 0.1419 N·m: the requirement alone puts 0.5264 N·m on the gearbox input";
+  - at 5.0: within.
+- (4) The passing design: 0.706991, within, no Problem. The gearbox-only design: "Cold-high at the gearbox input is 0.7070 N·m, above its 0.6000 N·m input rating." only; R·B/(i·η) = 0.563561, so no sentence 2.
+- (5) Auto on length:
+  - at the defaults it solves 13.7695 mm: hot-low 2.5000, 0.880564 at the input, red; sentence 1 reads "is 0.8806 N·m" and sentence 2 "even just meeting ... puts 0.8806 N·m": the same number, as it should be;
+  - with the minimum at 20 °C and variation 0 it solves 11.9023 mm: 0.566360, within, no Problem.
+- (6) A NaN rating: "Gearbox check unknown: a torque is not a number", Caution, and Problem 5.
+- (7) Short magnets: hot-low -0.4829, at the input -0.170091, the engine text "Within the gearbox input rating", greyed, check_level None, no Problem.
+- (8) The operating temperature below the minimum (sentence 1 only in every case):
+  - op -40 °C, min 20 °C, v 0: cold-high 2.8930 below hot-low 3.3246; at the input 0.609058 against a ripple of 0.6999 (= 3.3246 / 4.75);
+  - v 0.05: 0.639511 against 0.6999;
+  - op 0 °C, min 20 °C, v 0: 0.609058 against 0.6386 (= 3.0336 / 4.75);
+  - op -40 °C, min 20 °C, v 0.15: 0.700417 against 0.6999.
+- (9) Ratio and efficiency (dividing by the efficiency raises the input torque):
+  - ratio 1, efficiency 0.5: 7.646621, ripple 5.3770;
+  - ratio 1, efficiency 1: 3.823310, ripple 2.6885;
+  - ratio 5, efficiency 0.5: 1.529324, ripple 1.0754;
+  - ratio 20, efficiency 1: 0.191166, within.
+- (10) Each lever alone at the defaults, R·B/(i·η): variation 0 gives 0.6509 (the lever list drops the variation); minimum 20 °C gives 0.7663; Recoma 26 on both rings (parts cleared) gives 0.7581. None reaches 0.6.
+- (11) The second form:
+  - ratio 1: "... so even just meeting the 2.500 N·m requirement at the gearbox output puts 4.403 N·m on the gearbox input. It takes a gearbox rated for that or a requirement of at most 0.3406 N·m: the requirement alone puts 2.632 N·m on the gearbox input, so no narrower band settles it.";
+  - efficiency 0.5 (ratio 5): at most 0.8965 N·m, the requirement alone 1.000 N·m;
+  - ratio 1 with the requirement at 0.3406: no sentence 2 (0.599840); at 0.3407 sentence 2 shows (0.600016): "even just meeting the 0.3407 N·m requirement at the gearbox output puts 0.6001 N·m on the gearbox input. It takes a gearbox rated for that, a requirement of at most 0.3406 N·m, or a band of at most 1.672 times (...)".
+- (12) twelve_poles and "even just meeting":
+  - twelve_poles: hot-low 2.5415 meets the 2.5 requirement with room; sentence 1 reads "is 0.8952 N·m" and sentence 2 "even just meeting ... puts 0.8806 N·m": the two now agree (a design with room puts more). At 20 mm axial length: 1.459 against the same 0.8806.
+  - A sweep of 15,120 designs: rating 0.05-5.0, ratio and efficiency including both slider ends, five temperature pairs (including op below min and op equal to min), variation 0, 0.15 and 0.5, requirement 0.1-10 N·m, four geometries.
+    - Sentence 2 shows in 5,499, each with the minimum at or below the operating temperature and each containing "requirement at the gearbox output".
+    - 2,301 of those meet the requirement. In every one, sentence 1's readout is above sentence 2's quoted load, and cold-high at the input is at least R·B/(i·η). There are no exceptions.
+  - Auto on length at 60 requirements (1.80-2.39 N·m), each with sentence 2: in 27 sentence 1 reads one last digit below sentence 2. At 1.800 N·m: "is 0.6340 N·m" against "even just meeting the 1.800 N·m requirement at the gearbox output puts 0.6341 N·m", where hot-low is 1.80000000003 and R·B/(i·η) is 0.634017. Sentence 1 rounds to the nearest; sentence 2 rounds up (Task 3 I-2). See section 7.
+- Texts, by the crate's own counters, with the plain-words guard empty and no protection wording in each:
+  - string 10: 29 words, 2 sentences;
+  - string 13: 30 words, 2 sentences (at the cap);
+  - string 12: 39 characters;
+  - the defaults' Problem: 3 sentences, and sentence 2's first sentence is still one sentence (38 words).
+- The crate's tests, run with `--locked` against my scratch target directory, all pass:
+  - the 25 gearbox tests;
+  - the conflict, problems-quote, canonical-names, help, plain-words ("word") and sentence groups.
+
+**3. Strings.** Strings 4, 10 and 13 are re-judged as changed in this round. The other strings are judged beside them, for how they read; round 1's findings on them stand.
+
+| # | String | Verdict | Reason |
+|---|---|---|---|
+| 1 | Guide label "Gearbox input torque" | PASS (round 1) | Unchanged. |
+| 2 | Why | PASS (round 1) | Unchanged. It agrees with the new texts: "can reach" for cold-high, and each torque's side is named. |
+| 3 | Problem sentence 1 | PASS | Unchanged. Beside the new sentence 2 it now agrees wherever a design meets the requirement with room: twelve_poles 0.8952 against "even just meeting ... 0.8806"; 2,301 sweep designs. The one-digit difference under Auto is recorded in section 7. Round 1's S-1 is still open. |
+| 4 | Problem sentence 2 (the conflict) | PASS | M-1 applied verbatim. The requirement is named at the gearbox output and the load on the gearbox input. "Even just meeting" holds at every design: none that meets the requirement puts less than R·B/(i·η), over 2,301 designs. The remedy's "a requirement of at most {X}" is the same output-side quantity, named in the clause before. "It takes a gearbox rated for that" still refers to the torque on the gearbox input. Each sentence is still one sentence. |
+| 5 | Problem when the check cannot be made | PASS (round 1) | Unchanged. |
+| 6 | "Within the gearbox input rating" | PASS (round 1) | Unchanged. |
+| 7 | "Above the gearbox input rating" + ": {q} N·m against {r} N·m" | PASS (round 1) | Unchanged. Re-probed at (1), (3) and (9). |
+| 8 | "Gearbox check unknown: a torque is not a number" | PASS (round 1) | Unchanged. |
+| 9 | Engine label "Cold-high torque at the gearbox input against its rating" | PASS | Unchanged. On the row's hover it sits above the new help, and the two say the same thing: "its rating" is "the gearbox input torque rating". |
+| 10 | Engine help | PASS | M-3 applied verbatim. Both sides are named (metal_design.rs:509, exact at every probe). Nothing calls the rating a peak or a nominal rating (2A). "Fatigue from repeated slips is not checked." is true (8A, backlog BL-066) and agrees with the torque-band watch-out ("repeated slips also load the gearbox in fatigue, which nothing checks"). It makes no protection claim. 29 words. |
+| 11 | Rating help | PASS | Unchanged. It agrees with the new engine help: the same comparison, the same two sides. The spreadsheet note "GAM 5:1 peak input rating." still reads as the spreadsheet's own labelled note (R-11). |
+| 12 | Ripple label "Nominal slip swing at the gearbox input" | PASS | Unchanged. With the new help: "nominal" is "without the production allowance", and "at the gearbox input" is the output's pull-out divided by ratio and efficiency. |
+| 13 | Ripple help | PASS | M-2 applied verbatim. The pull-out it divides is named at the gearbox output, and the row is exactly pull-out / (ratio x efficiency) at every probe (model.rs:1156). "At operating temperature" holds with the operating temperature below the minimum (8). It claims no ordering with cold-high (PD-2): the swing is above cold-high at the input in three of the four (8) designs. No "warm", "peak" or "guarantee". 30 words, 2 sentences. |
+
+Routed points (a)-(f): round 1's judgments stand; no string they concern changed except as M-1 and M-2 settled them. (b)'s first point and (d)'s side point are now fixed in strings 4 and 13.
+
+**4. MUST-FIX.** None.
+
+**5. SHOULD-FIX.** No new one. Round 1's S-1 (sentence 1's equal readouts within 5e-5 N·m above the rating), S-2 ("a smaller measured variation" against the row "Production variation allowance") and S-3 (the gear ratio's help still says "the slip ripple", while the row and the new help now say "slip swing") stand as round 1 offered them, open for the controller. This round does not re-judge them. S-3's case is slightly stronger now: the ripple help itself opens with "Slip swing:".
+
+**6. Traps checked.**
+- Side of the gearbox: every torque in strings 4, 10 and 13 names its side.
+  - String 4: the requirement at the output, and the loads on the input.
+  - String 10: cold-high at the input and at the output, and the input rating.
+  - String 13: the pull-out at the output, and cold-high at the input.
+  - "Cold-high is 1.673 times hot-low" is a ratio on one side.
+- Efficiency: "divided by ratio and efficiency" in strings 10 and 13 raises the input torque (ratio 1: 7.647 at efficiency 0.5 against 3.823 at 1). No text says efficiency reduces the load.
+- Cold-high as an expectation:
+  - No new text bounds cold-high with "at most"; "at most" bounds only the requirement and the band.
+  - "Even just meeting ... puts {X}" states the model's cold-high at the gearbox input of a design that just meets the requirement. The clause before says "cold-high is 1.673 times hot-low here", and sentence 1 states the same model quantity for this design. It does not say every unit reaches it.
+  - The word "puts" is the spec's owner-approved draft wording, and round 1 judged it (probe 12).
+- Protect: mentions_gearbox_protection is false for strings 4, 10 and 13. The protection-ban tests pass.
+- Peak: none of strings 4, 10, 11, 12 and 13 says "peak". The test bans it in the rating help, both ripple texts and the engine help. The rating is called only "the gearbox input torque rating" or "input rating" (2A).
+- Ripple row: the nominal swing at the operating temperature, with no "warm".
+- Band and geometry: sentence 2 still says no size, gap or count passes both checks. The band reads 1.6731 at every NdFeB design probed here: the defaults, 8 magnets, 304 back iron, 12 poles, 12 poles at 20 mm length, the 20 mm ring radius and Auto at 13.77 mm. Round 1 found it constant over geometry to 2.2e-16.
+- Forbidden words: no "hot-day", path, id, cell, "BL-059", "Rust-only" or "clamp" in strings 4, 10 and 13. plain_text_violations is empty for each and for the full Problems at (1), (9) and (11).
+- Glyphs: no new glyph; the parentheses in string 10 pass the guard.
+- Caps:
+  - string 10: 29 words, 2 sentences;
+  - string 13: 30 words, 2 sentences, no braces or "guarantee";
+  - string 12: 39 characters;
+  - each Problem sentence keeps its sentence count;
+  - the Why is unchanged (28 words, 1 sentence).
+- Typed numbers: none in strings 4, 10 and 13. Every number in sentence 2 is formatted from the results and inputs.
+
+**7. Context lines.**
+- Trade-off line, face-gap side effect and status line: unchanged on the round-2 sheet. Round 1's "fine" stands:
+  - "One input pulls two ways (Axial magnet length, both rings): Hot-low torque needs it raised and Gearbox input torque needs it lowered, so change another input to settle one of them.";
+  - "Raising Magnet face gap also lowers the pull-out, so Hot-low torque falls further.";
+  - "Example design: fails 4 of 8 checks" while the clamp section is paused ("4 of 9" on the sheet, unpaused).
+- Recorded, no action. Under Auto, the design is the one that "just meets" the requirement, and sentence 1 can read one last digit below sentence 2's quoted load: 27 of 60 sampled requirements, for example 0.6340 against 0.6341, with the unrounded value 0.634017.
+  - This is the deliberate rounding of Task 3 I-2: the load is rounded up, so that a gearbox rated for the quoted torque takes it.
+  - It changes numbers, not text (B-6), and a 4-significant-digit reader takes it as rounding.
+  - "Even just meeting" makes it no worse than the old "meeting".
+  - No design that meets the requirement with room reads below the load (2,301 of 2,301).
+
+**8. Verdict:** PASS (no must-fix; round 1's S-1 to S-3 remain offered).
