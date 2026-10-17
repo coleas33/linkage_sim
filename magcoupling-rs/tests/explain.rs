@@ -1087,13 +1087,73 @@ fn release_notes_are_reviewed() {
     assert!(drafts.is_empty(), "not yet reviewed: {drafts:?}");
 }
 
+/// The committed review report of the notes, by its path from the repository root. A macro, not
+/// a `const`, so that `include_str!` reads the file this path names: the path is typed once.
+macro_rules! notes_review_path {
+    () => {
+        "docs/analyses/2026-10-14-magcoupler-notes-review.md"
+    };
+}
+
+/// The review report's path, which every shown note's review `record` names.
+const NOTES_REVIEW_PATH: &str = notes_review_path!();
+
+/// The review report's text.
+const NOTES_REVIEW: &str = include_str!(concat!("../../", notes_review_path!()));
+
+/// A shown note's review: the fields of its `notes::Review::Reviewed`.
+struct ShownReview {
+    id: &'static str,
+    reviewer: &'static str,
+    date: &'static str,
+    record: &'static str,
+}
+
+impl ShownReview {
+    /// The `## <id>` line that opens the note's section of the review report.
+    fn heading(&self) -> String {
+        format!("## {}", self.id)
+    }
+
+    /// The note's section of the review report: the lines after its heading, up to the next
+    /// `## ` heading (a later re-review's `###` subsection is part of it).
+    fn section(&self) -> Vec<&'static str> {
+        let heading = self.heading();
+        NOTES_REVIEW
+            .lines()
+            .skip_while(|line| line.trim_end() != heading)
+            .skip(1)
+            .take_while(|line| !line.starts_with("## "))
+            .collect()
+    }
+}
+
+/// Every shown note's review, in `notes::NOTES` order. A shown note that is not reviewed fails
+/// the calling test (spec section 4, S2-6: every note shown ships reviewed).
+fn shown_reviews() -> impl Iterator<Item = ShownReview> {
+    notes::NOTES.iter().filter(|n| notes::shown(n.id)).map(|n| {
+        let notes::Review::Reviewed {
+            reviewer,
+            date,
+            record,
+        } = n.review
+        else {
+            panic!("{}: not reviewed", n.id);
+        };
+        ShownReview {
+            id: n.id,
+            reviewer,
+            date,
+            record,
+        }
+    })
+}
+
 /// Spec section 4 (S2-6): every note shown ships as reviewed by the slice-2 physics review, its
 /// record names its own section of the committed review report, and the report holds that
 /// section exactly once (a re-review goes under the note's section as a `###` subsection).
 #[test]
 fn every_note_names_its_committed_review_section() {
-    const REPORT: &str = "docs/analyses/2026-10-14-magcoupler-notes-review.md";
-    let report = include_str!("../../docs/analyses/2026-10-14-magcoupler-notes-review.md");
     let iso_date = |date: &str| {
         date.len() == 10
             && date.bytes().enumerate().all(|(i, b)| {
@@ -1104,24 +1164,17 @@ fn every_note_names_its_committed_review_section() {
                 }
             })
     };
-    for n in notes::NOTES.iter().filter(|n| notes::shown(n.id)) {
-        let notes::Review::Reviewed {
-            reviewer,
-            date,
-            record,
-        } = n.review
-        else {
-            panic!("{}: not reviewed", n.id);
-        };
-        assert_eq!(reviewer, "physics reviewer (session model)", "{}", n.id);
-        assert!(iso_date(date), "{}: {date}", n.id);
-        assert_eq!(record, format!("{REPORT}#{}", n.id), "{}", n.id);
-        let heading = format!("## {}", n.id);
-        let sections = report
+    for review in shown_reviews() {
+        let id = review.id;
+        assert_eq!(review.reviewer, "physics reviewer (session model)", "{id}");
+        assert!(iso_date(review.date), "{id}: {}", review.date);
+        assert_eq!(review.record, format!("{NOTES_REVIEW_PATH}#{id}"), "{id}");
+        let heading = review.heading();
+        let sections = NOTES_REVIEW
             .lines()
             .filter(|line| line.trim_end() == heading)
             .count();
-        assert_eq!(sections, 1, "{}: its section of {REPORT}", n.id);
+        assert_eq!(sections, 1, "{id}: its section of {NOTES_REVIEW_PATH}");
     }
 }
 
@@ -1131,18 +1184,9 @@ fn every_note_names_its_committed_review_section() {
 /// without its record.
 #[test]
 fn every_note_s_review_date_is_recorded_in_its_section() {
-    let report = include_str!("../../docs/analyses/2026-10-14-magcoupler-notes-review.md");
-    for n in notes::NOTES.iter().filter(|n| notes::shown(n.id)) {
-        let notes::Review::Reviewed { date, .. } = n.review else {
-            panic!("{}: not reviewed", n.id);
-        };
-        let heading = format!("## {}", n.id);
-        let section: Vec<&str> = report
-            .lines()
-            .skip_while(|line| line.trim_end() != heading)
-            .skip(1)
-            .take_while(|line| !line.starts_with("## "))
-            .collect();
+    for review in shown_reviews() {
+        let date = review.date;
+        let section = review.section();
         let words = section.join(" ");
         let prose: Vec<&str> = words.split_whitespace().collect();
         let in_header = prose.join(" ").contains(&format!("Date: {date}"));
@@ -1152,8 +1196,9 @@ fn every_note_s_review_date_is_recorded_in_its_section() {
             .any(|line| line.starts_with("### ") && line.trim_end().ends_with(&re_review));
         assert!(
             in_header || in_heading,
-            "{}: its review date {date} is not recorded under {heading}",
-            n.id
+            "{}: its review date {date} is not recorded under {}",
+            review.id,
+            review.heading()
         );
     }
 }
