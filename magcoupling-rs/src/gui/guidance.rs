@@ -4575,12 +4575,15 @@ mod tests {
         // Spec 5 (Auto, owner decision 5A): Auto sizes for the hot minimum check alone, so where
         // the solve lands on the requirement (above the length slider's bottom it bisects to
         // it), a solved design's hot-low is the requirement and its cold-high at the gearbox
-        // input the requirement times the band over ratio and efficiency: the check fails
-        // exactly where the conflict holds, with sentence 2, except at a tie, where that is the
-        // rating itself (the requirement times the band is the rating times ratio times
-        // efficiency): there the solve's last digits above the requirement fail the check
-        // without sentence 2 (`under_auto_on_length_…_only_at_a_tie`). Where Auto overshoots
-        // the requirement the two need not agree either
+        // input the requirement times the band over ratio and efficiency: with the minimum
+        // temperature at or below the operating one, the check fails exactly where the conflict
+        // holds, with sentence 2, except at a tie, where that is the rating itself (the
+        // requirement times the band is the rating times ratio times efficiency): there the
+        // solve's last digits above the requirement fail the check without sentence 2
+        // (`under_auto_on_length_…_only_at_a_tie`). With the operating temperature below the
+        // minimum sentence 2 never shows, though the check can fail
+        // (`an_operating_temperature_below_the_minimum_…`). Where Auto overshoots the
+        // requirement the two need not agree either
         // (`where_auto_overshoots_the_requirement_…`). At the defaults the check fails with
         // sentence 2. With the minimum temperature at its slider's top and no variation
         // allowance the band narrows enough: Auto solves about 11.90 mm, the check passes and
