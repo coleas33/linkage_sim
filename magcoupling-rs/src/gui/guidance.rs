@@ -1753,14 +1753,16 @@ fn gearbox_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<Str
     }
 }
 
-/// The changes sentence 2 of the gearbox Problem can name as narrowing the band, in its order.
+/// The changes sentence 2 of the gearbox Problem can name as narrowing the band, in its order:
+/// the variation allowance last, so that no "or" follows "backed by measurement" (it would
+/// read as "backed by measurement or SmCo magnets").
 const WARMER_MINIMUM: &str = "a warmer minimum temperature";
-const SMALLER_VARIATION: &str = "a smaller variation allowance backed by measurement";
 const SMCO_MAGNETS: &str = "SmCo magnets";
+const SMALLER_VARIATION: &str = "a smaller variation allowance backed by measurement";
 
 /// What narrows the band (cold-high over hot-low) of a design with the minimum temperature at
 /// or below the operating one, as sentence 2 says it in brackets ("a warmer minimum
-/// temperature, a smaller variation allowance backed by measurement or SmCo magnets narrow
+/// temperature, SmCo magnets or a smaller variation allowance backed by measurement narrows
 /// it"), each change named only where it does narrow it (ruling R-3: sentence 2 is true
 /// wherever it shows).
 ///
@@ -1789,11 +1791,11 @@ fn band_levers(inputs: &DesignInputs, results: &DesignResults) -> Option<String>
     };
     let names: Vec<String> = [
         (WARMER_MINIMUM, spread && alphas.iter().any(|&a| a < 0.0)),
-        (SMALLER_VARIATION, inputs.metal.variation > 0.0),
         (
             SMCO_MAGNETS,
             spread && alphas.iter().all(|&a| below_every_smco(a)),
         ),
+        (SMALLER_VARIATION, inputs.metal.variation > 0.0),
     ]
     .into_iter()
     .filter(|&(_, narrows)| narrows)
@@ -5410,6 +5412,34 @@ mod tests {
                 SMALLER_VARIATION.contains(words),
                 "{words:?} in {SMALLER_VARIATION:?}"
             );
+        }
+    }
+
+    #[test]
+    fn sentence_2_names_the_variation_allowance_last() {
+        // BL-059 G-3 re-review of the review leftovers, M-1: an "or" after "backed by
+        // measurement" would read as "backed by measurement or SmCo magnets", which is false
+        // (SmCo narrows the band through its Br temperature coefficient, not by backing the
+        // allowance). So the allowance is named last wherever it is named, and its verb is
+        // "narrows". At the defaults, the first gearbox Problem a user sees, all three are named.
+        let text = problem(GEARBOX, &DesignInputs::default()).unwrap();
+        assert!(
+            text.contains("(a warmer minimum temperature, SmCo magnets or a smaller variation allowance backed by measurement narrows it)"),
+            "{text}"
+        );
+        for (name, inputs, _) in band_lever_designs() {
+            let conflict = gearbox_conflict(&inputs, &compute_all(&inputs))
+                .unwrap_or_else(|| panic!("{name}: the conflict holds"));
+            assert!(
+                !conflict.contains(&format!("{SMALLER_VARIATION} or ")),
+                "{name}: {conflict}"
+            );
+            if conflict.contains(SMALLER_VARIATION) {
+                assert!(
+                    conflict.contains(&format!("{SMALLER_VARIATION} narrows it)")),
+                    "{name}: {conflict}"
+                );
+            }
         }
     }
 

@@ -2472,3 +2472,101 @@ S-1 reads exactly at P1 ("0.54004 against 0.54000"). At an Auto tie, though, the
   would need 11 to 14 decimals. Round 1's S-2 and S-3 stay open as offered; this round did not re-review them.
 
 - Correction (2026-10-17, BL-059 review leftovers; task 8 review m-1): the bullet "Tests that followed the changes (each new assertion was seen failing on the old text first)" in this section's record above overstates. The "requirement at the gearbox output" assertions were seen failing on the old text; the "even just meeting" bound in `assert_gearbox_problem_consistent` cannot fail: it takes the band from the same design's results, so wherever hot-low meets the requirement it holds by construction, and the twelve-pole case gives it no way to fail. The band's independence of geometry, which sentence 2 rests on, is tested by `the_band_is_the_same_at_every_magnet_size_gap_count_and_back_iron` (`magcoupling-rs/tests/gearbox.rs`, whole-branch review MF-3).
+
+### Re-review of the review leftovers (2026-10-17)
+
+The BL-059 review leftovers (owner decision 2A, 2026-10-17; commit a11832e) changed two on-screen strings, round 1's
+S-3 and S-2: the gear ratio's help ("such as the slip swing") and `SMALLER_VARIATION`, the variation allowance in
+gearbox Problem sentence 2's bracket ("a smaller variation allowance backed by measurement"). Both had a G-3 text
+re-review in a fresh context. The reviewer's report for the record follows unchanged, its headings demoted one level
+(full answer: `.superpowers/sdd/2026-10-16-bl059-gearbox-check/leftovers-g3-1.md`).
+
+- Reviewer: fresh context, session model, 2026-10-17; G-3 re-review of the two changed strings (round 1).
+- Verdict: MUST_FIX (one item, M-1). The gear ratio's help passes. The band clause is true at every reachable design,
+  but at the defaults, the first gearbox Problem a user sees, "(a warmer minimum temperature, a smaller variation
+  allowance backed by measurement or SmCo magnets narrow it)" lets "or SmCo magnets" attach to "by": a false reading,
+  since SmCo magnets do not back a smaller variation allowance.
+- M-1, applied as the reviewer's option A in the commit that adds this record: the allowance is named last, after SmCo
+  magnets, so no "or" follows "backed by measurement"; the words are unchanged. At the defaults the bracket now reads
+  "(a warmer minimum temperature, SmCo magnets or a smaller variation allowance backed by measurement narrows it)";
+  the other four reachable forms are unchanged. New test `sentence_2_names_the_variation_allowance_last` (each of its
+  three assertions seen failing on the old order first).
+- No should-fix.
+
+**Report for the record (as returned).**
+
+#### Read
+- The brief.
+- The plan's head up to "## Tasks": Global Constraints with the physics traps, Review Focus, R-1 to R-13, plan review 1A-8A, PD-1 to PD-4.
+- The earlier G-3 record under "## BL-059 gearbox check" in `docs/analyses/2026-10-14-magcoupler-help-review.md` (rounds 1 and 2, the MF-1 re-review, and the m-1 correction).
+- Spec section 5 (the band clause's draft, and the variation "not offered as a fix").
+- Commit a11832e: its message and its source diff.
+- Code:
+  - `gui/plain_text.rs`: LABELS (:64-78), HELP for the gear ratio, the efficiency, the rating and the ripple, `the_gearbox_texts_claim_what_the_engine_does` (:2080-2145);
+  - `gui/guidance.rs`: `listed` (:1407), `gearbox_problem`, the constants, `band_levers`, `gearbox_conflict` (:1724-1894), `band_lever_designs`, `sentence_2_names_only_what_narrows_that_design_s_band`, `sentence_2_names_the_variation_by_its_input`;
+  - `gui/results_table.rs` :143 (the table draws `display_label`);
+  - `engine/model.rs` :349 and :1156-1157, `engine/metal_design.rs` :507-509, `engine/api.rs` :237-252;
+  - `engine/grades.rs` (the SmCo coefficients);
+  - `engine/explain/notes.rs`: the torque-band note's variation change and sources, and the slipping note's ripple sentence.
+
+#### Probes
+I built a scratch crate (`g3probe`) in my scratchpad with its own CARGO_TARGET_DIR. It depends on `magcoupling-rs` by path with `gui`, calls `compute_all` and the gearbox guide's `(g.problem)`, and runs the crate's own `word_count`, `sentence_count`, `plain_text_violations` and `mentions_gearbox_protection`.
+
+| Design | Cold-high at input | The bracket, or what shows instead |
+|---|---|---|
+| Defaults | 0.804907 | "(a warmer minimum temperature, a smaller variation allowance backed by measurement or SmCo magnets narrow it)": M-1 |
+| Rating 0.80 | 0.804907 | Same bracket; band at most 1.520 |
+| Ring radius 20 mm | 0.760233 | Same bracket |
+| Variation 0.5 | 1.049879 | Same bracket; band 3.710 |
+| No variation | 0.699920 | "(a warmer minimum temperature or SmCo magnets narrow it)" |
+| SmCo 2:17 (Recoma 26) rings, 25 mm length, rating 0.60 | 0.899057 | "(a warmer minimum temperature or a smaller variation allowance backed by measurement narrows it)" |
+| Minimum at the operating temperature | 0.804907 | "(a smaller variation allowance backed by measurement narrows it)" |
+| Br coefficient 0 | 0.700417 | "(a smaller variation allowance backed by measurement narrows it)" |
+| Rating 0.05, ratio 1, efficiency 0.5 | 0.8049 / 4.025 / 1.529 | Second form, no bracket |
+| Operating -40 °C, minimum 20 °C | 0.700417 | Sentence 1 only (PD-1) |
+| 8 magnets; SmCo rings at the defaults | 0.589311; 0.432037 | Within the rating, so no Problem |
+
+Every Problem probed:
+- has an empty plain-words guard, no protection wording, and its expected sentence count (3, or 1 in the corner);
+- matches the earlier G-3 record's numbers (1.673, 0.8806, 1.703, 1.140; 2.271 and 1.520; 0.1419 and 0.5264; 0.3406 and 2.632).
+
+#### String 1: the gear ratio's help (PASS)
+
+The help now reads: "Reduction ratio of the gearbox; the coupling sits on its wheel side. A higher ratio lowers the coupling torques referred to the gearbox input, such as the slip swing."
+
+- **One name.** "The slip swing" matches the quantity's on-screen name everywhere it is drawn:
+  - the row label "Nominal slip swing at the gearbox input", which the results table also draws through `display_label`;
+  - the ripple help, which opens "Slip swing:".
+
+  Dropping "Nominal" names no other quantity, since no other slip swing is on screen. "Slip ripple" no longer appears in any on-screen GUI text. The only "slip ripple" left is the workbook's Python-locked "Measure resonance and slip ripple; tune the traction loop." (`engine/metal_design.rs` :235), which this change leaves alone.
+- **True at every reachable input.** The ripple is T_pull / (ratio × efficiency) (`model.rs` :1156), and the ratio enters the engine nowhere else that feeds T_pull: `api.rs` passes it only to `metal_design`, for the two input-side torques at :507-509. So a higher ratio lowers the swing, and cold-high at the input, at every design.
+- **Traps.**
+  - The swing is introduced as one of "the coupling torques referred to the gearbox input", so its side is named.
+  - No "warm", "peak", "protect", efficiency claim, cell, id or path.
+- **Caps.** 29 words in 2 sentences; guard empty.
+- **Fit beside the neighbouring texts.** It agrees with the efficiency help ("refers the coupling torques to the gearbox input; a higher efficiency lowers them there") and with the ripple help.
+- **The example stays the swing, not cold-high.** Spec 5 keeps the ratio out of the fixes ("not a real part"). Naming cold-high, the checked torque, in this help would read as an invitation to use the ratio as a lever. "Such as" is not exhaustive, so nothing is lost.
+
+#### String 2: the band clause (true, but fails "one list": M-1)
+
+- **One name.** "Variation allowance" matches:
+  - the input's label, "Production variation allowance";
+  - the hot-minimum Problem ("the 15 % variation allowance");
+  - the clamp Problem.
+
+  "Backed by measurement" agrees with the input's help ("Engineering allowance, not measured.") and with the torque-band note's change for the input ("only with measured production scatter").
+- **Physics.**
+  - The band is (1 + v)/(1 - v) times the temperature terms, so a smaller allowance narrows it wherever v > 0. That is exactly where it is named (`inputs.metal.variation > 0.0`), and `sentence_2_names_only_what_narrows_that_design_s_band` checks it one slider step away.
+  - The new words are more exact than "a smaller measured variation": the band is computed from the allowance input, not from any measurement.
+- **Traps.**
+  - No geometry is said to narrow the band.
+  - No torque is in the bracket, so no side is needed.
+  - No "hot-day", "peak", "warm" or "protect".
+  - The guard is empty on every Problem probed.
+- **Reading.** One list in four of the five forms. The three-item form, which is the defaults' form, is M-1.
+
+#### Recorded, no change asked
+- **"Wheel side" against "gearbox output".** The gear ratio's help says the coupling "sits on its wheel side", while the ripple help and sentence 2 say "at the gearbox output". This is the same side in two plain wordings, not two names for one quantity. The help is pre-existing (slice 2, reviewed), and the S-3 change did not touch it.
+- **The slipping note.** It still says "sends torque ripple to the gearbox: at its input, here {model.gearbox_input_ripple_Nm}" (`notes.rs` :733), and its source line says "the ripple at the gearbox input". The note is signed off and out of this change's scope. After S-3, every overlay text and the dashboard say "slip swing"; only the note keeps "ripple". It could be a follow-up item if the owner wants one name in the notes too.
+- **Exports.** They keep the catalogue label "Estimated gearbox input torque ripple amplitude" (`results_table.rs` :352, :371). Exports are not overlay text.
+- **The commit body.** a11832e's message says the new constant "keeps the bracket one plain sentence". It is still one sentence, but not one unambiguous list until M-1 lands. The commit is history, so it needs no change.
