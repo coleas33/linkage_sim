@@ -1142,6 +1142,65 @@ mod tests {
     }
 
     #[test]
+    fn the_exports_carry_the_gearbox_check_with_no_cell() {
+        use crate::engine::gearbox::{
+            ABOVE_THE_GEARBOX_RATING, GEARBOX_CHECK_UNKNOWN, WITHIN_THE_GEARBOX_RATING,
+        };
+        // BL-059: the gearbox check is a Rust-only result, like the space claim. The CSV and
+        // JSON exports carry its engine label and verdict, last of the result groups (after the
+        // housing group, before the sweeps), with no unit and no spreadsheet cell; each of its
+        // three verdicts exports as the engine writes it.
+        const PATH: &str = "gearbox.cold_high_check";
+        let label = result_info(PATH).expect("a result").meta.label;
+        let mut within = DesignInputs::default();
+        within.coupling.gearbox_input_rating_Nm = 1.0;
+        let mut unknown = DesignInputs::default();
+        unknown.coupling.gearbox_input_rating_Nm = f64::NAN;
+        for (inputs, verdict_start) in [
+            (DesignInputs::default(), ABOVE_THE_GEARBOX_RATING),
+            (within, WITHIN_THE_GEARBOX_RATING),
+            (unknown, GEARBOX_CHECK_UNKNOWN),
+        ] {
+            let design = Design {
+                inputs,
+                ..Design::default()
+            };
+            let results = compute_all(&design.inputs);
+            let verdict = results.gearbox.cold_high_check.clone();
+            assert!(verdict.starts_with(verdict_start), "{verdict}");
+            let csv = results_csv(&results);
+            let lines: Vec<&str> = csv.split("\r\n").collect();
+            let row = lines
+                .iter()
+                .position(|l| l.starts_with(&format!("{PATH},")))
+                .expect("the gearbox check's CSV line");
+            assert_eq!(
+                lines[row],
+                [PATH, label, verdict.as_str(), "", ""]
+                    .map(csv_field)
+                    .join(",")
+            );
+            assert!(lines[row - 1].starts_with("housing."), "{}", lines[row - 1]);
+            assert!(
+                lines[row + 1].starts_with("gap_sweep["),
+                "{}",
+                lines[row + 1]
+            );
+            let json: Json = serde_json::from_str(&results_json(&design, &results)).unwrap();
+            let entry = json["results"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|r| r["path"] == PATH)
+                .expect("the gearbox check's JSON row");
+            assert_eq!(entry["label"], label);
+            assert_eq!(entry["value"], Json::from(verdict.as_str()));
+            assert_eq!(entry["unit"], "");
+            assert_eq!(entry["cell"], Json::Null);
+        }
+    }
+
+    #[test]
     fn the_json_export_holds_the_design_and_every_result() {
         let design = Design::default();
         let results = compute_all(&design.inputs);
