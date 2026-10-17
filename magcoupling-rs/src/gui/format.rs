@@ -99,6 +99,14 @@ pub(crate) fn signed_percent(fraction: f64) -> String {
     format!("{percent:+.0} %")
 }
 
+/// The place value of the [`SIGNIFICANT_DIGITS`]-th significant digit of a finite positive `x`,
+/// its last shown digit unless rounding carries into a new one (9.9996 shows as 10.00): 0.001
+/// for 1.703, 0.0001 for 0.8806. A number rounded up or down at its last shown digit moves by
+/// it.
+pub(crate) fn last_digit_step(x: f64) -> f64 {
+    10f64.powi(x.log10().floor() as i32 - (SIGNIFICANT_DIGITS - 1))
+}
+
 /// A number to [`SIGNIFICANT_DIGITS`] significant digits: fixed point when it
 /// rounds to at least 1e-3 and below 1e6, scientific outside; zero (either
 /// sign) as `0`.
@@ -193,6 +201,21 @@ mod tests {
         assert_eq!(num(-99.996), "-100.0");
         assert_eq!(num(0.0099996), "0.01000");
         assert_eq!(num(999_999.7), "1.000e6");
+    }
+
+    #[test]
+    fn the_last_digit_step_is_the_fourth_significant_digit_s_place() {
+        // 9.9996 shows as 10.00, but rounded down at its fourth digit it is 9.999.
+        for (x, step) in [
+            (1.703, 0.001),
+            (0.8806, 0.0001),
+            (9.9996, 0.001),
+            (1234.0, 1.0),
+            (0.001, 1e-6),
+        ] {
+            let got = last_digit_step(x);
+            assert!((got - step).abs() <= step * 1e-12, "{x}: {got}");
+        }
     }
 
     #[test]
