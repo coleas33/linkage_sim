@@ -1646,12 +1646,68 @@ fn gearbox_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<Str
     match level_of(GEARBOX, inputs, results) {
         Level::Good => None,
         Level::Caution => Some(GEARBOX_UNKNOWN.to_owned()),
-        Level::Bad => Some(format!(
-            "Cold-high at the gearbox input is {}, above its {} input rating.",
-            result_text(results, "metal.cold_high_input_Nm"),
-            input_text(inputs, "coupling.gearbox_input_rating_Nm"),
-        )),
+        Level::Bad => {
+            let overload = format!(
+                "Cold-high at the gearbox input is {}, above its {} input rating.",
+                result_text(results, "metal.cold_high_input_Nm"),
+                input_text(inputs, "coupling.gearbox_input_rating_Nm"),
+            );
+            // Owner decision 4A: where no geometry passes both checks, the Problem says so.
+            Some(match gearbox_conflict(inputs, results) {
+                Some(conflict) => format!("{overload} {conflict}"),
+                None => overload,
+            })
+        }
     }
+}
+
+/// Problem sentence 2 of the gearbox check (owner decision 4A): where no magnet size, gap or
+/// count can pass both it and the hot minimum check, the numbers and what would have to change
+/// instead. Cold-high over hot-low (the band) does not depend on the geometry, the magnet count
+/// or the back iron, only on the two temperatures, the grades' Br coefficients and the
+/// variation allowance. So a design that just meets the requirement has cold-high the
+/// requirement times the band at the gearbox output, and that over ratio × efficiency at its
+/// input: above the rating, no geometry passes both checks. `None` where hot-low is not above
+/// zero (the end-effect model is out of range, and the check is greyed) or a value is not a
+/// number (a comparison with NaN is false). `None` also with the operating temperature below
+/// the minimum (BL-067).
+fn gearbox_conflict(inputs: &DesignInputs, results: &DesignResults) -> Option<String> {
+    let (c, md) = (&inputs.coupling, &results.metal);
+    let required = inputs.metal.required_min_Nm;
+    let rating = c.gearbox_input_rating_Nm;
+    // Output torque per input torque in forward drive: ratio × efficiency, never zero on the
+    // sliders (ratio from 1, efficiency from 0.5).
+    let gear = c.gear_ratio * c.gear_efficiency;
+    let band = md.torque_cold_high_Nm / md.torque_hot_low_Nm;
+    let input_at_required = required * band / gear;
+    // With the operating temperature below the minimum, hot-low is taken colder than
+    // cold-high: the band's levers and its floor of one no longer hold, so no sentence 2.
+    let temperatures_in_order = inputs.metal.min_temp_C <= inputs.coupling.op_temp_C;
+    (temperatures_in_order && md.torque_hot_low_Nm > 0.0 && input_at_required > rating).then(|| {
+        // The requirement is a hot-low torque, at the gearbox output.
+        let largest_required = number_text(rating * gear / band, "metal.torque_hot_low_Nm");
+        let widest_band = rating * gear / required;
+        // The band is at least one (cold-high is never below hot-low with the temperatures in
+        // order): a band under one is out of the levers' reach, and only the gearbox or the
+        // requirement can settle the conflict.
+        let remedy = if widest_band >= 1.0 {
+            format!(
+                "It takes a gearbox rated for that, a requirement of at most {largest_required}, or a band of at most {} times (a warmer minimum temperature, a smaller measured variation or SmCo magnets narrow it).",
+                format_value(&Value::Num(widest_band)),
+            )
+        } else {
+            format!(
+                "It takes a gearbox rated for that or a requirement of at most {largest_required}: the requirement alone puts {} on the gearbox input, so no narrower band settles it.",
+                number_text(required / gear, "metal.cold_high_input_Nm"),
+            )
+        };
+        format!(
+            "No magnet size, gap or count passes both this and the hot minimum: cold-high is {} times hot-low here, so meeting the {} requirement puts {} on the gearbox input. {remedy}",
+            format_value(&Value::Num(band)),
+            input_text(inputs, "metal.required_min_Nm"),
+            number_text(input_at_required, "metal.cold_high_input_Nm"),
+        )
+    })
 }
 
 fn space_claim_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<String> {
@@ -2094,6 +2150,7 @@ mod tests {
     use crate::engine::assumptions::ASSUMPTIONS;
     use crate::engine::explain::notes;
     use crate::engine::model::ring_fits;
+    use crate::engine::sizing::{SizingOutcome, solve};
     use crate::gui::dashboard::{CHECKS, DASHBOARD};
     use crate::gui::explorer::reviewed_note;
     use crate::gui::plain_text::label_for;
@@ -2318,6 +2375,14 @@ mod tests {
                 texts.extend(guide_notes(&all, index, &inputs, &results));
             }
             texts.push(design_status_text(&design_status(&inputs, &results, false)));
+        }
+        // The gearbox Problem's other remedy (no band under one settles it) shows only at the
+        // gearbox ratio's and efficiency's slider bottoms, which no test design reaches.
+        let catalogue = InputCatalogue::get();
+        for path in ["coupling.gear_ratio", "coupling.gear_efficiency"] {
+            let range = catalogue.entry(path).unwrap().meta.range.unwrap();
+            let inputs = with_number(&DesignInputs::default(), path, range.min).unwrap();
+            texts.extend(gearbox_problem(&inputs, &compute_all(&inputs)));
         }
         texts
     }
@@ -3766,6 +3831,22 @@ mod tests {
                 }
             }
         }
+        // The gearbox Problem's sentence 2 (owner decision 4A) quotes numbers worked out from
+        // the results: two designs with different bands (a warmer minimum temperature narrows
+        // it) quote different numbers, each its own.
+        let sentences: Vec<String> = [
+            ("defaults", DesignInputs::default()),
+            ("minimum -20 °C", design(|i| i.metal.min_temp_C = -20.0)),
+        ]
+        .iter()
+        .map(|(name, inputs)| {
+            let results = compute_all(inputs);
+            let conflict = gearbox_conflict(inputs, &results).expect("the conflict holds");
+            assert_conflict_quotes(name, inputs, &results, &conflict);
+            conflict
+        })
+        .collect();
+        assert_ne!(sentences[0], sentences[1]);
     }
 
     #[test]
@@ -3807,6 +3888,306 @@ mod tests {
         let rated = design(|i| i.coupling.gearbox_input_rating_Nm = 0.7);
         let text = problem(GEARBOX, &rated).unwrap();
         assert!(text.contains("0.7000 N·m"), "{text}");
+    }
+
+    // ------------------------------------------------------------------ the gearbox conflict
+
+    /// Problem sentence 2's numbers (owner decision 4A), worked out here from a design's
+    /// results and inputs as the sentence's own check: the band (cold-high over hot-low), the
+    /// requirement, cold-high at the gearbox input of a design that just meets the
+    /// requirement, the largest requirement and the widest band the rating allows, and whether
+    /// the conflict holds (the minimum temperature at or below the operating one, hot-low above
+    /// zero, and the requirement times the band, at the gearbox input, above the rating).
+    struct ConflictNumbers {
+        band: f64,
+        required: f64,
+        input_at_required: f64,
+        largest_required: f64,
+        widest_band: f64,
+        holds: bool,
+    }
+
+    impl ConflictNumbers {
+        fn of(inputs: &DesignInputs, results: &DesignResults) -> Self {
+            let (c, md) = (&inputs.coupling, &results.metal);
+            let gear = c.gear_ratio * c.gear_efficiency;
+            let rating = c.gearbox_input_rating_Nm;
+            let band = md.torque_cold_high_Nm / md.torque_hot_low_Nm;
+            let required = inputs.metal.required_min_Nm;
+            let input_at_required = required * band / gear;
+            Self {
+                band,
+                required,
+                input_at_required,
+                largest_required: rating * gear / band,
+                widest_band: rating * gear / required,
+                holds: inputs.metal.min_temp_C <= inputs.coupling.op_temp_C
+                    && md.torque_hot_low_Nm > 0.0
+                    && input_at_required > rating,
+            }
+        }
+
+        /// Each number as sentence 2 quotes it (the readouts' format), in the sentence's order.
+        fn quoted(&self, inputs: &DesignInputs) -> [String; 5] {
+            [
+                format_value(&Value::Num(self.band)),
+                input_text(inputs, "metal.required_min_Nm"),
+                number_text(self.input_at_required, "metal.cold_high_input_Nm"),
+                number_text(self.largest_required, "metal.torque_hot_low_Nm"),
+                if self.widest_band >= 1.0 {
+                    format_value(&Value::Num(self.widest_band))
+                } else {
+                    // No band is offered: the requirement alone at the gearbox input.
+                    number_text(
+                        self.input_at_required / self.band,
+                        "metal.cold_high_input_Nm",
+                    )
+                },
+            ]
+        }
+    }
+
+    /// Asserts that `conflict`, Problem sentence 2 of `inputs` (whose results are `results`),
+    /// quotes its five numbers from the results in the sentence's order, and that each limit
+    /// it names is, as quoted, below what it limits: no rounding makes it read against itself.
+    fn assert_conflict_quotes(
+        name: &str,
+        inputs: &DesignInputs,
+        results: &DesignResults,
+        conflict: &str,
+    ) {
+        let numbers = ConflictNumbers::of(inputs, results);
+        let mut from = 0;
+        for text in numbers.quoted(inputs) {
+            let at = conflict[from..]
+                .find(&text)
+                .unwrap_or_else(|| panic!("{name}: {text} after byte {from} of {conflict}"));
+            from += at + text.len();
+        }
+        let as_quoted = |x: f64| -> f64 { format_value(&Value::Num(x)).parse().unwrap() };
+        assert!(
+            as_quoted(numbers.largest_required) < as_quoted(numbers.required),
+            "{name}: {conflict}"
+        );
+        if numbers.widest_band >= 1.0 {
+            assert!(
+                as_quoted(numbers.widest_band) < as_quoted(numbers.band),
+                "{name}: {conflict}"
+            );
+        } else {
+            // No band is offered: the requirement alone is above the rating at the input.
+            let alone = numbers.input_at_required / numbers.band;
+            let rating = inputs.coupling.gearbox_input_rating_Nm;
+            assert!(as_quoted(alone) > as_quoted(rating), "{name}: {conflict}");
+        }
+    }
+
+    /// Holds the gearbox Problem of `inputs` to owner decision 4A: it is present exactly when
+    /// the check fails or asks for a look; sentence 2 ([`gearbox_conflict`]) exists exactly
+    /// when the conflict holds by the test's own numbers ([`ConflictNumbers`]), quotes them
+    /// ([`assert_conflict_quotes`]), and follows sentence 1 after one space exactly when the
+    /// check fails as well. Returns the check's level and whether sentence 2 is shown.
+    fn assert_gearbox_problem_consistent(name: &str, inputs: &DesignInputs) -> (Level, bool) {
+        let results = compute_all(inputs);
+        let badge = level_of(GEARBOX, inputs, &results);
+        let problem = gearbox_problem(inputs, &results);
+        assert_eq!(
+            problem.is_some(),
+            badge != Level::Good,
+            "{name}: {problem:?}"
+        );
+        let conflict = gearbox_conflict(inputs, &results);
+        let holds = ConflictNumbers::of(inputs, &results).holds;
+        assert_eq!(conflict.is_some(), holds, "{name}: {conflict:?}");
+        let shown = match (&problem, &conflict) {
+            (Some(problem), Some(conflict)) => problem.ends_with(&format!(" {conflict}")),
+            _ => false,
+        };
+        assert_eq!(shown, badge == Level::Bad && holds, "{name}: {problem:?}");
+        if let Some(conflict) = &conflict {
+            assert_conflict_quotes(name, inputs, &results, conflict);
+        }
+        (badge, shown)
+    }
+
+    /// The Size tab's Auto on length for `base`: the solve over the length slider (the panel's
+    /// search range for every free variable but ring size) and the design it shows, as the
+    /// solved length and that design.
+    fn auto_on_length(base: &DesignInputs) -> (f64, DesignInputs) {
+        match solve(base, FreeVariable::AxialLength, base.metal.required_min_Nm) {
+            Ok(SizingOutcome::Solved(point)) => (
+                point.value,
+                crate::gui::sizing::sized(FreeVariable::AxialLength, base, point.value),
+            ),
+            other => panic!("Auto on length does not solve: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn at_the_defaults_the_gearbox_problem_says_no_geometry_passes_both_checks() {
+        // Owner decision 4A. Cold-high over hot-low does not depend on the geometry, so every
+        // design that meets the default requirement puts the requirement times that band on
+        // the gearbox output, above the rating at its input: sentence 2 follows sentence 1,
+        // every number of both from the results and inputs.
+        let inputs = DesignInputs::default();
+        let results = compute_all(&inputs);
+        assert_eq!(
+            assert_gearbox_problem_consistent("defaults", &inputs),
+            (Level::Bad, true)
+        );
+        let problem = gearbox_problem(&inputs, &results).unwrap();
+        let conflict = gearbox_conflict(&inputs, &results).unwrap();
+        let first = problem.strip_suffix(&format!(" {conflict}")).unwrap();
+        for text in [
+            result_text(&results, "metal.cold_high_input_Nm"),
+            input_text(&inputs, "coupling.gearbox_input_rating_Nm"),
+        ] {
+            assert!(first.contains(&text), "{text} in {first}");
+        }
+        // Spec 7.6's numbers, typed as the readouts print them, so a formula error the oracle
+        // shares with the code still shows: the band, the requirement, cold-high at the input
+        // of a design that just meets it, the largest requirement and the widest band.
+        for text in ["1.673", "2.500 N·m", "0.8806 N·m", "1.703 N·m", "1.140"] {
+            assert!(conflict.contains(text), "{text} in {conflict}");
+        }
+        // The second remedy form, at a gearbox ratio of 1: the largest requirement and what the
+        // requirement alone puts on the gearbox input.
+        let ratio_one = design(|i| i.coupling.gear_ratio = 1.0);
+        let conflict = gearbox_conflict(&ratio_one, &compute_all(&ratio_one)).unwrap();
+        for text in ["0.3407 N·m", "2.632 N·m"] {
+            assert!(conflict.contains(text), "{text} in {conflict}");
+        }
+    }
+
+    #[test]
+    fn a_design_failing_the_gearbox_check_alone_has_no_conflict_sentence() {
+        // The passing design with the rating back at its default fails the gearbox check
+        // alone. Its requirement times the band, at the gearbox input, is under the rating, so
+        // a design that just meets its requirement passes both checks: no sentence 2.
+        let inputs = only_the_gearbox_fails();
+        let results = compute_all(&inputs);
+        assert_eq!(
+            assert_gearbox_problem_consistent("gearbox_only", &inputs),
+            (Level::Bad, false)
+        );
+        let problem = gearbox_problem(&inputs, &results).unwrap();
+        for text in [
+            result_text(&results, "metal.cold_high_input_Nm"),
+            input_text(&inputs, "coupling.gearbox_input_rating_Nm"),
+        ] {
+            assert!(problem.contains(&text), "{text} in {problem}");
+        }
+        // Not a word of the defaults' sentence 2 either: its lead, the words before its first
+        // number, is nowhere in this Problem.
+        let defaults = DesignInputs::default();
+        let conflict = gearbox_conflict(&defaults, &compute_all(&defaults)).unwrap();
+        let lead = conflict.split(|c: char| c.is_ascii_digit()).next().unwrap();
+        assert!(!lead.is_empty() && !problem.contains(lead), "{problem}");
+    }
+
+    #[test]
+    fn under_auto_on_length_the_gearbox_check_fails_exactly_when_the_conflict_holds() {
+        // Spec 5 (Auto, owner decision 5A): Auto sizes for the hot minimum check alone, so a
+        // solved design's hot-low is the requirement and its cold-high at the gearbox input
+        // the requirement times the band over ratio and efficiency: the check fails exactly
+        // where sentence 2 shows. At the defaults it does. With the minimum temperature at its
+        // slider's top and no variation allowance the band narrows enough: Auto solves about
+        // 11.90 mm, the check passes and there is no Problem.
+        let catalogue = InputCatalogue::get();
+        let range = |path: &str| catalogue.entry(path).unwrap().meta.range.unwrap();
+        let narrow_band = design(|i| {
+            i.metal.min_temp_C = range("metal.min_temp_C").max;
+            i.metal.variation = range("metal.variation").min;
+        });
+        for (name, base, fails) in [
+            ("defaults", DesignInputs::default(), true),
+            ("narrow band", narrow_band, false),
+        ] {
+            let (length, inputs) = auto_on_length(&base);
+            let results = compute_all(&inputs);
+            assert_eq!(level_of(HOT_MIN, &inputs, &results), Level::Good, "{name}");
+            let (badge, shown) = assert_gearbox_problem_consistent(name, &inputs);
+            assert_eq!((badge == Level::Bad, shown), (fails, fails), "{name}");
+            if !fails {
+                assert!((length - 11.902).abs() < 0.005, "{length}");
+                assert_eq!(gearbox_problem(&inputs, &results), None);
+            }
+        }
+    }
+
+    #[test]
+    fn the_conflict_sentence_shows_exactly_when_no_geometry_passes_both_checks() {
+        // Review focus (owner decision 4A): over every test design, and the defaults with the
+        // gearbox ratio and efficiency at each end of their sliders, sentence 2 shows exactly
+        // when the check fails and the conflict holds, and every limit it quotes is below
+        // what it limits.
+        let catalogue = InputCatalogue::get();
+        let mut cases: Vec<(String, DesignInputs)> = designs()
+            .into_iter()
+            .map(|(name, inputs)| (name.to_owned(), inputs))
+            .collect();
+        for path in ["coupling.gear_ratio", "coupling.gear_efficiency"] {
+            let range = catalogue.entry(path).unwrap().meta.range.unwrap();
+            for end in [range.min, range.max] {
+                let inputs = with_number(&DesignInputs::default(), path, end).unwrap();
+                cases.push((format!("{path} at {end}"), inputs));
+            }
+        }
+        let (mut with_sentence, mut without_sentence) = (0, 0);
+        for (name, inputs) in &cases {
+            match assert_gearbox_problem_consistent(name, inputs) {
+                (Level::Bad, true) => with_sentence += 1,
+                (Level::Bad, false) => without_sentence += 1,
+                _ => {}
+            }
+        }
+        // Both forms of a failing check's Problem are reached.
+        assert!(
+            with_sentence > 0 && without_sentence > 0,
+            "{with_sentence} with sentence 2, {without_sentence} without"
+        );
+    }
+
+    #[test]
+    fn an_operating_temperature_below_the_minimum_keeps_the_gearbox_problem_to_sentence_1() {
+        // Review focus: the operating-temperature slider reaches below the minimum
+        // temperature. There hot-low is taken colder than cold-high, the band can fall below
+        // one and SmCo widens it, so sentence 2's levers would be false: the Problem is
+        // sentence 1 alone wherever the check fails, and nothing panics.
+        let catalogue = InputCatalogue::get();
+        let range = |path: &str| catalogue.entry(path).unwrap().meta.range.unwrap();
+        let coldest = range("coupling.op_temp_C").min;
+        let mut forms = BTreeSet::new();
+        for minimum in [-20.0, range("metal.min_temp_C").max] {
+            for variation in [
+                DesignInputs::default().metal.variation,
+                range("metal.variation").min,
+            ] {
+                let inputs = design(|i| {
+                    i.coupling.op_temp_C = coldest;
+                    i.metal.min_temp_C = minimum;
+                    i.metal.variation = variation;
+                });
+                assert!(inputs.coupling.op_temp_C < inputs.metal.min_temp_C);
+                let name = format!("minimum {minimum} °C, variation {variation}");
+                forms.insert(assert_gearbox_problem_consistent(&name, &inputs));
+                for required in [
+                    inputs.metal.required_min_Nm,
+                    range("metal.required_min_Nm").max,
+                ] {
+                    let demanding = with(inputs.clone(), |i| i.metal.required_min_Nm = required);
+                    let results = compute_all(&demanding);
+                    assert_eq!(
+                        gearbox_conflict(&demanding, &results),
+                        None,
+                        "{name}, {required}"
+                    );
+                    forms.insert(assert_gearbox_problem_consistent(&name, &demanding));
+                }
+            }
+        }
+        // Red in every case, never with sentence 2.
+        assert_eq!(forms, BTreeSet::from([(Level::Bad, false)]));
     }
 
     #[test]
