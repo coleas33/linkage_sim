@@ -1730,9 +1730,18 @@ fn gearbox_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<Str
         Level::Good => None,
         Level::Caution => Some(GEARBOX_UNKNOWN.to_owned()),
         Level::Bad => {
+            let torque = results.metal.cold_high_input_Nm;
+            let rating = inputs.coupling.gearbox_input_rating_Nm;
+            // Where both read the same at four significant digits, cold-high is quoted one last
+            // digit past the rating, as the badge and sentence 2 quote a torque on the gearbox
+            // input (whole-branch review MF-1).
+            let torque_text = if quoted_value(torque) > quoted_value(rating) {
+                result_text(results, "metal.cold_high_input_Nm")
+            } else {
+                number_text(quoted_load(torque, rating), "metal.cold_high_input_Nm")
+            };
             let overload = format!(
-                "Cold-high at the gearbox input is {}, above its {} input rating.",
-                result_text(results, "metal.cold_high_input_Nm"),
+                "Cold-high at the gearbox input is {torque_text}, above its {} input rating.",
                 input_text(inputs, "coupling.gearbox_input_rating_Nm"),
             );
             // Owner decision 4A: where no geometry passes both checks, the Problem says so.
@@ -4455,6 +4464,50 @@ mod tests {
         assert!(text.contains("0.7000 N·m"), "{text}");
     }
 
+    #[test]
+    fn sentence_1_never_reads_two_equal_numbers() {
+        // Whole-branch review MF-1. Sentence 1 quotes cold-high at the gearbox input and the
+        // rating as the readouts do, to four significant digits. Where cold-high is above the
+        // rating by less than half a last digit both would read the same, so cold-high is quoted
+        // one last digit past the rating, as the verdict and sentence 2 quote a torque on the
+        // gearbox input. On the sliders, an 8.01 mm magnet length, a 1.00 mm face gap and a
+        // 0.54 N·m rating put about 0.54004 N·m on the gearbox input.
+        let mut close = DesignInputs::default();
+        for (path, x) in [
+            ("coupling.magnets.axial_length_mm", 8.01),
+            ("metal.face_gap_mm", 1.0),
+            ("coupling.gearbox_input_rating_Nm", 0.54),
+        ] {
+            assert!(
+                slider_values(path).contains(&x),
+                "{path}: {x} on a step of its slider"
+            );
+            close = with_number(&close, path, x).unwrap_or_else(|| panic!("{path}: {x}"));
+        }
+        let results = compute_all(&close);
+        assert_eq!(level_of(GEARBOX, &close, &results), Level::Bad);
+        // The readouts show the two the same.
+        assert_eq!(
+            result_text(&results, "metal.cold_high_input_Nm"),
+            input_text(&close, "coupling.gearbox_input_rating_Nm")
+        );
+        let text = problem(GEARBOX, &close).unwrap();
+        assert!(
+            text.starts_with(
+                "Cold-high at the gearbox input is 0.5401 N·m, above its 0.5400 N·m input rating."
+            ),
+            "{text}"
+        );
+        // Where the two read apart, cold-high reads as its readout: the defaults are unchanged.
+        let text = problem(GEARBOX, &DesignInputs::default()).unwrap();
+        assert!(
+            text.starts_with(
+                "Cold-high at the gearbox input is 0.8049 N·m, above its 0.6000 N·m input rating."
+            ),
+            "{text}"
+        );
+    }
+
     // ------------------------------------------------------------------ the gearbox conflict
 
     /// Problem sentence 2's numbers (owner decision 4A), worked out here from a design's
@@ -4623,13 +4676,37 @@ mod tests {
         }
     }
 
+    /// The two numbers gearbox Problem sentence 1 quotes, as they read: cold-high at the gearbox
+    /// input and the rating.
+    fn sentence_1_numbers(problem: &str) -> (f64, f64) {
+        let between = |start: &str, end: &str| -> f64 {
+            let from = problem
+                .find(start)
+                .unwrap_or_else(|| panic!("{start:?} in {problem}"))
+                + start.len();
+            let to = from
+                + problem[from..]
+                    .find(end)
+                    .unwrap_or_else(|| panic!("{end:?} after {start:?} in {problem}"));
+            problem[from..to]
+                .parse()
+                .unwrap_or_else(|_| panic!("a number between {start:?} and {end:?} in {problem}"))
+        };
+        (
+            between("Cold-high at the gearbox input is ", " N·m, above its "),
+            between("above its ", " N·m input rating."),
+        )
+    }
+
     /// Holds the gearbox Problem of `inputs` to owner decision 4A: it is present exactly when
-    /// the check fails or asks for a look; sentence 2 ([`gearbox_conflict`]) exists exactly
-    /// when the conflict holds by the test's own numbers ([`ConflictNumbers`]), quotes them
-    /// ([`assert_conflict_quotes`]), names the requirement's side of the gearbox, and follows
-    /// sentence 1 after one space exactly when the check fails as well; and a design that meets
-    /// the requirement puts at least what sentence 2 says even just meeting it puts on the
-    /// gearbox input (G-3 review M-1). Returns the check's level and whether sentence 2 is shown.
+    /// the check fails or asks for a look; where the check fails, sentence 1 quotes cold-high at
+    /// the gearbox input above the rating as it reads, never two equal numbers (whole-branch
+    /// review MF-1); sentence 2 ([`gearbox_conflict`]) exists exactly when the conflict holds by
+    /// the test's own numbers ([`ConflictNumbers`]), quotes them ([`assert_conflict_quotes`]),
+    /// names the requirement's side of the gearbox, and follows sentence 1 after one space
+    /// exactly when the check fails as well; and a design that meets the requirement puts at
+    /// least what sentence 2 says even just meeting it puts on the gearbox input (G-3 review
+    /// M-1). Returns the check's level and whether sentence 2 is shown.
     fn assert_gearbox_problem_consistent(name: &str, inputs: &DesignInputs) -> (Level, bool) {
         let results = compute_all(inputs);
         let badge = level_of(GEARBOX, inputs, &results);
@@ -4639,6 +4716,10 @@ mod tests {
             badge != Level::Good,
             "{name}: {problem:?}"
         );
+        if let (Level::Bad, Some(problem)) = (badge, &problem) {
+            let (torque, rating) = sentence_1_numbers(problem);
+            assert!(torque > rating, "{name}: {problem}");
+        }
         let conflict = gearbox_conflict(inputs, &results);
         let numbers = ConflictNumbers::of(inputs, &results);
         assert_eq!(conflict.is_some(), numbers.holds, "{name}: {conflict:?}");
