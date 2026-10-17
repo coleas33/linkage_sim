@@ -35,6 +35,7 @@ use magcoupling::engine::explain::record::Eval;
 use magcoupling::engine::explain::registry::{Design, Registry, TermKind};
 use magcoupling::engine::explain::scope::{SCOPE, Status};
 use magcoupling::engine::explain::{TermSource, Trace, note_text, notes, probes, render};
+use magcoupling::engine::gearbox::{ABOVE_THE_GEARBOX_RATING, WITHIN_THE_GEARBOX_RATING};
 use magcoupling::engine::grades::{GRADES, Grade, GradeFamily, N42SH, grade};
 use magcoupling::engine::library;
 use magcoupling::engine::material_library::{BACK_IRON_CHOICES, SLEEVE_LINER_CHOICES, chosen};
@@ -1121,6 +1122,39 @@ fn every_note_names_its_committed_review_section() {
             .filter(|line| line.trim_end() == heading)
             .count();
         assert_eq!(sections, 1, "{}: its section of {REPORT}", n.id);
+    }
+}
+
+/// A note's review date is recorded in its section of the review report: in the section's
+/// "Date: <date>" (the slice-2 review) or in a `###` re-review heading that ends "(<date>)" (a
+/// later review, such as BL-059's of the torque-band and slip notes). A note's date never moves
+/// without its record.
+#[test]
+fn every_note_s_review_date_is_recorded_in_its_section() {
+    let report = include_str!("../../docs/analyses/2026-10-14-magcoupler-notes-review.md");
+    for n in notes::NOTES.iter().filter(|n| notes::shown(n.id)) {
+        let notes::Review::Reviewed { date, .. } = n.review else {
+            panic!("{}: not reviewed", n.id);
+        };
+        let heading = format!("## {}", n.id);
+        let section: Vec<&str> = report
+            .lines()
+            .skip_while(|line| line.trim_end() != heading)
+            .skip(1)
+            .take_while(|line| !line.starts_with("## "))
+            .collect();
+        let words = section.join(" ");
+        let prose: Vec<&str> = words.split_whitespace().collect();
+        let in_header = prose.join(" ").contains(&format!("Date: {date}"));
+        let re_review = format!("({date})");
+        let in_heading = section
+            .iter()
+            .any(|line| line.starts_with("### ") && line.trim_end().ends_with(&re_review));
+        assert!(
+            in_header || in_heading,
+            "{}: its review date {date} is not recorded under {heading}",
+            n.id
+        );
     }
 }
 
@@ -2501,7 +2535,8 @@ fn the_torque_band_note_s_sentences_hold_at_every_probe_design() {
     }
 }
 
-/// `hot_low_cold_high`'s watch-outs on the example design.
+/// `hot_low_cold_high`'s watch-outs: the first on the example design, the second at the five
+/// probe designs.
 #[test]
 fn the_torque_band_note_s_watch_outs_hold() {
     // Watch-out 1: hot-low reads the operating temperature, not the hot-day start, and the
@@ -2521,11 +2556,92 @@ fn the_torque_band_note_s_watch_outs_hold() {
         compute_all(&hotter_day).metal.torque_hot_low_Nm,
         r.metal.torque_hot_low_Nm
     );
-    // Watch-out 2: cold-high at the gearbox input (the relation: the sentences test) is above
-    // the input rating on the example design (the GUI test
-    // `nothing_checks_a_gearbox_torque_against_its_rating_yet` holds the "nothing checks it").
-    let c = &defaults.coupling;
-    assert!(r.metal.cold_high_input_Nm > c.gearbox_input_rating_Nm);
+    // Watch-out 2: the gearbox check compares cold-high at the gearbox input, the one value the
+    // watch-out quotes, with the input rating, at every probe design; on the example design
+    // and the 20 mm ring it fails, on the other three it passes, so both sides are probed.
+    let note = notes::note("hot_low_cold_high").expect("the torque-band note");
+    assert!(
+        note.watch_out[1].contains("gearbox check"),
+        "watch-out 2 names the gearbox check: {:?}",
+        note.watch_out[1]
+    );
+    assert_eq!(values_in(note.watch_out[1]), ["metal.cold_high_input_Nm"]);
+    let mut failing = Vec::new();
+    for (name, design) in probes::probe_designs() {
+        assert_the_gearbox_check_compares_cold_high_at_the_input(name, &design);
+        let check = compute_all(&design).gearbox.cold_high_check;
+        if check.starts_with(ABOVE_THE_GEARBOX_RATING) {
+            failing.push(name);
+        }
+    }
+    assert_eq!(failing, ["default", "20 mm ring radius"]);
+    // "Repeated slips also load the gearbox in fatigue, which nothing checks": the peak check
+    // is the engine's only check of the gearbox (a fatigue check, backlog BL-066, adds a
+    // second text result here, and this watch-out changes with it).
+    let gearbox_checks: Vec<String> = result_rows(&r)
+        .into_iter()
+        .filter(|row| row.meta.ty == FieldType::Text && row.path.contains("gearbox"))
+        .map(|row| row.path)
+        .collect();
+    assert_eq!(gearbox_checks, ["gearbox.cold_high_check"]);
+    // The note cites the check and the rating's open datasheet question.
+    assert!(note.sources.contains(&notes::GEARBOX_CHECK_SOURCE));
+}
+
+/// The placeholders of one note text, in order.
+fn values_in(text: &'static str) -> Vec<&'static str> {
+    note_text::segments(text)
+        .unwrap_or_else(|fault| panic!("{fault}"))
+        .into_iter()
+        .filter_map(|piece| match piece {
+            note_text::Segment::Value(path) => Some(path),
+            note_text::Segment::Text(_) => None,
+        })
+        .collect()
+}
+
+/// What the torque-band note's second watch-out and the slip note's first say of the gearbox
+/// check (BL-059), at `design`: it compares cold-high at the gearbox input with the input
+/// rating and fails exactly when cold-high there is above the rating, so at the rating it
+/// passes (the rating 1 % either side of cold-high at the input, and at it); and it compares
+/// only cold-high, not the ripple there (the nominal slip swing): with the rating between the
+/// two, it fails exactly when cold-high is the larger. Which is larger is the caller's to
+/// assert: cold-high with the temperatures in order (the probe designs), the ripple with the
+/// operating temperature below the minimum (backlog BL-067).
+fn assert_the_gearbox_check_compares_cold_high_at_the_input(name: &str, design: &DesignInputs) {
+    let fails = |d: &DesignInputs| {
+        let r = compute_all(d);
+        let check = r.gearbox.cold_high_check;
+        let above = check.starts_with(ABOVE_THE_GEARBOX_RATING);
+        assert!(
+            above || check == WITHIN_THE_GEARBOX_RATING,
+            "{name}: {check}"
+        );
+        assert_eq!(
+            above,
+            r.metal.cold_high_input_Nm > d.coupling.gearbox_input_rating_Nm,
+            "{name}: {check}"
+        );
+        above
+    };
+    let r = compute_all(design);
+    let peak = r.metal.cold_high_input_Nm;
+    let rated = |rating: f64| {
+        let mut d = design.clone();
+        d.coupling.gearbox_input_rating_Nm = rating;
+        d
+    };
+    for (rating, want) in [(0.99 * peak, true), (peak, false), (1.01 * peak, false)] {
+        assert_eq!(fails(&rated(rating)), want, "{name}: rating {rating}");
+    }
+    let swing = r.model.gearbox_input_ripple_Nm;
+    assert_eq!(
+        fails(&rated(0.5 * (swing + peak))),
+        peak > swing,
+        "{name}: a rating between the ripple and cold-high at the gearbox input"
+    );
+    // At the design's own rating.
+    fails(design);
 }
 
 /// `br_temperature`'s four entries at the five probe designs. The coefficient input moves only
@@ -2804,7 +2920,9 @@ fn levers_of(id: &str) -> Vec<Lever> {
 /// and minus the pull-out once per pole pair passed (the slip frequency), leaving a drag far
 /// below the pull-out; the gearbox input sees that swing through the ratio and the efficiency,
 /// and cold-high at the input lies above it (the first watch-out: cold, the swings can reach
-/// cold-high).
+/// cold-high, and the gearbox check compares only that torque with the input rating). With the
+/// operating temperature below the minimum the swing is above cold-high, and the check still
+/// compares only cold-high.
 #[test]
 fn the_slip_note_s_claims_hold_at_every_probe_design() {
     assert_eq!(
@@ -2824,11 +2942,65 @@ fn the_slip_note_s_claims_hold_at_every_probe_design() {
     );
     // Sentence 0 answers the gearbox ripple row that links the note (spec 3.1): the swinging
     // torque is the gearbox's (sentence 4's ripple, below).
-    let sentence_zero = notes::note("when_slipping").unwrap().sentences[0];
+    let note = notes::note("when_slipping").unwrap();
+    let sentence_zero = note.sentences[0];
     assert!(
         sentence_zero.contains("gearbox"),
         "sentence 0 names the gearbox: {sentence_zero:?}"
     );
+    // Watch-out 1 names the gearbox check and quotes cold-high at the gearbox input, the value
+    // it compares; the note cites the check and the rating's open datasheet question.
+    assert!(
+        note.watch_out[0].contains("gearbox check"),
+        "watch-out 1 names the gearbox check: {:?}",
+        note.watch_out[0]
+    );
+    assert_eq!(values_in(note.watch_out[0]), ["metal.cold_high_input_Nm"]);
+    assert!(note.sources.contains(&notes::GEARBOX_CHECK_SOURCE));
+    // Every torque in watch-out 1 names its gearbox side, and none is called the swings' peak:
+    // with the operating temperature below the minimum (both on their sliders; backlog
+    // BL-067) the nominal swing at the gearbox input is above cold-high there, and the check
+    // still compares only cold-high.
+    for words in [
+        "gearbox output",
+        "at the gearbox input here",
+        "the input rating",
+    ] {
+        assert!(
+            note.watch_out[0].contains(words),
+            "watch-out 1 names {words:?}: {:?}",
+            note.watch_out[0]
+        );
+    }
+    assert!(
+        !note.watch_out[0].to_lowercase().contains("peak"),
+        "watch-out 1 calls no torque the peak: {:?}",
+        note.watch_out[0]
+    );
+    for (op, min, v) in [(-40.0, 20.0, 0.05), (0.0, 20.0, 0.0)] {
+        let mut corner = DesignInputs::default();
+        corner.coupling.op_temp_C = op;
+        corner.metal.min_temp_C = min;
+        corner.metal.variation = v;
+        for (path, value) in [
+            ("coupling.op_temp_C", op),
+            ("metal.min_temp_C", min),
+            ("metal.variation", v),
+        ] {
+            let s = slider(path);
+            assert!(
+                s.min <= value && value <= s.max,
+                "{path} {value} on its slider"
+            );
+        }
+        let name = format!("op {op} °C, min {min} °C, variation {v}");
+        let r = compute_all(&corner);
+        assert!(
+            r.model.gearbox_input_ripple_Nm > r.metal.cold_high_input_Nm,
+            "{name}: the ripple above cold-high at the gearbox input"
+        );
+        assert_the_gearbox_check_compares_cold_high_at_the_input(&name, &corner);
+    }
     for (name, design) in probes::probe_designs() {
         let r = compute_all(&design);
         let c = &design.coupling;
@@ -2860,13 +3032,15 @@ fn the_slip_note_s_claims_hold_at_every_probe_design() {
             ),
             "{name}: the ripple"
         );
-        // Watch-out 1: cold, the swings reach cold-high, which at the gearbox input lies above
-        // the ripple at the operating temperature (the GUI test
-        // `nothing_checks_a_gearbox_torque_against_its_rating_yet` holds the "nothing checks").
+        // Watch-out 1: the gearbox output carries the swings (sentence 4's relation); cold they
+        // can reach cold-high, which at the gearbox input lies above the ripple at the
+        // operating temperature (the temperatures in order); and the gearbox check compares
+        // only that torque with the input rating.
         assert!(
             r.metal.cold_high_input_Nm > r.model.gearbox_input_ripple_Nm,
-            "{name}: cold-high at the gearbox input"
+            "{name}: cold-high at the gearbox input above the ripple"
         );
+        assert_the_gearbox_check_compares_cold_high_at_the_input(name, &design);
         // Entry 2: slower slipping, slower swings.
         let slower = compute_all(&stepped(&design, "metal.slip_rpm", Step::Lower));
         assert!(

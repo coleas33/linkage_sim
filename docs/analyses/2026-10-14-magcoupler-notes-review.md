@@ -2276,6 +2276,587 @@ The reviewer's report for the record on this field follows unchanged.
   not the hot-day start) and T-O (cold-high is an expectation, not a bound). With "expected"
   dropped from sentence 0 the test fails ("sentence 0 names expected"); the shipped text passes.
 
+### BL-059 re-review (2026-10-17)
+
+- Why: BL-059 added the gearbox check (`gearbox.cold_high_check`: cold-high at the gearbox input
+  against the gearbox input torque rating; spec
+  `docs/superpowers/specs/2026-10-16-bl059-gearbox-check-design.md`, sections 2 and 6), so
+  watch_out[1], which said nothing checks cold-high against the gearbox, became false. The note's
+  `review` date moves to the date in this heading. The slice-2 review above is not rewritten.
+- watch_out[1]:
+  - Old: "Nothing checks cold-high against the gearbox: at its input it is
+    {metal.cold_high_input_Nm} here; compare that with the gearbox's input rating yourself."
+  - New (26 words raw): "The gearbox check compares cold-high at the gearbox input,
+    {metal.cold_high_input_Nm} here, with its input rating; repeated slips also load the gearbox in
+    fatigue, which nothing checks."
+- sources[4] (new; the same line as `when_slipping`'s last source, typed once as
+  `notes::GEARBOX_CHECK_SOURCE`): "Design ruling of 2026-10-16: the gearbox check compares
+  cold-high at the gearbox input with the gearbox input torque rating; which datasheet figure that
+  rating is (input or output side; nominal, acceleration or emergency stop) is still to be
+  confirmed"
+- Reviewer: physics reviewer (session model), fresh context, one reviewer for this note and
+  `when_slipping` (the two watch-outs make one claim about one check and share one source line).
+  Rounds: 2 (round 1, 2026-10-16: PASS for this note's fields, MUST_FIX for the round, on
+  `when_slipping` watch_out[0]; round 2, 2026-10-17: PASS, this note's text unchanged since round
+  1). Verdict: PASS. Each round's full answer is
+  `.superpowers/sdd/2026-10-16-bl059-gearbox-check/t6-review-r<N>.md`.
+- Must-fix items applied (old -> new, and why): none to this note. Round 1's one must-fix item
+  (MF-1) was on `when_slipping` watch_out[0]; it is recorded under that note's
+  `### BL-059 re-review (2026-10-17)`.
+- Should-fix offered, not applied (open for the controller):
+  - SF-1 (round 1; round 2 keeps it offered; test only): the fatigue tripwire in
+    `the_torque_band_note_s_watch_outs_hold` also matches the label,
+    `row.path.contains("gearbox") || row.meta.label.to_lowercase().contains("gearbox")`, with the
+    `assert_eq!` unchanged, so it also catches a gearbox fatigue check (backlog BL-066) filed under
+    another result group. Today the label filter adds no row.
+  - Round 2's SF-1 to SF-3 are on `when_slipping` and the tests of its corner; they are listed
+    under that note's `### BL-059 re-review (2026-10-17)`.
+- Tests: `the_torque_band_note_s_watch_outs_hold` (`tests/explain.rs`) pins watch_out[1] at the
+  five probe designs: it names the gearbox check, its one live value is cold-high at the gearbox
+  input, and the check fails exactly when that is above the input rating (on the example design and
+  the 20 mm ring), passes at the rating, and compares that torque, not the slip swing. The only
+  gearbox check is that peak check, so "nothing checks" fatigue holds. The test failed on the old
+  text ("watch-out 2 names the gearbox check") and passes on the new.
+  `every_note_s_review_date_is_recorded_in_its_section` holds this heading to the note's date.
+- The dump the reviewer read: `magcoupling-rs/target/notes-review-BL059.txt` (both notes, five
+  designs; git-ignored).
+- Sign-off: no new sign-off sheet (owner, spec section 2: the owner reviews the diff).
+  `docs/analyses/2026-10-14-magcoupler-notes-signoff.md` stays the slice-2 record and shows the
+  old text.
+
+The reviewer's report for the record, round by round, as returned:
+
+Round 1:
+
+BL-059 Task 6: the physics review of the two gearbox watch-outs and their shared source (round 1)
+
+**Verdict (round 1): MUST_FIX.** There is one must-fix item, in `when_slipping` watch_out[0]. `hot_low_cold_high` watch_out[1] and `GEARBOX_CHECK_SOURCE` pass.
+
+**Must-fix**
+
+- **MF-1: `when_slipping` watch_out[0]** (`magcoupling-rs/src/engine/explain/notes.rs:750`).
+  - Draft: "The gearbox output carries these swings; cold they can reach cold-high, {metal.cold_high_input_Nm} at its input here, and the gearbox check compares only that peak with its rating."
+  - Replacement: 28 words raw. At the default design it renders 29 words, the same with "no prediction".
+
+    "The gearbox output carries these swings; cold they can reach cold-high, {metal.cold_high_input_Nm} at the gearbox input here; the gearbox check compares only that torque with the input rating."
+  - Why:
+    - **(a) "that peak" is false with the operating temperature below the minimum.** "That peak" calls cold-high the peak of these swings. Both sliders reach this corner (backlog BL-067; the engine is unchanged, decision 7A). There the nominal swing at the gearbox input is above cold-high at the gearbox input:
+
+      | Corner | Nominal swing at the input | Cold-high at the input |
+      |---|---|---|
+      | op −40 °C, min 20 °C, variation 0 | 0.6999 N·m | 0.6091 N·m |
+      | op −40 °C, min 20 °C, variation 0.05 | 0.6999 N·m (0.7349 with the allowance) | 0.6395 N·m |
+      | op 0 °C, min 20 °C, variation 0 | 0.6386 N·m | 0.6091 N·m |
+
+      The check still compares only cold-high. With the rating halfway between the two (0.6545, 0.6697 and 0.6239 N·m), it reads "Within the gearbox input rating" while the nominal swing is above the rating.
+      - "That torque" keeps the draft's scope through "only", which the draft used to separate the compared torque from the swings, and claims no order. It follows PD-2 and R-7, which removed the ripple help's inequality with cold-high for this same corner.
+      - "Peak" here was not a rating trap: it named the compared torque. It is wrong only as a claim about the swings.
+    - **(b) "with its rating" names no side of the gearbox for a torque (trap 1).** The rating is the gearbox input torque rating, and the check's own verdict says "the gearbox input rating".
+    - **(c) "at its input" can name the wrong side.** The note's subject is the coupling, and its input side is the gearbox output. There cold-high is 3.823 N·m, not 0.8049. "Its" can bind to the coupling or to "the gearbox output". "At the gearbox input" names the side with no doubt (the owner prefers explicit over clever).
+  - Kept from the draft:
+    - "The gearbox output carries these swings" holds by ruling 8: the coupling sits on the output, and the engine carries the full swing there.
+    - "Cold they can reach cold-high" states reachability, not a bound or an order (T-O). It stays literally true in the corner: at the minimum temperature, with the allowance, the swing amplitude is cold-high.
+  - Rules kept:
+    - "gearbox check" is still in the text, and `metal.cold_high_input_Nm` is still its only placeholder, so the tests' pins do not change.
+    - The placeholder sits in a clause with the whole word "here", and no unit is typed after it.
+    - At most 30 words raw.
+    - `plain_text_violations` and `audit_ids` are empty, and `mentions_gearbox_protection` is false.
+    - The text has no "peak", "warm", "hot-day" or "clamp", and it is glyph-safe.
+  - Checked outside the repository: I applied this text to a scratch copy of the crate (scratchpad `repocopy`, own `CARGO_TARGET_DIR`).
+    - `cargo test --locked --test explain`: 57 passed, 1 ignored.
+    - `cargo test --locked --features gui --lib`: 868 passed, 6 ignored.
+  - Test assertion that pins it. Add it to `the_slip_note_s_claims_hold_at_every_probe_design` (`magcoupling-rs/tests/explain.rs`), after `assert_eq!(values_in(note.watch_out[0]), ...)`. Run in that copy, it is red on the draft ("watch-out 1 names \"at the gearbox input here\"") and green on the replacement:
+
+    ```rust
+    // Every torque names its gearbox side, and no torque is called the swings' peak: with the
+    // operating temperature below the minimum (both on their sliders; backlog BL-067) the
+    // nominal swing at the gearbox input is above cold-high there, and the check still
+    // compares only cold-high.
+    for words in ["gearbox output", "at the gearbox input here", "the input rating"] {
+        assert!(note.watch_out[0].contains(words), "watch-out 1 names {words:?}: {:?}", note.watch_out[0]);
+    }
+    assert!(!note.watch_out[0].to_lowercase().contains("peak"), "watch-out 1 calls no torque the peak: {:?}", note.watch_out[0]);
+    for (op, min, v) in [(-40.0, 20.0, 0.05), (0.0, 20.0, 0.0)] {
+        let mut corner = DesignInputs::default();
+        corner.coupling.op_temp_C = op;
+        corner.metal.min_temp_C = min;
+        corner.metal.variation = v;
+        let r = compute_all(&corner);
+        let (swing, cold_high) = (r.model.gearbox_input_ripple_Nm, r.metal.cold_high_input_Nm);
+        assert!(swing > cold_high, "op {op}: {swing} against {cold_high}");
+        let mut between = corner.clone();
+        between.coupling.gearbox_input_rating_Nm = (swing + cold_high) / 2.0;
+        assert_eq!(compute_all(&between).gearbox.cold_high_check, WITHIN_THE_GEARBOX_RATING, "op {op}: the check compares only cold-high");
+        let mut under = corner.clone();
+        under.coupling.gearbox_input_rating_Nm = 0.99 * cold_high;
+        assert!(compute_all(&under).gearbox.cold_high_check.starts_with(ABOVE_THE_GEARBOX_RATING), "op {op}: above the rating");
+    }
+    ```
+
+    Preferred shape (DRY): split the order assertion (`swing < peak`) out of `assert_the_gearbox_check_compares_cold_high_at_the_input`. The rest of the helper, the rating at 0.99, 1.00 and 1.01 × cold-high at the input, can then run at these two corner designs too, so the hand-written block above shrinks to the corner loop and the word pins.
+
+**Should-fix (offered; test-only, no on-screen text)**
+
+- **SF-1: the fatigue tripwire in `the_torque_band_note_s_watch_outs_hold`** (`magcoupling-rs/tests/explain.rs`, the `gearbox_checks` filter). Today it collects the text results whose path contains "gearbox".
+  - Change: also match the label, `row.path.contains("gearbox") || row.meta.label.to_lowercase().contains("gearbox")`, with `assert_eq!` unchanged.
+  - Why: the tripwire then also catches a BL-066 fatigue check filed under another result group.
+  - Today the label filter adds no row. The only text result naming the gearbox in its path or label is `gearbox.cold_high_check`; the three fatigue screens are the adhesive's.
+- **SF-2: the tests' prose after MF-1.** Three comments in `tests/explain.rs` quote the draft's "compares that peak" or "only that peak":
+  - the helper's doc, "and the check compares that peak, not the swing";
+  - the doc of `the_slip_note_s_claims_hold_at_every_probe_design`;
+  - the inline comment before the helper call in that test.
+
+  Each should say "compares only cold-high (that torque)". The helper's doc should also say that its "cold-high above the swing" assertion holds only with the temperatures in order (the probe designs), so no later caller runs it in the BL-067 corner.
+
+**Report for the record**
+
+1. Reviewer: physics reviewer (session model), fresh context, 2026-10-16; round 1.
+
+2. Read:
+   - **Brief and binding rulings:**
+     - the brief, `.superpowers/sdd/2026-10-16-bl059-gearbox-check/task-6-inreview-brief-r1.md`;
+     - `rulings.md` (B-1 to B-10);
+     - the plan head, `docs/superpowers/plans/2026-10-16-bl059-gearbox-check.md:1-147`: Global Constraints and caps, Review Focus 3, R-1 to R-13, the owner's plan review 1A-8A, PD-1 to PD-4.
+   - **Spec**, `docs/superpowers/specs/2026-10-16-bl059-gearbox-check-design.md`:
+     - section 1 (:8-21);
+     - section 2 (:23-39; 1A basis at the input, 2A open datasheet figure, 7A, 8A);
+     - section 3 (:41-68; the band, the table, what the check does not cover);
+     - section 6 (:157-178; drafts and traps);
+     - section 10 (:245-250).
+   - **The change:**
+     - the diff `magcoupling-rs/target/g3/BL059-notes.diff`, byte-identical to `git diff` of `notes.rs` and `tests/explain.rs` in the working tree (checked);
+     - the dump `magcoupling-rs/target/notes-review-BL059.txt`.
+   - **`notes.rs`:**
+     - :148 `GEARBOX_CHECK_SOURCE`;
+     - :588 `hot_low_cold_high` watch_out[1] and :596 its source;
+     - :750 `when_slipping` watch_out[0] and :760 its source;
+     - :1588 the protect ban;
+     - :1932-1981 `cap_problems` (watch-outs ≤ 30 words, ≤ 2 per note).
+   - **Plain words and placeholders:**
+     - `plain.rs:62-129`: `plain_text_violations`, `audit_ids`, `mentions_gearbox_protection`;
+     - `plain.rs:93`: `word_count`, runs between whitespace;
+     - `note_text.rs:10-70`: `NO_VALUE`, `segments`, `render`.
+   - **Engine:**
+     - `engine/gearbox.rs:1-64`: equality passes, NaN reads unknown, the quoted overshoot;
+     - `engine/api.rs:359-360`: `gearbox::compute(mdr.cold_high_input_Nm, ci.gearbox_input_rating_Nm)`;
+     - `engine/metal_design.rs:412-414`: cold = T20·th2(min), hot-low = T_op·(1 − v), cold-high = cold·(1 + v);
+     - `engine/metal_design.rs:423`: the slip frequency, :479 `magnetic_cycles`, :509 `cold_high_input_Nm` = cold-high/(i·η);
+     - `engine/model.rs:1004` (T_pull) and :1156-1157 (ripple = T_pull/(i·η); reference = rating·i·η).
+   - **GUI:**
+     - `gui/guidance.rs:217-230`: `GEARBOX_GUIDE`, learn = the torque-band note;
+     - `gui/guidance.rs:1728-1745`: `gearbox_problem`; :1768-1799 `band_levers`; :1824 `gearbox_conflict`;
+     - `gui/dashboard.rs:155-184` (`DASHBOARD`), :194-203 (`END_EFFECT_ROWS`, which hold the check and the ripple row) and :587-596;
+     - `gui/explorer.rs:822-840`: `live_value`, "no prediction" past the end effect;
+     - `gui/plain_text.rs:64-78`: the ripple LABEL, "Nominal slip swing at the gearbox input";
+     - `gui/plain_text.rs:156-157` (the rating help) and :746-751 (the ripple help);
+     - `gui/plain_text.rs:2081-2180`: `the_gearbox_texts_claim_what_the_engine_does`, whose corner case is op −40 °C, min 20 °C, v 0.1.
+   - **Tests:** `tests/explain.rs`:
+     - :1133 the review-date guard;
+     - :2541-2621 the torque-band watch-outs and the shared helper;
+     - :2926-2995 the slip claims;
+     - :4607-4620 the here-clause rule.
+   - **Earlier reviews and traps:**
+     - `docs/analyses/2026-10-14-magcoupler-notes-review.md`, the sections hot_low_cold_high (:2052-2278) and when_slipping (:2566-2785): T-O ("expected", "can reach"), T-H (the nominal swing, larger when cold), ruling 8 (the coupling on the gearbox output), and the SF-2 offered there (the mounting fact);
+     - `docs/superpowers/specs/2026-10-14-magcoupler-guidance-2-design.md` section 8 (:358-381).
+
+3. Numbers reproduced from `compute_all`. A scratch crate `bl059review` in the scratchpad, with its own `CARGO_TARGET_DIR`, depends on `magcoupling-rs` by path with feature `gui`, so that `live_value`, the greying, the guide Problem and the overlay labels could be read.
+   - **(1) The five probe designs.** Cold-high at the output is the input value × 4.75 at each design (3.823310, 2.799225, 2.413847, 0.338067 and 3.611106 N·m). Every rendered value matches the dump.
+
+     | Design | Cold-high at the gearbox input (N·m) | Ripple at the input (N·m) | Check |
+     |---|---|---|---|
+     | default | 0.804907 | 0.565995 | "Above the gearbox input rating: 0.80 N·m against 0.60 N·m" |
+     | 8 magnets per ring | 0.589311 | 0.414392 | "Within the gearbox input rating" |
+     | 304 back iron | 0.508178 | 0.357341 | Within |
+     | Y30 ferrite, custom dimensions | 0.071172 | 0.043594 | Within |
+     | 20 mm ring radius | 0.760233 | 0.534581 | "Above the gearbox input rating: 0.76 N·m against 0.60 N·m" |
+
+     At the default the guide Problem carries sentence 1 and the conflict sentence (1.673, 2.500 N·m, 0.8806 N·m, 1.703 N·m, 1.140).
+   - **(2) Ratings.**
+     - At 1.0 N·m all five read Within.
+     - At 0.80 the default reads "Above the gearbox input rating: 0.81 N·m against 0.80 N·m".
+     - At exactly cold-high at the input (0.8049074464186606) it reads Within. One ulp below that it reads "Above ...: 0.81 N·m against 0.80 N·m".
+   - **(3) A NaN rating set on the struct.**
+     - The check reads "Gearbox check unknown: a torque is not a number".
+     - The Problem reads "The gearbox check cannot be made: cold-high at the gearbox input or the rating is not a number."
+     - Both watch-outs still render 0.8049 N·m, since cold-high is a number. This is unreachable from the UI (R-12).
+   - **(4) The end-effect model out of range.**
+     - Axial length 1.0 mm: f_end −0.3214. The engine gives cold-high at the input −0.02273 N·m and the ripple −0.01598 N·m.
+     - c_end 1.5: f_end −0.04044. The engine gives −0.03633 and −0.02554 N·m.
+     - In both cases the engine's check text reads Within, but `greyed_by_end_effect` is true for the check and for the ripple row (END_EFFECT_ROWS), so the dashboard greys them, uncounted. `live_value` is None, so both watch-outs render "... cold-high at the gearbox input, no prediction here, ..." and "... cold-high, no prediction at the gearbox input here; ...". The Problem is None.
+   - **(5) Operating temperature below the minimum,** both on their sliders. Each case shows cold-high at the input against the ripple at the input, then the check with the rating set halfway between them.
+
+     | Case | Cold-high at the input (N·m) | Ripple at the input (N·m) | Check at the default rating | Check with the rating between |
+     |---|---|---|---|---|
+     | op −40 °C, min 20 °C, v 0 | 0.6091 | 0.6999 | "Above ...: 0.61 N·m against 0.60 N·m" | 0.6545: Within |
+     | op −40 °C, min 20 °C, v 0.05 | 0.6395 | 0.6999 (0.7349 × (1 + v)) | "Above ...: 0.64 N·m against 0.60 N·m" | 0.6697: Within |
+     | op 0 °C, min 20 °C, v 0 | 0.6091 | 0.6386 | "Above ...: 0.61 N·m against 0.60 N·m" | 0.6239: Within |
+
+     - In all three corner cases the Problem is sentence 1 only: PD-1 gates sentence 2 on the minimum at or below the operating temperature.
+     - Extra (v 0.1): 0.6700 against 0.6999 N·m. With the rating between, it reads Within.
+     - Extra, edge and control:
+       - op 20 °C, min 20 °C, v 0: both 0.6091 N·m. With the rating between, it reads Within, at equality.
+       - op 50 °C, min 20 °C, v 0 (temperatures in order): 0.6091 against 0.5660 N·m. With the rating between, it reads "Above ...: 0.61 N·m against 0.59 N·m".
+     - Verdicts on the two phrases:
+       - "Cold they can reach cold-high" stays literally true: it states reachability only.
+       - "Only that peak" does not: the swings at the operating temperature exceed cold-high (MF-1).
+   - **(6) Ratio and efficiency at their slider ends.**
+     - Ratio 1, efficiency 0.5:
+       - cold-high at the input 7.646621 N·m, ripple 5.376953 N·m;
+       - check "Above the gearbox input rating: 7.65 N·m against 0.60 N·m";
+       - the Problem uses PD-1's second form: 8.366 N·m on the input, a requirement of at most 0.1793 N·m, the requirement alone 5.000 N·m.
+     - Ratio 20, efficiency 1.0: 0.191166 and 0.134424 N·m, Within.
+     - Both watch-outs read true at both.
+   - **(7) Fatigue.**
+     - At the defaults:
+       - the slip frequency is 166.67 Hz, so a 0.1 s event gives 16.67 cycles (33.3 reversals);
+       - `metal.magnetic_cycles` is 3.333e8 per life (2e7 events).
+     - The engine's only text result that names the gearbox is `gearbox.cold_high_check`, a peak comparison. The fatigue screens are the adhesive's: `temperature.adhesive.fatigue_screen` "OK: 7x margin", `hot_fatigue_screen` "OK" and `daily_screen` "Below the fatigue endurance". `gap_sweep[*]` and `pole_sweep[*].gearbox_input_Nm` are number rows, not checks.
+     - "Which nothing checks" is therefore true. BL-066 holds the gearbox fatigue check.
+   - **Overlays as drawn:**
+     - The ripple row's label is "Nominal slip swing at the gearbox input". Its help is "Torque swing while slipping: the pull-out at the operating temperature, without the production allowance, divided by the ratio and efficiency. The gearbox check compares cold-high at the gearbox input instead."
+     - The rating's help is "The gearbox's input torque rating. The gearbox check compares the cold-high torque at the gearbox input with it."
+   - **The draft's tests:** run on the working tree from outside the repo (`--locked`, scratch `CARGO_TARGET_DIR`), `the_slip_note_s_claims_hold_at_every_probe_design`, `the_torque_band_note_s_watch_outs_hold` and `every_note_s_review_date_is_recorded_in_its_section` pass. `git status` was unchanged afterwards.
+
+4. Per field:
+   - **`hot_low_cold_high` watch_out[1]: PASS.** "The gearbox check compares cold-high at the gearbox input, {metal.cold_high_input_Nm} here, with its input rating; repeated slips also load the gearbox in fatigue, which nothing checks."
+     - Each claim holds on the engine at every probe, the corner included: the check compares `metal.cold_high_input_Nm` with `coupling.gearbox_input_rating_Nm` (`api.rs:360`), and no gearbox fatigue check exists (probe 7).
+     - Both torques name their side, and "its" binds to the gearbox (nearest: "the gearbox input").
+     - It claims no bound, no order and no protection.
+     - Pinned by `the_torque_band_note_s_watch_outs_hold`:
+       - "gearbox check" is present;
+       - the only placeholder is `metal.cold_high_input_Nm`;
+       - the check fails exactly when cold-high at the input is above the rating, passes at the rating and follows cold-high, at all five probe designs;
+       - `gearbox_checks == ["gearbox.cold_high_check"]` holds the "nothing checks" (SF-1 widens it).
+     - No should-fix on the words.
+   - **`when_slipping` watch_out[0]: MUST-FIX (MF-1 above).** Replacement: "The gearbox output carries these swings; cold they can reach cold-high, {metal.cold_high_input_Nm} at the gearbox input here; the gearbox check compares only that torque with the input rating." The why and the pinning test are under MF-1; SF-2 is the test prose that follows it.
+   - **`GEARBOX_CHECK_SOURCE`: PASS.** "Design ruling of 2026-10-16: the gearbox check compares cold-high at the gearbox input with the gearbox input torque rating; which datasheet figure that rating is (input or output side; nominal, acceleration or emergency stop) is still to be confirmed"
+     - It states basis 1A and the open question of 2A: an input or an output figure; nominal, acceleration or emergency stop.
+     - "Gearbox input torque rating" is the input's label.
+     - It has no placeholder, and the plain-words checks are empty. The "BL-059" in its doc comment is code, not drawn.
+     - It is typed once and cited by both notes (DRY), and pinned by `note.sources.contains(&notes::GEARBOX_CHECK_SOURCE)` in both tests.
+   - **Asked by the brief: does `when_slipping` sentence 0 still answer the ripple row?** Yes. The row is now "Nominal slip swing at the gearbox input". Sentence 0 ("Past pull-out the coupling slips: ... the torque between them, carried by the gearbox, swings back and forth.") says what the slip swing is and that the gearbox carries it. Sentence 1 gives its size (plus to minus the pull-out, the nominal value), and sentence 4 gives its value at the gearbox input (0.5660 N·m, the row's number).
+   - **Considered, no change:**
+     - **Sentence 4 still says "torque ripple".** The row's old name used the same words, and sentence 4 is not false: it quotes the row's own value "at its input". Decision 7A changes only what became false or misleading.
+     - **Torque-band sentence 2 in the corner.** It says cold-high is "the most torque expected before it slips", which is false with the operating temperature below the minimum: at op −40 °C, min 20 °C, v 0.05, hot-low 3.158 N·m is above cold-high 3.038 N·m at the output. This predates BL-059 and belongs to BL-067; it is recorded there, not changed here.
+     - **The unchecked dynamic peaks.** Backlash, re-lock ring-down, torsional resonance and stored energy at a jam can exceed cold-high at the shaft (spec 3). Neither watch-out claims the check covers them: both say what the check compares, and the slip text says "only". The 30-word cap leaves no room to list them, and the engine help ("A peak check only.") and spec 10 scope them out.
+
+5. Traps checked:
+   - **Side of the gearbox for every torque.**
+     - The torque band text names it for each torque.
+     - The draft slip text failed on "its rating" and on "its input", which could bind to the coupling (MF-1). The replacement names "the gearbox output", "the gearbox input" and "the input rating".
+   - **Efficiency raises the input torque:** no field mentions efficiency.
+   - **Cold-high as an expectation:** the slip text says "can reach", and no field says "at most" or that every unit reaches it.
+   - **"The coupling protects the gearbox":** absent. `mentions_gearbox_protection` is false for all three fields and for the replacement, and `no_note_says_the_coupling_protects_the_gearbox` passes.
+   - **"Peak":**
+     - It is never used for the rating.
+     - The draft used it for the compared torque, which the trap allows, but as the swings' peak it is false in the BL-067 corner (MF-1).
+     - The replacement has no "peak".
+   - **The ripple row as the nominal swing, no "warm":** "these swings" are sentence 1's nominal swing at the operating temperature, and "warm" is absent.
+   - **Geometry narrowing the band:** not mentioned.
+   - **"Hot-day":** absent from the three fields. The torque band's watch_out[0] has it; that text predates BL-059 and is not changed by it.
+   - **Internal paths, ids, cells, "BL-059", "Rust-only", "clamp" on screen:** none.
+   - **Glyph-safe:** no glyph beyond the drawn unit, which `glyph_safe` handles.
+   - **T-O, T-H, ruling 8:** kept. "Cold they can reach cold-high", the nominal swing, and the gearbox output carrying the swing all hold.
+
+6. Form. Words are counted as runs between whitespace; raw counts are what the cap holds, and rendered counts are at the default design.
+
+   | Field | Raw words | Rendered words |
+   |---|---|---|
+   | `hot_low_cold_high` watch_out[1] | 26 | 27 ("0.8049 N·m") |
+   | `when_slipping` watch_out[0], draft | 27 | 28 |
+   | `when_slipping` watch_out[0], replacement | 28 | 29; also 29 with "no prediction" |
+   | `GEARBOX_CHECK_SOURCE` | 39 (sources have no cap) | n/a |
+
+   - Each note still has 2 watch-outs.
+   - Placeholder rule:
+     - Each watch-out holds exactly one placeholder, `metal.cold_high_input_Nm`, a number result in N·m.
+     - Each sits in a clause with the whole word "here" ("{…} here," and "{…} at the gearbox input here;"), and no unit is typed after it.
+     - `segments` parses each into 3 pieces, and the source holds none.
+     - `plain_text_violations` and `audit_ids` are empty for all four texts.
+
+7. Verdicts:
+   - `hot_low_cold_high`: PASS.
+   - `when_slipping`: MUST_FIX (MF-1).
+   - Round 1: MUST_FIX.
+
+Round 2:
+
+BL-059 Task 6: the physics review of the two gearbox watch-outs and their shared source (round 2)
+
+**Verdict (round 2): PASS.** No must-fix item remains.
+- `when_slipping` watch_out[0] now carries MF-1's replacement verbatim, and it passes.
+- `hot_low_cold_high` watch_out[1] and `GEARBOX_CHECK_SOURCE` are unchanged and still pass.
+- The three fields make one claim about one check, and both notes cite the one shared source line.
+- The new tests pin MF-1's claims. One scope word ("only") is not pinned; SF-1 below pins it.
+
+**Must-fix**
+
+None.
+
+**Should-fix (offered; none is needed for PASS)**
+
+- **SF-1: pin "only" in the slip watch-out** (`magcoupling-rs/tests/explain.rs:2960-2968`, in `the_slip_note_s_claims_hold_at_every_probe_design`). Test only; no on-screen text changes.
+  - Why: "only" is the word that keeps the sentence true where the operating temperature is below the minimum. There the nominal swing at the gearbox input is above cold-high, and the check does not compare the swing. With "only" dropped from the text ("the gearbox check compares that torque with the input rating"), every test stays green (mutation M4 in item 3).
+  - Replacement for lines 2960-2968. The comment also takes SF-2(c).
+
+    ```rust
+        // Every torque in watch-out 1 names its gearbox side, the check compares "only" cold-high,
+        // and no torque is called the swings' peak: with the operating temperature below the
+        // minimum (both on their sliders; backlog BL-067) the nominal swing at the gearbox input
+        // can be above cold-high there, as at the two corners below, and the check still compares
+        // only cold-high.
+        for words in [
+            "gearbox output",
+            "at the gearbox input here",
+            "compares only",
+            "the input rating",
+        ] {
+    ```
+  - Checked in a scratch copy of the crate. It is green on the shipped text. It is red on the text without "only", failing with `watch-out 1 names "compares only"`. `cargo fmt --check` is clean.
+- **SF-2: the corner prose in three test comments says "is above" where the engine gives "can be above".** Test prose only.
+  - Why: the nominal swing exceeds cold-high in the corner only for a small enough variation. At op −40 °C, min 20 °C and the default variation 0.15, all on their sliders, cold-high at the input is 0.700417 N·m and the ripple 0.699920 N·m: cold-high is still the larger.
+    - The ripple-to-cold-high ratio is th²(op) / (th²(min)·(1 + v)). At v 0 it is 1.14918 at op −40 °C and 1.04858 at op 0 °C, both with min 20 °C.
+    - So at the default Br coefficient the ripple is the larger only for variations below 0.1492 and 0.0486 respectively.
+    - The two corners the test uses (v 0.05 and v 0) are below those thresholds, so the assertions hold. Only the general sentences are too broad.
+  - (a) The helper's doc, `tests/explain.rs:2608-2610`. Old: "Which is larger is the caller's to assert: cold-high with the temperatures in order (the probe designs), the ripple with the operating temperature below the minimum (backlog BL-067)." New:
+
+    ```rust
+    /// two, it fails exactly when cold-high is the larger. Which is larger is the caller's to
+    /// assert: cold-high with the temperatures in order (the probe designs); with the operating
+    /// temperature below the minimum (backlog BL-067) either can be, the ripple at the slip test's
+    /// two corners.
+    ```
+  - (b) The slip test's doc, `tests/explain.rs:2923-2925`. Old: "With the operating temperature below the minimum the swing is above cold-high, and the check still compares only cold-high." New:
+
+    ```rust
+    /// cold-high, and the gearbox check compares only that torque with the input rating). With the
+    /// operating temperature below the minimum the swing can be above cold-high (at the two corners
+    /// tested), and the check still compares only cold-high.
+    ```
+  - (c) The inline comment at `tests/explain.rs:2960-2963`: the replacement is in SF-1's block above.
+  - All three were checked together with SF-1 in the scratch copy. The slip test passes and `cargo fmt --check` is clean.
+  - Outside this review's fields: the T9 brief's line "since with the operating temperature below the minimum the swing exceeds cold-high (BL-067)" (`task-9-brief.md:148`, and the plan's copy at `:6397`) generalizes the same way. If T9 quotes it, "can exceed" is the true form.
+- **SF-3 (optional; on-screen): "cold they" → "when cold they"** in `when_slipping` watch_out[0] (`notes.rs:750`).
+  - Text, 29 words raw. It renders 30 words at the default design, also 30 with "no prediction":
+
+    "The gearbox output carries these swings; when cold they can reach cold-high, {metal.cold_high_input_Nm} at the gearbox input here; the gearbox check compares only that torque with the input rating."
+  - Why: "cold they can reach" reads first as a garden path ("cold they?"). "When cold" restores the slice-2 reviewed wording, and the owner prefers explicit over terse.
+  - The physics is unchanged: reachability, no bound, no order.
+  - Every pin holds: "gearbox check", "gearbox output", "at the gearbox input here", "the input rating", no "peak", and the one placeholder.
+  - Checked in the scratch copy: `--test explain` 57 passed, 1 ignored; `--features gui --lib` 868 passed, 6 ignored.
+  - I would ship it, but the shipped text is neither false nor misleading without it.
+- **Still offered from round 1:** round 1's SF-1, the fatigue tripwire's label filter in `the_torque_band_note_s_watch_outs_hold`. It is unchanged and was not re-judged here.
+
+**Report for the record**
+
+1. Reviewer: physics reviewer (session model), fresh context, 2026-10-17; round 2.
+
+2. Read:
+   - **Brief and binding rulings:**
+     - `.superpowers/sdd/2026-10-16-bl059-gearbox-check/task-6-inreview-brief-r2.md`;
+     - `rulings.md` (B-1 to B-10; B-8: this record has no line starting "## ");
+     - the plan head, `docs/superpowers/plans/2026-10-16-bl059-gearbox-check.md:1-147`: Global Constraints, caps and traps (:27-75), Review Focus 3 (:82-88), R-1 to R-13 (:96-125), the owner's plan review 1A-8A (:127-138), PD-1 to PD-4 (:140-145);
+     - round 1's answer, `t6-review-r1.md` (MF-1, SF-1, SF-2).
+   - **Spec**, `docs/superpowers/specs/2026-10-16-bl059-gearbox-check-design.md`:
+     - section 1 (:8-21);
+     - section 2 (:23-39);
+     - section 3 (:41-68, including what the check does not cover);
+     - section 6 (:157-178, drafts and traps);
+     - section 10 (:245-250).
+   - **The change:**
+     - `magcoupling-rs/target/g3/BL059-notes.diff`, byte-identical to `git diff` of `notes.rs` and `tests/explain.rs` in the working tree (checked with `diff -q`);
+     - `magcoupling-rs/target/notes-review-BL059.txt`, the regenerated dump. It shows the new slip text at all five designs.
+   - **`notes.rs`:**
+     - :146-148 `GEARBOX_CHECK_SOURCE` and its doc;
+     - :536-603 `hot_low_cold_high` (watch_out[1] :588, source :596);
+     - :724-767 `when_slipping` (sentences :729-733, watch_out[0] :750, source :760);
+     - :1588 the protect ban;
+     - :1932-1981 `cap_problems` (at most 2 watch-outs, at most 30 words raw).
+   - **Plain words and placeholders:**
+     - `plain.rs:62` `plain_text_violations`, :93 `word_count`, :113 `audit_ids`, :126 `mentions_gearbox_protection`;
+     - `note_text.rs:11` `NO_VALUE`, :24 `segments`, :59 `render`.
+   - **Engine:**
+     - `engine/gearbox.rs:1-64`: equality passes, NaN reads unknown, the quoted overshoot, help "A peak check only.";
+     - `engine/api.rs:359-360`: `gearbox::compute(mdr.cold_high_input_Nm, ci.gearbox_input_rating_Nm)`;
+     - `engine/metal_design.rs:412-414`: cold = T20·th²(min), hot-low = T_op·(1 − v), cold-high = cold·(1 + v);
+     - `engine/metal_design.rs:423` (slip frequency), :479 (`magnetic_cycles`), :509 (`cold_high_input_Nm` = cold-high/(i·η));
+     - `engine/model.rs:349-352` (row meta), :1156 (ripple = T_pull/(i·η), T_pull at the operating temperature) and :1157 (reference = rating·i·η).
+   - **GUI:**
+     - `gui/guidance.rs:217-230` (`GEARBOX_GUIDE`, learn = the torque-band note);
+     - `gui/guidance.rs:338-342` (the ripple row's Why link → `when_slipping`) and :1728-1745 (`gearbox_problem`);
+     - `gui/dashboard.rs:155-184` (`DASHBOARD`), :194-203 (`END_EFFECT_ROWS`, which hold the check and the ripple row) and :587-597;
+     - `gui/explorer.rs:829-841` (`live_value`);
+     - `gui/plain_text.rs:74-77` (ripple label), :155-157 (rating help) and :747-751 (ripple help).
+   - **Tests**, `tests/explain.rs`:
+     - :1989-1996 `slider`;
+     - :2538-2589 the torque-band watch-outs;
+     - :2591-2601 `values_in`;
+     - :2603-2645 `assert_the_gearbox_check_compares_cold_high_at_the_input`;
+     - :2919-3051 the slip claims (word pins :2960-2979, corners :2980-3003, probe loop :3004-3050);
+     - :4655-4668 the here-clause rule.
+   - **Earlier reviews and traps:**
+     - `docs/analyses/2026-10-14-magcoupler-notes-review.md`, sections `hot_low_cold_high` (:2052-2278) and `when_slipping` (:2566-2785): T-O, T-H, ruling 8, the SF-2 offered there;
+     - `docs/superpowers/specs/2026-10-14-magcoupler-guidance-2-design.md` section 8 (:358-381).
+
+3. Numbers reproduced from `compute_all`.
+
+   **Setup.**
+   - Probe crate `bl059review` in the scratchpad (`t6r2/probe`), with its own `CARGO_TARGET_DIR`. It depends on `magcoupling-rs` by path with feature `gui`, for `live_value`, `greyed_by_end_effect`, the guide Problem and the overlay labels.
+   - A second probe (`t6r2/probe2`) read the Br-coefficient slider.
+   - Mutations and test runs used a scratch copy of the crate and of the files its tests include (`t6r2/repocopy`, own target dir). `src/` and `tests/` were byte-identical to the working tree.
+
+   **(1) The five probe designs.** Every rendered watch-out matches the dump.
+
+   | Design | Cold-high, output (N·m) | Cold-high at the gearbox input (N·m) | Ripple at the input (N·m) | Check |
+   |---|---|---|---|---|
+   | default | 3.823310 | 0.804907 | 0.565995 | "Above the gearbox input rating: 0.80 N·m against 0.60 N·m" |
+   | 8 magnets per ring | 2.799225 | 0.589311 | 0.414392 | "Within the gearbox input rating" |
+   | 304 back iron | 2.413847 | 0.508178 | 0.357341 | Within |
+   | Y30 ferrite, custom dimensions | 0.338067 | 0.071172 | 0.043594 | Within |
+   | 20 mm ring radius | 3.611106 | 0.760233 | 0.534581 | "Above the gearbox input rating: 0.76 N·m against 0.60 N·m" |
+
+   - At the default and at the 20 mm ring, the guide Problem carries sentence 1 and the conflict sentence (1.673; 2.500 N·m; 0.8806 N·m; 1.703 N·m; 1.140). At the other three it is None.
+
+   **(2) Ratings.**
+   - At 1.0 N·m all five read Within.
+   - At 0.80 the default reads "Above the gearbox input rating: 0.81 N·m against 0.80 N·m".
+   - At exactly cold-high at the input (0.8049074464186606) it reads Within. One ulp below, it reads "Above …: 0.81 N·m against 0.80 N·m".
+   - At 0.99, 1.00 and 1.01 × cold-high at the input it reads above, within, within.
+
+   **(3) A NaN rating on the struct.**
+   - The check reads "Gearbox check unknown: a torque is not a number".
+   - The Problem reads "The gearbox check cannot be made: cold-high at the gearbox input or the rating is not a number."
+   - Both watch-outs render 0.8049 N·m, since cold-high is a number, and stay true: they say what the check compares. This is unreachable from the UI (R-12).
+
+   **(4) The end-effect model out of range.**
+   - Axial length 1.0 mm: f_end −0.3214, "End-effect model out of range". The engine gives cold-high at the input −0.02273 N·m and the ripple −0.01598 N·m.
+   - c_end 1.5: f_end −0.0404. The engine gives −0.03633 and −0.02554 N·m.
+   - In both cases:
+     - the engine's check text reads Within, but `greyed_by_end_effect` is true for the check and for the ripple row (`END_EFFECT_ROWS`), so the dashboard greys both, uncounted;
+     - the Problem is None;
+     - `live_value` is None, so the watch-outs render "… cold-high at the gearbox input, no prediction here, …" and "… cold they can reach cold-high, no prediction at the gearbox input here; …".
+
+   **(5) Operating temperature below the minimum.**
+   - Sliders: operating −40 to 150 °C, minimum −60 to 20 °C, variation 0 to 0.5.
+   - In the table, "rating between" is the check with the rating halfway between the ripple and cold-high at the input.
+
+   | Case | Cold-high at the input (N·m) | Ripple at the input (N·m) | Check at 0.6 | Rating between | 0.99 / 1.00 / 1.01 × cold-high |
+   |---|---|---|---|---|---|
+   | op −40 °C, min 20 °C, v 0 | 0.609058 | 0.699920 | "Above …: 0.61 N·m against 0.60 N·m" | 0.6545: Within | above / within / within |
+   | op −40 °C, min 20 °C, v 0.05 | 0.639511 | 0.699920 (0.7349 with the allowance) | "Above …: 0.64 N·m against 0.60 N·m" | 0.6697: Within | above ("0.64 N·m against 0.63 N·m") / within / within |
+   | op 0 °C, min 20 °C, v 0 | 0.609058 | 0.638643 | "Above …: 0.61 N·m against 0.60 N·m" | 0.6239: Within | above / within / within |
+   | extra: op −40 °C, min 20 °C, v 0.1 | 0.669964 | 0.699920 | "Above …: 0.67 N·m against 0.60 N·m" | 0.6849: Within | above / within / within |
+   | extra: op −40 °C, min 20 °C, v 0.15 (default variation) | 0.700417 | 0.699920 | "Above …: 0.70 N·m against 0.60 N·m" | 0.7002: "Above …: 0.71 N·m against 0.70 N·m" (cold-high is the larger) | above / within / within |
+   | control: op 20 °C, min 20 °C, v 0 | 0.609058 | 0.609058 | "Above …: 0.61 N·m against 0.60 N·m" | 0.6091: Within (at equality) | above / within / within |
+   | control: op 50 °C, min 20 °C, v 0 | 0.609058 | 0.565995 | "Above …: 0.61 N·m against 0.60 N·m" | 0.5875: "Above …: 0.61 N·m against 0.59 N·m" | above / within / within |
+
+   - In every corner case the Problem is sentence 1 only: PD-1 gates sentence 2 on the minimum at or below the operating temperature.
+   - **Where the swing exceeds cold-high.** At v 0 the ripple-to-cold-high ratio is 1.14918 at op −40 °C and 1.04858 at op 0 °C. So the swing is the larger only for v below 0.1492 and 0.0486 respectively (SF-2).
+   - **Temperatures in order.** There cold-high at the input is at least the ripple everywhere on the sliders. The Br coefficient slider runs from −0.0025 to 0 /°C, and every grade's coefficient is at most −0.00035 /°C. At a coefficient of 0 and v 0 the two are equal (0.609058 at op 150 °C, min −60 °C).
+   - **Judged:**
+     - "Cold they can reach cold-high" stays literally true in the corner. At the minimum temperature, with the + allowance, the swing amplitude is cold-high by definition (`metal_design.rs:412-414`). It claims no bound and no order.
+     - "Compares only that torque" is true. With the rating between the two, the check reads Within while the swing is above the rating.
+     - Round 2's text has no "peak".
+
+   **(6) Ratio and efficiency at their slider ends.**
+   - Ratio 1, efficiency 0.5:
+     - cold-high at the input 7.646621 N·m, ripple 5.376953 N·m;
+     - check "Above the gearbox input rating: 7.65 N·m against 0.60 N·m";
+     - the Problem uses PD-1's second form (8.366 N·m; at most 0.1793 N·m; the requirement alone 5.000 N·m);
+     - the watch-outs render 7.647 N·m.
+   - Ratio 20, efficiency 1.0: 0.191166 and 0.134424 N·m, Within, Problem None; the watch-outs render 0.1912 N·m.
+   - Both watch-outs read true at both ends. Neither mentions efficiency.
+
+   **(7) Fatigue.**
+   - At the defaults the slip frequency is 166.6667 Hz. A 0.1 s event therefore gives 16.67 cycles (33.3 reversals), and `metal.magnetic_cycles` is 3.333e8 per life.
+   - The text results with "gearbox" or "fatigue" in their path or label:
+     - `temperature.adhesive.fatigue_screen` "OK: 7x margin" (the magnet bond);
+     - `temperature.adhesive_life.hot_fatigue_screen` "OK" (the magnet bond);
+     - `gearbox.cold_high_check`, a peak comparison.
+   - "Which nothing checks" (gearbox fatigue) is therefore true. BL-066 holds the gearbox fatigue check.
+
+   **Overlays as drawn.**
+   - The ripple row's label is "Nominal slip swing at the gearbox input". Its help is "Torque swing while slipping: the pull-out at the operating temperature, without the production allowance, divided by the ratio and efficiency. The gearbox check compares cold-high at the gearbox input instead."
+   - The rating's help is "The gearbox's input torque rating. The gearbox check compares the cold-high torque at the gearbox input with it."
+   - The check's engine label is "Cold-high torque at the gearbox input against its rating", with help ending "A peak check only."
+   - The guide's label is "Gearbox input torque". Its Why is "Cold-high torque can reach the gearbox output before the coupling slips, and in each swing while it slips; at the gearbox input it must stay within the rating."
+
+   **Do the tests pin MF-1? (mutations in the scratch copy, each reverted after)**
+
+   | Mutation | Result |
+   |---|---|
+   | M1: the check compares the larger of cold-high and the ripple at the input (`api.rs:360`) | The slip test is red at the first corner: "op -40 °C, min 20 °C, variation 0.05: Above the gearbox input rating: 0.70 N·m against 0.64 N·m", from the equality assertion inside `fails`. The torque-band test stays green, since the probes cannot tell the two apart; the corners are what pin "only cold-high". |
+   | M2: the check compares the ripple | Both tests are red: the torque band at "default: Within the gearbox input rating", the slip test at the first corner. |
+   | M3: round 1's draft text put back | Red: `watch-out 1 names "at the gearbox input here"`. |
+   | M4: "only" dropped from the text | Green, so "only" is not pinned (SF-1). |
+   | M5: the old one-sided between-rating assertion put back | Red at the first corner. This confirms the brief's claim. |
+
+   - **A note on the helper.** Its `assert_eq!(fails(mid), peak > swing)` follows from the equality inside `fails` for any finite pair, so it adds no strength. What pins the engine is that equality, evaluated where the rating sits between the two torques; M1 shows it does. Keeping it as documentation is fine, and no change is needed.
+   - **Test runs on the copy:**
+     - `cargo test --locked --test explain`: 57 passed, 1 ignored;
+     - `cargo test --locked --features gui --lib`: 868 passed, 6 ignored;
+     - `cargo fmt --check`: clean.
+   - `git status --short` of the repository was unchanged afterwards: the two modified files and the owner's untracked file.
+
+4. Per field:
+   - **`hot_low_cold_high` watch_out[1]: PASS** (unchanged since round 1). "The gearbox check compares cold-high at the gearbox input, {metal.cold_high_input_Nm} here, with its input rating; repeated slips also load the gearbox in fatigue, which nothing checks."
+     - Each claim holds on the engine at every probe and corner: `api.rs:360`, item 3 (1), (5) and (7).
+     - Both torques name their side, and "its" binds to the gearbox.
+     - It claims no bound, no order and no protection.
+     - It agrees with the slip text and the source: the same check, the same compared torque, the same rating. The slip text adds "only", and this text adds "fatigue, which nothing checks"; both scope the check as a peak check, as the engine help says ("A peak check only.").
+     - Pins: `the_torque_band_note_s_watch_outs_hold` (the words "gearbox check", the one placeholder, the helper at five probes, failing = default and 20 mm ring, the fatigue tripwire, the source).
+   - **`when_slipping` watch_out[0]: PASS.** "The gearbox output carries these swings; cold they can reach cold-high, {metal.cold_high_input_Nm} at the gearbox input here; the gearbox check compares only that torque with the input rating."
+     - "The gearbox output carries these swings" holds by ruling 8: the coupling sits on the gearbox output, and the engine carries the full swing there (`model.rs:1156`).
+     - "Cold they can reach cold-high" states reachability, not a bound (T-O). It stays true in the BL-067 corner.
+     - The quoted value is cold-high/(i·η) (`metal_design.rs:509`) and is named "at the gearbox input". It renders 0.8049, 0.5893, 0.5082, 0.07117 and 0.7602 N·m, or "no prediction".
+     - "The gearbox check compares only that torque with the input rating" matches `api.rs:360` and `gearbox.rs:47-60`. It stays true where the swing exceeds cold-high: in item 3 (5) the rating sits between the two and the check reads Within. "The input rating" names the rating's side.
+     - It does not claim the check covers backlash, re-lock ring-down, resonance or a jam's stored energy (spec 3); "only" scopes it.
+     - Pins: `the_slip_note_s_claims_hold_at_every_probe_design`, with "gearbox check", the one placeholder, the source, "gearbox output", "at the gearbox input here" and "the input rating", no "peak", the two slider corners with the ripple above cold-high and the helper there, and the helper plus the order at the five probes. SF-1 adds "compares only"; SF-3 is an optional wording.
+   - **`GEARBOX_CHECK_SOURCE`: PASS** (unchanged). "Design ruling of 2026-10-16: the gearbox check compares cold-high at the gearbox input with the gearbox input torque rating; which datasheet figure that rating is (input or output side; nominal, acceleration or emergency stop) is still to be confirmed"
+     - It states basis 1A and the open question of 2A.
+     - "Gearbox input torque rating" is the input's label.
+     - It has no placeholder and passes the plain-words checks. The "BL-059" in its doc comment is code, not drawn.
+     - It is typed once and cited by both notes (DRY); both tests pin `note.sources.contains(&notes::GEARBOX_CHECK_SOURCE)`.
+   - **Asked by the brief: does `when_slipping` sentence 0 still answer the ripple row?** Yes. The row now reads "Nominal slip swing at the gearbox input" and its Why link opens this note (`guidance.rs:338-342`). Sentence 0 says what the slip swing is and that the gearbox carries it. Sentence 1 gives its size (plus to minus the pull-out, the nominal value at the operating temperature). Sentence 4 gives the row's value at the gearbox input (0.5660 N·m at the default).
+     - Sentence 4's word "ripple", beside the row's new name "swing", is not false. It is outside decision 7A's scope (change only what became false or misleading); no change.
+     - The watch-out then says why the row is not the checked torque, as the ripple help does.
+
+5. Traps checked:
+   - **Side of the gearbox for every torque:** the slip text names "the gearbox output", "at the gearbox input" and "the input rating"; the torque-band text names "at the gearbox input" and "its input rating" ("its" is the gearbox); the source names the input for both.
+   - **Efficiency raises the input torque:** no field mentions efficiency, so nothing says it reduces the load.
+   - **Cold-high as an expectation:** the slip text says "can reach", and no field says "at most" or that every unit reaches it.
+   - **"The coupling protects the gearbox":** absent. `mentions_gearbox_protection` is false for all three fields and for SF-3's text, and `no_note_says_the_coupling_protects_the_gearbox` passes.
+   - **"Peak":** absent from all three fields, so it names neither the rating nor the swing. The test pins its absence in the slip text.
+   - **The ripple row as the nominal swing at the operating temperature, no "warm":** "these swings" are sentence 1's nominal swing, and "warm" is absent.
+   - **Geometry narrowing the band:** not mentioned.
+   - **"Hot-day":** absent from the three fields. The torque band's watch_out[0] has it, but that text predates BL-059 and is not changed by it.
+   - **Internal paths, ids, cells, "BL-059", "Rust-only", "clamp" on screen:** none. `plain_text_violations` and `audit_ids` are empty.
+   - **Glyph-safe:** ASCII only, except the drawn unit, which `glyph_safe` handles; the GUI glyph tests pass.
+   - **T-O, T-H, ruling 8:** kept ("can reach"; the nominal swing, larger when cold; the gearbox output carries the swing).
+   - **The BL-067 corner:** no on-screen claim of an order between the swing and cold-high. Three test comments over-generalize the corner (SF-2).
+
+6. Form. Words are counted as runs between whitespace; the cap holds the raw count.
+
+   | Field | Raw words | Rendered words, default design | Rendered, "no prediction" |
+   |---|---|---|---|
+   | `hot_low_cold_high` watch_out[1] | 26 | 27 ("0.8049 N·m") | 27 |
+   | `when_slipping` watch_out[0] | 28 | 29 | 29 |
+   | SF-3 text (optional) | 29 | 30 | 30 |
+   | `GEARBOX_CHECK_SOURCE` | 39 (sources have no cap) | n/a | n/a |
+
+   - Each note still has 2 watch-outs.
+   - **Placeholder rule:**
+     - Each watch-out holds exactly one placeholder, `metal.cold_high_input_Nm`, a number result in N·m. `segments` gives 3 pieces.
+     - Each placeholder is in a clause with the whole word "here" ("{…} here," and "{…} at the gearbox input here;"), and no unit is typed after it.
+     - The source holds none.
+   - `plain_text_violations` and `audit_ids` are empty for all three texts.
+   - The tests' pins are kept: the words "gearbox check" in both watch-outs, and `metal.cold_high_input_Nm` as each one's only placeholder.
+
+7. Verdicts:
+   - `hot_low_cold_high`: PASS. Its text has not changed since its passing round 1 (2026-10-16).
+   - `when_slipping`: PASS, in this round (2026-10-17).
+   - Round 2: PASS. No must-fix; SF-1, SF-2 and SF-3 are offered.
+
 ## br_temperature
 
 Task T14. Rewrite of "Remanence against temperature, and torque ∝ Br²" as "Heat weakens magnets:
@@ -2782,6 +3363,583 @@ Considered, no change (the reviewer's observations on this field):
   - Physically, at the slip frequency (166.7 Hz at the default) the shaft torque is the magnetic swing minus what the drive ring's own inertia absorbs.
   - Near a torsional resonance of the drive train it can be larger. As the drive slows after a slip, the ripple frequency falls through the range, and nothing checks for that.
   - This is an engine-scope observation for the gearbox and joint backlog (BL-059, BL-064), not a text matter.
+
+### BL-059 re-review (2026-10-17)
+
+- Why: as under `## hot_low_cold_high`, `### BL-059 re-review (2026-10-17)`: watch_out[0], which
+  said nothing checks the gearbox against these swings, became false. The note's `review` date
+  moves to the date in this heading. The slice-2 review above is not rewritten.
+- watch_out[0]:
+  - Old: "Nothing checks the gearbox against these swings: when cold they can reach the cold-high
+    torque, on this design {metal.cold_high_input_Nm} at its input; check its rating."
+  - New (28 words raw): "The gearbox output carries these swings; cold they can reach cold-high,
+    {metal.cold_high_input_Nm} at the gearbox input here; the gearbox check compares only that
+    torque with the input rating."
+- sources[5] (new): `notes::GEARBOX_CHECK_SOURCE`, quoted under `## hot_low_cold_high`.
+- Reviewer and rounds: reviewed with `hot_low_cold_high` in the same rounds. The full answers are
+  as under that note's `### BL-059 re-review (2026-10-17)`. Verdict for this note: PASS.
+- Must-fix items applied to this note (old -> new, and why):
+  - MF-1 (round 1; round 2 passed the new text):
+    - Old (the draft): "The gearbox output carries these swings; cold they can reach cold-high,
+      {metal.cold_high_input_Nm} at its input here, and the gearbox check compares only that peak
+      with its rating."
+    - New: the text above, round 1's replacement copied verbatim.
+    - Why: "that peak" called cold-high the peak of these swings, which is false with the
+      operating temperature below the minimum (both on their sliders; backlog BL-067). There the
+      nominal swing at the gearbox input is above cold-high at the gearbox input (0.6999 against
+      0.6091 N·m at op −40 °C, min 20 °C, variation 0; 0.6999 against 0.6395 N·m at variation
+      0.05; 0.6386 against 0.6091 N·m at op 0 °C, min 20 °C, variation 0), and with the rating
+      halfway between the two the check reads "Within the gearbox input rating" while the swing is
+      above the rating. "With its rating" named no side of the gearbox, and "at its input" could
+      bind to the coupling, whose input side is the gearbox output (cold-high there is 3.823 N·m,
+      not 0.8049).
+    - Test: `the_slip_note_s_claims_hold_at_every_probe_design` pins "gearbox output", "at the
+      gearbox input here" and "the input rating" in watch_out[0], and no "peak" in any case. At two
+      slider corners, op −40 °C, min 20 °C, variation 0.05 and op 0 °C, min 20 °C, variation 0
+      (each value asserted on its slider), the ripple at the gearbox input is above cold-high
+      there, and the shared helper `assert_the_gearbox_check_compares_cold_high_at_the_input`
+      runs. In the shape round 1 preferred (DRY), the order assertion (the ripple below cold-high
+      at the input) moved out of the helper into the slip test's probe loop, and the helper's
+      between-rating assertion became two-sided (the check fails exactly when cold-high is the
+      larger), so the helper also runs at the corners. The test was red on the draft
+      (`watch-out 1 names "at the gearbox input here"`) and is green on the new text; round 2's
+      mutations confirm the pin (a check comparing the larger of the two torques turns the slip
+      test red at the first corner).
+    - With it, the three test comments that quoted the draft's "that peak" (round 1's SF-2) now
+      say "only that torque" or "only cold-high", and the helper's doc leaves which torque is the
+      larger to its caller.
+- Should-fix offered for this note, not applied:
+  - SF-1 (round 2; test only): pin "compares only" in watch_out[0] (the word list in
+    `the_slip_note_s_claims_hold_at_every_probe_design` gains "compares only"). "Only" is the word
+    that keeps the sentence true where the swing is above cold-high; with it dropped from the text
+    every test stays green today.
+  - SF-2 (round 2; test prose only): three test comments say the swing "is above" cold-high with
+    the operating temperature below the minimum (the helper's doc, the slip test's doc and the
+    comment before the slip test's word pins); the engine gives "can be above". At op −40 °C,
+    min 20 °C and the default variation 0.15, cold-high at the input (0.700417 N·m) is still above
+    the ripple (0.699920 N·m): at the default Br coefficient the ripple is the larger only for
+    variations below 0.1492 (op −40 °C) and 0.0486 (op 0 °C). The two corners tested lie below
+    those, so the assertions hold. Round 2's answer gives the replacement comments, and notes that
+    the Task 9 brief's "the swing exceeds cold-high (BL-067)" generalizes the same way ("can
+    exceed" is the true form).
+  - SF-3 (round 2; optional, on screen): "cold they" -> "when cold they", 29 words raw (30
+    rendered at the default design): "The gearbox output carries these swings; when cold they can
+    reach cold-high, {metal.cold_high_input_Nm} at the gearbox input here; the gearbox check
+    compares only that torque with the input rating." Why: "cold they can reach" reads first as a
+    garden path, and "when cold" restores the slice-2 wording. The physics is unchanged, and the
+    reviewer judged the shipped text neither false nor misleading without it.
+- The ripple row's on-screen label: "Nominal slip swing at the gearbox input" (T5); sentence 0,
+  reviewed in slice 2 against "Estimated gearbox input torque ripple amplitude", still answers it
+  (rounds 1 and 2): it says what the slip swing is and that the gearbox carries it; sentence 1
+  gives its size (plus to minus the pull-out, the nominal value at the operating temperature) and
+  sentence 4 the row's value at the gearbox input (0.5660 N·m at the default design). Sentence 4's
+  word "ripple", beside the row's new name, is not false and is outside decision 7A's scope
+  (change only what became false or misleading); no change.
+- Tests: `the_slip_note_s_claims_hold_at_every_probe_design` (`tests/explain.rs`) pins watch_out[0]
+  at the five probe designs. It names the gearbox check, and its one live value is cold-high at the
+  gearbox input, which lies above the ripple there. The check compares that torque with the input
+  rating: it fails with the rating between the ripple and cold-high at the input. At the two
+  slider corners above (MF-1), where the ripple is the larger, a rating between the two passes.
+  The test failed on the old text ("watch-out 1 names the gearbox check") and passes on the new.
+
+The reviewer's report for the record on this note's fields, round by round, as returned:
+
+Round 1:
+
+(Round 1's answer, verbatim, without its parts on `hot_low_cold_high` alone: its SF-1, probe
+(7) on fatigue, its item-4 field, the torque-band corner observation, one trap line, its form row
+and its verdict. The full answer is under `## hot_low_cold_high`.)
+
+BL-059 Task 6: the physics review of the two gearbox watch-outs and their shared source (round 1)
+
+**Verdict (round 1): MUST_FIX.** There is one must-fix item, in `when_slipping` watch_out[0]. `hot_low_cold_high` watch_out[1] and `GEARBOX_CHECK_SOURCE` pass.
+
+**Must-fix**
+
+- **MF-1: `when_slipping` watch_out[0]** (`magcoupling-rs/src/engine/explain/notes.rs:750`).
+  - Draft: "The gearbox output carries these swings; cold they can reach cold-high, {metal.cold_high_input_Nm} at its input here, and the gearbox check compares only that peak with its rating."
+  - Replacement: 28 words raw. At the default design it renders 29 words, the same with "no prediction".
+
+    "The gearbox output carries these swings; cold they can reach cold-high, {metal.cold_high_input_Nm} at the gearbox input here; the gearbox check compares only that torque with the input rating."
+  - Why:
+    - **(a) "that peak" is false with the operating temperature below the minimum.** "That peak" calls cold-high the peak of these swings. Both sliders reach this corner (backlog BL-067; the engine is unchanged, decision 7A). There the nominal swing at the gearbox input is above cold-high at the gearbox input:
+
+      | Corner | Nominal swing at the input | Cold-high at the input |
+      |---|---|---|
+      | op −40 °C, min 20 °C, variation 0 | 0.6999 N·m | 0.6091 N·m |
+      | op −40 °C, min 20 °C, variation 0.05 | 0.6999 N·m (0.7349 with the allowance) | 0.6395 N·m |
+      | op 0 °C, min 20 °C, variation 0 | 0.6386 N·m | 0.6091 N·m |
+
+      The check still compares only cold-high. With the rating halfway between the two (0.6545, 0.6697 and 0.6239 N·m), it reads "Within the gearbox input rating" while the nominal swing is above the rating.
+      - "That torque" keeps the draft's scope through "only", which the draft used to separate the compared torque from the swings, and claims no order. It follows PD-2 and R-7, which removed the ripple help's inequality with cold-high for this same corner.
+      - "Peak" here was not a rating trap: it named the compared torque. It is wrong only as a claim about the swings.
+    - **(b) "with its rating" names no side of the gearbox for a torque (trap 1).** The rating is the gearbox input torque rating, and the check's own verdict says "the gearbox input rating".
+    - **(c) "at its input" can name the wrong side.** The note's subject is the coupling, and its input side is the gearbox output. There cold-high is 3.823 N·m, not 0.8049. "Its" can bind to the coupling or to "the gearbox output". "At the gearbox input" names the side with no doubt (the owner prefers explicit over clever).
+  - Kept from the draft:
+    - "The gearbox output carries these swings" holds by ruling 8: the coupling sits on the output, and the engine carries the full swing there.
+    - "Cold they can reach cold-high" states reachability, not a bound or an order (T-O). It stays literally true in the corner: at the minimum temperature, with the allowance, the swing amplitude is cold-high.
+  - Rules kept:
+    - "gearbox check" is still in the text, and `metal.cold_high_input_Nm` is still its only placeholder, so the tests' pins do not change.
+    - The placeholder sits in a clause with the whole word "here", and no unit is typed after it.
+    - At most 30 words raw.
+    - `plain_text_violations` and `audit_ids` are empty, and `mentions_gearbox_protection` is false.
+    - The text has no "peak", "warm", "hot-day" or "clamp", and it is glyph-safe.
+  - Checked outside the repository: I applied this text to a scratch copy of the crate (scratchpad `repocopy`, own `CARGO_TARGET_DIR`).
+    - `cargo test --locked --test explain`: 57 passed, 1 ignored.
+    - `cargo test --locked --features gui --lib`: 868 passed, 6 ignored.
+  - Test assertion that pins it. Add it to `the_slip_note_s_claims_hold_at_every_probe_design` (`magcoupling-rs/tests/explain.rs`), after `assert_eq!(values_in(note.watch_out[0]), ...)`. Run in that copy, it is red on the draft ("watch-out 1 names \"at the gearbox input here\"") and green on the replacement:
+
+    ```rust
+    // Every torque names its gearbox side, and no torque is called the swings' peak: with the
+    // operating temperature below the minimum (both on their sliders; backlog BL-067) the
+    // nominal swing at the gearbox input is above cold-high there, and the check still
+    // compares only cold-high.
+    for words in ["gearbox output", "at the gearbox input here", "the input rating"] {
+        assert!(note.watch_out[0].contains(words), "watch-out 1 names {words:?}: {:?}", note.watch_out[0]);
+    }
+    assert!(!note.watch_out[0].to_lowercase().contains("peak"), "watch-out 1 calls no torque the peak: {:?}", note.watch_out[0]);
+    for (op, min, v) in [(-40.0, 20.0, 0.05), (0.0, 20.0, 0.0)] {
+        let mut corner = DesignInputs::default();
+        corner.coupling.op_temp_C = op;
+        corner.metal.min_temp_C = min;
+        corner.metal.variation = v;
+        let r = compute_all(&corner);
+        let (swing, cold_high) = (r.model.gearbox_input_ripple_Nm, r.metal.cold_high_input_Nm);
+        assert!(swing > cold_high, "op {op}: {swing} against {cold_high}");
+        let mut between = corner.clone();
+        between.coupling.gearbox_input_rating_Nm = (swing + cold_high) / 2.0;
+        assert_eq!(compute_all(&between).gearbox.cold_high_check, WITHIN_THE_GEARBOX_RATING, "op {op}: the check compares only cold-high");
+        let mut under = corner.clone();
+        under.coupling.gearbox_input_rating_Nm = 0.99 * cold_high;
+        assert!(compute_all(&under).gearbox.cold_high_check.starts_with(ABOVE_THE_GEARBOX_RATING), "op {op}: above the rating");
+    }
+    ```
+
+    Preferred shape (DRY): split the order assertion (`swing < peak`) out of `assert_the_gearbox_check_compares_cold_high_at_the_input`. The rest of the helper, the rating at 0.99, 1.00 and 1.01 × cold-high at the input, can then run at these two corner designs too, so the hand-written block above shrinks to the corner loop and the word pins.
+
+**Should-fix (offered; test-only, no on-screen text)**
+
+- **SF-2: the tests' prose after MF-1.** Three comments in `tests/explain.rs` quote the draft's "compares that peak" or "only that peak":
+  - the helper's doc, "and the check compares that peak, not the swing";
+  - the doc of `the_slip_note_s_claims_hold_at_every_probe_design`;
+  - the inline comment before the helper call in that test.
+
+  Each should say "compares only cold-high (that torque)". The helper's doc should also say that its "cold-high above the swing" assertion holds only with the temperatures in order (the probe designs), so no later caller runs it in the BL-067 corner.
+
+**Report for the record**
+
+1. Reviewer: physics reviewer (session model), fresh context, 2026-10-16; round 1.
+
+2. Read:
+   - **Brief and binding rulings:**
+     - the brief, `.superpowers/sdd/2026-10-16-bl059-gearbox-check/task-6-inreview-brief-r1.md`;
+     - `rulings.md` (B-1 to B-10);
+     - the plan head, `docs/superpowers/plans/2026-10-16-bl059-gearbox-check.md:1-147`: Global Constraints and caps, Review Focus 3, R-1 to R-13, the owner's plan review 1A-8A, PD-1 to PD-4.
+   - **Spec**, `docs/superpowers/specs/2026-10-16-bl059-gearbox-check-design.md`:
+     - section 1 (:8-21);
+     - section 2 (:23-39; 1A basis at the input, 2A open datasheet figure, 7A, 8A);
+     - section 3 (:41-68; the band, the table, what the check does not cover);
+     - section 6 (:157-178; drafts and traps);
+     - section 10 (:245-250).
+   - **The change:**
+     - the diff `magcoupling-rs/target/g3/BL059-notes.diff`, byte-identical to `git diff` of `notes.rs` and `tests/explain.rs` in the working tree (checked);
+     - the dump `magcoupling-rs/target/notes-review-BL059.txt`.
+   - **`notes.rs`:**
+     - :148 `GEARBOX_CHECK_SOURCE`;
+     - :588 `hot_low_cold_high` watch_out[1] and :596 its source;
+     - :750 `when_slipping` watch_out[0] and :760 its source;
+     - :1588 the protect ban;
+     - :1932-1981 `cap_problems` (watch-outs ≤ 30 words, ≤ 2 per note).
+   - **Plain words and placeholders:**
+     - `plain.rs:62-129`: `plain_text_violations`, `audit_ids`, `mentions_gearbox_protection`;
+     - `plain.rs:93`: `word_count`, runs between whitespace;
+     - `note_text.rs:10-70`: `NO_VALUE`, `segments`, `render`.
+   - **Engine:**
+     - `engine/gearbox.rs:1-64`: equality passes, NaN reads unknown, the quoted overshoot;
+     - `engine/api.rs:359-360`: `gearbox::compute(mdr.cold_high_input_Nm, ci.gearbox_input_rating_Nm)`;
+     - `engine/metal_design.rs:412-414`: cold = T20·th2(min), hot-low = T_op·(1 − v), cold-high = cold·(1 + v);
+     - `engine/metal_design.rs:423`: the slip frequency, :479 `magnetic_cycles`, :509 `cold_high_input_Nm` = cold-high/(i·η);
+     - `engine/model.rs:1004` (T_pull) and :1156-1157 (ripple = T_pull/(i·η); reference = rating·i·η).
+   - **GUI:**
+     - `gui/guidance.rs:217-230`: `GEARBOX_GUIDE`, learn = the torque-band note;
+     - `gui/guidance.rs:1728-1745`: `gearbox_problem`; :1768-1799 `band_levers`; :1824 `gearbox_conflict`;
+     - `gui/dashboard.rs:155-184` (`DASHBOARD`), :194-203 (`END_EFFECT_ROWS`, which hold the check and the ripple row) and :587-596;
+     - `gui/explorer.rs:822-840`: `live_value`, "no prediction" past the end effect;
+     - `gui/plain_text.rs:64-78`: the ripple LABEL, "Nominal slip swing at the gearbox input";
+     - `gui/plain_text.rs:156-157` (the rating help) and :746-751 (the ripple help);
+     - `gui/plain_text.rs:2081-2180`: `the_gearbox_texts_claim_what_the_engine_does`, whose corner case is op −40 °C, min 20 °C, v 0.1.
+   - **Tests:** `tests/explain.rs`:
+     - :1133 the review-date guard;
+     - :2541-2621 the torque-band watch-outs and the shared helper;
+     - :2926-2995 the slip claims;
+     - :4607-4620 the here-clause rule.
+   - **Earlier reviews and traps:**
+     - `docs/analyses/2026-10-14-magcoupler-notes-review.md`, the sections hot_low_cold_high (:2052-2278) and when_slipping (:2566-2785): T-O ("expected", "can reach"), T-H (the nominal swing, larger when cold), ruling 8 (the coupling on the gearbox output), and the SF-2 offered there (the mounting fact);
+     - `docs/superpowers/specs/2026-10-14-magcoupler-guidance-2-design.md` section 8 (:358-381).
+
+3. Numbers reproduced from `compute_all`. A scratch crate `bl059review` in the scratchpad, with its own `CARGO_TARGET_DIR`, depends on `magcoupling-rs` by path with feature `gui`, so that `live_value`, the greying, the guide Problem and the overlay labels could be read.
+   - **(1) The five probe designs.** Cold-high at the output is the input value × 4.75 at each design (3.823310, 2.799225, 2.413847, 0.338067 and 3.611106 N·m). Every rendered value matches the dump.
+
+     | Design | Cold-high at the gearbox input (N·m) | Ripple at the input (N·m) | Check |
+     |---|---|---|---|
+     | default | 0.804907 | 0.565995 | "Above the gearbox input rating: 0.80 N·m against 0.60 N·m" |
+     | 8 magnets per ring | 0.589311 | 0.414392 | "Within the gearbox input rating" |
+     | 304 back iron | 0.508178 | 0.357341 | Within |
+     | Y30 ferrite, custom dimensions | 0.071172 | 0.043594 | Within |
+     | 20 mm ring radius | 0.760233 | 0.534581 | "Above the gearbox input rating: 0.76 N·m against 0.60 N·m" |
+
+     At the default the guide Problem carries sentence 1 and the conflict sentence (1.673, 2.500 N·m, 0.8806 N·m, 1.703 N·m, 1.140).
+   - **(2) Ratings.**
+     - At 1.0 N·m all five read Within.
+     - At 0.80 the default reads "Above the gearbox input rating: 0.81 N·m against 0.80 N·m".
+     - At exactly cold-high at the input (0.8049074464186606) it reads Within. One ulp below that it reads "Above ...: 0.81 N·m against 0.80 N·m".
+   - **(3) A NaN rating set on the struct.**
+     - The check reads "Gearbox check unknown: a torque is not a number".
+     - The Problem reads "The gearbox check cannot be made: cold-high at the gearbox input or the rating is not a number."
+     - Both watch-outs still render 0.8049 N·m, since cold-high is a number. This is unreachable from the UI (R-12).
+   - **(4) The end-effect model out of range.**
+     - Axial length 1.0 mm: f_end −0.3214. The engine gives cold-high at the input −0.02273 N·m and the ripple −0.01598 N·m.
+     - c_end 1.5: f_end −0.04044. The engine gives −0.03633 and −0.02554 N·m.
+     - In both cases the engine's check text reads Within, but `greyed_by_end_effect` is true for the check and for the ripple row (END_EFFECT_ROWS), so the dashboard greys them, uncounted. `live_value` is None, so both watch-outs render "... cold-high at the gearbox input, no prediction here, ..." and "... cold-high, no prediction at the gearbox input here; ...". The Problem is None.
+   - **(5) Operating temperature below the minimum,** both on their sliders. Each case shows cold-high at the input against the ripple at the input, then the check with the rating set halfway between them.
+
+     | Case | Cold-high at the input (N·m) | Ripple at the input (N·m) | Check at the default rating | Check with the rating between |
+     |---|---|---|---|---|
+     | op −40 °C, min 20 °C, v 0 | 0.6091 | 0.6999 | "Above ...: 0.61 N·m against 0.60 N·m" | 0.6545: Within |
+     | op −40 °C, min 20 °C, v 0.05 | 0.6395 | 0.6999 (0.7349 × (1 + v)) | "Above ...: 0.64 N·m against 0.60 N·m" | 0.6697: Within |
+     | op 0 °C, min 20 °C, v 0 | 0.6091 | 0.6386 | "Above ...: 0.61 N·m against 0.60 N·m" | 0.6239: Within |
+
+     - In all three corner cases the Problem is sentence 1 only: PD-1 gates sentence 2 on the minimum at or below the operating temperature.
+     - Extra (v 0.1): 0.6700 against 0.6999 N·m. With the rating between, it reads Within.
+     - Extra, edge and control:
+       - op 20 °C, min 20 °C, v 0: both 0.6091 N·m. With the rating between, it reads Within, at equality.
+       - op 50 °C, min 20 °C, v 0 (temperatures in order): 0.6091 against 0.5660 N·m. With the rating between, it reads "Above ...: 0.61 N·m against 0.59 N·m".
+     - Verdicts on the two phrases:
+       - "Cold they can reach cold-high" stays literally true: it states reachability only.
+       - "Only that peak" does not: the swings at the operating temperature exceed cold-high (MF-1).
+   - **(6) Ratio and efficiency at their slider ends.**
+     - Ratio 1, efficiency 0.5:
+       - cold-high at the input 7.646621 N·m, ripple 5.376953 N·m;
+       - check "Above the gearbox input rating: 7.65 N·m against 0.60 N·m";
+       - the Problem uses PD-1's second form: 8.366 N·m on the input, a requirement of at most 0.1793 N·m, the requirement alone 5.000 N·m.
+     - Ratio 20, efficiency 1.0: 0.191166 and 0.134424 N·m, Within.
+     - Both watch-outs read true at both.
+   - **Overlays as drawn:**
+     - The ripple row's label is "Nominal slip swing at the gearbox input". Its help is "Torque swing while slipping: the pull-out at the operating temperature, without the production allowance, divided by the ratio and efficiency. The gearbox check compares cold-high at the gearbox input instead."
+     - The rating's help is "The gearbox's input torque rating. The gearbox check compares the cold-high torque at the gearbox input with it."
+   - **The draft's tests:** run on the working tree from outside the repo (`--locked`, scratch `CARGO_TARGET_DIR`), `the_slip_note_s_claims_hold_at_every_probe_design`, `the_torque_band_note_s_watch_outs_hold` and `every_note_s_review_date_is_recorded_in_its_section` pass. `git status` was unchanged afterwards.
+
+4. Per field:
+   - **`when_slipping` watch_out[0]: MUST-FIX (MF-1 above).** Replacement: "The gearbox output carries these swings; cold they can reach cold-high, {metal.cold_high_input_Nm} at the gearbox input here; the gearbox check compares only that torque with the input rating." The why and the pinning test are under MF-1; SF-2 is the test prose that follows it.
+   - **`GEARBOX_CHECK_SOURCE`: PASS.** "Design ruling of 2026-10-16: the gearbox check compares cold-high at the gearbox input with the gearbox input torque rating; which datasheet figure that rating is (input or output side; nominal, acceleration or emergency stop) is still to be confirmed"
+     - It states basis 1A and the open question of 2A: an input or an output figure; nominal, acceleration or emergency stop.
+     - "Gearbox input torque rating" is the input's label.
+     - It has no placeholder, and the plain-words checks are empty. The "BL-059" in its doc comment is code, not drawn.
+     - It is typed once and cited by both notes (DRY), and pinned by `note.sources.contains(&notes::GEARBOX_CHECK_SOURCE)` in both tests.
+   - **Asked by the brief: does `when_slipping` sentence 0 still answer the ripple row?** Yes. The row is now "Nominal slip swing at the gearbox input". Sentence 0 ("Past pull-out the coupling slips: ... the torque between them, carried by the gearbox, swings back and forth.") says what the slip swing is and that the gearbox carries it. Sentence 1 gives its size (plus to minus the pull-out, the nominal value), and sentence 4 gives its value at the gearbox input (0.5660 N·m, the row's number).
+   - **Considered, no change:**
+     - **Sentence 4 still says "torque ripple".** The row's old name used the same words, and sentence 4 is not false: it quotes the row's own value "at its input". Decision 7A changes only what became false or misleading.
+     - **The unchecked dynamic peaks.** Backlash, re-lock ring-down, torsional resonance and stored energy at a jam can exceed cold-high at the shaft (spec 3). Neither watch-out claims the check covers them: both say what the check compares, and the slip text says "only". The 30-word cap leaves no room to list them, and the engine help ("A peak check only.") and spec 10 scope them out.
+
+5. Traps checked:
+   - **Side of the gearbox for every torque.**
+     - The draft slip text failed on "its rating" and on "its input", which could bind to the coupling (MF-1). The replacement names "the gearbox output", "the gearbox input" and "the input rating".
+   - **Efficiency raises the input torque:** no field mentions efficiency.
+   - **Cold-high as an expectation:** the slip text says "can reach", and no field says "at most" or that every unit reaches it.
+   - **"The coupling protects the gearbox":** absent. `mentions_gearbox_protection` is false for all three fields and for the replacement, and `no_note_says_the_coupling_protects_the_gearbox` passes.
+   - **"Peak":**
+     - It is never used for the rating.
+     - The draft used it for the compared torque, which the trap allows, but as the swings' peak it is false in the BL-067 corner (MF-1).
+     - The replacement has no "peak".
+   - **The ripple row as the nominal swing, no "warm":** "these swings" are sentence 1's nominal swing at the operating temperature, and "warm" is absent.
+   - **Geometry narrowing the band:** not mentioned.
+   - **"Hot-day":** absent from the three fields. The torque band's watch_out[0] has it; that text predates BL-059 and is not changed by it.
+   - **Internal paths, ids, cells, "BL-059", "Rust-only", "clamp" on screen:** none.
+   - **Glyph-safe:** no glyph beyond the drawn unit, which `glyph_safe` handles.
+   - **T-O, T-H, ruling 8:** kept. "Cold they can reach cold-high", the nominal swing, and the gearbox output carrying the swing all hold.
+
+6. Form. Words are counted as runs between whitespace; raw counts are what the cap holds, and rendered counts are at the default design.
+
+   | Field | Raw words | Rendered words |
+   |---|---|---|
+   | `when_slipping` watch_out[0], draft | 27 | 28 |
+   | `when_slipping` watch_out[0], replacement | 28 | 29; also 29 with "no prediction" |
+   | `GEARBOX_CHECK_SOURCE` | 39 (sources have no cap) | n/a |
+
+   - Each note still has 2 watch-outs.
+   - Placeholder rule:
+     - Each watch-out holds exactly one placeholder, `metal.cold_high_input_Nm`, a number result in N·m.
+     - Each sits in a clause with the whole word "here" ("{…} here," and "{…} at the gearbox input here;"), and no unit is typed after it.
+     - `segments` parses each into 3 pieces, and the source holds none.
+     - `plain_text_violations` and `audit_ids` are empty for all four texts.
+
+7. Verdicts:
+   - `when_slipping`: MUST_FIX (MF-1).
+   - Round 1: MUST_FIX.
+
+Round 2:
+
+(Round 2's answer, verbatim, without its parts on `hot_low_cold_high` alone: round 1's SF-1,
+which it keeps offered, probe (7) on fatigue, its item-4 field, its form row and its verdict.)
+
+BL-059 Task 6: the physics review of the two gearbox watch-outs and their shared source (round 2)
+
+**Verdict (round 2): PASS.** No must-fix item remains.
+- `when_slipping` watch_out[0] now carries MF-1's replacement verbatim, and it passes.
+- `hot_low_cold_high` watch_out[1] and `GEARBOX_CHECK_SOURCE` are unchanged and still pass.
+- The three fields make one claim about one check, and both notes cite the one shared source line.
+- The new tests pin MF-1's claims. One scope word ("only") is not pinned; SF-1 below pins it.
+
+**Must-fix**
+
+None.
+
+**Should-fix (offered; none is needed for PASS)**
+
+- **SF-1: pin "only" in the slip watch-out** (`magcoupling-rs/tests/explain.rs:2960-2968`, in `the_slip_note_s_claims_hold_at_every_probe_design`). Test only; no on-screen text changes.
+  - Why: "only" is the word that keeps the sentence true where the operating temperature is below the minimum. There the nominal swing at the gearbox input is above cold-high, and the check does not compare the swing. With "only" dropped from the text ("the gearbox check compares that torque with the input rating"), every test stays green (mutation M4 in item 3).
+  - Replacement for lines 2960-2968. The comment also takes SF-2(c).
+
+    ```rust
+        // Every torque in watch-out 1 names its gearbox side, the check compares "only" cold-high,
+        // and no torque is called the swings' peak: with the operating temperature below the
+        // minimum (both on their sliders; backlog BL-067) the nominal swing at the gearbox input
+        // can be above cold-high there, as at the two corners below, and the check still compares
+        // only cold-high.
+        for words in [
+            "gearbox output",
+            "at the gearbox input here",
+            "compares only",
+            "the input rating",
+        ] {
+    ```
+  - Checked in a scratch copy of the crate. It is green on the shipped text. It is red on the text without "only", failing with `watch-out 1 names "compares only"`. `cargo fmt --check` is clean.
+- **SF-2: the corner prose in three test comments says "is above" where the engine gives "can be above".** Test prose only.
+  - Why: the nominal swing exceeds cold-high in the corner only for a small enough variation. At op −40 °C, min 20 °C and the default variation 0.15, all on their sliders, cold-high at the input is 0.700417 N·m and the ripple 0.699920 N·m: cold-high is still the larger.
+    - The ripple-to-cold-high ratio is th²(op) / (th²(min)·(1 + v)). At v 0 it is 1.14918 at op −40 °C and 1.04858 at op 0 °C, both with min 20 °C.
+    - So at the default Br coefficient the ripple is the larger only for variations below 0.1492 and 0.0486 respectively.
+    - The two corners the test uses (v 0.05 and v 0) are below those thresholds, so the assertions hold. Only the general sentences are too broad.
+  - (a) The helper's doc, `tests/explain.rs:2608-2610`. Old: "Which is larger is the caller's to assert: cold-high with the temperatures in order (the probe designs), the ripple with the operating temperature below the minimum (backlog BL-067)." New:
+
+    ```rust
+    /// two, it fails exactly when cold-high is the larger. Which is larger is the caller's to
+    /// assert: cold-high with the temperatures in order (the probe designs); with the operating
+    /// temperature below the minimum (backlog BL-067) either can be, the ripple at the slip test's
+    /// two corners.
+    ```
+  - (b) The slip test's doc, `tests/explain.rs:2923-2925`. Old: "With the operating temperature below the minimum the swing is above cold-high, and the check still compares only cold-high." New:
+
+    ```rust
+    /// cold-high, and the gearbox check compares only that torque with the input rating). With the
+    /// operating temperature below the minimum the swing can be above cold-high (at the two corners
+    /// tested), and the check still compares only cold-high.
+    ```
+  - (c) The inline comment at `tests/explain.rs:2960-2963`: the replacement is in SF-1's block above.
+  - All three were checked together with SF-1 in the scratch copy. The slip test passes and `cargo fmt --check` is clean.
+  - Outside this review's fields: the T9 brief's line "since with the operating temperature below the minimum the swing exceeds cold-high (BL-067)" (`task-9-brief.md:148`, and the plan's copy at `:6397`) generalizes the same way. If T9 quotes it, "can exceed" is the true form.
+- **SF-3 (optional; on-screen): "cold they" → "when cold they"** in `when_slipping` watch_out[0] (`notes.rs:750`).
+  - Text, 29 words raw. It renders 30 words at the default design, also 30 with "no prediction":
+
+    "The gearbox output carries these swings; when cold they can reach cold-high, {metal.cold_high_input_Nm} at the gearbox input here; the gearbox check compares only that torque with the input rating."
+  - Why: "cold they can reach" reads first as a garden path ("cold they?"). "When cold" restores the slice-2 reviewed wording, and the owner prefers explicit over terse.
+  - The physics is unchanged: reachability, no bound, no order.
+  - Every pin holds: "gearbox check", "gearbox output", "at the gearbox input here", "the input rating", no "peak", and the one placeholder.
+  - Checked in the scratch copy: `--test explain` 57 passed, 1 ignored; `--features gui --lib` 868 passed, 6 ignored.
+  - I would ship it, but the shipped text is neither false nor misleading without it.
+
+**Report for the record**
+
+1. Reviewer: physics reviewer (session model), fresh context, 2026-10-17; round 2.
+
+2. Read:
+   - **Brief and binding rulings:**
+     - `.superpowers/sdd/2026-10-16-bl059-gearbox-check/task-6-inreview-brief-r2.md`;
+     - `rulings.md` (B-1 to B-10; B-8: this record has no line starting "## ");
+     - the plan head, `docs/superpowers/plans/2026-10-16-bl059-gearbox-check.md:1-147`: Global Constraints, caps and traps (:27-75), Review Focus 3 (:82-88), R-1 to R-13 (:96-125), the owner's plan review 1A-8A (:127-138), PD-1 to PD-4 (:140-145);
+     - round 1's answer, `t6-review-r1.md` (MF-1, SF-1, SF-2).
+   - **Spec**, `docs/superpowers/specs/2026-10-16-bl059-gearbox-check-design.md`:
+     - section 1 (:8-21);
+     - section 2 (:23-39);
+     - section 3 (:41-68, including what the check does not cover);
+     - section 6 (:157-178, drafts and traps);
+     - section 10 (:245-250).
+   - **The change:**
+     - `magcoupling-rs/target/g3/BL059-notes.diff`, byte-identical to `git diff` of `notes.rs` and `tests/explain.rs` in the working tree (checked with `diff -q`);
+     - `magcoupling-rs/target/notes-review-BL059.txt`, the regenerated dump. It shows the new slip text at all five designs.
+   - **`notes.rs`:**
+     - :146-148 `GEARBOX_CHECK_SOURCE` and its doc;
+     - :536-603 `hot_low_cold_high` (watch_out[1] :588, source :596);
+     - :724-767 `when_slipping` (sentences :729-733, watch_out[0] :750, source :760);
+     - :1588 the protect ban;
+     - :1932-1981 `cap_problems` (at most 2 watch-outs, at most 30 words raw).
+   - **Plain words and placeholders:**
+     - `plain.rs:62` `plain_text_violations`, :93 `word_count`, :113 `audit_ids`, :126 `mentions_gearbox_protection`;
+     - `note_text.rs:11` `NO_VALUE`, :24 `segments`, :59 `render`.
+   - **Engine:**
+     - `engine/gearbox.rs:1-64`: equality passes, NaN reads unknown, the quoted overshoot, help "A peak check only.";
+     - `engine/api.rs:359-360`: `gearbox::compute(mdr.cold_high_input_Nm, ci.gearbox_input_rating_Nm)`;
+     - `engine/metal_design.rs:412-414`: cold = T20·th²(min), hot-low = T_op·(1 − v), cold-high = cold·(1 + v);
+     - `engine/metal_design.rs:423` (slip frequency), :479 (`magnetic_cycles`), :509 (`cold_high_input_Nm` = cold-high/(i·η));
+     - `engine/model.rs:349-352` (row meta), :1156 (ripple = T_pull/(i·η), T_pull at the operating temperature) and :1157 (reference = rating·i·η).
+   - **GUI:**
+     - `gui/guidance.rs:217-230` (`GEARBOX_GUIDE`, learn = the torque-band note);
+     - `gui/guidance.rs:338-342` (the ripple row's Why link → `when_slipping`) and :1728-1745 (`gearbox_problem`);
+     - `gui/dashboard.rs:155-184` (`DASHBOARD`), :194-203 (`END_EFFECT_ROWS`, which hold the check and the ripple row) and :587-597;
+     - `gui/explorer.rs:829-841` (`live_value`);
+     - `gui/plain_text.rs:74-77` (ripple label), :155-157 (rating help) and :747-751 (ripple help).
+   - **Tests**, `tests/explain.rs`:
+     - :1989-1996 `slider`;
+     - :2538-2589 the torque-band watch-outs;
+     - :2591-2601 `values_in`;
+     - :2603-2645 `assert_the_gearbox_check_compares_cold_high_at_the_input`;
+     - :2919-3051 the slip claims (word pins :2960-2979, corners :2980-3003, probe loop :3004-3050);
+     - :4655-4668 the here-clause rule.
+   - **Earlier reviews and traps:**
+     - `docs/analyses/2026-10-14-magcoupler-notes-review.md`, sections `hot_low_cold_high` (:2052-2278) and `when_slipping` (:2566-2785): T-O, T-H, ruling 8, the SF-2 offered there;
+     - `docs/superpowers/specs/2026-10-14-magcoupler-guidance-2-design.md` section 8 (:358-381).
+
+3. Numbers reproduced from `compute_all`.
+
+   **Setup.**
+   - Probe crate `bl059review` in the scratchpad (`t6r2/probe`), with its own `CARGO_TARGET_DIR`. It depends on `magcoupling-rs` by path with feature `gui`, for `live_value`, `greyed_by_end_effect`, the guide Problem and the overlay labels.
+   - A second probe (`t6r2/probe2`) read the Br-coefficient slider.
+   - Mutations and test runs used a scratch copy of the crate and of the files its tests include (`t6r2/repocopy`, own target dir). `src/` and `tests/` were byte-identical to the working tree.
+
+   **(1) The five probe designs.** Every rendered watch-out matches the dump.
+
+   | Design | Cold-high, output (N·m) | Cold-high at the gearbox input (N·m) | Ripple at the input (N·m) | Check |
+   |---|---|---|---|---|
+   | default | 3.823310 | 0.804907 | 0.565995 | "Above the gearbox input rating: 0.80 N·m against 0.60 N·m" |
+   | 8 magnets per ring | 2.799225 | 0.589311 | 0.414392 | "Within the gearbox input rating" |
+   | 304 back iron | 2.413847 | 0.508178 | 0.357341 | Within |
+   | Y30 ferrite, custom dimensions | 0.338067 | 0.071172 | 0.043594 | Within |
+   | 20 mm ring radius | 3.611106 | 0.760233 | 0.534581 | "Above the gearbox input rating: 0.76 N·m against 0.60 N·m" |
+
+   - At the default and at the 20 mm ring, the guide Problem carries sentence 1 and the conflict sentence (1.673; 2.500 N·m; 0.8806 N·m; 1.703 N·m; 1.140). At the other three it is None.
+
+   **(2) Ratings.**
+   - At 1.0 N·m all five read Within.
+   - At 0.80 the default reads "Above the gearbox input rating: 0.81 N·m against 0.80 N·m".
+   - At exactly cold-high at the input (0.8049074464186606) it reads Within. One ulp below, it reads "Above …: 0.81 N·m against 0.80 N·m".
+   - At 0.99, 1.00 and 1.01 × cold-high at the input it reads above, within, within.
+
+   **(3) A NaN rating on the struct.**
+   - The check reads "Gearbox check unknown: a torque is not a number".
+   - The Problem reads "The gearbox check cannot be made: cold-high at the gearbox input or the rating is not a number."
+   - Both watch-outs render 0.8049 N·m, since cold-high is a number, and stay true: they say what the check compares. This is unreachable from the UI (R-12).
+
+   **(4) The end-effect model out of range.**
+   - Axial length 1.0 mm: f_end −0.3214, "End-effect model out of range". The engine gives cold-high at the input −0.02273 N·m and the ripple −0.01598 N·m.
+   - c_end 1.5: f_end −0.0404. The engine gives −0.03633 and −0.02554 N·m.
+   - In both cases:
+     - the engine's check text reads Within, but `greyed_by_end_effect` is true for the check and for the ripple row (`END_EFFECT_ROWS`), so the dashboard greys both, uncounted;
+     - the Problem is None;
+     - `live_value` is None, so the watch-outs render "… cold-high at the gearbox input, no prediction here, …" and "… cold they can reach cold-high, no prediction at the gearbox input here; …".
+
+   **(5) Operating temperature below the minimum.**
+   - Sliders: operating −40 to 150 °C, minimum −60 to 20 °C, variation 0 to 0.5.
+   - In the table, "rating between" is the check with the rating halfway between the ripple and cold-high at the input.
+
+   | Case | Cold-high at the input (N·m) | Ripple at the input (N·m) | Check at 0.6 | Rating between | 0.99 / 1.00 / 1.01 × cold-high |
+   |---|---|---|---|---|---|
+   | op −40 °C, min 20 °C, v 0 | 0.609058 | 0.699920 | "Above …: 0.61 N·m against 0.60 N·m" | 0.6545: Within | above / within / within |
+   | op −40 °C, min 20 °C, v 0.05 | 0.639511 | 0.699920 (0.7349 with the allowance) | "Above …: 0.64 N·m against 0.60 N·m" | 0.6697: Within | above ("0.64 N·m against 0.63 N·m") / within / within |
+   | op 0 °C, min 20 °C, v 0 | 0.609058 | 0.638643 | "Above …: 0.61 N·m against 0.60 N·m" | 0.6239: Within | above / within / within |
+   | extra: op −40 °C, min 20 °C, v 0.1 | 0.669964 | 0.699920 | "Above …: 0.67 N·m against 0.60 N·m" | 0.6849: Within | above / within / within |
+   | extra: op −40 °C, min 20 °C, v 0.15 (default variation) | 0.700417 | 0.699920 | "Above …: 0.70 N·m against 0.60 N·m" | 0.7002: "Above …: 0.71 N·m against 0.70 N·m" (cold-high is the larger) | above / within / within |
+   | control: op 20 °C, min 20 °C, v 0 | 0.609058 | 0.609058 | "Above …: 0.61 N·m against 0.60 N·m" | 0.6091: Within (at equality) | above / within / within |
+   | control: op 50 °C, min 20 °C, v 0 | 0.609058 | 0.565995 | "Above …: 0.61 N·m against 0.60 N·m" | 0.5875: "Above …: 0.61 N·m against 0.59 N·m" | above / within / within |
+
+   - In every corner case the Problem is sentence 1 only: PD-1 gates sentence 2 on the minimum at or below the operating temperature.
+   - **Where the swing exceeds cold-high.** At v 0 the ripple-to-cold-high ratio is 1.14918 at op −40 °C and 1.04858 at op 0 °C. So the swing is the larger only for v below 0.1492 and 0.0486 respectively (SF-2).
+   - **Temperatures in order.** There cold-high at the input is at least the ripple everywhere on the sliders. The Br coefficient slider runs from −0.0025 to 0 /°C, and every grade's coefficient is at most −0.00035 /°C. At a coefficient of 0 and v 0 the two are equal (0.609058 at op 150 °C, min −60 °C).
+   - **Judged:**
+     - "Cold they can reach cold-high" stays literally true in the corner. At the minimum temperature, with the + allowance, the swing amplitude is cold-high by definition (`metal_design.rs:412-414`). It claims no bound and no order.
+     - "Compares only that torque" is true. With the rating between the two, the check reads Within while the swing is above the rating.
+     - Round 2's text has no "peak".
+
+   **(6) Ratio and efficiency at their slider ends.**
+   - Ratio 1, efficiency 0.5:
+     - cold-high at the input 7.646621 N·m, ripple 5.376953 N·m;
+     - check "Above the gearbox input rating: 7.65 N·m against 0.60 N·m";
+     - the Problem uses PD-1's second form (8.366 N·m; at most 0.1793 N·m; the requirement alone 5.000 N·m);
+     - the watch-outs render 7.647 N·m.
+   - Ratio 20, efficiency 1.0: 0.191166 and 0.134424 N·m, Within, Problem None; the watch-outs render 0.1912 N·m.
+   - Both watch-outs read true at both ends. Neither mentions efficiency.
+
+   **Overlays as drawn.**
+   - The ripple row's label is "Nominal slip swing at the gearbox input". Its help is "Torque swing while slipping: the pull-out at the operating temperature, without the production allowance, divided by the ratio and efficiency. The gearbox check compares cold-high at the gearbox input instead."
+   - The rating's help is "The gearbox's input torque rating. The gearbox check compares the cold-high torque at the gearbox input with it."
+   - The check's engine label is "Cold-high torque at the gearbox input against its rating", with help ending "A peak check only."
+   - The guide's label is "Gearbox input torque". Its Why is "Cold-high torque can reach the gearbox output before the coupling slips, and in each swing while it slips; at the gearbox input it must stay within the rating."
+
+   **Do the tests pin MF-1? (mutations in the scratch copy, each reverted after)**
+
+   | Mutation | Result |
+   |---|---|
+   | M1: the check compares the larger of cold-high and the ripple at the input (`api.rs:360`) | The slip test is red at the first corner: "op -40 °C, min 20 °C, variation 0.05: Above the gearbox input rating: 0.70 N·m against 0.64 N·m", from the equality assertion inside `fails`. The torque-band test stays green, since the probes cannot tell the two apart; the corners are what pin "only cold-high". |
+   | M2: the check compares the ripple | Both tests are red: the torque band at "default: Within the gearbox input rating", the slip test at the first corner. |
+   | M3: round 1's draft text put back | Red: `watch-out 1 names "at the gearbox input here"`. |
+   | M4: "only" dropped from the text | Green, so "only" is not pinned (SF-1). |
+   | M5: the old one-sided between-rating assertion put back | Red at the first corner. This confirms the brief's claim. |
+
+   - **A note on the helper.** Its `assert_eq!(fails(mid), peak > swing)` follows from the equality inside `fails` for any finite pair, so it adds no strength. What pins the engine is that equality, evaluated where the rating sits between the two torques; M1 shows it does. Keeping it as documentation is fine, and no change is needed.
+   - **Test runs on the copy:**
+     - `cargo test --locked --test explain`: 57 passed, 1 ignored;
+     - `cargo test --locked --features gui --lib`: 868 passed, 6 ignored;
+     - `cargo fmt --check`: clean.
+   - `git status --short` of the repository was unchanged afterwards: the two modified files and the owner's untracked file.
+
+4. Per field:
+   - **`when_slipping` watch_out[0]: PASS.** "The gearbox output carries these swings; cold they can reach cold-high, {metal.cold_high_input_Nm} at the gearbox input here; the gearbox check compares only that torque with the input rating."
+     - "The gearbox output carries these swings" holds by ruling 8: the coupling sits on the gearbox output, and the engine carries the full swing there (`model.rs:1156`).
+     - "Cold they can reach cold-high" states reachability, not a bound (T-O). It stays true in the BL-067 corner.
+     - The quoted value is cold-high/(i·η) (`metal_design.rs:509`) and is named "at the gearbox input". It renders 0.8049, 0.5893, 0.5082, 0.07117 and 0.7602 N·m, or "no prediction".
+     - "The gearbox check compares only that torque with the input rating" matches `api.rs:360` and `gearbox.rs:47-60`. It stays true where the swing exceeds cold-high: in item 3 (5) the rating sits between the two and the check reads Within. "The input rating" names the rating's side.
+     - It does not claim the check covers backlash, re-lock ring-down, resonance or a jam's stored energy (spec 3); "only" scopes it.
+     - Pins: `the_slip_note_s_claims_hold_at_every_probe_design`, with "gearbox check", the one placeholder, the source, "gearbox output", "at the gearbox input here" and "the input rating", no "peak", the two slider corners with the ripple above cold-high and the helper there, and the helper plus the order at the five probes. SF-1 adds "compares only"; SF-3 is an optional wording.
+   - **`GEARBOX_CHECK_SOURCE`: PASS** (unchanged). "Design ruling of 2026-10-16: the gearbox check compares cold-high at the gearbox input with the gearbox input torque rating; which datasheet figure that rating is (input or output side; nominal, acceleration or emergency stop) is still to be confirmed"
+     - It states basis 1A and the open question of 2A.
+     - "Gearbox input torque rating" is the input's label.
+     - It has no placeholder and passes the plain-words checks. The "BL-059" in its doc comment is code, not drawn.
+     - It is typed once and cited by both notes (DRY); both tests pin `note.sources.contains(&notes::GEARBOX_CHECK_SOURCE)`.
+   - **Asked by the brief: does `when_slipping` sentence 0 still answer the ripple row?** Yes. The row now reads "Nominal slip swing at the gearbox input" and its Why link opens this note (`guidance.rs:338-342`). Sentence 0 says what the slip swing is and that the gearbox carries it. Sentence 1 gives its size (plus to minus the pull-out, the nominal value at the operating temperature). Sentence 4 gives the row's value at the gearbox input (0.5660 N·m at the default).
+     - Sentence 4's word "ripple", beside the row's new name "swing", is not false. It is outside decision 7A's scope (change only what became false or misleading); no change.
+     - The watch-out then says why the row is not the checked torque, as the ripple help does.
+
+5. Traps checked:
+   - **Side of the gearbox for every torque:** the slip text names "the gearbox output", "at the gearbox input" and "the input rating"; the torque-band text names "at the gearbox input" and "its input rating" ("its" is the gearbox); the source names the input for both.
+   - **Efficiency raises the input torque:** no field mentions efficiency, so nothing says it reduces the load.
+   - **Cold-high as an expectation:** the slip text says "can reach", and no field says "at most" or that every unit reaches it.
+   - **"The coupling protects the gearbox":** absent. `mentions_gearbox_protection` is false for all three fields and for SF-3's text, and `no_note_says_the_coupling_protects_the_gearbox` passes.
+   - **"Peak":** absent from all three fields, so it names neither the rating nor the swing. The test pins its absence in the slip text.
+   - **The ripple row as the nominal swing at the operating temperature, no "warm":** "these swings" are sentence 1's nominal swing, and "warm" is absent.
+   - **Geometry narrowing the band:** not mentioned.
+   - **"Hot-day":** absent from the three fields. The torque band's watch_out[0] has it, but that text predates BL-059 and is not changed by it.
+   - **Internal paths, ids, cells, "BL-059", "Rust-only", "clamp" on screen:** none. `plain_text_violations` and `audit_ids` are empty.
+   - **Glyph-safe:** ASCII only, except the drawn unit, which `glyph_safe` handles; the GUI glyph tests pass.
+   - **T-O, T-H, ruling 8:** kept ("can reach"; the nominal swing, larger when cold; the gearbox output carries the swing).
+   - **The BL-067 corner:** no on-screen claim of an order between the swing and cold-high. Three test comments over-generalize the corner (SF-2).
+
+6. Form. Words are counted as runs between whitespace; the cap holds the raw count.
+
+   | Field | Raw words | Rendered words, default design | Rendered, "no prediction" |
+   |---|---|---|---|
+   | `when_slipping` watch_out[0] | 28 | 29 | 29 |
+   | SF-3 text (optional) | 29 | 30 | 30 |
+   | `GEARBOX_CHECK_SOURCE` | 39 (sources have no cap) | n/a | n/a |
+
+   - Each note still has 2 watch-outs.
+   - **Placeholder rule:**
+     - Each watch-out holds exactly one placeholder, `metal.cold_high_input_Nm`, a number result in N·m. `segments` gives 3 pieces.
+     - Each placeholder is in a clause with the whole word "here" ("{…} here," and "{…} at the gearbox input here;"), and no unit is typed after it.
+     - The source holds none.
+   - `plain_text_violations` and `audit_ids` are empty for all three texts.
+   - The tests' pins are kept: the words "gearbox check" in both watch-outs, and `metal.cold_high_input_Nm` as each one's only placeholder.
+
+7. Verdicts:
+   - `when_slipping`: PASS, in this round (2026-10-17).
+   - Round 2: PASS. No must-fix; SF-1, SF-2 and SF-3 are offered.
 
 ## slip_heating
 
