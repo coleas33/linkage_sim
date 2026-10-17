@@ -4740,7 +4740,10 @@ mod tests {
             );
             // The band does not depend on the geometry, so a design with hot-low at or above the
             // requirement has cold-high, at the gearbox input too, at or above what just meeting
-            // it puts there, up to float noise.
+            // it puts there, up to float noise. The band here is this design's own, so this holds
+            // by construction; tests/gearbox.rs
+            // `the_band_is_the_same_at_every_magnet_size_gap_count_and_back_iron` pins the premise
+            // across the geometry sliders (whole-branch review MF-3).
             if results.metal.torque_hot_low_Nm >= numbers.required {
                 assert!(
                     results.metal.cold_high_input_Nm >= numbers.input_at_required * (1.0 - 1e-12),

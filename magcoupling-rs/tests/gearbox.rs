@@ -10,7 +10,9 @@ use magcoupling::engine::explain::probes::probe_designs;
 use magcoupling::engine::gearbox::{
     self, ABOVE_THE_GEARBOX_RATING, GEARBOX_CHECK_UNKNOWN, WITHIN_THE_GEARBOX_RATING,
 };
-use magcoupling::engine::meta::{SetErrorKind, SliderRange, Value, input_rows, result_rows};
+use magcoupling::engine::meta::{
+    InputSet, SetErrorKind, SliderRange, Value, input_rows, result_rows,
+};
 
 /// The failing verdict quoting a cold-high at the gearbox input and a rating, as the badge
 /// quotes them (to 0.01 N·m).
@@ -350,5 +352,117 @@ fn the_check_is_a_rust_only_text_result_with_no_cell_after_the_housing_group() {
         rows[at + 1].path.starts_with("gap_sweep["),
         "{}",
         rows[at + 1].path
+    );
+}
+
+/// A slider's two ends and seven steps spread evenly between them.
+fn ends_and_steps_between(range: SliderRange) -> Vec<f64> {
+    const PARTS: u32 = 8;
+    let steps = ((range.max - range.min) / range.step).round();
+    let mut values = vec![range.min, range.max];
+    values.extend(
+        (1..PARTS)
+            .map(|k| range.min + (steps * f64::from(k) / f64::from(PARTS)).round() * range.step),
+    );
+    values
+}
+
+#[test]
+fn the_band_is_the_same_at_every_magnet_size_gap_count_and_back_iron() {
+    // Whole-branch review MF-3: the premise of the gearbox Problem's second sentence, "No magnet
+    // size, gap or count passes both" (spec section 3). Cold-high over hot-low, the band, depends
+    // only on the two temperatures, each ring's Br temperature coefficient and the variation
+    // allowance, so every design that just meets the requirement puts the requirement times
+    // the same band on the gearbox output. An engine change that made cold-high and hot-low
+    // scale apart with the geometry (a torque not proportional to Br_i Br_o, say) would make
+    // that sentence false with the tests that take the band from the same design still green:
+    // this one fails then. Over the defaults with the magnet length, the ring radius, the face
+    // gap, the magnet count and the back iron each at its slider's ends and steps between (each
+    // choice of the back iron), and the probe designs that keep the defaults' Br temperature
+    // coefficients, wherever the end-effect model is in range the band is the defaults' up to
+    // float noise.
+    let band = |inputs: &DesignInputs| -> Option<f64> {
+        let r = compute_all(inputs);
+        (r.model.end_effect_check == "OK" && r.metal.torque_hot_low_Nm > 0.0)
+            .then(|| r.metal.torque_cold_high_Nm / r.metal.torque_hot_low_Nm)
+    };
+    let defaults = DesignInputs::default();
+    let at_defaults = band(&defaults).expect("the defaults are in the end-effect range");
+    let assert_same_band = |name: &str, inputs: &DesignInputs| -> bool {
+        let Some(here) = band(inputs) else {
+            return false;
+        };
+        assert!(
+            ((here - at_defaults) / at_defaults).abs() <= 1e-12,
+            "{name}: band {here} against the defaults' {at_defaults}"
+        );
+        true
+    };
+    let rows = input_rows(&defaults);
+    for path in [
+        "coupling.magnets.axial_length_mm",
+        "coupling.inner_back_apothem_mm",
+        "metal.face_gap_mm",
+        "coupling.npole",
+        "coupling.backiron",
+    ] {
+        let row = rows
+            .iter()
+            .find(|row| row.path == path)
+            .unwrap_or_else(|| panic!("{path} is an input"));
+        let values: Vec<Value> = match row.meta.range {
+            Some(range) => ends_and_steps_between(range)
+                .into_iter()
+                .map(|x| match row.value {
+                    Value::Int(_) => Value::Int(x.round() as i64),
+                    _ => Value::Num(x),
+                })
+                .collect(),
+            None => row
+                .meta
+                .choices
+                .iter()
+                .map(|&(code, _)| Value::Int(code))
+                .collect(),
+        };
+        assert!(values.len() >= 2, "{path}: {values:?}");
+        let count = values.len();
+        let mut checked = 0;
+        for value in values {
+            let mut inputs = defaults.clone();
+            inputs
+                .set(path, value.clone())
+                .unwrap_or_else(|e| panic!("{path} = {value:?}: {e:?}"));
+            if assert_same_band(&format!("{path} = {value:?}"), &inputs) {
+                checked += 1;
+            }
+        }
+        // Most of each slider is in the end-effect range: the band is checked, not skipped.
+        assert!(
+            2 * checked > count,
+            "{path}: {checked} of {count} designs in range"
+        );
+    }
+    // The probe designs that keep the defaults' Br temperature coefficients: all but the
+    // ferrite, whose grade sets its own.
+    let alphas = |inputs: &DesignInputs| {
+        let m = compute_all(inputs).model;
+        (m.inner_alpha_br_per_C, m.outer_alpha_br_per_C)
+    };
+    let mut kept = Vec::new();
+    for (name, inputs) in probe_designs() {
+        if alphas(&inputs) == alphas(&defaults) {
+            assert!(assert_same_band(name, &inputs), "{name}: in range");
+            kept.push(name);
+        }
+    }
+    assert_eq!(
+        kept,
+        [
+            "default",
+            "8 magnets per ring",
+            "304 back iron",
+            "20 mm ring radius"
+        ]
     );
 }
