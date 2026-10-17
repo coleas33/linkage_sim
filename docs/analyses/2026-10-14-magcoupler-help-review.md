@@ -2570,3 +2570,151 @@ The help now reads: "Reduction ratio of the gearbox; the coupling sits on its wh
 - **The slipping note.** It still says "sends torque ripple to the gearbox: at its input, here {model.gearbox_input_ripple_Nm}" (`notes.rs` :733), and its source line says "the ripple at the gearbox input". The note is signed off and out of this change's scope. After S-3, every overlay text and the dashboard say "slip swing"; only the note keeps "ripple". It could be a follow-up item if the owner wants one name in the notes too.
 - **Exports.** They keep the catalogue label "Estimated gearbox input torque ripple amplitude" (`results_table.rs` :352, :371). Exports are not overlay text.
 - **The commit body.** a11832e's message says the new constant "keeps the bracket one plain sentence". It is still one sentence, but not one unambiguous list until M-1 lands. The commit is history, so it needs no change.
+
+### Re-review of the review leftovers (2026-10-17), round 2
+
+Round 2 of the G-3 text re-review of the leftovers' two on-screen strings, after commit 80d4d60 applied round 1's M-1
+(the variation allowance named last in gearbox Problem sentence 2's bracket, after "SmCo magnets"). The reviewer worked
+in a fresh context. Its report for the record follows unchanged, its headings demoted one level (full answer:
+`.superpowers/sdd/2026-10-16-bl059-gearbox-check/leftovers-g3-2.md`).
+
+- Reviewer: fresh context, session model, 2026-10-17; G-3 re-review of the two changed strings (round 2).
+- Verdict: PASS. No must-fix, no should-fix. M-1 is fixed as option A asked: at the defaults the bracket reads "(a
+  warmer minimum temperature, SmCo magnets or a smaller variation allowance backed by measurement narrows it)", and in
+  the reviewer's sweep of 201,620 designs no "or" follows "backed by measurement". The gear ratio's help is unchanged
+  since round 1 passed it.
+- No text changed in this round. The four items recorded with no change asked (the remedy sentence's two comma styles,
+  the `band_lever_designs` doc's wording and order, the historical quotes of the old forms in this record, commit
+  80d4d60's type) stay as recorded.
+
+**Report for the record (as returned).**
+
+#### Scope: what changed since round 1
+
+`git diff 741f02b HEAD -- magcoupling-rs/src` (round 1's base to HEAD) touches only `magcoupling-rs/src/gui/guidance.rs`:
+- **Constants (:1756-1761).** Reordered to WARMER_MINIMUM, SMCO_MAGNETS, SMALLER_VARIATION. Their doc says why: "the variation allowance last, so that no "or" follows "backed by measurement"". The three strings are byte-identical to round 1's.
+- **`band_levers` (:1792-1799).** The `names` array is reordered to match. The doc example (:1764-1766) shows the new three-item form. The verb `match` and its comment ("only SmCo magnets is plural") are unchanged and still accurate.
+- **New test `sentence_2_names_the_variation_allowance_last` (:5418-5444).**
+
+`plain_text.rs` is untouched, so the gear ratio's help ("... such as the slip swing.") is still the text round 1 passed. Per the brief, I did not re-judge it.
+
+#### Read
+- The brief.
+- Round 1's answer (`leftovers-g3-1.md`).
+- The plan's head up to "## Tasks": Global Constraints and physics traps, Review Focus, R-1 to R-13, 1A-8A, PD-1 to PD-4.
+- Under "## BL-059 gearbox check" in `docs/analyses/2026-10-14-magcoupler-help-review.md`:
+  - the earlier G-3 record (rounds 1 and 2, the MF-1 re-review);
+  - the new "Re-review of the review leftovers (2026-10-17)" section.
+- Commit 80d4d60: its message and its diff of the source, the README and `docs/ai/05-update-tracker.md`.
+- Code:
+  - `guidance.rs`: `listed` (:1407), `gearbox_problem`, the constants, `band_levers`, `gearbox_conflict` (:1724-1896), `band_lever_designs` (:2459-2510), and `sentence_2_names_only_what_narrows_that_design_s_band`, `sentence_2_names_the_variation_by_its_input` and `sentence_2_names_the_variation_allowance_last` (:5342-5444);
+  - `engine/grades.rs`: every grade's family and Br coefficient;
+  - `gui/pickers.rs`: the grade labels.
+
+#### Probes
+
+I used the scratch crate `g3probe` (depends on `magcoupling-rs` by path with `gui`; its own target directory). It draws the gearbox guide's `(g.problem)` text and runs the crate's own `plain_text_violations`, `mentions_gearbox_protection`, `sentence_count` and `word_count`.
+
+**Named designs.** The full Problem was drawn at each. Every one has an empty guard, no protection wording, and 3 sentences, or 1 in the PD-1 corner.
+
+| Design | Bracket, or what shows instead |
+|---|---|
+| Defaults (0.8049 at the input) | "(a warmer minimum temperature, SmCo magnets or a smaller variation allowance backed by measurement narrows it)" |
+| Rating 0.80; ring radius 20 mm; variation 0.5; Br coefficient at its bottom (-0.0025) | Same three-item bracket |
+| No variation allowance | "(a warmer minimum temperature or SmCo magnets narrow it)", unchanged |
+| SmCo 2:17 rings, 25 mm length | "(a warmer minimum temperature or a smaller variation allowance backed by measurement narrows it)", unchanged |
+| Minimum at the operating temperature; Br coefficient 0 | "(a smaller variation allowance backed by measurement narrows it)", unchanged |
+| Rating 0.05, ratio 1, efficiency 0.5; SmCo rings at no variation and a rating of 0.30 | Second remedy form (PD-1), no bracket |
+| Operating -40 °C, minimum 20 °C | Sentence 1 only |
+
+The numbers match the earlier records: 1.673, 0.8806, 1.703 and 1.140 at the defaults; 2.271 and 1.520 at a rating of 0.80.
+
+**Sweep.** 201,620 designs:
+- every grade choice:
+  - library parts;
+  - each of the 17 grades on both rings;
+  - an inner library part beside an outer ring of each grade;
+- the Br coefficient every tenth slider step, plus the SmCo boundaries (-0.00045 and -0.00035, each and one step below) and the top two steps;
+- allowances of 0, 0.01, 0.15 and 0.5;
+- minimum temperatures every tenth slider step;
+- operating temperatures -20, 20, 50, 100 and 150 °C;
+- the defaults' rating.
+
+Of these, 111,175 draw a bracket, in exactly five forms:
+
+| Count | Form |
+|---|---|
+| 59,417 | "a warmer minimum temperature, SmCo magnets or a smaller variation allowance backed by measurement narrows it" |
+| 32,643 | "a warmer minimum temperature or a smaller variation allowance backed by measurement narrows it" |
+| 13,606 | "a warmer minimum temperature or SmCo magnets narrow it" |
+| 3,310 | "a warmer minimum temperature narrows it" |
+| 2,199 | "a smaller variation allowance backed by measurement narrows it" |
+
+The sweep found no rule break:
+- no "backed by measurement or" and no "backed by measurement,";
+- the verb is "narrow" exactly where SmCo magnets is last, and "narrows" everywhere else;
+- SmCo magnets is never first;
+- every drawn Problem has an empty plain-words guard and no protection wording.
+
+**Tests.** `cargo test --locked --features gui --lib -- sentence_2_ gearbox_problem` ran 11 tests and all passed, the new test among them.
+
+#### The band clause, re-read (PASS)
+
+**One list.** "A, B or C narrows it" with no serial comma is the house list form (`listed`). Each item is a noun phrase that cannot attach to its neighbour:
+- "a warmer minimum temperature, SmCo magnets" is not an apposition;
+- "backed by measurement" now ends the list, so no later item can be taken as a second object of "by".
+
+The one other attachment a reader could try is "(SmCo magnets or a smaller variation allowance) backed by measurement". "Magnets backed by measurement" makes no sense, so the narrow reading wins. Even read the wide way, it would only add a needless condition; it would not make a false claim.
+
+**Verb.** With "or", the verb agrees with the nearest item: "a smaller variation allowance ... narrows it". In the [warmer, SmCo] form, "SmCo magnets ... narrow it" is still right.
+
+**Order.** The reorder changes only the three-item form. The brief's "2-item and 1-item forms unchanged" holds at every input, not just on the sliders:
+- the one two-item form whose order would change, [SmCo, allowance], cannot be reached;
+- SmCo is named only with every ring's coefficient below every SmCo grade's, and those coefficients (-0.00035, -0.00045) are const and below zero;
+- so every ring's coefficient is below zero, and the warmer minimum (same `spread` condition) is named too.
+
+A design file cannot reach [SmCo, allowance] either, because this is an implication on the same two values.
+
+**One name per quantity.** The words are unchanged:
+- "variation allowance" is the input's label ("Production variation allowance");
+- "SmCo" is the family word the grade picker and the grade hover use;
+- "minimum temperature" names the minimum-temperature input.
+
+**Physics traps.** No torque is in the bracket, so no side is needed. No geometry is named as narrowing the band. There is no "peak", "warm" (for the ripple row), "hot-day" or "protect", and no cell, id or path. Ruling R-3 still holds: each change is named exactly where one step of it narrows the band (`sentence_2_names_only_what_narrows_that_design_s_band`, unchanged and passing).
+
+#### The new test
+
+`sentence_2_names_the_variation_allowance_last` makes three assertions:
+- it pins the defaults' bracket as drawn;
+- at all seven `band_lever_designs()`, `"{SMALLER_VARIATION} or "` is absent;
+- wherever the allowance is named, `"{SMALLER_VARIATION} narrows it)"` is present.
+
+The second and third together force the allowance to be last in any list:
+- in the middle, the "or" check fails;
+- first, the "narrows it)" check fails.
+
+Every reachable form is among the seven designs. Each assertion fails on the old order, which the commit reports was seen red first:
+- the old defaults' bracket lacks the new literal;
+- it contains "... backed by measurement or ";
+- it ends "narrow it)".
+
+#### Docs
+
+All three docs agree with the code:
+- **`magcoupling-rs/README.md` :677.** The `guidance.rs` row names the new order ("a warmer minimum temperature, SmCo magnets or a smaller variation allowance (always last, so no "or" follows "backed by measurement")") and the new test.
+- **`docs/ai/05-update-tracker.md` :17.** One clause, with the defaults' bracket quoted correctly.
+- **`docs/analyses/2026-10-14-magcoupler-help-review.md` :2476-.** The round-1 record is appended, and M-1 is recorded as applied with the correct new reading.
+
+No other doc in `docs/ai` or the README quotes the bracket.
+
+#### Recorded, no change asked
+
+- **Comma styles in one sentence.** The remedy sentence uses a serial comma in its outer list ("a gearbox rated for that, a requirement of at most 1.703 N·m, or a band ...") and none in the bracket.
+  - The outer comma is needed: without it, "at most 1.703 N·m or a band" would attach.
+  - The bracket follows `listed`, which the temperature Problem's literal-pinned lists share. Round 1 weighed and declined a serial comma there (its option C).
+  - This is pre-existing and unchanged by this fix.
+- **The test helper's doc (`band_lever_designs`, :2459-2463).** It still calls the lever "a smaller variation", and it lists the flags in the order [warmer, variation, SmCo].
+  - That order is the order of the test's `changes` array, which it zips with, so the helper is consistent with itself.
+  - It is not the on-screen order, and it is not on screen. An optional tidy only.
+- **Historical quotes of the old forms in the help-review record.** These are :2162 and :2211 (the earlier rounds' as-returned reports) and :2517 (round 1's probe table, which marks the row as M-1). They record what was on screen at the time. No change.
+- **Commit 80d4d60's type.** It is typed `docs(magcoupler)` but carries the on-screen fix and a new test. It is history, so it needs no change.
