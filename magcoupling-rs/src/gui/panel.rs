@@ -8597,15 +8597,45 @@ mod tests {
         assert_eq!(harness.panel.inputs(), &short_magnets());
     }
 
+    /// Opens `path` with Explain on and clicks its closest-note link: the one copy of `note`'s
+    /// title on the lead's line, left of the dashboard (whose rows draw note titles in their Why
+    /// lines), clicked on its text (it ends a wrapped row). A second copy there would make the
+    /// click ambiguous: the helper says so rather than pass. The click opens `note` on its own
+    /// and edits nothing.
+    fn click_the_closest_note_link(path: &str, note: &crate::engine::explain::notes::Note) {
+        use crate::gui::explorer::NEAREST_NOTE;
+        use crate::gui::typeset::glyph_safe;
+        let mut harness = Harness::on_screen(TALL);
+        harness.panel.explorer.explain = true;
+        harness.panel.explorer.open_path(path);
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        let lead = text_rect(&output, NEAREST_NOTE).expect("the lead");
+        let beside: Vec<egui::Pos2> = last_characters(&output, &glyph_safe(note.title))
+            .into_iter()
+            .filter(|at| {
+                at.x < TALL.x - DASHBOARD_WIDTH && (at.y - lead.center().y).abs() < lead.height()
+            })
+            .collect();
+        assert_eq!(
+            beside.len(),
+            1,
+            "{path}: the link beside the lead: {beside:?}"
+        );
+        harness.click(beside[0]);
+        assert_eq!(harness.panel.explorer.note(), Some(note.id), "{path}");
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default(), "{path}");
+    }
+
     #[test]
     fn explain_offers_the_gearbox_row_its_why_note_and_the_link_opens_it() {
         // BL-059: the gearbox check has no equation and no note of its own. With Explain on,
         // its row offers the note its Why link leads to, the torque band (a row's own link comes
-        // first), never "no note", and the link beside the lead opens it on its own.
+        // first), and the link beside the lead opens it on its own. Its "no note" and lead counts
+        // are the dashboard loop's (`explain_never_shows_no_teaching_note_on_a_dashboard_row`).
         use crate::engine::explain::notes::note_for;
-        use crate::gui::explorer::{NEAREST_NOTE, NO_NOTE, NoteFallback, note_fallback};
+        use crate::gui::explorer::{NoteFallback, note_fallback};
         use crate::gui::guidance::{Learn, TORQUE_BAND_NOTE, row_learn};
-        use crate::gui::typeset::glyph_safe;
         assert!(note_for(GEARBOX_CHECK).is_none());
         assert_eq!(
             row_learn(GEARBOX_CHECK),
@@ -8615,26 +8645,7 @@ mod tests {
             panic!("{GEARBOX_CHECK} offers no note");
         };
         assert_eq!(note.id, TORQUE_BAND_NOTE);
-        let mut harness = Harness::on_screen(TALL);
-        harness.panel.explorer.explain = true;
-        harness.panel.explorer.open_path(GEARBOX_CHECK);
-        harness.frame(Vec::new());
-        let output = harness.frame(Vec::new());
-        assert_eq!(count(&output, NO_NOTE), 0);
-        assert_eq!(count(&output, NEAREST_NOTE), 1);
-        // The one copy of the title on the lead's line, left of the dashboard (whose rows draw
-        // the same title in their Why lines).
-        let lead = text_rect(&output, NEAREST_NOTE).expect("the lead");
-        let beside: Vec<egui::Pos2> = last_characters(&output, &glyph_safe(note.title))
-            .into_iter()
-            .filter(|at| {
-                at.x < TALL.x - DASHBOARD_WIDTH && (at.y - lead.center().y).abs() < lead.height()
-            })
-            .collect();
-        assert_eq!(beside.len(), 1, "the link beside the lead: {beside:?}");
-        harness.click(beside[0]);
-        assert_eq!(harness.panel.explorer.note(), Some(TORQUE_BAND_NOTE));
-        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+        click_the_closest_note_link(GEARBOX_CHECK, note);
     }
 
     #[test]
@@ -8684,9 +8695,8 @@ mod tests {
         // offers the closest note upstream; its link opens it on its own.
         use crate::engine::explain::notes::note_for;
         use crate::gui::dashboard::DASHBOARD;
-        use crate::gui::explorer::{NEAREST_NOTE, NoteFallback, note_fallback};
+        use crate::gui::explorer::{NoteFallback, note_fallback};
         use crate::gui::guidance::{Learn, row_learn};
-        use crate::gui::typeset::glyph_safe;
         let (path, note) = DASHBOARD
             .iter()
             .find_map(|&(path, _)| match (note_for(path), note_fallback(path)) {
@@ -8698,23 +8708,7 @@ mod tests {
                 _ => None,
             })
             .expect("a dashboard row offered its closest note upstream");
-        let mut harness = Harness::on_screen(TALL);
-        harness.panel.explorer.explain = true;
-        harness.panel.explorer.open_path(path);
-        harness.frame(Vec::new());
-        let output = harness.frame(Vec::new());
-        let lead = text_rect(&output, NEAREST_NOTE).expect("the lead");
-        // The one copy of the title on the lead's line, clicked on its text (it ends a wrapped
-        // row); a dashboard Why link to the same note on that line would make the click
-        // ambiguous: the test says so rather than pass.
-        let beside: Vec<egui::Pos2> = last_characters(&output, &glyph_safe(note.title))
-            .into_iter()
-            .filter(|at| (at.y - lead.center().y).abs() < lead.height())
-            .collect();
-        assert_eq!(beside.len(), 1, "the link beside the lead: {beside:?}");
-        harness.click(beside[0]);
-        assert_eq!(harness.panel.explorer.note(), Some(note.id), "{path}");
-        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+        click_the_closest_note_link(path, note);
     }
 
     #[test]
