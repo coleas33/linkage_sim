@@ -2510,6 +2510,30 @@ mod tests {
         })
     }
 
+    /// The designs with a band of one (review NB-2), each named: no variation allowance, with the
+    /// minimum at the operating temperature (both -20 °C; the engine's band there is one ulp
+    /// above one) or with no Br temperature coefficient (its slider's top; the band exactly one).
+    fn bands_of_one() -> [(&'static str, DesignInputs); 2] {
+        let no_variation = slider_range("metal.variation").min;
+        [
+            (
+                "minimum at the operating temperature",
+                design(|i| {
+                    i.metal.variation = no_variation;
+                    i.metal.min_temp_C = -20.0;
+                    i.coupling.op_temp_C = -20.0;
+                }),
+            ),
+            (
+                "no Br temperature coefficient",
+                design(|i| {
+                    i.metal.variation = no_variation;
+                    i.calibration.alpha_br_per_C = slider_range("calibration.alpha_br_per_C").max;
+                }),
+            ),
+        ]
+    }
+
     /// `base` at its gearbox efficiency and at an efficiency of one (the slider's top), each with
     /// every rating on its slider whose product with the ratio and efficiency is, in decimals, a
     /// requirement on its slider, and that requirement (review NB-2): what the requirement alone
@@ -4521,10 +4545,13 @@ mod tests {
         // the solve lands on the requirement (above the length slider's bottom it bisects to
         // it), a solved design's hot-low is the requirement and its cold-high at the gearbox
         // input the requirement times the band over ratio and efficiency: the check fails
-        // exactly where sentence 2 shows. Where Auto overshoots the requirement it need not
-        // (`where_auto_overshoots_the_requirement_…`). At the defaults it does. With the minimum
-        // temperature at its slider's top and no variation allowance the band narrows enough:
-        // Auto solves about 11.90 mm, the check passes and there is no Problem.
+        // exactly where sentence 2 shows, except at the exact tie (a band of one with the
+        // requirement exactly the rating times ratio times efficiency), where the solve's last
+        // digits above the requirement fail the check without it. Where Auto overshoots the
+        // requirement, or at that tie, it need not (`where_auto_overshoots_the_requirement_…`).
+        // At the defaults it does. With the minimum temperature at its slider's top and no
+        // variation allowance the band narrows enough: Auto solves about 11.90 mm, the check
+        // passes and there is no Problem.
         let narrow_band = design(|i| {
             i.metal.min_temp_C = slider_range("metal.min_temp_C").max;
             i.metal.variation = slider_range("metal.variation").min;
@@ -4552,14 +4579,16 @@ mod tests {
     #[test]
     fn where_auto_overshoots_the_requirement_the_gearbox_check_can_fail_without_the_conflict() {
         // Review I-3, why the README scopes "fails exactly when that sentence shows" to an Auto
-        // solve that lands on the requirement: where Auto overshoots it, the overshoot reaches
-        // the gearbox input too, and a rating on its slider between what meeting the
-        // requirement puts on the gearbox input and what the solved design puts there fails the
-        // check with no sentence 2. Auto on Magnets per ring steps by two: with a 2 N·m
-        // requirement (the review's probe; Auto on the count does not reach the defaults'
-        // 2.5 N·m) it solves 10 magnets. Auto on length stops at its slider's bottom where that
-        // already meets the requirement: with no end effect and the lowest requirement it does.
+        // solve that lands on the requirement, and names the exact tie: where Auto overshoots
+        // it, the overshoot reaches the gearbox input too, and a rating on its slider between
+        // what meeting the requirement puts on the gearbox input and what the solved design puts
+        // there fails the check with no sentence 2. Auto on Magnets per ring steps by two: with
+        // a 2 N·m requirement (the review's probe; Auto on the count does not reach the
+        // defaults' 2.5 N·m) it solves 10 magnets. Auto on length stops at its slider's bottom
+        // where that already meets the requirement: with no end effect and the lowest
+        // requirement it does.
         let length_bottom = slider_range("coupling.magnets.axial_length_mm").min;
+        let mut failing = Vec::new();
         for (variable, base) in [
             (
                 FreeVariable::MagnetsPerRing,
@@ -4593,10 +4622,38 @@ mod tests {
                     panic!("{name}: a rating between {at_requirement} and {at_solved}")
                 });
             let inputs = with(solved, |i| i.coupling.gearbox_input_rating_Nm = rating);
-            let results = compute_all(&inputs);
-            assert_eq!(level_of(HOT_MIN, &inputs, &results), Level::Good, "{name}");
+            failing.push((name, inputs));
+        }
+        // The exact tie (review I-3, round 3): at a band of one with the requirement exactly the
+        // rating times ratio times efficiency, a design exactly at the requirement puts exactly
+        // the rating on the gearbox input and passes both checks, so sentence 2 is held back.
+        // Auto on length bisects to the requirement (above its slider's bottom) but stops within
+        // its length tolerance above it: the solved hot-low reads as the requirement, its last
+        // digits above it, and the check, strict at the rating, fails. At each band of one, the
+        // exact product at the defaults' requirement.
+        for (base_name, base) in bands_of_one() {
+            let (_, tie) = exact_products(&base)
+                .into_iter()
+                .find(|(_, i)| i.metal.required_min_Nm == base.metal.required_min_Nm)
+                .unwrap_or_else(|| panic!("{base_name}: an exact product at the requirement"));
+            let (length, solved) = auto_on_length(&tie);
+            let name = format!("{base_name}, Auto on length at {length}");
+            assert!(length > length_bottom, "{name}");
+            let results = compute_all(&solved);
+            let hot_low = results.metal.torque_hot_low_Nm;
+            assert!(hot_low > solved.metal.required_min_Nm, "{name}: {hot_low}");
             assert_eq!(
-                assert_gearbox_problem_consistent(&name, &inputs),
+                result_text(&results, "metal.torque_hot_low_Nm"),
+                input_text(&solved, "metal.required_min_Nm"),
+                "{name}"
+            );
+            failing.push((name, solved));
+        }
+        for (name, inputs) in &failing {
+            let results = compute_all(inputs);
+            assert_eq!(level_of(HOT_MIN, inputs, &results), Level::Good, "{name}");
+            assert_eq!(
+                assert_gearbox_problem_consistent(name, inputs),
                 (Level::Bad, false),
                 "{name}"
             );
@@ -4778,26 +4835,8 @@ mod tests {
         // band (1.0000000000000002 at -20 °C) or the requirement over ratio times efficiency an
         // ulp past it; the search finds designs where it does, at the default ratio and
         // efficiency and at an efficiency of one.
-        let alpha_top = slider_range("calibration.alpha_br_per_C").max;
-        let no_variation = slider_range("metal.variation").min;
         let mut past_by_noise = 0;
-        for (base_name, base) in [
-            (
-                "minimum at the operating temperature",
-                design(|i| {
-                    i.metal.variation = no_variation;
-                    i.metal.min_temp_C = -20.0;
-                    i.coupling.op_temp_C = -20.0;
-                }),
-            ),
-            (
-                "no Br temperature coefficient",
-                design(|i| {
-                    i.metal.variation = no_variation;
-                    i.calibration.alpha_br_per_C = alpha_top;
-                }),
-            ),
-        ] {
+        for (base_name, base) in bands_of_one() {
             for (name, inputs) in exact_products(&base) {
                 let name = format!("{base_name}, {name}");
                 let results = compute_all(&inputs);
