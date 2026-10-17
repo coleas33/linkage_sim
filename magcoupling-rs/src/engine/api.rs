@@ -26,6 +26,7 @@ use super::clamps::{self, ClampInputs, ClampResults};
 use super::deviations::Deviations;
 #[cfg(feature = "workbook-parity")]
 use super::deviations::{REGISTRY, restore_workbook_defaults};
+use super::gearbox::{self, GearboxResults};
 use super::grades;
 use super::housing::{self, HousingResults};
 use super::material_library;
@@ -67,6 +68,7 @@ results! {
             clamps: ClampResults,
             warnings: WarningResults,
             housing: HousingResults,
+            gearbox: GearboxResults,
         }
         tables {
             gap_sweep: SweepRow => TableLayout::RowsDown { sheet: "Gap sweep", first_row: 6 },
@@ -354,6 +356,8 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
 
     // Addendum A1: the space claim, from the derived dimensions (both modes).
     let housing = housing::compute(&mdr, &axial);
+    // BL-059: cold-high at the gearbox input against the gearbox input torque rating.
+    let gearbox = gearbox::compute(mdr.cold_high_input_Nm, ci.gearbox_input_rating_Nm);
 
     let alloy = if inputs.clamps.alloy == 1 {
         &materials::AL7075
@@ -411,6 +415,7 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         clamps: clr,
         warnings: warn,
         housing,
+        gearbox,
         gap_sweep: gap,
         pole_sweep: pole,
     }

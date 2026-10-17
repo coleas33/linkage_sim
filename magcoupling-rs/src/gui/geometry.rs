@@ -41,7 +41,7 @@ use std::f64::consts::PI;
 
 use crate::engine::meta::{NumOrText, Value};
 use crate::gui::dashboard::{Level, verdict_level};
-use crate::gui::format::{SIGNIFICANT_DIGITS, format_value, with_unit};
+use crate::gui::format::{format_value, last_digit_step, with_unit};
 use crate::gui::plain_text::{CUP_WALL_INPUT, label_for};
 use crate::{DesignInputs, DesignResults};
 
@@ -267,7 +267,7 @@ pub fn mm_at_least(x: f64) -> String {
     if !x.is_finite() || x <= 0.0 {
         return mm(x);
     }
-    let step = 10f64.powi(x.log10().floor() as i32 - (SIGNIFICANT_DIGITS - 1));
+    let step = last_digit_step(x);
     mm((x / step).ceil() * step)
 }
 

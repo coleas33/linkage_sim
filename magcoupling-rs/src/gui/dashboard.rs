@@ -2,9 +2,9 @@
 //! badges derived from check verdicts; corrected values carry a 'corrected vs workbook' marker
 //! with the deviation in its tooltip").
 //!
-//! [`DASHBOARD`] lists its rows: the 15 headline numbers in Python's order, then the A1 space
-//! claim badge and the audit M9 end-effect flag. A row's badge comes from a check verdict
-//! ([`verdict_level`]); its marker from the deviation registry
+//! [`DASHBOARD`] lists its rows: the 15 headline numbers in Python's order, then the gearbox
+//! check (BL-059), the A1 space claim badge and the audit M9 end-effect flag. A row's badge
+//! comes from a check verdict ([`verdict_level`]); its marker from the deviation registry
 //! ([`crate::gui::corrections`]). Two notes from the user's decisions of 2026-09-30:
 //!
 //! - **End effect (audit M9).** When f_end ≤ 0 the pull-out and the numbers computed from it
@@ -152,7 +152,7 @@ const TEMPERATURE_VERDICT: &str = "temperature.summary.verdict";
 
 /// The dashboard rows: (result path, the check whose verdict gives its badge). The first 15
 /// are `HEADLINE`, in order (a test checks).
-pub const DASHBOARD: [(&str, Option<&str>); 17] = [
+pub const DASHBOARD: [(&str, Option<&str>); 18] = [
     ("model.pullout_Nm", None),
     ("model.pullout_20C_Nm", None),
     ("metal.torque_hot_low_Nm", Some("metal.hot_min_check")),
@@ -177,6 +177,7 @@ pub const DASHBOARD: [(&str, Option<&str>); 17] = [
     ),
     (TEMPERATURE_VERDICT, Some(TEMPERATURE_VERDICT)),
     ("clamps.recommended", Some("clamps.recommended")),
+    ("gearbox.cold_high_check", Some("gearbox.cold_high_check")),
     (
         "housing.space_claim_check",
         Some("housing.space_claim_check"),
@@ -184,12 +185,13 @@ pub const DASHBOARD: [(&str, Option<&str>); 17] = [
     ("model.end_effect_check", Some("model.end_effect_check")),
 ];
 
-/// The dashboard rows computed from the pull-out, greyed when f_end ≤ 0 (audit M9): the
-/// headline rows that move with the end-effect coefficient (a test probes it at back iron 1
-/// and 0). Per-row greying of the results table waits for plan A-3's dependency graph; the
-/// table shows the banner instead (decision M41-11), and its two checks among these rows (the
-/// hot minimum, the recommended screw) give no badge there either ([`greyed_by_end_effect`]).
-pub const END_EFFECT_ROWS: [&str; 7] = [
+/// The dashboard rows computed from the pull-out, greyed when f_end ≤ 0 (audit M9): the rows
+/// that move with the end-effect coefficient (a test probes them at back iron 1 and 0), the
+/// headline's and the gearbox check, computed from cold-high. Per-row greying of the results
+/// table waits for plan A-3's dependency graph; the table shows the banner instead (decision
+/// M41-11), and its three checks among these rows (the hot minimum, the recommended screw, the
+/// gearbox check) give no badge there either ([`greyed_by_end_effect`]).
+pub const END_EFFECT_ROWS: [&str; 8] = [
     "model.pullout_Nm",
     "model.pullout_20C_Nm",
     "metal.torque_hot_low_Nm",
@@ -197,6 +199,7 @@ pub const END_EFFECT_ROWS: [&str; 7] = [
     "metal.torque_cold_high_Nm",
     "model.gearbox_input_ripple_Nm",
     "clamps.recommended",
+    "gearbox.cold_high_check",
 ];
 
 /// The dashboard rows that read the workbook's stored 3D fields (the reverse fields of the
@@ -253,11 +256,11 @@ pub const MARKER_LEGEND: &str = "E-numbers beside a value are corrections to the
 
 /// Every design-level check of the results, in schema order (decision O-3): the dashboard's
 /// verdicts, the coupling model's, the temperature design's and the clamp's checks and
-/// screens, the material warnings and the space claim. Each gives a badge level
-/// ([`verdict_level`]): the results table shows it, and its failing filter lists the checks
-/// that fail ([`failing_checks`]). The clamp table's per-size checks and the sweeps' status
-/// texts rate candidates, not the design, so they are left out.
-pub const CHECKS: [&str; 30] = [
+/// screens, the material warnings, the space claim and the gearbox check. Each gives a badge
+/// level ([`verdict_level`]): the results table shows it, and its failing filter lists the
+/// checks that fail ([`failing_checks`]). The clamp table's per-size checks and the sweeps'
+/// status texts rate candidates, not the design, so they are left out.
+pub const CHECKS: [&str; 31] = [
     "calibration.end_effect_check",
     "model.inner_flat_check",
     "model.outer_flat_check",
@@ -288,6 +291,7 @@ pub const CHECKS: [&str; 30] = [
     "warnings.uncoated_low_alloy_steel",
     "warnings.cte_mismatch_with_magnets",
     "housing.space_claim_check",
+    "gearbox.cold_high_check",
 ];
 
 /// The badge level of a check's verdict text; `None` (no badge) for a path that is no check, a
@@ -368,6 +372,15 @@ pub fn verdict_level(path: &str, text: &str) -> Option<Level> {
         ("housing.space_claim_check", crate::engine::housing::INSIDE_THE_SPACE_CLAIM) => Some(Good),
         ("housing.space_claim_check", crate::engine::housing::SPACE_CLAIM_UNKNOWN) => Some(Caution),
         ("housing.space_claim_check", t) if t.starts_with("Exceeds the space claim:") => Some(Bad),
+        ("gearbox.cold_high_check", crate::engine::gearbox::WITHIN_THE_GEARBOX_RATING) => {
+            Some(Good)
+        }
+        ("gearbox.cold_high_check", crate::engine::gearbox::GEARBOX_CHECK_UNKNOWN) => Some(Caution),
+        ("gearbox.cold_high_check", t)
+            if t.starts_with(crate::engine::gearbox::ABOVE_THE_GEARBOX_RATING) =>
+        {
+            Some(Bad)
+        }
         ("model.end_effect_check", "OK") => Some(Good),
         ("model.end_effect_check", END_EFFECT_OUT_OF_RANGE) => Some(Bad),
         _ => None,
@@ -995,9 +1008,9 @@ mod tests {
     use crate::gui::guidance::{CHECK_GUIDES, Direction, Fixes, ROW_LEARN, all_fixes, trade_offs};
     use crate::gui::readouts::ReadoutEvents;
     use crate::gui::test_support::{
-        assert_glyphs, drawn_texts, hover_frames, only_the_clamp_fails, passing_design,
-        primary_button, short_magnets, sized_frame, text_center, text_color, text_rect,
-        tooltips_at_once, with_poles,
+        assert_glyphs, drawn_texts, hover_frames, only_the_clamp_fails, only_the_gearbox_fails,
+        passing_design, primary_button, short_magnets, sized_frame, text_center, text_color,
+        text_rect, tooltips_at_once, with_poles,
     };
     use std::collections::BTreeSet;
 
@@ -1008,7 +1021,11 @@ mod tests {
         assert_eq!(paths[..15], headline[..]);
         assert_eq!(
             paths[15..],
-            ["housing.space_claim_check", "model.end_effect_check"]
+            [
+                "gearbox.cold_high_check",
+                "housing.space_claim_check",
+                "model.end_effect_check"
+            ]
         );
         for path in END_EFFECT_ROWS.iter().chain(STORED_3D_ROWS.iter()) {
             assert!(paths.contains(path), "{path}");
@@ -1055,6 +1072,13 @@ mod tests {
                 }),
                 Bad,
             ),
+            ("gearbox.cold_high_check", DesignInputs::default(), Bad),
+            ("gearbox.cold_high_check", passing_design(), Good),
+            (
+                "gearbox.cold_high_check",
+                design(|i| i.coupling.gearbox_input_rating_Nm = f64::NAN),
+                Caution,
+            ),
             ("housing.space_claim_check", DesignInputs::default(), Good),
             (
                 "housing.space_claim_check",
@@ -1075,6 +1099,17 @@ mod tests {
             };
             assert_eq!(verdict_level(check, &text), Some(want), "{check}: {text:?}");
         }
+        // The gearbox check's texts as its engine writes them: at the rating, above it, an
+        // infinite torque, and a torque or a rating that is not a number.
+        let gearbox = |torque: f64, rating: f64| {
+            let text = crate::engine::gearbox::compute(torque, rating).cold_high_check;
+            verdict_level("gearbox.cold_high_check", &text)
+        };
+        assert_eq!(gearbox(0.6, 0.6), Some(Good));
+        assert_eq!(gearbox(0.8049, 0.6), Some(Bad));
+        assert_eq!(gearbox(f64::INFINITY, 0.6), Some(Bad));
+        assert_eq!(gearbox(f64::NAN, 0.6), Some(Caution));
+        assert_eq!(gearbox(0.6, f64::NAN), Some(Caution));
         // No back iron (E9): the wall rule does not apply, so the check gives no badge.
         let text = compute_all(&design(|i| i.coupling.backiron = 0))
             .materials
@@ -1309,6 +1344,20 @@ mod tests {
         );
         // No arm reads a text of another check, or of a path that is no check.
         assert_eq!(verdict_level("model.hub_check", "OK"), None);
+        assert_eq!(
+            verdict_level(
+                "housing.space_claim_check",
+                crate::engine::gearbox::WITHIN_THE_GEARBOX_RATING
+            ),
+            None
+        );
+        assert_eq!(
+            verdict_level(
+                "gearbox.cold_high_check",
+                crate::engine::housing::INSIDE_THE_SPACE_CLAIM
+            ),
+            None
+        );
         assert_eq!(verdict_level("warnings.no_such_rule", "text"), None);
         assert_eq!(check_level(&manual, "model.pullout_Nm"), None);
     }
@@ -1363,7 +1412,7 @@ mod tests {
         // The levels order by severity: the worst of several is their maximum.
         assert!(Good < Caution && Caution < Bad);
         assert_eq!([Caution, Bad, Good].into_iter().max(), Some(Bad));
-        // The defaults fail four checks, all red.
+        // The defaults fail five checks, all red.
         let defaults = compute_all(&DesignInputs::default());
         assert_eq!(
             failing_checks(&defaults, false),
@@ -1372,6 +1421,7 @@ mod tests {
                 ("metal.hot_min_check", Bad),
                 ("metal.clearance_check", Bad),
                 ("materials.cup_wall_check", Bad),
+                ("gearbox.cold_high_check", Bad),
             ]
         );
         // Manual magnets add two amber rating checks, after the red.
@@ -1386,6 +1436,7 @@ mod tests {
                 ("metal.hot_min_check", Bad),
                 ("metal.clearance_check", Bad),
                 ("materials.cup_wall_check", Bad),
+                ("gearbox.cold_high_check", Bad),
                 ("model.inner_temp_check", Caution),
                 ("model.outer_temp_check", Caution),
             ]
@@ -1410,9 +1461,9 @@ mod tests {
         }
     }
 
-    /// The headline paths whose value moves when `inputs` take any of `values`, from the
+    /// The dashboard rows whose value moves when `inputs` take any of `values`, from the
     /// defaults at back iron 1 and 0.
-    fn headline_moved_by(
+    fn dashboard_moved_by(
         inputs: &[String],
         values: impl Fn(&str) -> Vec<f64>,
     ) -> BTreeSet<&'static str> {
@@ -1425,9 +1476,9 @@ mod tests {
                     let mut edited = base.clone();
                     edited.set(path, Value::Num(x)).unwrap();
                     let after = compute_all(&edited);
-                    for (_, result) in HEADLINE {
-                        if before.get(result) != after.get(result) {
-                            moved.insert(result);
+                    for &(row, _) in &DASHBOARD {
+                        if before.get(row) != after.get(row) {
+                            moved.insert(row);
                         }
                     }
                 }
@@ -1437,19 +1488,25 @@ mod tests {
     }
 
     #[test]
-    fn the_end_effect_rows_are_the_headline_rows_that_move_with_the_end_effect_coefficient() {
+    fn the_end_effect_rows_are_the_dashboard_rows_that_move_with_the_end_effect_coefficient() {
         // c_end = 0 (f_end = 1) is the one value that flips the hot-minimum verdict.
-        let moved = headline_moved_by(&["coupling.c_end".to_owned()], |_| {
+        let moved = dashboard_moved_by(&["coupling.c_end".to_owned()], |_| {
             vec![0.0, 0.05, 0.3, 0.5]
         });
         assert_eq!(moved, END_EFFECT_ROWS.into_iter().collect());
+        // The headline's rows, and one row past it: the gearbox check, computed from cold-high.
+        let past_the_headline: Vec<&str> = END_EFFECT_ROWS
+            .into_iter()
+            .filter(|row| !HEADLINE.iter().any(|&(_, path)| path == *row))
+            .collect();
+        assert_eq!(past_the_headline, ["gearbox.cold_high_check"]);
     }
 
     #[test]
     fn the_stored_3d_rows_are_the_headline_rows_that_move_with_the_stored_3d_inputs() {
         let inputs: Vec<String> = STORED_3D_INPUTS.map(str::to_owned).to_vec();
         let catalogue = crate::gui::inputs::InputCatalogue::get();
-        let moved = headline_moved_by(&inputs, |path| {
+        let moved = dashboard_moved_by(&inputs, |path| {
             let range = catalogue.entry(path).unwrap().meta.range.unwrap();
             vec![range.min, range.max]
         });
@@ -1497,10 +1554,10 @@ mod tests {
                 .collect()
         };
         assert_eq!(
-            headline_moved_by(&fields("temperature.slip_loss."), ends),
+            dashboard_moved_by(&fields("temperature.slip_loss."), ends),
             BTreeSet::from([TEMPERATURE_VERDICT])
         );
-        let by_reverse = headline_moved_by(&fields("temperature.demag."), ends);
+        let by_reverse = dashboard_moved_by(&fields("temperature.demag."), ends);
         for limit in [
             "temperature.summary.governing_limit_C",
             "temperature.summary.margin_hot_day_C",
@@ -1603,7 +1660,7 @@ mod tests {
     fn out_of_range_end_effect_drops_the_pull_out_checks_from_the_table_and_the_failing_filter() {
         // The twin of the test above for the results table's badges and its failing filter
         // (both read `check_level`): a verdict computed from an invalid pull-out is no verdict,
-        // so the two checks among the greyed rows give no badge and are not listed as failing.
+        // so the three checks among the greyed rows give no badge and are not listed as failing.
         use Level::{Bad, Caution};
         let results = compute_all(&short_magnets());
         assert!(end_effect_out_of_range(&results).is_some());
@@ -1611,10 +1668,17 @@ mod tests {
             .into_iter()
             .filter(|path| CHECKS.contains(path))
             .collect();
-        assert_eq!(greyed, ["metal.hot_min_check", "clamps.recommended"]);
+        assert_eq!(
+            greyed,
+            [
+                "metal.hot_min_check",
+                "clamps.recommended",
+                "gearbox.cold_high_check"
+            ]
+        );
         for path in &greyed {
             assert!(greyed_by_end_effect(&results, path), "{path}");
-            // The verdict has a level of its own (red and green here): the rule drops it.
+            // The verdict has a level of its own (red, green and green here): the rule drops it.
             let Some(Value::Text(text)) = results.get(path) else {
                 panic!("{path} is text")
             };
@@ -1648,7 +1712,8 @@ mod tests {
                 }
             }
         }
-        // In range nothing is dropped: the defaults' hot minimum is red, the screw green.
+        // In range nothing is dropped: the defaults' hot minimum is red, the screw green, the
+        // gearbox check red.
         let defaults = compute_all(&DesignInputs::default());
         assert!(!greyed_by_end_effect(&defaults, "metal.hot_min_check"));
         assert_eq!(check_level(&defaults, "metal.hot_min_check"), Some(Bad));
@@ -1656,8 +1721,58 @@ mod tests {
             check_level(&defaults, "clamps.recommended"),
             Some(Level::Good)
         );
+        assert!(!greyed_by_end_effect(&defaults, "gearbox.cold_high_check"));
+        assert_eq!(check_level(&defaults, "gearbox.cold_high_check"), Some(Bad));
         // A row outside END_EFFECT_ROWS is never dropped, out of range or not.
         assert!(!greyed_by_end_effect(&results, "metal.clearance_check"));
+    }
+
+    #[test]
+    fn out_of_range_end_effect_greys_the_gearbox_check_whatever_its_text_reads() {
+        // Cold-high comes from the pull-out, so while the end-effect model is out of range it is
+        // no torque: on short magnets it is below zero and the engine's text reads within the
+        // rating, a pass from a meaningless number; a rating below it (set on the struct) turns
+        // the text red. Either way the row is greyed without a badge, the check has no level in
+        // the dashboard, the results table or its failing filter, its guide shows no Problem,
+        // and the status line counts it neither way.
+        use crate::engine::gearbox::{ABOVE_THE_GEARBOX_RATING, WITHIN_THE_GEARBOX_RATING};
+        use crate::gui::results_table::{entry_index, entry_level, table_entries};
+        let gearbox = "gearbox.cold_high_check";
+        let guide = guidance::guide(gearbox).expect("the gearbox check's guide");
+        let entry = &table_entries()[entry_index(gearbox).expect("the gearbox check's row")];
+        let mut below = short_magnets();
+        below.coupling.gearbox_input_rating_Nm = -10.0;
+        let mut statuses = Vec::new();
+        for (inputs, text) in [
+            (short_magnets(), WITHIN_THE_GEARBOX_RATING),
+            (below, ABOVE_THE_GEARBOX_RATING),
+        ] {
+            let results = compute_all(&inputs);
+            assert!(end_effect_out_of_range(&results).is_some());
+            let torque = results.metal.cold_high_input_Nm;
+            assert!(torque < 0.0, "{torque}");
+            let verdict = &results.gearbox.cold_high_check;
+            assert!(verdict.starts_with(text), "{verdict}");
+            assert!(verdict_level(gearbox, verdict).is_some(), "{verdict}");
+            assert!(greyed_by_end_effect(&results, gearbox));
+            assert_eq!(check_level(&results, gearbox), None);
+            let line = dashboard_lines(&results)
+                .into_iter()
+                .find(|l| l.path == gearbox)
+                .expect("the gearbox row");
+            assert!(line.greyed);
+            assert_eq!(line.level, None);
+            assert_eq!(entry_level(&results, entry), None);
+            assert!(
+                failing_checks(&results, false)
+                    .iter()
+                    .all(|&(path, _)| path != gearbox)
+            );
+            assert_eq!(guidance::level(guide, &inputs, &results), Level::Good);
+            assert_eq!((guide.problem)(&inputs, &results), None);
+            statuses.push(design_status(&inputs, &results, false));
+        }
+        assert_eq!(statuses[0], statuses[1]);
     }
 
     #[test]
@@ -1810,7 +1925,8 @@ mod tests {
             // The line keeps the catalogue label: the spreadsheet's Summary writes it.
             assert_eq!(line.label, result_info(line.path).unwrap().meta.label);
         }
-        // The overlay renames three rows (spec 3.5); their catalogue labels are not drawn.
+        // The overlay renames four rows (spec 3.5's three and BL-059's ripple row); their
+        // catalogue labels are not drawn.
         let renamed: Vec<&str> = lines
             .iter()
             .filter(|line| label_for(line.path) != line.label)
@@ -1821,7 +1937,8 @@ mod tests {
             [
                 "model.pullout_Nm",
                 "metal.torque_hot_low_Nm",
-                "metal.torque_cold_high_Nm"
+                "metal.torque_cold_high_Nm",
+                "model.gearbox_input_ripple_Nm"
             ]
         );
         for line in lines.iter().filter(|line| renamed.contains(&line.path)) {
@@ -1960,7 +2077,7 @@ mod tests {
         }
         assert_eq!(
             design_status_text(&design_status(&inputs, &results, true)),
-            "Your design: passes all 7 checks"
+            "Your design: passes all 8 checks"
         );
     }
 
@@ -2145,7 +2262,7 @@ mod tests {
                 );
             }
         }
-        // The workbook example's three red checks are the ones with blocks.
+        // The workbook example's four red checks are the ones with blocks.
         let defaults = DesignInputs::default();
         let results = compute_all(&defaults);
         let red: BTreeSet<&str> = CHECK_GUIDES
@@ -2157,6 +2274,7 @@ mod tests {
             "metal.hot_min_check",
             "metal.clearance_check",
             "materials.cup_wall_check",
+            "gearbox.cold_high_check",
         ];
         assert_eq!(red, BTreeSet::from(want));
         // The designs above reach a trade-off note and an amber header.
@@ -2207,18 +2325,20 @@ mod tests {
         let mut passing_hot_day = passing_design();
         passing_hot_day.temperature.duty = hot_day().temperature.duty;
         let cases = [
-            // The workbook example: three red checks.
-            (DesignInputs::default(), 3, 0, Level::Bad),
+            // The workbook example: four red checks.
+            (DesignInputs::default(), 4, 0, Level::Bad),
             // One fixed: the cup wall at its rule's 2.0 mm and up.
             (
                 design(|i| i.metal.cup_wall_corner_mm = 2.4),
-                2,
+                3,
                 0,
                 Level::Bad,
             ),
             (passing_design(), 0, 0, Level::Good),
+            // The passing design with the example's gearbox rating: the gearbox check alone.
+            (only_the_gearbox_fails(), 1, 0, Level::Bad),
             // The hot day's temperature verdict is amber, counted apart from the red.
-            (hot_day(), 3, 1, Level::Bad),
+            (hot_day(), 4, 1, Level::Bad),
             // The passing design on the hot day: amber alone.
             (passing_hot_day, 0, 1, Level::Caution),
         ];

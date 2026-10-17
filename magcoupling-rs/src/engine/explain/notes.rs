@@ -143,6 +143,10 @@ pub struct Note {
     pub review: Review,
 }
 
+/// The source both gearbox watch-outs rest on (`hot_low_cold_high` and `when_slipping`; BL-059):
+/// the gearbox check, and the open question of which datasheet figure the rating is. Typed once.
+pub const GEARBOX_CHECK_SOURCE: &str = "Design ruling of 2026-10-16: the gearbox check compares cold-high at the gearbox input with the gearbox input torque rating; which datasheet figure that rating is (input or output side; nominal, acceleration or emergency stop) is still to be confirmed";
+
 /// Every note: 20, the cap the completeness test holds (15 to 20): the spec's list
 /// (harmonics, back iron, pull-out against angle, end effect, Br(T), demagnetization, slip
 /// heating, the slip temperature, the shaft clamp and the six A5 warnings), ferrite's cold
@@ -581,7 +585,7 @@ pub const NOTES: &[Note] = &[
         ],
         watch_out: &[
             "Hot-low uses the operating temperature you enter, not the hot-day start ({temperature.duty.hot_day_start_C} here); the hot-day torque is reported apart, without the allowance.",
-            "Nothing checks cold-high against the gearbox: at its input it is {metal.cold_high_input_Nm} here; compare that with the gearbox's input rating yourself.",
+            "The gearbox check compares cold-high at the gearbox input, {metal.cold_high_input_Nm} here, with its input rating; repeated slips also load the gearbox in fatigue, which nothing checks.",
         ],
         diagram: None,
         sources: &[
@@ -589,10 +593,11 @@ pub const NOTES: &[Note] = &[
             "Math audit of 2026-09-29, confirmed: the hot and cold torque rows and the hot-minimum check",
             "Design rulings of 2026-10-14 and 2026-10-15: the coupling sits on the gearbox output, and whatever holds the hub on the shaft carries the cold-high torque",
             "Guidance audit of 2026-10-13: which temperature each torque uses; the gearbox input",
+            GEARBOX_CHECK_SOURCE,
         ],
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
-            date: "2026-10-14",
+            date: "2026-10-17",
             record: "docs/analyses/2026-10-14-magcoupler-notes-review.md#hot_low_cold_high",
         },
     },
@@ -742,7 +747,7 @@ pub const NOTES: &[Note] = &[
             },
         ],
         watch_out: &[
-            "Nothing checks the gearbox against these swings: when cold they can reach the cold-high torque, on this design {metal.cold_high_input_Nm} at its input; check its rating.",
+            "The gearbox output carries these swings; cold they can reach cold-high, {metal.cold_high_input_Nm} at the gearbox input here; the gearbox check compares only that torque with the input rating.",
             "The drag, the heating and the magnets' limits use fields stored from the example design's 3D model; those fields do not follow your geometry or magnet grade.",
         ],
         diagram: None,
@@ -752,10 +757,11 @@ pub const NOTES: &[Note] = &[
             "The demagnetization model: the like-poles-facing reverse field while slipping sets the magnet limit",
             "The gearbox rows: the ripple at the gearbox input is the pull-out through the gear ratio and efficiency",
             "Guidance audit of 2026-10-13: what happens past pull-out; the rings re-lock only when the slip speed falls",
+            GEARBOX_CHECK_SOURCE,
         ],
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
-            date: "2026-10-14",
+            date: "2026-10-17",
             record: "docs/analyses/2026-10-14-magcoupler-notes-review.md#when_slipping",
         },
     },
@@ -1580,13 +1586,14 @@ mod tests {
 
     #[test]
     fn no_note_says_the_coupling_protects_the_gearbox() {
-        // BL-059 and spec section 8: nothing checks the cold-high torque at the gearbox input
-        // against a rating, so no note may claim the coupling protects the gearbox.
+        // Spec section 8 and BL-059: the gearbox check compares only the modelled cold-high
+        // peak at the gearbox input with one rating; repeated slips, backlash and resonance are
+        // not checked, so a pass protects nothing and no note may claim the coupling protects
+        // the gearbox.
         for n in NOTES {
             for text in note_texts(n) {
-                let lower = text.to_lowercase();
                 assert!(
-                    !(lower.contains("gearbox") && lower.contains("protect")),
+                    !crate::engine::explain::plain::mentions_gearbox_protection(text),
                     "{}: {text}",
                     n.id
                 );

@@ -10,7 +10,9 @@
 //! coercivity source, the E17 free-space fields, the harmonic set, the axial
 //! length override) are Rust-only and default to the ported behaviour. The
 //! forward calculation also reports the A1 space claim ([`engine::housing`],
-//! with the axial housing that follows the length override). Beyond it:
+//! with the axial housing that follows the length override) and the BL-059
+//! gearbox check ([`engine::gearbox`]: cold-high at the gearbox input against
+//! its rating). Beyond it:
 //! [`engine::sizing::solve`] (inverse sizing, Addendum A1) and
 //! [`engine::assumptions`] (the A3 assumptions panel).
 //!

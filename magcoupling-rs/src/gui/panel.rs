@@ -1629,6 +1629,7 @@ mod tests {
     const AXIAL_LENGTH: &str = "coupling.magnets.axial_length_mm";
     const PART_INNER: &str = "coupling.magnets.part_inner";
     const MEASURED_DRAG: &str = "metal.measured_drag_Nm";
+    const GEARBOX_CHECK: &str = "gearbox.cold_high_check";
 
     /// A screen tall enough for every dashboard row: the check guides (their blocks and every
     /// row's Why line) push the lower rows past [`SCREEN`]'s, and egui paints no label
@@ -3034,7 +3035,7 @@ mod tests {
         use crate::gui::results_table::{
             FAILING_ONLY, NO_RESULT, NOTHING_FAILS, SEARCH_HINT, table_entries,
         };
-        // Manual magnets: the defaults' four red checks and two amber rating checks.
+        // Manual magnets: the defaults' five red checks and two amber rating checks.
         let mut harness = Harness::new();
         harness.panel.inputs.coupling.magnets.part_inner.clear();
         harness.panel.inputs.coupling.magnets.part_outer.clear();
@@ -3042,9 +3043,9 @@ mod tests {
         harness.click_text(FAILING_ONLY);
         let output = harness.frame(Vec::new());
         let failing = failing_checks(harness.panel.results(), false);
-        assert_eq!(failing.len(), 6);
+        assert_eq!(failing.len(), 7);
         let total = table_entries().len();
-        assert_eq!(count(&output, &format!("6 of {total} results")), 1);
+        assert_eq!(count(&output, &format!("7 of {total} results")), 1);
         // In the table, between the inputs and the dashboard: each failing check's label, and
         // no passing check's (two checks may share a label: "Verdict").
         let centre =
@@ -3061,7 +3062,7 @@ mod tests {
                 .count();
             assert_eq!(drawn, want, "{check}");
         }
-        // Four red badges and two amber in the table, in the dashboard's colours: every badge
+        // Five red badges and two amber in the table, in the dashboard's colours: every badge
         // drawn but the dashboard's own.
         let visuals = harness.ctx.style().visuals.clone();
         let lines = crate::gui::dashboard::dashboard_lines(harness.panel.results());
@@ -3078,7 +3079,7 @@ mod tests {
         };
         assert_eq!(
             (table_badges(Level::Bad), table_badges(Level::Caution)),
-            (4, 2)
+            (5, 2)
         );
         // Off again: the groups come back.
         harness.click_text(FAILING_ONLY);
@@ -3089,11 +3090,34 @@ mod tests {
         // nothing, not that no check fails.
         harness.click_text(FAILING_ONLY);
         harness.click_text(SEARCH_HINT);
-        harness.frame(vec![egui::Event::Text("gearbox".to_owned())]);
+        harness.frame(vec![egui::Event::Text("ripple".to_owned())]);
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, &format!("0 of {total} results")), 1);
         assert_eq!(count(&output, NO_RESULT), 1);
         assert_eq!(count(&output, NOTHING_FAILS), 0);
+    }
+
+    /// The badge levels drawn on the line of `row`, a rect of the results table's text: the
+    /// badge circles whose centre `in_table` places in the table, by x (the dashboard draws its
+    /// own beside it).
+    fn table_badges_on(
+        output: &egui::FullOutput,
+        visuals: &egui::Visuals,
+        row: egui::Rect,
+        in_table: impl Fn(f32) -> bool,
+    ) -> Vec<Level> {
+        let shapes = crate::gui::test_support::flat_shapes(output);
+        [Level::Good, Level::Caution, Level::Bad]
+            .into_iter()
+            .filter(|level| {
+                shapes.iter().any(|shape| {
+                    matches!(shape, egui::Shape::Circle(c)
+                        if c.fill == level.color(visuals)
+                            && in_table(c.center.x)
+                            && (c.center.y - row.center().y).abs() < row.height())
+                })
+            })
+            .collect()
     }
 
     #[test]
@@ -3103,9 +3127,9 @@ mod tests {
         use crate::gui::test_support::flat_shapes;
         // Short magnets (f_end < 0): the dashboard greys the rows computed from the pull-out,
         // without badges. In the table's headline (open) each check row carries exactly the
-        // dashboard's badge, so the hot minimum (red by its text) and the screw sized from the
-        // invalid pull-out (green by its text) carry none, and the failing filter leaves the hot
-        // minimum out.
+        // dashboard's badge, so the hot minimum (red by its text), the screw sized from the
+        // invalid pull-out and the gearbox check of a cold-high below zero (both green by their
+        // texts) carry none, and the failing filter leaves the hot minimum out.
         let mut harness = Harness::new();
         harness.panel.inputs = short_magnets();
         harness.click_text(CentreView::Results.label());
@@ -3119,33 +3143,24 @@ mod tests {
             .fold(f32::MIN, f32::max)
             - 30.0;
         let centre = |x: f32| x > INPUTS_WIDTH && x < dashboard_left;
-        let badges_on = |output: &egui::FullOutput, row: egui::Rect| -> Vec<Level> {
-            let shapes = flat_shapes(output);
-            [Level::Good, Level::Caution, Level::Bad]
-                .into_iter()
-                .filter(|level| {
-                    shapes.iter().any(|shape| {
-                        matches!(shape, egui::Shape::Circle(c)
-                            if c.fill == level.color(&visuals)
-                                && centre(c.center.x)
-                                && (c.center.y - row.center().y).abs() < row.height())
-                    })
-                })
-                .collect()
-        };
         let lines = dashboard_lines(harness.panel.results());
         let checks: Vec<_> = lines
             .iter()
             .filter(|line| CHECKS.contains(&line.path))
             .collect();
-        assert_eq!(checks.len(), 7);
+        assert_eq!(checks.len(), 8);
         for line in checks {
             let row = text_rects(&output, line.label)
                 .into_iter()
                 .find(|r| centre(r.center().x))
                 .unwrap_or_else(|| panic!("{} in the table", line.path));
             let want: Vec<Level> = line.level.into_iter().collect();
-            assert_eq!(badges_on(&output, row), want, "{}", line.path);
+            assert_eq!(
+                table_badges_on(&output, &visuals, row, centre),
+                want,
+                "{}",
+                line.path
+            );
         }
         // The failing filter: the hot minimum is not listed; the end-effect check is, first.
         harness.click_text(FAILING_ONLY);
@@ -8582,6 +8597,57 @@ mod tests {
         assert_eq!(harness.panel.inputs(), &short_magnets());
     }
 
+    /// Opens `path` with Explain on and clicks its closest-note link: the one copy of `note`'s
+    /// title on the lead's line, left of the dashboard (whose rows draw note titles in their Why
+    /// lines), clicked on its text (it ends a wrapped row). A second copy there would make the
+    /// click ambiguous: the helper says so rather than pass. The click opens `note` on its own
+    /// and edits nothing.
+    fn click_the_closest_note_link(path: &str, note: &crate::engine::explain::notes::Note) {
+        use crate::gui::explorer::NEAREST_NOTE;
+        use crate::gui::typeset::glyph_safe;
+        let mut harness = Harness::on_screen(TALL);
+        harness.panel.explorer.explain = true;
+        harness.panel.explorer.open_path(path);
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        let lead = text_rect(&output, NEAREST_NOTE).expect("the lead");
+        let beside: Vec<egui::Pos2> = last_characters(&output, &glyph_safe(note.title))
+            .into_iter()
+            .filter(|at| {
+                at.x < TALL.x - DASHBOARD_WIDTH && (at.y - lead.center().y).abs() < lead.height()
+            })
+            .collect();
+        assert_eq!(
+            beside.len(),
+            1,
+            "{path}: the link beside the lead: {beside:?}"
+        );
+        harness.click(beside[0]);
+        assert_eq!(harness.panel.explorer.note(), Some(note.id), "{path}");
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default(), "{path}");
+    }
+
+    #[test]
+    fn explain_offers_the_gearbox_row_its_why_note_and_the_link_opens_it() {
+        // BL-059: the gearbox check has no equation and no note of its own. With Explain on,
+        // its row offers the note its Why link leads to, the torque band (a row's own link comes
+        // first), and the link beside the lead opens it on its own. Its "no note" and lead counts
+        // are the dashboard loop's (`explain_never_shows_no_teaching_note_on_a_dashboard_row`).
+        use crate::engine::explain::notes::note_for;
+        use crate::gui::explorer::{NoteFallback, note_fallback};
+        use crate::gui::guidance::{Learn, TORQUE_BAND_NOTE, row_learn};
+        assert!(note_for(GEARBOX_CHECK).is_none());
+        assert_eq!(
+            row_learn(GEARBOX_CHECK),
+            Some(Learn::Note(TORQUE_BAND_NOTE))
+        );
+        let NoteFallback::Note(note) = note_fallback(GEARBOX_CHECK) else {
+            panic!("{GEARBOX_CHECK} offers no note");
+        };
+        assert_eq!(note.id, TORQUE_BAND_NOTE);
+        click_the_closest_note_link(GEARBOX_CHECK, note);
+    }
+
     #[test]
     fn explain_never_shows_no_teaching_note_on_a_dashboard_row() {
         // Spec section 6 test 11: each dashboard row opened with Explain on shows its note, the
@@ -8629,9 +8695,8 @@ mod tests {
         // offers the closest note upstream; its link opens it on its own.
         use crate::engine::explain::notes::note_for;
         use crate::gui::dashboard::DASHBOARD;
-        use crate::gui::explorer::{NEAREST_NOTE, NoteFallback, note_fallback};
+        use crate::gui::explorer::{NoteFallback, note_fallback};
         use crate::gui::guidance::{Learn, row_learn};
-        use crate::gui::typeset::glyph_safe;
         let (path, note) = DASHBOARD
             .iter()
             .find_map(|&(path, _)| match (note_for(path), note_fallback(path)) {
@@ -8643,23 +8708,7 @@ mod tests {
                 _ => None,
             })
             .expect("a dashboard row offered its closest note upstream");
-        let mut harness = Harness::on_screen(TALL);
-        harness.panel.explorer.explain = true;
-        harness.panel.explorer.open_path(path);
-        harness.frame(Vec::new());
-        let output = harness.frame(Vec::new());
-        let lead = text_rect(&output, NEAREST_NOTE).expect("the lead");
-        // The one copy of the title on the lead's line, clicked on its text (it ends a wrapped
-        // row); a dashboard Why link to the same note on that line would make the click
-        // ambiguous: the test says so rather than pass.
-        let beside: Vec<egui::Pos2> = last_characters(&output, &glyph_safe(note.title))
-            .into_iter()
-            .filter(|at| (at.y - lead.center().y).abs() < lead.height())
-            .collect();
-        assert_eq!(beside.len(), 1, "the link beside the lead: {beside:?}");
-        harness.click(beside[0]);
-        assert_eq!(harness.panel.explorer.note(), Some(note.id), "{path}");
-        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+        click_the_closest_note_link(path, note);
     }
 
     #[test]
@@ -8679,28 +8728,111 @@ mod tests {
     }
 
     #[test]
+    fn the_gearbox_row_s_own_why_link_opens_the_torque_band_note() {
+        // BL-059: the gearbox check's Why link leads to the torque-band note, as the hot-low,
+        // hot-minimum and cold-high rows above it do, so those rows draw the note's title first.
+        // The copy clicked is the gearbox row's own: on the dashboard, below the row's label and
+        // above the next row's. The click edits nothing.
+        use crate::gui::dashboard::DASHBOARD;
+        use crate::gui::guidance::TORQUE_BAND_NOTE;
+        use crate::gui::typeset::glyph_safe;
+        let mut harness = Harness::on_screen(TALL);
+        let output = harness.frame(Vec::new());
+        let note = crate::gui::explorer::reviewed_note(TORQUE_BAND_NOTE)
+            .expect("the torque-band note is reviewed");
+        let on_dashboard = |x: f32| x > TALL.x - DASHBOARD_WIDTH;
+        let label_top = |path: &str| {
+            text_rects(&output, label_for(path))
+                .into_iter()
+                .find(|r| on_dashboard(r.center().x))
+                .unwrap_or_else(|| panic!("{path} on the dashboard"))
+                .top()
+        };
+        let index = DASHBOARD
+            .iter()
+            .position(|&(path, _)| path == GEARBOX_CHECK)
+            .expect("the gearbox row");
+        let (row, next) = (label_top(GEARBOX_CHECK), label_top(DASHBOARD[index + 1].0));
+        let links: Vec<egui::Pos2> = last_characters(&output, &glyph_safe(note.title))
+            .into_iter()
+            .filter(|at| on_dashboard(at.x))
+            .collect();
+        assert!(links[0].y < row, "the rows above draw it first: {links:?}");
+        let own: Vec<egui::Pos2> = links
+            .iter()
+            .copied()
+            .filter(|at| at.y > row && at.y < next)
+            .collect();
+        assert_eq!(own.len(), 1, "one link under the gearbox row: {links:?}");
+        harness.click(own[0]);
+        assert!(harness.panel.explorer.open);
+        assert_eq!(harness.panel.explorer.note(), Some(TORQUE_BAND_NOTE));
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
+    fn the_failing_filter_lists_the_gearbox_check_with_its_red_badge() {
+        use crate::gui::dashboard::failing_checks;
+        use crate::gui::results_table::{FAILING_ONLY, entry_index, table_entries};
+        // BL-059: at the defaults the gearbox check fails beside the cup ring, the hot minimum,
+        // the clearance and the cup wall, all red. The filter lists the five, and the gearbox
+        // check's row once in the table, with a red badge.
+        let mut harness = Harness::new();
+        harness.click_text(CentreView::Results.label());
+        harness.click_text(FAILING_ONLY);
+        let output = harness.frame(Vec::new());
+        let failing = failing_checks(harness.panel.results(), false);
+        assert_eq!(failing.len(), 5, "{failing:?}");
+        assert!(
+            failing.iter().all(|&(_, level)| level == Level::Bad),
+            "{failing:?}"
+        );
+        assert!(
+            failing.contains(&(GEARBOX_CHECK, Level::Bad)),
+            "{failing:?}"
+        );
+        let total = table_entries().len();
+        assert_eq!(count(&output, &format!("5 of {total} results")), 1);
+        let in_table = |x: f32| x > INPUTS_WIDTH && x < SCREEN.x - DASHBOARD_WIDTH;
+        // The row is found by the label the table draws: its entry's (`row_ui`), which an
+        // overlay name for the dashboard row would not change.
+        let entry = &table_entries()[entry_index(GEARBOX_CHECK).expect("the gearbox row")];
+        let rows: Vec<egui::Rect> = text_rects(&output, entry.info.meta.label)
+            .into_iter()
+            .filter(|r| in_table(r.center().x))
+            .collect();
+        assert_eq!(rows.len(), 1, "the gearbox check's row in the table");
+        let visuals = harness.ctx.style().visuals.clone();
+        assert_eq!(
+            table_badges_on(&output, &visuals, rows[0], in_table),
+            [Level::Bad]
+        );
+    }
+
+    #[test]
     fn the_status_line_counts_the_checks_at_default_and_after_a_fix() {
         use crate::gui::guidance::{design_status, design_status_text};
         let mut harness = Harness::new();
         let output = harness.frame(Vec::new());
         let status = design_status(harness.panel.inputs(), harness.panel.results(), false);
-        // The workbook example fails its hot minimum, its clearance and its cup wall.
+        // The workbook example fails its hot minimum, its clearance, its cup wall and its
+        // gearbox check.
         assert_eq!(
             (status.bad, status.caution, status.total, status.is_default),
-            (3, 0, 8, true)
+            (4, 0, 9, true)
         );
         assert_eq!(count(&output, &design_status_text(&status)), 1);
         // A fix: the cup wall at 2.4 mm (its rule asks for 2.0 mm and up).
         harness.panel.inputs.metal.cup_wall_corner_mm = 2.4;
         let output = harness.frame(Vec::new());
         let status = design_status(harness.panel.inputs(), harness.panel.results(), false);
-        assert_eq!((status.bad, status.is_default), (2, false));
+        assert_eq!((status.bad, status.is_default), (3, false));
         assert_eq!(count(&output, &design_status_text(&status)), 1);
         // Reset all: the example again.
         harness.click_text(RESET_ALL);
         let output = harness.frame(Vec::new());
         let status = design_status(harness.panel.inputs(), harness.panel.results(), false);
-        assert_eq!((status.bad, status.is_default), (3, true));
+        assert_eq!((status.bad, status.is_default), (4, true));
         assert_eq!(count(&output, &design_status_text(&status)), 1);
     }
 

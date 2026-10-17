@@ -43,7 +43,7 @@
 
 use crate::engine::clamps::SCREW_SIZES;
 use crate::engine::deviations::Deviations;
-use crate::engine::grades::GRADES;
+use crate::engine::grades::{GRADES, GradeFamily};
 use crate::engine::library::{MAGNET_LIBRARY, lookup};
 use crate::engine::meta::{InputSet, NumOrText, ResultSet, SliderRange, Value};
 use crate::engine::model::{
@@ -57,7 +57,9 @@ use crate::engine::size_controls::{
 use crate::engine::sizing::FreeVariable;
 use crate::engine::temperature::{CURE_MARGIN_MIN_C, DemagInputs};
 use crate::gui::dashboard::{DASHBOARD, Level, check_level, result_info};
-use crate::gui::format::{fixed, format_value, signed_percent, with_unit};
+use crate::gui::format::{
+    SIGNIFICANT_DIGITS, fixed, format_value, last_digit_step, signed_percent, with_unit,
+};
 use crate::gui::inputs::{InputCatalogue, optional_seed, section_label};
 use crate::gui::pickers::{CUSTOM, GRADE_PATHS, PART_PATHS};
 use crate::gui::plain_text::display_label;
@@ -142,6 +144,7 @@ const CLEARANCE: &str = "metal.clearance_check";
 const CUP_WALL: &str = "materials.cup_wall_check";
 const TEMPERATURE: &str = "temperature.summary.verdict";
 const CLAMP: &str = "clamps.recommended";
+const GEARBOX: &str = "gearbox.cold_high_check";
 const SPACE_CLAIM: &str = "housing.space_claim_check";
 const END_EFFECT: &str = "model.end_effect_check";
 
@@ -209,6 +212,22 @@ const CLAMP_GUIDE: CheckGuide = CheckGuide {
         ("clamps.clamp_length_mm", Direction::Raise),
     ]),
     learn: Learn::Note("clamp_preload"),
+};
+
+const GEARBOX_GUIDE: CheckGuide = CheckGuide {
+    check: GEARBOX,
+    label: "Gearbox input torque",
+    problem: gearbox_problem,
+    why: "Cold-high torque can reach the gearbox output before the coupling slips, and in each swing while it slips; at the gearbox input it must stay within the rating.",
+    // Geometry only (owner decision 6A): both lower cold-high, and hot-low with it, which the
+    // trade-off and side-effect lines say where the hot minimum fails. Not the variation (an
+    // assumption), the minimum temperature (an environment fact), or the rating or ratio (no
+    // real gearbox changes one alone): the Problem names them where no geometry passes both.
+    fixes: Fixes::Static(&[
+        (MAGNET_LENGTH, Direction::Lower),
+        (FACE_GAP, Direction::Raise),
+    ]),
+    learn: Learn::Note(TORQUE_BAND_NOTE),
 };
 
 const SPACE_CLAIM_GUIDE: CheckGuide = CheckGuide {
@@ -287,15 +306,16 @@ const FIT_GUIDE: CheckGuide = CheckGuide {
     learn: Learn::None("No note covers block fit yet."),
 };
 
-/// The guides: the seven dashboard checks in the dashboard's order, then the Magnets fit row.
+/// The guides: the eight dashboard checks in the dashboard's order, then the Magnets fit row.
 /// Every Why and Problem template goes through the slice's physics review (spec G-3), and none
 /// says what spec section 8 rules out.
-pub static CHECK_GUIDES: [CheckGuide; 8] = [
+pub static CHECK_GUIDES: [CheckGuide; 9] = [
     HOT_MIN_GUIDE,
     CLEARANCE_GUIDE,
     CUP_WALL_GUIDE,
     TEMPERATURE_GUIDE,
     CLAMP_GUIDE,
+    GEARBOX_GUIDE,
     SPACE_CLAIM_GUIDE,
     END_EFFECT_GUIDE,
     FIT_GUIDE,
@@ -341,6 +361,7 @@ pub static ROW_LEARN: [(&str, Learn); DASHBOARD.len()] = [
     ),
     (TEMPERATURE, TEMPERATURE_GUIDE.learn),
     (CLAMP, CLAMP_GUIDE.learn),
+    (GEARBOX, GEARBOX_GUIDE.learn),
     (SPACE_CLAIM, SPACE_CLAIM_GUIDE.learn),
     (END_EFFECT, END_EFFECT_GUIDE.learn),
 ];
@@ -1227,7 +1248,7 @@ fn temperature_sentences(inputs: &DesignInputs, results: &DesignResults) -> Vec<
         sentences.push(format!(
             "Hot-day magnet temperature {} (hot ambient plus the driving rise) is at or above {}.",
             result_text(results, "temperature.summary.hot_day_start_C"),
-            listed(&hot_limits)
+            listed(&hot_limits, "and")
         ));
     }
     for ring in unknown_rings {
@@ -1293,7 +1314,7 @@ fn temperature_sentences(inputs: &DesignInputs, results: &DesignResults) -> Vec<
         sentences.push(format!(
             "The minimum magnet temperature {} is below {}{source}",
             input_text(inputs, "metal.min_temp_C"),
-            listed(&cold_limits)
+            listed(&cold_limits, "and")
         ));
     }
     sentences
@@ -1382,12 +1403,12 @@ fn cure_margin_texts(results: &DesignResults) -> (String, String) {
     }
 }
 
-/// `items` as one list: "a", "a and b", "a, b and c".
-fn listed(items: &[String]) -> String {
+/// `items` as one list joined by `conjunction` ("and" or "or"): "a", "a and b", "a, b and c".
+fn listed(items: &[String], conjunction: &str) -> String {
     match items {
         [] => String::new(),
         [only] => only.clone(),
-        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+        [rest @ .., last] => format!("{} {conjunction} {last}", rest.join(", ")),
     }
 }
 
@@ -1478,10 +1499,10 @@ pub fn design_status(
     }
 }
 
-/// The design status line: "Example design: fails 3 of 8 checks", "Your design: fails
-/// 2 of 8 checks", "Your design: passes all 8 checks", each followed by ", 1 caution" or ", 2
+/// The design status line: "Example design: fails 4 of 9 checks", "Your design: fails
+/// 3 of 9 checks", "Your design: passes all 9 checks", each followed by ", 1 caution" or ", 2
 /// cautions" when a check asks for a look. The count is of the guides that count ([`counts`]):
-/// 7 while the shaft-clamp section is paused.
+/// 8 while the shaft-clamp section is paused.
 pub fn design_status_text(status: &DesignStatus) -> String {
     let design = if status.is_default {
         EXAMPLE_DESIGN
@@ -1531,6 +1552,87 @@ fn input_text(inputs: &DesignInputs, path: &str) -> String {
 fn number_text(x: f64, unit_of: &str) -> String {
     let unit = result_info(unit_of).map_or("", |info| info.meta.unit);
     with_unit(format_value(&Value::Num(x)), unit)
+}
+
+/// The value a number reads as: `x` to four significant digits, as [`format_value`] shows it.
+fn quoted_value(x: f64) -> f64 {
+    format_value(&Value::Num(x)).parse().unwrap_or(x)
+}
+
+/// Float noise in last shown digits: 0.6 × 4.75 / 2.5 is not 1.14 in binary but reads 1.140, and
+/// is quoted so when rounded down or up at its last digit.
+const LAST_DIGIT_NOISE: f64 = 1e-9;
+
+/// A limit `x` as gearbox Problem sentence 2 quotes it (review I-2): rounded down at its last
+/// shown digit, so a requirement or band set to the quoted limit meets it, and one digit further
+/// down where it would still read equal to `limited`, the number it limits, as that is quoted.
+/// No rounding makes a limit read equal to what it limits. A number that is not finite or not
+/// positive (a value from a file) is quoted as it is.
+fn quoted_limit(x: f64, limited: f64) -> f64 {
+    if !x.is_finite() || x <= 0.0 {
+        return x;
+    }
+    let step = last_digit_step(x);
+    let down = (x / step + LAST_DIGIT_NOISE).floor() * step;
+    if quoted_value(down) < quoted_value(limited) {
+        down
+    } else {
+        down - last_digit_step(down)
+    }
+}
+
+/// A torque `x` on the gearbox input, above the `rating`, as gearbox Problem sentence 2 quotes it
+/// (review I-2): rounded up at its last shown digit, so a gearbox rated for the quoted torque
+/// takes it, and one digit further up where it would still read equal to the rating as that is
+/// quoted (as the gearbox verdict quotes cold-high past the rating). A number that is not
+/// finite or not positive (a value from a file) is quoted as it is.
+fn quoted_load(x: f64, rating: f64) -> f64 {
+    if !x.is_finite() || x <= 0.0 {
+        return x;
+    }
+    let step = last_digit_step(x);
+    let up = (x / step - LAST_DIGIT_NOISE).ceil() * step;
+    if quoted_value(up) > quoted_value(rating) {
+        up
+    } else {
+        up + last_digit_step(up)
+    }
+}
+
+/// The most decimals [`band_quotes`] gives a number near one: f64 holds no more of its digits.
+const MOST_DECIMALS: usize = 15;
+
+/// The band and the widest band the rating allows, as gearbox Problem sentence 2's first remedy
+/// quotes them: the band as the readouts show it, the widest band rounded down past it
+/// ([`quoted_limit`]). With the minimum temperature at or below the operating one no band is
+/// below one, so a widest band under one by float noise is one; and where the band reads 1.000
+/// with the widest band from one up to it, the readouts' digits cannot quote the widest band
+/// below the band without quoting a band below one, which no change reaches (review NB-1). Both
+/// then get more decimals, as few as tell them apart, the widest band still rounded down and
+/// never below one: "1.0004" and "1.0000".
+fn band_quotes(band: f64, widest: f64) -> (String, String) {
+    let widest = widest.max(1.0);
+    let limit = quoted_limit(widest, band);
+    if limit >= 1.0 {
+        return (
+            format_value(&Value::Num(band)),
+            format_value(&Value::Num(limit)),
+        );
+    }
+    // Both are from 1 to 1.0005, which the readouts show to three decimals: from four.
+    let at = |decimals: usize| {
+        let step = 10f64.powi(-(decimals as i32));
+        let down = ((widest / step + LAST_DIGIT_NOISE).floor() * step).max(1.0);
+        (fixed(band, decimals), fixed(down, decimals))
+    };
+    let apart = |(here, limit): &(String, String)| {
+        let value = |text: &str| text.parse().unwrap_or(f64::NAN);
+        value(limit) < value(here)
+    };
+    (SIGNIFICANT_DIGITS as usize..=MOST_DECIMALS)
+        .map(at)
+        .find(apart)
+        .unwrap_or_else(|| at(MOST_DECIMALS))
 }
 
 /// A fraction as a percentage: four significant digits without trailing zeros (0.15 gives
@@ -1615,6 +1717,180 @@ fn clamp_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<Strin
             percent_text(inputs.metal.variation),
             result_text(results, "clamps.max_torque_Nm"),
             input_text(inputs, "clamps.safety_factor"),
+        )
+    })
+}
+
+/// The gearbox check's Problem when it cannot be made (it asks for a look): a value it
+/// compares is not a number.
+const GEARBOX_UNKNOWN: &str = "The gearbox check cannot be made: cold-high at the gearbox input or the rating is not a number.";
+
+fn gearbox_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<String> {
+    match level_of(GEARBOX, inputs, results) {
+        Level::Good => None,
+        Level::Caution => Some(GEARBOX_UNKNOWN.to_owned()),
+        Level::Bad => {
+            let torque = results.metal.cold_high_input_Nm;
+            let rating = inputs.coupling.gearbox_input_rating_Nm;
+            // Where both read the same at four significant digits, cold-high is quoted one last
+            // digit past the rating, as the badge and sentence 2 quote a torque on the gearbox
+            // input (whole-branch review MF-1).
+            let torque_text = if quoted_value(torque) > quoted_value(rating) {
+                result_text(results, "metal.cold_high_input_Nm")
+            } else {
+                number_text(quoted_load(torque, rating), "metal.cold_high_input_Nm")
+            };
+            let overload = format!(
+                "Cold-high at the gearbox input is {torque_text}, above its {} input rating.",
+                input_text(inputs, "coupling.gearbox_input_rating_Nm"),
+            );
+            // Owner decision 4A: where no geometry passes both checks, the Problem says so.
+            Some(match gearbox_conflict(inputs, results) {
+                Some(conflict) => format!("{overload} {conflict}"),
+                None => overload,
+            })
+        }
+    }
+}
+
+/// The changes sentence 2 of the gearbox Problem can name as narrowing the band, in its order:
+/// the variation allowance last, so that no "or" follows "backed by measurement" (it would
+/// read as "backed by measurement or SmCo magnets").
+const WARMER_MINIMUM: &str = "a warmer minimum temperature";
+const SMCO_MAGNETS: &str = "SmCo magnets";
+const SMALLER_VARIATION: &str = "a smaller variation allowance backed by measurement";
+
+/// What narrows the band (cold-high over hot-low) of a design with the minimum temperature at
+/// or below the operating one, as sentence 2 says it in brackets ("a warmer minimum
+/// temperature, SmCo magnets or a smaller variation allowance backed by measurement narrows
+/// it"), each change named only where it does narrow it (ruling R-3: sentence 2 is true
+/// wherever it shows).
+///
+/// The band is (1 + v) / (1 − v) times each ring's th(minimum) / th(operating), with
+/// th(T) = 1 + α (T − 20 °C) and α the ring's Br temperature coefficient (its grade's for
+/// manual dimensions with a grade, else the calibration's; at or below zero on every slider and
+/// grade). A ring's share is above one only with the minimum below the operating temperature
+/// and α below zero, and then falls as the minimum warms and as α rises toward zero. So a
+/// warmer minimum narrows the band only below the operating temperature with a coefficient
+/// below zero, SmCo magnets only there with every ring's coefficient below every SmCo grade's
+/// (each ring's share then falls whichever SmCo grade it takes), and a smaller variation
+/// allowance only above zero. `None` where nothing does, as at a band of one (review NB-2):
+/// on the sliders a band above one always has a change that narrows it, but values from a file
+/// can make one without.
+fn band_levers(inputs: &DesignInputs, results: &DesignResults) -> Option<String> {
+    let alphas = [
+        results.model.inner_alpha_br_per_C,
+        results.model.outer_alpha_br_per_C,
+    ];
+    let spread = inputs.metal.min_temp_C < inputs.coupling.op_temp_C;
+    let below_every_smco = |alpha: f64| {
+        GRADES
+            .iter()
+            .filter(|g| matches!(g.family, GradeFamily::SmCo2_17 | GradeFamily::SmCo1_5))
+            .all(|g| alpha < g.alpha_br_per_C)
+    };
+    let names: Vec<String> = [
+        (WARMER_MINIMUM, spread && alphas.iter().any(|&a| a < 0.0)),
+        (
+            SMCO_MAGNETS,
+            spread && alphas.iter().all(|&a| below_every_smco(a)),
+        ),
+        (SMALLER_VARIATION, inputs.metal.variation > 0.0),
+    ]
+    .into_iter()
+    .filter(|&(_, narrows)| narrows)
+    .map(|(change, _)| change.to_owned())
+    .collect();
+    // After "or" the verb agrees with the change named last; only SmCo magnets is plural.
+    let verb = match names.last() {
+        None => return None,
+        Some(last) if last == SMCO_MAGNETS => "narrow",
+        Some(_) => "narrows",
+    };
+    Some(format!("{} {verb} it", listed(&names, "or")))
+}
+
+/// Relative float noise in a torque gearbox Problem sentence 2 sets against the rating (review
+/// NB-2). The band is a ratio of two engine torques, 1.0000000000000002 where it is exactly one
+/// (no variation allowance, the minimum at the operating temperature), and the requirement over
+/// ratio × efficiency can miss a rating it equals in decimals by an ulp (0.84 N·m × 5 × 0.95 is
+/// 3.99 N·m). A torque only this far above the rating is at it, and at the rating passes.
+const RATING_NOISE: f64 = 1e-12;
+
+/// Problem sentence 2 of the gearbox check (owner decision 4A): where no magnet size, gap or
+/// count can pass both it and the hot minimum check, the numbers and what would have to change
+/// instead. Cold-high over hot-low (the band) does not depend on the geometry, the magnet count
+/// or the back iron, only on the two temperatures, each ring's Br temperature coefficient (its
+/// grade's, else the calibration's) and the variation allowance ([`band_levers`]). So a design
+/// that just meets the requirement has cold-high the requirement times the band at the gearbox
+/// output, and that over ratio × efficiency at its input: above the rating, no geometry passes
+/// both checks. Above the rating means beyond float noise ([`RATING_NOISE`]): where meeting the
+/// requirement puts exactly the rating on the gearbox input (a tie: the requirement times the
+/// band is the rating times ratio × efficiency, at a band of one or above it), a design passes
+/// both. Each limit is quoted rounded down and each torque on the gearbox input rounded up, each
+/// past what it is set against ([`quoted_limit`], [`quoted_load`], [`band_quotes`]). Where
+/// nothing narrows the band ([`band_levers`]) no band is offered. `None` where hot-low is not
+/// above zero (the end-effect model is out of range, and the check is greyed) or a value is not
+/// a number (a comparison with NaN is false). `None` also with the operating temperature below
+/// the minimum (BL-067).
+fn gearbox_conflict(inputs: &DesignInputs, results: &DesignResults) -> Option<String> {
+    let (c, md) = (&inputs.coupling, &results.metal);
+    let required = inputs.metal.required_min_Nm;
+    let rating = c.gearbox_input_rating_Nm;
+    // Output torque per input torque in forward drive: ratio × efficiency, never zero on the
+    // sliders (ratio from 1, efficiency from 0.5).
+    let gear = c.gear_ratio * c.gear_efficiency;
+    let band = md.torque_cold_high_Nm / md.torque_hot_low_Nm;
+    let input_at_required = required * band / gear;
+    // What the requirement alone, at a band of one, puts on the gearbox input.
+    let alone = required / gear;
+    let above_rating = |torque: f64| torque > rating * (1.0 + RATING_NOISE);
+    // With the operating temperature below the minimum, hot-low is taken colder than
+    // cold-high: the band's levers and its floor of one no longer hold, so no sentence 2.
+    let temperatures_in_order = inputs.metal.min_temp_C <= inputs.coupling.op_temp_C;
+    let holds =
+        temperatures_in_order && md.torque_hot_low_Nm > 0.0 && above_rating(input_at_required);
+    holds.then(|| {
+        // The requirement is a hot-low torque, at the gearbox output.
+        let largest_required = number_text(
+            quoted_limit(rating * gear / band, required),
+            "metal.torque_hot_low_Nm",
+        );
+        // The band is at least one (cold-high is never below hot-low with the temperatures in
+        // order): where the requirement alone is above the rating, a band under one is out of the
+        // levers' reach, and only the gearbox or the requirement can settle it.
+        let (band_text, remedy) = if above_rating(alone) {
+            (
+                format_value(&Value::Num(band)),
+                format!(
+                    "It takes a gearbox rated for that or a requirement of at most {largest_required}: the requirement alone puts {} on the gearbox input, so no narrower band settles it.",
+                    number_text(quoted_load(alone, rating), "metal.cold_high_input_Nm"),
+                ),
+            )
+        } else if let Some(levers) = band_levers(inputs, results) {
+            let (band_text, widest_band) = band_quotes(band, rating * gear / required);
+            (
+                band_text,
+                format!(
+                    "It takes a gearbox rated for that, a requirement of at most {largest_required}, or a band of at most {widest_band} times ({levers})."
+                ),
+            )
+        } else {
+            // Nothing narrows the band (no input on the sliders reaches this): no band.
+            (
+                format_value(&Value::Num(band)),
+                format!(
+                    "It takes a gearbox rated for that or a requirement of at most {largest_required}."
+                ),
+            )
+        };
+        format!(
+            "No magnet size, gap or count passes both this and the hot minimum: cold-high is {band_text} times hot-low here, so even just meeting the {} requirement at the gearbox output puts {} on the gearbox input. {remedy}",
+            input_text(inputs, "metal.required_min_Nm"),
+            number_text(
+                quoted_load(input_at_required, rating),
+                "metal.cold_high_input_Nm"
+            ),
         )
     })
 }
@@ -2058,13 +2334,16 @@ mod tests {
     use crate::compute_all;
     use crate::engine::assumptions::ASSUMPTIONS;
     use crate::engine::explain::notes;
+    use crate::engine::grades::Grade;
     use crate::engine::model::ring_fits;
-    use crate::gui::dashboard::{CHECKS, DASHBOARD};
+    use crate::engine::sizing::{SizingOutcome, solve};
+    use crate::gui::dashboard::{CHECKS, DASHBOARD, FIX, dashboard_ui};
     use crate::gui::explorer::reviewed_note;
     use crate::gui::plain_text::label_for;
+    use crate::gui::readouts::Readouts;
     use crate::gui::test_support::{
-        assert_glyphs, clamp_at_its_limit, hot_day, only_the_clamp_fails, passing_design,
-        short_magnets, small_boss, with_poles,
+        assert_glyphs, clamp_at_its_limit, drawn_texts, hot_day, only_the_clamp_fails,
+        only_the_gearbox_fails, passing_design, short_magnets, sized_frame, small_boss, with_poles,
     };
     use std::collections::BTreeSet;
 
@@ -2079,6 +2358,42 @@ mod tests {
     /// The defaults with `edit` applied.
     fn design(edit: impl Fn(&mut DesignInputs)) -> DesignInputs {
         with(DesignInputs::default(), edit)
+    }
+
+    /// The slider range of the input at `path`.
+    fn slider_range(path: &str) -> SliderRange {
+        InputCatalogue::get()
+            .entry(path)
+            .and_then(|entry| entry.meta.range)
+            .unwrap_or_else(|| panic!("{path} has a slider"))
+    }
+
+    /// Every value on the slider of the input at `path`, bottom to top, one step apart, each the
+    /// decimal it reads (k / 100 on a slider of step 0.01): the number a typed or loaded value
+    /// is, not the bottom plus k steps, which can miss it by an ulp.
+    fn slider_values(path: &str) -> Vec<f64> {
+        let range = slider_range(path);
+        let per_unit = (1.0 / range.step).round();
+        let (first, last) = (
+            (range.min * per_unit).round() as i64,
+            (range.max * per_unit).round() as i64,
+        );
+        (first..=last).map(|k| k as f64 / per_unit).collect()
+    }
+
+    /// The defaults with the gearbox ratio, then the efficiency, at the bottom and at the top of
+    /// its slider, each named for its input and value. At the two bottoms the requirement alone
+    /// is above the rating at the gearbox input, which no test design reaches.
+    fn gear_slider_ends() -> Vec<(String, DesignInputs)> {
+        let mut ends = Vec::new();
+        for path in ["coupling.gear_ratio", "coupling.gear_efficiency"] {
+            let range = slider_range(path);
+            for end in [range.min, range.max] {
+                let inputs = with_number(&DesignInputs::default(), path, end).unwrap();
+                ends.push((format!("{path} at {end}"), inputs));
+            }
+        }
+        ends
     }
 
     /// [`passing_design`] with `edit` applied: it fails what `edit` breaks, so a fix that turns
@@ -2119,12 +2434,197 @@ mod tests {
         i.temperature.demag.h_rev_single_ring_kA_m = 700.0;
     }
 
-    /// Manual Y30 ferrite blocks: the cold demagnetization check fails.
-    fn ferrite(i: &mut DesignInputs) {
+    /// Both rings on manual dimensions of the grade `id`, which then sets each ring's Br
+    /// temperature coefficient.
+    fn graded(i: &mut DesignInputs, id: &str) {
         i.coupling.magnets.part_inner.clear();
         i.coupling.magnets.part_outer.clear();
-        i.coupling.magnets.grade_inner = "Y30".to_owned();
-        i.coupling.magnets.grade_outer = "Y30".to_owned();
+        i.coupling.magnets.grade_inner = id.to_owned();
+        i.coupling.magnets.grade_outer = id.to_owned();
+    }
+
+    /// Manual Y30 ferrite blocks: the cold demagnetization check fails.
+    fn ferrite(i: &mut DesignInputs) {
+        graded(i, "Y30");
+    }
+
+    /// The SmCo grades of the grade table, in its order.
+    fn smco_grades() -> Vec<&'static Grade> {
+        GRADES
+            .iter()
+            .filter(|g| matches!(g.family, GradeFamily::SmCo2_17 | GradeFamily::SmCo1_5))
+            .collect()
+    }
+
+    /// Designs where gearbox Problem sentence 2 shows its band and names only some of what
+    /// narrows it (review I-1), each with whether it names a warmer minimum temperature, a
+    /// smaller variation and SmCo magnets: the defaults, the Br coefficient at its slider ends,
+    /// rings of a SmCo grade, one ring just below every SmCo grade's coefficient beside one of a
+    /// SmCo grade, no variation allowance and the minimum at the operating temperature.
+    fn band_lever_designs() -> Vec<(&'static str, DesignInputs, [bool; 3])> {
+        let smco = smco_grades();
+        let lowest_smco = smco
+            .iter()
+            .map(|g| g.alpha_br_per_C)
+            .fold(f64::INFINITY, f64::min);
+        let alpha = slider_range("calibration.alpha_br_per_C");
+        let at_alpha = |x: f64| design(|i| i.calibration.alpha_br_per_C = x);
+        vec![
+            ("defaults", DesignInputs::default(), [true, true, true]),
+            (
+                "Br coefficient at its bottom",
+                at_alpha(alpha.min),
+                [true, true, true],
+            ),
+            (
+                "Br coefficient at its top",
+                at_alpha(alpha.max),
+                [false, true, false],
+            ),
+            (
+                "SmCo rings",
+                design(|i| graded(i, smco[0].id)),
+                [true, true, false],
+            ),
+            // The inner ring (a library part, at the calibration's coefficient) one slider step
+            // below every SmCo grade's; the outer of the first SmCo grade. Both rings of the
+            // lowest-coefficient SmCo grade widen the band: the outer ring's share rises more
+            // than the inner's falls.
+            (
+                "one ring below every SmCo grade, one of a SmCo grade",
+                design(|i| {
+                    i.calibration.alpha_br_per_C = lowest_smco - alpha.step;
+                    i.coupling.magnets.part_outer.clear();
+                    i.coupling.magnets.grade_outer = smco[0].id.to_owned();
+                }),
+                [true, true, false],
+            ),
+            (
+                "no variation allowance",
+                design(|i| i.metal.variation = slider_range("metal.variation").min),
+                [true, false, true],
+            ),
+            (
+                "minimum at the operating temperature",
+                design(|i| i.coupling.op_temp_C = i.metal.min_temp_C),
+                [false, true, false],
+            ),
+        ]
+    }
+
+    /// A design whose band reads 1.000 but is above one (review NB-1): the Br coefficient one
+    /// slider step below zero, no variation allowance, the minimum (-40 °C) 20 °C below the
+    /// operating temperature. Its band is about 1.0004.
+    fn band_reading_one() -> DesignInputs {
+        let alpha = slider_range("calibration.alpha_br_per_C");
+        design(|i| {
+            i.calibration.alpha_br_per_C = alpha.max - alpha.step;
+            i.metal.variation = slider_range("metal.variation").min;
+            i.coupling.op_temp_C = -20.0;
+        })
+    }
+
+    /// The designs with a band of one (review NB-2), each named: no variation allowance, with the
+    /// minimum at the operating temperature (both -20 °C; the engine's band there is one ulp
+    /// above one) or with no Br temperature coefficient (its slider's top; the band exactly one).
+    fn bands_of_one() -> [(&'static str, DesignInputs); 2] {
+        let no_variation = slider_range("metal.variation").min;
+        [
+            (
+                "minimum at the operating temperature",
+                design(|i| {
+                    i.metal.variation = no_variation;
+                    i.metal.min_temp_C = -20.0;
+                    i.coupling.op_temp_C = -20.0;
+                }),
+            ),
+            (
+                "no Br temperature coefficient",
+                design(|i| {
+                    i.metal.variation = no_variation;
+                    i.calibration.alpha_br_per_C = slider_range("calibration.alpha_br_per_C").max;
+                }),
+            ),
+        ]
+    }
+
+    /// Designs whose band is above one and a ratio of small whole numbers, so that a requirement
+    /// on its slider times the band can be, in decimals, a rating times ratio times efficiency
+    /// (review I-3, round 3), each named: no Br temperature coefficient (its slider's top) at the
+    /// defaults' variation allowance, a band of 1.15/0.85 = 23/17; and every lever of the band
+    /// live, a Br coefficient of -0.002 1/°C, a variation allowance of 0.10, the minimum
+    /// temperature at -20 °C and the operating at 80 °C, a band of (1.08/0.88)² × 1.10/0.90 =
+    /// 81/44.
+    fn short_fraction_bands() -> [(&'static str, DesignInputs); 2] {
+        [
+            (
+                "no Br temperature coefficient, the defaults' allowance",
+                design(|i| {
+                    i.calibration.alpha_br_per_C = slider_range("calibration.alpha_br_per_C").max;
+                }),
+            ),
+            (
+                "every band lever live",
+                design(|i| {
+                    i.calibration.alpha_br_per_C = -0.002;
+                    i.metal.variation = 0.10;
+                    i.metal.min_temp_C = -20.0;
+                    i.coupling.op_temp_C = 80.0;
+                }),
+            ),
+        ]
+    }
+
+    /// `base` at its gearbox efficiency and at an efficiency of one (the slider's top), each with
+    /// every rating on its slider whose product with the ratio and efficiency is, in decimals, a
+    /// requirement on its slider times `band`, and that requirement: a design that just meets
+    /// it, at that band, puts exactly the rating on the gearbox input, though float arithmetic
+    /// can put it an ulp either side. At a `band` of one, what the requirement alone puts there
+    /// (review NB-2); at the base's own band, what meeting the requirement puts there, a tie
+    /// (review I-3).
+    fn exact_products(base: &DesignInputs, band: f64) -> Vec<(String, DesignInputs)> {
+        let requirements = slider_values("metal.required_min_Nm");
+        let mut found = Vec::new();
+        for efficiency in [
+            base.coupling.gear_efficiency,
+            slider_range("coupling.gear_efficiency").max,
+        ] {
+            let gear = base.coupling.gear_ratio * efficiency;
+            for rating in slider_values("coupling.gearbox_input_rating_Nm") {
+                // Ratio, efficiency and rating have five decimals between them, so where `band`
+                // is one, or a ratio p/q of whole numbers, a requirement on the slider that is
+                // not such a product misses one by 1e-5 / q or more.
+                if let Some(&required) = requirements
+                    .iter()
+                    .find(|&&required| (required * band - rating * gear).abs() < 1e-9)
+                {
+                    let inputs = with(base.clone(), |i| {
+                        i.coupling.gear_efficiency = efficiency;
+                        i.coupling.gearbox_input_rating_Nm = rating;
+                        i.metal.required_min_Nm = required;
+                    });
+                    let name =
+                        format!("efficiency {efficiency}, rating {rating}, required {required}");
+                    found.push((name, inputs));
+                }
+            }
+        }
+        found
+    }
+
+    /// A design and results whose band is above one with nothing that narrows it, which no input
+    /// on the sliders reaches (review NB-2): the results of the defaults with no variation
+    /// allowance and the minimum at the operating temperature (a band of one), cold-high then
+    /// edited by hand to 1.5 times hot-low. The gearbox check fails, and the requirement alone
+    /// is under the rating at the gearbox input.
+    fn nothing_narrows_the_band() -> (DesignInputs, DesignResults) {
+        let inputs = design(|i| {
+            i.metal.variation = slider_range("metal.variation").min;
+            i.coupling.op_temp_C = i.metal.min_temp_C;
+        });
+        let mut results = compute_all(&inputs);
+        results.metal.torque_cold_high_Nm = 1.5 * results.metal.torque_hot_low_Nm;
+        (inputs, results)
     }
 
     /// No screw fits a 3 mm clamp.
@@ -2152,6 +2652,12 @@ mod tests {
         i.metal.max_diameter_mm = f64::NAN;
     }
 
+    /// A gearbox input rating that is not a number (set on the struct): the gearbox check asks
+    /// for a look.
+    fn unknown_rating(i: &mut DesignInputs) {
+        i.coupling.gearbox_input_rating_Nm = f64::NAN;
+    }
+
     /// True arcs instead of flat blocks.
     fn arcs(i: &mut DesignInputs) {
         i.coupling.faceted = 0;
@@ -2168,7 +2674,7 @@ mod tests {
         i.metal.liner_mm = 0.0;
     }
 
-    /// Every design the tests use: the defaults (they fail three checks), a passing design,
+    /// Every design the tests use: the defaults (they fail four checks), a passing design,
     /// and for every check designs that fail it, most of them the passing design with one
     /// check broken.
     fn designs() -> Vec<(&'static str, DesignInputs)> {
@@ -2204,6 +2710,7 @@ mod tests {
             ),
             ("no_back_iron", breaking(no_back_iron)),
             ("bare_clearance", design(bare_clearance)),
+            ("gearbox_only", only_the_gearbox_fails()),
             // Two failing checks that pull one input apart (review focus 4).
             (
                 "length_conflict",
@@ -2256,7 +2763,12 @@ mod tests {
                 texts.push(fix_text(path, direction));
             }
         }
-        for fallback in [NO_FIX, TEMPERATURE_FALLBACK, SPACE_CLAIM_FALLBACK] {
+        for fallback in [
+            NO_FIX,
+            TEMPERATURE_FALLBACK,
+            SPACE_CLAIM_FALLBACK,
+            GEARBOX_UNKNOWN,
+        ] {
             texts.push(fallback.to_owned());
         }
         for (_, learn) in &ROW_LEARN {
@@ -2272,6 +2784,24 @@ mod tests {
                 texts.extend(guide_notes(&all, index, &inputs, &results));
             }
             texts.push(design_status_text(&design_status(&inputs, &results, false)));
+        }
+        // The gearbox Problem's other remedy (no band under one settles it) shows only at the
+        // gearbox ratio's and efficiency's slider bottoms, which no test design reaches.
+        for (_, inputs) in gear_slider_ends() {
+            texts.extend(gearbox_problem(&inputs, &compute_all(&inputs)));
+        }
+        // Its first remedy names only what narrows the band, so the bracket's other wordings
+        // show only at the band-lever designs.
+        for (_, inputs, _) in band_lever_designs() {
+            texts.extend(gearbox_problem(&inputs, &compute_all(&inputs)));
+        }
+        // Where nothing narrows the band it offers no band, which only hand-edited results reach;
+        // where the band and the widest band both read 1.000 (an exact product at a band that
+        // reads 1.000: the widest band is one), it quotes both with more decimals.
+        let (inputs, results) = nothing_narrows_the_band();
+        texts.extend(gearbox_problem(&inputs, &results));
+        for (_, inputs) in exact_products(&band_reading_one(), 1.0).into_iter().take(1) {
+            texts.extend(gearbox_problem(&inputs, &compute_all(&inputs)));
         }
         texts
     }
@@ -2314,6 +2844,41 @@ mod tests {
             });
             assert!(!body.contains(". "), "{}: one sentence", g.check);
         }
+    }
+
+    /// The gearbox guide's Why is a static text, so it holds at every reachable input (spec
+    /// section 6), and cold-high is an expectation, not a bound. With the operating temperature
+    /// below the minimum temperature, each inside its slider (the corner of backlog BL-067),
+    /// hot-low is above cold-high: more than cold-high reaches the gearbox output while the
+    /// coupling slips there. The Why may say cold-high "can reach" the output, never that "up to"
+    /// cold-high does.
+    #[test]
+    fn the_gearbox_why_never_bounds_the_torque_by_cold_high() {
+        let mut corner = DesignInputs::default();
+        for (path, x) in [
+            ("coupling.op_temp_C", -40.0),
+            ("metal.min_temp_C", 20.0),
+            ("metal.variation", 0.0),
+        ] {
+            let range = slider_range(path);
+            assert!(
+                range.min <= x && x <= range.max,
+                "{path}: {x} on its slider"
+            );
+            corner = with_number(&corner, path, x).unwrap_or_else(|| panic!("{path}: {x}"));
+        }
+        let m = &compute_all(&corner).metal;
+        assert!(
+            m.torque_hot_low_Nm > m.torque_cold_high_Nm,
+            "hot-low {} above cold-high {}",
+            m.torque_hot_low_Nm,
+            m.torque_cold_high_Nm
+        );
+        assert!(
+            !GEARBOX_GUIDE.why.to_lowercase().contains("up to cold-high"),
+            "{}",
+            GEARBOX_GUIDE.why
+        );
     }
 
     /// The fix inputs that are model assumptions, each a design lever all the same: the heat
@@ -2459,22 +3024,45 @@ mod tests {
         );
     }
 
-    /// The torque-band note's second watch-out and the slip note's first say nothing checks
-    /// cold-high at the gearbox input, or the slip swings, against the gearbox's rating. When
-    /// such a check lands (BL-059) this fails, and those watch-outs change in the same commit.
+    /// The gearbox check (BL-059, replacing the test that said nothing checks a gearbox torque):
+    /// one dashboard row of its own, after the headline's rows and before the space claim, a
+    /// design check of the results, and a guide, between the clamp's and the space claim's,
+    /// whose Why link and its row's lead to the torque-band note, which owns cold-high at the
+    /// gearbox input. The ripple row stays a value with no check.
     #[test]
-    fn nothing_checks_a_gearbox_torque_against_its_rating_yet() {
-        let gearbox_rows: Vec<(&str, Option<&str>)> = DASHBOARD
+    fn the_gearbox_check_is_a_dashboard_row_with_its_guide() {
+        let gearbox_rows: Vec<(usize, (&str, Option<&str>))> = DASHBOARD
             .iter()
             .copied()
-            .filter(|&(row, check)| {
+            .enumerate()
+            .filter(|&(_, (row, check))| {
                 row.contains("gearbox") || check.is_some_and(|c| c.contains("gearbox"))
             })
             .collect();
-        // The ripple row: a value with no check.
-        assert_eq!(gearbox_rows, [("model.gearbox_input_ripple_Nm", None)]);
-        assert!(CHECKS.iter().all(|c| !c.contains("gearbox")));
-        assert!(CHECK_GUIDES.iter().all(|g| !g.check.contains("gearbox")));
+        assert_eq!(
+            gearbox_rows,
+            [
+                (5, ("model.gearbox_input_ripple_Nm", None)),
+                (15, (GEARBOX, Some(GEARBOX))),
+            ]
+        );
+        let checks: Vec<&str> = CHECKS
+            .iter()
+            .copied()
+            .filter(|c| c.contains("gearbox"))
+            .collect();
+        assert_eq!(checks, [GEARBOX]);
+        let gearbox = guide(GEARBOX).expect("the gearbox check has a guide");
+        assert_eq!(gearbox.learn, Learn::Note(TORQUE_BAND_NOTE));
+        assert_eq!(row_learn(GEARBOX), Some(gearbox.learn));
+        let guided = CHECK_GUIDES
+            .iter()
+            .filter(|g| g.check.contains("gearbox"))
+            .count();
+        assert_eq!(guided, 1);
+        let at = |check: &str| CHECK_GUIDES.iter().position(|g| g.check == check).unwrap();
+        assert_eq!(at(GEARBOX), at(CLAMP) + 1);
+        assert_eq!(at(SPACE_CLAIM), at(GEARBOX) + 1);
     }
 
     // ------------------------------------------------------------------ the fix texts
@@ -2659,6 +3247,10 @@ mod tests {
                 at_least_zero("overall length", md.axial_reserve_mm),
                 at_least_zero("large-diameter bay", md.large_dia_reserve_mm),
             ],
+            GEARBOX => vec![at_least_zero(
+                "gearbox input torque",
+                inputs.coupling.gearbox_input_rating_Nm - md.cold_high_input_Nm,
+            )],
             END_EFFECT => vec![term("end-effect factor", m.f_end, m.f_end > 0.0)],
             // The engine's rule ring by ring; the margin is the flat's slack, or what is left
             // of the arcs' share of the circle.
@@ -2827,6 +3419,20 @@ mod tests {
                 "screw size",
             ),
             (
+                GEARBOX,
+                DesignInputs::default(),
+                MAGNET_LENGTH,
+                Direction::Lower,
+                "gearbox input torque",
+            ),
+            (
+                GEARBOX,
+                DesignInputs::default(),
+                FACE_GAP,
+                Direction::Raise,
+                "gearbox input torque",
+            ),
+            (
                 SPACE_CLAIM,
                 breaking(long_magnets),
                 MAGNET_LENGTH,
@@ -2885,7 +3491,6 @@ mod tests {
             .collect();
         assert_eq!(listed, slider_fixes);
         assert_eq!(listed.len(), cases.len());
-        let catalogue = InputCatalogue::get();
         for (check, failing_design, path, direction, term) in cases {
             let before = compute_all(&failing_design);
             assert_ne!(
@@ -2902,7 +3507,7 @@ mod tests {
                 let size = dimensions(&failing_design).unwrap();
                 resize_diameter(&failing_design, to_end(size.diameter_range)).unwrap()
             } else {
-                let range = catalogue.entry(path).unwrap().meta.range.unwrap();
+                let range = slider_range(path);
                 let end = match path {
                     "metal.cap_od_mm" => before.model.cup_od_mm,
                     _ => to_end(range),
@@ -3272,17 +3877,170 @@ mod tests {
         assert!(shown(SPACE_CLAIM, &typed).contains(&("metal.cap_od_mm", Direction::Lower)));
     }
 
+    /// The defaults with the gearbox input rating just above cold-high at the gearbox input:
+    /// halfway into the rise one step of the magnet-length slider gives (spec 7, item 7). The
+    /// rating feeds no other result, so the step and its rise are the defaults' own.
+    fn near_the_gearbox_limit() -> DesignInputs {
+        let defaults = DesignInputs::default();
+        let results = compute_all(&defaults);
+        let [longer] = &moves(&defaults, &results, MAGNET_LENGTH, Direction::Raise)[..] else {
+            panic!("one step of longer magnets from the defaults")
+        };
+        let at = results.metal.cold_high_input_Nm;
+        let rise = compute_all(longer).metal.cold_high_input_Nm - at;
+        assert!(rise > 0.0, "longer magnets raise cold-high: {rise}");
+        design(|i| i.coupling.gearbox_input_rating_Nm = at + rise / 2.0)
+    }
+
+    /// Asserts that the guide at `guide_index` of [`CHECK_GUIDES`] has no fix to show in this
+    /// design (`inputs`, whose results are `results`) with the shaft-clamp section paused or
+    /// shown (`paused`), and that the dashboard, fed the fixes as the panel hands them to it (no
+    /// Minimum OD set), draws [`NO_FIX`] right after the Fix label of the guide's open block,
+    /// found by its `problem`: `dashboard::fix_line` draws it for an open block whose fixes are
+    /// empty (ruling B-4).
+    fn assert_open_block_draws_no_fix(
+        inputs: &DesignInputs,
+        results: &DesignResults,
+        guide_index: usize,
+        problem: &str,
+        paused: bool,
+    ) {
+        let all = within_minimum_diameter(&all_fixes(inputs, results, paused), inputs, None);
+        assert_eq!(all[guide_index], [], "paused {paused}");
+        let output = sized_frame(
+            &egui::Context::default(),
+            egui::vec2(1280.0, 4000.0),
+            Vec::new(),
+            |ui| dashboard_ui(ui, inputs, results, &all, paused, &mut Readouts::default()),
+        );
+        let texts = drawn_texts(&output);
+        let check = CHECK_GUIDES[guide_index].check;
+        let open = texts
+            .iter()
+            .position(|t| t == problem)
+            .unwrap_or_else(|| panic!("the block of {check} is open, paused {paused}"));
+        let fix = open + texts[open..].iter().position(|t| t == FIX).unwrap();
+        assert_eq!(texts[fix + 1], NO_FIX, "paused {paused}");
+    }
+
+    #[test]
+    fn near_the_gearbox_limit_the_hot_minimum_guide_shows_no_fix() {
+        // Spec 7, item 7, a test of its own rather than a `designs()` entry: there the hot
+        // minimum guide's only fix is held back by construction. The gearbox check passes just
+        // under its rating and the hot minimum check fails; one step of longer magnets, the
+        // hot minimum's only fix, would turn the gearbox check red, so `helps` holds it back
+        // and the hot minimum's open block draws the no-fix line (`dashboard::fix_line` draws
+        // `NO_FIX` for an open block whose fixes are empty), with the shaft-clamp section
+        // shown and paused.
+        let inputs = near_the_gearbox_limit();
+        let results = compute_all(&inputs);
+        assert_eq!(level_of(GEARBOX, &inputs, &results), Level::Good);
+        assert_eq!(problem(GEARBOX, &inputs), None);
+        assert_eq!(level_of(HOT_MIN, &inputs, &results), Level::Bad);
+        let longer = (MAGNET_LENGTH, Direction::Raise);
+        let [stepped] = &moves(&inputs, &results, longer.0, longer.1)[..] else {
+            panic!("one step of longer magnets")
+        };
+        assert_eq!(
+            level_of(GEARBOX, stepped, &compute_all(stepped)),
+            Level::Bad
+        );
+        let hot_min = CHECK_GUIDES
+            .iter()
+            .position(|g| g.check == HOT_MIN)
+            .unwrap();
+        let problem = hot_min_problem(&inputs, &results).unwrap();
+        for paused in [false, true] {
+            assert!(
+                !helps(&inputs, &results, longer, None, paused),
+                "paused {paused}"
+            );
+            assert_open_block_draws_no_fix(&inputs, &results, hot_min, &problem, paused);
+        }
+        // With the rating a whole rise further up, the step stays within it and the fix shows.
+        let rise =
+            2.0 * (inputs.coupling.gearbox_input_rating_Nm - results.metal.cold_high_input_Nm);
+        let roomier = with(inputs, |i| i.coupling.gearbox_input_rating_Nm += rise);
+        let results = compute_all(&roomier);
+        assert_eq!(fixes(&HOT_MIN_GUIDE, &roomier, &results, false), [longer]);
+    }
+
+    #[test]
+    fn at_the_hot_minimum_s_limit_the_gearbox_guide_shows_no_fix_and_its_problem_says_why() {
+        // Spec 5 (5A) and 4A: the length Auto solves, set by hand, puts hot-low at the
+        // requirement; cold-high over hot-low does not depend on the geometry, so the gearbox
+        // check fails there. Both its fixes lower hot-low, so `helps` holds each back (one step
+        // would turn the hot minimum red), the open gearbox block draws NO_FIX right after its
+        // Fix label, and its Problem's sentence 2 says why, with the clamp section shown and
+        // paused.
+        let (_, inputs) = auto_on_length(&DesignInputs::default());
+        let results = compute_all(&inputs);
+        assert_eq!(level_of(HOT_MIN, &inputs, &results), Level::Good);
+        assert_eq!(level_of(GEARBOX, &inputs, &results), Level::Bad);
+        let gearbox = CHECK_GUIDES
+            .iter()
+            .position(|g| g.check == GEARBOX)
+            .unwrap();
+        let problem = gearbox_problem(&inputs, &results).unwrap();
+        let conflict = gearbox_conflict(&inputs, &results).expect("no geometry passes both");
+        assert!(problem.ends_with(&format!(" {conflict}")), "{problem}");
+        for paused in [false, true] {
+            for fix in [
+                (MAGNET_LENGTH, Direction::Lower),
+                (FACE_GAP, Direction::Raise),
+            ] {
+                assert!(
+                    !helps(&inputs, &results, fix, None, paused),
+                    "{fix:?} paused {paused}"
+                );
+            }
+            assert_open_block_draws_no_fix(&inputs, &results, gearbox, &problem, paused);
+        }
+    }
+
+    #[test]
+    fn each_gearbox_fix_moves_the_check_toward_passing_all_along_its_slider() {
+        // Spec 5: both gearbox fixes are monotone over their sliders from the example design,
+        // so a step anywhere along the way, not only the slider's end, moves cold-high at the
+        // gearbox input down (200 points from the default to the end the fix points to).
+        let defaults = DesignInputs::default();
+        let results = compute_all(&defaults);
+        for (path, direction) in [
+            (MAGNET_LENGTH, Direction::Lower),
+            (FACE_GAP, Direction::Raise),
+        ] {
+            let range = slider_range(path);
+            let start = current_number(&defaults, &results, path).unwrap();
+            let end = match direction {
+                Direction::Lower => range.min,
+                _ => range.max,
+            };
+            let mut last = results.metal.cold_high_input_Nm;
+            for k in 1..=200 {
+                let x = start + (end - start) * f64::from(k) / 200.0;
+                let inputs = with_number(&defaults, path, x).unwrap();
+                let now = compute_all(&inputs).metal.cold_high_input_Nm;
+                assert!(now < last, "{path} at {x}: {now} after {last}");
+                last = now;
+            }
+        }
+    }
+
     #[test]
     fn two_failing_checks_that_pull_one_input_apart_say_so() {
         // Spec review focus 4: the default design's first screen once said "lower the gap" for
         // the hot-low torque and "raise the gap" for the clearance. A fix whose step turns a
         // passing check red is not offered, so that pair cannot show. One input still shows
         // both ways when two checks that pull it apart both fail already: here the hot-low
-        // torque against an overall-length claim the stack is over (magnet length), and the
-        // blocks against a diameter claim (Outside diameter). Each fix helps its own check, so
-        // both stay, and each of the two blocks says, in the same words, that the input pulls
-        // two ways and another input has to settle one of them (`trade_offs`).
-        let pulled_apart: [(&str, &[&str]); 2] = [
+        // torque against the gearbox check, on the example design and wherever both fail (magnet
+        // length: no magnet size passes both), and against an overall-length claim the stack is
+        // over (magnet length), and the blocks against a diameter claim (Outside diameter). Each
+        // fix helps its own check, so both stay, and each of the two blocks says, in the same
+        // words, that the input pulls two ways and another input has to settle one of them
+        // (`trade_offs`).
+        let pulled_apart: [(&str, &[&str]); 4] = [
+            ("defaults", &[MAGNET_LENGTH]),
+            ("bare_clearance", &[MAGNET_LENGTH]),
             ("length_conflict", &[MAGNET_LENGTH]),
             ("diameter_conflict", &[RING]),
         ];
@@ -3308,31 +4066,57 @@ mod tests {
                 .find(|&&(fixture, _)| fixture == name)
                 .map_or(&[][..], |&(_, paths)| paths);
             assert_eq!(both_ways, expected, "{name}");
-            // The guides that raise and lower each such input carry its note; no other does.
+            // The guides that raise and lower each such input carry its note, one for each guide
+            // that pulls it the other way; no other guide does.
+            let pulling = |path: &str, direction: Direction| -> Vec<&str> {
+                CHECK_GUIDES
+                    .iter()
+                    .zip(&all)
+                    .filter(|(_, fixes)| fixes.contains(&(path, direction)))
+                    .map(|(g, _)| g.label)
+                    .collect()
+            };
             for (index, g) in CHECK_GUIDES.iter().enumerate() {
                 let mut wanted = Vec::new();
-                for &path in &both_ways {
-                    let by = |direction| {
-                        let at = all.iter().position(|f| f.contains(&(path, direction)));
-                        CHECK_GUIDES[at.unwrap()].label
-                    };
-                    if all[index].iter().any(|&(fixed, _)| fixed == path) {
-                        wanted.push(note(path, by(Direction::Raise), by(Direction::Lower)));
+                for &(path, direction) in &all[index] {
+                    if !both_ways.contains(&path) {
+                        continue;
+                    }
+                    match direction {
+                        Direction::Raise => {
+                            for lowering in pulling(path, Direction::Lower) {
+                                wanted.push(note(path, g.label, lowering));
+                            }
+                        }
+                        Direction::Lower => {
+                            for raising in pulling(path, Direction::Raise) {
+                                wanted.push(note(path, raising, g.label));
+                            }
+                        }
+                        Direction::Change | Direction::CustomHotterGrade => {}
                     }
                 }
                 assert_eq!(trade_offs(&all, index), wanted, "{name}: {}", g.check);
             }
         }
-        // The two cases in words: the same note in both blocks.
+        // The cases in words. The overall-length claim: the space claim's note in its block and
+        // in the hot-low torque's, which also carries the gearbox check's (it lowers the
+        // magnets too).
+        let at = |check| CHECK_GUIDES.iter().position(|g| g.check == check).unwrap();
         let length = design(|i| i.metal.max_overall_axial_mm = 30.0);
         let results = compute_all(&length);
         let all = all_fixes(&length, &results, false);
-        let expected = [
-            "One input pulls two ways (Axial magnet length, both rings): Hot-low torque needs it raised and Space claim needs it lowered, so change another input to settle one of them.",
-        ];
-        let at = |check| CHECK_GUIDES.iter().position(|g| g.check == check).unwrap();
-        assert_eq!(trade_offs(&all, at(HOT_MIN)), expected);
-        assert_eq!(trade_offs(&all, at(SPACE_CLAIM)), expected);
+        let space = "One input pulls two ways (Axial magnet length, both rings): Hot-low torque needs it raised and Space claim needs it lowered, so change another input to settle one of them.";
+        let gearbox = note(MAGNET_LENGTH, HOT_MIN_GUIDE.label, GEARBOX_GUIDE.label);
+        assert_eq!(trade_offs(&all, at(HOT_MIN)), [gearbox.as_str(), space]);
+        assert_eq!(trade_offs(&all, at(GEARBOX)), [gearbox.as_str()]);
+        assert_eq!(trade_offs(&all, at(SPACE_CLAIM)), [space]);
+        // The example design: the hot-low torque against the gearbox check alone, the same note
+        // in both blocks.
+        let defaults = DesignInputs::default();
+        let all = all_fixes(&defaults, &compute_all(&defaults), false);
+        assert_eq!(trade_offs(&all, at(HOT_MIN)), [gearbox.as_str()]);
+        assert_eq!(trade_offs(&all, at(GEARBOX)), [gearbox.as_str()]);
         let crowded = with(with_poles(12), |i| i.metal.max_diameter_mm = 42.0);
         let results = compute_all(&crowded);
         let all = all_fixes(&crowded, &results, false);
@@ -3432,6 +4216,16 @@ mod tests {
         }
     }
 
+    #[test]
+    fn no_guide_text_says_the_coupling_protects_the_gearbox() {
+        // BL-059 and slice-2 spec section 8: the gearbox check's Problem, Why and fixes, and
+        // every other guide text, say what the check compares; a pass is no protection.
+        use crate::engine::explain::plain::mentions_gearbox_protection;
+        for text in every_text() {
+            assert!(!mentions_gearbox_protection(&text), "{text:?}");
+        }
+    }
+
     // ------------------------------------------------------------------ the Problems
 
     #[test]
@@ -3458,7 +4252,7 @@ mod tests {
                 }
             }
         }
-        // The passing design passes every guide; the defaults fail three, all red.
+        // The passing design passes every guide; the defaults fail four, all red.
         let inputs = passing_design();
         let results = compute_all(&inputs);
         for g in &CHECK_GUIDES {
@@ -3471,7 +4265,15 @@ mod tests {
             .map(|g| (g.check, level(g, &inputs, &results)))
             .filter(|&(_, badge)| badge != Good)
             .collect();
-        assert_eq!(failing, [(HOT_MIN, Bad), (CLEARANCE, Bad), (CUP_WALL, Bad)]);
+        assert_eq!(
+            failing,
+            [
+                (HOT_MIN, Bad),
+                (CLEARANCE, Bad),
+                (CUP_WALL, Bad),
+                (GEARBOX, Bad)
+            ]
+        );
         // Each failing design fails the check it was built for, at the level the dashboard gives.
         for (inputs, check, want) in [
             (breaking(hot_day), TEMPERATURE, Caution),
@@ -3491,6 +4293,7 @@ mod tests {
             (with_poles(40), FIT_CHECK, Bad),
             (with(with_poles(40), arcs), FIT_CHECK, Bad),
             (design(bare_clearance), CLEARANCE, Bad),
+            (only_the_gearbox_fails(), GEARBOX, Bad),
         ] {
             let results = compute_all(&inputs);
             assert_eq!(level_of(check, &inputs, &results), want, "{check}");
@@ -3550,6 +4353,12 @@ mod tests {
                 &["clamps.required_Nm", "clamps.max_torque_Nm"],
             ),
             (
+                GEARBOX,
+                DesignInputs::default(),
+                design(|i| i.metal.min_temp_C = 0.0),
+                &["metal.cold_high_input_Nm"],
+            ),
+            (
                 SPACE_CLAIM,
                 breaking(large_cap),
                 breaking(|i| i.metal.cap_od_mm = 45.0),
@@ -3599,6 +4408,22 @@ mod tests {
                 }
             }
         }
+        // The gearbox Problem's sentence 2 (owner decision 4A) quotes numbers worked out from
+        // the results: two designs with different bands (a warmer minimum temperature narrows
+        // it) quote different numbers, each its own.
+        let sentences: Vec<String> = [
+            ("defaults", DesignInputs::default()),
+            ("minimum -20 °C", design(|i| i.metal.min_temp_C = -20.0)),
+        ]
+        .iter()
+        .map(|(name, inputs)| {
+            let results = compute_all(inputs);
+            let conflict = gearbox_conflict(inputs, &results).expect("the conflict holds");
+            assert_conflict_quotes(name, inputs, &results, &conflict);
+            conflict
+        })
+        .collect();
+        assert_ne!(sentences[0], sentences[1]);
     }
 
     #[test]
@@ -3625,6 +4450,997 @@ mod tests {
         let text = problem(CLEARANCE, &thinner).unwrap();
         assert!(text.starts_with("Radial running gap 0.7768 mm"), "{text}");
         assert!(text.contains("leaves -0.003174 mm"), "{text}");
+        // The gearbox check: cold-high at the gearbox input and the rating, each as its readout
+        // shows it; the rating follows an edit.
+        let results = compute_all(&defaults);
+        let quoted = [
+            result_text(&results, "metal.cold_high_input_Nm"),
+            input_text(&defaults, "coupling.gearbox_input_rating_Nm"),
+        ];
+        assert_eq!(quoted, ["0.8049 N·m", "0.6000 N·m"]);
+        let text = problem(GEARBOX, &defaults).unwrap();
+        for number in &quoted {
+            assert!(text.contains(number.as_str()), "{number} in {text}");
+        }
+        let rated = design(|i| i.coupling.gearbox_input_rating_Nm = 0.7);
+        let text = problem(GEARBOX, &rated).unwrap();
+        assert!(text.contains("0.7000 N·m"), "{text}");
+    }
+
+    #[test]
+    fn sentence_1_never_reads_two_equal_numbers() {
+        // Whole-branch review MF-1. Sentence 1 quotes cold-high at the gearbox input and the
+        // rating as the readouts do, to four significant digits. Where cold-high is above the
+        // rating by less than half a last digit both would read the same, so cold-high is quoted
+        // one last digit past the rating, as the verdict and sentence 2 quote a torque on the
+        // gearbox input. On the sliders, an 8.01 mm magnet length, a 1.00 mm face gap and a
+        // 0.54 N·m rating put about 0.54004 N·m on the gearbox input.
+        let mut close = DesignInputs::default();
+        for (path, x) in [
+            ("coupling.magnets.axial_length_mm", 8.01),
+            ("metal.face_gap_mm", 1.0),
+            ("coupling.gearbox_input_rating_Nm", 0.54),
+        ] {
+            assert!(
+                slider_values(path).contains(&x),
+                "{path}: {x} on a step of its slider"
+            );
+            close = with_number(&close, path, x).unwrap_or_else(|| panic!("{path}: {x}"));
+        }
+        let results = compute_all(&close);
+        assert_eq!(level_of(GEARBOX, &close, &results), Level::Bad);
+        // The readouts show the two the same.
+        assert_eq!(
+            result_text(&results, "metal.cold_high_input_Nm"),
+            input_text(&close, "coupling.gearbox_input_rating_Nm")
+        );
+        let text = problem(GEARBOX, &close).unwrap();
+        assert!(
+            text.starts_with(
+                "Cold-high at the gearbox input is 0.5401 N·m, above its 0.5400 N·m input rating."
+            ),
+            "{text}"
+        );
+        // Where the two read apart, cold-high reads as its readout: the defaults are unchanged.
+        let text = problem(GEARBOX, &DesignInputs::default()).unwrap();
+        assert!(
+            text.starts_with(
+                "Cold-high at the gearbox input is 0.8049 N·m, above its 0.6000 N·m input rating."
+            ),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn off_the_sliders_sentence_1_can_read_two_equal_numbers_as_the_readme_says() {
+        // Whole-branch review fix wave 2, m-1 (G-3 SF-2). Sentence 1 quotes cold-high one last
+        // digit past the rating only for a positive torque: [`quoted_load`] quotes any other as
+        // it is. On the sliders a failing check has cold-high above a rating of at least the
+        // rating slider's bottom, so above zero. A design file can carry values off the
+        // sliders: here a negative gearbox ratio, and a rating a hair below the negative
+        // cold-high at the gearbox input that ratio gives, and the two read the same. So the
+        // README says sentence 1 never reads two equal numbers on the sliders; a change that
+        // quotes these apart too can drop that scope from the README and this test.
+        let reversed = design(|i| i.coupling.gear_ratio = -5.0);
+        let cold_high_input = compute_all(&reversed).metal.cold_high_input_Nm;
+        let file = with(reversed, |i| {
+            i.coupling.gearbox_input_rating_Nm = cold_high_input - 1e-7;
+        });
+        for (path, x) in [
+            ("coupling.gear_ratio", file.coupling.gear_ratio),
+            (
+                "coupling.gearbox_input_rating_Nm",
+                file.coupling.gearbox_input_rating_Nm,
+            ),
+        ] {
+            assert!(x < slider_range(path).min, "{path}: {x} below its slider");
+        }
+        let results = compute_all(&file);
+        assert_eq!(level_of(GEARBOX, &file, &results), Level::Bad);
+        let text = problem(GEARBOX, &file).unwrap();
+        assert!(
+            text.starts_with(
+                "Cold-high at the gearbox input is -0.8049 N·m, above its -0.8049 N·m input rating."
+            ),
+            "{text}"
+        );
+        let readme = include_str!("../../README.md");
+        let claim =
+            "The gearbox Problem's first sentence never reads two equal numbers on the sliders:";
+        assert!(readme.contains(claim), "README.md should say {claim:?}");
+    }
+
+    // ------------------------------------------------------------------ the gearbox conflict
+
+    /// Problem sentence 2's numbers (owner decision 4A), worked out here from a design's
+    /// results and inputs as the sentence's own check: the band (cold-high over hot-low), the
+    /// requirement, cold-high at the gearbox input of a design that just meets the
+    /// requirement, what the requirement alone puts there, the largest requirement and the
+    /// widest band the rating allows, whether no band is offered (the requirement alone above
+    /// the rating) and whether the conflict holds (the minimum temperature at or below the
+    /// operating one, hot-low above zero, and the requirement times the band, at the gearbox
+    /// input, above the rating). Above the rating means beyond float noise ([`RATING_NOISE`],
+    /// review NB-2): at the rating passes.
+    struct ConflictNumbers {
+        band: f64,
+        required: f64,
+        input_at_required: f64,
+        alone: f64,
+        largest_required: f64,
+        widest_band: f64,
+        no_band: bool,
+        holds: bool,
+    }
+
+    impl ConflictNumbers {
+        fn of(inputs: &DesignInputs, results: &DesignResults) -> Self {
+            let (c, md) = (&inputs.coupling, &results.metal);
+            let gear = c.gear_ratio * c.gear_efficiency;
+            let rating = c.gearbox_input_rating_Nm;
+            let above_rating = |torque: f64| torque > rating * (1.0 + RATING_NOISE);
+            let band = md.torque_cold_high_Nm / md.torque_hot_low_Nm;
+            let required = inputs.metal.required_min_Nm;
+            let input_at_required = required * band / gear;
+            let alone = required / gear;
+            Self {
+                band,
+                required,
+                input_at_required,
+                alone,
+                largest_required: rating * gear / band,
+                widest_band: rating * gear / required,
+                no_band: above_rating(alone),
+                holds: inputs.metal.min_temp_C <= inputs.coupling.op_temp_C
+                    && md.torque_hot_low_Nm > 0.0
+                    && above_rating(input_at_required),
+            }
+        }
+
+        /// Sentence 2's three numbers that it sets against another, in its order (review I-2):
+        /// cold-high at the gearbox input of a design that just meets the requirement, against
+        /// the rating; the largest requirement, against the requirement; and the widest band,
+        /// against the band, or where no band is offered the requirement alone at the gearbox
+        /// input, against the rating.
+        fn bounds(&self, rating: f64) -> [Bound; 3] {
+            let reads = |x: f64| format_value(&Value::Num(x));
+            let load = |what, value| Bound {
+                what,
+                value,
+                text: number_text(quoted_load(value, rating), "metal.cold_high_input_Nm"),
+                against: reads(rating),
+                below: false,
+                floor: 0.0,
+            };
+            [
+                load("cold-high at the input", self.input_at_required),
+                Bound {
+                    what: "largest requirement",
+                    value: self.largest_required,
+                    text: number_text(
+                        quoted_limit(self.largest_required, self.required),
+                        "metal.torque_hot_low_Nm",
+                    ),
+                    against: reads(self.required),
+                    below: true,
+                    floor: 0.0,
+                },
+                if self.no_band {
+                    load("requirement alone at the input", self.alone)
+                } else {
+                    let (band, widest) = band_quotes(self.band, self.widest_band);
+                    Bound {
+                        what: "widest band",
+                        value: self.widest_band,
+                        text: widest,
+                        against: band,
+                        below: true,
+                        // With the temperatures in order no band is below one (review NB-1).
+                        floor: 1.0,
+                    }
+                },
+            ]
+        }
+
+        /// Each number as sentence 2 quotes it (the readouts' format; its [`bounds`] rounded
+        /// toward passing), in the sentence's order.
+        fn quoted(&self, inputs: &DesignInputs) -> [String; 5] {
+            let [input, largest, last] = self.bounds(inputs.coupling.gearbox_input_rating_Nm);
+            // The band as the sentence quotes it: where it offers a band, as set against it.
+            let band = if self.no_band {
+                format_value(&Value::Num(self.band))
+            } else {
+                last.against.clone()
+            };
+            [
+                band,
+                input_text(inputs, "metal.required_min_Nm"),
+                input.text,
+                largest.text,
+                last.text,
+            ]
+        }
+    }
+
+    /// A number sentence 2 sets against another ([`ConflictNumbers::bounds`]): its value, its
+    /// text as the sentence quotes it (with its unit), the number it must read past as the
+    /// sentence quotes that, below it (a limit) or above it (a torque on the gearbox input,
+    /// against the rating), and the least it can read.
+    struct Bound {
+        what: &'static str,
+        value: f64,
+        text: String,
+        against: String,
+        below: bool,
+        floor: f64,
+    }
+
+    /// Asserts that `conflict`, Problem sentence 2 of `inputs` (whose results are `results`),
+    /// quotes its five numbers from the results in the sentence's order, and that each number it
+    /// sets against another reads past it as quoted: no rounding makes it read against itself
+    /// (review I-2). Each of those is also quoted on its passing side of its own value, within
+    /// two of its last shown digits, and not below the least it can be: a requirement or band set
+    /// to a quoted limit meets it, a band quoted is one a change can reach (review NB-1), and a
+    /// gearbox rated for a quoted torque takes it.
+    fn assert_conflict_quotes(
+        name: &str,
+        inputs: &DesignInputs,
+        results: &DesignResults,
+        conflict: &str,
+    ) {
+        let numbers = ConflictNumbers::of(inputs, results);
+        let mut from = 0;
+        for text in numbers.quoted(inputs) {
+            let at = conflict[from..]
+                .find(&text)
+                .unwrap_or_else(|| panic!("{name}: {text} after byte {from} of {conflict}"));
+            from += at + text.len();
+        }
+        // A number as quoted, without its unit.
+        let number = |text: &str| -> f64 { text.split(' ').next().unwrap().parse().unwrap() };
+        for b in numbers.bounds(inputs.coupling.gearbox_input_rating_Nm) {
+            let (shown, against) = (number(&b.text), number(&b.against));
+            // How far the quoted value is from the value, in last shown digits: the coarser of
+            // the two, as at a decade (0.99999 quoted 1.001 is one digit of 1.001 past 1.000).
+            let step = last_digit_step(b.value).max(last_digit_step(shown));
+            let digits = (shown - b.value) / step;
+            let message = format!(
+                "{name}: {} {} quoted {} against {}: {conflict}",
+                b.what, b.value, b.text, b.against
+            );
+            assert!(shown >= b.floor, "{message}");
+            if b.below {
+                assert!(shown < against, "{message}");
+                assert!(-2.0 < digits && digits <= 1e-6, "{message}");
+            } else {
+                assert!(shown > against, "{message}");
+                assert!((-1e-6..2.0).contains(&digits), "{message}");
+            }
+        }
+    }
+
+    /// The two numbers gearbox Problem sentence 1 quotes, as they read: cold-high at the gearbox
+    /// input and the rating.
+    fn sentence_1_numbers(problem: &str) -> (f64, f64) {
+        let between = |start: &str, end: &str| -> f64 {
+            let from = problem
+                .find(start)
+                .unwrap_or_else(|| panic!("{start:?} in {problem}"))
+                + start.len();
+            let to = from
+                + problem[from..]
+                    .find(end)
+                    .unwrap_or_else(|| panic!("{end:?} after {start:?} in {problem}"));
+            problem[from..to]
+                .parse()
+                .unwrap_or_else(|_| panic!("a number between {start:?} and {end:?} in {problem}"))
+        };
+        (
+            between("Cold-high at the gearbox input is ", " N·m, above its "),
+            between("above its ", " N·m input rating."),
+        )
+    }
+
+    /// Holds the gearbox Problem of `inputs` to owner decision 4A: it is present exactly when
+    /// the check fails or asks for a look; where the check fails, sentence 1 quotes cold-high at
+    /// the gearbox input above the rating as it reads, never two equal numbers (whole-branch
+    /// review MF-1); sentence 2 ([`gearbox_conflict`]) exists exactly when the conflict holds by
+    /// the test's own numbers ([`ConflictNumbers`]), quotes them ([`assert_conflict_quotes`]),
+    /// names the requirement's side of the gearbox, and follows sentence 1 after one space
+    /// exactly when the check fails as well; and a design that meets the requirement puts at
+    /// least what sentence 2 says even just meeting it puts on the gearbox input (G-3 review
+    /// M-1). Returns the check's level and whether sentence 2 is shown.
+    fn assert_gearbox_problem_consistent(name: &str, inputs: &DesignInputs) -> (Level, bool) {
+        let results = compute_all(inputs);
+        let badge = level_of(GEARBOX, inputs, &results);
+        let problem = gearbox_problem(inputs, &results);
+        assert_eq!(
+            problem.is_some(),
+            badge != Level::Good,
+            "{name}: {problem:?}"
+        );
+        if let (Level::Bad, Some(problem)) = (badge, &problem) {
+            let (torque, rating) = sentence_1_numbers(problem);
+            assert!(torque > rating, "{name}: {problem}");
+        }
+        let conflict = gearbox_conflict(inputs, &results);
+        let numbers = ConflictNumbers::of(inputs, &results);
+        assert_eq!(conflict.is_some(), numbers.holds, "{name}: {conflict:?}");
+        let shown = match (&problem, &conflict) {
+            (Some(problem), Some(conflict)) => problem.ends_with(&format!(" {conflict}")),
+            _ => false,
+        };
+        assert_eq!(
+            shown,
+            badge == Level::Bad && numbers.holds,
+            "{name}: {problem:?}"
+        );
+        if let Some(conflict) = &conflict {
+            assert_conflict_quotes(name, inputs, &results, conflict);
+            assert!(
+                conflict.contains("requirement at the gearbox output"),
+                "{name}: {conflict}"
+            );
+            // The band does not depend on the geometry, so a design with hot-low at or above the
+            // requirement has cold-high, at the gearbox input too, at or above what just meeting
+            // it puts there, up to float noise. The band here is this design's own, so this holds
+            // by construction; tests/gearbox.rs
+            // `the_band_is_the_same_at_every_magnet_size_gap_count_and_back_iron` pins the premise
+            // across the geometry sliders (whole-branch review MF-3).
+            if results.metal.torque_hot_low_Nm >= numbers.required {
+                assert!(
+                    results.metal.cold_high_input_Nm >= numbers.input_at_required * (1.0 - 1e-12),
+                    "{name}: {} against {}",
+                    results.metal.cold_high_input_Nm,
+                    numbers.input_at_required
+                );
+            }
+        }
+        (badge, shown)
+    }
+
+    /// The Size tab's Auto on `variable` for `base`: the solve over the variable's slider (the
+    /// panel's search range for every free variable but ring size) and the design it shows, as
+    /// the solved value and that design.
+    fn auto_on(variable: FreeVariable, base: &DesignInputs) -> (f64, DesignInputs) {
+        match solve(base, variable, base.metal.required_min_Nm) {
+            Ok(SizingOutcome::Solved(point)) => (
+                point.value,
+                crate::gui::sizing::sized(variable, base, point.value),
+            ),
+            other => panic!("Auto on {variable:?} does not solve: {other:?}"),
+        }
+    }
+
+    /// [`auto_on`] the axial magnet length (ruling B-5): the solved length and the design.
+    fn auto_on_length(base: &DesignInputs) -> (f64, DesignInputs) {
+        auto_on(FreeVariable::AxialLength, base)
+    }
+
+    #[test]
+    fn at_the_defaults_the_gearbox_problem_says_no_geometry_passes_both_checks() {
+        // Owner decision 4A. Cold-high over hot-low does not depend on the geometry, so every
+        // design that meets the default requirement puts the requirement times that band on
+        // the gearbox output, above the rating at its input: sentence 2 follows sentence 1,
+        // every number of both from the results and inputs.
+        let inputs = DesignInputs::default();
+        let results = compute_all(&inputs);
+        assert_eq!(
+            assert_gearbox_problem_consistent("defaults", &inputs),
+            (Level::Bad, true)
+        );
+        let problem = gearbox_problem(&inputs, &results).unwrap();
+        let conflict = gearbox_conflict(&inputs, &results).unwrap();
+        let first = problem.strip_suffix(&format!(" {conflict}")).unwrap();
+        for text in [
+            result_text(&results, "metal.cold_high_input_Nm"),
+            input_text(&inputs, "coupling.gearbox_input_rating_Nm"),
+        ] {
+            assert!(first.contains(&text), "{text} in {first}");
+        }
+        // Spec 7.6's numbers, typed as the readouts print them, so a formula error the oracle
+        // shares with the code still shows: the band, the requirement, cold-high at the input
+        // of a design that just meets it, the largest requirement and the widest band.
+        for text in ["1.673", "2.500 N·m", "0.8806 N·m", "1.703 N·m", "1.140"] {
+            assert!(conflict.contains(text), "{text} in {conflict}");
+        }
+        // G-3 review M-1: the requirement named at the gearbox output, and the torque on the
+        // gearbox input what even just meeting it puts there (a design with room puts more).
+        let load = "so even just meeting the 2.500 N·m requirement at the gearbox output puts 0.8806 N·m on the gearbox input.";
+        assert!(conflict.contains(load), "{conflict}");
+        // The second remedy form, at a gearbox ratio of 1: the largest requirement and what the
+        // requirement alone puts on the gearbox input. The largest requirement, 0.34069 N·m, is
+        // quoted rounded down (review I-2): a requirement of 0.3407 N·m would not pass.
+        let ratio_one = design(|i| i.coupling.gear_ratio = 1.0);
+        let conflict = gearbox_conflict(&ratio_one, &compute_all(&ratio_one)).unwrap();
+        for text in ["0.3406 N·m", "2.632 N·m"] {
+            assert!(conflict.contains(text), "{text} in {conflict}");
+        }
+    }
+
+    #[test]
+    fn a_design_failing_the_gearbox_check_alone_has_no_conflict_sentence() {
+        // The passing design with the rating back at its default fails the gearbox check
+        // alone. Its requirement times the band, at the gearbox input, is under the rating, so
+        // a design that just meets its requirement passes both checks: no sentence 2.
+        let inputs = only_the_gearbox_fails();
+        let results = compute_all(&inputs);
+        assert_eq!(
+            assert_gearbox_problem_consistent("gearbox_only", &inputs),
+            (Level::Bad, false)
+        );
+        let problem = gearbox_problem(&inputs, &results).unwrap();
+        for text in [
+            result_text(&results, "metal.cold_high_input_Nm"),
+            input_text(&inputs, "coupling.gearbox_input_rating_Nm"),
+        ] {
+            assert!(problem.contains(&text), "{text} in {problem}");
+        }
+        // Not a word of the defaults' sentence 2 either: its lead, the words before its first
+        // number, is nowhere in this Problem.
+        let defaults = DesignInputs::default();
+        let conflict = gearbox_conflict(&defaults, &compute_all(&defaults)).unwrap();
+        let lead = conflict.split(|c: char| c.is_ascii_digit()).next().unwrap();
+        assert!(!lead.is_empty() && !problem.contains(lead), "{problem}");
+    }
+
+    #[test]
+    fn under_auto_on_length_the_gearbox_check_fails_exactly_when_the_conflict_holds() {
+        // Spec 5 (Auto, owner decision 5A): Auto sizes for the hot minimum check alone, so where
+        // the solve lands on the requirement (above the length slider's bottom it bisects to
+        // it), a solved design's hot-low is the requirement and its cold-high at the gearbox
+        // input the requirement times the band over ratio and efficiency: with the minimum
+        // temperature at or below the operating one, the check fails exactly where the conflict
+        // holds, with sentence 2, except at a tie, where that is the rating itself (the
+        // requirement times the band is the rating times ratio times efficiency): there the
+        // solve's last digits above the requirement fail the check without sentence 2
+        // (`under_auto_on_length_…_only_at_a_tie`). With the operating temperature below the
+        // minimum sentence 2 never shows, though the check can fail
+        // (`an_operating_temperature_below_the_minimum_…`). Where Auto overshoots the
+        // requirement the two need not agree either
+        // (`where_auto_overshoots_the_requirement_…`). At the defaults the check fails with
+        // sentence 2. With the minimum temperature at its slider's top and no variation
+        // allowance the band narrows enough: Auto solves about 11.90 mm, the check passes and
+        // there is no Problem.
+        let narrow_band = design(|i| {
+            i.metal.min_temp_C = slider_range("metal.min_temp_C").max;
+            i.metal.variation = slider_range("metal.variation").min;
+        });
+        for (name, base, fails) in [
+            ("defaults", DesignInputs::default(), true),
+            ("narrow band", narrow_band, false),
+        ] {
+            let (length, inputs) = auto_on_length(&base);
+            assert!(
+                length > slider_range("coupling.magnets.axial_length_mm").min,
+                "{name}: {length}"
+            );
+            let results = compute_all(&inputs);
+            assert_eq!(level_of(HOT_MIN, &inputs, &results), Level::Good, "{name}");
+            let (badge, shown) = assert_gearbox_problem_consistent(name, &inputs);
+            assert_eq!((badge == Level::Bad, shown), (fails, fails), "{name}");
+            if !fails {
+                assert!((length - 11.902).abs() < 0.005, "{length}");
+                assert_eq!(gearbox_problem(&inputs, &results), None);
+            }
+        }
+    }
+
+    #[test]
+    fn where_auto_overshoots_the_requirement_the_gearbox_check_can_fail_without_the_conflict() {
+        // Review I-3, why the README says the check can fail without sentence 2 where Auto
+        // overshoots the requirement: the overshoot reaches the gearbox input too, and a rating
+        // on its slider between what meeting the requirement puts on the gearbox input and what
+        // the solved design puts there fails the check with no sentence 2. Auto on Magnets per
+        // ring steps by two: with a 2 N·m requirement (the review's probe; Auto on the count
+        // does not reach the defaults' 2.5 N·m) it solves 10 magnets. Auto on length stops at
+        // its slider's bottom where that already meets the requirement: with no end effect and
+        // the lowest requirement it does. Where the solve lands on the requirement instead, see
+        // `under_auto_on_length_the_gearbox_check_fails_without_sentence_2_only_at_a_tie`.
+        let length_bottom = slider_range("coupling.magnets.axial_length_mm").min;
+        for (variable, base) in [
+            (
+                FreeVariable::MagnetsPerRing,
+                design(|i| i.metal.required_min_Nm = 2.0),
+            ),
+            (
+                FreeVariable::AxialLength,
+                design(|i| {
+                    i.coupling.c_end = slider_range("coupling.c_end").min;
+                    i.metal.required_min_Nm = slider_range("metal.required_min_Nm").min;
+                }),
+            ),
+        ] {
+            let (value, solved) = auto_on(variable, &base);
+            let name = format!("Auto on {variable:?} at {value}");
+            let results = compute_all(&solved);
+            if variable == FreeVariable::AxialLength {
+                assert_eq!(value, length_bottom, "{name}");
+            }
+            // It overshoots the requirement.
+            assert!(
+                results.metal.torque_hot_low_Nm > base.metal.required_min_Nm * 1.01,
+                "{name}"
+            );
+            let at_requirement = ConflictNumbers::of(&solved, &results).input_at_required;
+            let at_solved = results.metal.cold_high_input_Nm;
+            let rating = *slider_values("coupling.gearbox_input_rating_Nm")
+                .iter()
+                .find(|&&rating| at_requirement < rating && rating < at_solved)
+                .unwrap_or_else(|| {
+                    panic!("{name}: a rating between {at_requirement} and {at_solved}")
+                });
+            let inputs = with(solved, |i| i.coupling.gearbox_input_rating_Nm = rating);
+            let results = compute_all(&inputs);
+            assert_eq!(level_of(HOT_MIN, &inputs, &results), Level::Good, "{name}");
+            assert_eq!(
+                assert_gearbox_problem_consistent(&name, &inputs),
+                (Level::Bad, false),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn under_auto_on_length_the_gearbox_check_fails_without_sentence_2_only_at_a_tie() {
+        // Review I-3, the README's claim in general. Every Auto solve meets the requirement, so
+        // where the conflict holds the solved design fails the check and sentence 2 shows. Where
+        // Auto on length lands on the requirement (above its slider's bottom it bisects to it),
+        // the check fails without sentence 2 only at a tie, where meeting the requirement puts
+        // the rating itself on the gearbox input: the requirement times the band is the rating
+        // times ratio times efficiency. A design exactly at the requirement then passes both
+        // checks, so sentence 2 is held back ([`RATING_NOISE`]), but the solve stops within its
+        // length tolerance above the requirement and the check, strict at the rating, fails.
+        // The sliders reach a tie at a band of one and at bands above one that are ratios of
+        // small whole numbers. At each band of one and two such bands above it, Auto on length
+        // solves the tie whose requirement is nearest the defaults' (no typed numbers), and
+        // over every rating on its slider the solved design fails the check with sentence 2
+        // below the tie's rating, without it at that rating, and passes above it.
+        let length_bottom = slider_range("coupling.magnets.axial_length_mm").min;
+        let bases = bands_of_one()
+            .map(|(name, base)| (name, base, false))
+            .into_iter()
+            .chain(short_fraction_bands().map(|(name, base)| (name, base, true)));
+        for (base_name, base, above_one) in bases {
+            let band = ConflictNumbers::of(&base, &compute_all(&base)).band;
+            // A band of one is one up to float noise.
+            assert_eq!(band > 1.0 + 1e-9, above_one, "{base_name}: {band}");
+            let off =
+                |i: &DesignInputs| (i.metal.required_min_Nm - base.metal.required_min_Nm).abs();
+            let (tie_name, tie) = exact_products(&base, band)
+                .into_iter()
+                .min_by(|(_, a), (_, b)| off(a).total_cmp(&off(b)))
+                .unwrap_or_else(|| panic!("{base_name}: a tie on the sliders"));
+            let (length, solved) = auto_on_length(&tie);
+            let name = format!("{base_name}, {tie_name}, Auto on length at {length}");
+            // It lands on the requirement: its hot-low reads as the requirement, its last digits
+            // above it.
+            assert!(length > length_bottom, "{name}");
+            let results = compute_all(&solved);
+            let hot_low = results.metal.torque_hot_low_Nm;
+            assert!(hot_low > solved.metal.required_min_Nm, "{name}: {hot_low}");
+            assert_eq!(
+                result_text(&results, "metal.torque_hot_low_Nm"),
+                input_text(&solved, "metal.required_min_Nm"),
+                "{name}"
+            );
+            assert_eq!(level_of(HOT_MIN, &solved, &results), Level::Good, "{name}");
+            let at_tie = tie.coupling.gearbox_input_rating_Nm;
+            for rating in slider_values("coupling.gearbox_input_rating_Nm") {
+                let inputs = with(solved.clone(), |i| {
+                    i.coupling.gearbox_input_rating_Nm = rating
+                });
+                let expected = if rating < at_tie {
+                    (Level::Bad, true)
+                } else if rating == at_tie {
+                    (Level::Bad, false)
+                } else {
+                    (Level::Good, false)
+                };
+                let name = format!("{name}, rating {rating}");
+                assert_eq!(
+                    assert_gearbox_problem_consistent(&name, &inputs),
+                    expected,
+                    "{name}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_conflict_sentence_shows_exactly_when_no_geometry_passes_both_checks() {
+        // Review focus (owner decision 4A): over every test design, and the defaults with the
+        // gearbox ratio and efficiency at each end of their sliders, sentence 2 shows exactly
+        // when the check fails and the conflict holds, and every limit it quotes is below
+        // what it limits.
+        let mut cases: Vec<(String, DesignInputs)> = designs()
+            .into_iter()
+            .map(|(name, inputs)| (name.to_owned(), inputs))
+            .collect();
+        cases.extend(gear_slider_ends());
+        let (mut with_sentence, mut without_sentence) = (0, 0);
+        // The designs that show sentence 2 while meeting the requirement with room.
+        let mut with_room = Vec::new();
+        for (name, inputs) in &cases {
+            let (badge, shown) = assert_gearbox_problem_consistent(name, inputs);
+            match (badge, shown) {
+                (Level::Bad, true) => with_sentence += 1,
+                (Level::Bad, false) => without_sentence += 1,
+                _ => {}
+            }
+            if shown && compute_all(inputs).metal.torque_hot_low_Nm > inputs.metal.required_min_Nm {
+                with_room.push(name.as_str());
+            }
+        }
+        // Both forms of a failing check's Problem are reached.
+        assert!(
+            with_sentence > 0 && without_sentence > 0,
+            "{with_sentence} with sentence 2, {without_sentence} without"
+        );
+        // G-3 review M-1: twelve poles meets the requirement with room and puts more on the
+        // gearbox input than sentence 2 quotes, so the helper's "even just meeting" bound is
+        // checked where it is not an equality.
+        assert!(with_room.contains(&"twelve_poles"), "{with_room:?}");
+    }
+
+    #[test]
+    fn sentence_2_rounds_its_limits_toward_passing_and_past_what_they_limit() {
+        // Review I-2. A limit is quoted rounded down at its last shown digit and a torque on the
+        // gearbox input rounded up, so a value set to the quoted number passes; float noise is
+        // not a digit; where the quoted number would still read equal to the one it is set
+        // against, it goes one digit further.
+        let reads = |x: f64| format_value(&Value::Num(x));
+        for (limit, limited, quoted) in [
+            // The defaults' largest requirement: down is also the nearest.
+            (1.703451, 2.5, "1.703"),
+            // The ratio-1 design's: the nearest, 0.3407, would not pass.
+            (0.340690, 2.5, "0.3406"),
+            // 1.14 to the last digit, though not in binary.
+            (0.6 * 4.75 / 2.5, 1.673, "1.140"),
+            (0.99996, 2.0, "0.9999"),
+            // Down reads 1.590, as the 1.59004 it limits does: one digit further.
+            (1.59001, 1.59004, "1.589"),
+            // A requirement can be below one; a band cannot ([`band_quotes`], below).
+            (1.00001, 1.00004, "0.9990"),
+        ] {
+            assert_eq!(
+                reads(quoted_limit(limit, limited)),
+                quoted,
+                "{limit} below {limited}"
+            );
+        }
+        for (load, rating, quoted) in [
+            (0.880564, 0.6, "0.8806"),
+            (0.88051, 0.6, "0.8806"),
+            (2.5 / 0.95, 0.6, "2.632"),
+            (2.85 / 4.75, 0.5, "0.6000"),
+            (0.99994, 0.5, "1.000"),
+            // Up reads 0.5600, as the 0.55998 rating does: one digit further.
+            (0.55999, 0.55998, "0.5601"),
+            (0.99999, 0.99996, "1.001"),
+        ] {
+            assert_eq!(
+                reads(quoted_load(load, rating)),
+                quoted,
+                "{load} above {rating}"
+            );
+        }
+        // A number that is not finite or not positive (a value from a file) is quoted as it is.
+        for x in [f64::INFINITY, 0.0, -0.5] {
+            assert_eq!(reads(quoted_limit(x, 1.0)), reads(x));
+            assert_eq!(reads(quoted_load(x, 1.0)), reads(x));
+        }
+        // The band and the widest band (review NB-1): the widest band is a limit, but no band is
+        // below one, so one under one by float noise is one, and where both read 1.000 both get
+        // more decimals, as few as tell them apart, the widest band never below one (at 13
+        // decimals one rounded down is 0.9999999999999 in binary).
+        let under_one = 1.0 - RATING_NOISE / 2.0;
+        for (band, widest, quoted) in [
+            (1.673, 1.14, ("1.673", "1.140")),
+            (1.67303, 1.6730295, ("1.673", "1.672")),
+            (1.673, under_one, ("1.673", "1.000")),
+            (1.0012, 1.0, ("1.001", "1.000")),
+            (1.0004, 1.0, ("1.0004", "1.0000")),
+            (1.0004, under_one, ("1.0004", "1.0000")),
+            (1.00004, 1.00001, ("1.00004", "1.00001")),
+            (1.0000000000002, 1.0, ("1.0000000000002", "1.0000000000000")),
+        ] {
+            assert_eq!(
+                band_quotes(band, widest),
+                (quoted.0.to_owned(), quoted.1.to_owned()),
+                "{widest} below {band}"
+            );
+        }
+    }
+
+    #[test]
+    fn at_a_rounding_boundary_sentence_2_reads_each_limit_past_what_it_limits() {
+        // Review I-2. Where the requirement times the band, at the gearbox input, is only just
+        // above the rating, each number sentence 2 sets against another is only just past it,
+        // and quoted to the nearest it reads equal to it ("a requirement of at most 1.590 N·m"
+        // for a 1.590 N·m requirement). Two searches find such designs, with no typed numbers:
+        // on the sliders, the defaults with each requirement on its slider and the highest
+        // rating on its slider below what meeting that requirement puts on the gearbox input;
+        // and at each gearbox ratio and efficiency slider end, a rating (from a file) a hair
+        // below what the requirement alone puts there. Every such tie is found, and at each
+        // design that shows one, sentence 2 reads each number past the other. The slider search
+        // also runs at a band that reads 1.000 (review NB-1), where it finds the widest band
+        // from one up to the band: no band below one is offered there.
+        let ratings = slider_values("coupling.gearbox_input_rating_Nm");
+        let mut boundary = Vec::new();
+        for (base_name, base) in [
+            ("defaults", DesignInputs::default()),
+            ("band reading 1.000", band_reading_one()),
+        ] {
+            // The band depends on neither the requirement nor the rating.
+            let results = compute_all(&base);
+            for required in slider_values("metal.required_min_Nm") {
+                let inputs = with(base.clone(), |i| i.metal.required_min_Nm = required);
+                let target = ConflictNumbers::of(&inputs, &results).input_at_required;
+                if let Some(&rating) = ratings.iter().rev().find(|&&rating| rating < target) {
+                    let inputs = with(inputs, |i| i.coupling.gearbox_input_rating_Nm = rating);
+                    let name = format!("{base_name}, required {required}, rating {rating}");
+                    boundary.push((name, inputs));
+                }
+            }
+        }
+        for (name, inputs) in gear_slider_ends() {
+            let numbers = ConflictNumbers::of(&inputs, &compute_all(&inputs));
+            let rating = numbers.alone * (1.0 - 1e-9);
+            let inputs = with(inputs, |i| i.coupling.gearbox_input_rating_Nm = rating);
+            boundary.push((format!("{name}, rating {rating}"), inputs));
+        }
+        let reads = |x: f64| format_value(&Value::Num(x));
+        let (mut ties, mut widest_under_a_band_reading_one) = (BTreeSet::new(), 0);
+        for (name, inputs) in &boundary {
+            let numbers = ConflictNumbers::of(inputs, &compute_all(inputs));
+            assert!(numbers.holds, "{name}");
+            // Tied: the number and the one it is set against read equal at the readouts' format.
+            let tied: Vec<&str> = numbers
+                .bounds(inputs.coupling.gearbox_input_rating_Nm)
+                .iter()
+                .filter(|b| reads(b.value) == reads(b.against.parse().unwrap()))
+                .map(|b| b.what)
+                .collect();
+            if !numbers.no_band && reads(numbers.band) == reads(1.0) {
+                widest_under_a_band_reading_one += 1;
+            }
+            if !tied.is_empty() {
+                assert_gearbox_problem_consistent(name, inputs);
+                ties.extend(tied);
+            }
+        }
+        assert_eq!(
+            ties,
+            BTreeSet::from([
+                "cold-high at the input",
+                "largest requirement",
+                "widest band",
+                "requirement alone at the input",
+            ])
+        );
+        assert!(widest_under_a_band_reading_one > 0);
+    }
+
+    #[test]
+    fn at_a_band_of_one_meeting_the_requirement_exactly_at_the_rating_shows_no_sentence_2() {
+        // Review NB-2. With no variation allowance and the minimum at the operating temperature,
+        // or no Br temperature coefficient, the band is exactly one, so where the requirement is
+        // exactly the rating times ratio times efficiency a design that just meets it puts
+        // exactly the rating on the gearbox input, and at the rating passes: no sentence 2, so
+        // no "no magnet size ... passes both" and no empty bracket. Float arithmetic puts the
+        // band (1.0000000000000002 at -20 °C) or the requirement over ratio times efficiency an
+        // ulp past it; the search finds designs where it does, at the default ratio and
+        // efficiency and at an efficiency of one.
+        let mut past_by_noise = 0;
+        for (base_name, base) in bands_of_one() {
+            for (name, inputs) in exact_products(&base, 1.0) {
+                let name = format!("{base_name}, {name}");
+                let results = compute_all(&inputs);
+                let numbers = ConflictNumbers::of(&inputs, &results);
+                if numbers.input_at_required > inputs.coupling.gearbox_input_rating_Nm {
+                    past_by_noise += 1;
+                }
+                assert_eq!(band_levers(&inputs, &results), None, "{name}");
+                assert_eq!(gearbox_conflict(&inputs, &results), None, "{name}");
+                let (_, shown) = assert_gearbox_problem_consistent(&name, &inputs);
+                assert!(!shown, "{name}");
+            }
+        }
+        assert!(past_by_noise > 0);
+    }
+
+    #[test]
+    fn where_the_requirement_alone_meets_the_rating_exactly_sentence_2_offers_a_band_of_one() {
+        // Review NB-2, the same float noise in the choice of remedy. Where the requirement is
+        // exactly the rating times ratio times efficiency, a band of one puts exactly the rating
+        // on the gearbox input and passes, so the requirement alone is not above the rating and
+        // a narrower band settles it: sentence 2 offers a band, of at most one, and never says
+        // "no narrower band settles it", though float arithmetic puts the requirement over
+        // ratio times efficiency an ulp above the rating at some of these designs.
+        let mut above_by_noise = 0;
+        let one = format!("a band of at most {} times", format_value(&Value::Num(1.0)));
+        for (name, inputs) in exact_products(&DesignInputs::default(), 1.0) {
+            let results = compute_all(&inputs);
+            if ConflictNumbers::of(&inputs, &results).alone
+                > inputs.coupling.gearbox_input_rating_Nm
+            {
+                above_by_noise += 1;
+            }
+            // Sentence 2 holds at every one of them (the band is 1.673); the Problem shows it
+            // where the check fails too.
+            assert_gearbox_problem_consistent(&name, &inputs);
+            let conflict = gearbox_conflict(&inputs, &results)
+                .unwrap_or_else(|| panic!("{name}: the conflict holds"));
+            assert!(conflict.contains(&one), "{name}: {conflict}");
+        }
+        assert!(above_by_noise > 0);
+    }
+
+    #[test]
+    fn where_nothing_narrows_the_band_sentence_2_offers_only_the_gearbox_or_the_requirement() {
+        // Review NB-2's guard. The bracket names what narrows the band; where nothing does,
+        // which no input on the sliders reaches (hand-edited results), sentence 2 offers no band
+        // and no bracket, only the gearbox and the largest requirement, rounded down.
+        let (inputs, results) = nothing_narrows_the_band();
+        assert_eq!(band_levers(&inputs, &results), None);
+        let numbers = ConflictNumbers::of(&inputs, &results);
+        assert!(numbers.holds && !numbers.no_band);
+        let problem = gearbox_problem(&inputs, &results).unwrap();
+        let largest = number_text(
+            quoted_limit(numbers.largest_required, numbers.required),
+            "metal.torque_hot_low_Nm",
+        );
+        let remedy =
+            format!("It takes a gearbox rated for that or a requirement of at most {largest}.");
+        assert!(problem.ends_with(&format!(" {remedy}")), "{problem}");
+        assert!(
+            !problem.contains('(') && !problem.contains("band of"),
+            "{problem}"
+        );
+    }
+
+    #[test]
+    fn an_operating_temperature_below_the_minimum_keeps_the_gearbox_problem_to_sentence_1() {
+        // Review focus: the operating-temperature slider reaches below the minimum
+        // temperature. There hot-low is taken colder than cold-high, the band can fall below
+        // one and SmCo widens it, so sentence 2's levers would be false: the Problem is
+        // sentence 1 alone wherever the check fails, and nothing panics.
+        let coldest = slider_range("coupling.op_temp_C").min;
+        let mut forms = BTreeSet::new();
+        for minimum in [-20.0, slider_range("metal.min_temp_C").max] {
+            for variation in [
+                DesignInputs::default().metal.variation,
+                slider_range("metal.variation").min,
+            ] {
+                let inputs = design(|i| {
+                    i.coupling.op_temp_C = coldest;
+                    i.metal.min_temp_C = minimum;
+                    i.metal.variation = variation;
+                });
+                assert!(inputs.coupling.op_temp_C < inputs.metal.min_temp_C);
+                let name = format!("minimum {minimum} °C, variation {variation}");
+                forms.insert(assert_gearbox_problem_consistent(&name, &inputs));
+                for required in [
+                    inputs.metal.required_min_Nm,
+                    slider_range("metal.required_min_Nm").max,
+                ] {
+                    let demanding = with(inputs.clone(), |i| i.metal.required_min_Nm = required);
+                    let results = compute_all(&demanding);
+                    assert_eq!(
+                        gearbox_conflict(&demanding, &results),
+                        None,
+                        "{name}, {required}"
+                    );
+                    forms.insert(assert_gearbox_problem_consistent(&name, &demanding));
+                }
+            }
+        }
+        // Red in every case, never with sentence 2.
+        assert_eq!(forms, BTreeSet::from([(Level::Bad, false)]));
+    }
+
+    #[test]
+    fn sentence_2_names_only_what_narrows_that_design_s_band() {
+        // Review I-1 (ruling R-3: sentence 2 is true wherever it shows). The band is
+        // (1 + v) / (1 - v) times each ring's th(minimum) / th(operating), th(T) = 1 + α (T - 20 °C)
+        // with α the ring's Br temperature coefficient. A warmer minimum narrows it only below the
+        // operating temperature and with a coefficient below zero, SmCo magnets only there and
+        // with every ring's coefficient below every SmCo grade's, a smaller variation allowance
+        // only above zero. Over the Br coefficient's slider ends (its top, zero, leaves nothing
+        // that changes with temperature), rings of a SmCo grade, one ring just below every SmCo
+        // grade's coefficient beside one of a SmCo grade, no variation allowance and the minimum
+        // at the operating temperature: sentence 2 names each change exactly where every design
+        // one step of it away has a narrower band.
+        let smco = smco_grades();
+        let band = |inputs: &DesignInputs| ConflictNumbers::of(inputs, &compute_all(inputs)).band;
+        for (name, inputs, named) in band_lever_designs() {
+            let conflict = gearbox_conflict(&inputs, &compute_all(&inputs))
+                .unwrap_or_else(|| panic!("{name}: the conflict holds"));
+            let here = band(&inputs);
+            let (minimum, operating) = (inputs.metal.min_temp_C, inputs.coupling.op_temp_C);
+            let variation = inputs.metal.variation;
+            // Each change and the designs one step of it away: the minimum one step warmer (not
+            // past the operating temperature), the allowance one step smaller (not below zero),
+            // both rings of each SmCo grade.
+            let changes = [
+                (
+                    WARMER_MINIMUM,
+                    vec![with(inputs.clone(), |i| {
+                        i.metal.min_temp_C =
+                            (minimum + slider_range("metal.min_temp_C").step).min(operating)
+                    })],
+                ),
+                (
+                    SMALLER_VARIATION,
+                    vec![with(inputs.clone(), |i| {
+                        i.metal.variation =
+                            (variation - slider_range("metal.variation").step).max(0.0)
+                    })],
+                ),
+                (
+                    SMCO_MAGNETS,
+                    smco.iter()
+                        .map(|g| with(inputs.clone(), |i| graded(i, g.id)))
+                        .collect(),
+                ),
+            ];
+            for ((change, moved), named) in changes.into_iter().zip(named) {
+                assert_eq!(
+                    conflict.contains(change),
+                    named,
+                    "{name}: {change} in {conflict}"
+                );
+                let bands: Vec<f64> = moved.iter().map(band).collect();
+                assert_eq!(
+                    bands.iter().all(|&after| after < here * (1.0 - 1e-12)),
+                    named,
+                    "{name}: {change} moves the band from {here} to {bands:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn sentence_2_names_the_variation_by_its_input() {
+        // BL-059 G-3 round 1 S-2: the bracket names the input a user moves, the production
+        // variation allowance ("a smaller measured variation" named none), and says the
+        // smaller allowance needs measurement behind it.
+        let input = label_for("metal.variation").to_lowercase();
+        assert!(input.contains("variation allowance"), "{input}");
+        for words in ["variation allowance", "measurement"] {
+            assert!(
+                SMALLER_VARIATION.contains(words),
+                "{words:?} in {SMALLER_VARIATION:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn sentence_2_names_the_variation_allowance_last() {
+        // BL-059 G-3 re-review of the review leftovers, M-1: an "or" after "backed by
+        // measurement" would read as "backed by measurement or SmCo magnets", which is false
+        // (SmCo narrows the band through its Br temperature coefficient, not by backing the
+        // allowance). So the allowance is named last wherever it is named, and its verb is
+        // "narrows". At the defaults, the first gearbox Problem a user sees, all three are named.
+        let text = problem(GEARBOX, &DesignInputs::default()).unwrap();
+        assert!(
+            text.contains("(a warmer minimum temperature, SmCo magnets or a smaller variation allowance backed by measurement narrows it)"),
+            "{text}"
+        );
+        for (name, inputs, _) in band_lever_designs() {
+            let conflict = gearbox_conflict(&inputs, &compute_all(&inputs))
+                .unwrap_or_else(|| panic!("{name}: the conflict holds"));
+            assert!(
+                !conflict.contains(&format!("{SMALLER_VARIATION} or ")),
+                "{name}: {conflict}"
+            );
+            if conflict.contains(SMALLER_VARIATION) {
+                assert!(
+                    conflict.contains(&format!("{SMALLER_VARIATION} narrows it)")),
+                    "{name}: {conflict}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -3999,6 +5815,46 @@ mod tests {
     }
 
     #[test]
+    fn the_gearbox_problem_is_some_exactly_when_the_check_fails_or_cannot_be_made() {
+        // Red above the rating; amber when a torque it compares is not a number (the rating,
+        // or cold-high at the gearbox input through a ratio set on the struct), with the text
+        // that says so; green at or under the rating and while the end-effect model is out of
+        // range (the row is greyed).
+        use Level::{Bad, Caution, Good};
+        let gearbox = guide(GEARBOX).unwrap();
+        for (name, inputs, want) in [
+            ("defaults", DesignInputs::default(), Bad),
+            ("passing", passing_design(), Good),
+            ("gearbox only", only_the_gearbox_fails(), Bad),
+            ("unknown rating", breaking(unknown_rating), Caution),
+            (
+                "unknown ratio",
+                breaking(|i| i.coupling.gear_ratio = f64::NAN),
+                Caution,
+            ),
+            ("short magnets", short_magnets(), Good),
+            ("40 poles", with_poles(40), Good),
+        ] {
+            let results = compute_all(&inputs);
+            assert_eq!(level(gearbox, &inputs, &results), want, "{name}");
+            let text = (gearbox.problem)(&inputs, &results);
+            match want {
+                Good => assert_eq!(text, None, "{name}"),
+                Caution => assert_eq!(text.as_deref(), Some(GEARBOX_UNKNOWN), "{name}"),
+                Bad => {
+                    let text = text.unwrap_or_else(|| panic!("{name}: no Problem"));
+                    for number in [
+                        result_text(&results, "metal.cold_high_input_Nm"),
+                        input_text(&inputs, "coupling.gearbox_input_rating_Nm"),
+                    ] {
+                        assert!(text.contains(&number), "{name}: {number} in {text}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn a_check_that_does_not_apply_gives_no_problem() {
         // Without back iron no magnetic rule sizes the cup wall: no badge, no Problem.
         let inputs = breaking(no_back_iron);
@@ -4020,30 +5876,30 @@ mod tests {
         assert_eq!(
             defaults,
             DesignStatus {
-                bad: 3,
+                bad: 4,
                 caution: 0,
-                total: 8,
+                total: 9,
                 is_default: true
             }
         );
         assert_eq!(
             design_status_text(&defaults),
-            "Example design: fails 3 of 8 checks"
+            "Example design: fails 4 of 9 checks"
         );
         // One fix: the cup wall at its suggested 2.0 mm.
         let fixed = status(&design(|i| i.metal.cup_wall_corner_mm = 2.0));
         assert_eq!(
             design_status_text(&fixed),
-            "Your design: fails 2 of 8 checks"
+            "Your design: fails 3 of 9 checks"
         );
         assert_eq!(
             design_status_text(&status(&passing_design())),
-            "Your design: passes all 8 checks"
+            "Your design: passes all 9 checks"
         );
         // Cautions are counted apart from the failures.
         assert_eq!(
             design_status_text(&status(&design(hot_day))),
-            "Your design: fails 3 of 8 checks, 1 caution"
+            "Your design: fails 4 of 9 checks, 1 caution"
         );
         let two_cautions = design(|i| {
             hot_day(i);
@@ -4051,17 +5907,17 @@ mod tests {
         });
         assert_eq!(
             design_status_text(&status(&two_cautions)),
-            "Your design: fails 3 of 8 checks, 2 cautions"
+            "Your design: fails 4 of 9 checks, 2 cautions"
         );
         // The Magnets fit row counts as a check: 40 blocks fail it, the hot-low torque and the
-        // clearance, and pass the cup wall.
+        // clearance, and pass the cup wall and the gearbox check.
         assert_eq!(
             design_status_text(&status(&with_poles(40))),
-            "Your design: fails 3 of 8 checks"
+            "Your design: fails 3 of 9 checks"
         );
         // Any edit leaves the example, even one that keeps the counts.
         let edited = status(&design(|i| i.metal.hardware_g = 7.0));
-        assert_eq!((edited.bad, edited.is_default), (3, false));
+        assert_eq!((edited.bad, edited.is_default), (4, false));
     }
 
     #[test]
@@ -4105,23 +5961,66 @@ mod tests {
         let results = compute_all(&inputs);
         assert_eq!(level(guide(CLAMP).unwrap(), &inputs, &results), Level::Bad);
         let shown = design_status(&inputs, &results, false);
-        assert_eq!((shown.bad, shown.caution, shown.total), (1, 0, 8));
+        assert_eq!((shown.bad, shown.caution, shown.total), (1, 0, 9));
         assert_eq!(
             design_status_text(&shown),
-            "Your design: fails 1 of 8 checks"
+            "Your design: fails 1 of 9 checks"
         );
         let paused = design_status(&inputs, &results, true);
-        assert_eq!((paused.bad, paused.caution, paused.total), (0, 0, 7));
+        assert_eq!((paused.bad, paused.caution, paused.total), (0, 0, 8));
         assert_eq!(
             design_status_text(&paused),
-            "Your design: passes all 7 checks"
+            "Your design: passes all 8 checks"
         );
-        // The example design fails the same three checks either way.
+        // The example design fails the same four checks either way.
         let defaults = DesignInputs::default();
         let results = compute_all(&defaults);
         assert_eq!(
             design_status_text(&design_status(&defaults, &results, true)),
-            "Example design: fails 3 of 7 checks"
+            "Example design: fails 4 of 8 checks"
+        );
+    }
+
+    #[test]
+    fn the_gearbox_check_counts_in_the_status_whether_the_clamp_section_shows_or_not() {
+        // Owner decision 3A: counted, and red above the rating. The example design fails it
+        // beside the hot minimum, the clearance and the cup wall; the passing design passes it,
+        // and with the example's rating back fails it alone; a rating that is not a number asks
+        // for a look. The clamp section's pause takes only the clamp out of the count.
+        let status = |inputs: &DesignInputs, paused: bool| {
+            design_status_text(&design_status(inputs, &compute_all(inputs), paused))
+        };
+        let defaults = DesignInputs::default();
+        assert_eq!(
+            status(&defaults, true),
+            "Example design: fails 4 of 8 checks"
+        );
+        assert_eq!(
+            status(&defaults, false),
+            "Example design: fails 4 of 9 checks"
+        );
+        let passing = passing_design();
+        assert_eq!(status(&passing, true), "Your design: passes all 8 checks");
+        assert_eq!(status(&passing, false), "Your design: passes all 9 checks");
+        let gearbox_only = only_the_gearbox_fails();
+        let results = compute_all(&gearbox_only);
+        let failing: Vec<(&str, Level)> = CHECK_GUIDES
+            .iter()
+            .map(|g| (g.check, level(g, &gearbox_only, &results)))
+            .filter(|&(_, badge)| badge != Level::Good)
+            .collect();
+        assert_eq!(failing, [(GEARBOX, Level::Bad)]);
+        assert_eq!(
+            status(&gearbox_only, true),
+            "Your design: fails 1 of 8 checks"
+        );
+        assert_eq!(
+            status(&gearbox_only, false),
+            "Your design: fails 1 of 9 checks"
+        );
+        assert_eq!(
+            status(&breaking(unknown_rating), true),
+            "Your design: passes all 8 checks, 1 caution"
         );
     }
 
@@ -4927,10 +6826,17 @@ mod tests {
         let (shown, notes) = notes_of(&only);
         assert!(shown.contains(&gap), "{shown:?}");
         assert!(notes.is_empty(), "{notes:?}");
-        // No other guide gets the note, and an index past the guides gets none.
+        // The gearbox guide's gap fix, shown at the defaults beside the failing hot-low torque,
+        // brings the same note; no other guide gets it, and an index past the guides gets none.
+        let gearbox = CHECK_GUIDES
+            .iter()
+            .position(|g| g.check == GEARBOX)
+            .unwrap();
         let results = compute_all(&defaults);
         let all = all_fixes(&defaults, &results, false);
-        for index in (0..=CHECK_GUIDES.len()).filter(|&i| i != clearance) {
+        assert!(all[gearbox].contains(&gap), "{:?}", all[gearbox]);
+        assert_eq!(side_effects(&all, gearbox, &defaults, &results), [note]);
+        for index in (0..=CHECK_GUIDES.len()).filter(|&i| i != clearance && i != gearbox) {
             assert!(side_effects(&all, index, &defaults, &results).is_empty());
         }
     }
