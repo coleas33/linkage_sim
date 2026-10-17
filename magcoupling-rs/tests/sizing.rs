@@ -4,6 +4,7 @@
 
 use magcoupling::compute_all;
 use magcoupling::engine::api::DesignInputs;
+use magcoupling::engine::gearbox::ABOVE_THE_GEARBOX_RATING;
 use magcoupling::engine::housing::{INSIDE_THE_SPACE_CLAIM, SPACE_CLAIM_UNKNOWN};
 use magcoupling::engine::meta::NumOrText;
 use magcoupling::engine::meta::SetErrorKind;
@@ -1157,6 +1158,33 @@ fn a_design_sized_by_length_grows_its_housing_and_can_exceed_the_space_claim() {
             );
         }
     }
+}
+
+#[test]
+fn auto_sizes_for_the_hot_minimum_alone_and_the_gearbox_check_fails_there() {
+    // BL-059, owner decision 5A: Auto still sizes for the hot minimum check alone. Sized by
+    // length to its own requirement (the Size tab's Auto on length searches the length slider,
+    // as `solve` does), the default design's magnets reach 13.77 mm and hot-low meets the
+    // requirement; cold-high at the gearbox input, about 0.88 N·m, is above the 0.6 N·m input
+    // rating there. Cold-high over hot-low does not depend on the geometry, so no length passes
+    // both, and the gearbox check is red at Auto's answer.
+    let base = DesignInputs::default();
+    let p = solved(solve(
+        &base,
+        FreeVariable::AxialLength,
+        base.metal.required_min_Nm,
+    ));
+    assert!((p.value - 13.77).abs() < 0.005, "{}", p.value);
+    let r = compute_all(&p.inputs);
+    assert_eq!(r.metal.hot_min_check, "Estimate covers hot min");
+    assert!(r.metal.cold_high_input_Nm > base.coupling.gearbox_input_rating_Nm);
+    assert!(
+        r.gearbox
+            .cold_high_check
+            .starts_with(ABOVE_THE_GEARBOX_RATING),
+        "{}",
+        r.gearbox.cold_high_check
+    );
 }
 
 #[test]

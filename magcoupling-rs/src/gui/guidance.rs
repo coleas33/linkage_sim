@@ -2325,12 +2325,13 @@ mod tests {
     use crate::engine::grades::Grade;
     use crate::engine::model::ring_fits;
     use crate::engine::sizing::{SizingOutcome, solve};
-    use crate::gui::dashboard::{CHECKS, DASHBOARD};
+    use crate::gui::dashboard::{CHECKS, DASHBOARD, FIX, dashboard_ui};
     use crate::gui::explorer::reviewed_note;
     use crate::gui::plain_text::label_for;
+    use crate::gui::readouts::Readouts;
     use crate::gui::test_support::{
-        assert_glyphs, clamp_at_its_limit, hot_day, only_the_clamp_fails, only_the_gearbox_fails,
-        passing_design, short_magnets, small_boss, with_poles,
+        assert_glyphs, clamp_at_its_limit, drawn_texts, hot_day, only_the_clamp_fails,
+        only_the_gearbox_fails, passing_design, short_magnets, sized_frame, small_boss, with_poles,
     };
     use std::collections::BTreeSet;
 
@@ -2697,6 +2698,7 @@ mod tests {
             ),
             ("no_back_iron", breaking(no_back_iron)),
             ("bare_clearance", design(bare_clearance)),
+            ("gearbox_only", only_the_gearbox_fails()),
             // Two failing checks that pull one input apart (review focus 4).
             (
                 "length_conflict",
@@ -3863,6 +3865,155 @@ mod tests {
         assert!(shown(SPACE_CLAIM, &typed).contains(&("metal.cap_od_mm", Direction::Lower)));
     }
 
+    /// The defaults with the gearbox input rating just above cold-high at the gearbox input:
+    /// halfway into the rise one step of the magnet-length slider gives (spec 7, item 7). The
+    /// rating feeds no other result, so the step and its rise are the defaults' own.
+    fn near_the_gearbox_limit() -> DesignInputs {
+        let defaults = DesignInputs::default();
+        let results = compute_all(&defaults);
+        let [longer] = &moves(&defaults, &results, MAGNET_LENGTH, Direction::Raise)[..] else {
+            panic!("one step of longer magnets from the defaults")
+        };
+        let at = results.metal.cold_high_input_Nm;
+        let rise = compute_all(longer).metal.cold_high_input_Nm - at;
+        assert!(rise > 0.0, "longer magnets raise cold-high: {rise}");
+        design(|i| i.coupling.gearbox_input_rating_Nm = at + rise / 2.0)
+    }
+
+    /// Asserts that the guide at `guide_index` of [`CHECK_GUIDES`] has no fix to show in this
+    /// design (`inputs`, whose results are `results`) with the shaft-clamp section paused or
+    /// shown (`paused`), and that the dashboard, fed the fixes as the panel hands them to it (no
+    /// Minimum OD set), draws [`NO_FIX`] right after the Fix label of the guide's open block,
+    /// found by its `problem`: `dashboard::fix_line` draws it for an open block whose fixes are
+    /// empty (ruling B-4).
+    fn assert_open_block_draws_no_fix(
+        inputs: &DesignInputs,
+        results: &DesignResults,
+        guide_index: usize,
+        problem: &str,
+        paused: bool,
+    ) {
+        let all = within_minimum_diameter(&all_fixes(inputs, results, paused), inputs, None);
+        assert_eq!(all[guide_index], [], "paused {paused}");
+        let output = sized_frame(
+            &egui::Context::default(),
+            egui::vec2(1280.0, 4000.0),
+            Vec::new(),
+            |ui| dashboard_ui(ui, inputs, results, &all, paused, &mut Readouts::default()),
+        );
+        let texts = drawn_texts(&output);
+        let check = CHECK_GUIDES[guide_index].check;
+        let open = texts
+            .iter()
+            .position(|t| t == problem)
+            .unwrap_or_else(|| panic!("the block of {check} is open, paused {paused}"));
+        let fix = open + texts[open..].iter().position(|t| t == FIX).unwrap();
+        assert_eq!(texts[fix + 1], NO_FIX, "paused {paused}");
+    }
+
+    #[test]
+    fn near_the_gearbox_limit_the_hot_minimum_guide_shows_no_fix() {
+        // Spec 7, item 7, a test of its own rather than a `designs()` entry: there the hot
+        // minimum guide's only fix is held back by construction. The gearbox check passes just
+        // under its rating and the hot minimum check fails; one step of longer magnets, the
+        // hot minimum's only fix, would turn the gearbox check red, so `helps` holds it back
+        // and the hot minimum's open block draws the no-fix line (`dashboard::fix_line` draws
+        // `NO_FIX` for an open block whose fixes are empty), with the shaft-clamp section
+        // shown and paused.
+        let inputs = near_the_gearbox_limit();
+        let results = compute_all(&inputs);
+        assert_eq!(level_of(GEARBOX, &inputs, &results), Level::Good);
+        assert_eq!(problem(GEARBOX, &inputs), None);
+        assert_eq!(level_of(HOT_MIN, &inputs, &results), Level::Bad);
+        let longer = (MAGNET_LENGTH, Direction::Raise);
+        let [stepped] = &moves(&inputs, &results, longer.0, longer.1)[..] else {
+            panic!("one step of longer magnets")
+        };
+        assert_eq!(
+            level_of(GEARBOX, stepped, &compute_all(stepped)),
+            Level::Bad
+        );
+        let hot_min = CHECK_GUIDES
+            .iter()
+            .position(|g| g.check == HOT_MIN)
+            .unwrap();
+        let problem = hot_min_problem(&inputs, &results).unwrap();
+        for paused in [false, true] {
+            assert!(
+                !helps(&inputs, &results, longer, None, paused),
+                "paused {paused}"
+            );
+            assert_open_block_draws_no_fix(&inputs, &results, hot_min, &problem, paused);
+        }
+        // With the rating a whole rise further up, the step stays within it and the fix shows.
+        let rise =
+            2.0 * (inputs.coupling.gearbox_input_rating_Nm - results.metal.cold_high_input_Nm);
+        let roomier = with(inputs, |i| i.coupling.gearbox_input_rating_Nm += rise);
+        let results = compute_all(&roomier);
+        assert_eq!(fixes(&HOT_MIN_GUIDE, &roomier, &results, false), [longer]);
+    }
+
+    #[test]
+    fn at_the_hot_minimum_s_limit_the_gearbox_guide_shows_no_fix_and_its_problem_says_why() {
+        // Spec 5 (5A) and 4A: the length Auto solves, set by hand, puts hot-low at the
+        // requirement; cold-high over hot-low does not depend on the geometry, so the gearbox
+        // check fails there. Both its fixes lower hot-low, so `helps` holds each back (one step
+        // would turn the hot minimum red), the open gearbox block draws NO_FIX right after its
+        // Fix label, and its Problem's sentence 2 says why, with the clamp section shown and
+        // paused.
+        let (_, inputs) = auto_on_length(&DesignInputs::default());
+        let results = compute_all(&inputs);
+        assert_eq!(level_of(HOT_MIN, &inputs, &results), Level::Good);
+        assert_eq!(level_of(GEARBOX, &inputs, &results), Level::Bad);
+        let gearbox = CHECK_GUIDES
+            .iter()
+            .position(|g| g.check == GEARBOX)
+            .unwrap();
+        let problem = gearbox_problem(&inputs, &results).unwrap();
+        let conflict = gearbox_conflict(&inputs, &results).expect("no geometry passes both");
+        assert!(problem.ends_with(&format!(" {conflict}")), "{problem}");
+        for paused in [false, true] {
+            for fix in [
+                (MAGNET_LENGTH, Direction::Lower),
+                (FACE_GAP, Direction::Raise),
+            ] {
+                assert!(
+                    !helps(&inputs, &results, fix, None, paused),
+                    "{fix:?} paused {paused}"
+                );
+            }
+            assert_open_block_draws_no_fix(&inputs, &results, gearbox, &problem, paused);
+        }
+    }
+
+    #[test]
+    fn each_gearbox_fix_moves_the_check_toward_passing_all_along_its_slider() {
+        // Spec 5: both gearbox fixes are monotone over their sliders from the example design,
+        // so a step anywhere along the way, not only the slider's end, moves cold-high at the
+        // gearbox input down (200 points from the default to the end the fix points to).
+        let defaults = DesignInputs::default();
+        let results = compute_all(&defaults);
+        for (path, direction) in [
+            (MAGNET_LENGTH, Direction::Lower),
+            (FACE_GAP, Direction::Raise),
+        ] {
+            let range = slider_range(path);
+            let start = current_number(&defaults, &results, path).unwrap();
+            let end = match direction {
+                Direction::Lower => range.min,
+                _ => range.max,
+            };
+            let mut last = results.metal.cold_high_input_Nm;
+            for k in 1..=200 {
+                let x = start + (end - start) * f64::from(k) / 200.0;
+                let inputs = with_number(&defaults, path, x).unwrap();
+                let now = compute_all(&inputs).metal.cold_high_input_Nm;
+                assert!(now < last, "{path} at {x}: {now} after {last}");
+                last = now;
+            }
+        }
+    }
+
     #[test]
     fn two_failing_checks_that_pull_one_input_apart_say_so() {
         // Spec review focus 4: the default design's first screen once said "lower the gap" for
@@ -4120,6 +4271,7 @@ mod tests {
             (with_poles(40), FIT_CHECK, Bad),
             (with(with_poles(40), arcs), FIT_CHECK, Bad),
             (design(bare_clearance), CLEARANCE, Bad),
+            (only_the_gearbox_fails(), GEARBOX, Bad),
         ] {
             let results = compute_all(&inputs);
             assert_eq!(level_of(check, &inputs, &results), want, "{check}");
