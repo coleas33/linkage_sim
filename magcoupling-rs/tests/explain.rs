@@ -1314,9 +1314,9 @@ fn only_the_review_tools_are_ignored() {
 
 /// BL-059 (the F36 lesson: counts in the docs went stale before): the README and
 /// `03-structure.yaml` state the dashboard's rows and the design checks as the code counts them,
-/// and, while the shaft-clamp section is paused (ruling 11), the README's pause paragraph the
-/// guides the status line counts (whole-branch review MF-2); once the section is back that
-/// paragraph goes, as the notes' paused phrase does.
+/// and, while the shaft-clamp section is paused (ruling 11), the README's pause paragraph states
+/// how many guides the status line counts (whole-branch review MF-2); once the section is back
+/// that paragraph goes, as the notes' paused phrase does.
 #[cfg(feature = "gui")]
 #[test]
 fn the_docs_count_the_dashboard_rows_and_the_checks() {
