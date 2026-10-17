@@ -355,16 +355,54 @@ fn the_check_is_a_rust_only_text_result_with_no_cell_after_the_housing_group() {
     );
 }
 
-/// A slider's two ends and seven steps spread evenly between them.
+/// A slider's two ends and seven steps spread evenly between them, bottom to top, each value
+/// once: fewer steps between on a slider of fewer than eight steps.
 fn ends_and_steps_between(range: SliderRange) -> Vec<f64> {
     const PARTS: u32 = 8;
     let steps = ((range.max - range.min) / range.step).round();
-    let mut values = vec![range.min, range.max];
-    values.extend(
-        (1..PARTS)
-            .map(|k| range.min + (steps * f64::from(k) / f64::from(PARTS)).round() * range.step),
+    // How many steps up from the bottom each value is: whole numbers, rising, so a repeat is
+    // the one before it.
+    let mut ups: Vec<f64> = (0..=PARTS)
+        .map(|k| (steps * f64::from(k) / f64::from(PARTS)).round())
+        .collect();
+    ups.dedup();
+    ups.into_iter()
+        .map(|up| {
+            if up == steps {
+                range.max
+            } else {
+                range.min + up * range.step
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn ends_and_steps_between_lists_each_slider_value_once() {
+    // Whole-branch review fix wave 2, m-3: on a slider of fewer than eight steps the seven
+    // evenly spread steps fall on the same values, and on the ends; each is listed once, bottom
+    // to top, the ends exact.
+    let slider = |min, max, step| SliderRange {
+        min,
+        max,
+        step,
+        log: false,
+    };
+    assert_eq!(
+        ends_and_steps_between(slider(4.0, 10.0, 2.0)),
+        [4.0, 6.0, 8.0, 10.0]
     );
-    values
+    // 0.2 + 4 × 0.1 is not 0.6 in binary: the top is the slider's own end, once.
+    assert_ne!(0.2 + 4.0 * 0.1, 0.6);
+    assert_eq!(
+        ends_and_steps_between(slider(0.2, 0.6, 0.1)),
+        [0.2, 0.2 + 0.1, 0.2 + 2.0 * 0.1, 0.2 + 3.0 * 0.1, 0.6]
+    );
+    // Eight steps or more: the two ends and seven steps between.
+    assert_eq!(
+        ends_and_steps_between(slider(0.0, 16.0, 1.0)),
+        [0.0, 2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0]
+    );
 }
 
 #[test]
