@@ -4508,6 +4508,45 @@ mod tests {
         );
     }
 
+    #[test]
+    fn off_the_sliders_sentence_1_can_read_two_equal_numbers_as_the_readme_says() {
+        // Whole-branch review fix wave 2, m-1 (G-3 SF-2). Sentence 1 quotes cold-high one last
+        // digit past the rating only for a positive torque: [`quoted_load`] quotes any other as
+        // it is. On the sliders a failing check has cold-high above a rating of at least the
+        // rating slider's bottom, so above zero. A design file can carry values off the
+        // sliders: here a negative gearbox ratio, and a rating a hair below the negative
+        // cold-high at the gearbox input that ratio gives, and the two read the same. So the
+        // README says sentence 1 never reads two equal numbers on the sliders; a change that
+        // quotes these apart too can drop that scope from the README and this test.
+        let reversed = design(|i| i.coupling.gear_ratio = -5.0);
+        let cold_high_input = compute_all(&reversed).metal.cold_high_input_Nm;
+        let file = with(reversed, |i| {
+            i.coupling.gearbox_input_rating_Nm = cold_high_input - 1e-7;
+        });
+        for (path, x) in [
+            ("coupling.gear_ratio", file.coupling.gear_ratio),
+            (
+                "coupling.gearbox_input_rating_Nm",
+                file.coupling.gearbox_input_rating_Nm,
+            ),
+        ] {
+            assert!(x < slider_range(path).min, "{path}: {x} below its slider");
+        }
+        let results = compute_all(&file);
+        assert_eq!(level_of(GEARBOX, &file, &results), Level::Bad);
+        let text = problem(GEARBOX, &file).unwrap();
+        assert!(
+            text.starts_with(
+                "Cold-high at the gearbox input is -0.8049 N·m, above its -0.8049 N·m input rating."
+            ),
+            "{text}"
+        );
+        let readme = include_str!("../../README.md");
+        let claim =
+            "The gearbox Problem's first sentence never reads two equal numbers on the sliders:";
+        assert!(readme.contains(claim), "README.md should say {claim:?}");
+    }
+
     // ------------------------------------------------------------------ the gearbox conflict
 
     /// Problem sentence 2's numbers (owner decision 4A), worked out here from a design's
