@@ -1873,7 +1873,7 @@ fn gearbox_conflict(inputs: &DesignInputs, results: &DesignResults) -> Option<St
             )
         };
         format!(
-            "No magnet size, gap or count passes both this and the hot minimum: cold-high is {band_text} times hot-low here, so meeting the {} requirement puts {} on the gearbox input. {remedy}",
+            "No magnet size, gap or count passes both this and the hot minimum: cold-high is {band_text} times hot-low here, so even just meeting the {} requirement at the gearbox output puts {} on the gearbox input. {remedy}",
             input_text(inputs, "metal.required_min_Nm"),
             number_text(
                 quoted_load(input_at_required, rating),
@@ -4626,8 +4626,10 @@ mod tests {
     /// Holds the gearbox Problem of `inputs` to owner decision 4A: it is present exactly when
     /// the check fails or asks for a look; sentence 2 ([`gearbox_conflict`]) exists exactly
     /// when the conflict holds by the test's own numbers ([`ConflictNumbers`]), quotes them
-    /// ([`assert_conflict_quotes`]), and follows sentence 1 after one space exactly when the
-    /// check fails as well. Returns the check's level and whether sentence 2 is shown.
+    /// ([`assert_conflict_quotes`]), names the requirement's side of the gearbox, and follows
+    /// sentence 1 after one space exactly when the check fails as well; and a design that meets
+    /// the requirement puts at least what sentence 2 says even just meeting it puts on the
+    /// gearbox input (G-3 review M-1). Returns the check's level and whether sentence 2 is shown.
     fn assert_gearbox_problem_consistent(name: &str, inputs: &DesignInputs) -> (Level, bool) {
         let results = compute_all(inputs);
         let badge = level_of(GEARBOX, inputs, &results);
@@ -4638,15 +4640,34 @@ mod tests {
             "{name}: {problem:?}"
         );
         let conflict = gearbox_conflict(inputs, &results);
-        let holds = ConflictNumbers::of(inputs, &results).holds;
-        assert_eq!(conflict.is_some(), holds, "{name}: {conflict:?}");
+        let numbers = ConflictNumbers::of(inputs, &results);
+        assert_eq!(conflict.is_some(), numbers.holds, "{name}: {conflict:?}");
         let shown = match (&problem, &conflict) {
             (Some(problem), Some(conflict)) => problem.ends_with(&format!(" {conflict}")),
             _ => false,
         };
-        assert_eq!(shown, badge == Level::Bad && holds, "{name}: {problem:?}");
+        assert_eq!(
+            shown,
+            badge == Level::Bad && numbers.holds,
+            "{name}: {problem:?}"
+        );
         if let Some(conflict) = &conflict {
             assert_conflict_quotes(name, inputs, &results, conflict);
+            assert!(
+                conflict.contains("requirement at the gearbox output"),
+                "{name}: {conflict}"
+            );
+            // The band does not depend on the geometry, so a design with hot-low at or above the
+            // requirement has cold-high, at the gearbox input too, at or above what just meeting
+            // it puts there, up to float noise.
+            if results.metal.torque_hot_low_Nm >= numbers.required {
+                assert!(
+                    results.metal.cold_high_input_Nm >= numbers.input_at_required * (1.0 - 1e-12),
+                    "{name}: {} against {}",
+                    results.metal.cold_high_input_Nm,
+                    numbers.input_at_required
+                );
+            }
         }
         (badge, shown)
     }
@@ -4696,6 +4717,10 @@ mod tests {
         for text in ["1.673", "2.500 N·m", "0.8806 N·m", "1.703 N·m", "1.140"] {
             assert!(conflict.contains(text), "{text} in {conflict}");
         }
+        // G-3 review M-1: the requirement named at the gearbox output, and the torque on the
+        // gearbox input what even just meeting it puts there (a design with room puts more).
+        let load = "so even just meeting the 2.500 N·m requirement at the gearbox output puts 0.8806 N·m on the gearbox input.";
+        assert!(conflict.contains(load), "{conflict}");
         // The second remedy form, at a gearbox ratio of 1: the largest requirement and what the
         // requirement alone puts on the gearbox input. The largest requirement, 0.34069 N·m, is
         // quoted rounded down (review I-2): a requirement of 0.3407 N·m would not pass.
@@ -4907,11 +4932,17 @@ mod tests {
             .collect();
         cases.extend(gear_slider_ends());
         let (mut with_sentence, mut without_sentence) = (0, 0);
+        // The designs that show sentence 2 while meeting the requirement with room.
+        let mut with_room = Vec::new();
         for (name, inputs) in &cases {
-            match assert_gearbox_problem_consistent(name, inputs) {
+            let (badge, shown) = assert_gearbox_problem_consistent(name, inputs);
+            match (badge, shown) {
                 (Level::Bad, true) => with_sentence += 1,
                 (Level::Bad, false) => without_sentence += 1,
                 _ => {}
+            }
+            if shown && compute_all(inputs).metal.torque_hot_low_Nm > inputs.metal.required_min_Nm {
+                with_room.push(name.as_str());
             }
         }
         // Both forms of a failing check's Problem are reached.
@@ -4919,6 +4950,10 @@ mod tests {
             with_sentence > 0 && without_sentence > 0,
             "{with_sentence} with sentence 2, {without_sentence} without"
         );
+        // G-3 review M-1: twelve poles meets the requirement with room and puts more on the
+        // gearbox input than sentence 2 quotes, so the helper's "even just meeting" bound is
+        // checked where it is not an equality.
+        assert!(with_room.contains(&"twelve_poles"), "{with_room:?}");
     }
 
     #[test]

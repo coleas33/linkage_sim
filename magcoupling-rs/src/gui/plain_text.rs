@@ -747,7 +747,7 @@ const HELP: &[(&str, &str)] = &[
     // docs/analyses/2026-10-14-magcoupler-help-review.md, BL-059 section).
     (
         "model.gearbox_input_ripple_Nm",
-        "Torque swing while slipping: the pull-out at the operating temperature, without the production allowance, divided by the ratio and efficiency. The gearbox check compares cold-high at the gearbox input instead.",
+        "Slip swing: the pull-out at the gearbox output at operating temperature, without the production allowance, divided by ratio and efficiency. The gearbox check compares cold-high at the gearbox input instead.",
     ),
 ];
 
@@ -2080,13 +2080,14 @@ mod batch_b_tests {
 
     /// BL-059: the gearbox rating's help names the check that now reads the rating, and the
     /// ripple row's label and help name the nominal slip swing, apart from the cold-high torque
-    /// the check compares. The rating's type is open (owner decision 2A), so no text calls it a
-    /// peak; the operating-temperature slider reaches below the minimum, so no text calls the
-    /// swing warm. Each claim holds on the engine: at the five probe designs the swing is the
-    /// nominal pull-out divided by the ratio and efficiency, one slider step of the operating
-    /// temperature moves it and one of the minimum temperature or the variation does not; and
-    /// with the rating halfway between the swing and cold-high at the gearbox input, the check
-    /// follows cold-high on either side of the swing.
+    /// the check compares; the check row's help names both sides of the gearbox and that fatigue
+    /// is not checked (G-3 review M-2, M-3). The rating's type is open (owner decision 2A), so no
+    /// text calls it a peak; the operating-temperature slider reaches below the minimum, so no
+    /// text calls the swing warm. Each claim holds on the engine: at the five probe designs the
+    /// swing is the nominal pull-out divided by the ratio and efficiency, one slider step of the
+    /// operating temperature moves it and one of the minimum temperature or the variation does
+    /// not; and with the rating halfway between the swing and cold-high at the gearbox input, the
+    /// check follows cold-high on either side of the swing.
     #[test]
     fn the_gearbox_texts_claim_what_the_engine_does() {
         use crate::engine::explain::notes::Step;
@@ -2094,6 +2095,8 @@ mod batch_b_tests {
         use crate::engine::gearbox::{ABOVE_THE_GEARBOX_RATING, WITHIN_THE_GEARBOX_RATING};
         const RATING: &str = "coupling.gearbox_input_rating_Nm";
         const RIPPLE: &str = "model.gearbox_input_ripple_Nm";
+        // The check row's help is the engine's: the overlay has no row for it.
+        const CHECK: &str = "gearbox.cold_high_check";
         // The words: what each text must name, then what none may say ("no check" was the
         // rating's help until the check landed).
         let names = |path: &str, text: &str, words: &[&str]| {
@@ -2115,9 +2118,24 @@ mod batch_b_tests {
                 "without the production allowance",
                 "ratio and efficiency",
                 "cold-high at the gearbox input",
+                "pull-out at the gearbox output",
             ],
         );
-        for text in [help_for(RATING), label_for(RIPPLE), help_for(RIPPLE)] {
+        names(
+            CHECK,
+            help_for(CHECK),
+            &[
+                "gearbox output",
+                "gearbox input",
+                "fatigue from repeated slips is not checked",
+            ],
+        );
+        for text in [
+            help_for(RATING),
+            label_for(RIPPLE),
+            help_for(RIPPLE),
+            help_for(CHECK),
+        ] {
             let lower = text.to_lowercase();
             for word in ["no check", "peak", "warm"] {
                 assert!(!lower.contains(word), "{word:?} in {text:?}");

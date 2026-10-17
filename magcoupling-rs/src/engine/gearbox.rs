@@ -25,7 +25,7 @@ results! {
     pub struct GearboxResults {
         fields {
             cold_high_check: String => out_rust_only("", "Cold-high torque at the gearbox input against its rating",
-                "Compares the cold-high torque at the gearbox input, cold-high divided by the ratio and efficiency, with the gearbox input torque rating. A peak check only."),
+                "Compares cold-high at the gearbox input (cold-high at the gearbox output divided by ratio and efficiency) with the gearbox input torque rating. Fatigue from repeated slips is not checked."),
         }
     }
 }
