@@ -1813,7 +1813,8 @@ const RATING_NOISE: f64 = 1e-12;
 /// that just meets the requirement has cold-high the requirement times the band at the gearbox
 /// output, and that over ratio × efficiency at its input: above the rating, no geometry passes
 /// both checks. Above the rating means beyond float noise ([`RATING_NOISE`]): where meeting the
-/// requirement puts exactly the rating on the gearbox input, at a band of one, a design passes
+/// requirement puts exactly the rating on the gearbox input (a tie: the requirement times the
+/// band is the rating times ratio × efficiency, at a band of one or above it), a design passes
 /// both. Each limit is quoted rounded down and each torque on the gearbox input rounded up, each
 /// past what it is set against ([`quoted_limit`], [`quoted_load`], [`band_quotes`]). Where
 /// nothing narrows the band ([`band_levers`]) no band is offered. `None` where hot-low is not
@@ -2534,12 +2535,41 @@ mod tests {
         ]
     }
 
+    /// Designs whose band is above one and a ratio of small whole numbers, so that a requirement
+    /// on its slider times the band can be, in decimals, a rating times ratio times efficiency
+    /// (review I-3, round 3), each named: no Br temperature coefficient (its slider's top) at the
+    /// defaults' variation allowance, a band of 1.15/0.85 = 23/17; and every lever of the band
+    /// live, a Br coefficient of -0.002 1/°C, a variation allowance of 0.10, the minimum
+    /// temperature at -20 °C and the operating at 80 °C, a band of (1.08/0.88)² × 1.10/0.90 =
+    /// 81/44.
+    fn short_fraction_bands() -> [(&'static str, DesignInputs); 2] {
+        [
+            (
+                "no Br temperature coefficient, the defaults' allowance",
+                design(|i| {
+                    i.calibration.alpha_br_per_C = slider_range("calibration.alpha_br_per_C").max;
+                }),
+            ),
+            (
+                "every band lever live",
+                design(|i| {
+                    i.calibration.alpha_br_per_C = -0.002;
+                    i.metal.variation = 0.10;
+                    i.metal.min_temp_C = -20.0;
+                    i.coupling.op_temp_C = 80.0;
+                }),
+            ),
+        ]
+    }
+
     /// `base` at its gearbox efficiency and at an efficiency of one (the slider's top), each with
     /// every rating on its slider whose product with the ratio and efficiency is, in decimals, a
-    /// requirement on its slider, and that requirement (review NB-2): what the requirement alone
-    /// puts on the gearbox input is exactly the rating, though float arithmetic can put it an
-    /// ulp either side.
-    fn exact_products(base: &DesignInputs) -> Vec<(String, DesignInputs)> {
+    /// requirement on its slider times `band`, and that requirement: a design that just meets
+    /// it, at that band, puts exactly the rating on the gearbox input, though float arithmetic
+    /// can put it an ulp either side. At a `band` of one, what the requirement alone puts there
+    /// (review NB-2); at the base's own band, what meeting the requirement puts there, a tie
+    /// (review I-3).
+    fn exact_products(base: &DesignInputs, band: f64) -> Vec<(String, DesignInputs)> {
         let requirements = slider_values("metal.required_min_Nm");
         let mut found = Vec::new();
         for efficiency in [
@@ -2548,11 +2578,12 @@ mod tests {
         ] {
             let gear = base.coupling.gear_ratio * efficiency;
             for rating in slider_values("coupling.gearbox_input_rating_Nm") {
-                // Ratio, efficiency and rating have five decimals between them, so a product
-                // that is not a requirement on the slider misses one by 1e-5 or more.
+                // Ratio, efficiency and rating have five decimals between them, so where `band`
+                // is one, or a ratio p/q of whole numbers, a requirement on the slider that is
+                // not such a product misses one by 1e-5 / q or more.
                 if let Some(&required) = requirements
                     .iter()
-                    .find(|&&required| (required - rating * gear).abs() < 1e-9)
+                    .find(|&&required| (required * band - rating * gear).abs() < 1e-9)
                 {
                     let inputs = with(base.clone(), |i| {
                         i.coupling.gear_efficiency = efficiency;
@@ -2755,7 +2786,7 @@ mod tests {
         // reads 1.000: the widest band is one), it quotes both with more decimals.
         let (inputs, results) = nothing_narrows_the_band();
         texts.extend(gearbox_problem(&inputs, &results));
-        for (_, inputs) in exact_products(&band_reading_one()).into_iter().take(1) {
+        for (_, inputs) in exact_products(&band_reading_one(), 1.0).into_iter().take(1) {
             texts.extend(gearbox_problem(&inputs, &compute_all(&inputs)));
         }
         texts
@@ -4545,13 +4576,15 @@ mod tests {
         // the solve lands on the requirement (above the length slider's bottom it bisects to
         // it), a solved design's hot-low is the requirement and its cold-high at the gearbox
         // input the requirement times the band over ratio and efficiency: the check fails
-        // exactly where sentence 2 shows, except at the exact tie (a band of one with the
-        // requirement exactly the rating times ratio times efficiency), where the solve's last
-        // digits above the requirement fail the check without it. Where Auto overshoots the
-        // requirement, or at that tie, it need not (`where_auto_overshoots_the_requirement_…`).
-        // At the defaults it does. With the minimum temperature at its slider's top and no
-        // variation allowance the band narrows enough: Auto solves about 11.90 mm, the check
-        // passes and there is no Problem.
+        // exactly where the conflict holds, with sentence 2, except at a tie, where that is the
+        // rating itself (the requirement times the band is the rating times ratio times
+        // efficiency): there the solve's last digits above the requirement fail the check
+        // without sentence 2 (`under_auto_on_length_…_only_at_a_tie`). Where Auto overshoots
+        // the requirement the two need not agree either
+        // (`where_auto_overshoots_the_requirement_…`). At the defaults the check fails with
+        // sentence 2. With the minimum temperature at its slider's top and no variation
+        // allowance the band narrows enough: Auto solves about 11.90 mm, the check passes and
+        // there is no Problem.
         let narrow_band = design(|i| {
             i.metal.min_temp_C = slider_range("metal.min_temp_C").max;
             i.metal.variation = slider_range("metal.variation").min;
@@ -4578,17 +4611,16 @@ mod tests {
 
     #[test]
     fn where_auto_overshoots_the_requirement_the_gearbox_check_can_fail_without_the_conflict() {
-        // Review I-3, why the README scopes "fails exactly when that sentence shows" to an Auto
-        // solve that lands on the requirement, and names the exact tie: where Auto overshoots
-        // it, the overshoot reaches the gearbox input too, and a rating on its slider between
-        // what meeting the requirement puts on the gearbox input and what the solved design puts
-        // there fails the check with no sentence 2. Auto on Magnets per ring steps by two: with
-        // a 2 N·m requirement (the review's probe; Auto on the count does not reach the
-        // defaults' 2.5 N·m) it solves 10 magnets. Auto on length stops at its slider's bottom
-        // where that already meets the requirement: with no end effect and the lowest
-        // requirement it does.
+        // Review I-3, why the README says the check can fail without sentence 2 where Auto
+        // overshoots the requirement: the overshoot reaches the gearbox input too, and a rating
+        // on its slider between what meeting the requirement puts on the gearbox input and what
+        // the solved design puts there fails the check with no sentence 2. Auto on Magnets per
+        // ring steps by two: with a 2 N·m requirement (the review's probe; Auto on the count
+        // does not reach the defaults' 2.5 N·m) it solves 10 magnets. Auto on length stops at
+        // its slider's bottom where that already meets the requirement: with no end effect and
+        // the lowest requirement it does. Where the solve lands on the requirement instead, see
+        // `under_auto_on_length_the_gearbox_check_fails_without_sentence_2_only_at_a_tie`.
         let length_bottom = slider_range("coupling.magnets.axial_length_mm").min;
-        let mut failing = Vec::new();
         for (variable, base) in [
             (
                 FreeVariable::MagnetsPerRing,
@@ -4622,22 +4654,50 @@ mod tests {
                     panic!("{name}: a rating between {at_requirement} and {at_solved}")
                 });
             let inputs = with(solved, |i| i.coupling.gearbox_input_rating_Nm = rating);
-            failing.push((name, inputs));
+            let results = compute_all(&inputs);
+            assert_eq!(level_of(HOT_MIN, &inputs, &results), Level::Good, "{name}");
+            assert_eq!(
+                assert_gearbox_problem_consistent(&name, &inputs),
+                (Level::Bad, false),
+                "{name}"
+            );
         }
-        // The exact tie (review I-3, round 3): at a band of one with the requirement exactly the
-        // rating times ratio times efficiency, a design exactly at the requirement puts exactly
-        // the rating on the gearbox input and passes both checks, so sentence 2 is held back.
-        // Auto on length bisects to the requirement (above its slider's bottom) but stops within
-        // its length tolerance above it: the solved hot-low reads as the requirement, its last
-        // digits above it, and the check, strict at the rating, fails. At each band of one, the
-        // exact product at the defaults' requirement.
-        for (base_name, base) in bands_of_one() {
-            let (_, tie) = exact_products(&base)
+    }
+
+    #[test]
+    fn under_auto_on_length_the_gearbox_check_fails_without_sentence_2_only_at_a_tie() {
+        // Review I-3, the README's claim in general. Every Auto solve meets the requirement, so
+        // where the conflict holds the solved design fails the check and sentence 2 shows. Where
+        // Auto on length lands on the requirement (above its slider's bottom it bisects to it),
+        // the check fails without sentence 2 only at a tie, where meeting the requirement puts
+        // the rating itself on the gearbox input: the requirement times the band is the rating
+        // times ratio times efficiency. A design exactly at the requirement then passes both
+        // checks, so sentence 2 is held back ([`RATING_NOISE`]), but the solve stops within its
+        // length tolerance above the requirement and the check, strict at the rating, fails.
+        // The sliders reach a tie at a band of one and at bands above one that are ratios of
+        // small whole numbers. At each band of one and two such bands above it, Auto on length
+        // solves the tie whose requirement is nearest the defaults' (no typed numbers), and
+        // over every rating on its slider the solved design fails the check with sentence 2
+        // below the tie's rating, without it at that rating, and passes above it.
+        let length_bottom = slider_range("coupling.magnets.axial_length_mm").min;
+        let bases = bands_of_one()
+            .map(|(name, base)| (name, base, false))
+            .into_iter()
+            .chain(short_fraction_bands().map(|(name, base)| (name, base, true)));
+        for (base_name, base, above_one) in bases {
+            let band = ConflictNumbers::of(&base, &compute_all(&base)).band;
+            // A band of one is one up to float noise.
+            assert_eq!(band > 1.0 + 1e-9, above_one, "{base_name}: {band}");
+            let off =
+                |i: &DesignInputs| (i.metal.required_min_Nm - base.metal.required_min_Nm).abs();
+            let (tie_name, tie) = exact_products(&base, band)
                 .into_iter()
-                .find(|(_, i)| i.metal.required_min_Nm == base.metal.required_min_Nm)
-                .unwrap_or_else(|| panic!("{base_name}: an exact product at the requirement"));
+                .min_by(|(_, a), (_, b)| off(a).total_cmp(&off(b)))
+                .unwrap_or_else(|| panic!("{base_name}: a tie on the sliders"));
             let (length, solved) = auto_on_length(&tie);
-            let name = format!("{base_name}, Auto on length at {length}");
+            let name = format!("{base_name}, {tie_name}, Auto on length at {length}");
+            // It lands on the requirement: its hot-low reads as the requirement, its last digits
+            // above it.
             assert!(length > length_bottom, "{name}");
             let results = compute_all(&solved);
             let hot_low = results.metal.torque_hot_low_Nm;
@@ -4647,16 +4707,26 @@ mod tests {
                 input_text(&solved, "metal.required_min_Nm"),
                 "{name}"
             );
-            failing.push((name, solved));
-        }
-        for (name, inputs) in &failing {
-            let results = compute_all(inputs);
-            assert_eq!(level_of(HOT_MIN, inputs, &results), Level::Good, "{name}");
-            assert_eq!(
-                assert_gearbox_problem_consistent(name, inputs),
-                (Level::Bad, false),
-                "{name}"
-            );
+            assert_eq!(level_of(HOT_MIN, &solved, &results), Level::Good, "{name}");
+            let at_tie = tie.coupling.gearbox_input_rating_Nm;
+            for rating in slider_values("coupling.gearbox_input_rating_Nm") {
+                let inputs = with(solved.clone(), |i| {
+                    i.coupling.gearbox_input_rating_Nm = rating
+                });
+                let expected = if rating < at_tie {
+                    (Level::Bad, true)
+                } else if rating == at_tie {
+                    (Level::Bad, false)
+                } else {
+                    (Level::Good, false)
+                };
+                let name = format!("{name}, rating {rating}");
+                assert_eq!(
+                    assert_gearbox_problem_consistent(&name, &inputs),
+                    expected,
+                    "{name}"
+                );
+            }
         }
     }
 
@@ -4837,7 +4907,7 @@ mod tests {
         // efficiency and at an efficiency of one.
         let mut past_by_noise = 0;
         for (base_name, base) in bands_of_one() {
-            for (name, inputs) in exact_products(&base) {
+            for (name, inputs) in exact_products(&base, 1.0) {
                 let name = format!("{base_name}, {name}");
                 let results = compute_all(&inputs);
                 let numbers = ConflictNumbers::of(&inputs, &results);
@@ -4863,7 +4933,7 @@ mod tests {
         // ratio times efficiency an ulp above the rating at some of these designs.
         let mut above_by_noise = 0;
         let one = format!("a band of at most {} times", format_value(&Value::Num(1.0)));
-        for (name, inputs) in exact_products(&DesignInputs::default()) {
+        for (name, inputs) in exact_products(&DesignInputs::default(), 1.0) {
             let results = compute_all(&inputs);
             if ConflictNumbers::of(&inputs, &results).alone
                 > inputs.coupling.gearbox_input_rating_Nm
