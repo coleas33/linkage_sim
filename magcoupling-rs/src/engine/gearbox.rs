@@ -10,8 +10,8 @@
 //! rating (`coupling.gearbox_input_rating_Nm`): the same test as cold-high at most rating ×
 //! ratio × efficiency at the output, the workbook's `model.gearbox_reference_Nm` (owner
 //! decision 1A). In the forward-drive half of each slip cycle the input carries T/(i·η), so
-//! the input basis never checks less than the gearbox sees. A peak check only: the repeated
-//! slip swing as a fatigue load is not checked (backlog BL-066).
+//! the input basis never checks less than the gearbox sees. Fatigue from repeated slips is not
+//! checked: the repeated slip swing as a fatigue load is backlog BL-066.
 //!
 //! At the rating passes, as the hot minimum check passes at the requirement. The badge quotes
 //! both torques to 0.01 N·m, the cold-high at least 0.01 N·m above the rating as quoted, so a

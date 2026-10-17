@@ -1315,8 +1315,9 @@ fn only_the_review_tools_are_ignored() {
 /// BL-059 (the F36 lesson: counts in the docs went stale before): the README and
 /// `03-structure.yaml` state the dashboard's rows and the design checks as the code counts them,
 /// and, while the shaft-clamp section is paused (ruling 11), the README's pause paragraph states
-/// how many guides the status line counts (whole-branch review MF-2); once the section is back
-/// that paragraph goes, as the notes' paused phrase does.
+/// how many guides the status line counts (whole-branch review MF-2), as does
+/// `03-structure.yaml`'s `design_status` entry (O-1); once the section is back that paragraph
+/// goes, as the notes' paused phrase does.
 #[cfg(feature = "gui")]
 #[test]
 fn the_docs_count_the_dashboard_rows_and_the_checks() {
@@ -1348,6 +1349,14 @@ fn the_docs_count_the_dashboard_rows_and_the_checks() {
             readme,
             format!(
                 "the status line counts {} guides",
+                counted_guides(true).count()
+            ),
+        ));
+        claims.push((
+            "03-structure.yaml",
+            structure,
+            format!(
+                "{} while the clamp section is paused",
                 counted_guides(true).count()
             ),
         ));
@@ -2636,8 +2645,8 @@ fn the_torque_band_note_s_watch_outs_hold() {
         }
     }
     assert_eq!(failing, ["default", "20 mm ring radius"]);
-    // "Repeated slips also load the gearbox in fatigue, which nothing checks": the peak check
-    // is the engine's only check of the gearbox (a fatigue check, backlog BL-066, adds a
+    // "Repeated slips also load the gearbox in fatigue, which nothing checks": the cold-high
+    // check is the engine's only check of the gearbox (a fatigue check, backlog BL-066, adds a
     // second text result here, and this watch-out changes with it).
     let gearbox_checks: Vec<String> = result_rows(&r)
         .into_iter()
@@ -2667,8 +2676,9 @@ fn values_in(text: &'static str) -> Vec<&'static str> {
 /// passes (the rating 1 % either side of cold-high at the input, and at it); and it compares
 /// only cold-high, not the ripple there (the nominal slip swing): with the rating between the
 /// two, it fails exactly when cold-high is the larger. Which is larger is the caller's to
-/// assert: cold-high with the temperatures in order (the probe designs), the ripple with the
-/// operating temperature below the minimum (backlog BL-067).
+/// assert: cold-high with the temperatures in order (the probe designs), the ripple at the
+/// caller's corners with the operating temperature below the minimum, where it can be the larger
+/// (backlog BL-067).
 fn assert_the_gearbox_check_compares_cold_high_at_the_input(name: &str, design: &DesignInputs) {
     let fails = |d: &DesignInputs| {
         let r = compute_all(d);
@@ -2982,7 +2992,7 @@ fn levers_of(id: &str) -> Vec<Lever> {
 /// below the pull-out; the gearbox input sees that swing through the ratio and the efficiency,
 /// and cold-high at the input lies above it (the first watch-out: cold, the swings can reach
 /// cold-high, and the gearbox check compares only that torque with the input rating). With the
-/// operating temperature below the minimum the swing is above cold-high, and the check still
+/// operating temperature below the minimum the swing can be above cold-high, and the check still
 /// compares only cold-high.
 #[test]
 fn the_slip_note_s_claims_hold_at_every_probe_design() {
@@ -3018,14 +3028,15 @@ fn the_slip_note_s_claims_hold_at_every_probe_design() {
     );
     assert_eq!(values_in(note.watch_out[0]), ["metal.cold_high_input_Nm"]);
     assert!(note.sources.contains(&notes::GEARBOX_CHECK_SOURCE));
-    // Every torque in watch-out 1 names its gearbox side, and none is called the swings' peak:
-    // with the operating temperature below the minimum (both on their sliders; backlog
-    // BL-067) the nominal swing at the gearbox input is above cold-high there, and the check
-    // still compares only cold-high.
+    // Every torque in watch-out 1 names its gearbox side, none is called the swings' peak, and
+    // the check "compares only that torque": with the operating temperature below the minimum
+    // (both on their sliders; backlog BL-067) the nominal swing at the gearbox input can be
+    // above cold-high there, and the check still compares only cold-high.
     for words in [
         "gearbox output",
         "at the gearbox input here",
         "the input rating",
+        "compares only that torque",
     ] {
         assert!(
             note.watch_out[0].contains(words),

@@ -3704,6 +3704,8 @@ None.
    - `when_slipping`: PASS, in this round (2026-10-17).
    - Round 2: PASS. No must-fix; SF-1, SF-2 and SF-3 are offered.
 
+- Correction (2026-10-17, BL-059 review leftovers; task 6 review M-1): MF-1's Why above says that with the operating temperature below the minimum the nominal swing at the gearbox input "is above" cold-high there; it can be, not always is: at op −40 °C, min 20 °C and the default variation 0.15, cold-high at the input (0.700417 N·m) is above the swing (0.699920 N·m), as SF-2 above says. The three test comments SF-2 names now say "can be", and the test pins "compares only that torque" (SF-1).
+
 ## slip_heating
 
 Task T15. Rewrite of "Eddy-current slip loss and skin depth" as "Slip heating: where the heat
