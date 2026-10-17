@@ -2382,3 +2382,91 @@ Routed points (a)-(f): round 1's judgments stand; no string they concern changed
   - No design that meets the requirement with room reads below the load (2,301 of 2,301).
 
 **8. Verdict:** PASS (no must-fix; round 1's S-1 to S-3 remain offered).
+
+### Re-review after the whole-branch review, fix wave 1 (2026-10-17)
+
+The BL-059 whole-branch review's fix wave 1 (2026-10-17; `final-review.md` MF-1, commit 6cbc852) changed Problem
+sentence 1 (`gearbox_problem`, `gui/guidance.rs`). Where cold-high at the gearbox input and the rating would read the
+same to 4 significant digits, the torque is now quoted one last digit past the rating (`quoted_load`, rounded up), so
+on the sliders a failing check never reads two equal numbers; everywhere else it reads as before, and the template is
+unchanged.
+Round 1's S-1 (more decimals) offered another answer to the same defect. The changed text had its G-3 re-review in a
+fresh context at HEAD d2565e5. The reviewer's report for the record follows unchanged, its headings demoted one level
+(full answer: `.superpowers/sdd/2026-10-16-bl059-gearbox-check/textreview-T10-the-whole-branch-review-fix-wave-1-1.md`).
+
+- Reviewer: fresh context, session model, 2026-10-17; G-3 re-review of gearbox Problem sentence 1 as changed by MF-1
+  (round 1).
+- Verdict: PASS, no must-fix. Sentence 1 is true at the defaults, at the slider design that read "0.5400 ... 0.5400"
+  (now "0.5401 ... 0.5400"), at every Auto tie solved, at the rating slider's ends, at the reachable rounding edges
+  and with the operating temperature below the minimum; it breaks none of the spec section 6 traps.
+- Should-fix offered, neither for this branch's on-screen text:
+  - SF-1 (a follow-up item, not this branch): the hot minimum Problem, unchanged by BL-059, can read two equal numbers
+    while its check fails (825 cases in a sweep of slider designs; for example "Hot-low torque 0.9300 N·m is below the
+    required 0.9300 N·m"); file a backlog item to quote the hot-low torque rounded down past the requirement where
+    both read equal, and to audit the other Problems for the same pattern.
+  - SF-2 (docs precision, optional): the README's "The gearbox Problem's first sentence never reads two equal
+    numbers" holds on the sliders only (with design-file values, a non-positive cold-high at the gearbox input beside
+    a negative rating can read "-0.1000 against -0.1000"); the exact text offered is "The gearbox Problem's first
+    sentence never reads two equal numbers on the sliders:".
+
+**Report for the record (as returned).**
+
+#### The changed text, as drawn (probe output at HEAD)
+
+| Design | cold-high at input (unrounded) | Readout | Sentence 1 | Badge |
+|---|---|---|---|---|
+| defaults | 0.804907446 | 0.8049 N·m | "Cold-high at the gearbox input is 0.8049 N·m, above its 0.6000 N·m input rating." (unchanged; sentence 2 unchanged: 1.673, 0.8806, 1.703, 1.140) | 0.80 against 0.60 |
+| P1: 8.01 mm, 1.00 mm, 0.54 N·m (each a slider step) | 0.540040364 | 0.5400 N·m | "... is 0.5401 N·m, above its 0.5400 N·m input rating." + sentence 2 (1.673, 0.8806; largest requirement 1.533 N·m; widest band 1.026) | 0.55 against 0.54 |
+| Auto ties (24 solved: 6 from each of the 4 tie-test bases) | rating + 6e-14 to 5e-11 | equal to the rating | rating + one last digit, e.g. "0.08001 ... 0.08000", "0.2001 ... 0.2000", "0.9201 ... 0.9200", "1.841 ... 1.840", "3.241 ... 3.240"; no sentence 2 (a tie) | rating + 0.01 |
+| defaults, rating 0.8049 or cold-high - 1e-6 (file values) | 0.804907446 | 0.8049 | "... is 0.8050 N·m, above its 0.8049 N·m input rating." + sentence 2 | 0.81 against 0.80 |
+| corner (op -40 °C, min 20 °C), rating cold-high - 1e-7 (file) | 0.700416510 | 0.7004 | "... is 0.7005 N·m, above its 0.7004 N·m input rating." (sentence 1 only, PD-1) | 0.71 against 0.70 |
+
+#### Sweep
+
+The sweep covered the axial length at every slider step × face gap 0.5, 1.0, 1.5 and 2.0 mm (19,524 geometries with hot-low > 0) × every rating step from 0.05 to 5.00.
+- Failing (geometry, rating) pairs: 3,611,518.
+- Pairs in the new branch, where the two would read equal: 743.
+  - 29 of them show sentence 2.
+  - 714 meet the requirement.
+- The quoted cold-high minus the true value lies between 0.50 and 1.00 of the rating's last digit. It never goes below the true value and never exceeds it by more than one last digit.
+- Where the design meets the requirement, sentence 1 never reads below sentence 2's quoted load (0 of 714). Inside this window MF-1 also removes the earlier last-digit mismatch (nearest-rounded sentence 1 against rounded-up sentence 2), because both now use `quoted_load`, which is monotone. Outside the window, sentence 1 still rounds to the nearest, as G-3 round 2 recorded and accepted. That is unchanged.
+
+#### Edge pairs
+
+Each pair (true value against rating) produced:
+- Decade carries: 0.99998 against 0.99996 gives "1.001 against 1.000"; 9.99996 against 9.99995 gives "10.01 against 10.00".
+- Rating slider ends: 0.05 gives "0.05001 against 0.05000"; 5.0 gives "5.001 against 5.000".
+- Scientific range: "1.001e-4 against 1.000e-4".
+- Off-grid ratings: correct.
+- File-only non-positive values: "-0.1000 against -0.1000" (SF-2).
+- The sentence-1 parser in `sentence_1_numbers` reads every one of these forms.
+
+#### Traps and rules (spec section 6, plan Global Constraints)
+
+The sentence template is unchanged and was reviewed at G-3 round 1. It holds against each rule:
+- the torque names its side ("at the gearbox input");
+- the rating is "its ... input rating", never "peak";
+- no efficiency wording;
+- no "protects";
+- cold-high is not used as a bound;
+- no "hot-day", "warm", clamp, id or path;
+- the number is in readout format (4 significant digits) through `number_text`, with the result's own unit, "N·m";
+- `plain_text_violations` cannot change, since only digits differ.
+
+"Above" is true wherever the Bad arm runs, because the engine is strict (`cold_high_input_Nm > rating`). The quoted torque is rounded up, toward the load side. This is the house rule for a torque on the gearbox input set against its rating (sentence 2's `quoted_load`, review I-2), and the badge's +0.01 rule (spec 4) goes further. So nothing understates the load.
+
+#### Why `quoted_load`, not G-3 S-1 (more decimals)
+
+S-1 reads exactly at P1 ("0.54004 against 0.54000"). At an Auto tie, though, the excess is 6e-14 to 5e-11 N·m. Telling the two numbers apart there takes 11 to 14 decimals ("0.50000000003 ... 0.50000000000"). That puts solve tolerance on screen, which a non-specialist engineer would read as noise or a bug. `quoted_load` reads one last digit past the rating at every tie and at P1. It is conservative, it uses the convention the badge and sentence 2 already use, and it never moves more than one last digit.
+
+#### Recorded, no change asked
+
+- In the window only, which is half a last digit above the rating (5e-5 N·m for ratings from 0.10 to 0.99, 5e-4 N·m from 1.00 to 5.00), sentence 1 can read one last digit above the result's own readout (0.5401 in the Problem, 0.5400 in the results table). This is the deliberate price of "never two equal numbers". It is smaller than the badge's own difference (0.55) beside it. Nothing reads false: the quoted figure is the load rounded up, and "above" is true.
+- At an exact Auto tie the check fails by solve tolerance (about 1e-11 N·m), and sentence 1 now reads "0.5001 above 0.5000". The final review already recorded this as an engine-tolerance question for the owner, not this branch. The text is true under the engine's strict rule.
+- The code comment at `gearbox_problem`, the test doc comments (`sentence_1_never_reads_two_equal_numbers`, `assert_gearbox_problem_consistent`, the MF-3 pointer) and the two README additions match the code's behaviour. The README examples (0.5001 against 0.5000; 0.5401 against 0.5400; the defaults' 0.8049 against 0.6000) are what the code draws.
+- Tests: the `gui::guidance` module on the HEAD tree gives 93 passed, 0 failed, 3 ignored (two of the ignored are my scratch-only probes), run with `--features gui` on the scratch copy. The new assertion (sentence 1's parsed torque > rating wherever Bad) runs through every caller of `assert_gearbox_problem_consistent`, including the tie test.
+- G-3 S-2 and S-3 (round 1) remain open as offered. They are not part of this changed item, and I re-reviewed neither.
+
+- No must-fix, and no text changed in this round. SF-1 and SF-2 stay open for the controller. Round 1's S-1 is
+  answered by MF-1 in another form: the reviewer prefers `quoted_load` to S-1's more decimals, which at an Auto tie
+  would need 11 to 14 decimals. Round 1's S-2 and S-3 stay open as offered; this round did not re-review them.
