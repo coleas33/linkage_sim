@@ -216,7 +216,7 @@ const GEARBOX_GUIDE: CheckGuide = CheckGuide {
     check: GEARBOX,
     label: "Gearbox input torque",
     problem: gearbox_problem,
-    why: "Up to cold-high torque reaches the gearbox output before the coupling slips, and in each swing while it slips; at the gearbox input it must stay within the rating.",
+    why: "Cold-high torque can reach the gearbox output before the coupling slips, and in each swing while it slips; at the gearbox input it must stay within the rating.",
     // Geometry only (owner decision 6A): both lower cold-high, and hot-low with it, which the
     // trade-off and side-effect lines say where the hot minimum fails. Not the variation (an
     // assumption), the minimum temperature (an environment fact), or the rating or ratio (no
@@ -2360,6 +2360,42 @@ mod tests {
             });
             assert!(!body.contains(". "), "{}: one sentence", g.check);
         }
+    }
+
+    /// The gearbox guide's Why is a static text, so it holds at every reachable input (spec
+    /// section 6), and cold-high is an expectation, not a bound. With the operating temperature
+    /// below the minimum temperature, each inside its slider (the corner of backlog BL-067),
+    /// hot-low is above cold-high: more than cold-high reaches the gearbox output while the
+    /// coupling slips there. The Why may say cold-high "can reach" the output, never that "up to"
+    /// cold-high does.
+    #[test]
+    fn the_gearbox_why_never_bounds_the_torque_by_cold_high() {
+        let catalogue = InputCatalogue::get();
+        let mut corner = DesignInputs::default();
+        for (path, x) in [
+            ("coupling.op_temp_C", -40.0),
+            ("metal.min_temp_C", 20.0),
+            ("metal.variation", 0.0),
+        ] {
+            let range = catalogue.entry(path).unwrap().meta.range.unwrap();
+            assert!(
+                range.min <= x && x <= range.max,
+                "{path}: {x} on its slider"
+            );
+            corner = with_number(&corner, path, x).unwrap_or_else(|| panic!("{path}: {x}"));
+        }
+        let m = &compute_all(&corner).metal;
+        assert!(
+            m.torque_hot_low_Nm > m.torque_cold_high_Nm,
+            "hot-low {} above cold-high {}",
+            m.torque_hot_low_Nm,
+            m.torque_cold_high_Nm
+        );
+        assert!(
+            !GEARBOX_GUIDE.why.to_lowercase().contains("up to cold-high"),
+            "{}",
+            GEARBOX_GUIDE.why
+        );
     }
 
     /// The fix inputs that are model assumptions, each a design lever all the same: the heat
