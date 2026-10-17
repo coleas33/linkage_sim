@@ -1755,13 +1755,14 @@ fn gearbox_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<Str
 
 /// The changes sentence 2 of the gearbox Problem can name as narrowing the band, in its order.
 const WARMER_MINIMUM: &str = "a warmer minimum temperature";
-const SMALLER_VARIATION: &str = "a smaller measured variation";
+const SMALLER_VARIATION: &str = "a smaller variation allowance backed by measurement";
 const SMCO_MAGNETS: &str = "SmCo magnets";
 
 /// What narrows the band (cold-high over hot-low) of a design with the minimum temperature at
 /// or below the operating one, as sentence 2 says it in brackets ("a warmer minimum
-/// temperature, a smaller measured variation or SmCo magnets narrow it"), each change named
-/// only where it does narrow it (ruling R-3: sentence 2 is true wherever it shows).
+/// temperature, a smaller variation allowance backed by measurement or SmCo magnets narrow
+/// it"), each change named only where it does narrow it (ruling R-3: sentence 2 is true
+/// wherever it shows).
 ///
 /// The band is (1 + v) / (1 − v) times each ring's th(minimum) / th(operating), with
 /// th(T) = 1 + α (T − 20 °C) and α the ring's Br temperature coefficient (its grade's for
@@ -5394,6 +5395,21 @@ mod tests {
                     "{name}: {change} moves the band from {here} to {bands:?}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn sentence_2_names_the_variation_by_its_input() {
+        // BL-059 G-3 round 1 S-2: the bracket names the input a user moves, the production
+        // variation allowance ("a smaller measured variation" named none), and says the
+        // smaller allowance needs measurement behind it.
+        let input = label_for("metal.variation").to_lowercase();
+        assert!(input.contains("variation allowance"), "{input}");
+        for words in ["variation allowance", "measurement"] {
+            assert!(
+                SMALLER_VARIATION.contains(words),
+                "{words:?} in {SMALLER_VARIATION:?}"
+            );
         }
     }
 

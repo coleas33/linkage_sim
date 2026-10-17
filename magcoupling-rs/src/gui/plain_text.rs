@@ -146,7 +146,7 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "coupling.gear_ratio",
-        "Reduction ratio of the gearbox; the coupling sits on its wheel side. A higher ratio lowers the coupling torques referred to the gearbox input, such as the slip ripple.",
+        "Reduction ratio of the gearbox; the coupling sits on its wheel side. A higher ratio lowers the coupling torques referred to the gearbox input, such as the slip swing.",
     ),
     (
         "coupling.gear_efficiency",
@@ -2080,15 +2080,16 @@ mod batch_b_tests {
 
     /// BL-059: the gearbox rating's help names the check that now reads the rating, and the
     /// ripple row's label and help name the nominal slip swing, apart from the cold-high torque
-    /// the check compares; the check row's help names both sides of the gearbox and that fatigue
-    /// is not checked (G-3 review M-2, M-3). The rating's type is open (owner decision 2A), so none
-    /// of these texts calls it a peak (the spreadsheet's own note, shown only with Show spreadsheet
+    /// the check compares; the gear ratio's help calls it the slip swing too (one name on
+    /// screen); the check row's help names both sides of the gearbox and that fatigue is not
+    /// checked (G-3 review M-2, M-3). The rating's type is open (owner decision 2A), so none of
+    /// these texts calls it a peak (the spreadsheet's own note, shown only with Show spreadsheet
     /// details on, keeps its "peak": plan ruling R-11); the operating-temperature slider reaches
-    /// below the minimum, so no text calls the swing warm. Each claim holds on the engine: at the five probe designs the
-    /// swing is the nominal pull-out divided by the ratio and efficiency, one slider step of the
-    /// operating temperature moves it and one of the minimum temperature or the variation does
-    /// not; and with the rating halfway between the swing and cold-high at the gearbox input, the
-    /// check follows cold-high on either side of the swing.
+    /// below the minimum, so no text calls the swing warm. Each claim holds on the engine: at
+    /// the five probe designs the swing is the nominal pull-out divided by the ratio and
+    /// efficiency, one slider step of the operating temperature moves it and one of the minimum
+    /// temperature or the variation does not; and with the rating halfway between the swing and
+    /// cold-high at the gearbox input, the check follows cold-high on either side of the swing.
     #[test]
     fn the_gearbox_texts_claim_what_the_engine_does() {
         use crate::engine::explain::notes::Step;
@@ -2130,6 +2131,14 @@ mod batch_b_tests {
                 "gearbox input",
                 "fatigue from repeated slips is not checked",
             ],
+        );
+        // The gear ratio's help names the ripple row's quantity by the row's own name (slice 2's
+        // one-name rule; BL-059 G-3 round 1 S-3): "slip swing", as the row reads.
+        names(RIPPLE, label_for(RIPPLE), &["slip swing"]);
+        names(
+            "coupling.gear_ratio",
+            help_for("coupling.gear_ratio"),
+            &["the slip swing"],
         );
         for text in [
             help_for(RATING),
