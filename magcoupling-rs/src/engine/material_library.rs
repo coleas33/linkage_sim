@@ -88,8 +88,8 @@ pub struct Material {
     /// Expansion coefficient [1e-6/K].
     pub cte_1e6_per_K: Sourced,
     pub modulus_GPa: Sourced,
-    /// Yield strength [MPa] (published minimum where one exists; read by the shaft joint check
-    /// through [`PartProperties::hub`]).
+    /// Yield strength [MPa] (published minimum where one exists; the engine reads only the hub, cup
+    /// and boss material's, for the shaft joint check, through [`PartProperties::hub`]).
     pub yield_MPa: Sourced,
     pub cp_J_kgK: Sourced,
     /// The wall check's design flux density [T] (decision 20): workbook values only,
@@ -838,12 +838,12 @@ pub struct PartProperties {
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[allow(non_snake_case)] // unit suffixes, as the engine's names
 pub struct HubMaterial {
-    /// The steel circuit's values ([`PartProperties::steel`]) with the circuit in effect
+    /// The steel circuit's values ([`PartProperties::steel`]) when the circuit in effect is
     /// steel, else the body's ([`PartProperties::body`]).
     pub props: EngineProps,
     /// The library yield strength [MPa] of the metal in effect: the back-iron pick's on the
     /// steel circuit or when the pick is non-magnetic, else the workbook's aluminium (6061-T6);
-    /// NaN for a pick outside the choices on the steel circuit (its values are NaN too).
+    /// NaN for a code outside the choices on the steel circuit (its values are NaN too).
     pub yield_MPa: f64,
 }
 
