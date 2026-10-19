@@ -2992,3 +2992,147 @@ apply. Even so, the new clause holds the traps that could touch it: no "at most"
 `the_docs_count_the_notes_and_the_steps` and `the_docs_count_the_dashboard_rows_and_the_checks` passed.
 
 **R-5. No model question arises.** Both changes are docs; neither asks to change the engine.
+
+### Re-review after a change by the implementer after its review (2026-10-18)
+
+BL-064 Task 3 (commit 6e8d172) added the shaft joint check's explain layer: the 23 equation records
+(`engine/explain/records/shaft_joint.rs`), the three `back_iron` table fields with their labels and symbols (`E_{BI}`,
+`α_{BI}`, `σ_{y,BI}`), the 18 new input symbols, the scope chain `shaft_joint` and its results-table heading "Shaft
+joints", and the four assumption rows `fit_friction`, `fit_smoothing`, `rotor_over_shaft` and `joining_clearance`
+(their labels, rationales and sources, the spec 4.5 drafts), with the doc texts around them (the README,
+`docs/ai/02-system.yaml` and `docs/ai/03-structure.yaml`). The assumption labels and rationales stay drafts until Task
+8's G-3 review, and the records are Task 7's physics review's. They had a G-3 text re-review in a fresh context at HEAD
+6e8d172. The reviewer's report for the record follows unchanged (full answer:
+`.superpowers/sdd/2026-10-18-bl064-shaft-joint/textreview-T3-a-change-by-the-implementer-after-its-review-1.md`).
+
+- Reviewer: fresh context, session model, 2026-10-18; G-3 text re-review of BL-064 Task 3's texts (round 1). There
+  was no note text to review: the note `shaft_joint` arrives in Task 7 (the note dump names no note).
+- Verdict: PASS, no must-fix. No changed text is false at the defaults, at the five probe designs or at any reachable
+  input, and no trap or cap is broken. The 23 records transcribe `shaft_joint::compute` and `PartProperties::hub`
+  exactly. The four assumption rows are the spec 4.5 drafts verbatim (label, path, rationale and source, character for
+  character), and each claim holds in the engine. The three table labels, the chain heading and the 18 symbols are
+  accurate, and no new symbol collides with the crate's 500.
+- Should-fix offered, none applied in this round; they stay open for the controller (SF-1 and SF-2 for Task 8's G-3
+  review, SF-3 to SF-5 for Task 7's physics review, which owns the records, and SF-6, a test, for Task 8):
+  - SF-1 (`fit_friction` rationale): "a finish in the bore lowers it" claims more than is known: oil lowers the
+    friction, but no source in the spec or the research gives the direction for a coating or a finish. Offered (44
+    words, 2 sentences): "The friction between each rotor's bore and its shaft that turns the fit's grip into holding torque. 0.14 is for dry, degreased steel on steel; oil, a coating or a finish in the bore can lower it, and the holding torque falls in proportion."
+    The `shaft_joint.friction` input help (Task 2's text) has the same "lowers it"; a change there goes to the G-3
+    review with a re-bless of `input_schema.json`.
+  - SF-2 (`fit_smoothing` rationale, trap 5): "taken off both ends of the measured band" is true for holding and the
+    bore stress, not for fitting, which reads the measured maximum with no smoothing taken off (5 µm is about 41 °C on
+    the 4140 hub). Offered (57 words, 2 sentences): "Interference lost as the surface peaks of bore and shaft flatten when the fit is made: taken off both ends of the measured band for holding and bore stress, not for fitting. 5 µm is conservative for holding with ground and honed surfaces; a finer finish loses less, which raises the grip and the bore stress together."
+  - SF-3 (`records/shaft_joint.rs`, the eight Lamé records' no-wall condition; the implementer's concern 1): it
+    typesets as `D ≤ d_{bore} or t_{kw} > 0 and (D − d_{bore})/2 ≤ t_{kw}`. The evaluator groups it as the engine does
+    (`and` binds tighter), but a reader may group it left to right. Offered: split it into the engine's two no-wall
+    kinds, one arm each, with the same values. For the inner hub's four records the first `cases` line becomes the two
+    lines below; the cup's four take `{metal.boss_od_mm}` for `[D]`. It typesets as
+    `{ undefined if D ≤ d_{bore}; undefined if t_{kw} > 0 and (D − d_{bore})/2 ≤ t_{kw}; ... otherwise }`.
+
+    ```text
+    cases([D] <= {coupling.bore_mm} => nan;
+          {coupling.keyway_depth_mm} > 0 and frac([D] - {coupling.bore_mm}, 2) <= {coupling.keyway_depth_mm} => nan;
+    ```
+  - SF-4 (`hub_fit_allowed_C`'s local `[ϑ_{cap}]`): in this crate "cap" is a part (the end cap's `D_{cap}`,
+    `t_{cap}`, `σ_{cap}` and the `cap_housing` table). Offered: `[ϑ_{lim,sr,i}]` at each of the six occurrences, with
+    `where [ϑ_{lim,sr,i}] = {temperature.demag.inner_onset_single_ring_C} - 10`.
+  - SF-5 (two record symbols, low): (a) the key-arc local `[b]` sits beside the bondline `b_i` in the inner hub's
+    formula. Offered `[b_{arc}]` in `hub_holding_Nm`, `hub_needed_um`, `cup_holding_Nm` and `cup_needed_um`:
+    `[b_{arc}] = cases({coupling.keyway_depth_mm} > 0 => {shaft_joint.key_width_mm}; else => 0)`, and inside `[T_1]`
+    `max(0, π · {coupling.bore_mm} - [b_{arc}])`. (b) `δ_{fit,hub}` and `δ_{fit,cup}`, the fittable edge, read as "the
+    fit's interference". Offered `δ_{join,hub}` and `δ_{join,cup}`. Either rename belongs before the note quotes
+    symbols.
+  - SF-6 (`tests/assumptions.rs`, for Task 8): the four rationales type their defaults (0.14, 5 µm, 20 °C, 10 µm), and
+    no test ties them to the inputs. Offered: for each `(id, path, quoted, value)` in
+    `("fit_friction", "shaft_joint.friction", "0.14 is", 0.14)`,
+    `("fit_smoothing", "shaft_joint.smoothing_um", "5 µm is", 5.0)`,
+    `("rotor_over_shaft", "shaft_joint.rotor_over_shaft_C", "20 °C is", 20.0)` and
+    `("joining_clearance", "shaft_joint.joining_clearance_um", "10 µm is", 10.0)`, assert
+    `rationale(id).contains(quoted)` and `DesignInputs::default().get(path) == Some(Value::Num(value))`.
+- No text changed in this round.
+
+**Report for the record (as returned).**
+
+**R-1. What was verified true.**
+- **The 23 records against the engine, term by term:**
+  - the Lamé pressure: `1e-3 / (d·((k_θ + ν)/E_part + (1 − ν)/E_shaft))`, with E in MPa;
+  - the holding torque, with the key arc floored at 0 and taken off only with a keyway;
+  - the bore von Mises: `√(k_θ² + k_θ + 1)·p`, plane stress, σ_r = −p;
+  - the cold and hot mismatch;
+  - `δ_lo = min(Δ_c, Δ_h − α_part·Δϑ_rot·d·1000)` and `δ_hi = max(Δ_c, Δ_h)`, in `py_min` and `py_max` argument order;
+  - the needed and elastic edges;
+  - the key alone: three arms, matching `keyed` / `bearing` / else, a NaN bearing length giving +inf as the engine does;
+  - the NIST shrink: linear from 265 K up, the Fe-2.25Ni fit below, anchored at 265 K, with a NaN shaft temperature
+    falling to NaN in both;
+  - the fittable edge and the fitting temperature, both on the measured maximum;
+  - `hub_fit_allowed_C`: each of the four arms equals `py_min(py_min(yours, adhesive), onset − 10)` with ties to the
+    earlier value, a NaN fails every arm, and an onset of +inf never binds;
+  - the cup's allowed temperature: your limit alone.
+- **The part-material cases against `PartProperties::hub` and `resolve`:**
+  - steel with the default pick: the Materials inputs;
+  - steel with another pick, or a non-magnetic pick: that pick's `engine` values;
+  - otherwise the workbook's aluminium, E18's 68.9 GPa and 23.6e-6 /°C;
+  - the yield: the pick's library value on steel or for a non-magnetic pick, else 6061-T6's 241 MPa;
+  - a pick outside the choices: NaN on steel, aluminium off it.
+- **The four assumption rationales at the engine.**
+  - **Friction.** Holding is linear in μ, so "falls in proportion" holds.
+  - **Smoothing.** It is taken off both the minimum and the maximum, so a finer finish raises the grip and the stress
+    together (trap 19).
+  - **Rotor over shaft.** The allowance enters only the hot end (`rotor_warmer_um` in `loosest_um`), as "the grip at
+    the hot end falls" says. This is more precise than the input helps T2's SF-8 flagged.
+  - **Joining clearance.** It is added to the measured maximum in the fitting temperature, and one value serves both
+    joints (`JointCommon`).
+- **The traps over all changed text.** None of these appear: "clamp", "safe", "strongest", "at most", "up to", "most
+  expected", "heat the hub", "protect", "permanent", induction, the grade's 150 °C, a fit class, a ratio or efficiency,
+  U+2192 or U+2300. "After warming and cooling" is trap 14's form. Neither path nor heading contains "clamp" or
+  "gearbox". `plain_problems` is clean on the labels and rationales (tested).
+
+**R-2. Table labels.**
+- **Not drawn on screen.** The three new `TableField` labels are not drawn anywhere. Only `symbol` is read, by
+  `render.rs:142` and `typeset.rs:797/1653`.
+- **The yield label is consistent with the data file.** "(library: the published minimum where one exists)" matches
+  `docs/analyses/2026-09-30-magcoupling-addendum-a-data.json`:
+  - guaranteed minima for 17-4PH (both), 304, 6061-T6, 316L and Ti-6Al-4V;
+  - typical values where no minimum is published: 416 ("no minimum published"), and the 4140 Otai annealed row.
+- **"(library)" means the entry's `engine` values.** On the modulus and expansion labels, "(library)" follows the
+  existing σ, ρ and c labels, which also read the entry's `engine` values. For 4140 the engine's 12.3e-6 /°C differs
+  from the sourced 12.2. The test pins the engine value, as the check uses it.
+
+**R-3. Two "Shaft joints" headings, T3 to T4 only.**
+- **Now.** The new chain heading and T2's package heading share the text. Until T5 puts `shaft_joint.check` on the
+  dashboard (spec 5.1, index 15), the results table shows "Shaft joints" twice:
+  - the chain, with 23 rows;
+  - the package under "Other results", with the verdict alone.
+- **After T5.** The package group empties and `groups_of` drops it (`retain(!rows.is_empty())`).
+- **Impact.** The branch is not released before T10's stop, so no change is needed. `result_groups.rs`'s new test
+  comment says the same.
+
+**R-4. Sources (not G-3 text, spec 4.5 and 6.3; pinned by `tests/assumptions.rs`).**
+- **Shown on screen.** The panel prints them ("Source: ...", `panel.rs:1268`). So "BL-064 shaft joint spec", the
+  backticked file path and "§" appear on screen. This is by design: trap 22 covers labels and rationales, not sources,
+  and the older sources show "Workbook ...!C..", "Addendum A3" and "M1 audit".
+- **Not verified here, taken from the spec.**
+  - "DIN 7190-1:2017 §8.2".
+  - "smoothing 0.4·Rz per surface". This does not say radius or diameter. The research used 0.8·ΣRz on the diameter,
+    from memory (`research-physics.md:168`). That figure agrees with the source only if 0.4·Rz is per surface on the
+    radius.
+  - Gear Technology Nov/Dec 2017 (0.145) and ANSI/AGMA 9003 (0.15).
+- **Robustness of the rationale.** "5 µm is conservative for holding with ground and honed surfaces" holds under either
+  reading: ground Rz ≈ 2.5 µm and honed Rz ≤ 3 µm give at most about 4.4 µm at 0.8·ΣRz.
+
+**R-5. Symbols.**
+- **No collisions.** The 18 new input symbols and 23 record symbols collide with none of the crate's 500.
+- **Overlaps the module doc already tells apart:**
+  - `σ_{BI}` (conductivity) beside `σ_{y,BI}` (yield) in one table;
+  - `μ_{fit}` and `μ_{joint}`; `S_{fit}` beside the clamp's `S_{req}` and `S_{cl}`;
+  - `p_{key,hub}` and `p_{key,cup}` beside the paused clamp's `p_{key,Al}`;
+  - `ϑ_{lim,hub}` (your fitting limit) and `ϑ_{lim,i}` (the inner magnet limit).
+- **Module doc claim checked.** "Elsewhere α is a Br temperature coefficient" is true: every α that is an expansion
+  coefficient (`α_{part}`, `α_{st,in}`, `α_{BI}`) is new in this commit.
+
+**R-6. The records module doc (a code comment).** It says the no-wall case is "a keyway as deep as the wall". The engine
+tests `wall ≤ depth`: at least as deep. Not on screen.
+
+**R-7. No model question arises.** No changed text asks to change the engine. R-1 (the stress side's smoothing) and R-14
+(which body sits at the bond limit at the hot end) stay with T7's physics review, as planned. SF-2's wording is true
+under either outcome of R-1.
