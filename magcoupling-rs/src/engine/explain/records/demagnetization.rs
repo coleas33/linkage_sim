@@ -72,7 +72,10 @@ pub const RECORDS: &[Record] = &[
     // BL-064 (owner R-15 ring): the inner ring's own single-ring onset, whichever ring governs
     // (temperature::ring_demag's fourth onset of the inner block). The inner magnet limit's
     // record with the single-ring field in place of the skipping field, no design margin, and
-    // +inf (not the rating) for a positive beta; its `where` terms repeat that record's.
+    // +inf (not the rating) for a positive beta; its `where` terms repeat that record's. The
+    // BL-064 spec (section 4.5) keeps the copy: the drift guard (tests/explain.rs,
+    // every_record_reproduces_the_engine_everywhere) holds both records to the engine, and a
+    // per-ring calibration-offset result would let them share the terms.
     record("temperature.demag.inner_onset_single_ring_C", "ϑ_{sr,i}",
         r#"cases({temperature.demag.inner_beta_per_C} > 0 => inf;
                else => 20 + frac([H_k] - {temperature.demag.h_rev_single_ring_kA_m},
