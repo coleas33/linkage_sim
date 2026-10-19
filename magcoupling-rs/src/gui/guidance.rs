@@ -5534,7 +5534,6 @@ mod tests {
             .map(|(path, direction)| (path, direction == Direction::Raise))
             .collect();
         assert_eq!(swept, listed);
-        let mut flats = 0;
         for (base, path, direction, term, flat_reading) in cases {
             let before = compute_all(&base);
             assert_ne!(
@@ -5556,6 +5555,7 @@ mod tests {
                 (margin(SHAFT_JOINT, term, &design, &results), joints[index])
             };
             let (mut last, mut last_joint) = at(values[0]);
+            let mut case_flats = 0;
             for &x in &values[1..] {
                 let (now, joint) = at(x);
                 let what = format!("{term} against {path} at {x}: {last} -> {now}");
@@ -5563,7 +5563,7 @@ mod tests {
                 if now == last {
                     let reading = flat_reading.unwrap_or_else(|| panic!("flat: {what}"));
                     assert_eq!(reading(&joint), reading(&last_joint), "{what}");
-                    flats += 1;
+                    case_flats += 1;
                 }
                 (last, last_joint) = (now, joint);
             }
@@ -5572,9 +5572,13 @@ mod tests {
                 "{}: moves the {term} margin {from} -> {last}",
                 fix_text(path, direction)
             );
+            // Each case with a reading reaches its own flat (the floor, the cap or the override).
+            assert_eq!(
+                case_flats > 0,
+                flat_reading.is_some(),
+                "{term} against {path}"
+            );
         }
-        // The flats exist (the floor, the cap and the override each reach theirs).
-        assert!(flats > 0);
     }
 
     /// The defaults with the cup's minimum interference 0.001 µm above the smallest that holds:
