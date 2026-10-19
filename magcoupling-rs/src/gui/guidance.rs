@@ -5166,8 +5166,9 @@ mod tests {
         // 50.8 mm magnets make the cup slip and its key alone bear too much (the cup does not
         // lengthen with the magnets); DP460's design limit, and the inner ring's single-ring onset
         // of library N42 blocks (owner R-15), keep the inner hub from being fitted; and the six
-        // designs that break the joint alone. Every other test design passes every term, the
-        // short magnets' greyed row too (a cold-high below zero asks nothing of a fit).
+        // designs that break the joint alone. Every other test design passes, its check reading
+        // the pass, never unknown (a joint that is not judged fails no term), the short magnets'
+        // greyed row too (a cold-high below zero asks nothing of a fit).
         let want: Vec<(&str, Vec<String>)> = [
             ("n42_parts", &["inner hub fitting"][..]),
             ("cool_adhesive", &["inner hub fitting"]),
@@ -5194,6 +5195,13 @@ mod tests {
             .filter_map(|(name, inputs)| {
                 let results = compute_all(&inputs);
                 let failing = failing_term_names(SHAFT_JOINT, &inputs, &results);
+                if failing.is_empty() {
+                    assert_eq!(
+                        results.shaft_joint.check,
+                        shaft_joint::SHAFT_JOINTS_PASS,
+                        "{name}"
+                    );
+                }
                 (!failing.is_empty()).then_some((name, failing))
             })
             .collect();
