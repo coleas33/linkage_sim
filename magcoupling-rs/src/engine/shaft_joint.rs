@@ -113,7 +113,7 @@ results! {
             part_yield_MPa: f64 => out_rust_only("MPa", "Inner hub and cup yield strength",
                 "The library's yield strength of the inner hub and cup material in effect; for 4140, the annealed value, conservative while the condition is open."),
             stress_limit_MPa: f64 => out_rust_only("MPa", "Bore stress limit",
-                "The part's yield strength with a margin. At the tightest fit the bore stress must not exceed it, so the part stays elastic and keeps its grip."),
+                "The part's yield strength with a margin. The bore stress at the tightest fit must stay within it, so the part stays elastic; so must the key backup's pressure."),
             hub_holding_Nm: f64 => out_rust_only("N·m", "Inner hub holding torque at its loosest",
                 "Torque the inner hub's fit holds without slipping at its loosest: minimum measured interference less smoothing, cold, or hot with the rotor warmer than its shaft, whichever loosens it more."),
             cup_holding_Nm: f64 => out_rust_only("N·m", "Cup holding torque at its loosest",

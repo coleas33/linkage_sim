@@ -470,6 +470,21 @@ fn the_shaft_shrink_helps_count_from_room_temperature_and_type_no_number() {
 }
 
 #[test]
+fn the_stress_limit_help_names_the_key_backup() {
+    // G-3 SF-3, from the review leftovers: the key backup is held to the same limit, and its
+    // badge quotes this row (keyway 0.3 mm: "509.8 MPa against 345.8 MPa"), so the row's help
+    // names the key backup beside the bore stress.
+    let help = result_help("shaft_joint.stress_limit_MPa");
+    assert!(help.contains("key backup"), "{help}");
+    let shallow = design(|i| i.coupling.keyway_depth_mm = 0.3);
+    let text = check(&shallow);
+    assert!(text.starts_with(KEY_OVER_ITS_LIMIT), "{text}");
+    let (_, limit) = quoted(&text);
+    let stress_limit = compute_all(&shallow).shaft_joint.stress_limit_MPa;
+    assert_near(limit, stress_limit, 0.05, "the key badge's limit");
+}
+
+#[test]
 fn per_micrometre_each_joint_grips_and_stresses_as_the_spec_says() {
     // Spec section 3.4, the defaults: contact pressure, holding torque (friction 0.14, the 3 mm
     // key's arc taken off) and bore von Mises stress per µm of effective interference.
