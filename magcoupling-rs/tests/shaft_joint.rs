@@ -960,6 +960,28 @@ fn the_cap_reads_the_inner_ring_s_own_onset_with_mixed_rings() {
 }
 
 #[test]
+fn the_bonded_hub_s_limit_helps_name_the_inner_ring_s_onset() {
+    // G-3 SF-1, from the review leftovers: the cap reads the inner ring's own onset (pinned
+    // above), and with mixed rings the results show two onsets, so both helps of the bonded
+    // inner hub's fitting limit name the inner ring's, never "the magnets'". The input's help
+    // also says the bond strain is not checked (spec trap 20). Both keep "onset less 10 °C",
+    // which `tests/explain.rs` pins to the engine's cure margin.
+    let input = input_meta("shaft_joint.hub_fit_max_C").help;
+    let result = result_help("shaft_joint.hub_fit_allowed_C");
+    for (what, help) in [("the input", input), ("the result", result)] {
+        assert!(
+            help.contains("the inner ring's single-ring onset"),
+            "{what}: {help}"
+        );
+        assert!(
+            !help.contains("the magnets' single-ring onset"),
+            "{what}: {help}"
+        );
+    }
+    assert!(input.contains("bond strain is not checked"), "{input}");
+}
+
+#[test]
 fn a_long_magnet_makes_the_cup_slip_first() {
     // The hub grows with the magnets under the axial override, the boss does not: at 40 mm the
     // cup slips and its key follows; the cup starts to slip near a magnet length of 26.5 mm.

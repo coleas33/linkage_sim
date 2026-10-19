@@ -3374,7 +3374,7 @@
       "cell": null,
       "choices": [],
       "default": 100.0,
-      "help": "Its magnets are bonded before fitting. The check caps it at the adhesive's design limit and at the magnets' single-ring onset less 10 °C.",
+      "help": "Its magnets are bonded before fitting. The check caps it at the adhesive's design limit and the inner ring's single-ring onset less 10 °C; bond strain is not checked.",
       "label": "Hottest the bonded inner hub may be for fitting",
       "path": "shaft_joint.hub_fit_max_C",
       "range": {

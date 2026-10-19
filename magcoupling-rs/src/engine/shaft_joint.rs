@@ -81,7 +81,7 @@ inputs! {
                 "Height of the key face bearing on the inner hub and the cup, capped at the keyway depth (DIN 6885-1 gives 1.2 mm for 10 mm).")
                 .range(0.5, 3.0, 0.1),
             hub_fit_max_C: f64 = 100.0 => param_rust_only("°C", "Hottest the bonded inner hub may be for fitting",
-                "Its magnets are bonded before fitting. The check caps it at the adhesive's design limit and at the magnets' single-ring onset less 10 °C.")
+                "Its magnets are bonded before fitting. The check caps it at the adhesive's design limit and the inner ring's single-ring onset less 10 °C; bond strain is not checked.")
                 .range(20.0, 130.0, 1.0),
             cup_fit_max_C: f64 = 300.0 => param_rust_only("°C", "Hottest the bare cup may be for fitting",
                 "The cup is fitted before its magnets are bonded. Stay below the treatment temperatures of its material and finish, and keep the heat off the gearbox seal.")
@@ -147,7 +147,7 @@ results! {
             cup_fit_temp_C: f64 => out_rust_only("°C", "Cup temperature the fit would need",
                 "What the bare cup would need on the gearbox shaft as set, the joining clearance included. Above the allowed temperature it cannot be fitted this way: never warm it further."),
             hub_fit_allowed_C: f64 => out_rust_only("°C", "Inner hub fitting temperature allowed",
-                "The lowest of your limit for the bonded inner hub, the selected adhesive's design limit and the magnets' single-ring onset less 10 °C; not a number if any is."),
+                "The lowest of your limit for the bonded inner hub, the selected adhesive's design limit and the inner ring's single-ring onset less 10 °C; not a number if any is."),
             cup_fit_allowed_C: f64 => out_rust_only("°C", "Cup fitting temperature allowed",
                 "Your limit for the bare cup, which is fitted before its magnets are bonded."),
             check: String => out_rust_only("", "Shaft joints: keyed shrink fits",
