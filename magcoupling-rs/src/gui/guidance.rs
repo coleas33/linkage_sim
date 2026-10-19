@@ -1815,24 +1815,34 @@ fn quoted_load(x: f64, rating: f64) -> f64 {
     }
 }
 
-/// `x` rounded down at its last shown digit, float noise aside ([`LAST_DIGIT_NOISE`]); a
-/// number that is not finite or not positive as it is.
+/// `x` rounded down to a multiple of `step`, float noise aside ([`LAST_DIGIT_NOISE`]): the one
+/// rounding-down rule of the quotes.
+fn floor_at(x: f64, step: f64) -> f64 {
+    (x / step + LAST_DIGIT_NOISE).floor() * step
+}
+
+/// `x` rounded up to a multiple of `step`, float noise aside ([`LAST_DIGIT_NOISE`]): the one
+/// rounding-up rule of the quotes.
+fn ceil_at(x: f64, step: f64) -> f64 {
+    (x / step - LAST_DIGIT_NOISE).ceil() * step
+}
+
+/// `x` rounded down at its last shown digit ([`floor_at`]); a number that is not finite or not
+/// positive as it is.
 fn rounded_down(x: f64) -> f64 {
     if !x.is_finite() || x <= 0.0 {
         return x;
     }
-    let step = last_digit_step(x);
-    (x / step + LAST_DIGIT_NOISE).floor() * step
+    floor_at(x, last_digit_step(x))
 }
 
-/// `x` rounded up at its last shown digit, float noise aside ([`LAST_DIGIT_NOISE`]); a number
-/// that is not finite or not positive as it is.
+/// `x` rounded up at its last shown digit ([`ceil_at`]); a number that is not finite or not
+/// positive as it is.
 fn rounded_up(x: f64) -> f64 {
     if !x.is_finite() || x <= 0.0 {
         return x;
     }
-    let step = last_digit_step(x);
-    (x / step - LAST_DIGIT_NOISE).ceil() * step
+    ceil_at(x, last_digit_step(x))
 }
 
 /// How many decimals the readouts show for `x` ([`format_value`]'s text): `None` where that
@@ -1845,8 +1855,23 @@ fn shown_decimals(x: f64) -> Option<usize> {
     }
 }
 
-/// The most decimals [`band_quotes`] gives a number near one: f64 holds no more of its digits.
+/// The most decimals [`fewest_decimals_apart`] gives a number near one: f64 holds no more of
+/// its digits.
 const MOST_DECIMALS: usize = 15;
+
+/// The one search for more decimals of [`band_quotes`] and [`window_quotes`] (BL-059 NB-1): the
+/// fewest decimals, from `from` up to [`MOST_DECIMALS`], whose `quotes` read `apart`, with those
+/// quotes; else [`MOST_DECIMALS`] and its quotes.
+fn fewest_decimals_apart<T>(
+    from: usize,
+    quotes: impl Fn(usize) -> T,
+    apart: impl Fn(&T) -> bool,
+) -> (usize, T) {
+    (from..=MOST_DECIMALS)
+        .map(|decimals| (decimals, quotes(decimals)))
+        .find(|(_, quoted)| apart(quoted))
+        .unwrap_or_else(|| (MOST_DECIMALS, quotes(MOST_DECIMALS)))
+}
 
 /// The band and the widest band the rating allows, as gearbox Problem sentence 2's first remedy
 /// quotes them: the band as the readouts show it, the widest band rounded down past it
@@ -1868,17 +1893,14 @@ fn band_quotes(band: f64, widest: f64) -> (String, String) {
     // Both are from 1 to 1.0005, which the readouts show to three decimals: from four.
     let at = |decimals: usize| {
         let step = 10f64.powi(-(decimals as i32));
-        let down = ((widest / step + LAST_DIGIT_NOISE).floor() * step).max(1.0);
+        let down = floor_at(widest, step).max(1.0);
         (fixed(band, decimals), fixed(down, decimals))
     };
     let apart = |(here, limit): &(String, String)| {
         let value = |text: &str| text.parse().unwrap_or(f64::NAN);
         value(limit) < value(here)
     };
-    (SIGNIFICANT_DIGITS as usize..=MOST_DECIMALS)
-        .map(at)
-        .find(apart)
-        .unwrap_or_else(|| at(MOST_DECIMALS))
+    fewest_decimals_apart(SIGNIFICANT_DIGITS as usize, at, apart).1
 }
 
 /// A fraction as a percentage: four significant digits without trailing zeros (0.15 gives
@@ -2275,20 +2297,14 @@ fn window_quotes(needed: f64, upper: f64, unit_of: &str) -> (String, String) {
     }
     let at = |decimals: usize| {
         let step = 10f64.powi(-(decimals as i32));
-        (
-            (needed / step - LAST_DIGIT_NOISE).ceil() * step,
-            (upper / step + LAST_DIGIT_NOISE).floor() * step,
-        )
+        (ceil_at(needed, step), floor_at(upper, step))
     };
     let first = [low, high]
         .into_iter()
         .filter_map(shown_decimals)
         .max()
         .map_or(SIGNIFICANT_DIGITS as usize, |decimals| decimals + 1);
-    let (decimals, (low, high)) = (first..=MOST_DECIMALS)
-        .map(|decimals| (decimals, at(decimals)))
-        .find(|&(_, (low, high))| low < high)
-        .unwrap_or_else(|| (MOST_DECIMALS, at(MOST_DECIMALS)));
+    let (decimals, (low, high)) = fewest_decimals_apart(first, at, |&(low, high)| low < high);
     let unit = result_info(unit_of).map_or("", |info| info.meta.unit);
     (
         with_unit(fixed(low, decimals), unit),
