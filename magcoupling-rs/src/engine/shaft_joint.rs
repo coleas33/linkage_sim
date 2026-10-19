@@ -87,7 +87,7 @@ inputs! {
                 "The cup is fitted before its magnets are bonded. Stay below the treatment temperatures of its material and finish, and keep the heat off the gearbox seal.")
                 .range(20.0, 400.0, 5.0),
             wheel_shaft_fit_C: f64 = -196.0 => param_rust_only("°C", "Wheel shaft temperature at fitting",
-                "A cooled shaft shrinks, so the inner hub needs less heat. Dry ice is about -78 °C; liquid nitrogen is -196 °C.")
+                "A cooled shaft shrinks, so the temperature the inner hub's fit would need falls. Dry ice is about -78 °C; liquid nitrogen is -196 °C.")
                 .range(-196.0, 40.0, 1.0),
             output_shaft_fit_C: f64 = 20.0 => param_rust_only("°C", "Gearbox shaft temperature at fitting",
                 "The gearbox output shaft cannot be immersed. Cold spray can take it to about -20 °C, the slider's bottom; never below the gearbox's rated range.")

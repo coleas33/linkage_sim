@@ -796,6 +796,43 @@ fn an_uncooled_wheel_shaft_or_dry_ice_cannot_fit_the_inner_hub_nor_a_cooler_bare
 }
 
 #[test]
+fn the_wheel_shaft_help_says_the_needed_temperature_falls() {
+    // G-3 SF-4, from the review leftovers: the help names the result a colder wheel shaft
+    // lowers, the temperature the inner hub's fit would need, as the note's change entry does,
+    // and never speaks of heat (spec trap 14). One step up from the default raises that
+    // temperature, and over the whole slider each colder step lowers it.
+    let path = "shaft_joint.wheel_shaft_fit_C";
+    let help = input_meta(path).help;
+    assert!(
+        help.contains("the temperature the inner hub's fit would need falls"),
+        "{help}"
+    );
+    assert!(!help.contains("heat"), "{help}");
+    let needed = |shaft: f64| {
+        compute_all(&design(|i| i.shaft_joint.wheel_shaft_fit_C = shaft))
+            .shaft_joint
+            .hub_fit_temp_C
+    };
+    let shipped = DesignInputs::default().shaft_joint.wheel_shaft_fit_C;
+    let up = shipped + slider(path).step;
+    assert!(
+        needed(up) > needed(shipped),
+        "{up} °C: {} against {} °C at {shipped} °C",
+        needed(up),
+        needed(shipped)
+    );
+    for pair in slider_values(path).windows(2) {
+        let [colder, warmer] = [pair[0], pair[1]];
+        assert!(
+            needed(colder) < needed(warmer),
+            "{colder} °C needs {}, {warmer} °C needs {}",
+            needed(colder),
+            needed(warmer)
+        );
+    }
+}
+
+#[test]
 fn the_allowed_hub_temperature_is_the_lowest_of_three() {
     // Owner R-15: the bonded inner hub's allowed fitting temperature is the lowest of your
     // limit, the selected adhesive's design limit and the inner ring's own single-ring onset

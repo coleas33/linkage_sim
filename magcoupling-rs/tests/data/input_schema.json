@@ -3410,7 +3410,7 @@
       "cell": null,
       "choices": [],
       "default": -196.0,
-      "help": "A cooled shaft shrinks, so the inner hub needs less heat. Dry ice is about -78 °C; liquid nitrogen is -196 °C.",
+      "help": "A cooled shaft shrinks, so the temperature the inner hub's fit would need falls. Dry ice is about -78 °C; liquid nitrogen is -196 °C.",
       "label": "Wheel shaft temperature at fitting",
       "path": "shaft_joint.wheel_shaft_fit_C",
       "range": {
