@@ -9,11 +9,11 @@ mod common;
 use std::collections::{BTreeMap, BTreeSet};
 
 use common::{cell_values_for, num, plain_problems};
-use magcoupling::engine::api::{DesignInputs, compute_all, compute_all_with};
+use magcoupling::engine::api::{DesignInputs, compute_all, compute_all_with, parts_in_effect};
 use magcoupling::engine::compat::parity_close;
 use magcoupling::engine::deviations::Deviations;
 use magcoupling::engine::material_library::{
-    BACK_IRON_CHOICES, CAP_HOUSING_CHOICES, PartProperties, SLEEVE_LINER_CHOICES, material, resolve,
+    BACK_IRON_CHOICES, CAP_HOUSING_CHOICES, SLEEVE_LINER_CHOICES, material,
 };
 use magcoupling::engine::materials::PartMaterialInputs;
 use magcoupling::engine::meta::{InputSet, SetErrorKind, Value, input_rows, result_rows};
@@ -415,18 +415,6 @@ fn every_warning_text_reads_in_plain_words() {
     assert!(failures.is_empty(), "{failures:#?}");
 }
 
-/// The parts' materials in effect for `inputs`, resolved as `api::compute` resolves them.
-fn parts_of(inputs: &DesignInputs) -> PartProperties {
-    resolve(
-        &inputs.materials.parts,
-        &inputs.materials.steel,
-        inputs.coupling.backiron,
-        &inputs.metal,
-        &inputs.temperature.slip_loss,
-        &inputs.temperature.thermal,
-    )
-}
-
 /// The library yield strength of material `id` [MPa].
 fn library_yield(id: &str) -> f64 {
     material(id)
@@ -441,7 +429,7 @@ fn the_hub_material_follows_the_circuit_and_its_yield_the_metal_in_effect() {
     // with the library yield of the metal in effect, not of the pick.
     use magcoupling::engine::temperature::{AL_HUB_CTE_PER_C, AL_HUB_MODULUS_GPA};
     // The default: the Materials inputs (12.3e-6 /°C, 205 GPa) and the library's 4140 yield.
-    let default = parts_of(&DesignInputs::default()).hub();
+    let default = parts_in_effect(&DesignInputs::default()).hub();
     assert_eq!(
         (
             default.props.cte_per_C,
@@ -454,7 +442,7 @@ fn the_hub_material_follows_the_circuit_and_its_yield_the_metal_in_effect() {
     // non-magnetic one (304, 6061) selects the free-space circuit and is the body. Either way
     // the yield is the pick's own.
     for (code, id) in BACK_IRON_CHOICES {
-        let parts = parts_of(&with_back_iron(code));
+        let parts = parts_in_effect(&with_back_iron(code));
         let hub = parts.hub();
         let ferromagnetic = material(id).expect(id).ferromagnetic;
         assert_eq!(parts.backiron, i64::from(ferromagnetic), "{id}");
@@ -472,7 +460,7 @@ fn the_hub_material_follows_the_circuit_and_its_yield_the_metal_in_effect() {
     for code in (1..=8).chain([99]) {
         let mut inputs = with_back_iron(code);
         inputs.coupling.backiron = 0;
-        let parts = parts_of(&inputs);
+        let parts = parts_in_effect(&inputs);
         let hub = parts.hub();
         assert_eq!(hub.props, parts.body, "{code}");
         let id = match parts.back_iron.material {
@@ -490,7 +478,7 @@ fn the_hub_material_follows_the_circuit_and_its_yield_the_metal_in_effect() {
     }
     // On the steel circuit a code outside the choices gives NaN values and a NaN yield (decision
     // D3: never another material), so the shaft joint check reads unknown.
-    let unknown = parts_of(&with_back_iron(99)).hub();
+    let unknown = parts_in_effect(&with_back_iron(99)).hub();
     assert!(
         unknown.props.cte_per_C.is_nan()
             && unknown.props.modulus_GPa.is_nan()
@@ -522,7 +510,7 @@ fn the_expansion_warning_reads_the_hub_material_in_effect_unchanged() {
     designs.push(("4140 expansion typed 16e-6".to_owned(), typed));
     let mut fired_count = 0;
     for (label, inputs) in designs {
-        let parts = parts_of(&inputs);
+        let parts = parts_in_effect(&inputs);
         let before = if parts.backiron == 1 {
             parts.steel.cte_per_C
         } else {

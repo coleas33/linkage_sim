@@ -1832,8 +1832,9 @@ fn an_infinite_cold_high_slips() {
 
 #[test]
 fn the_joints_rebuilt_from_the_results_are_the_engine_s() {
-    // `api::shaft_joint_links` reads every value from the design's inputs and results; the check
-    // recomputed from it is the engine's, at the probe designs and at the edge designs above.
+    // `api::shaft_joint_links` reads every value from the design's inputs, results and parts in
+    // effect; the check recomputed from it is the engine's, at the probe designs and at the edge
+    // designs above.
     let mut designs: Vec<DesignInputs> = probe_designs().into_iter().map(|(_, d)| d).collect();
     designs.extend([
         passing(),
