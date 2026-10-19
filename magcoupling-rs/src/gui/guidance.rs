@@ -2081,11 +2081,13 @@ fn cannot_be_made_problem(inputs: &DesignInputs, reason: &CannotBeMade) -> Strin
 }
 
 /// The bottom of the slider of the input at `path`, with its unit, as a readout shows it.
+/// Panics where `path` is not an input with a slider: the guide asks only for those.
 fn slider_bottom_text(path: &str) -> String {
     let entry = InputCatalogue::get().entry(path);
     let bottom = entry
         .and_then(|entry| entry.meta.range)
-        .map_or(f64::NAN, |range| range.min);
+        .map(|range| range.min)
+        .unwrap_or_else(|| panic!("{path} has a slider"));
     with_unit(
         format_value(&Value::Num(bottom)),
         entry.map_or("", |entry| entry.meta.unit),
@@ -7869,6 +7871,14 @@ mod tests {
         let results = compute_all(&at_bottom);
         assert_eq!(results.shaft_joint.check, shaft_joint::SHAFT_JOINTS_PASS);
         assert_eq!(shaft_joint_problem(&at_bottom, &results), None);
+    }
+
+    #[test]
+    #[should_panic(expected = "has a slider")]
+    fn the_slider_bottom_of_a_path_without_a_slider_panics() {
+        // Re-review note 5: a sentence quotes a slider's bottom only for an input with a slider;
+        // any other path is a mistake in the guide, never a "NaN" on screen.
+        slider_bottom_text("shaft_joint.check");
     }
 
     /// Asserts that `text` holds each of `parts`, in their order.
