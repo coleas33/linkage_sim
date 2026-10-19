@@ -3237,6 +3237,45 @@ mod tests {
         i.metal.liner_mm = 0.0;
     }
 
+    /// The cup's minimum interference at 10 µm: at its loosest the cup slips.
+    fn cup_slips(i: &mut DesignInputs) {
+        i.shaft_joint.cup_interference_min_um = 10.0;
+    }
+
+    /// The inner hub's maximum interference at 26 µm: at its tightest its bore stress is above
+    /// its limit, and fitting it needs more than its allowed temperature.
+    fn hub_overstressed(i: &mut DesignInputs) {
+        i.shaft_joint.hub_interference_max_um = 26.0;
+    }
+
+    /// The cup's maximum interference at 26 µm: at its tightest its bore stress is above its
+    /// limit.
+    fn cup_overstressed(i: &mut DesignInputs) {
+        i.shaft_joint.cup_interference_max_um = 26.0;
+    }
+
+    /// The wheel shaft at 20 °C for fitting, not cooled: the inner hub cannot be fitted.
+    fn uncooled_wheel_shaft(i: &mut DesignInputs) {
+        i.shaft_joint.wheel_shaft_fit_C = 20.0;
+    }
+
+    /// The bare cup allowed only 250 °C for fitting: the cup cannot be fitted.
+    fn low_cup_fit_limit(i: &mut DesignInputs) {
+        i.shaft_joint.cup_fit_max_C = 250.0;
+    }
+
+    /// No boss length: the cup's boss and web are no longer than the key is wide, so the cup's
+    /// key has no bearing length (and the cup slips).
+    fn no_boss(i: &mut DesignInputs) {
+        i.metal.boss_length_mm = 0.0;
+    }
+
+    /// A 3 mm inner hub: no longer than the key is wide, so its key has no bearing length (and
+    /// it slips).
+    fn short_hub(i: &mut DesignInputs) {
+        i.metal.hub_length_mm = 3.0;
+    }
+
     /// Every design the tests use: the defaults (they fail four checks), a passing design,
     /// and for every check designs that fail it, most of them the passing design with one
     /// check broken.
@@ -3279,22 +3318,10 @@ mod tests {
             // cannot be fitted on an uncooled wheel shaft; the cup's boss and web, and then the
             // inner hub, are no longer than the key is wide (each also slips).
             ("joint_slips", only_the_joint_fails()),
-            (
-                "joint_overstressed",
-                breaking(|i| i.shaft_joint.hub_interference_max_um = 26.0),
-            ),
-            (
-                "joint_cannot_be_fitted",
-                breaking(|i| i.shaft_joint.wheel_shaft_fit_C = 20.0),
-            ),
-            (
-                "cup_key_no_bearing_area",
-                breaking(|i| i.metal.boss_length_mm = 0.0),
-            ),
-            (
-                "inner_hub_key_no_bearing_area",
-                breaking(|i| i.metal.hub_length_mm = 3.0),
-            ),
+            ("joint_overstressed", breaking(hub_overstressed)),
+            ("joint_cannot_be_fitted", breaking(uncooled_wheel_shaft)),
+            ("cup_key_no_bearing_area", breaking(no_boss)),
+            ("inner_hub_key_no_bearing_area", breaking(short_hub)),
             // Two failing checks that pull one input apart (review focus 4).
             (
                 "length_conflict",
@@ -3319,22 +3346,22 @@ mod tests {
             ),
             (
                 "cup slips",
-                breaking(|i| i.shaft_joint.cup_interference_min_um = 10.0),
+                breaking(cup_slips),
                 "At its loosest the cup holds",
             ),
             (
                 "inner hub overstressed",
-                breaking(|i| i.shaft_joint.hub_interference_max_um = 26.0),
+                breaking(hub_overstressed),
                 "the inner hub's bore stress is",
             ),
             (
                 "cup overstressed",
-                breaking(|i| i.shaft_joint.cup_interference_max_um = 26.0),
+                breaking(cup_overstressed),
                 "the cup's bore stress is",
             ),
             (
                 "uncooled wheel shaft",
-                breaking(|i| i.shaft_joint.wheel_shaft_fit_C = 20.0),
+                breaking(uncooled_wheel_shaft),
                 "your limit for the bonded inner hub",
             ),
             (
@@ -3349,7 +3376,7 @@ mod tests {
             ),
             (
                 "cup cannot be fitted",
-                breaking(|i| i.shaft_joint.cup_fit_max_C = 250.0),
+                breaking(low_cup_fit_limit),
                 "your limit for the bare cup",
             ),
             (
@@ -3359,12 +3386,12 @@ mod tests {
             ),
             (
                 "cup key without length",
-                breaking(|i| i.metal.boss_length_mm = 0.0),
+                breaking(no_boss),
                 "its boss and web",
             ),
             (
                 "inner hub key without length",
-                breaking(|i| i.metal.hub_length_mm = 3.0),
+                breaking(short_hub),
                 "is no longer than the key is wide",
             ),
             (
@@ -3384,7 +3411,7 @@ mod tests {
             ),
             (
                 "no joining clearance",
-                breaking(|i| i.shaft_joint.wheel_shaft_fit_C = 20.0),
+                breaking(uncooled_wheel_shaft),
                 "do not even open its",
             ),
             (
@@ -4104,6 +4131,138 @@ mod tests {
             .margin
     }
 
+    /// The names of the terms of `check` that fail, in [`terms`]' order.
+    fn failing_term_names(
+        check: &str,
+        inputs: &DesignInputs,
+        results: &DesignResults,
+    ) -> Vec<String> {
+        terms(check, inputs, results)
+            .into_iter()
+            .filter(|t| !t.passes)
+            .map(|t| t.name)
+            .collect()
+    }
+
+    /// A reading of one shaft joint's terms that holds still wherever a sweep of
+    /// [`shaft_joint_sweeps`] finds its margin flat.
+    type JointReading = fn(&JointTerms) -> f64;
+
+    /// Every slider fix of the shaft joints' guide, with what to sweep it on (spec 5.2): (a design
+    /// that fails the check, the fix's input and direction, the term it moves, the reading that
+    /// holds still where that term's margin is flat). The reading is `None` where the margin
+    /// rises at every step. A margin is flat only where nothing the term reads moves: the bore
+    /// stress against the band's maximum where smoothing takes all of it (the effective
+    /// interference is floored at zero), the key against the contact height past the keyway depth
+    /// (the contact is capped there), and the inner hub's slip against the hub length where the
+    /// axial override sets the hub's length (BL-064). The hub's minimum goes past the band's
+    /// maximum (to the slider's 40 µm): the margin keeps rising, though the band then reads
+    /// reversed.
+    fn shaft_joint_sweeps() -> Vec<(
+        DesignInputs,
+        &'static str,
+        Direction,
+        &'static str,
+        Option<JointReading>,
+    )> {
+        use Direction::{Lower, Raise};
+        let effective_max: JointReading = |j| j.effective_max_um;
+        let contact: JointReading = |j| j.key_contact_mm;
+        let length: JointReading = |j| j.key_bearing_mm;
+        vec![
+            (
+                only_the_joint_fails(),
+                HUB_MIN,
+                Raise,
+                "inner hub slips",
+                None,
+            ),
+            (
+                only_the_joint_fails(),
+                HUB_LENGTH,
+                Raise,
+                "inner hub slips",
+                None,
+            ),
+            (
+                only_the_joint_fails(),
+                FACE_GAP,
+                Raise,
+                "inner hub slips",
+                None,
+            ),
+            (breaking(cup_slips), CUP_MIN, Raise, "cup slips", None),
+            (breaking(cup_slips), BOSS_LENGTH, Raise, "cup slips", None),
+            (breaking(cup_slips), MAGNET_LENGTH, Lower, "cup slips", None),
+            (
+                breaking(hub_overstressed),
+                HUB_MAX,
+                Lower,
+                "inner hub bore stress",
+                Some(effective_max),
+            ),
+            (
+                breaking(uncooled_wheel_shaft),
+                HUB_MAX,
+                Lower,
+                "inner hub fitting",
+                None,
+            ),
+            (
+                breaking(cup_overstressed),
+                CUP_MAX,
+                Lower,
+                "cup bore stress",
+                Some(effective_max),
+            ),
+            (
+                breaking(low_cup_fit_limit),
+                CUP_MAX,
+                Lower,
+                "cup fitting",
+                None,
+            ),
+            (
+                breaking(uncooled_wheel_shaft),
+                WHEEL_SHAFT,
+                Lower,
+                "inner hub fitting",
+                None,
+            ),
+            (
+                breaking(low_cup_fit_limit),
+                GEARBOX_SHAFT,
+                Lower,
+                "cup fitting",
+                None,
+            ),
+            // 50.8 mm magnets: the cup's key alone bears about 390 MPa at a 1.2 mm contact,
+            // under the 1.7 mm keyway depth that caps it.
+            (
+                breaking(long_magnets),
+                KEY_CONTACT,
+                Raise,
+                "cup key",
+                Some(contact),
+            ),
+            (breaking(no_boss), BOSS_LENGTH, Raise, "cup key", None),
+            (
+                breaking(short_hub),
+                HUB_LENGTH,
+                Raise,
+                "inner hub key",
+                None,
+            ),
+            (
+                breaking(|i| i.coupling.magnets.axial_length_mm = Some(40.0)),
+                HUB_LENGTH,
+                Raise,
+                "inner hub slips",
+                Some(length),
+            ),
+        ]
+    }
+
     #[test]
     fn each_failing_term_has_a_fix_that_moves_it_and_no_fix_turns_another_check_red() {
         // Spec review focus 3. For every test design and every check it fails: each fix shown
@@ -4258,87 +4417,6 @@ mod tests {
                 Direction::Raise,
                 "gearbox input torque",
             ),
-            // BL-064. The hub's minimum goes past the band's maximum (to the slider's 40 µm):
-            // the margin keeps rising, though the band then reads reversed.
-            (
-                SHAFT_JOINT,
-                only_the_joint_fails(),
-                HUB_MIN,
-                Direction::Raise,
-                "inner hub slips",
-            ),
-            (
-                SHAFT_JOINT,
-                only_the_joint_fails(),
-                HUB_LENGTH,
-                Direction::Raise,
-                "inner hub slips",
-            ),
-            (
-                SHAFT_JOINT,
-                only_the_joint_fails(),
-                FACE_GAP,
-                Direction::Raise,
-                "inner hub slips",
-            ),
-            (
-                SHAFT_JOINT,
-                breaking(|i| i.shaft_joint.cup_interference_min_um = 10.0),
-                CUP_MIN,
-                Direction::Raise,
-                "cup slips",
-            ),
-            (
-                SHAFT_JOINT,
-                breaking(|i| i.shaft_joint.cup_interference_min_um = 10.0),
-                BOSS_LENGTH,
-                Direction::Raise,
-                "cup slips",
-            ),
-            (
-                SHAFT_JOINT,
-                breaking(|i| i.shaft_joint.cup_interference_min_um = 10.0),
-                MAGNET_LENGTH,
-                Direction::Lower,
-                "cup slips",
-            ),
-            (
-                SHAFT_JOINT,
-                breaking(|i| i.shaft_joint.hub_interference_max_um = 26.0),
-                HUB_MAX,
-                Direction::Lower,
-                "inner hub bore stress",
-            ),
-            (
-                SHAFT_JOINT,
-                breaking(|i| i.shaft_joint.cup_interference_max_um = 26.0),
-                CUP_MAX,
-                Direction::Lower,
-                "cup bore stress",
-            ),
-            (
-                SHAFT_JOINT,
-                breaking(|i| i.shaft_joint.wheel_shaft_fit_C = 20.0),
-                WHEEL_SHAFT,
-                Direction::Lower,
-                "inner hub fitting",
-            ),
-            (
-                SHAFT_JOINT,
-                breaking(|i| i.shaft_joint.cup_fit_max_C = 250.0),
-                GEARBOX_SHAFT,
-                Direction::Lower,
-                "cup fitting",
-            ),
-            // 50.8 mm magnets: the cup's key alone bears about 390 MPa at a 1.2 mm contact,
-            // under the 1.7 mm keyway depth that caps it.
-            (
-                SHAFT_JOINT,
-                breaking(long_magnets),
-                KEY_CONTACT,
-                Direction::Raise,
-                "cup key",
-            ),
             (
                 SPACE_CLAIM,
                 breaking(long_magnets),
@@ -4382,11 +4460,18 @@ mod tests {
                 "inner ring",
             ),
         ];
-        // The table holds every slider fix of every guide, once.
+        // The table holds every slider fix of every guide once, the shaft joints' apart: those
+        // are in `shaft_joint_sweeps`, whose test asks the same of each over its whole slider.
         let key = |check: &'static str, path: &'static str, direction: Direction| {
             (check, path, direction == Direction::Raise)
         };
-        let listed: BTreeSet<_> = cases.iter().map(|&(c, _, p, d, _)| key(c, p, d)).collect();
+        let mut listed: BTreeSet<_> = cases.iter().map(|&(c, _, p, d, _)| key(c, p, d)).collect();
+        assert_eq!(listed.len(), cases.len());
+        listed.extend(
+            shaft_joint_sweeps()
+                .into_iter()
+                .map(|(_, path, direction, _, _)| key(SHAFT_JOINT, path, direction)),
+        );
         let slider_fixes: BTreeSet<_> = CHECK_GUIDES
             .iter()
             .flat_map(|g| {
@@ -4397,7 +4482,6 @@ mod tests {
             })
             .collect();
         assert_eq!(listed, slider_fixes);
-        assert_eq!(listed.len(), cases.len());
         for (check, failing_design, path, direction, term) in cases {
             let before = compute_all(&failing_design);
             assert_ne!(
@@ -4965,11 +5049,7 @@ mod tests {
             .into_iter()
             .filter_map(|(name, inputs)| {
                 let results = compute_all(&inputs);
-                let failing: Vec<String> = terms(SHAFT_JOINT, &inputs, &results)
-                    .into_iter()
-                    .filter(|t| !t.passes)
-                    .map(|t| t.name)
-                    .collect();
+                let failing = failing_term_names(SHAFT_JOINT, &inputs, &results);
                 (!failing.is_empty()).then_some((name, failing))
             })
             .collect();
@@ -4992,25 +5072,19 @@ mod tests {
             (FACE_GAP, Raise),
         ];
         assert_eq!(shown(only_the_joint_fails()), hub_slip);
-        assert_eq!(
-            shown(breaking(|i| i.shaft_joint.cup_interference_min_um = 10.0)),
-            cup_slip
-        );
+        assert_eq!(shown(breaking(cup_slips)), cup_slip);
         // The inner hub's bore stress and fitting temperature: its maximum down; its wheel shaft
         // is at the slider's bottom already.
-        assert_eq!(
-            shown(breaking(|i| i.shaft_joint.hub_interference_max_um = 26.0)),
-            [(HUB_MAX, Lower)]
-        );
+        assert_eq!(shown(breaking(hub_overstressed)), [(HUB_MAX, Lower)]);
         // An uncooled wheel shaft: the maximum down, or the shaft colder.
         assert_eq!(
-            shown(breaking(|i| i.shaft_joint.wheel_shaft_fit_C = 20.0)),
+            shown(breaking(uncooled_wheel_shaft)),
             [(HUB_MAX, Lower), (WHEEL_SHAFT, Lower)]
         );
         // The bare cup allowed 250 °C: its maximum down, or the gearbox shaft colder (to the
         // slider's -20 °C).
         assert_eq!(
-            shown(breaking(|i| i.shaft_joint.cup_fit_max_C = 250.0)),
+            shown(breaking(low_cup_fit_limit)),
             [(CUP_MAX, Lower), (GEARBOX_SHAFT, Lower)]
         );
         // No back iron: both aluminium parts slip; the face gap once, under the inner hub.
@@ -5132,13 +5206,13 @@ mod tests {
         for (name, inputs, term, length) in [
             (
                 "cup",
-                breaking(|i| i.metal.boss_length_mm = 0.0),
+                breaking(no_boss),
                 "cup key",
                 (BOSS_LENGTH, Direction::Raise),
             ),
             (
                 "inner hub",
-                breaking(|i| i.metal.hub_length_mm = 3.0),
+                breaking(short_hub),
                 "inner hub key",
                 (HUB_LENGTH, Direction::Raise),
             ),
@@ -5155,7 +5229,7 @@ mod tests {
             assert!(shown.contains(&length), "{name}: {shown:?}");
         }
         let no_contact = breaking(|i| {
-            i.metal.boss_length_mm = 0.0;
+            no_boss(i);
             i.shaft_joint.key_contact_mm = 0.0;
         });
         let results = compute_all(&no_contact);
@@ -5196,125 +5270,12 @@ mod tests {
     #[test]
     fn each_shaft_joint_fix_moves_its_term_toward_passing_all_along_its_slider() {
         // Spec 5.2: each margin is monotone over its fix's whole slider, every value at the
-        // slider's own step from bottom to top (the hub's minimum past the band's maximum
-        // included), rising the way the fix moves. It is flat only where nothing the term reads
-        // moves: the bore stress against the band's maximum where smoothing takes all of it (the
-        // effective interference is floored at zero), the key against the contact height past
-        // the keyway depth (the contact is capped there), and the inner hub's slip against the
-        // hub length where the axial override sets the hub's length (BL-064).
-        type Reading = fn(&JointTerms) -> f64;
-        let effective_max: Reading = |j| j.effective_max_um;
-        let contact: Reading = |j| j.key_contact_mm;
-        let length: Reading = |j| j.key_bearing_mm;
-        let cup_min_10 = || breaking(|i| i.shaft_joint.cup_interference_min_um = 10.0);
-        let cases: Vec<(DesignInputs, &str, Direction, &str, Option<Reading>)> = vec![
-            (
-                only_the_joint_fails(),
-                HUB_MIN,
-                Direction::Raise,
-                "inner hub slips",
-                None,
-            ),
-            (
-                only_the_joint_fails(),
-                HUB_LENGTH,
-                Direction::Raise,
-                "inner hub slips",
-                None,
-            ),
-            (
-                only_the_joint_fails(),
-                FACE_GAP,
-                Direction::Raise,
-                "inner hub slips",
-                None,
-            ),
-            (cup_min_10(), CUP_MIN, Direction::Raise, "cup slips", None),
-            (
-                cup_min_10(),
-                BOSS_LENGTH,
-                Direction::Raise,
-                "cup slips",
-                None,
-            ),
-            (
-                cup_min_10(),
-                MAGNET_LENGTH,
-                Direction::Lower,
-                "cup slips",
-                None,
-            ),
-            (
-                breaking(|i| i.shaft_joint.hub_interference_max_um = 26.0),
-                HUB_MAX,
-                Direction::Lower,
-                "inner hub bore stress",
-                Some(effective_max),
-            ),
-            (
-                breaking(|i| i.shaft_joint.wheel_shaft_fit_C = 20.0),
-                HUB_MAX,
-                Direction::Lower,
-                "inner hub fitting",
-                None,
-            ),
-            (
-                breaking(|i| i.shaft_joint.cup_interference_max_um = 26.0),
-                CUP_MAX,
-                Direction::Lower,
-                "cup bore stress",
-                Some(effective_max),
-            ),
-            (
-                breaking(|i| i.shaft_joint.cup_fit_max_C = 250.0),
-                CUP_MAX,
-                Direction::Lower,
-                "cup fitting",
-                None,
-            ),
-            (
-                breaking(|i| i.shaft_joint.wheel_shaft_fit_C = 20.0),
-                WHEEL_SHAFT,
-                Direction::Lower,
-                "inner hub fitting",
-                None,
-            ),
-            (
-                breaking(|i| i.shaft_joint.cup_fit_max_C = 250.0),
-                GEARBOX_SHAFT,
-                Direction::Lower,
-                "cup fitting",
-                None,
-            ),
-            (
-                breaking(long_magnets),
-                KEY_CONTACT,
-                Direction::Raise,
-                "cup key",
-                Some(contact),
-            ),
-            (
-                breaking(|i| i.metal.boss_length_mm = 0.0),
-                BOSS_LENGTH,
-                Direction::Raise,
-                "cup key",
-                None,
-            ),
-            (
-                breaking(|i| i.metal.hub_length_mm = 3.0),
-                HUB_LENGTH,
-                Direction::Raise,
-                "inner hub key",
-                None,
-            ),
-            (
-                breaking(|i| i.coupling.magnets.axial_length_mm = Some(40.0)),
-                HUB_LENGTH,
-                Direction::Raise,
-                "inner hub slips",
-                Some(length),
-            ),
-        ];
+        // slider's own step from bottom to top, rising the way the fix moves, and flat only where
+        // its case's reading holds still (`shaft_joint_sweeps`). As
+        // `every_fix_moves_its_check_toward_passing_over_its_slider` asks of the other guides'
+        // fixes, each case's design fails the check, and the fix's input at its slider's end in
+        // the fix's direction gives a larger margin than the design's own.
+        let cases = shaft_joint_sweeps();
         // Every slider fix of the guide is swept.
         let swept: BTreeSet<(&str, bool)> = cases
             .iter()
@@ -5327,6 +5288,13 @@ mod tests {
         assert_eq!(swept, listed);
         let mut flats = 0;
         for (base, path, direction, term, flat_reading) in cases {
+            let before = compute_all(&base);
+            assert_ne!(
+                level_of(SHAFT_JOINT, &base, &before),
+                Level::Good,
+                "{term} against {path}: the case's design fails the check"
+            );
+            let from = margin(SHAFT_JOINT, term, &base, &before);
             let index = usize::from(term.starts_with(shaft_joint::CUP));
             let mut values = slider_values(path);
             if direction == Direction::Lower {
@@ -5351,6 +5319,11 @@ mod tests {
                 }
                 (last, last_joint) = (now, joint);
             }
+            assert!(
+                last > from,
+                "{}: moves the {term} margin {from} -> {last}",
+                fix_text(path, direction)
+            );
         }
         // The flats exist (the floor, the cap and the override each reach theirs).
         assert!(flats > 0);
@@ -5442,11 +5415,7 @@ mod tests {
                 ),
                 "{name}"
             );
-            let failing: Vec<String> = terms(SHAFT_JOINT, &inputs, &results)
-                .into_iter()
-                .filter(|t| !t.passes)
-                .map(|t| t.name)
-                .collect();
+            let failing = failing_term_names(SHAFT_JOINT, &inputs, &results);
             assert_eq!(failing, ["inner hub fitting"], "{name}");
             assert_eq!(
                 level_of(TEMPERATURE, &inputs, &results),
@@ -5479,11 +5448,7 @@ mod tests {
         // is at its slider's bottom.
         let inputs = breaking(cool_adhesive);
         let results = compute_all(&inputs);
-        let failing: Vec<String> = terms(SHAFT_JOINT, &inputs, &results)
-            .into_iter()
-            .filter(|t| !t.passes)
-            .map(|t| t.name)
-            .collect();
+        let failing = failing_term_names(SHAFT_JOINT, &inputs, &results);
         assert_eq!(failing, ["inner hub fitting"]);
         assert_eq!(
             fixes(guide(SHAFT_JOINT).unwrap(), &inputs, &results, false),
@@ -5556,7 +5521,7 @@ mod tests {
             (
                 breaking(|i| {
                     reversed(i);
-                    i.shaft_joint.cup_interference_min_um = 10.0;
+                    cup_slips(i);
                 }),
                 shaft_joint::CUP,
                 vec![
@@ -7528,9 +7493,7 @@ mod tests {
         let not_a_number = breaking(|i| i.temperature.adhesive.selected = 0);
         let bore_0 = breaking(|i| i.coupling.bore_mm = 0.0);
         let no_factor = breaking(|i| i.shaft_joint.safety_factor = 0.0);
-        let overstressed_short = with(short_magnets(), |i| {
-            i.shaft_joint.hub_interference_max_um = 26.0;
-        });
+        let overstressed_short = with(short_magnets(), hub_overstressed);
         for (name, inputs, want) in [
             ("defaults", DesignInputs::default(), Good),
             ("passing", passing_design(), Good),
@@ -7674,7 +7637,7 @@ mod tests {
         );
         // An uncooled wheel shaft (review MF-6, SF-12, review 2 SF-6b).
         assert_in_order(
-            &text(design(|i| i.shaft_joint.wheel_shaft_fit_C = 20.0)),
+            &text(design(uncooled_wheel_shaft)),
             &[
                 "Fitting the inner hub would need it at 247.6 °C with the wheel shaft at 20.00 °C, above the 100.0 °C allowed: your limit for the bonded inner hub, 100.0 °C.",
                 "holding needs at least 12.09 µm, but the allowed temperatures do not even open its 10.00 µm joining clearance.",
@@ -7718,7 +7681,7 @@ mod tests {
             &text(breaking(|i| {
                 i.temperature.adhesive.selected = 3;
                 i.shaft_joint.hub_fit_max_C = 150.0;
-                i.shaft_joint.hub_interference_max_um = 26.0;
+                hub_overstressed(i);
             })),
             &[&format!(
                 "above the 133.4 °C allowed: the magnets' single-ring onset, 143.4 °C, less {}.",
@@ -7774,7 +7737,7 @@ mod tests {
         // Spec 7.1: at a 26 µm hub maximum the badge is the bore stress; the fitting cause follows it
         // in the Problem, then the window.
         assert_in_order(
-            &text(design(|i| i.shaft_joint.hub_interference_max_um = 26.0)),
+            &text(design(hub_overstressed)),
             &[
                 "At its tightest the inner hub's bore stress is 385.1 MPa",
                 "Fitting the inner hub would need it at 158.3 °C",
