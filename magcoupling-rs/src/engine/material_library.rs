@@ -833,8 +833,9 @@ pub struct PartProperties {
     pub cap: PartMaterial,
 }
 
-/// The hub, cup and boss material in effect (BL-064, spec section 4.1): what the shaft joint
-/// check and the material warnings read for the parts on the shafts.
+/// The hub, cup and boss material in effect (with every correction on; BL-064, spec
+/// section 4.1): what the shaft joint check and the material warnings read for the parts
+/// on the shafts.
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[allow(non_snake_case)] // unit suffixes, as the engine's names
 pub struct HubMaterial {
