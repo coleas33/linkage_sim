@@ -450,8 +450,10 @@ fn end_view(
     // shaft-clamp section shows.
     // No keyway (depth 0 or less): no key, as the shaft joints then have no key term
     // (shaft_joint::joint). A depth that is not a number keeps its key and its "not drawn" note.
-    #[allow(clippy::neg_cmp_op_on_partial_ord)] // a NaN depth is not "no keyway"
-    if !(c.keyway_depth_mm <= 0.0) {
+    // No key either at a typed width of 0 or less (as at a depth of 0 or less, plan deviation
+    // PD-3); a width that is not a number keeps its key and its "not drawn" note too.
+    #[allow(clippy::neg_cmp_op_on_partial_ord)] // a NaN depth or width is not "no key"
+    if !(c.keyway_depth_mm <= 0.0) && !(inputs.shaft_joint.key_width_mm <= 0.0) {
         let w = inputs.shaft_joint.key_width_mm / 2.0;
         let seat = (bore * bore - w * w).max(0.0).sqrt();
         let tip = bore + c.keyway_depth_mm;
@@ -1019,8 +1021,8 @@ mod tests {
         // BL-064 (spec 5.4): the key's sides sit at half the shaft joints' key width either side
         // of the x axis, from where they cross the bore to the keyway's depth past it, in both
         // states; the paused clamp's own key width moves nothing in the drawing; with no keyway
-        // there is no key (ruling C-5), and a keyway depth that is not a number keeps its "not
-        // drawn" note (plan review 3A).
+        // there is no key (ruling C-5), nor at a key width of 0 or less (build ruling B-5), and
+        // a keyway depth that is not a number keeps its "not drawn" note (plan review 3A).
         let defaults = DesignInputs::default();
         let bore = defaults.coupling.bore_mm / 2.0;
         let tip = bore + defaults.coupling.keyway_depth_mm;
@@ -1088,6 +1090,22 @@ mod tests {
             let keyless = design(|i| i.coupling.keyway_depth_mm = 0.0);
             let g = geometry(&keyless, &compute_all(&keyless), paused);
             assert!(keys(&g).is_empty(), "keyway 0, paused {paused}");
+            // A key width typed at 0 or less: no key either (build ruling B-5, as PD-3 at a depth
+            // of 0 or less), never a flat or a mirrored one, and no "not drawn" note, as nothing
+            // that is not a number was dropped.
+            for width in [0.0, -1.0] {
+                let inputs = design(|i| i.shaft_joint.key_width_mm = width);
+                let g = geometry(&inputs, &compute_all(&inputs), paused);
+                assert!(keys(&g).is_empty(), "key width {width}, paused {paused}");
+                assert!(
+                    !g.notes.contains(&Note {
+                        text: parts_not_drawn(1, "end"),
+                        level: Some(Level::Caution)
+                    }),
+                    "key width {width}, paused {paused}: {:?}",
+                    g.notes
+                );
+            }
         }
     }
 
