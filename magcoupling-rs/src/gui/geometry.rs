@@ -368,7 +368,6 @@ fn end_view(
     inputs: &DesignInputs,
     results: &DesignResults,
     diameter: Option<f64>,
-    clamps_paused: bool,
     notes: &mut Vec<Note>,
 ) -> View {
     let (c, m, ret) = (&inputs.coupling, &results.model, &results.retainers);
@@ -446,10 +445,14 @@ fn end_view(
         outline: Outline::Disc { r: bore },
     });
     // The key in the hub's keyway, at 0°: from where its sides cross the bore to the keyway's
-    // depth past the bore (Calculator C40), the key's width (Shaft clamps C58). The key is the
-    // shaft-clamp section's: not drawn while it is paused.
-    if !clamps_paused {
-        let w = inputs.clamps.key_width_mm / 2.0;
+    // depth past the bore (Calculator C40), the shaft joints' key width (BL-064). The key backs
+    // up the shrink fits that hold both rotors, so it is drawn whether or not the paused
+    // shaft-clamp section shows.
+    // No keyway (depth 0 or less): no key, as the shaft joints then have no key term
+    // (shaft_joint::joint). A depth that is not a number keeps its key and its "not drawn" note.
+    #[allow(clippy::neg_cmp_op_on_partial_ord)] // a NaN depth is not "no keyway"
+    if !(c.keyway_depth_mm <= 0.0) {
+        let w = inputs.shaft_joint.key_width_mm / 2.0;
         let seat = (bore * bore - w * w).max(0.0).sqrt();
         let tip = bore + c.keyway_depth_mm;
         pieces.push(Piece {
@@ -854,7 +857,7 @@ fn parts_not_drawn(dropped: usize, name: &str) -> String {
 }
 
 /// The geometry of the design shown: its inputs and the results computed from them; while
-/// the shaft-clamp section is paused (`clamps_paused`) without its key and its boss check.
+/// the shaft-clamp section is paused (`clamps_paused`) without its boss check.
 pub fn geometry(inputs: &DesignInputs, results: &DesignResults, clamps_paused: bool) -> Geometry {
     let mut all_notes = Vec::new();
     // The diameter claim is decided once, for both views, against the body's largest OD.
@@ -864,7 +867,7 @@ pub fn geometry(inputs: &DesignInputs, results: &DesignResults, clamps_paused: b
         body_od(inputs, results),
         &mut all_notes,
     );
-    let mut end = end_view(inputs, results, diameter, clamps_paused, &mut all_notes);
+    let mut end = end_view(inputs, results, diameter, &mut all_notes);
     let mut side = side_view(inputs, results, diameter, &mut all_notes);
     for (view, name) in [(&mut end, "end"), (&mut side, "side")] {
         let dropped = view.retain_finite();
@@ -972,25 +975,35 @@ mod tests {
         let Outline::Polygon(key) = &key.outline else {
             panic!("the key is a rectangle")
         };
-        // From where its 4 mm sides cross the 10 mm bore to 1.7 mm past the bore.
-        assert_eq!(key[1], [6.7, -2.0]);
-        assert!((key[0][0] - 21.0_f64.sqrt()).abs() < 1e-12);
+        // From where its 3 mm sides (the shaft joints' DIN 6885-1 3 x 3 key, BL-064) cross the
+        // 10 mm bore to 1.7 mm past the bore.
+        assert_eq!(inputs.shaft_joint.key_width_mm, 3.0);
+        assert_eq!(key[1], [6.7, -1.5]);
+        assert!((key[0][0] - 22.75_f64.sqrt()).abs() < 1e-12);
+    }
+
+    /// The drawn keys of `g`, in both views.
+    fn keys(g: &Geometry) -> Vec<&Piece> {
+        g.end
+            .pieces
+            .iter()
+            .chain(&g.side.pieces)
+            .filter(|p| p.part == Part::Key)
+            .collect()
     }
 
     #[test]
-    fn the_key_and_the_clamp_boss_check_are_drawn_only_while_the_clamp_section_shows() {
-        // Ruling 11: the key (its width is a clamp input) and the check against the clamp
-        // inputs' boss go with the paused section; the wall rule and the cap check stay.
+    fn the_key_is_drawn_in_both_states_and_the_clamp_boss_check_only_while_the_clamp_section_shows()
+    {
+        // Ruling 11: the check against the clamp inputs' boss goes with the paused section; the
+        // wall rule and the cap check stay. BL-064: the key is the shaft joints' (its width is
+        // `shaft_joint.key_width_mm`), the backup of the shrink fits that hold both rotors, so
+        // it is drawn whether the paused section shows or not.
         let defaults = DesignInputs::default();
         let results = compute_all(&defaults);
-        for (paused, keys, notes) in [(false, 1, 3), (true, 0, 2)] {
+        for (paused, notes) in [(false, 3), (true, 2)] {
             let g = geometry(&defaults, &results, paused);
-            let drawn = g.end.pieces.iter().chain(&g.side.pieces);
-            assert_eq!(
-                drawn.filter(|p| p.part == Part::Key).count(),
-                keys,
-                "paused {paused}"
-            );
+            assert_eq!(keys(&g).len(), 1, "paused {paused}");
             assert_eq!(g.notes.len(), notes, "paused {paused}");
             assert_eq!(
                 g.notes
@@ -998,6 +1011,83 @@ mod tests {
                     .any(|n| n.text.ends_with("in the clamp inputs")),
                 !paused
             );
+        }
+    }
+
+    #[test]
+    fn the_key_takes_the_shaft_joints_width_and_never_the_paused_clamp_s() {
+        // BL-064 (spec 5.4): the key's sides sit at half the shaft joints' key width either side
+        // of the x axis, from where they cross the bore to the keyway's depth past it, in both
+        // states; the paused clamp's own key width moves nothing in the drawing; with no keyway
+        // there is no key (ruling C-5), and a keyway depth that is not a number keeps its "not
+        // drawn" note (plan review 3A).
+        let defaults = DesignInputs::default();
+        let bore = defaults.coupling.bore_mm / 2.0;
+        let tip = bore + defaults.coupling.keyway_depth_mm;
+        let slider = crate::gui::inputs::InputCatalogue::get()
+            .entry("shaft_joint.key_width_mm")
+            .and_then(|entry| entry.meta.range)
+            .expect("the key width has a slider");
+        for paused in [false, true] {
+            // Each end of the key width's slider (1 and 6 mm on the 10 mm bore).
+            for width in [slider.min, slider.max] {
+                let inputs = design(|i| i.shaft_joint.key_width_mm = width);
+                let g = geometry(&inputs, &compute_all(&inputs), paused);
+                let drawn = keys(&g);
+                assert_eq!(drawn.len(), 1, "{width} mm, paused {paused}");
+                let w = width / 2.0;
+                let seat = (bore * bore - w * w).sqrt();
+                assert_eq!(
+                    drawn[0].outline,
+                    Outline::Polygon(vec![[seat, -w], [tip, -w], [tip, w], [seat, w]]),
+                    "{width} mm, paused {paused}"
+                );
+            }
+            // The paused clamp's key width, at each end of its slider: the same drawing.
+            let clamp_slider = crate::gui::inputs::InputCatalogue::get()
+                .entry("clamps.key_width_mm")
+                .and_then(|entry| entry.meta.range)
+                .expect("the clamp's key width has a slider");
+            let at_defaults = geometry(&defaults, &compute_all(&defaults), paused);
+            for width in [clamp_slider.min, clamp_slider.max] {
+                let inputs = design(|i| i.clamps.key_width_mm = width);
+                assert_eq!(
+                    geometry(&inputs, &compute_all(&inputs), paused),
+                    at_defaults,
+                    "the clamp's key width {width} mm, paused {paused}"
+                );
+            }
+            // A key typed wider than the bore: its sides start on the axis, still one key.
+            let wide = design(|i| i.shaft_joint.key_width_mm = 12.0);
+            let g = geometry(&wide, &compute_all(&wide), paused);
+            let drawn = keys(&g);
+            assert_eq!(drawn.len(), 1, "paused {paused}");
+            assert_eq!(
+                drawn[0].outline,
+                Outline::Polygon(vec![[0.0, -6.0], [tip, -6.0], [tip, 6.0], [0.0, 6.0]])
+            );
+            // A key width or a keyway depth that is not a number: no key, and the end view's
+            // note counts it. A depth that is not a number is not "no keyway" (ruling C-5's
+            // guard keeps it; plan review 3A).
+            let nan_width = design(|i| i.shaft_joint.key_width_mm = f64::NAN);
+            let nan_depth = design(|i| i.coupling.keyway_depth_mm = f64::NAN);
+            for (what, nan) in [("key width", nan_width), ("keyway depth", nan_depth)] {
+                let g = geometry(&nan, &compute_all(&nan), paused);
+                assert!(keys(&g).is_empty(), "{what} NaN, paused {paused}");
+                assert!(
+                    g.notes.contains(&Note {
+                        text: parts_not_drawn(1, "end"),
+                        level: Some(Level::Caution)
+                    }),
+                    "{what} NaN, paused {paused}: {:?}",
+                    g.notes
+                );
+            }
+            // No keyway (depth 0): the shaft joints have no key term, so no key is drawn (ruling
+            // C-5, plan deviation PD-3).
+            let keyless = design(|i| i.coupling.keyway_depth_mm = 0.0);
+            let g = geometry(&keyless, &compute_all(&keyless), paused);
+            assert!(keys(&g).is_empty(), "keyway 0, paused {paused}");
         }
     }
 

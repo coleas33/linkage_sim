@@ -4912,7 +4912,7 @@ const INERT_INPUTS: &[(&str, &str)] = &[
     ),
     (
         "clamps.key_width_mm",
-        "only the drawing reads it (Python drawing.py); the key pressure divides by the contact height",
+        "the paused shaft-clamp section's key width: only its clamp drawing reads it (Python drawing.py), not the geometry view, whose key takes the shaft joints' own width (BL-064); the key pressure divides by the contact height",
     ),
 ];
 

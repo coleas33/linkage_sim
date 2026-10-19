@@ -82,6 +82,42 @@ pub(crate) fn clamp_at_its_limit() -> crate::DesignInputs {
     inputs
 }
 
+/// The defaults with every shaft joint input (BL-064) one slider step off its default: up, or
+/// down where up would leave the slider. Each input then reads back as itself, not its default.
+pub(crate) fn shaft_joints_off_default() -> crate::DesignInputs {
+    use crate::engine::meta::{InputSet, Value, input_rows};
+    let mut inputs = crate::DesignInputs::default();
+    for row in input_rows(&crate::DesignInputs::default())
+        .into_iter()
+        .filter(|row| row.path.starts_with("shaft_joint."))
+    {
+        let (Value::Num(x), Some(range)) = (row.value, row.meta.range) else {
+            panic!("{} is a number with a slider", row.path)
+        };
+        let step = if x + range.step <= range.max {
+            range.step
+        } else {
+            -range.step
+        };
+        inputs
+            .set(&row.path, Value::Num(x + step))
+            .expect("a value on the slider");
+    }
+    inputs
+}
+
+/// The defaults with a 16 mm bore in a 12 mm boss and no boss length (BL-064): the cup has no
+/// wall around its bore, so its holding, bore stress, needed and elastic results are not a
+/// number, and its key no bearing length (the web alone, 2.5 mm, under the 3 mm key), so its
+/// key pressure is +inf.
+pub(crate) fn cup_without_wall_or_key_bearing() -> crate::DesignInputs {
+    let mut inputs = crate::DesignInputs::default();
+    inputs.coupling.bore_mm = 16.0;
+    inputs.metal.boss_od_mm = 12.0;
+    inputs.metal.boss_length_mm = 0.0;
+    inputs
+}
+
 /// The screen of the headless frames [points]: a laptop window.
 pub(crate) const SCREEN: egui::Vec2 = egui::vec2(1280.0, 1024.0);
 

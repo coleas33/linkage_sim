@@ -4353,6 +4353,51 @@ mod tests {
                 }
                 let named: Vec<&String> = texts.iter().filter(|t| names_the_clamp(t)).collect();
                 assert!(named.is_empty(), "{named:#?}");
+                // Not vacuous for the shaft joints (BL-064), which show while the clamp is
+                // paused: the enumeration reaches the label and the help of each of their inputs
+                // and results, their two input sections and their group's heading.
+                use crate::engine::meta::{input_rows, result_rows};
+                use crate::gui::inputs::section_label;
+                use crate::gui::plain_text::help_for;
+                use crate::gui::result_groups::CHAIN_LABELS;
+                let reaches = |text: &str| texts.iter().any(|t| t.contains(text));
+                let paths: Vec<String> = input_rows(&DesignInputs::default())
+                    .into_iter()
+                    .map(|row| row.path)
+                    .chain(
+                        result_rows(&compute_all(&DesignInputs::default()))
+                            .into_iter()
+                            .map(|row| row.path),
+                    )
+                    .filter(|path| path.starts_with("shaft_joint."))
+                    .collect();
+                assert_eq!(paths.len(), 15 + 24);
+                for path in &paths {
+                    for text in [label_for(path), help_for(path)] {
+                        assert!(reaches(text), "{path}: {text:?} is not collected");
+                    }
+                }
+                let shaft = WORKFLOW
+                    .iter()
+                    .find(|group| group.id == "shaft")
+                    .expect("the shaft group");
+                let headings: Vec<&str> = shaft
+                    .sections
+                    .iter()
+                    .filter(|section| ["shaft.fit", "shaft.fitting"].contains(&section.id))
+                    .map(|section| section.label)
+                    .chain(section_label("shaft_joint"))
+                    .chain(
+                        CHAIN_LABELS
+                            .iter()
+                            .filter(|&&(chain, _)| chain == "shaft_joint")
+                            .map(|&(_, label)| label),
+                    )
+                    .collect();
+                assert_eq!(headings.len(), 4);
+                for heading in headings {
+                    assert!(reaches(heading), "{heading:?} is not collected");
+                }
             } else {
                 // Not vacuous: with the section shown, the same enumeration names the clamp and
                 // reaches each surface the pause hides.

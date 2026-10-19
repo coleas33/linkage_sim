@@ -1256,6 +1256,219 @@ mod tests {
         }
     }
 
+    /// The lines of `sheet` from its group heading `heading` up to the next group heading: each
+    /// heading's text, each input or result row's path (column `path`).
+    fn group_lines<'s>(sheet: &'s Sheet, path: usize, heading: &'s str) -> Vec<&'s str> {
+        let start = sheet
+            .rows
+            .iter()
+            .position(|row| row[0].style == CellStyle::Group && row[0].as_text() == heading)
+            .unwrap_or_else(|| panic!("no group heading {heading}"));
+        let mut lines = vec![heading];
+        for row in &sheet.rows[start + 1..] {
+            match row[0].style {
+                CellStyle::Group => break,
+                CellStyle::Section => lines.push(row[0].as_text()),
+                _ => lines.push(row[path].as_text()),
+            }
+        }
+        lines
+    }
+
+    #[test]
+    fn the_inputs_and_results_sheets_carry_every_shaft_joint_row() {
+        use crate::engine::explain::scope::SCOPE;
+        use crate::engine::meta::{input_rows, result_rows};
+        use crate::gui::inputs::{WORKFLOW, section_label};
+        use crate::gui::result_groups::CHAIN_LABELS;
+        use crate::gui::test_support::{cup_without_wall_or_key_bearing, shaft_joints_off_default};
+        // BL-064 (spec 5.3, 5.4 and 7.15): each of the shaft joints' 15 inputs and 24 results
+        // has one row, with its value and unit and no workbook cell. The Inputs sheet lays the
+        // inputs out as the inputs side does: in the workflow order the key's two rows follow
+        // the keyway depth (and the paused clamp's key rows, which the exports keep), then the
+        // "Shrink fit" and "Fitting temperatures" sections; in the original-sheet order they
+        // are the "Shaft joints" group, in schema order. The four assumptions are flagged. The
+        // Results sheet lists the 23 numbers under the "Shaft joints" chain, between Geometry and
+        // Mass; a value that is not a number and +inf are the CSV's text. The headings are read
+        // from where the page takes them (the G-3 review may reword them); the paths are pinned.
+        const FIT: [&str; 8] = [
+            "shaft_joint.hub_interference_min_um",
+            "shaft_joint.hub_interference_max_um",
+            "shaft_joint.cup_interference_min_um",
+            "shaft_joint.cup_interference_max_um",
+            "shaft_joint.safety_factor",
+            "shaft_joint.friction",
+            "shaft_joint.smoothing_um",
+            "shaft_joint.rotor_over_shaft_C",
+        ];
+        const FITTING: [&str; 5] = [
+            "shaft_joint.hub_fit_max_C",
+            "shaft_joint.cup_fit_max_C",
+            "shaft_joint.wheel_shaft_fit_C",
+            "shaft_joint.output_shaft_fit_C",
+            "shaft_joint.joining_clearance_um",
+        ];
+        const ASSUMED: [&str; 4] = [
+            "shaft_joint.friction",
+            "shaft_joint.smoothing_um",
+            "shaft_joint.rotor_over_shaft_C",
+            "shaft_joint.joining_clearance_um",
+        ];
+        let schema: Vec<String> = input_rows(&DesignInputs::default())
+            .into_iter()
+            .map(|row| row.path)
+            .filter(|path| path.starts_with("shaft_joint."))
+            .collect();
+        assert_eq!(schema.len(), 15);
+        let shaft = WORKFLOW
+            .iter()
+            .find(|group| group.id == "shaft")
+            .expect("the shaft group");
+        let section = |id: &str| {
+            shaft
+                .sections
+                .iter()
+                .find(|section| section.id == id)
+                .unwrap_or_else(|| panic!("no section {id}"))
+                .label
+        };
+        let chain_label = |id: &str| {
+            CHAIN_LABELS
+                .iter()
+                .find(|&&(chain, _)| chain == id)
+                .unwrap_or_else(|| panic!("no chain {id}"))
+                .1
+        };
+        let heading = section_label("shaft_joint").expect("the shaft joints' heading");
+        let input_path = column(&INPUT_COLUMNS, "Path");
+        for inputs in [DesignInputs::default(), shaft_joints_off_default()] {
+            let results = compute_all(&inputs);
+            let changed = inputs != DesignInputs::default();
+            for order in InputOrder::ALL {
+                let mut shot = snapshot(&inputs, &results);
+                shot.input_order = order;
+                let book = sheets(&shot);
+                let sheet = sheet(&book, INPUTS_SHEET);
+                for path in &schema {
+                    let entry = InputCatalogue::get().entry(path).expect("an input");
+                    assert_eq!(
+                        row_of(sheet, input_path, path),
+                        &vec![
+                            Cell::text(entry.meta.label),
+                            value_cell(&inputs.get(path).expect("an input")),
+                            Cell::text(entry.meta.unit),
+                            Cell::text(RUST_ONLY),
+                            Cell::text(path.clone()),
+                            flag(changed),
+                            flag(ASSUMED.contains(&path.as_str())),
+                            flag(false),
+                            flag(false),
+                            Cell::empty(),
+                        ],
+                        "{order:?}"
+                    );
+                }
+                let want: Vec<&str> = match order {
+                    InputOrder::Workflow => [
+                        shaft.label,
+                        "coupling.bore_mm",
+                        "coupling.keyway_depth_mm",
+                        "clamps.key_width_mm",
+                        "clamps.key_contact_mm",
+                        "shaft_joint.key_width_mm",
+                        "shaft_joint.key_contact_mm",
+                        section("shaft.fit"),
+                    ]
+                    .into_iter()
+                    .chain(FIT)
+                    .chain([section("shaft.fitting")])
+                    .chain(FITTING)
+                    .collect(),
+                    InputOrder::Workbook => [heading]
+                        .into_iter()
+                        .chain(schema.iter().map(String::as_str))
+                        .collect(),
+                };
+                // The workflow group goes on with the paused clamp's sections after these.
+                let lines = group_lines(sheet, input_path, want[0]);
+                assert_eq!(lines[..want.len().min(lines.len())], want[..], "{order:?}");
+                if order == InputOrder::Workbook {
+                    assert_eq!(
+                        lines.len(),
+                        want.len(),
+                        "the group ends with the joints' inputs"
+                    );
+                }
+            }
+        }
+        // The Results sheet: the chain's 23 numbers under its heading, then the check's row.
+        let chain = SCOPE
+            .iter()
+            .find(|chain| chain.id == "shaft_joint")
+            .expect("the shaft joints' chain");
+        let mut numbers: Vec<&str> = chain.paths.to_vec();
+        numbers.sort_unstable();
+        let mut want: Vec<String> = result_rows(&compute_all(&DesignInputs::default()))
+            .into_iter()
+            .map(|row| row.path)
+            .filter(|path| path.starts_with("shaft_joint.") && path != "shaft_joint.check")
+            .collect();
+        want.sort_unstable();
+        assert_eq!(numbers, want, "the chain is the 23 numbers");
+        let result_path = column(&RESULT_COLUMNS, "Path");
+        let check = column(&RESULT_COLUMNS, "Check");
+        for inputs in [DesignInputs::default(), cup_without_wall_or_key_bearing()] {
+            let results = compute_all(&inputs);
+            let book = sheets(&snapshot(&inputs, &results));
+            let sheet = sheet(&book, RESULTS_SHEET);
+            let group_headings: Vec<&str> = sheet
+                .rows
+                .iter()
+                .filter(|row| row[0].style == CellStyle::Group)
+                .map(|row| row[0].as_text())
+                .collect();
+            let at = group_headings
+                .iter()
+                .position(|&heading| heading == chain_label("shaft_joint"))
+                .expect("the shaft joints' chain heading");
+            assert_eq!(
+                (group_headings[at - 1], group_headings[at + 1]),
+                (chain_label("geometry"), chain_label("mass"))
+            );
+            assert_eq!(
+                group_lines(sheet, result_path, chain_label("shaft_joint"))[1..],
+                chain.paths[..]
+            );
+            for path in chain.paths.iter().chain(["shaft_joint.check"].iter()) {
+                let info = result_info(path).expect("a result");
+                let row = row_of(sheet, result_path, path);
+                assert_eq!(row[0], Cell::text(info.meta.label), "{path}");
+                assert_eq!(row[1], value_cell(&results.get(path).unwrap()), "{path}");
+                assert_eq!(row[2], Cell::text(info.meta.unit), "{path}");
+                let level = if CHECKS.contains(path) {
+                    level_cell(check_level(&results, path))
+                } else {
+                    Cell::empty()
+                };
+                assert_eq!(row[check], level, "{path}");
+                assert_eq!(row[4], Cell::text(RUST_ONLY), "{path}");
+                assert_eq!(row[6], Cell::empty(), "{path}");
+            }
+        }
+        let edge = cup_without_wall_or_key_bearing();
+        let results = compute_all(&edge);
+        let book = sheets(&snapshot(&edge, &results));
+        let sheet = sheet(&book, RESULTS_SHEET);
+        assert_eq!(
+            row_of(sheet, result_path, "shaft_joint.cup_holding_Nm")[1],
+            Cell::text("NaN")
+        );
+        assert_eq!(
+            row_of(sheet, result_path, "shaft_joint.cup_key_pressure_MPa")[1],
+            Cell::text("+inf")
+        );
+    }
+
     #[test]
     fn the_summary_lists_the_warnings_that_fire_and_the_assumptions_banner() {
         // 304 stainless back iron: a warning (red) and a caution (amber) fire.
