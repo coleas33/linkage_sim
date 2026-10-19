@@ -1212,10 +1212,10 @@ mod tests {
         // JSON as it was); and a bore of 16 mm in a 12 mm boss with no boss length, where the
         // cup has no wall (its holding is not a number) and its key no bearing length (+inf):
         // both export as text, never as a number or a JSON null.
-        for inputs in [
-            DesignInputs::default(),
-            shaft_joints_off_default(),
-            cup_without_wall_or_key_bearing(),
+        for (inputs, edge) in [
+            (DesignInputs::default(), false),
+            (shaft_joints_off_default(), false),
+            (cup_without_wall_or_key_bearing(), true),
         ] {
             let design = Design {
                 inputs,
@@ -1239,6 +1239,19 @@ mod tests {
                     .map(csv_field)
                     .join(",");
                 assert_eq!(*line, want);
+            }
+            if edge {
+                // The edge design writes a value that is not a number and +inf as text.
+                assert!(results.shaft_joint.cup_holding_Nm.is_nan());
+                assert_eq!(results.shaft_joint.cup_key_pressure_MPa, f64::INFINITY);
+                let line = |path: &str| {
+                    lines[first..end]
+                        .iter()
+                        .find(|l| l.starts_with(&format!("{path},")))
+                        .unwrap_or_else(|| panic!("the CSV line of {path}"))
+                };
+                assert!(line("shaft_joint.cup_holding_Nm").contains(",NaN,"));
+                assert!(line("shaft_joint.cup_key_pressure_MPa").contains(",+inf,"));
             }
             assert!(
                 lines[first - 1].starts_with("gearbox.cold_high_check,"),
@@ -1275,19 +1288,6 @@ mod tests {
             let read = design_from_json(&json["design"].to_string()).expect("the design reads");
             assert_eq!(read.inputs.shaft_joint, design.inputs.shaft_joint);
         }
-        // The edge design writes a value that is not a number and +inf as text.
-        let results = compute_all(&cup_without_wall_or_key_bearing());
-        assert!(results.shaft_joint.cup_holding_Nm.is_nan());
-        assert_eq!(results.shaft_joint.cup_key_pressure_MPa, f64::INFINITY);
-        let csv = results_csv(&results);
-        let line = |path: &str| {
-            csv.split("\r\n")
-                .find(|l| l.starts_with(&format!("{path},")))
-                .unwrap()
-                .to_owned()
-        };
-        assert!(line("shaft_joint.cup_holding_Nm").contains(",NaN,"));
-        assert!(line("shaft_joint.cup_key_pressure_MPa").contains(",+inf,"));
     }
 
     #[test]

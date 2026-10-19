@@ -1448,7 +1448,10 @@ mod tests {
         assert_eq!(numbers, want, "the chain is the 23 numbers");
         let result_path = column(&RESULT_COLUMNS, "Path");
         let check = column(&RESULT_COLUMNS, "Check");
-        for inputs in [DesignInputs::default(), cup_without_wall_or_key_bearing()] {
+        for (inputs, edge) in [
+            (DesignInputs::default(), false),
+            (cup_without_wall_or_key_bearing(), true),
+        ] {
             let results = compute_all(&inputs);
             let book = sheets(&snapshot(&inputs, &results));
             let sheet = sheet(&book, RESULTS_SHEET);
@@ -1485,19 +1488,18 @@ mod tests {
                 assert_eq!(row[4], Cell::text(RUST_ONLY), "{path}");
                 assert_eq!(row[6], Cell::empty(), "{path}");
             }
+            if edge {
+                // The edge design writes a value that is not a number and +inf as the CSV's text.
+                assert_eq!(
+                    row_of(sheet, result_path, "shaft_joint.cup_holding_Nm")[1],
+                    Cell::text("NaN")
+                );
+                assert_eq!(
+                    row_of(sheet, result_path, "shaft_joint.cup_key_pressure_MPa")[1],
+                    Cell::text("+inf")
+                );
+            }
         }
-        let edge = cup_without_wall_or_key_bearing();
-        let results = compute_all(&edge);
-        let book = sheets(&snapshot(&edge, &results));
-        let sheet = sheet(&book, RESULTS_SHEET);
-        assert_eq!(
-            row_of(sheet, result_path, "shaft_joint.cup_holding_Nm")[1],
-            Cell::text("NaN")
-        );
-        assert_eq!(
-            row_of(sheet, result_path, "shaft_joint.cup_key_pressure_MPa")[1],
-            Cell::text("+inf")
-        );
     }
 
     #[test]
