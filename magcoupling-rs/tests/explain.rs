@@ -4624,7 +4624,7 @@ fn cure_margin_words() -> String {
 
 /// BL-064 (spec 6.1, 7.8 and 7.11): what the shaft-joint note says holds at the five probe
 /// designs. Sentence 1 quotes each joint's holding torque at its loosest against the torque each
-/// must hold, the safety factor times cold-high. Sentence 3 quotes the cup's bore stress against
+/// must hold, the safety factor times cold-high, which it names. Sentence 3 quotes the cup's bore stress against
 /// the limit in a "here" clause (review 5 SF-4, review 6 SF-1): per µm of effective
 /// interference the bore stress is E·δ/d times √3/2, about 0.87 (a thick wall), to 1.0 (a thin
 /// one), so it follows interference over diameter and hardly the wall. Sentence 4 quotes the
@@ -4654,6 +4654,13 @@ fn the_shaft_joint_note_s_claims_hold_at_every_probe_design() {
             "shaft_joint.cup_holding_Nm",
             "shaft_joint.required_Nm"
         ]
+    );
+    // Sentence 1 says what each joint must hold (the notes record's SF-2, from the review
+    // leftovers), as `r.required_Nm` is asserted below at every probe design.
+    assert!(
+        s[1].contains("{shaft_joint.required_Nm}, cold-high times the safety factor."),
+        "sentence 1 says what each joint must hold: {:?}",
+        s[1]
     );
     assert_eq!(
         values_in(s[3]),

@@ -931,7 +931,7 @@ pub const NOTES: &[Note] = &[
         ],
         sentences: &[
             "A shrink fit holds each rotor on its shaft: the bore is made smaller than the shaft, and friction from the grip carries the torque.",
-            "At its loosest the inner hub holds {shaft_joint.hub_holding_Nm} here and the cup {shaft_joint.cup_holding_Nm}; each must hold {shaft_joint.required_Nm}.",
+            "At its loosest the inner hub holds {shaft_joint.hub_holding_Nm} here and the cup {shaft_joint.cup_holding_Nm}; each must hold {shaft_joint.required_Nm}, cold-high times the safety factor.",
             "Measured interference is not what grips: smoothing takes micrometres off at fitting, and a rotor running warmer than its shaft loses more.",
             "Tighter is not safer here: the cup's bore stress, {shaft_joint.cup_bore_stress_MPa} against {shaft_joint.stress_limit_MPa}, follows interference over diameter, hardly the wall.",
             "Here the inner hub would need {shaft_joint.hub_fit_temp_C} on the wheel shaft shrunk {shaft_joint.wheel_shaft_shrink_um}; allowed: {shaft_joint.hub_fit_allowed_C}, lowest of your limit, adhesive's, single-ring onset less 10 °C.",
