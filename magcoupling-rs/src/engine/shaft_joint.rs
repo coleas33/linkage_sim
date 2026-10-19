@@ -536,7 +536,7 @@ impl JointTerms {
 
     /// Whether the key has a bearing area: a positive bearing length and contact height.
     pub fn key_has_bearing_area(&self) -> bool {
-        self.key_bearing_mm > 0.0 && self.key_contact_mm > 0.0
+        has_bearing_area(self.key_bearing_mm, self.key_contact_mm)
     }
 
     /// The terms the four comparisons read; a judged joint with any of them NaN reads unknown.
@@ -633,6 +633,11 @@ fn quoted_below(value: f64, need: f64, decimals: usize) -> (String, String) {
     )
 }
 
+/// A key has bearing area with a positive bearing length and contact height.
+fn has_bearing_area(bearing_mm: f64, contact_mm: f64) -> bool {
+    bearing_mm > 0.0 && contact_mm > 0.0
+}
+
 /// One joint's terms (spec sections 3.1 and 3.3): plane-stress Lamé thick cylinders on a solid
 /// shaft, the key's arc taken off the contact, the temperature ends, the fitting temperature
 /// and the key alone.
@@ -700,7 +705,7 @@ pub fn joint(spec: &JointSpec, common: &JointCommon) -> JointTerms {
     // The key alone (form A: bearing length L − b), its contact capped at the keyway depth.
     let key_bearing_mm = spec.length_mm - common.key_width_mm;
     let key_contact_mm = py_min(common.key_contact_mm, common.keyway_depth_mm);
-    let bearing = key_bearing_mm > 0.0 && key_contact_mm > 0.0;
+    let bearing = has_bearing_area(key_bearing_mm, key_contact_mm);
     let key_pressure_MPa = if !keyed {
         0.0
     } else if bearing {
