@@ -1215,6 +1215,20 @@ fn auto_reads_no_shaft_joint_input_and_both_joints_hold_at_its_answer() {
     ] {
         assert!((got - want).abs() < 5e-5, "{got} against {want}");
     }
+    // The mechanism behind the literals (T4 review 6, from the review leftovers): the cup's boss
+    // does not lengthen with the magnets, so its holding is the defaults' bit for bit, and each
+    // joint must hold the safety factor times cold-high at Auto's answer.
+    assert_eq!(
+        joints.cup_holding_Nm.to_bits(),
+        compute_all(&base).shaft_joint.cup_holding_Nm.to_bits(),
+        "the cup's holding at Auto's answer and at the defaults"
+    );
+    assert_eq!(
+        joints.required_Nm.to_bits(),
+        (p.inputs.shaft_joint.safety_factor * compute_all(&p.inputs).metal.torque_cold_high_Nm)
+            .to_bits(),
+        "the safety factor times cold-high"
+    );
     for row in input_rows(&base)
         .into_iter()
         .filter(|row| row.path.starts_with("shaft_joint."))
