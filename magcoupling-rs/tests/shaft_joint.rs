@@ -13,11 +13,12 @@ use magcoupling::engine::compat::py_min;
 use magcoupling::engine::explain::probes::probe_designs;
 use magcoupling::engine::meta::{InputMeta, InputSet, SliderRange, Value, input_rows, result_rows};
 use magcoupling::engine::shaft_joint::{
-    self, BORE_OVER_ITS_LIMIT, CANNOT_BE_FITTED, CAUSES, CUP, Cause, FIT_SLIPS, HubFitLimit,
+    self, BORE_OVER_ITS_LIMIT, CANNOT_BE_FITTED, CAUSES, CUP, Cause, FIT_SLIPS, Floor, HubFitLimit,
     INNER_HUB, JointCommon, JointSpec, JointTerms, KEY_HAS_NO_BEARING_AREA, KEY_OVER_ITS_LIMIT,
     NoWall, ROOM_C, SHAFT_CTE_PER_C, SHAFT_JOINT_UNKNOWN, SHAFT_JOINTS_PASS, ShaftJointInputs,
-    ShaftJointLinks, UNKNOWN_BAND_REVERSED, UNKNOWN_NO_WALL, UNKNOWN_NOT_A_NUMBER,
-    UNKNOWN_SAFETY_FACTOR, YIELD_FACTOR, hub_fit_allowed, shaft_shrink_um,
+    ShaftJointLinks, UNKNOWN_BAND_REVERSED, UNKNOWN_IMPOSSIBLE_VALUE, UNKNOWN_NO_WALL,
+    UNKNOWN_NOT_A_NUMBER, UNKNOWN_SAFETY_FACTOR, YIELD_FACTOR, hub_fit_allowed, impossible_values,
+    shaft_shrink_um,
 };
 use magcoupling::engine::temperature::CURE_MARGIN_MIN_C;
 
@@ -283,8 +284,9 @@ fn the_check_is_a_rust_only_group_of_fifteen_inputs_and_twenty_four_results() {
 
 #[test]
 fn the_verdict_texts_are_the_spec_s() {
-    // Spec section 4.2: one pass, one unknown prefix with three reasons and the safety factor's
-    // (ruling C-4), five failing prefixes.
+    // Spec section 4.2: one pass, one unknown prefix with three reasons, the safety factor's
+    // (ruling C-4) and the impossible value's (its extension, the whole-branch review's MF-1),
+    // five failing prefixes.
     assert_eq!(
         SHAFT_JOINTS_PASS,
         "Both shaft joints hold and can be fitted"
@@ -298,6 +300,10 @@ fn the_verdict_texts_are_the_spec_s() {
             "the minimum interference is above the maximum",
         ),
         (UNKNOWN_SAFETY_FACTOR, "the safety factor is not above zero"),
+        (
+            UNKNOWN_IMPOSSIBLE_VALUE,
+            "a value is outside what it can physically be",
+        ),
     ] {
         assert_eq!(text, format!("{SHAFT_JOINT_UNKNOWN}: {reason}"));
     }
@@ -317,6 +323,7 @@ fn the_verdict_texts_are_the_spec_s() {
         UNKNOWN_NO_WALL,
         UNKNOWN_BAND_REVERSED,
         UNKNOWN_SAFETY_FACTOR,
+        UNKNOWN_IMPOSSIBLE_VALUE,
         FIT_SLIPS,
         BORE_OVER_ITS_LIMIT,
         CANNOT_BE_FITTED,
@@ -1215,6 +1222,134 @@ fn a_value_that_is_not_a_number_reads_unknown() {
             && unknown_pick.part_yield_MPa.is_nan()
     );
     assert_eq!(unknown_pick.check, UNKNOWN_NOT_A_NUMBER);
+}
+
+#[test]
+fn a_value_below_what_its_input_can_physically_be_reads_unknown() {
+    // The whole-branch review's MF-1 (ruling C-4 extended): a friction, smoothing or joining
+    // clearance below zero, a key width not above zero or a shaft below absolute zero is a typed
+    // value no slider reaches; judged as if real, it gives false passes and fixes that make a
+    // joint worse. Each reads unknown just past its floor and is judged at it;
+    // `impossible_values` names it by its field, with its value and floor; and its slider's
+    // bottom is a value it can be (the Problem asks for at least that).
+    let absolute_zero = -273.15;
+    // (the field, its floor, the lowest value it can be, a value just past that)
+    let cases = [
+        ("friction", Floor::Zero, 0.0, -1e-9),
+        ("smoothing_um", Floor::Zero, 0.0, -1e-9),
+        ("key_width_mm", Floor::AboveZero, 1e-9, 0.0),
+        (
+            "wheel_shaft_fit_C",
+            Floor::AbsoluteZero,
+            absolute_zero,
+            absolute_zero - 1e-9,
+        ),
+        (
+            "output_shaft_fit_C",
+            Floor::AbsoluteZero,
+            absolute_zero,
+            absolute_zero - 1e-9,
+        ),
+        ("joining_clearance_um", Floor::Zero, 0.0, -1e-9),
+    ];
+    for (field, floor, lowest, past) in cases {
+        let at = |x: f64| {
+            let mut inputs = DesignInputs::default();
+            inputs
+                .shaft_joint
+                .set(field, Value::Num(x))
+                .unwrap_or_else(|e| panic!("{e}"));
+            inputs
+        };
+        assert!(floor.allows(lowest) && !floor.allows(past), "{field}");
+        let bottom = slider(&format!("shaft_joint.{field}")).min;
+        assert!(floor.allows(bottom), "{field}'s slider bottom, {bottom}");
+        let judged = at(lowest);
+        assert_eq!(
+            impossible_values(&judged.shaft_joint),
+            [],
+            "{field} at {lowest}"
+        );
+        assert_ne!(
+            check(&judged),
+            UNKNOWN_IMPOSSIBLE_VALUE,
+            "{field} at {lowest}"
+        );
+        let typed = at(past);
+        let listed = impossible_values(&typed.shaft_joint);
+        assert_eq!(listed.len(), 1, "{field} at {past}");
+        assert_eq!(
+            (listed[0].field, listed[0].value, listed[0].floor),
+            (field, past, floor)
+        );
+        assert_eq!(
+            typed.shaft_joint.get(listed[0].field),
+            Some(Value::Num(past)),
+            "{field}"
+        );
+        assert_eq!(check(&typed), UNKNOWN_IMPOSSIBLE_VALUE, "{field} at {past}");
+    }
+    // Several at once: each named, in the inputs' order, whatever order they were typed in.
+    let both = design(|i| {
+        i.shaft_joint.joining_clearance_um = -2.0;
+        i.shaft_joint.friction = -0.14;
+    });
+    let fields: Vec<&str> = impossible_values(&both.shaft_joint)
+        .iter()
+        .map(|value| value.field)
+        .collect();
+    assert_eq!(fields, ["friction", "joining_clearance_um"]);
+    // A NaN is at or above no floor, and the verdict reads it as not a number first; then a
+    // safety factor not above zero; then the impossible value, before any judged term (a
+    // friction of -0.14 holds less than nothing, so judged it would read the fit slips).
+    let nan = design(|i| {
+        i.shaft_joint.friction = -0.14;
+        i.shaft_joint.key_width_mm = f64::NAN;
+    });
+    assert_eq!(impossible_values(&nan.shaft_joint).len(), 2);
+    assert_eq!(check(&nan), UNKNOWN_NOT_A_NUMBER);
+    let no_factor = design(|i| {
+        i.shaft_joint.friction = -0.14;
+        i.shaft_joint.safety_factor = 0.0;
+    });
+    assert_eq!(check(&no_factor), UNKNOWN_SAFETY_FACTOR);
+    let negative = design(|i| i.shaft_joint.friction = -0.14);
+    let [hub, cup] = terms(&negative);
+    assert!(hub.holding_Nm < 0.0 && cup.holding_Nm < 0.0);
+    assert!(hub.determinate() && hub.fails(Cause::Slips));
+    assert_eq!(check(&negative), UNKNOWN_IMPOSSIBLE_VALUE);
+    // The engine's one test of whether the check can be made, which the guide reads too: its
+    // reason's verdict is the check's, and the defaults have none.
+    for (name, inputs) in [
+        ("not a number", nan),
+        ("safety factor", no_factor),
+        ("impossible", negative),
+        ("two impossible", both.clone()),
+    ] {
+        let links = links(&inputs);
+        let joints = shaft_joint::joints(&inputs.shaft_joint, &links);
+        let reason = shaft_joint::cannot_be_made(&inputs.shaft_joint, &links, &joints)
+            .unwrap_or_else(|| panic!("{name}: the check cannot be made"));
+        assert_eq!(reason.verdict(), check(&inputs), "{name}");
+    }
+    let links_both = links(&both);
+    assert_eq!(
+        shaft_joint::cannot_be_made(
+            &both.shaft_joint,
+            &links_both,
+            &shaft_joint::joints(&both.shaft_joint, &links_both)
+        ),
+        Some(shaft_joint::CannotBeMade::ImpossibleValues(
+            impossible_values(&both.shaft_joint)
+        ))
+    );
+    let defaults = DesignInputs::default();
+    let links = links(&defaults);
+    let joints = shaft_joint::joints(&defaults.shaft_joint, &links);
+    assert_eq!(
+        shaft_joint::cannot_be_made(&defaults.shaft_joint, &links, &joints),
+        None
+    );
 }
 
 #[test]

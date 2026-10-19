@@ -21,9 +21,9 @@
 //! (no bearing area, or above the limit). The badge shows the first failing term, naming the
 //! first failing joint (inner hub, then cup). A joint with no wall around its bore or with its
 //! band reversed is not judged; it reads unknown only when no judged joint fails. A value that
-//! is not a number reads unknown before all of them, then a safety factor not above zero
-//! ([`verdict`]). Equality passes; a failing badge never quotes two equal numbers (the BL-059
-//! rounding).
+//! is not a number reads unknown before all of them, then a safety factor not above zero, then
+//! an input typed below what it can physically be ([`cannot_be_made`], [`verdict`]). Equality
+//! passes; a failing badge never quotes two equal numbers (the BL-059 rounding).
 //!
 //! The temperature model: the interference moves with temperature by the expansion mismatch of
 //! shaft and part. The loosest fit takes the end that loosens it more: the minimum magnet
@@ -220,6 +220,14 @@ pub const UNKNOWN_BAND_REVERSED: &str = unknown!(": the minimum interference is 
 /// (ruling C-4): the torque each joint must hold would be zero or below, and a key pressure below
 /// zero would pass.
 pub const UNKNOWN_SAFETY_FACTOR: &str = unknown!(": the safety factor is not above zero");
+
+/// `shaft_joint.check` when an input is typed below what it can physically be
+/// ([`impossible_values`]; ruling C-4 extended by the whole-branch review): judged as if real,
+/// a friction below zero holds less than nothing, a smoothing below zero adds interference, a
+/// key width at or below zero widens the contact arc, and a shaft below absolute zero takes
+/// NIST's fit outside its range.
+pub const UNKNOWN_IMPOSSIBLE_VALUE: &str =
+    unknown!(": a value is outside what it can physically be");
 
 /// The start of `shaft_joint.check` when a fit slips; " ({joint}): holds {holding} N·m against
 /// {required} N·m" follows.
@@ -794,15 +802,108 @@ pub fn failing(joints: &[JointTerms; 2]) -> Vec<(Cause, &JointTerms)> {
         .collect()
 }
 
-/// `shaft_joint.check` (spec section 4.3): unknown when any input or engine value it reads,
-/// or any term a judged joint compares, is not a number; then unknown when the safety factor
-/// is not above zero (ruling C-4); else the first failing term of a judged joint; else a joint
-/// with no wall, then a reversed band, as unknown; else the pass.
-pub fn verdict(
+/// The lowest an input of the check can physically be ([`impossible_values`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Floor {
+    /// Zero or more: a friction, a smoothing, a clearance.
+    Zero,
+    /// Above zero: a key's width.
+    AboveZero,
+    /// Absolute zero or warmer [°C]: a shaft's temperature.
+    AbsoluteZero,
+}
+
+impl Floor {
+    /// Whether `x` can physically be: at or above the floor, above it for
+    /// [`Floor::AboveZero`]. A NaN cannot.
+    pub fn allows(self, x: f64) -> bool {
+        match self {
+            Floor::Zero => x >= 0.0,
+            Floor::AboveZero => x > 0.0,
+            Floor::AbsoluteZero => x >= -ZERO_C_IN_K,
+        }
+    }
+}
+
+/// An input of the check typed below what it can physically be.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ImpossibleValue {
+    /// The input's field: its path in [`ShaftJointInputs`].
+    pub field: &'static str,
+    /// The value typed.
+    pub value: f64,
+    /// The floor it is below.
+    pub floor: Floor,
+}
+
+/// The check's inputs typed below what they can physically be, in the inputs' order (ruling
+/// C-4 extended by the whole-branch review): a friction, a smoothing or a joining clearance
+/// below zero, a key width at or below zero, a shaft below absolute zero. No slider reaches
+/// one. A friction of 0 can be (it holds nothing, and is judged so). A NaN is listed too;
+/// [`cannot_be_made`] reads it as not a number first.
+pub fn impossible_values(inputs: &ShaftJointInputs) -> Vec<ImpossibleValue> {
+    [
+        ("friction", inputs.friction, Floor::Zero),
+        ("smoothing_um", inputs.smoothing_um, Floor::Zero),
+        ("key_width_mm", inputs.key_width_mm, Floor::AboveZero),
+        (
+            "wheel_shaft_fit_C",
+            inputs.wheel_shaft_fit_C,
+            Floor::AbsoluteZero,
+        ),
+        (
+            "output_shaft_fit_C",
+            inputs.output_shaft_fit_C,
+            Floor::AbsoluteZero,
+        ),
+        (
+            "joining_clearance_um",
+            inputs.joining_clearance_um,
+            Floor::Zero,
+        ),
+    ]
+    .into_iter()
+    .filter(|&(_, value, floor)| !floor.allows(value))
+    .map(|(field, value, floor)| ImpossibleValue {
+        field,
+        value,
+        floor,
+    })
+    .collect()
+}
+
+/// Why the check cannot be made at all, in the order [`verdict`] reads them (spec section 4.4,
+/// ruling C-4 and its extension): no joint is then judged, and the guide offers no fix.
+#[derive(Clone, Debug, PartialEq)]
+pub enum CannotBeMade {
+    /// An input or engine value it reads, or a term a judged joint compares, is not a number.
+    NotANumber,
+    /// The safety factor is not above zero (ruling C-4).
+    SafetyFactor,
+    /// Inputs typed below what they can physically be ([`impossible_values`]).
+    ImpossibleValues(Vec<ImpossibleValue>),
+}
+
+impl CannotBeMade {
+    /// Its `shaft_joint.check`.
+    pub fn verdict(&self) -> &'static str {
+        match self {
+            CannotBeMade::NotANumber => UNKNOWN_NOT_A_NUMBER,
+            CannotBeMade::SafetyFactor => UNKNOWN_SAFETY_FACTOR,
+            CannotBeMade::ImpossibleValues(_) => UNKNOWN_IMPOSSIBLE_VALUE,
+        }
+    }
+}
+
+/// Why the check cannot be made (spec section 4.4): any input or engine value it reads, or any
+/// term a judged joint compares, is not a number; else the safety factor is not above zero
+/// (ruling C-4); else an input is typed below what it can physically be (its extension).
+/// `None` when it can be made. [`verdict`] and the guide both read it.
+pub fn cannot_be_made(
     inputs: &ShaftJointInputs,
     links: &ShaftJointLinks,
     joints: &[JointTerms; 2],
-) -> String {
+) -> Option<CannotBeMade> {
     let mut input_nan = false;
     inputs.visit("", &mut |_, _, value| {
         input_nan |= matches!(value, Value::Num(x) if x.is_nan());
@@ -813,11 +914,30 @@ pub fn verdict(
         .filter(|j| j.determinate())
         .any(|j| j.compared().iter().any(|x| x.is_nan()));
     if input_nan || link_nan || term_nan {
-        return UNKNOWN_NOT_A_NUMBER.to_owned();
+        return Some(CannotBeMade::NotANumber);
     }
     #[allow(clippy::neg_cmp_op_on_partial_ord)] // the negation is the point: a NaN fails it
     if !(inputs.safety_factor > 0.0) {
-        return UNKNOWN_SAFETY_FACTOR.to_owned();
+        return Some(CannotBeMade::SafetyFactor);
+    }
+    let impossible = impossible_values(inputs);
+    if !impossible.is_empty() {
+        return Some(CannotBeMade::ImpossibleValues(impossible));
+    }
+    None
+}
+
+/// `shaft_joint.check` (spec section 4.3): unknown while the check cannot be made
+/// ([`cannot_be_made`]: a value that is not a number, then a safety factor not above zero,
+/// then a value below what it can physically be); else the first failing term of a judged
+/// joint; else a joint with no wall, then a reversed band, as unknown; else the pass.
+pub fn verdict(
+    inputs: &ShaftJointInputs,
+    links: &ShaftJointLinks,
+    joints: &[JointTerms; 2],
+) -> String {
+    if let Some(reason) = cannot_be_made(inputs, links, joints) {
+        return reason.verdict().to_owned();
     }
     if let Some((cause, joint)) = failing(joints).first() {
         return joint.text(*cause);

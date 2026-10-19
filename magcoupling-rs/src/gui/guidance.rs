@@ -50,7 +50,9 @@ use crate::engine::meta::{InputSet, NumOrText, ResultSet, SliderRange, Value};
 use crate::engine::model::{
     ResolvedMagnet, RingFit, blocks_fit, end_effect_in_range, resolve_magnets, ring_fits,
 };
-use crate::engine::shaft_joint::{self, Cause, HubFitLimit, JointTerms, NoWall};
+use crate::engine::shaft_joint::{
+    self, CannotBeMade, Cause, Floor, HubFitLimit, ImpossibleValue, JointTerms, NoWall,
+};
 use crate::engine::size_controls::{
     DiameterBreakdown, DiameterFit, FIT_TOLERANCE_MM, LengthBreakdown, diameter_breakdown,
     dimensions, dimensions_with_minimum_diameter, length_breakdown, resize_diameter,
@@ -344,13 +346,20 @@ const JOINT_SIDES: [JointSide; 2] = [
 ];
 
 /// The shaft joints of a design as the engine judges them, inner hub first, rebuilt from its
-/// inputs and results ([`shaft_joint_links`]); `None` while the check cannot be made (a value
-/// it reads or works out is not a number, or the safety factor is not above zero: ruling C-4),
-/// where no term is judged.
-fn shaft_joints(inputs: &DesignInputs, results: &DesignResults) -> Option<[JointTerms; 2]> {
-    let check = results.shaft_joint.check.as_str();
-    (check != shaft_joint::UNKNOWN_NOT_A_NUMBER && check != shaft_joint::UNKNOWN_SAFETY_FACTOR)
-        .then(|| shaft_joint::joints(&inputs.shaft_joint, &shaft_joint_links(inputs, results)))
+/// inputs and results ([`shaft_joint_links`]); while the check cannot be made, why, by the
+/// engine's own test ([`shaft_joint::cannot_be_made`]: a value it reads or works out is not a
+/// number, the safety factor is not above zero, or an input is typed below what it can
+/// physically be), where no term is judged.
+fn shaft_joints(
+    inputs: &DesignInputs,
+    results: &DesignResults,
+) -> Result<[JointTerms; 2], CannotBeMade> {
+    let links = shaft_joint_links(inputs, results);
+    let joints = shaft_joint::joints(&inputs.shaft_joint, &links);
+    match shaft_joint::cannot_be_made(&inputs.shaft_joint, &links, &joints) {
+        Some(reason) => Err(reason),
+        None => Ok(joints),
+    }
 }
 
 /// The index in [`JOINT_SIDES`] of the joint named `name`, and its side.
@@ -374,7 +383,7 @@ fn shaft_joint_fixes(
     results: &DesignResults,
     clamps_paused: bool,
 ) -> Vec<(&'static str, Direction)> {
-    let Some(joints) = shaft_joints(inputs, results) else {
+    let Ok(joints) = shaft_joints(inputs, results) else {
         return Vec::new();
     };
     let mut shown: Vec<(&'static str, Direction)> = Vec::new();
@@ -1967,7 +1976,8 @@ const SHAFT_JOINT_NOT_A_NUMBER: &str =
 const SHAFT_JOINT_FALLBACK: &str = "A shaft joint does not pass: see the shaft joint results.";
 
 /// The shaft joints' Problem (spec 5.2): while the check cannot be made (a value that is not a
-/// number, or a safety factor not above zero: ruling C-4), its sentence alone; else a
+/// number, a safety factor not above zero, ruling C-4, or an input typed below what it can
+/// physically be, its extension), its sentences alone ([`cannot_be_made_problem`]); else a
 /// sentence per term a judged joint fails, in the badge's order ([`shaft_joint::failing`]),
 /// with its live numbers; then, for each judged joint failing a slip, stress or fitting term,
 /// the window of measured interference that would work, or why there is none
@@ -1977,15 +1987,9 @@ fn shaft_joint_problem(inputs: &DesignInputs, results: &DesignResults) -> Option
     if !failing(SHAFT_JOINT, inputs, results) {
         return None;
     }
-    // A safety factor typed at or below zero (ruling C-4): its sentence alone, with no fix.
-    if results.shaft_joint.check == shaft_joint::UNKNOWN_SAFETY_FACTOR {
-        return Some(format!(
-            "The safety factor, {}, is not above zero: enter at least 1.",
-            input_text(inputs, "shaft_joint.safety_factor")
-        ));
-    }
-    let Some(joints) = shaft_joints(inputs, results) else {
-        return Some(SHAFT_JOINT_NOT_A_NUMBER.to_owned());
+    let joints = match shaft_joints(inputs, results) {
+        Ok(joints) => joints,
+        Err(reason) => return Some(cannot_be_made_problem(inputs, &reason)),
     };
     let mut sentences: Vec<String> = shaft_joint::failing(&joints)
         .into_iter()
@@ -2007,6 +2011,49 @@ fn shaft_joint_problem(inputs: &DesignInputs, results: &DesignResults) -> Option
         sentences.extend(not_judged_sentences(inputs, side, joint));
     }
     Some(joined_or(sentences, SHAFT_JOINT_FALLBACK))
+}
+
+/// The shaft joints' Problem while the check cannot be made, with no fix: the not-a-number
+/// sentence; the safety factor's (ruling C-4); or a sentence for each input typed below what it
+/// can physically be, in the inputs' order ([`impossible_value_sentence`]).
+fn cannot_be_made_problem(inputs: &DesignInputs, reason: &CannotBeMade) -> String {
+    match reason {
+        CannotBeMade::NotANumber => SHAFT_JOINT_NOT_A_NUMBER.to_owned(),
+        CannotBeMade::SafetyFactor => format!(
+            "The safety factor, {}, is not above zero: enter at least 1.",
+            input_text(inputs, "shaft_joint.safety_factor")
+        ),
+        CannotBeMade::ImpossibleValues(values) => values
+            .iter()
+            .map(|value| impossible_value_sentence(inputs, value))
+            .collect::<Vec<_>>()
+            .join(" "),
+    }
+}
+
+/// The sentence of an input typed below what it can physically be (the whole-branch review's
+/// MF-1): its name as the fixes give it ([`fix_label`]), its value, its floor, and its slider's
+/// bottom to enter instead, as the safety factor's sentence asks for at least its own.
+fn impossible_value_sentence(inputs: &DesignInputs, value: &ImpossibleValue) -> String {
+    let path = format!("shaft_joint.{}", value.field);
+    let floor = match value.floor {
+        Floor::Zero => "below zero",
+        Floor::AboveZero => "zero or below",
+        Floor::AbsoluteZero => "below absolute zero",
+    };
+    let entry = InputCatalogue::get().entry(&path);
+    let bottom = entry
+        .and_then(|entry| entry.meta.range)
+        .map_or(f64::NAN, |range| range.min);
+    format!(
+        "{}, {}, cannot physically be {floor}: enter at least {}.",
+        fix_label(&path),
+        input_text(inputs, &path),
+        with_unit(
+            format_value(&Value::Num(bottom)),
+            entry.map_or("", |entry| entry.meta.unit)
+        ),
+    )
 }
 
 /// The sentence of a term `cause` the joint of `side` fails, its numbers live, a failing value
@@ -3425,6 +3472,11 @@ mod tests {
                 "The safety factor,",
             ),
             (
+                "a value it cannot physically be",
+                breaking(|i| i.shaft_joint.friction = -0.14),
+                "cannot physically be below zero",
+            ),
+            (
                 "cup without a wall",
                 breaking(|i| {
                     i.coupling.bore_mm = 16.0;
@@ -4092,8 +4144,8 @@ mod tests {
             // that is not judged (no wall, a reversed band, or the check cannot be made) passes
             // them; with no keyway the key terms pass with a margin of +inf.
             SHAFT_JOINT => {
-                // Not judged while the check cannot be made (`shaft_joints` is `None`).
-                let judged = shaft_joints(inputs, results).is_some();
+                // Not judged while the check cannot be made (`shaft_joints` is an `Err`).
+                let judged = shaft_joints(inputs, results).is_ok();
                 let links = shaft_joint_links(inputs, results);
                 shaft_joint::joints(&inputs.shaft_joint, &links)
                     .iter()
@@ -7506,6 +7558,8 @@ mod tests {
         let not_a_number = breaking(|i| i.temperature.adhesive.selected = 0);
         let bore_0 = breaking(|i| i.coupling.bore_mm = 0.0);
         let no_factor = breaking(|i| i.shaft_joint.safety_factor = 0.0);
+        let negative_friction = breaking(|i| i.shaft_joint.friction = -0.14);
+        let frictionless = breaking(|i| i.shaft_joint.friction = 0.0);
         let overstressed_short = with(short_magnets(), hub_overstressed);
         for (name, inputs, want) in [
             ("defaults", DesignInputs::default(), Good),
@@ -7514,6 +7568,8 @@ mod tests {
             ("not a number", not_a_number.clone(), Caution),
             ("bore 0", bore_0.clone(), Caution),
             ("safety factor 0", no_factor.clone(), Caution),
+            ("friction below zero", negative_friction.clone(), Caution),
+            ("friction 0", frictionless.clone(), Bad),
             (
                 "reversed band",
                 breaking(|i| i.shaft_joint.hub_interference_min_um = 20.0),
@@ -7600,6 +7656,110 @@ mod tests {
             ))
         );
         assert_eq!(fixes(joint, &no_factor, &results, false), []);
+        // A friction typed below zero (the whole-branch review's MF-1, ruling C-4 extended): its
+        // sentence alone, and no fix. Judged, it quoted a holding below zero, a window that no
+        // interference gives, and raising either band's minimum, which holds less still.
+        let results = compute_all(&negative_friction);
+        assert_eq!(
+            results.shaft_joint.check,
+            shaft_joint::UNKNOWN_IMPOSSIBLE_VALUE
+        );
+        let text = shaft_joint_problem(&negative_friction, &results).unwrap();
+        assert_eq!(
+            text,
+            "Shrink-fit friction coefficient, -0.1400, cannot physically be below zero: enter at least 0.05000."
+        );
+        for words in ["would hold", "holds", "measured interference"] {
+            assert!(!text.contains(words), "{words:?} in {text}");
+        }
+        assert_eq!(fixes(joint, &negative_friction, &results, false), []);
+        // A friction of exactly 0 is judged: each joint holds 0 N·m, which its sentence says;
+        // no interference holds without friction, so no window shows and no fix helps.
+        let results = compute_all(&frictionless);
+        assert_eq!(
+            (
+                results.shaft_joint.hub_holding_Nm,
+                results.shaft_joint.cup_holding_Nm
+            ),
+            (0.0, 0.0)
+        );
+        let text = shaft_joint_problem(&frictionless, &results).unwrap();
+        assert_in_order(
+            &text,
+            &[
+                "At its loosest the inner hub holds 0 N·m",
+                "At its loosest the cup holds 0 N·m",
+            ],
+        );
+        for words in ["would hold", "No measured interference works"] {
+            assert!(!text.contains(words), "{words:?} in {text}");
+        }
+        assert_eq!(fixes(joint, &frictionless, &results, false), []);
+    }
+
+    #[test]
+    fn each_value_below_what_its_input_can_physically_be_has_its_own_sentence() {
+        // The whole-branch review's MF-1 (ruling C-4 extended): one sentence for each input
+        // typed below what it can physically be, in the inputs' order, each with its label, its
+        // value, its floor and its slider's bottom; nothing else, and no fix.
+        let joint = guide(SHAFT_JOINT).unwrap();
+        type Edit = fn(&mut DesignInputs);
+        let cases: [(Edit, &str); 6] = [
+            (
+                |i| i.shaft_joint.friction = -0.14,
+                "Shrink-fit friction coefficient, -0.1400, cannot physically be below zero: enter at least 0.05000.",
+            ),
+            (
+                |i| i.shaft_joint.smoothing_um = -3.0,
+                "Surface smoothing of the fit, -3.000 µm, cannot physically be below zero: enter at least 0 µm.",
+            ),
+            (
+                |i| i.shaft_joint.key_width_mm = 0.0,
+                "Shaft key width, 0 mm, cannot physically be zero or below: enter at least 1.000 mm.",
+            ),
+            (
+                |i| i.shaft_joint.wheel_shaft_fit_C = -300.0,
+                "Wheel shaft temperature at fitting, -300.0 °C, cannot physically be below absolute zero: enter at least -196.0 °C.",
+            ),
+            (
+                |i| i.shaft_joint.output_shaft_fit_C = -300.0,
+                "Gearbox shaft temperature at fitting, -300.0 °C, cannot physically be below absolute zero: enter at least -20.00 °C.",
+            ),
+            (
+                |i| i.shaft_joint.joining_clearance_um = -2.0,
+                "Joining clearance, -2.000 µm, cannot physically be below zero: enter at least 0 µm.",
+            ),
+        ];
+        for (edit, sentence) in cases {
+            let inputs = breaking(edit);
+            let results = compute_all(&inputs);
+            assert_eq!(
+                results.shaft_joint.check,
+                shaft_joint::UNKNOWN_IMPOSSIBLE_VALUE,
+                "{sentence}"
+            );
+            assert_eq!(
+                level(joint, &inputs, &results),
+                Level::Caution,
+                "{sentence}"
+            );
+            assert_eq!(
+                shaft_joint_problem(&inputs, &results).as_deref(),
+                Some(sentence)
+            );
+            assert_eq!(fixes(joint, &inputs, &results, false), [], "{sentence}");
+        }
+        // Two at once, typed in the other order: both sentences, in the inputs' order.
+        let inputs = breaking(|i| {
+            i.shaft_joint.output_shaft_fit_C = -300.0;
+            i.shaft_joint.friction = -0.14;
+        });
+        let results = compute_all(&inputs);
+        assert_eq!(
+            shaft_joint_problem(&inputs, &results).as_deref(),
+            Some(format!("{} {}", cases[0].1, cases[4].1).as_str())
+        );
+        assert_eq!(fixes(joint, &inputs, &results, false), []);
     }
 
     /// Asserts that `text` holds each of `parts`, in their order.
@@ -7925,6 +8085,7 @@ mod tests {
                 shaft_joint::UNKNOWN_NO_WALL,
                 shaft_joint::UNKNOWN_BAND_REVERSED,
                 shaft_joint::UNKNOWN_SAFETY_FACTOR,
+                shaft_joint::UNKNOWN_IMPOSSIBLE_VALUE,
                 shaft_joint::FIT_SLIPS,
                 shaft_joint::BORE_OVER_ITS_LIMIT,
                 shaft_joint::CANNOT_BE_FITTED,

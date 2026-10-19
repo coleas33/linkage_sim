@@ -5,8 +5,13 @@
 use magcoupling::compute_all;
 use magcoupling::engine::api::{DesignInputs, compute_all_with, headline};
 use magcoupling::engine::deviations::Deviations;
-use magcoupling::engine::meta::{FieldType, InputSet, NumOrText, SetErrorKind, Value, input_rows};
-use magcoupling::engine::shaft_joint::{FIT_SLIPS, UNKNOWN_NOT_A_NUMBER, UNKNOWN_SAFETY_FACTOR};
+use magcoupling::engine::meta::{
+    FieldType, InputSet, NumOrText, SetErrorKind, Value, input_rows, result_rows,
+};
+use magcoupling::engine::shaft_joint::{
+    CANNOT_BE_FITTED, FIT_SLIPS, UNKNOWN_IMPOSSIBLE_VALUE, UNKNOWN_NOT_A_NUMBER,
+    UNKNOWN_SAFETY_FACTOR,
+};
 
 #[test]
 fn an_invalid_adhesive_code_selects_no_adhesive() {
@@ -59,6 +64,84 @@ fn degenerate_shaft_joint_inputs_never_pass() {
         let s = compute_all(&inputs).shaft_joint;
         assert_eq!(s.check, UNKNOWN_SAFETY_FACTOR, "{factor}");
     }
+    // The whole-branch review's MF-1 (ruling C-4 extended): a value typed below what its input
+    // can physically be reads unknown, never a judged verdict, while every term is still worked
+    // out (no result is NaN). Judged, a friction of -0.14 holds -9.484 N·m and offers a window
+    // and fixes that make it worse; a smoothing of -3 µm adds interference; a key width at or
+    // below zero widens the contact arc past the bore's circumference; a shaft below absolute
+    // zero takes NIST's fit outside its range.
+    type Edit = fn(&mut DesignInputs);
+    let impossible: [(&str, Edit); 7] = [
+        ("friction -0.14", |i| i.shaft_joint.friction = -0.14),
+        ("smoothing -3 µm", |i| {
+            smoothing_band(i);
+            i.shaft_joint.smoothing_um = -3.0;
+        }),
+        ("joining clearance -2 µm", |i| {
+            i.shaft_joint.joining_clearance_um = -2.0;
+        }),
+        ("key width -20 mm", |i| i.shaft_joint.key_width_mm = -20.0),
+        ("key width 0 mm", |i| i.shaft_joint.key_width_mm = 0.0),
+        ("wheel shaft -300 °C", |i| {
+            i.shaft_joint.hub_interference_max_um = 19.5;
+            i.shaft_joint.wheel_shaft_fit_C = -300.0;
+        }),
+        ("gearbox shaft -300 °C", |i| {
+            i.shaft_joint.output_shaft_fit_C = -300.0;
+        }),
+    ];
+    for (name, edit) in impossible {
+        let mut inputs = DesignInputs::default();
+        edit(&mut inputs);
+        let s = compute_all(&inputs).shaft_joint;
+        assert_eq!(s.check, UNKNOWN_IMPOSSIBLE_VALUE, "{name}");
+        let numbers = result_rows(&s)
+            .into_iter()
+            .filter_map(|row| match row.value {
+                Value::Num(x) => Some((row.path, x)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(numbers.len(), 23, "{name}");
+        for (path, x) in numbers {
+            assert!(!x.is_nan(), "{name}: {path} is {x}");
+        }
+    }
+    // Where it matters: each of these would pass judged, though the slider's bottom fails. The
+    // smoothing's bottom, 0 µm, slips (7.48 against 7.65 N·m); the wheel shaft's, -196 °C,
+    // cannot fit the inner hub with its maximum at 19.5 µm (105.5 against 100.0 °C).
+    let mut no_smoothing = DesignInputs::default();
+    smoothing_band(&mut no_smoothing);
+    no_smoothing.shaft_joint.smoothing_um = 0.0;
+    assert_eq!(
+        compute_all(&no_smoothing).shaft_joint.check,
+        format!("{FIT_SLIPS} (inner hub): holds 7.48 N·m against 7.65 N·m")
+    );
+    let mut nitrogen = DesignInputs::default();
+    nitrogen.shaft_joint.hub_interference_max_um = 19.5;
+    assert_eq!(nitrogen.shaft_joint.wheel_shaft_fit_C, -196.0);
+    assert_eq!(
+        compute_all(&nitrogen).shaft_joint.check,
+        format!("{CANNOT_BE_FITTED} (inner hub): needs 105.5 °C against 100.0 °C")
+    );
+    // A friction of exactly 0 can be (a lubricated bore comes near it): it is judged, and
+    // holds 0 N·m.
+    let mut frictionless = DesignInputs::default();
+    frictionless.shaft_joint.friction = 0.0;
+    let s = compute_all(&frictionless).shaft_joint;
+    assert_eq!((s.hub_holding_Nm, s.cup_holding_Nm), (0.0, 0.0));
+    assert_eq!(
+        s.check,
+        format!("{FIT_SLIPS} (inner hub): holds 0.00 N·m against 7.65 N·m")
+    );
+}
+
+/// The whole-branch review's smoothing probe: the inner hub's band at 7 to 13 µm and the cup's
+/// maximum at 15 µm (its minimum stays at its default, 15 µm).
+fn smoothing_band(inputs: &mut DesignInputs) {
+    inputs.shaft_joint.hub_interference_min_um = 7.0;
+    inputs.shaft_joint.hub_interference_max_um = 13.0;
+    inputs.shaft_joint.cup_interference_max_um = 15.0;
 }
 
 #[test]
