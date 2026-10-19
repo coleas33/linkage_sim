@@ -4877,16 +4877,9 @@ fn the_shaft_joint_texts_type_the_cure_margin_the_engine_keeps() {
         .find(|row| row.path == "shaft_joint.hub_fit_max_C")
         .map(|row| row.meta.help)
         .expect("the bonded inner hub's fitting limit");
-    let results = result_rows(&compute_all(&defaults));
-    let help_of = |path: &str| {
-        results
-            .iter()
-            .find(|row| row.path == path)
-            .map(|row| row.meta.help)
-            .unwrap_or_else(|| panic!("{path} is a result"))
-    };
-    let result_help = help_of("shaft_joint.hub_fit_allowed_C");
-    let onset_help = help_of("temperature.demag.inner_onset_single_ring_C");
+    let results = compute_all(&defaults);
+    let result_help = help_of(&results, "shaft_joint.hub_fit_allowed_C");
+    let onset_help = help_of(&results, "temperature.demag.inner_onset_single_ring_C");
     let note = notes::note("shaft_joint").expect("the shaft-joint note");
     for (what, text, words) in [
         (
@@ -4918,6 +4911,45 @@ fn the_shaft_joint_texts_type_the_cure_margin_the_engine_keeps() {
         assert!(text.contains(&words), "{what} says {words:?}: {text:?}");
     }
     assert!(!onset_help.contains("stays below it"), "{onset_help}");
+}
+
+/// The help of the result at `path` in `results`.
+fn help_of(results: &DesignResults, path: &str) -> &'static str {
+    result_rows(results)
+        .into_iter()
+        .find(|row| row.path == path)
+        .map(|row| row.meta.help)
+        .unwrap_or_else(|| panic!("{path} is a result"))
+}
+
+/// The B3 review's I-1, from the review leftovers (spec 6.3: nothing false at the five
+/// probes): the inner onset's help defines the onset by heating. A ferrite inner ring (a
+/// positive Hcj coefficient) never reaches its knee on heating, so the row reads +inf, yet it
+/// does demagnetize, on cooling: at the Y30 probe design the inner ring's own cold limit is
+/// above the design's coldest magnet temperature and the cold demagnetization check fails. A
+/// help that defined the onset without heating would read "never" there.
+#[test]
+fn the_inner_onset_help_ties_the_onset_to_heating() {
+    let design = probe_inputs("Y30 ferrite, custom dimensions");
+    let results = compute_all(&design);
+    let demag = &results.temperature.demag;
+    assert!(demag.inner_beta_per_C > 0.0, "a ferrite inner ring");
+    assert_eq!(
+        demag.inner_onset_single_ring_C,
+        f64::INFINITY,
+        "no onset on heating"
+    );
+    assert!(
+        design.metal.min_temp_C < num(demag.inner_cold_limit_C),
+        "the inner ring demagnetizes on cooling"
+    );
+    // The check's pass, from the engine: the same design at its cold limit (equality passes).
+    let mut at_limit = design.clone();
+    at_limit.metal.min_temp_C = num(demag.cold_limit_C);
+    let pass = compute_all(&at_limit).temperature.demag.cold_check;
+    assert_ne!(demag.cold_check, pass, "the cold check fails");
+    let help = help_of(&results, "temperature.demag.inner_onset_single_ring_C");
+    assert!(help.contains("demagnetizes when heated"), "{help}");
 }
 
 // ---------------------------------------------------------------------------------------

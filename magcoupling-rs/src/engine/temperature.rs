@@ -508,7 +508,7 @@ results! {
             inner_magnet_limit_C: f64 => out_rust_only("°C", "Inner ring: magnet design limit",
                 "The inner ring's own limit, whichever ring governs: its onset while skipping minus the design margin, or with a positive beta its rating (no limit without one)."),
             inner_onset_single_ring_C: f64 => out_rust_only("°C", "Inner ring: single-ring onset",
-                "The temperature at which the inner ring alone on its carrier starts to demagnetize, whichever ring governs. The bonded hub's allowed fitting temperature stays at least 10 °C below it."),
+                "The temperature above which the inner ring alone on its carrier demagnetizes when heated, whichever ring governs. The bonded hub's allowed fitting temperature stays at least 10 °C below it."),
             inner_cold_limit_C: NumOrText => out_rust_only("°C", "Inner ring: cold magnet limit",
                 "Positive beta only: the inner ring's cold onset while skipping plus the design margin; 'n/a' otherwise."),
             outer_hcj20_kA_m: f64 => out_rust_only("kA/m", "Outer ring: Hcj at 20 °C used",
