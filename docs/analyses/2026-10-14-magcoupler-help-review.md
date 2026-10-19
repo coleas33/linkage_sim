@@ -3283,3 +3283,140 @@ follows unchanged (full answer:
 - SF-1's observation is an engine observation, not a model change: the boss stands for the web, and the result is
   conservative.
 - R-1 and R-14 stay with T7's physics review, as planned.
+
+### Re-review after task-review fix round 1 (2026-10-19)
+
+BL-064 Task 5's task-review fix round 1 (commit 6f3dbe0) applied the record above's SF-1 and SF-2 word for word, in
+`gui/guidance.rs`. The cup's bore sentence in `not_judged_sentences` now reads "is at least as wide as its boss" and
+"the boss leaves no wall". The `KeywayThroughWall` arm splits by joint: the cup gets its own keyway sentence, on the
+boss's wall, and the inner hub's stays word for word. Both cup sentences end "the check does not judge the web alone".
+`SHAFT_JOINT_NOT_A_NUMBER` reads "a value it reads or works out is not a number". The doc comments around them and the
+README's `src/gui/guidance.rs` row changed with them. These texts stay drafts until Task 8's G-3 review. The changed
+texts had a G-3 text re-review in a fresh context at HEAD 6f3dbe0. The reviewer's report for the record follows
+unchanged (full answer:
+`.superpowers/sdd/2026-10-18-bl064-shaft-joint/textreview-T5-task-review-fix-round-1-1.md`).
+
+- Reviewer: fresh context, session model, 2026-10-19; G-3 text re-review of BL-064 Task 5's changed texts after its
+  task-review fix round 1 (round 1). There was no note text to review: the note `shaft_joint` arrives in Task 7 (the
+  note dump names no note).
+- Verdict: PASS, no must-fix. Each of the three changed texts is true at every one of the 27 designs probed, and each
+  says what the engine rule behind it decides. The inner hub's keyway sentence renders word for word as it did before
+  the arm was split. No trap of spec 6.2 is broken, and no cap applies: the caps cover helps, Whys, note sentences and
+  watch-outs, not Problem sentences. The changed string lines are ASCII only.
+- Should-fix offered, none applied in this round; both stay open for Task 8's G-3 review:
+  - SF-1 (the cup's two no-wall sentences): "the check does not judge the web alone" can also be read as "the check
+    judges more than the web". Both readings are true, but the second hides the point, that the web's own grip is not
+    judged. Offered: end both cup sentences with "the check does not judge the web's own grip." (8 words, as now):
+    "The cup's bore, {coupling.bore_mm}, is at least as wide as its boss, {metal.boss_od_mm}, so the boss leaves no wall to grip the gearbox shaft; the check does not judge the web's own grip."
+    and "The cup's keyway, {coupling.keyway_depth_mm} deep, cuts through the boss's wall around its {coupling.bore_mm} bore, so the boss has no closed ring to grip the gearbox shaft; the check does not judge the web's own grip."
+    The whole-text pins at `guidance.rs:6917`, `:7071` and `:7076` move; the form words at `:3385` and `:3398` stay.
+  - SF-2 (the cup's keyway sentence): it quotes the keyway depth and the bore but not the boss's diameter, the third
+    number that decides the verdict, so a user cannot see why the wall is too thin. Offered, naming the wall by its two
+    edges, with SF-1: "The cup's keyway, {coupling.keyway_depth_mm} deep, cuts through the boss's wall between its {coupling.bore_mm} bore and its {metal.boss_od_mm} outside diameter, so the boss has no closed ring to grip the gearbox shaft; the check does not judge the web's own grip."
+    Without SF-1: "The cup's keyway, {coupling.keyway_depth_mm} deep, cuts through the boss's wall between its {coupling.bore_mm} bore and its {metal.boss_od_mm} outside diameter, so the boss has no closed ring to grip the gearbox shaft; the check does not judge the web alone."
+    At boss 12 it renders 39 words. The arm adds `input_text(inputs, "metal.boss_od_mm")`, and the pin at `:7076`
+    moves. The inner hub's keyway sentence cannot do the same: its wall runs to the flats' incircle, which is not an
+    input (round 1's R-5).
+- No text changed in this round.
+
+**Report for the record (as returned).**
+
+**R-1. What was verified true, claim by claim, against `engine/shaft_joint.rs`.**
+- **`SHAFT_JOINT_NOT_A_NUMBER`: "a value it reads or works out is not a number".**
+  - **When it shows.** Only when `shaft_joints` is `None` for `UNKNOWN_NOT_A_NUMBER`. `verdict` gives that when an
+    input, a link, or a compared term of a judged joint is NaN (`:807-816`). "Reads" covers the first two cases and
+    "works out" the third, so the sentence covers every case and claims nothing outside them.
+  - **Bore 0.**
+    - The pressure per µm is 1e-3/(0·…) = +inf.
+    - The contact arc is max(0, π·0 − 3.0) = 0, or π·0 = 0 keyless.
+    - So the holding per µm is f·inf·0·… = NaN.
+    - Both parts keep a wall (boss 22 > 0, and the hub's incircle > 0), so both joints are judged and the NaN holding
+      is a compared term. Keyed and keyless read alike.
+  - **Probed:** bore 0 keyed and keyless, boss NaN, keyway NaN and adhesive 0. Each reads the sentence alone, with no
+    fix, under the badge "Shaft joint check unknown: a value is not a number", which agrees with it.
+  - **Length.** 18 words. No cap applies; round 1's record already corrected its "15 words".
+- **The cup's bore sentence: "is at least as wide as its boss".**
+  - **The rule.** It shows for `NoWall::BoreAsWideAsPart` on the cup, the engine's `!(boss_od_mm > bore_mm)`.
+  - **No reversed numbers.** A NaN boss is a link, so it reads "not a number" first. Wherever this sentence shows, the
+    bore is at least the boss numerically. The readout's rounding is monotonic, so the quoted bore never reads below
+    the quoted boss. Probed:
+    - 12.00 against 12.00;
+    - 16.00 against 16.00 and against 12.00;
+    - 10.00 against "0 mm" and against "-22.00 mm" (PD-1's typed bosses).
+- **"so the boss leaves no wall to grip the gearbox shaft".** A bore at least as wide as the boss removes the boss's
+  material all round, and a boss typed at or below zero has none.
+- **"the check does not judge the web alone".**
+  - `joint_specs` takes the boss's diameter over `boss_length_mm + web_mm`, so the check never judges the web by
+    itself.
+  - The web is the cup's rear wall and runs out to the cup's diameter (`model.rs:1256`), so it still surrounds the
+    bore.
+  - At boss length 0 (bore 16, boss 12) the web alone carries the fit, and the clause says exactly what is true.
+- **The cup's keyway sentence.**
+  - **The rule.** `(boss_od_mm − bore_mm)/2 <= keyway_depth_mm`, with a keyway (depth above 0), tested after the bore
+    rule.
+  - **The physics.** The depth is cut into the bore (its help), so the slot's floor reaches the bore's radius plus
+    the depth, at or past the boss's radius. The keyway is through the boss's wall, and the boss is an open ring: "no
+    closed ring" holds.
+  - **The web.** Its wall reaches the cup's diameter and is far thicker than the keyway slider's top, 4.0 mm, so the
+    web alone is still not judged here either.
+  - **Where it shows:**
+    - boss 12 (the slider's bottom) with the default 1.7 mm keyway: a 1.0 mm wall;
+    - bore 16 with boss 17: 0.5 mm;
+    - bore 16 with keyway 4.0: 3.0 mm;
+    - a typed bore of 21: 0.5 mm.
+  - **The rule's edge.** Boss 13.4 with bore 10 gives a wall of 1.7000000000000002 mm, above 1.7, and passes. Boss
+    13.5 passes too.
+- **The inner hub's keyway sentence.** At bore 16 with keyway 2.1, and with keyway 4.0, it renders "The inner hub's
+  keyway, 2.100 mm deep, cuts through the wall around its 16.00 mm bore, so the fit has no closed ring to grip the
+  wheel shaft." That is the old shared template with the inner hub's name and shaft.
+- **Order and fixes, unchanged by the fix.**
+  - The determinate joint's causes and window come first, then the inner hub's not-judged sentence, then the cup's.
+  - With the cup's band also reversed, the cup's keyway sentence is followed by its band sentence.
+  - With both joints indeterminate, or one joint indeterminate and the other passing, no fix shows.
+  - Where the inner hub slips beside a cup with no wall, the inner hub's three slip fixes show (boss 12 with a hub
+    minimum of 8; bore 16 with boss 12).
+
+**R-2. Traps.**
+- **Trap 20.** The clause names what is not judged and claims nothing about it is fine.
+- **Trap 21.** No "clamp"; the texts say "grip", as the trap asks.
+- **Trap 11.** The gearbox shaft is named only as the shaft gripped, with no advice about it.
+- **Trap 22.** The texts are ASCII only.
+  - "web" is the input's own label word ("Integral steel rear web thickness"), and the guide already says "its boss
+    and web".
+  - "boss" is the input's own label word ("Shaft boss outside diameter").
+- **The other traps.** None applies: the texts quote no torque, temperature, fit class or interference.
+- **The word scan.** None of these is in the three texts: clamp, heat, safe, protect, strongest, at most, most
+  expected, permanent, backlash, induction, up to.
+
+**R-3. Spec 5.2's drafts still read the old words (`2026-10-17-bl064-shaft-joint-design.md:707-714`).**
+- **Not drift to fix in this round.**
+  - The spec has not been edited since its approval (`0687034`).
+  - Section 5.2 calls these texts drafts whose final words the G-3 review sets.
+  - Round 1's "Spec 5.2's drafts follow" was not carried out, and it need not be.
+- **For Task 8.** Its G-3 record should quote the words as shipped.
+- **For Task 9.** Its sweep may note the difference from the spec.
+- **Historical copies.** The plan's text (`:11395-11397`, `:11667-11685`), the T5 brief and round 1's record also
+  keep the old words. All three are historical, so leave them.
+
+**R-4. The badge is not changed text (T8 row 3).**
+- `UNKNOWN_NO_WALL` reads "Shaft joint check unknown: no wall around the bore (cup)". It states the same model fact
+  that round 1's SF-1(b) addressed in the Problem.
+- After "unknown" it reads as the check's reason, and the Problem under it now says the web's grip is not judged, so
+  the two read together.
+- No change recommended.
+
+**R-5. Round 1's R-5 stands for the inner hub's keyway sentence.** The sentence treats the flats' incircle as the
+wall, which is the engine's conservative wall. Its words did not change in this fix. Leave it.
+
+**R-6. A typed bore at or below zero is never named.**
+- Bore 0 reads "not a number". Bore -5 is judged and slips, reading "holds 0 N·m" (round 1's R-6).
+- Both are off the bore slider (4-16 mm), and neither reads a pass.
+- A sentence that names the bore would be a new form. That is the owner's call, and not a fix for this round.
+
+**R-7. Code checks in passing (not text).**
+- The split keyway arm hard-codes "wheel shaft" and "gearbox shaft", as the bore arm already did.
+- `JointSide::shaft` is still read by the fitting sentence (`guidance.rs:2039`), so the split leaves nothing orphaned.
+- The doc comments at `:346-349`, `:1960-1961` and `:2233-2235`, and the README row, describe the new texts
+  correctly.
+
+**R-8. No model question arises.** No changed text asks to change the engine.
