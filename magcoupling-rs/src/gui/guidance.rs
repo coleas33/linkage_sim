@@ -3446,10 +3446,63 @@ mod tests {
         ]
     }
 
+    /// A value typed below what its input can physically be: (an edit that types it so, the one
+    /// sentence the shaft joints' Problem then reads).
+    type ImpossibleValueCase = (fn(&mut DesignInputs), &'static str);
+
+    /// Each input a value can be typed below what it can physically be (the whole-branch
+    /// review's MF-1), in the inputs' order.
+    fn impossible_value_cases() -> [ImpossibleValueCase; 6] {
+        [
+            (
+                |i| i.shaft_joint.friction = -0.14,
+                "Shrink-fit friction coefficient, -0.1400, cannot physically be below zero: enter at least 0.05000, its slider's bottom.",
+            ),
+            (
+                |i| i.shaft_joint.smoothing_um = -3.0,
+                "Surface smoothing of the fit, -3.000 µm, cannot physically be below zero: enter at least 0 µm, its slider's bottom.",
+            ),
+            (
+                |i| i.shaft_joint.key_width_mm = 0.0,
+                "Shaft key width, 0 mm, cannot physically be zero or below: enter at least 1.000 mm, its slider's bottom.",
+            ),
+            (
+                |i| i.shaft_joint.wheel_shaft_fit_C = -300.0,
+                "Wheel shaft temperature at fitting, -300.0 °C, cannot physically be below absolute zero: enter at least -196.0 °C, its slider's bottom.",
+            ),
+            (
+                |i| i.shaft_joint.output_shaft_fit_C = -300.0,
+                "Gearbox shaft temperature at fitting, -300.0 °C, cannot physically be below absolute zero: enter at least -20.00 °C, its slider's bottom.",
+            ),
+            (
+                |i| i.shaft_joint.joining_clearance_um = -2.0,
+                "Joining clearance, -2.000 µm, cannot physically be below zero: enter at least 0 µm, its slider's bottom.",
+            ),
+        ]
+    }
+
+    /// Two values typed below what they can physically be at once ([`impossible_value_cases`]):
+    /// the gearbox shaft, then the friction, the other order than the inputs'.
+    fn two_impossible_values(i: &mut DesignInputs) {
+        let [friction, .., gearbox_shaft, _] = impossible_value_cases();
+        (gearbox_shaft.0)(i);
+        (friction.0)(i);
+    }
+
     /// One design per sentence form of the shaft joints' Problem (spec 5.2), each the passing
     /// design with joint inputs moved: (its name, the design, words its Problem holds, the
     /// form's own). Few of them are in [`designs`]; their Problems join [`every_text`].
     fn shaft_joint_problem_designs() -> Vec<(&'static str, DesignInputs, &'static str)> {
+        // Each value below what its input can physically be, its words its whole sentence.
+        let [
+            friction,
+            smoothing,
+            key_width,
+            wheel_shaft,
+            gearbox_shaft,
+            clearance,
+        ] = impossible_value_cases();
+        let typed = |name, (edit, sentence): ImpossibleValueCase| (name, breaking(edit), sentence);
         vec![
             (
                 "inner hub slips",
@@ -3536,10 +3589,16 @@ mod tests {
                 breaking(|i| i.shaft_joint.safety_factor = 0.0),
                 "The safety factor,",
             ),
+            typed("a friction below zero", friction),
+            typed("a smoothing below zero", smoothing),
+            typed("a key width of zero", key_width),
+            typed("a wheel shaft below absolute zero", wheel_shaft),
+            typed("a gearbox shaft below absolute zero", gearbox_shaft),
+            typed("a joining clearance below zero", clearance),
             (
-                "a value it cannot physically be",
-                breaking(|i| i.shaft_joint.friction = -0.14),
-                "cannot physically be below zero",
+                "two values it cannot physically be",
+                breaking(two_impossible_values),
+                "its slider's bottom. Gearbox shaft temperature at fitting",
             ),
             (
                 "gearbox shaft below its slider's bottom",
@@ -7848,33 +7907,7 @@ mod tests {
         // typed below what it can physically be, in the inputs' order, each with its label, its
         // value, its floor and its slider's bottom; nothing else, and no fix.
         let joint = guide(SHAFT_JOINT).unwrap();
-        type Edit = fn(&mut DesignInputs);
-        let cases: [(Edit, &str); 6] = [
-            (
-                |i| i.shaft_joint.friction = -0.14,
-                "Shrink-fit friction coefficient, -0.1400, cannot physically be below zero: enter at least 0.05000, its slider's bottom.",
-            ),
-            (
-                |i| i.shaft_joint.smoothing_um = -3.0,
-                "Surface smoothing of the fit, -3.000 µm, cannot physically be below zero: enter at least 0 µm, its slider's bottom.",
-            ),
-            (
-                |i| i.shaft_joint.key_width_mm = 0.0,
-                "Shaft key width, 0 mm, cannot physically be zero or below: enter at least 1.000 mm, its slider's bottom.",
-            ),
-            (
-                |i| i.shaft_joint.wheel_shaft_fit_C = -300.0,
-                "Wheel shaft temperature at fitting, -300.0 °C, cannot physically be below absolute zero: enter at least -196.0 °C, its slider's bottom.",
-            ),
-            (
-                |i| i.shaft_joint.output_shaft_fit_C = -300.0,
-                "Gearbox shaft temperature at fitting, -300.0 °C, cannot physically be below absolute zero: enter at least -20.00 °C, its slider's bottom.",
-            ),
-            (
-                |i| i.shaft_joint.joining_clearance_um = -2.0,
-                "Joining clearance, -2.000 µm, cannot physically be below zero: enter at least 0 µm, its slider's bottom.",
-            ),
-        ];
+        let cases = impossible_value_cases();
         for (edit, sentence) in cases {
             let inputs = breaking(edit);
             let results = compute_all(&inputs);
@@ -7895,10 +7928,7 @@ mod tests {
             assert_eq!(fixes(joint, &inputs, &results, false), [], "{sentence}");
         }
         // Two at once, typed in the other order: both sentences, in the inputs' order.
-        let inputs = breaking(|i| {
-            i.shaft_joint.output_shaft_fit_C = -300.0;
-            i.shaft_joint.friction = -0.14;
-        });
+        let inputs = breaking(two_impossible_values);
         let results = compute_all(&inputs);
         assert_eq!(
             shaft_joint_problem(&inputs, &results).as_deref(),
