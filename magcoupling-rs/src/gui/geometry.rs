@@ -1018,7 +1018,7 @@ mod tests {
     }
 
     #[test]
-    fn the_key_takes_the_shaft_joints_width_and_never_the_paused_clamp_s() {
+    fn the_key_takes_the_shaft_joints_width_and_never_the_paused_clamps() {
         // BL-064 (spec 5.4): the key's sides sit at half the shaft joints' key width either side
         // of the x axis, from where they cross the bore to the keyway's depth past it, in both
         // states; the paused clamp's own key width moves nothing in the drawing; with no keyway (a
