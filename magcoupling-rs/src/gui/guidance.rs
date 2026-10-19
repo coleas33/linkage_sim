@@ -2139,10 +2139,11 @@ fn term_sentence(
     }
 }
 
-/// What sets the allowed fitting temperature of the joint of `side`, with its live number (trap
-/// 9): the cup's is your limit for the bare cup; the bonded inner hub's is the lowest of three
-/// (owner R-15), named by the engine's own rule ([`shaft_joint::hub_fit_allowed`]), so the
-/// number and its name come from one place.
+/// What sets the allowed fitting temperature of the joint of `side` (trap 9): the cup's is your
+/// limit for the bare cup, whose number the sentence already quotes as the allowed temperature;
+/// the bonded inner hub's is the lowest of three (owner R-15), each with its live number, named
+/// by the engine's own rule ([`shaft_joint::hub_fit_allowed`]) on the engine's own links
+/// ([`shaft_joint_links`]), so the number and its name come from one place.
 fn fitting_source(inputs: &DesignInputs, results: &DesignResults, side: &JointSide) -> String {
     if side.name != shaft_joint::INNER_HUB {
         return "your limit for the bare cup".to_owned();
