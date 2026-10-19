@@ -37,7 +37,7 @@ Where a line number has moved because of an earlier task, trust the code and kee
   Claude-Session: https://claude.ai/code/session_01UW1Rcc7PfLxGH7NQJ5srin
   ```
   Every message file in this plan quotes these plan-time lines. If the executing session's reminder names another model or another session, write its two lines instead, in every message file. A trailer names the model and session that made the commit, never ones copied from this plan.
-- **Commit messages:** written with the Write tool to `.superpowers/sdd/2026-10-17-bl064-shaft-joint/msg/T<n>.txt`, or `T<n>-fix-<k>.txt`, `plan.txt` (Before Task 1) and the names T7, T8 and T10 give. Then `git commit -F <file>`. Never pipe a heredoc.
+- **Commit messages:** written with the Write tool to `.superpowers/sdd/2026-10-17-bl064-shaft-joint/msg/T<n>.txt`, or `T<n>-fix-<k>.txt`, `plan-review.txt` (Before Task 1) and the names T7, T8 and T10 give. Then `git commit -F <file>`. Never pipe a heredoc.
 - **Staging:** files by name only. Never `git add -A` or `git add .`. Never stage the owner's untracked `docs/analyses/2026-05-28-press-4bar-analysis.md`. T8 Step 7 and T10 Step 3 name their files at run time, because the review decides what changes: list them from `git status --short`, one by one. T10's commits are Steps 3, 7 and 9. Its last step, Step 11, commits nothing: the branch delete and the auto-memory are outside the repo.
 - **Build ledger:** the superpowers:subagent-driven-development skill's `progress.md`, in the workspace its `sdd-workspace` script derives from this plan's file name: `.superpowers/sdd/2026-10-18-bl064-shaft-joint/progress.md`. That is not the planning folder `.superpowers/sdd/2026-10-17-bl064-shaft-joint/` (`$W` in the steps), which holds the message files and the release tools. BL-059's plan and workspace shared one name; BL-064's do not. Each task review's deferred minor finding goes into the ledger as one line, `Task <N>: minor (deferred): <one-liner>`, the skill's form. A build under superpowers:executing-plans keeps the same file and lines by hand. T10 Step 8 reads them.
 - **TDD:** red, then green. A task that adds tests only shows its red by planted faults, each undone afterwards.
@@ -84,7 +84,7 @@ These five inputs or conditions are the most likely to bite a user and have no l
 1. **A typed value no slider reaches.**
    - A bore of 0 reads unknown, never a pass.
    - A key wider than the bore's circumference holds 0 N·m, with no window sentence.
-   - A part diameter at or below zero reads "no wall" (unknown), never a pass (ruling C-3).
+   - A part diameter at or below zero (the cup's boss, or the inner hub keyed or not) reads "no wall" (unknown), never a pass (ruling C-3; plan review 3A).
    - A safety factor at or below zero reads unknown, never a pass with negative key pressures (ruling C-4).
 
    T2, T5.
@@ -101,9 +101,9 @@ These five inputs or conditions are the most likely to bite a user and have no l
   - T3 edits the README chain list;
   - T2 edits the README "gearbox" filter clause.
 - **C-2.** A-5, A-6, A-7, A-10, A-12, A-13, A-16, A-17 and A-18 are adopted as written.
-- **C-3 (A-8).** A part diameter at or below zero, typed and reachable on no slider, reads "no wall" (unknown), never a judged wall. The test is `!(spec.outer_diameter_mm > d)` instead of `q >= 1.0`. The records and a test follow. This is plan deviation PD-1 from spec 3.1, which judged such a value. It handles a typed edge the spec did not name, and the owner confirms it in the plan review (Open owner questions, below).
-- **C-4 (A-9, option A).** A safety factor at or below zero reads "Shaft joint check unknown: the safety factor is not above zero" (Caution, no fix, its Problem asks for at least 1). The G-3 review covers its text, and `tests/robustness.rs` pins 0 and -1. Plan deviation PD-2; the owner confirms it in the plan review (Open owner questions, below).
-- **C-5 (A-11).** At a keyway depth of 0 or less, the drawing draws no key, because the check then has no key term. It is a local guard in `geometry.rs`, and the reviewed joint code is untouched. A NaN depth keeps its "not drawn" note. Plan deviation PD-3, **an owner decision in the plan review**: folded in as recommended. A decline is taken out before Task 1, as the Open owner questions below say.
+- **C-3 (A-8).** A part diameter at or below zero, typed and reachable on no slider, reads "no wall" (unknown), never a judged wall. The test is `!(spec.outer_diameter_mm > d)` instead of `q >= 1.0`. The records and a test follow. This is plan deviation PD-1 from spec 3.1, which judged such a value. It handles a typed edge the spec did not name, and the owner confirmed it in the plan review (1A, below).
+- **C-4 (A-9, option A).** A safety factor at or below zero reads "Shaft joint check unknown: the safety factor is not above zero" (Caution, no fix, its Problem asks for at least 1). The G-3 review covers its text, and `tests/robustness.rs` pins 0 and -1. Plan deviation PD-2; the owner confirmed it in the plan review (1A, below).
+- **C-5 (A-11).** At a keyway depth of 0 or less, the drawing draws no key, because the check then has no key term. It is a local guard in `geometry.rs`, and the reviewed joint code is untouched. A NaN depth keeps its "not drawn" note. Plan deviation PD-3, an owner decision: the owner kept it in the plan review (2A, below).
 - **C-6 (A-14, contract).** Task ownership follows the drafts:
   - the inputs-panel placement and `PACKAGE_LABELS` are T2's (DEV-1);
   - `CHAIN_LABELS` is T3's;
@@ -122,7 +122,7 @@ These five inputs or conditions are the most likely to bite a user and have no l
   - **The drafts' T8 item C5 (not ruling C-5), the paused clamp's key-width help, is declined.** Owner decision 6A keeps the paused section's texts unchanged, so T8 does not offer it.
   - **BL-072** stays its own item, tied to the owner's approved correction E24 and to BL-057 (D-F).
   - **The T7 physics review.** If it asks to change the engine model (R-1, R-2, R-3 or R-14), T7 stops and reports: that is the owner's call.
-- **C-9. Backlog priorities** BL-069 3, BL-070 2, BL-071 2, BL-072 2, as drafted: the owner confirms or re-ranks them in the plan review.
+- **C-9. Backlog priorities** BL-069 3, BL-070 2, BL-071 2, BL-072 2, as drafted: the owner kept them in the plan review.
 
 ## Plan deviations from the spec
 
@@ -131,45 +131,47 @@ These five inputs or conditions are the most likely to bite a user and have no l
 - **PD-3 (C-5).** No key is drawn at a keyway depth of 0 or less.
 - **The drafters' deviations** (DEV-1..5, DV-B1..3, DV-C1..8, D-1..9, D-E's and D-F's) are renumbered PD-4 to PD-43, each with its drafter label, where it lives and its ruling, in the section `## Deviation index` at the end of this plan. The per-task test counts are in `## Per-task test counts` after it, and where each amendment landed is in `## Amendment ledger`.
 
-## Open owner questions (answered in the plan review, before Task 1)
+## Plan review (owner, 2026-10-18: SMALL CHANGE, every recommended option)
 
-1. **PD-1** (ruling C-3): a typed part diameter at or below zero reads "no wall" (unknown).
-2. **PD-2** (ruling C-4): a typed safety factor at or below zero reads unknown.
-3. **PD-3** (ruling C-5): no key is drawn at a keyway depth of 0 or less.
-4. **The backlog priorities** (ruling C-9): BL-069 3, BL-070 2, BL-071 2, BL-072 2, as drafted.
+The owner reviewed this plan one question per review section and took every recommended option. Each answer is folded into the tasks.
 
-The drafts' T8 item C5 is not open: it is declined (C-8, PD-31). PD-1 to PD-3 are folded into the tasks as recommended. A re-ranked priority is written as T9 Step 10 says: its `priority:` lines and Step 12's priority assertion.
+| # | Question | Answer |
+|---|---|---|
+| 1 | Do the two typed edges read unknown: a part diameter at or below zero (PD-1, ruling C-3) and a safety factor at or below zero (PD-2, ruling C-4)? | **1A.** Both read unknown, as folded in: a non-positive part diameter reads "no wall", and a safety factor at or below zero reads unknown. |
+| 2 | Is a key drawn at a keyway depth of 0 or less (PD-3, ruling C-5)? | **2A.** No key is drawn there, as folded in (the local guard in `geometry.rs`). |
+| 3 | Add the two missing edge tests? | **3A.** Both are added with exact code, each in an existing test. (a) T2 Step 1, beside the cup's -22 mm boss in `a_joint_with_no_wall_reads_nan_and_is_not_judged`: the inner hub's part diameter, 2 · (apothem − bondline), is typed at 0 and at -40.4 mm, keyless and keyed. It reads `format!("{UNKNOWN_NO_WALL} ({INNER_HUB})")` and is never judged; T2 Step 5 shows its red against the spec's `q >= 1.0`. (b) T4 Step 2, in `the_key_takes_the_shaft_joints_width_and_never_the_paused_clamp_s`: a keyway depth that is not a number keeps its "not drawn" note and draws no key, in both clamp states; T4 Step 5 shows its red against a guard that drops a NaN. No count moves. |
+| 4 | Change anything for speed? | **4A.** No performance change. Measured on the integrated prototype (native release, the clamp section paused): `all_fixes` takes 148.6 µs at the defaults, against 151 µs before BL-064; `compute_all` takes 17.6 µs. |
 
-**If the owner declines PD-1, PD-2 or PD-3,** the controller takes it out of this plan's text before the plan is committed (Before Task 1), never during a task. Every place the `## Amendment ledger` lists under its amendment goes back to the drafts' behaviour that `plan-critique.md` describes under the same amendment:
-- **PD-1 (A-8):** `joint`'s no-wall test stays `if q >= 1.0 {`, and the records keep `[Q] >= 1`. The boss-at-−22 mm assertion and the A-8 doc and record lines go.
-- **PD-2 (A-9):** the critique's option B. `UNKNOWN_SAFETY_FACTOR`, its Caution arm, its Problem sentence, its T8 strings rows and its doc lines go. The `for factor in [0.0, -1.0]` loop leaves `degenerate_shaft_joint_inputs_never_pass`, whose name it would then contradict, for a test of its own in `tests/robustness.rs` that pins the verdict the spec's code gives at 0 and −1 (the critique's probe read a pass). `robustness` then counts 14 from T2 on, and the Per-task test counts' T2 row says so.
-- **PD-3 (A-11):** no guard in T4 Step 4, no keyway-0 check in T4 Step 2, and none of the A-11 words in T4's head, Files and Interfaces, README edit (f), `03-structure.yaml` edit (a), T4 Step 16's message or T9 Step 7's tracker.
-
-Each Old/New pair a removal touches is then checked against the file it edits, and the PD line above is marked "declined by the owner". No other count moves: PD-1 and PD-3 add assertions to existing tests only.
+The backlog priorities stand as drafted (ruling C-9): BL-069 3, BL-070 2, BL-071 2, BL-072 2. Two more choices of ruling C-8 also stand. The first is the shared rounding helpers (D-D D-5, PD-24). The second is the engine's public joint terms: `Cause`, `JointTerms`, `joints`, `failing`, `verdict` and `api::shaft_joint_links` (D-A Q6). The drafts' T8 item C5 stays declined (C-8, PD-31).
 
 ## Before Task 1 (controller)
 
-At session start the plan file is untracked, and every task's `git status --short` check expects only the owner's `?? docs/analyses/2026-05-28-press-4bar-analysis.md`. So the plan is committed first, as BL-059's was (819c040, its review recorded in 0ac7b30):
+The plan was committed before its review (24eb057). The review folded in above leaves the file modified, and every task's `git status --short` check expects only the owner's `?? docs/analyses/2026-05-28-press-4bar-analysis.md`. So the reviewed plan is committed first, as BL-059's review was (its plan 819c040, its review recorded in 0ac7b30):
 
-1. Fold the owner's answers to the Open owner questions into this plan's text.
-2. Write `.superpowers/sdd/2026-10-17-bl064-shaft-joint/msg/plan.txt` with the Write tool:
+1. Write `.superpowers/sdd/2026-10-17-bl064-shaft-joint/msg/plan-review.txt` with the Write tool:
    ```text
-   docs(magcoupler): BL-064 shaft joint implementation plan (T1-T10)
+   docs(magcoupler): record the owner's BL-064 plan review (1A-4A)
 
-   <one paragraph: the ten tasks from the approved spec (0687034), the critique's 18
-   amendments folded in, and the owner's answer to each open question: PD-1, PD-2 and
-   PD-3 kept or declined, the BL-069 to BL-072 priorities>
+   The owner reviewed the plan one question per section (SMALL CHANGE) and took every
+   recommended option: a part diameter typed at or below zero reads "no wall" and a
+   safety factor at or below zero reads unknown (PD-1, PD-2); no key is drawn at a
+   keyway depth of 0 or less (PD-3); two edge tests added to existing tests, an inner
+   hub typed at or below zero (T2) and a keyway depth that is not a number (T4), each
+   shown red by a planted fault; no performance change (all_fixes 148.6 us at the
+   defaults against 151 us before BL-064). The backlog priorities stand: BL-069 3,
+   BL-070 2, BL-071 2, BL-072 2.
 
    Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
    Claude-Session: https://claude.ai/code/session_01UW1Rcc7PfLxGH7NQJ5srin
    ```
-3. Commit it:
+2. Commit it:
    ```bash
+   git status --short
    git add docs/superpowers/plans/2026-10-18-bl064-shaft-joint.md
-   git commit -F .superpowers/sdd/2026-10-17-bl064-shaft-joint/msg/plan.txt
+   git commit -F .superpowers/sdd/2026-10-17-bl064-shaft-joint/msg/plan-review.txt
    git status --short
    ```
-   Expected: one commit of 1 file; `git status --short` then shows only `?? docs/analyses/2026-05-28-press-4bar-analysis.md`.
+   Expected: the first status shows ` M docs/superpowers/plans/2026-10-18-bl064-shaft-joint.md` and the owner's `?? docs/analyses/2026-05-28-press-4bar-analysis.md`. Then one commit of 1 file, and the last status shows only the owner's file.
 
 During the build, progress and rulings go into the build ledger, not into this plan. A plan edit made anyway (a ticked checkbox included) is committed by name, with its own message file, before the next task's status check.
 
@@ -2488,6 +2490,36 @@ fn a_joint_with_no_wall_reads_nan_and_is_not_judged() {
         i.metal.boss_od_mm = -22.0;
     });
     assert_eq!(check(&negative_boss), format!("{UNKNOWN_NO_WALL} ({CUP})"));
+    // The inner hub's half (plan review 3A): its part diameter, 2 · (apothem − bondline), typed
+    // at 0 mm (the apothem typed at the bondline) and at -40.4 mm (the apothem typed -10.15 mm),
+    // each keyless and at the default 1.7 mm keyway. The hub has no wall and is not judged, and
+    // the cup holds, where `q >= 1` would have judged the keyless -40.4 mm hub with the numbers
+    // of a +40.4 mm one (a pass) and read the keyed one as cut through by its keyway.
+    for apothem in [DesignInputs::default().metal.bond_inner_mm, -10.15] {
+        for keyway in [0.0, 1.7] {
+            let typed = design(|i| {
+                i.coupling.inner_back_apothem_mm = apothem;
+                i.coupling.keyway_depth_mm = keyway;
+            });
+            let what = format!("apothem {apothem} mm, keyway {keyway} mm");
+            assert_eq!(
+                check(&typed),
+                format!("{UNKNOWN_NO_WALL} ({INNER_HUB})"),
+                "{what}"
+            );
+            let joints = terms(&typed);
+            assert_eq!(joints[0].no_wall, Some(NoWall::BoreAsWideAsPart), "{what}");
+            assert!(shaft_joint::failing(&joints).is_empty(), "{what}");
+            let s = compute_all(&typed).shaft_joint;
+            assert!(
+                s.hub_holding_Nm.is_nan()
+                    && s.hub_bore_stress_MPa.is_nan()
+                    && s.hub_needed_um.is_nan()
+                    && s.hub_elastic_max_um.is_nan(),
+                "{what}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -2905,10 +2937,12 @@ Expected: neither compiles:
 ```text
 error[E0432]: unresolved imports `magcoupling::engine::shaft_joint`, `magcoupling::engine::shaft_joint`
 error[E0432]: unresolved import `magcoupling::engine::api::shaft_joint_links`
-error[E0609]: no field `shaft_joint` on type `DesignResults`      (41 of these; 33 more on `DesignInputs`, `&DesignInputs` and `&mut DesignInputs`)
-error: could not compile `magcoupling-rs` (test "shaft_joint") due to 76 previous errors
+error[E0609]: no field `shaft_joint` on type `DesignResults`      (42 of these; 33 more on `DesignInputs`, `&DesignInputs` and `&mut DesignInputs`)
+error: could not compile `magcoupling-rs` (test "shaft_joint") due to 77 previous errors
 error: could not compile `magcoupling-rs` (test "robustness") due to 7 previous errors
 ```
+
+(Measured on Task 1's prototype tree with this step's file: 41 and 76 before the plan review's inner-hub case, whose `compute_all(&typed).shaft_joint` adds one. That case, in `a_joint_with_no_wall_reads_nan_and_is_not_judged`, is red here with the rest of the file; Step 5 shows its own red against the spec's `q >= 1.0`.)
 
 Run: `cargo test --manifest-path magcoupling-rs/Cargo.toml --test schema engine_owned_help_is_plain_and_short`
 
@@ -3972,6 +4006,27 @@ Expected: `shaft_joint` `test result: ok. 30 passed; 0 failed`; `robustness` `te
 
 The defaults reproduce spec 3.5 (prototype, full precision): required 7.646620740977276 N·m; holding 9.4844 / 16.8990 N·m; bore stress 241.701 / 312.532 MPa against 345.8333; key 127.444 / 101.955 MPa; needed 12.0815 / 11.3098 µm, elastic 23.8076 / 23.8626, fittable 18.8281 / 24.4400; fitting 93.2674 / 280.1626 °C against 100 / 300; wheel shaft shrink 18.9881 µm; "Both shaft joints hold and can be fitted". Every row of spec 3.6 the tests name reads as the spec gives it.
 
+Then prove that `a_joint_with_no_wall_reads_nan_and_is_not_judged` pins ruling C-3 on both joints (plan review 3A). Both files are new and untracked, so each undo is checked by grep, not by `git diff`. Use the Run command above for every run.
+1. In `magcoupling-rs/src/engine/shaft_joint.rs`, `joint`, replace `    let no_wall = if !(spec.outer_diameter_mm > d) {` with the spec's `    let no_wall = if q >= 1.0 {`. Expected: `shaft_joint` `test result: FAILED. 29 passed; 1 failed`, at the cup's -22 mm boss:
+   ```text
+     left: "Both shaft joints hold and can be fitted"
+    right: "Shaft joint check unknown: no wall around the bore (cup)"
+   ```
+   `robustness` passes (13).
+2. Keep fault 1. In `magcoupling-rs/tests/shaft_joint.rs`, replace `    assert_eq!(check(&negative_boss), format!("{UNKNOWN_NO_WALL} ({CUP})"));` with `    let _ = negative_boss;`. Expected: `test result: FAILED. 29 passed; 1 failed`, now at the inner hub:
+   ```text
+   assertion `left == right` failed: apothem -10.15 mm, keyway 0 mm
+     left: "Both shaft joints hold and can be fitted"
+    right: "Shaft joint check unknown: no wall around the bore (inner hub)"
+   ```
+   (Keyed, the same fault reads `Some(KeywayThroughWall)` against `Some(BoreAsWideAsPart)` at `apothem -10.15 mm, keyway 1.7 mm`: the no-wall kind is asserted too.)
+3. Undo both. Run:
+   ```bash
+   grep -c 'if !(spec.outer_diameter_mm > d) {' magcoupling-rs/src/engine/shaft_joint.rs
+   grep -c 'assert_eq!(check(&negative_boss), format!("{UNKNOWN_NO_WALL} ({CUP})"));' magcoupling-rs/tests/shaft_joint.rs
+   ```
+   Expected: `1` and `1`; the Run command above again reads 30 and 13 passed.
+
 - [ ] **Step 6: Run the engine suite; move the gearbox test and re-bless the input schema**
 
 Run: `cargo test --manifest-path magcoupling-rs/Cargo.toml --no-fail-fast`
@@ -4601,7 +4656,7 @@ at the rating passes, +inf fails. Fatigue from repeated slips is not checked: th
 ```
 New:
 ```text
-| `tests/shaft_joint.rs` | BL-064 shaft joints end to end and on `joint`: the 15 inputs and 24 results are Rust-only, in the spec's order, after the clamp inputs and the gearbox results; the verdict texts; per µm (inner hub 7.738 MPa, 2.0009 N·m, 17.930 MPa; cup 8.132, 2.5073, 17.879); the defaults pass (holding 9.4844 / 16.899 against 7.6466 N·m, bore stress 241.70 / 312.53 against 345.83 MPa, key 127.44 / 101.95 MPa, fitting 93.267 / 280.16 against 100 / 300 °C; windows 12.08-18.83 and 11.31-23.86 µm); the BL-067 corner reads cold-high (6.3647 N·m) and passes; the five probe designs (304 slips at the inner hub); a band minimum too low slips at its joint, a maximum too high is over the stress limit with the fitting cause after it; causes in order, then the inner hub before the cup; the 304 and aluminium windows are empty; 416 loosens cold, 304 hot; an uncooled or dry-ice wheel shaft cannot fit the inner hub; the allowed hub temperature is the lowest of three (owner R-15: N42 parts 59.83 °C, N50M 88.80 °C, ferrite never capped, 2214 Hi-Temp with 150 °C typed 133.36 °C) and reads the inner ring's own onset with mixed rings (inner B842SH, outer B842 passes; inner N42H, outer SmCo_2_17_30 needs 125.8 against 102.8 °C); a long magnet makes the cup slip first; equality passes and the next float fails; the badge never quotes two equal numbers; NaN in any of the 15 inputs or 15 engine values reads unknown; the allowed-temperature helper drops no NaN and names the limit that binds (ties the earlier); a reversed band and a missing wall are not judged (a boss typed at -22 mm has none); the key's edges (keyway 0.3, 1.0 and 0 mm, a contact typed -0.5 or 0, boss length 0 and 0.5, hub length 3 mm); each margin is finite with its sign the verdict; the shaft shrink (NIST, continuous at 265 K, falling over the slider); +inf cold-high slips; the joints rebuilt from the results are the engine's; the inputs move no result outside the check. |
+| `tests/shaft_joint.rs` | BL-064 shaft joints end to end and on `joint`: the 15 inputs and 24 results are Rust-only, in the spec's order, after the clamp inputs and the gearbox results; the verdict texts; per µm (inner hub 7.738 MPa, 2.0009 N·m, 17.930 MPa; cup 8.132, 2.5073, 17.879); the defaults pass (holding 9.4844 / 16.899 against 7.6466 N·m, bore stress 241.70 / 312.53 against 345.83 MPa, key 127.44 / 101.95 MPa, fitting 93.267 / 280.16 against 100 / 300 °C; windows 12.08-18.83 and 11.31-23.86 µm); the BL-067 corner reads cold-high (6.3647 N·m) and passes; the five probe designs (304 slips at the inner hub); a band minimum too low slips at its joint, a maximum too high is over the stress limit with the fitting cause after it; causes in order, then the inner hub before the cup; the 304 and aluminium windows are empty; 416 loosens cold, 304 hot; an uncooled or dry-ice wheel shaft cannot fit the inner hub; the allowed hub temperature is the lowest of three (owner R-15: N42 parts 59.83 °C, N50M 88.80 °C, ferrite never capped, 2214 Hi-Temp with 150 °C typed 133.36 °C) and reads the inner ring's own onset with mixed rings (inner B842SH, outer B842 passes; inner N42H, outer SmCo_2_17_30 needs 125.8 against 102.8 °C); a long magnet makes the cup slip first; equality passes and the next float fails; the badge never quotes two equal numbers; NaN in any of the 15 inputs or 15 engine values reads unknown; the allowed-temperature helper drops no NaN and names the limit that binds (ties the earlier); a reversed band and a missing wall are not judged (a boss typed at -22 mm has none, nor an inner hub typed at 0 or -40.4 mm, keyed or not); the key's edges (keyway 0.3, 1.0 and 0 mm, a contact typed -0.5 or 0, boss length 0 and 0.5, hub length 3 mm); each margin is finite with its sign the verdict; the shaft shrink (NIST, continuous at 265 K, falling over the slider); +inf cold-high slips; the joints rebuilt from the results are the engine's; the inputs move no result outside the check. |
 | `tests/size_controls.rs` |
 ```
 
@@ -7096,7 +7151,8 @@ with:
         // BL-064 (spec 5.4): the key's sides sit at half the shaft joints' key width either side
         // of the x axis, from where they cross the bore to the keyway's depth past it, in both
         // states; the paused clamp's own key width moves nothing in the drawing; with no keyway
-        // there is no key (ruling C-5).
+        // there is no key (ruling C-5), and a keyway depth that is not a number keeps its "not
+        // drawn" note (plan review 3A).
         let defaults = DesignInputs::default();
         let bore = defaults.coupling.bore_mm / 2.0;
         let tip = bore + defaults.coupling.keyway_depth_mm;
@@ -7142,18 +7198,23 @@ with:
                 drawn[0].outline,
                 Outline::Polygon(vec![[0.0, -6.0], [tip, -6.0], [tip, 6.0], [0.0, 6.0]])
             );
-            // A key width that is not a number: no key, and the end view's note counts it.
-            let nan = design(|i| i.shaft_joint.key_width_mm = f64::NAN);
-            let g = geometry(&nan, &compute_all(&nan), paused);
-            assert!(keys(&g).is_empty(), "paused {paused}");
-            assert!(
-                g.notes.contains(&Note {
-                    text: parts_not_drawn(1, "end"),
-                    level: Some(Level::Caution)
-                }),
-                "{:?}",
-                g.notes
-            );
+            // A key width or a keyway depth that is not a number: no key, and the end view's
+            // note counts it. A depth that is not a number is not "no keyway" (ruling C-5's
+            // guard keeps it; plan review 3A).
+            let nan_width = design(|i| i.shaft_joint.key_width_mm = f64::NAN);
+            let nan_depth = design(|i| i.coupling.keyway_depth_mm = f64::NAN);
+            for (what, nan) in [("key width", nan_width), ("keyway depth", nan_depth)] {
+                let g = geometry(&nan, &compute_all(&nan), paused);
+                assert!(keys(&g).is_empty(), "{what} NaN, paused {paused}");
+                assert!(
+                    g.notes.contains(&Note {
+                        text: parts_not_drawn(1, "end"),
+                        level: Some(Level::Caution)
+                    }),
+                    "{what} NaN, paused {paused}: {:?}",
+                    g.notes
+                );
+            }
             // No keyway (depth 0): the shaft joints have no key term, so no key is drawn (ruling
             // C-5, plan deviation PD-3).
             let keyless = design(|i| i.coupling.keyway_depth_mm = 0.0);
@@ -7183,6 +7244,8 @@ gui::geometry::tests::the_key_takes_the_shaft_joints_width_and_never_the_paused_
   left: Polygon([[4.58257569495584, -2.0], [6.7, -2.0], [6.7, 2.0], [4.58257569495584, 2.0]])
  right: Polygon([[4.9749371855331, -0.5], [6.7, -0.5], [6.7, 0.5], [4.9749371855331, 0.5]])
 ```
+
+The keyway-depth cases (ruling C-5 and plan review 3A) come after that first failing assertion, so they add no line here. Before Step 4 they would fail too: at a keyway depth of 0 the clamp's key is still drawn unpaused, and with a depth that is not a number nothing is drawn while paused, so there is no "not drawn" note. Step 5 shows the NaN case's own red, against a guard that drops a NaN.
 
 - [ ] **Step 4: Draw the key from the shaft joints' width in both states (`geometry.rs`)**
 
@@ -7276,6 +7339,8 @@ with:
 Run: `cargo test --manifest-path magcoupling-rs/Cargo.toml --features app --lib -- gui::geometry`
 
 Expected: `test result: ok. 33 passed; 0 failed` (the `geometry` and `geometry_view` tests; the three of Step 2 among them). The NaN test `a_number_that_is_not_finite_draws_nothing_wrong_and_says_so` passes unchanged: it draws unpaused, where the key was drawn before too.
+
+Then prove the guard keeps a NaN depth (plan review 3A). In `end_view`, replace `    if !(c.keyway_depth_mm <= 0.0) {` with `    if c.keyway_depth_mm > 0.0 {`, the plain comparison, which drops a NaN. Run the same command. Expected: `test result: FAILED. 32 passed; 1 failed`. `the_key_takes_the_shaft_joints_width_and_never_the_paused_clamp_s` fails with the message `keyway depth NaN, paused false: [Note { text: "Wall rule: …` and a notes list that holds no "Not drawn" note. Undo it. Then `grep -c 'if !(c.keyway_depth_mm <= 0.0) {' magcoupling-rs/src/gui/geometry.rs` prints `1`, and the command again reads 33 passed.
 
 - [ ] **Step 6: Two shared test designs (`test_support.rs`)**
 
@@ -8062,7 +8127,7 @@ the key and the clamp-boss design check only while the shaft-clamp section is no
 ```
 New:
 ```text
-the key in both states of the shaft-clamp pause, at the shaft joints' key width (BL-064: each end of its slider; one typed wider than the bore from the axis; one not a number not drawn and counted; none at a keyway depth of 0), never at the paused clamp's, and the clamp-boss design check only while the shaft-clamp section is not paused
+the key in both states of the shaft-clamp pause, at the shaft joints' key width (BL-064: each end of its slider; one typed wider than the bore from the axis; a width or a keyway depth that is not a number not drawn and counted; none at a keyway depth of 0), never at the paused clamp's, and the clamp-boss design check only while the shaft-clamp section is not paused
 ```
 
 (g) The `src/gui/spreadsheet.rs`, `src/gui/xlsx.rs` row (around :678). Old:
@@ -8146,14 +8211,15 @@ shows, and not at all without a keyway, where the joints have no key term; the p
 clamp's key width moves nothing in the drawing. The PAUSED doc and the inert-input reason
 of the clamp's key width say so.
 
-Tests: the key in both states at each end of its slider, typed wider than the bore, not a
-number and with no keyway; the CSV, JSON and spreadsheet exports carry the 15 inputs and 24 results
-with no cell (the inputs where the inputs side draws them, the four assumptions flagged,
-the 23 numbers under the Shaft joints chain between Geometry and Mass, NaN and +inf as
-text); the clamp-name guard reaches every shaft-joint label and help while paused; Auto
-reads no shaft joint input and both joints hold at its answer. Moved: the key outline
-(3 mm: [6.7, -1.5] and sqrt 22.75), the key test renamed (a key in both states), the
-BL-059 Auto test's solve shared.
+Tests: the key in both states at each end of its slider, typed wider than the bore, its
+width or the keyway depth not a number, and with no keyway; the CSV, JSON and
+spreadsheet exports carry the 15 inputs and 24 results with no cell (the inputs where
+the inputs side draws them, the four assumptions flagged, the 23 numbers under the Shaft
+joints chain between Geometry and Mass, NaN and +inf as text); the clamp-name guard
+reaches every shaft-joint label and help while paused; Auto reads no shaft joint input
+and both joints hold at its answer. Moved: the key outline (3 mm: [6.7, -1.5] and sqrt
+22.75), the key test renamed (a key in both states), the BL-059 Auto test's solve
+shared.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01UW1Rcc7PfLxGH7NQJ5srin
@@ -16384,8 +16450,8 @@ BL-064 keeps the clamp section paused (owner decision 6A, 2026-10-17), so the cl
 
 - [ ] **Step 10: `docs/ai/backlog.yaml`: new BL-069, BL-070, BL-071 and BL-072**
 
-The priorities below (BL-069 3; BL-070, BL-071 and BL-072 2) are the drafted ones; the owner confirms or re-ranks them
-in the plan review (ruling C-9). Write the owner's, and set Step 12's priority assertion to match.
+The priorities below (BL-069 3; BL-070, BL-071 and BL-072 2) are the drafted ones, which the owner kept in the plan
+review (ruling C-9). Step 12's priority assertion matches them.
 
 BL-070's evidence ends with one of two sentences, chosen from Step 2's watch-out lines: if a watch-out at the
 default design contains "fretting" (case-insensitive; `grep -c -i fretting` on the printed lines), use sentence (F);
@@ -17011,7 +17077,7 @@ states it, quoted, with the record's heading; "not ruled" where the record is si
 - The 4140 condition (annealed, 415 MPa, the check's conservative yield, or pre-hardened) and the UltraOx process and its temperature (the bare cup's 300 °C default and 400 °C slider top must stay below it; BL-069).
 - The key length and the real keyway depth: the 1.7 mm keyway default matches no DIN 6885-1 row (3 × 3 has a hub depth t2 of 1.4 mm); the key contact input, 1.2 mm, is separate.
 - The bondline thickness: at 0.05 mm the bond screen reaches the AA 326 lap shear near 113 °C, at 0.10 mm near 198 °C; the bonded hub's 100 °C default rests on the 0.05 mm figure.
-- The four new backlog items, at the priorities you set in the plan review (drafted: BL-069 3; BL-070, BL-071 and BL-072 2; ruling C-9). BL-072 is the E24 correction you approved on 2026-10-01, which was to land with E21 (BL-057).
+- The four new backlog items, at the priorities you kept in the plan review (BL-069 3; BL-070, BL-071 and BL-072 2; ruling C-9). BL-072 is the E24 correction you approved on 2026-10-01, which was to land with E21 (BL-057).
 
 ## 9. Leftovers from the reviews (none blocks the merge; your call)
 
@@ -17585,7 +17651,7 @@ PD-1 to PD-3 are in the head. The drafters' deviations follow, renumbered from P
 - **PD-33** (D-F; T9): BL-056 is not edited. Adopted.
 - **PD-34** (D-F; T9): the docs say the clamp section is "kept paused", not paused for good (decision 6A). Adopted.
 - **PD-35** (D-F; T9 Step 10): BL-072 stays its own item, tied to the owner-approved E24 and to BL-057. Adopted (C-8).
-- **PD-36** (D-F; T9 Step 10): backlog priorities BL-069 3, BL-070 2, BL-071 2, BL-072 2. The owner confirms or re-ranks them in the plan review (C-9).
+- **PD-36** (D-F; T9 Step 10): backlog priorities BL-069 3, BL-070 2, BL-071 2, BL-072 2. The owner kept them in the plan review (C-9).
 - **PD-37** (D-F; T9 Steps 2 and 3): additions beyond spec 8: the screen-dump tool and the shipped-text check (`check_shipped.py`). Adopted.
 - **PD-38** (D-F; T10 Step 3): Task 10's fix wave re-blesses the input schema when a fix rewords a `shaft_joint.*` label or help. Adopted (C-6).
 - **PD-39** (D-F; T9 Step 7): the tracker entry is dated 2026-10-17, the date of the owner's decisions. Adopted.
@@ -17614,6 +17680,8 @@ Measured counts first: Tasks 1 to 4 on the drafters' prototypes, Tasks 5 to 7 on
 
 These never move: deviations 54, differential 19, parity 4, python_schema 7 (gate 12's parity untouched), gearbox 13, schema 11, material_library 4, size_controls 38, static_data 8; the two app binaries run 0 tests. The amendments folded in add assertions to existing tests only, so no count above moves for them.
 
+The plan review's two edge tests (3A) also add assertions to existing tests only, so no count above moves for them either. The inner hub typed at or below zero sits in `a_joint_with_no_wall_reads_nan_and_is_not_judged` (T2), and a keyway depth that is not a number sits in `the_key_takes_the_shaft_joints_width_and_never_the_paused_clamp_s` (T4). The only number they move is T2 Step 2's compile errors, 76 -> 77. Measured on a review prototype: the critic's integrated tree with rulings C-3 and C-5 and both tests applied, and the critic's two later probes left out. It read the T7 row: app lib 921 (6 ignored), lib 232 (1 ignored), `explain` 63 and 62, `shaft_joint` 30, `robustness` 13, `sizing` 45, the `gui::geometry` filter 33. Clippy both ways and `cargo fmt --check` were clean.
+
 ## Amendment ledger
 
 - **A-1** (C-1): T7 Step 1c (no import edit); T7's Files list (no `temperature` import); T7 Step 1e (the narrower `hub_fit_allowed` import).
@@ -17630,7 +17698,7 @@ These never move: deviations 54, differential 19, parity 4, python_schema 7 (gat
 - **A-12** (C-2): T5 Steps 5 and 7, T6 Step 5, T7 Step 12; the Per-task test counts above.
 - **A-13** (C-2): T2 Step 9 (Task 3's `CHAIN_LABELS`); T9 Step 4 (`spreadsheet.rs:1196` to T5), Step 7 (the tracker's panel bullet), Step 8 (BL-064's notes); T10's gui-smoke paragraph (10.26 and 16.90 N·m).
 - **A-14** (C-6): the head's C-6 and Global Constraints; T3's PD-9, T8 Step 3 and T10 Step 3 carry the re-bless rule; the Deviation index.
-- **A-15** (C-7): the head (its Open owner questions, and its pointers to the sections below); the Deviation index; the Per-task test counts.
+- **A-15** (C-7): the head (its Plan review, and its pointers to the sections below); the Deviation index; the Per-task test counts.
 - **A-16** (C-2): T7 Step 11, the expected heading lines.
 - **A-17** (C-2): T10 Step 2, reviewer item (9).
 - **A-18** (C-2): T8 Step 2, the brief's probe (4).
@@ -17643,3 +17711,4 @@ These never move: deviations 54, differential 19, parity 4, python_schema 7 (gat
 - **C-7**: the head.
 - **C-8**: T5 Step 1b(5) (`name == "check"`, PD-23); T5 Steps 4(7), 4(9), 4(11) (the shared helpers, PD-24) and T10 Step 2 item (9); T5 Step 1d(3) (the guard's designs and the label and Why assertion); T5 Step 1f (the result-groups swap) and Step 6a(11) ("dashboard's 19 rows"); T2 Step 1 (`passing()`); T1 Step 5 and T9 Step 7 (the E18 observation); T8 (C5 removed from the Interfaces, the context list, Step 1's greps and expectations, the brief, Step 3 and the record; PD-31); T7 Step 9 (stop on an engine-model CHANGE, PD-32); T9 Step 10 (BL-072, PD-35).
 - **C-9**: T9 Step 10 (the priorities note) and Step 12 (its assertion); T10 Step 8, the leftovers' section 8; PD-36.
+- **Plan review** (owner, 2026-10-18): the head's Plan review, Before Task 1 (`plan-review.txt`), the Global Constraints' message-file list, C-3, C-4, C-5, C-9 and Review Focus item 1. For 3A (a), the inner hub typed at or below zero: T2 Step 1 (in `a_joint_with_no_wall_reads_nan_and_is_not_judged`), Step 2 (the error counts), Step 5 (its planted faults) and Step 11 README (b). For 3A (b), a keyway depth that is not a number: T4 Step 2 (in `the_key_takes_the_shaft_joints_width_and_never_the_paused_clamp_s`), Step 3 (the note), Step 5 (its planted fault), Step 14 README (f) and Step 16 (the message). Also the Per-task test counts' note, PD-36, T9 Step 10 and T10's section 8.
