@@ -235,6 +235,18 @@ fn edge_points() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
     let num = Value::Num;
     let onset = default_num("temperature.demag.onset_skipping_C");
     let hot_day_start = default_num("temperature.duty.hot_day_start_C");
+    // The shaft joints' keyless no-wall points (ruling C-3): the cup's boss, and the inner hub's
+    // part diameter, 2 · (apothem − bondline), typed 1 mm under the bore and at it exactly.
+    let inputs = DesignInputs::default();
+    let bore = inputs.coupling.bore_mm;
+    let bond = inputs.metal.bond_inner_mm;
+    let apothem_under_bore = (bore - 1.0) / 2.0 + bond;
+    let apothem_at_bore = bore / 2.0 + bond;
+    assert_eq!(
+        2.0 * (apothem_at_bore - bond),
+        bore,
+        "the inner hub's no-wall point is not at the bore"
+    );
     vec![
         (
             // The outer ring (manual, ferrite's beta) has a 0/0 cold onset, so its cold limit is
@@ -515,10 +527,7 @@ fn edge_points() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
                 ("coupling.bore_mm", num(16.0)),
                 ("metal.boss_od_mm", num(12.0)),
             ],
-            |r| {
-                let [hub, cup] = lame_rows(r);
-                cup.iter().all(|x| x.is_nan()) && hub.iter().all(|x| x.is_finite())
-            },
+            only_the_cup_has_no_wall,
         ),
         joint_edge(
             // A 2.1 mm keyway on a 16 mm bore cuts through the inner hub's 2.1 mm wall: its four
@@ -528,10 +537,65 @@ fn edge_points() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
                 ("coupling.bore_mm", num(16.0)),
                 ("coupling.keyway_depth_mm", num(2.1)),
             ],
-            |r| {
-                let [hub, cup] = lame_rows(r);
-                hub.iter().all(|x| x.is_nan()) && cup.iter().all(|x| x.is_finite())
-            },
+            only_the_inner_hub_has_no_wall,
+        ),
+        // Ruling C-3 (plan deviation PD-1): no wall wherever the part's outer diameter is not
+        // above the bore, a diameter typed below zero included. These six points are keyless,
+        // so the no-wall arm's first condition alone gives the NaN (the two points above are
+        // keyed, and there the keyway condition gives it too). Per joint, a diameter under the
+        // bore pins `D <= d` against `D <= 0` or no such condition; one at the bore pins it
+        // against `D < d` (in the holding and needed rows: with k_θ infinite there the stress
+        // rows are NaN either way); and one typed below zero pins it against the spec's first
+        // form `Q >= 1`, which would judge it (Q < 0 there). The negative designs are
+        // `tests/shaft_joint.rs`'s (`a_joint_with_no_wall_reads_nan_and_is_not_judged`).
+        joint_edge(
+            "shaft joints: keyless, boss 1 mm under the bore: no wall around the cup's bore",
+            vec![
+                ("coupling.keyway_depth_mm", num(0.0)),
+                ("metal.boss_od_mm", num(bore - 1.0)),
+            ],
+            only_the_cup_has_no_wall,
+        ),
+        joint_edge(
+            "shaft joints: keyless, boss at the bore: no wall around the cup's bore",
+            vec![
+                ("coupling.keyway_depth_mm", num(0.0)),
+                ("metal.boss_od_mm", num(bore)),
+            ],
+            only_the_cup_has_no_wall,
+        ),
+        joint_edge(
+            "shaft joints: keyless, boss -22 mm: no wall around the cup's bore",
+            vec![
+                ("coupling.keyway_depth_mm", num(0.0)),
+                ("metal.boss_od_mm", num(-22.0)),
+            ],
+            only_the_cup_has_no_wall,
+        ),
+        joint_edge(
+            "shaft joints: keyless, inner hub's diameter 1 mm under the bore: no wall around the inner hub's bore",
+            vec![
+                ("coupling.keyway_depth_mm", num(0.0)),
+                ("coupling.inner_back_apothem_mm", num(apothem_under_bore)),
+            ],
+            only_the_inner_hub_has_no_wall,
+        ),
+        joint_edge(
+            "shaft joints: keyless, inner hub's diameter at the bore: no wall around the inner hub's bore",
+            vec![
+                ("coupling.keyway_depth_mm", num(0.0)),
+                ("coupling.inner_back_apothem_mm", num(apothem_at_bore)),
+            ],
+            only_the_inner_hub_has_no_wall,
+        ),
+        joint_edge(
+            // The inner hub's part diameter, 2 · (apothem − bondline), is -40.4 mm here.
+            "shaft joints: keyless, inner back apothem -10.15 mm: no wall around the inner hub's bore",
+            vec![
+                ("coupling.keyway_depth_mm", num(0.0)),
+                ("coupling.inner_back_apothem_mm", num(-10.15)),
+            ],
+            only_the_inner_hub_has_no_wall,
         ),
         joint_edge(
             // No keyway: no key term (both key pressures read 0) and no key arc off the contact.
@@ -693,6 +757,20 @@ fn lame_rows(r: &DesignResults) -> [[f64; 4]; 2] {
             s.cup_elastic_max_um,
         ],
     ]
+}
+
+/// Whether the cup alone has no wall around its bore in `r`: its four Lamé rows NaN, the inner
+/// hub's numbers.
+fn only_the_cup_has_no_wall(r: &DesignResults) -> bool {
+    let [hub, cup] = lame_rows(r);
+    cup.iter().all(|x| x.is_nan()) && hub.iter().all(|x| x.is_finite())
+}
+
+/// Whether the inner hub alone has no wall around its bore in `r`: its four Lamé rows NaN, the
+/// cup's numbers.
+fn only_the_inner_hub_has_no_wall(r: &DesignResults) -> bool {
+    let [hub, cup] = lame_rows(r);
+    hub.iter().all(|x| x.is_nan()) && cup.iter().all(|x| x.is_finite())
 }
 
 /// Whether the key pressures of `r` are the defaults' with the key's contact height capped at
