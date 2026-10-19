@@ -10,7 +10,8 @@
 //! two parts, and the overshoot per axis past the space claim with the dimension it measures
 //! (spec A1); 10 of the 11 are new (the running clearance is a dashboard path), so the
 //! scope held 169 paths. BL-064 adds the inner ring's own single-ring onset to the
-//! demagnetization chain (owner R-15 ring): 170 paths.
+//! demagnetization chain (owner R-15 ring) and a chain of the shaft joints, the 23 numeric
+//! results of their check (spec 4.5), after the geometry callouts: 193 paths.
 
 /// Whether a chain's records are written.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -241,6 +242,35 @@ pub const SCOPE: &[Chain] = &[
             "housing.diameter_overshoot_mm",
             "housing.length_overshoot_mm",
             "housing.bay_overshoot_mm",
+        ],
+    },
+    Chain {
+        id: "shaft_joint",
+        status: Status::Explained,
+        paths: &[
+            "shaft_joint.required_Nm",
+            "shaft_joint.part_modulus_GPa",
+            "shaft_joint.part_cte_per_C",
+            "shaft_joint.part_yield_MPa",
+            "shaft_joint.stress_limit_MPa",
+            "shaft_joint.hub_holding_Nm",
+            "shaft_joint.cup_holding_Nm",
+            "shaft_joint.hub_bore_stress_MPa",
+            "shaft_joint.cup_bore_stress_MPa",
+            "shaft_joint.hub_key_pressure_MPa",
+            "shaft_joint.cup_key_pressure_MPa",
+            "shaft_joint.hub_needed_um",
+            "shaft_joint.cup_needed_um",
+            "shaft_joint.hub_elastic_max_um",
+            "shaft_joint.cup_elastic_max_um",
+            "shaft_joint.wheel_shaft_shrink_um",
+            "shaft_joint.output_shaft_shrink_um",
+            "shaft_joint.hub_fittable_max_um",
+            "shaft_joint.cup_fittable_max_um",
+            "shaft_joint.hub_fit_temp_C",
+            "shaft_joint.cup_fit_temp_C",
+            "shaft_joint.hub_fit_allowed_C",
+            "shaft_joint.cup_fit_allowed_C",
         ],
     },
     Chain {

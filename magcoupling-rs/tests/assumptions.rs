@@ -56,6 +56,16 @@ fn other_value(path: &str) -> Value {
     })
 }
 
+/// The words every BL-064 shaft joint assumption's source carries, citing the spec by name.
+const BL064_SOURCE: &str = "BL-064 shaft joint spec";
+
+/// What the source of an assumption on a Rust-only input (no workbook cell) cites in place of
+/// a cell: the spec that added the input.
+const RUST_ONLY_SOURCES: [&str; 2] = ["Addendum A3", BL064_SOURCE];
+
+/// The BL-064 spec's path from the repository root, which the friction row's source names.
+const BL064_SPEC: &str = "docs/superpowers/specs/2026-10-17-bl064-shaft-joint-design.md";
+
 #[test]
 fn every_flagged_input_is_in_exactly_one_row() {
     let flagged: BTreeSet<String> = input_rows(&DesignInputs::default())
@@ -79,7 +89,9 @@ fn the_rows_are_the_spec_v1_set() {
     // Spec A3, in its order: harmonics included, end-effect coefficient, calibration factor,
     // production variation, Br and Hcj temperature coefficients, demag knee fraction, demag
     // margin, back-iron design flux density, thermal conductance, driving rise, slip-event
-    // duration, clamp friction coefficient, preload fraction of proof load.
+    // duration, clamp friction coefficient, preload fraction of proof load; then BL-064's four
+    // (spec 4.5): the shrink-fit friction, the surface smoothing, the rotor hotter than its
+    // shaft and the joining clearance.
     let ids: Vec<&str> = ASSUMPTIONS.iter().map(|a| a.id).collect();
     assert_eq!(
         ids,
@@ -98,6 +110,10 @@ fn the_rows_are_the_spec_v1_set() {
             "slip_event_duration",
             "clamp_friction",
             "preload_fraction",
+            "fit_friction",
+            "fit_smoothing",
+            "rotor_over_shaft",
+            "joining_clearance",
         ]
     );
     // The end-effect coefficient is the Calculator's and the Calibration's (report 6.5);
@@ -125,13 +141,54 @@ fn every_row_has_a_label_rationale_source_and_one_unit() {
             let m = meta(path);
             assert_eq!(m.unit, unit, "{}: {path} has another unit", a.id);
             // The source cites the workbook cell of every workbook input it sets; a Rust-only
-            // input (the harmonic set) has none and cites the spec.
+            // input has none and cites its spec instead: Addendum A3 (the harmonic set) or the
+            // BL-064 shaft joint spec (the shaft joints' four; review 2, MF-3).
             match m.cell {
                 Some(cell) => assert!(a.source.contains(cell), "{}: source omits {cell}", a.id),
-                None => assert!(a.source.contains("Addendum A3"), "{}", a.id),
+                None => assert!(
+                    RUST_ONLY_SOURCES.iter().any(|s| a.source.contains(s)),
+                    "{}: a Rust-only input's source cites none of {RUST_ONLY_SOURCES:?}",
+                    a.id
+                ),
             }
         }
     }
+}
+
+#[test]
+fn the_shaft_joint_rows_are_rust_only_and_cite_the_bl064_spec() {
+    // BL-064 (spec 4.5, review 2 MF-3): one row per shaft joint assumption, each on one
+    // Rust-only input with no workbook cell, each source citing the spec by name (the G-3
+    // review does not cover sources, so the words are pinned here); the friction row also names
+    // the spec's file, which exists. None is hidden while the shaft-clamp section is paused.
+    let row = |id: &str| {
+        ASSUMPTIONS
+            .iter()
+            .find(|a| a.id == id)
+            .unwrap_or_else(|| panic!("{id}: no assumption"))
+    };
+    for (id, path) in [
+        ("fit_friction", "shaft_joint.friction"),
+        ("fit_smoothing", "shaft_joint.smoothing_um"),
+        ("rotor_over_shaft", "shaft_joint.rotor_over_shaft_C"),
+        ("joining_clearance", "shaft_joint.joining_clearance_um"),
+    ] {
+        let a = row(id);
+        assert_eq!(a.paths, [path], "{id}");
+        let m = meta(path);
+        assert!(m.rust_only && m.cell.is_none(), "{path}");
+        assert!(a.source.contains(BL064_SOURCE), "{id}: {}", a.source);
+        assert!(a.shown(true) && a.shown(false), "{id}");
+    }
+    assert!(
+        row("fit_friction").source.contains(BL064_SPEC),
+        "{}",
+        row("fit_friction").source
+    );
+    let spec = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join(BL064_SPEC);
+    assert!(spec.is_file(), "{} is not a file", spec.display());
 }
 
 #[test]

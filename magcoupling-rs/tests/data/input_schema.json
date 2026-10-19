@@ -3280,7 +3280,7 @@
       "unit": "-"
     },
     {
-      "assumption": false,
+      "assumption": true,
       "cell": null,
       "choices": [],
       "default": 0.14,
@@ -3298,7 +3298,7 @@
       "unit": "-"
     },
     {
-      "assumption": false,
+      "assumption": true,
       "cell": null,
       "choices": [],
       "default": 5.0,
@@ -3316,7 +3316,7 @@
       "unit": "µm"
     },
     {
-      "assumption": false,
+      "assumption": true,
       "cell": null,
       "choices": [],
       "default": 20.0,
@@ -3442,7 +3442,7 @@
       "unit": "°C"
     },
     {
-      "assumption": false,
+      "assumption": true,
       "cell": null,
       "choices": [],
       "default": 10.0,

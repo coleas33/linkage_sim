@@ -62,13 +62,16 @@ inputs! {
                 .range(1.0, 4.0, 0.1),
             friction: f64 = 0.14 => param_rust_only("-", "Shrink-fit friction coefficient",
                 "Steel on steel, dry and degreased. Holding torque scales with it; oil or a coating in the bore lowers it.")
-                .range(0.05, 0.30, 0.01),
+                .range(0.05, 0.30, 0.01)
+                .assumption(),
             smoothing_um: f64 = 5.0 => param_rust_only("µm", "Surface smoothing of the fit",
                 "Interference lost as surface peaks flatten when fitted. It lowers both the grip and the bore stress; a ground shaft and honed bore lose less.")
-                .range(0.0, 15.0, 0.1),
+                .range(0.0, 15.0, 0.1)
+                .assumption(),
             rotor_over_shaft_C: f64 = 20.0 => param_rust_only("°C", "Rotor hotter than its shaft, running",
                 "How much hotter each rotor may run than its shaft from slip heating. A warmer rotor's bore grows, so the grip falls.")
-                .range(0.0, 60.0, 1.0),
+                .range(0.0, 60.0, 1.0)
+                .assumption(),
             key_width_mm: f64 = 3.0 => param_rust_only("mm", "Shaft key width",
                 "Width of the parallel key in both joints (DIN 6885-1 gives 3 mm for a 10 mm shaft). Its slot takes this much of the fit's contact.")
                 .range(1.0, 6.0, 0.5),
@@ -89,7 +92,8 @@ inputs! {
                 .range(-20.0, 40.0, 1.0),
             joining_clearance_um: f64 = 10.0 => param_rust_only("µm", "Joining clearance",
                 "Clearance each part needs over its shaft to slide on before it grips; one value for both joints. Less needs a guided, single fast push to a stop.")
-                .range(0.0, 30.0, 0.5),
+                .range(0.0, 30.0, 0.5)
+                .assumption(),
         }
     }
 }
