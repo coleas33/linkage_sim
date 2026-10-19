@@ -4355,11 +4355,13 @@ mod tests {
                 assert!(named.is_empty(), "{named:#?}");
                 // Not vacuous for the shaft joints (BL-064), which show while the clamp is
                 // paused: the enumeration reaches the label and the help of each of their inputs
-                // and results, their two input sections and their group's heading.
+                // and results, their two input sections and their groups' headings. A label or a
+                // help may sit inside a hover text. Four input labels are also their assumptions'
+                // names, so for those inputs it is the help that shows the input is collected.
                 use crate::engine::meta::{input_rows, result_rows};
                 use crate::gui::inputs::section_label;
                 use crate::gui::plain_text::help_for;
-                use crate::gui::result_groups::CHAIN_LABELS;
+                use crate::gui::result_groups::result_groups;
                 let reaches = |text: &str| texts.iter().any(|t| t.contains(text));
                 let paths: Vec<String> = input_rows(&DesignInputs::default())
                     .into_iter()
@@ -4377,26 +4379,33 @@ mod tests {
                         assert!(reaches(text), "{path}: {text:?} is not collected");
                     }
                 }
+                // Each heading whole, as the panel draws it: the two input sections and the
+                // original sheet's group by their labels, and the results table's chain group by
+                // its label and its row count, as the table draws a group's heading. Part of a
+                // text would not do: the check's label, "Shaft joints: keyed shrink fits",
+                // contains "Shaft joints".
                 let shaft = WORKFLOW
                     .iter()
                     .find(|group| group.id == "shaft")
                     .expect("the shaft group");
-                let headings: Vec<&str> = shaft
+                let chain = result_groups()
+                    .iter()
+                    .find(|group| group.id == "shaft_joint" && !group.other)
+                    .expect("the Shaft joints chain");
+                let headings: Vec<String> = shaft
                     .sections
                     .iter()
                     .filter(|section| ["shaft.fit", "shaft.fitting"].contains(&section.id))
-                    .map(|section| section.label)
-                    .chain(section_label("shaft_joint"))
-                    .chain(
-                        CHAIN_LABELS
-                            .iter()
-                            .filter(|&&(chain, _)| chain == "shaft_joint")
-                            .map(|&(_, label)| label),
-                    )
+                    .map(|section| section.label.to_owned())
+                    .chain(section_label("shaft_joint").map(str::to_owned))
+                    .chain([format!("{} ({})", chain.label, chain.rows.len())])
                     .collect();
                 assert_eq!(headings.len(), 4);
-                for heading in headings {
-                    assert!(reaches(heading), "{heading:?} is not collected");
+                for heading in &headings {
+                    assert!(
+                        texts.contains(heading),
+                        "{heading:?} is not collected whole"
+                    );
                 }
             } else {
                 // Not vacuous: with the section shown, the same enumeration names the clamp and
