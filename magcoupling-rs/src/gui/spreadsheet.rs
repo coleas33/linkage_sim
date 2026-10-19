@@ -576,7 +576,7 @@ mod tests {
     use crate::engine::assumptions::ASSUMPTIONS;
     use crate::engine::sizing::FreeVariable;
     use crate::gui::dashboard::{CHECKS, DASHBOARD, check_level};
-    use crate::gui::test_support::{short_magnets, snapshot};
+    use crate::gui::test_support::{only_the_joint_fails, passing_design, short_magnets, snapshot};
 
     fn sheet<'s>(book: &'s [Sheet], name: &str) -> &'s Sheet {
         book.iter()
@@ -1191,68 +1191,101 @@ mod tests {
         }
     }
 
+    /// Asserts the Summary of `inputs` lists one row per dashboard row, then a blank, and that
+    /// the row of the Rust-only check at `path` sits between `neighbours`: its engine label and
+    /// text, no unit, its badge's `level`, Rust-only for the cell, its path, no correction and
+    /// `note`; and that the Results sheet's row carries the same level.
+    fn assert_summary_check_row(
+        inputs: &DesignInputs,
+        path: &str,
+        neighbours: (&str, &str),
+        level: Option<Level>,
+        note: &str,
+    ) {
+        let results = compute_all(inputs);
+        let book = sheets(&snapshot(inputs, &results));
+        let rows = &sheet(&book, SUMMARY_SHEET).rows;
+        let header = rows
+            .iter()
+            .position(|r| r.first().map(Cell::as_text) == Some(DASHBOARD_COLUMNS[0]))
+            .unwrap();
+        let dashboard = &rows[header + 1..header + 1 + DASHBOARD.len()];
+        assert_eq!(
+            rows[header + 1 + DASHBOARD.len()],
+            Vec::<Cell>::new(),
+            "one row per dashboard row, then a blank"
+        );
+        let path_column = column(&DASHBOARD_COLUMNS, "Path");
+        let paths: Vec<&str> = dashboard
+            .iter()
+            .map(|row| row[path_column].as_text())
+            .collect();
+        let at = paths
+            .iter()
+            .position(|&p| p == path)
+            .unwrap_or_else(|| panic!("the row of {path}"));
+        assert_eq!((paths[at - 1], paths[at + 1]), neighbours, "{path}");
+        let Some(Value::Text(text)) = results.get(path) else {
+            panic!("{path} is text")
+        };
+        assert_eq!(
+            dashboard[at],
+            [
+                Cell::text(result_info(path).expect("a result").meta.label),
+                Cell::text(text),
+                Cell::empty(),
+                level_cell(level),
+                Cell::text(RUST_ONLY),
+                Cell::text(path),
+                Cell::empty(),
+                Cell::text(note),
+            ],
+            "{path}"
+        );
+        let results_sheet = sheet(&book, RESULTS_SHEET);
+        let row = row_of(results_sheet, column(&RESULT_COLUMNS, "Path"), path);
+        assert_eq!(row[column(&RESULT_COLUMNS, "Check")], level_cell(level));
+        assert_eq!(
+            row[column(&RESULT_COLUMNS, "Workbook cell")],
+            Cell::text(RUST_ONLY)
+        );
+    }
+
     #[test]
-    fn the_summary_lists_eighteen_dashboard_rows_with_the_gearbox_badge() {
-        // BL-059: the dashboard gains the gearbox check, so the Summary lists 18 rows, the
-        // gearbox's between the clamp's and the space claim's: its engine label and verdict, no
-        // unit, its badge's level, Rust-only for the cell, its path and no correction. It is red
-        // at the defaults, green with a 1.0 N·m rating, and greyed with no level while the
-        // end-effect model is out of range; the Results sheet's row carries the same level.
+    fn the_summary_lists_nineteen_dashboard_rows_with_the_gearbox_badge() {
+        // BL-059: the gearbox's row, between the shaft joints' (BL-064) and the space claim's.
+        // It is red at the defaults, green with a 1.0 N·m rating, and greyed with no level while
+        // the end-effect model is out of range.
+        assert_eq!(DASHBOARD.len(), 19);
         const PATH: &str = "gearbox.cold_high_check";
-        let label = result_info(PATH).expect("a result").meta.label;
+        let neighbours = ("shaft_joint.check", "housing.space_claim_check");
         let mut within = DesignInputs::default();
         within.coupling.gearbox_input_rating_Nm = 1.0;
-        let path_column = column(&DASHBOARD_COLUMNS, "Path");
         for (inputs, level, note) in [
             (DesignInputs::default(), Some(Level::Bad), ""),
             (within, Some(Level::Good), ""),
             (short_magnets(), None, GREYED_NOTE),
         ] {
-            let results = compute_all(&inputs);
-            let book = sheets(&snapshot(&inputs, &results));
-            let rows = &sheet(&book, SUMMARY_SHEET).rows;
-            let header = rows
-                .iter()
-                .position(|r| r.first().map(Cell::as_text) == Some(DASHBOARD_COLUMNS[0]))
-                .unwrap();
-            let dashboard = &rows[header + 1..header + 1 + 18];
-            assert_eq!(
-                rows[header + 1 + 18],
-                Vec::<Cell>::new(),
-                "18 rows, then a blank"
-            );
-            let paths: Vec<&str> = dashboard
-                .iter()
-                .map(|row| row[path_column].as_text())
-                .collect();
-            let at = paths
-                .iter()
-                .position(|&path| path == PATH)
-                .expect("the gearbox row");
-            assert_eq!(
-                (paths[at - 1], paths[at + 1]),
-                ("clamps.recommended", "housing.space_claim_check")
-            );
-            assert_eq!(
-                dashboard[at],
-                [
-                    Cell::text(label),
-                    Cell::text(results.gearbox.cold_high_check.clone()),
-                    Cell::empty(),
-                    level_cell(level),
-                    Cell::text(RUST_ONLY),
-                    Cell::text(PATH),
-                    Cell::empty(),
-                    Cell::text(note),
-                ]
-            );
-            let results_sheet = sheet(&book, RESULTS_SHEET);
-            let row = row_of(results_sheet, column(&RESULT_COLUMNS, "Path"), PATH);
-            assert_eq!(row[column(&RESULT_COLUMNS, "Check")], level_cell(level));
-            assert_eq!(
-                row[column(&RESULT_COLUMNS, "Workbook cell")],
-                Cell::text(RUST_ONLY)
-            );
+            assert_summary_check_row(&inputs, PATH, neighbours, level, note);
+        }
+    }
+
+    #[test]
+    fn the_summary_lists_the_shaft_joints_row_with_its_badge_and_the_stored_3d_note() {
+        // BL-064 (spec 7.15; owner R-15): the shaft joints' row, between the clamp's and the
+        // gearbox's. It reads a stored 3D field, so its note column carries the stored-3D label,
+        // green at the defaults and at the passing design, red where the inner hub slips; while
+        // the end-effect model is out of range it is greyed with no level, and the greyed note
+        // wins.
+        const PATH: &str = "shaft_joint.check";
+        let neighbours = ("clamps.recommended", "gearbox.cold_high_check");
+        for (inputs, level, note) in [
+            (DesignInputs::default(), Some(Level::Good), STORED_3D_LABEL),
+            (passing_design(), Some(Level::Good), STORED_3D_LABEL),
+            (only_the_joint_fails(), Some(Level::Bad), STORED_3D_LABEL),
+            (short_magnets(), None, GREYED_NOTE),
+        ] {
+            assert_summary_check_row(&inputs, PATH, neighbours, level, note);
         }
     }
 

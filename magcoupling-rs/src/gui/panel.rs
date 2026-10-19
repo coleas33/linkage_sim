@@ -1619,8 +1619,9 @@ mod tests {
     use crate::gui::sizing::DEBOUNCE_S;
     use crate::gui::test_support::{
         SCREEN, clamp_at_its_limit, drawn_texts, hot_day, key_event, key_tap, last_characters,
-        only_the_clamp_fails, primary_button, select_all, short_magnets, sized_frame,
-        sized_frame_at, text_center, text_rect, text_rects, tooltips_at_once, with_poles,
+        only_the_clamp_fails, only_the_joint_fails, primary_button, select_all, short_magnets,
+        sized_frame, sized_frame_at, text_center, text_rect, text_rects, tooltips_at_once,
+        with_poles,
     };
     use crate::headline;
 
@@ -3135,8 +3136,9 @@ mod tests {
         // Short magnets (f_end < 0): the dashboard greys the rows computed from the pull-out,
         // without badges. In the table's headline (open) each check row carries exactly the
         // dashboard's badge, so the hot minimum (red by its text), the screw sized from the
-        // invalid pull-out and the gearbox check of a cold-high below zero (both green by their
-        // texts) carry none, and the failing filter leaves the hot minimum out.
+        // invalid pull-out, and the shaft joints and gearbox checks of a cold-high below zero
+        // (all three green by their texts) carry none, and the failing filter leaves the hot
+        // minimum out.
         let mut harness = Harness::new();
         harness.panel.inputs = short_magnets();
         harness.click_text(CentreView::Results.label());
@@ -3155,7 +3157,7 @@ mod tests {
             .iter()
             .filter(|line| CHECKS.contains(&line.path))
             .collect();
-        assert_eq!(checks.len(), 8);
+        assert_eq!(checks.len(), 9);
         for line in checks {
             let row = text_rects(&output, line.label)
                 .into_iter()
@@ -4294,6 +4296,32 @@ mod tests {
                     harness.panel.inputs = inputs;
                     harness.frame(Vec::new());
                     texts.extend(drawn_texts(&harness.frame(Vec::new())));
+                }
+                // The shaft joints' guide (BL-064) counts while the section is paused: its
+                // Problem drawn, open under its red row, where the inner hub slips, where it is
+                // over its stress limit and cannot be fitted either, and on an uncooled wheel
+                // shaft.
+                let joint = crate::gui::guidance::guide("shaft_joint.check").expect("its guide");
+                let mut overstressed = DesignInputs::default();
+                overstressed.shaft_joint.hub_interference_max_um = 26.0;
+                let mut uncooled = DesignInputs::default();
+                uncooled.shaft_joint.wheel_shaft_fit_C = 20.0;
+                for inputs in [only_the_joint_fails(), overstressed, uncooled] {
+                    harness.panel.inputs = inputs;
+                    harness.frame(Vec::new());
+                    let drawn = drawn_texts(&harness.frame(Vec::new()));
+                    let panel = &harness.panel;
+                    let problem =
+                        (joint.problem)(panel.inputs(), panel.results()).expect("the joints fail");
+                    assert!(drawn.contains(&problem), "{problem}");
+                    texts.extend(drawn);
+                }
+                // Not vacuous for the guide (ruling C-8): its label and Why are collected.
+                for text in [joint.label, joint.why] {
+                    assert!(
+                        texts.iter().any(|t| t.contains(text)),
+                        "{text:?} is not collected"
+                    );
                 }
                 // The teaching notes shown, their change entries as drawn, their Start here
                 // walk and its hover. No change entry or equation of theirs leads into the
@@ -8890,10 +8918,10 @@ mod tests {
         let output = harness.frame(Vec::new());
         let status = design_status(harness.panel.inputs(), harness.panel.results(), false);
         // The workbook example fails its hot minimum, its clearance, its cup wall and its
-        // gearbox check.
+        // gearbox check, of the ten guided checks (the shaft joints pass).
         assert_eq!(
             (status.bad, status.caution, status.total, status.is_default),
-            (4, 0, 9, true)
+            (4, 0, 10, true)
         );
         assert_eq!(count(&output, &design_status_text(&status)), 1);
         // A fix: the cup wall at 2.4 mm (its rule asks for 2.0 mm and up).

@@ -334,9 +334,8 @@ mod tests {
         ] {
             assert_eq!(section(path), ("shaft_joint", false), "{path}");
         }
-        // The verdict is no chain path: until it is a dashboard row it sits in the package
-        // group under the other results.
-        assert_eq!(section("shaft_joint.check"), ("shaft_joint", true));
+        // The verdict is no chain path: it is a dashboard row, so the headline's (BL-064).
+        assert_eq!(section("shaft_joint.check"), ("headline", false));
         assert_eq!(
             group_of("temperature.summary.peak_with_fault_C"),
             "slip_heating"

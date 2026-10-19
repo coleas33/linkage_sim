@@ -22,15 +22,17 @@ pub(crate) fn with_poles(npole: i64) -> crate::DesignInputs {
     inputs
 }
 
-/// A design that passes all 9 guided checks (`gui::guidance::CHECK_GUIDES`), each with room
+/// A design that passes all 10 guided checks (`gui::guidance::CHECK_GUIDES`), each with room
 /// to spare: the defaults with a 1.8 mm face gap (running clearance about 0.1 mm over its
 /// target), a 2.0 mm cup wall (the flux needs about 1.85 mm at that gap), a 1.6 N·m
 /// requirement (hot-low torque about 2.0 N·m, a quarter over it: a hotter-rated grade, weaker
 /// than N42SH, still meets it) and a 1.0 N·m gearbox input rating (cold-high at the gearbox
 /// input about 0.71 N·m, 29 % under it; the rating changes no other result than the
-/// workbook's gearbox reference, `model.gearbox_reference_Nm`, its only other reader). The
-/// guidance tests break one check of it at a time, so a fix that turns another check red
-/// shows.
+/// workbook's gearbox reference, `model.gearbox_reference_Nm`, its only other reader). Its
+/// shaft joints pass at the example's bands (BL-064: the inner hub holds about 9.48 N·m and
+/// the cup 16.90 N·m against 6.72 N·m; the inner hub would need about 93.3 °C to fit, against
+/// 100 °C allowed). The guidance tests break one check of it at a time, so a fix that turns
+/// another check red shows.
 pub(crate) fn passing_design() -> crate::DesignInputs {
     let mut inputs = crate::DesignInputs::default();
     inputs.metal.face_gap_mm = 1.8;
@@ -67,6 +69,15 @@ pub(crate) fn only_the_gearbox_fails() -> crate::DesignInputs {
     inputs.coupling.gearbox_input_rating_Nm = crate::DesignInputs::default()
         .coupling
         .gearbox_input_rating_Nm;
+    inputs
+}
+
+/// [`passing_design`] with the inner hub's minimum interference at 8 µm: smoothing and the
+/// hot end take all of it (its effective interference at the loosest is floored at 0), so the
+/// inner hub slips, and nothing else fails (BL-064).
+pub(crate) fn only_the_joint_fails() -> crate::DesignInputs {
+    let mut inputs = passing_design();
+    inputs.shaft_joint.hub_interference_min_um = 8.0;
     inputs
 }
 
