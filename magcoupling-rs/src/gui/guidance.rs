@@ -3358,6 +3358,12 @@ mod tests {
         i.shaft_joint.cup_interference_max_um = 26.0;
     }
 
+    /// The cup's maximum at 24 µm: its bore stress is above the limit (348.3 against 345.8 MPa)
+    /// and it still fits (296.4 against 300 °C).
+    fn cup_stress_alone(i: &mut DesignInputs) {
+        i.shaft_joint.cup_interference_max_um = 24.0;
+    }
+
     /// The wheel shaft at 20 °C for fitting, not cooled: the inner hub cannot be fitted.
     fn uncooled_wheel_shaft(i: &mut DesignInputs) {
         i.shaft_joint.wheel_shaft_fit_C = 20.0;
@@ -3420,12 +3426,14 @@ mod tests {
             // BL-064 (spec 7.9): the shaft joints, each design failing them alone. The inner hub
             // slips; its bore stress and fitting temperature are over (a 26 µm maximum); it
             // cannot be fitted on an uncooled wheel shaft; the cup's boss and web, and then the
-            // inner hub, are no longer than the key is wide (each also slips).
+            // inner hub, are no longer than the key is wide (each also slips); the cup's bore
+            // stress alone is over (a 24 µm maximum).
             ("joint_slips", only_the_joint_fails()),
             ("joint_overstressed", breaking(hub_overstressed)),
             ("joint_cannot_be_fitted", breaking(uncooled_wheel_shaft)),
             ("cup_key_no_bearing_area", breaking(no_boss)),
             ("inner_hub_key_no_bearing_area", breaking(short_hub)),
+            ("cup_stress_alone", breaking(cup_stress_alone)),
             // Two failing checks that pull one input apart (review focus 4).
             (
                 "length_conflict",
@@ -5157,7 +5165,7 @@ mod tests {
         // Spec 7.9, the test designs re-probed: without back iron both aluminium parts slip;
         // 50.8 mm magnets make the cup slip and its key alone bear too much (the cup does not
         // lengthen with the magnets); DP460's design limit, and the inner ring's single-ring onset
-        // of library N42 blocks (owner R-15), keep the inner hub from being fitted; and the five
+        // of library N42 blocks (owner R-15), keep the inner hub from being fitted; and the six
         // designs that break the joint alone. Every other test design passes every term, the
         // short magnets' greyed row too (a cold-high below zero asks nothing of a fit).
         let want: Vec<(&str, Vec<String>)> = [
@@ -5176,6 +5184,7 @@ mod tests {
                 "inner_hub_key_no_bearing_area",
                 &["inner hub slips", "inner hub key"],
             ),
+            ("cup_stress_alone", &["cup bore stress"]),
         ]
         .into_iter()
         .map(|(name, terms)| (name, terms.iter().map(|t| (*t).to_owned()).collect()))
@@ -5211,6 +5220,8 @@ mod tests {
         // The inner hub's bore stress and fitting temperature: its maximum down; its wheel shaft
         // is at the slider's bottom already.
         assert_eq!(shown(breaking(hub_overstressed)), [(HUB_MAX, Lower)]);
+        // The cup's bore stress alone: its maximum down.
+        assert_eq!(shown(breaking(cup_stress_alone)), [(CUP_MAX, Lower)]);
         // An uncooled wheel shaft: the maximum down, or the shaft colder.
         assert_eq!(
             shown(breaking(uncooled_wheel_shaft)),
