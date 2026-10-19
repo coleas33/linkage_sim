@@ -5805,3 +5805,143 @@ The report for the record follows.
 - The pinned words hold: sentence 1's, 3's and 4's placeholders; "here", "cup's", "Here", "wheel shaft", "your limit", "adhesive's", "single-ring onset", "onset less 10 °C"; the two watch-outs' words; "held 10 °C below"; and round 2's "at or above it", "would need", "allowed" and no "heat". The aims are unchanged and move as they say at the five probes.
 
 8. Verdict for the note, round 2: PASS. MF-1 and MF-2 are applied, true and pinned; no must-fix remains. Should-fix offered: SF-1 (watch_out[0]), SF-2 (sentences[1]), SF-3 (sources[2]) from round 1, and SF-4 (the "at" of both band mirrors in the note's test). No CHANGE in item 5 goes to the owner. For the owner's information (round 1's, reproduced): the cup's placeholder band meets its stress limit only with a smoothing of about 3.2 µm or more (the assumption is 5 µm), and the default inner hub can be fitted only with the wheel shaft at -181 °C or colder.
+
+### Re-review after a change by the implementer after its review (2026-10-19)
+
+BL-064 Task 7's commit 5fe8abd shipped this note with the words round 2 passed and set its status
+from Draft to Reviewed (physics reviewer (session model), 2026-10-19, this section). Around it,
+the same commit made the note Start here step 14 of 15, added "shaft joints" to the Start here
+hover, sent the shaft-joint row's Why link to the note in place of the interim reason, set the
+sign-off sheet generator's `CLAMPS_PAUSED_LINE` and `ADDED_AFTER_THE_SLICE` lines, and moved the
+counts of notes and steps in `magcoupling-rs/README.md` and `docs/ai/03-structure.yaml`. The
+change after the review had a text re-review in a fresh context at HEAD 5fe8abd. The reviewer's
+report for the record follows unchanged (full answer:
+`.superpowers/sdd/2026-10-18-bl064-shaft-joint/textreview-T7-a-change-by-the-implementer-after-its-review-1.md`).
+
+- Reviewer: fresh context, session model, 2026-10-19; text re-review 1 of BL-064 Task 7's change
+  after its review (commit 5fe8abd, base 5fb7292).
+- Verdict: PASS, no must-fix. The note ships exactly as round 2 passed it: every field, every
+  placeholder and every aim, at the five probe designs; only its status changed. The changed
+  on-screen texts (the Start here hover and bar, the Why link) are true, inside the caps and
+  break no trap. The sheet generator's two lines are spec 6.1's words. The counts are right: 21
+  notes, 20 shown while paused, 15 steps, and 14 while paused.
+- The note's review date: 2026-10-19, the date in this heading. The note already carries it, so
+  it does not move.
+- Should-fix offered, none applied in this round. Both are low and in the docs that describe the
+  tests, not on screen; both stay open for the controller (the answer's option B leaves them to
+  Task 9's docs pass):
+  - SF-1 (`docs/ai/03-structure.yaml:75`): the note's two claim tests sit inside "the slice-2 note
+    release gates (...)", whose clause says they hold the notes shown; neither is a release gate.
+    Offered, two edits on that line. Replace
+    "start_here_is_fifteen_steps_and_fourteen_while_paused, the_shaft_joint_note_s_claims_hold_at_every_probe_design, the_shaft_joint_texts_type_the_cure_margin_the_engine_keeps, only_the_review_tools_are_ignored;"
+    with
+    "start_here_is_fifteen_steps_and_fourteen_while_paused, only_the_review_tools_are_ignored;"
+    and replace "how many notes show));" with
+    "how many notes show), and BL-064's shaft-joint note tests (the_shaft_joint_note_s_claims_hold_at_every_probe_design, the_shaft_joint_texts_type_the_cure_margin_the_engine_keeps));"
+  - SF-2 (`magcoupling-rs/README.md:679`, the `tests/explain.rs` row): "both helps of the bonded
+    inner hub's fitting limit" reads as two helps of one input, while the test reads the help of
+    the input `shaft_joint.hub_fit_max_C` and that of the result `shaft_joint.hub_fit_allowed_C`;
+    the sentence also lacks its "that". Offered: replace
+    "holds the margin both helps of the bonded inner hub's fitting limit, sentence 4 and the first source type to `temperature::CURE_MARGIN_MIN_C`"
+    with
+    "holds the margin that the helps of the bonded inner hub's hottest fitting temperature and of its allowed fitting temperature, sentence 4 and the first source type to `temperature::CURE_MARGIN_MIN_C`"
+- The answer's R-2 observations ask for no change in this round: the README's "0.86 to 1.0 times
+  E·δ/d" names the cup though the test checks both joints; the README's "signed off" and this
+  record's owner sign-off are two senses of the word; the dated sign-off sheet keeps the old
+  clamp line as slice-2 history; and the note's open should-fix items from rounds 1 and 2 stay
+  the controller's call.
+- No text changed in this round.
+
+**Report for the record (as returned).**
+
+**R-1. What changed after the review, item by item, and what holds.**
+- **The note** (`notes.rs:899-989`).
+  - **Its text.** It is the text round 2 passed. Change entry 0 is round 1's MF-2 word for word: "the cup grips harder at
+    its loosest; its maximum must stay at or above it, within the stress limit, and still fit." Change entry 2 is MF-1
+    word for word: "a warmer wheel shaft shrinks less, so the temperature the inner hub's fit would need rises, toward or
+    past the allowed one."
+  - **Its words at the five probes.** I re-read every field. Every value, and every aim's "moves as it says", matches
+    round 2's numbers to the last digit (for example 9.484 / 16.90 / 7.647 N·m, and 312.5 against 345.8 MPa).
+  - **Caps.** Sentences are 25, 17, 22, 19 and 25 words raw. Entries are at most 22 words. The two watch-outs are 28
+    each.
+  - **Traps.** Trap 2: cold-high is not named and nothing is ordered. Traps 9 and 14: no "heat" in entry 2, and the need
+    is quoted against "allowed". Trap 21: no "clamp". Trap 22: glyphs only, ·, µ, °, ×.
+- **The `NOTES` doc** (21 notes).
+  - The count is right: 9 + 6 + 1 + 1 + 3 + 1 = 21. That is the spec's list of 9, the six A5 warnings, ferrite's cold
+    side, the calibration, slice 2's three, and the shaft joints.
+  - The cap test reads `(15..=21)`.
+- **`START_HERE_ALL` and its doc** (15 steps).
+  - `("shaft_joint", "shaft_joint.hub_holding_Nm")` sits just before `("clamp_preload", "clamps.capacity_Nm")`, so it is
+    step 14 of 15.
+  - While paused, `START_HERE` is the first 14, and the shaft-joint step is the last one shown, as the doc says.
+- **The hover** (`explorer.rs:116`).
+  - Paused, it reads "A suggested order: how the coupling makes torque, the magnet pattern, back iron, pull-out, magnet
+    ends, calibration, temperature, slipping and its heat, demagnetization, shaft joints". That is 25 words, in step
+    order, with no "clamp".
+  - With the section shown, it ends "..., shaft joints, clamps". This keeps the step order, because the clamp step is
+    last.
+  - The macro's doc, "topics before its last, the clamp note's", still holds.
+- **The bar's doc** (`explorer.rs:198-200`).
+  - The doc reads "13 of 14 (ferrite rings only)" while paused and "13 of 15" with the section shown. Both are right:
+    the bar prints `step + 1` of `START_HERE.len()`, and ferrite is index 12.
+  - The new pin, `start_here_text(13) == "Start here 14 of {steps}: Shaft joints: a keyed shrink fit"`, holds in both
+    states.
+  - The double colon is the established form: six other titles carry a colon, such as "Back iron: why steel behind the
+    magnets adds torque".
+- **The Why link** (`guidance.rs:226`).
+  - `Learn::Note("shaft_joint")` makes `row_learn`, `note_fallback` and the dashboard draw the note's title under the
+    row. The panel test clicks it, opens the note and changes no input.
+  - The interim reason no longer appears anywhere in the code.
+  - The guide's Why sentence is unchanged. It is T8's.
+- **The sign-off generator** (`explorer.rs` tests).
+  - `CLAMPS_PAUSED_LINE` equals spec 6.1's draft. It is true:
+    - the section is paused since 2026-10-15;
+    - `clamp_preload` keeps its text and is hidden;
+    - the owner's ruling of 2026-10-17, "Hub is shrink fit with key only", puts the keyed shrink fits in place of the
+      clamp.
+  - `ADDED_AFTER_THE_SLICE` equals spec 6.1's constant. It is true: the note has no slice-2 text, and its record is
+    `## shaft_joint`.
+  - The test's counts hold in both switch states:
+    - 17 snapshot notes, which is 21 less 3 less 1;
+    - `NEW_IN_SLICE` 3 times;
+    - `ADDED_AFTER_THE_SLICE` once.
+  - Per decision 23, the sheet is not regenerated: `git log` shows `docs/analyses/2026-10-14-magcoupler-notes-signoff.md`
+    last changed in `c1fe68d`.
+- **The record** (`## shaft_joint`).
+  - **The template.** It is plan T7 Step 11's template, with its slots filled from the answers:
+    - Rounds 2 and PASS; the date 2026-10-19.
+    - MF-1 and MF-2: old and new text, why, and pins, each matching the test.
+    - SF-1 to SF-4, not applied. True: the test has none of SF-4's assertions.
+    - The 40 °C decision.
+    - R-1 to R-4 and R-14, all CONFIRM.
+  - **The paste.** Both rounds are verbatim (checked by diff), and the section holds one `#` line.
+  - **The files it names exist:** `t7-review-r1.md`, `t7-review-r2.md`, `notes-review-BL064.txt` and
+    `g3/BL064-note.diff`.
+  - **Line ends.** The blob stores LF like the rest of the file, and the work tree converts it.
+- **README and `03-structure.yaml`.**
+  - Every count matches the code: 21 notes; 20 shown; 14 steps while paused, 15 in full; "Start here 14 of 15"; step
+    15 the clamp.
+  - `the_docs_count_the_notes_and_the_steps` passes.
+  - The README's tests rows name only tests that exist, and their claims hold, apart from SF-2.
+
+**R-2. Observations, no change asked.**
+- **"0.86 to 1.0 times E·δ/d."** The README and the record give this for "the cup's" bore stress. The test checks both
+  joints, so the statement is true but narrower than the test. The aluminium body, 1.005 to 1.127, is off the five
+  probes, as round 2 noted.
+- **"Signed off."** The README says "All 21 are signed off ... by their per-note physics reviews". This is its own sense
+  of "signed off": the panel's gate (`note_for`). The record says the owner's review of the BL-064 diff is the note's
+  owner sign-off. Both are true. The two senses of "sign-off" could be told apart in Task 9's pass if the owner wants.
+- **The committed sign-off sheet still says the clamp "returns, rewritten and reviewed, with that section (BL-064)"**
+  (`docs/analyses/2026-10-14-magcoupler-notes-signoff.md:14`).
+  - Owner 6A asks for docs that say so to be reworded. The Global Constraints forbid editing this sheet, and decision 23
+    keeps it as the slice-2 record.
+  - The generator now prints the new line. The dated sheet keeps the old one. That is history, not a live claim.
+  - Task 9 or the owner may add a dated pointer elsewhere. This review does not ask for one.
+- **The open should-fix items.**
+  - The note's SF-1 to SF-3 (rounds 1 and 2) are still open for the controller.
+  - I concur that SF-1 is worth taking: the heat cure of EA 9514 or 2214 Hi-Temp, with the cup already on the gearbox
+    shaft. Today's watch-out is not false: it says nothing here checks the gearbox's shaft, bearings or seal. But it is
+    where an engineer choosing a heat-cured adhesive would meet the hazard.
+  - None of these is a change after the review. Each stays the controller's call.
+
+**R-3. No model question arises.** No changed text asks for an engine change. No ruling on R-1 to R-4 or R-14 moved.
