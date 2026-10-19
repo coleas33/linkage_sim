@@ -3284,7 +3284,7 @@
       "cell": null,
       "choices": [],
       "default": 0.14,
-      "help": "Steel on steel, dry and degreased. Holding torque scales with it; oil or a coating in the bore lowers it.",
+      "help": "The default is for dry, degreased steel on steel. Holding torque scales with it; oil or a coating in the bore lowers it.",
       "label": "Shrink-fit friction coefficient",
       "path": "shaft_joint.friction",
       "range": {

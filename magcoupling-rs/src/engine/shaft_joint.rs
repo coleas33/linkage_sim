@@ -63,7 +63,7 @@ inputs! {
                 "The fit alone must hold cold-high times this, and the key alone is checked at the same torque. While the coupling slips, the torque can reverse many times.")
                 .range(1.0, 4.0, 0.1),
             friction: f64 = 0.14 => param_rust_only("-", "Shrink-fit friction coefficient",
-                "Steel on steel, dry and degreased. Holding torque scales with it; oil or a coating in the bore lowers it.")
+                "The default is for dry, degreased steel on steel. Holding torque scales with it; oil or a coating in the bore lowers it.")
                 .range(0.05, 0.30, 0.01)
                 .assumption(),
             smoothing_um: f64 = 5.0 => param_rust_only("µm", "Surface smoothing of the fit",

@@ -9,6 +9,7 @@
 
 use magcoupling::compute_all;
 use magcoupling::engine::api::{DesignInputs, shaft_joint_links};
+use magcoupling::engine::assumptions::ASSUMPTIONS;
 use magcoupling::engine::compat::py_min;
 use magcoupling::engine::explain::probes::probe_designs;
 use magcoupling::engine::meta::{InputMeta, InputSet, SliderRange, Value, input_rows, result_rows};
@@ -418,6 +419,27 @@ fn the_bare_cup_s_limit_help_names_no_steel_as_the_cup_can_be_aluminium() {
     assert!(
         help.contains("the treatment temperatures of its material and finish"),
         "{help}"
+    );
+}
+
+#[test]
+fn the_friction_help_opens_with_its_rationale_s_default() {
+    // G-3 SF-6, from the review leftovers: with a 304 or aluminium part (pick 7 or 8, or no back
+    // iron) the contact is not steel on steel, so the help's first sentence states what the
+    // default is for, in the assumption rationale's own words, never the design's contact.
+    let path = "shaft_joint.friction";
+    let rationale = ASSUMPTIONS
+        .iter()
+        .find(|a| a.paths.contains(&path))
+        .unwrap_or_else(|| panic!("{path} is an assumption"))
+        .rationale;
+    let help = input_meta(path).help;
+    let (first, _) = help
+        .split_once(". ")
+        .unwrap_or_else(|| panic!("{path}'s help has two sentences: {help}"));
+    assert!(
+        rationale.contains(first),
+        "{first:?} is not in the rationale: {rationale}"
     );
 }
 
