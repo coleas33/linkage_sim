@@ -15,11 +15,19 @@ use std::collections::BTreeSet;
 use common::{input_meta, plain_problems};
 use magcoupling::engine::api::{DesignInputs, compute_all};
 use magcoupling::engine::assumptions::{
-    ASSUMPTIONS, any_modified, modified, reset_to_workbook_defaults, states,
+    ASSUMPTIONS, Assumption, any_modified, modified, reset_to_workbook_defaults, states,
 };
 use magcoupling::engine::deviations::Deviations;
 use magcoupling::engine::explain::probes;
 use magcoupling::engine::meta::{FieldType, InputSet, Value, input_rows, result_rows};
+
+/// The assumption row `id`.
+fn row(id: &str) -> &'static Assumption {
+    ASSUMPTIONS
+        .iter()
+        .find(|a| a.id == id)
+        .unwrap_or_else(|| panic!("{id}: no assumption"))
+}
 
 /// A value of the input at `path` other than its default, inside its slider or among its
 /// choices: the range end farther from the default, or the first other choice.
@@ -120,7 +128,7 @@ fn the_rows_are_the_spec_v1_set() {
     );
     // The end-effect coefficient is the Calculator's and the Calibration's (report 6.5);
     // the clamp friction is the shaft-to-bore input, not the adapter joint's C66.
-    let paths = |id: &str| ASSUMPTIONS.iter().find(|a| a.id == id).unwrap().paths;
+    let paths = |id: &str| row(id).paths;
     assert_eq!(paths("end_effect"), ["coupling.c_end", "calibration.c_end"]);
     assert_eq!(paths("clamp_friction"), ["clamps.friction"]);
     assert_eq!(paths("harmonics"), ["coupling.max_harmonic"]);
@@ -163,12 +171,6 @@ fn the_shaft_joint_rows_are_rust_only_and_cite_the_bl064_spec() {
     // Rust-only input with no workbook cell, each source citing the spec by name (the G-3
     // review does not cover sources, so the words are pinned here); the friction row also names
     // the spec's file, which exists. None is hidden while the shaft-clamp section is paused.
-    let row = |id: &str| {
-        ASSUMPTIONS
-            .iter()
-            .find(|a| a.id == id)
-            .unwrap_or_else(|| panic!("{id}: no assumption"))
-    };
     for (id, path) in BL064_ROWS {
         let a = row(id);
         assert_eq!(a.paths, [path], "{id}");
