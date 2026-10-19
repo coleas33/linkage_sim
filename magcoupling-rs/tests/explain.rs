@@ -32,6 +32,7 @@ use magcoupling::engine::compat::parity_close;
 use magcoupling::engine::deviations::DeviationId;
 use magcoupling::engine::explain::markup::{Expr, Formula, Symbol};
 use magcoupling::engine::explain::notes::{Change, Sense, Step};
+use magcoupling::engine::explain::plain::TORQUE_ORDER_WORDS;
 use magcoupling::engine::explain::record::Eval;
 use magcoupling::engine::explain::registry::{Design, Registry, TermKind};
 use magcoupling::engine::explain::scope::{SCOPE, Status};
@@ -4919,7 +4920,7 @@ fn the_shaft_joint_note_s_claims_hold_at_every_probe_design() {
     assert!(ferrite.temperature.demag.inner_beta_per_C > 0.0);
     // No order of the torques: cold-high can reach the joints; it is no bound on them.
     let texts = note_texts_with_sources(note);
-    for banned in ["strongest", "most expected", "most torque expected"] {
+    for banned in TORQUE_ORDER_WORDS {
         for text in &texts {
             assert!(
                 !text.to_lowercase().contains(banned),

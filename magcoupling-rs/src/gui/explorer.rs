@@ -2353,7 +2353,7 @@ mod tests {
     #[test]
     fn the_shaft_joint_note_draws_the_fit_temperature_beside_the_wheel_shaft_s_shrink() {
         use crate::engine::explain::note_text::render;
-        use crate::gui::test_support::passing_design;
+        use crate::gui::test_support::{n42_parts, passing_design};
         let sentence = notes::note("shaft_joint")
             .expect("the shaft-joint note")
             .sentences[4];
@@ -2366,15 +2366,14 @@ mod tests {
             inputs.shaft_joint.wheel_shaft_fit_C = celsius;
             inputs
         };
-        let mut n42_parts = passing_design();
-        n42_parts.coupling.magnets.part_inner = "B842".to_owned();
-        n42_parts.coupling.magnets.part_outer = "B842".to_owned();
+        let mut n42 = passing_design();
+        n42_parts(&mut n42);
         for (inputs, words) in [
             (
                 DesignInputs::default(),
                 "would need 93.27 °C on the wheel shaft shrunk 18.99 µm; allowed: 100.0 °C,",
             ),
-            (n42_parts, "allowed: 59.83 °C,"),
+            (n42, "allowed: 59.83 °C,"),
             (
                 wheel_shaft_at(20.0),
                 "would need 247.6 °C on the wheel shaft shrunk 0 µm;",

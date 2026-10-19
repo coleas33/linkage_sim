@@ -1426,6 +1426,7 @@ mod batch_b_tests {
     use crate::engine::meta::{InputSet, ResultSet, Value};
     use crate::engine::size_controls::{dimensions, resize_diameter, with_ring_radius};
     use crate::gui::inputs::WORKFLOW;
+    use crate::gui::test_support::n42_parts;
     use crate::{DesignInputs, compute_all};
     use std::collections::BTreeSet;
 
@@ -1591,16 +1592,7 @@ mod batch_b_tests {
             "coercivity inputs" => set("temperature.demag.coercivity_source", Value::Int(0)),
             "measured drag" => set("metal.measured_drag_Nm", Value::Num(0.05)),
             "shallow keyway" => set("coupling.keyway_depth_mm", Value::Num(1.0)),
-            "N42 parts" => {
-                set(
-                    "coupling.magnets.part_inner",
-                    Value::Text("B842".to_owned()),
-                );
-                set(
-                    "coupling.magnets.part_outer",
-                    Value::Text("B842".to_owned()),
-                );
-            }
+            "N42 parts" => n42_parts(&mut inputs),
             "manual, no grade" => {
                 set("coupling.magnets.part_inner", Value::Text(String::new()));
                 set("coupling.magnets.part_outer", Value::Text(String::new()));

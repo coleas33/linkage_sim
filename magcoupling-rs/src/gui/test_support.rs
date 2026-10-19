@@ -49,6 +49,14 @@ pub(crate) fn hot_day(inputs: &mut crate::DesignInputs) {
     inputs.temperature.duty.driving_rise_C = 60.0;
 }
 
+/// Library N42 blocks (rated 80 °C) in both rings: their magnet limit is below the hot-day
+/// start, and on the example design the inner ring's single-ring onset less the cure margin is
+/// the inner hub's allowed fitting temperature (BL-064).
+pub(crate) fn n42_parts(inputs: &mut crate::DesignInputs) {
+    inputs.coupling.magnets.part_inner = "B842".to_owned();
+    inputs.coupling.magnets.part_outer = "B842".to_owned();
+}
+
 /// No screw fits a 12 mm clamp boss.
 pub(crate) fn small_boss(inputs: &mut crate::DesignInputs) {
     inputs.clamps.boss_od_mm = 12.0;

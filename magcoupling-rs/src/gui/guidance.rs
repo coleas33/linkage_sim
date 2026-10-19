@@ -3009,9 +3009,9 @@ mod tests {
     use crate::gui::readouts::Readouts;
     use crate::gui::test_support::{
         assert_glyphs, clamp_at_its_limit, drawn_texts, hot_day, hub_overstressed, is_shaft_joint,
-        only_the_clamp_fails, only_the_gearbox_fails, only_the_joint_fails, passing_design,
-        reversed_hub_band, shaft_joint_input_rows, shaft_joint_result_rows, short_magnets,
-        sized_frame, slider_range, small_boss, with_poles,
+        n42_parts, only_the_clamp_fails, only_the_gearbox_fails, only_the_joint_fails,
+        passing_design, reversed_hub_band, shaft_joint_input_rows, shaft_joint_result_rows,
+        short_magnets, sized_frame, slider_range, small_boss, with_poles,
     };
     use std::collections::BTreeSet;
 
@@ -3067,13 +3067,6 @@ mod tests {
     fn custom_hot_day(i: &mut DesignInputs) {
         hot_day(i);
         i.coupling.magnets.part_inner.clear();
-    }
-
-    /// Library N42 blocks (rated 80 °C) in both rings: their magnet limit is below the hot-day
-    /// start.
-    fn n42_parts(i: &mut DesignInputs) {
-        i.coupling.magnets.part_inner = "B842".to_owned();
-        i.coupling.magnets.part_outer = "B842".to_owned();
     }
 
     /// A long unbroken slip at a high slip speed: only the fault peak passes the magnet limit.
@@ -8360,9 +8353,10 @@ mod tests {
     /// input (review 2, MF-1; BL-067): cold-high "can reach" a joint, it is no bound, and with
     /// the operating temperature below the minimum (each on its slider) the operating pull-out
     /// with its allowance is above it. No text the check shows may call any torque the
-    /// strongest or the most expected.
+    /// strongest or the most expected (`plain::TORQUE_ORDER_WORDS`).
     #[test]
     fn the_shaft_joint_texts_never_order_the_torques() {
+        use crate::engine::explain::plain::TORQUE_ORDER_WORDS;
         let mut corner = DesignInputs::default();
         for (path, x) in [
             ("coupling.op_temp_C", -40.0),
@@ -8428,7 +8422,7 @@ mod tests {
         assert!(texts.len() > 50, "{}", texts.len());
         for text in texts {
             let lower = text.to_lowercase();
-            for word in ["strongest", "most expected", "most torque expected"] {
+            for word in TORQUE_ORDER_WORDS {
                 assert!(!lower.contains(word), "{word:?} in {text:?}");
             }
         }

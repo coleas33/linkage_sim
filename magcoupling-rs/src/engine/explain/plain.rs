@@ -128,6 +128,10 @@ pub fn mentions_gearbox_protection(text: &str) -> bool {
     lower.contains("gearbox") && lower.contains("protect")
 }
 
+/// Words that would order the coupling's torques (BL-064 spec 6.2, trap 2): no shaft-joint text
+/// says them.
+pub const TORQUE_ORDER_WORDS: [&str; 3] = ["strongest", "most expected", "most torque expected"];
+
 /// Whether `c` continues a word: a letter, a digit or an underscore.
 fn is_word(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
