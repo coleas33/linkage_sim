@@ -139,7 +139,7 @@ pub fn lookup(table: &str, key: &Value, field_name: &str) -> Result<Option<Value
                 "modulus_GPa" => num(m.engine.modulus_GPa),
                 "cte_per_C" => num(m.engine.cte_per_C),
                 // As `PartProperties::hub` reads it: NaN where the library has no yield.
-                "yield_MPa" => num(m.yield_MPa.value.unwrap_or(f64::NAN)),
+                "yield_MPa" => num(m.yield_or_nan()),
                 _ => unreachable!("checked against TABLE_FIELDS"),
             })
         }

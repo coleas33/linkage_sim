@@ -102,6 +102,14 @@ pub struct Material {
     pub notes: &'static str,
 }
 
+impl Material {
+    /// The yield strength [MPa], NaN where the library has none, as the shaft joint check reads
+    /// it.
+    pub fn yield_or_nan(&self) -> f64 {
+        self.yield_MPa.value.unwrap_or(f64::NAN)
+    }
+}
+
 /// Every library material, in the data file's order.
 pub const MATERIALS: [Material; 14] = [
     Material {
@@ -860,7 +868,7 @@ impl PartProperties {
         };
         HubMaterial {
             props: if steel { self.steel } else { self.body },
-            yield_MPa: record.and_then(|m| m.yield_MPa.value).unwrap_or(f64::NAN),
+            yield_MPa: record.map_or(f64::NAN, Material::yield_or_nan),
         }
     }
 }
@@ -1000,5 +1008,19 @@ mod tests {
             chosen(&BACK_IRON_CHOICES, 7).map(|m| m.ferromagnetic),
             Some(false)
         );
+    }
+
+    #[test]
+    fn the_yield_is_the_library_s_and_nan_where_it_has_none() {
+        // `Material::yield_or_nan`, read by `PartProperties::hub` and the explain tables. Every
+        // library material has a sourced yield today, so only a record without one reaches NaN.
+        for m in &MATERIALS {
+            assert_eq!(Some(m.yield_or_nan()), m.yield_MPa.value, "{}", m.id);
+        }
+        let unsourced = Material {
+            yield_MPa: NOT_SOURCED,
+            ..MATERIALS[0]
+        };
+        assert!(unsourced.yield_or_nan().is_nan());
     }
 }
