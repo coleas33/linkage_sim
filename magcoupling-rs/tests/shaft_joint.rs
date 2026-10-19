@@ -74,6 +74,14 @@ fn terms(inputs: &DesignInputs) -> [JointTerms; 2] {
     shaft_joint::joints(&inputs.shaft_joint, &links(inputs))
 }
 
+/// The failing terms of `inputs`' judged joints as (cause, joint), in the badge's order.
+fn failing_names(inputs: &DesignInputs) -> Vec<(Cause, &'static str)> {
+    shaft_joint::failing(&terms(inputs))
+        .into_iter()
+        .map(|(cause, j)| (cause, j.name))
+        .collect()
+}
+
 /// `x` within `tolerance` of `want`.
 fn assert_near(x: f64, want: f64, tolerance: f64, what: &str) {
     assert!((x - want).abs() <= tolerance, "{what}: {x}, want {want}");
@@ -674,13 +682,8 @@ fn a_band_maximum_too_high_is_over_the_stress_limit_and_cannot_be_fitted() {
             over_stress(joint, stress, limit),
             "{joint} {maximum}"
         );
-        let joints = terms(&inputs);
-        let failing: Vec<(Cause, &str)> = shaft_joint::failing(&joints)
-            .into_iter()
-            .map(|(cause, j)| (cause, j.name))
-            .collect();
         assert_eq!(
-            failing,
+            failing_names(&inputs),
             [(Cause::BoreStress, joint), (Cause::CannotBeFitted, joint)],
             "{joint} {maximum}"
         );
@@ -695,13 +698,8 @@ fn the_badge_takes_causes_in_order_then_the_inner_hub_before_the_cup() {
         i.shaft_joint.hub_interference_max_um = 28.0;
         i.shaft_joint.cup_interference_max_um = 28.0;
     });
-    let joints = terms(&both);
-    let failing: Vec<(Cause, &str)> = shaft_joint::failing(&joints)
-        .into_iter()
-        .map(|(cause, j)| (cause, j.name))
-        .collect();
     assert_eq!(
-        failing,
+        failing_names(&both),
         [
             (Cause::BoreStress, INNER_HUB),
             (Cause::BoreStress, CUP),
@@ -1043,11 +1041,10 @@ fn a_long_magnet_makes_the_cup_slip_first() {
         verdict.starts_with(&format!("{FIT_SLIPS} ({CUP})")),
         "{verdict}"
     );
-    let failing: Vec<(Cause, &str)> = shaft_joint::failing(&terms(&long))
-        .into_iter()
-        .map(|(cause, j)| (cause, j.name))
-        .collect();
-    assert_eq!(failing, [(Cause::Slips, CUP), (Cause::Key, CUP)]);
+    assert_eq!(
+        failing_names(&long),
+        [(Cause::Slips, CUP), (Cause::Key, CUP)]
+    );
     for (length, slips_at_cup) in [(26.0, false), (27.0, true)] {
         let inputs = design(|i| i.coupling.magnets.axial_length_mm = Some(length));
         let [_, cup] = terms(&inputs);
@@ -1742,12 +1739,11 @@ fn the_key_alone_is_a_backup_with_its_own_edges() {
     // badge's first cause; the cup's key (407.8 MPa) follows.
     let shallow = design(|i| i.coupling.keyway_depth_mm = 0.3);
     assert_eq!(check(&shallow), key_over(INNER_HUB, "509.8", "345.8"));
+    assert_eq!(
+        failing_names(&shallow),
+        [(Cause::Key, INNER_HUB), (Cause::Key, CUP)]
+    );
     let joints = terms(&shallow);
-    let failing: Vec<(Cause, &str)> = shaft_joint::failing(&joints)
-        .into_iter()
-        .map(|(cause, j)| (cause, j.name))
-        .collect();
-    assert_eq!(failing, [(Cause::Key, INNER_HUB), (Cause::Key, CUP)]);
     assert_near(joints[1].key_pressure_MPa, 407.82, 5e-3, "cup key");
     // The contact height is capped at the keyway depth: 152.9 / 122.3 MPa at 1.0 mm.
     let s = compute_all(&design(|i| i.coupling.keyway_depth_mm = 1.0)).shaft_joint;
@@ -1808,12 +1804,8 @@ fn the_key_alone_is_a_backup_with_its_own_edges() {
     assert_near(s.hub_holding_Nm, 2.189, 5e-4, "short hub");
     assert_eq!(s.hub_key_pressure_MPa, f64::INFINITY);
     assert_eq!(s.check, slips(INNER_HUB, "2.19", "7.65"));
-    let failing: Vec<(Cause, &str)> = shaft_joint::failing(&terms(&short_hub))
-        .into_iter()
-        .map(|(cause, j)| (cause, j.name))
-        .collect();
     assert_eq!(
-        failing,
+        failing_names(&short_hub),
         [(Cause::Slips, INNER_HUB), (Cause::Key, INNER_HUB)]
     );
 }
