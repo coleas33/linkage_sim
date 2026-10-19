@@ -5,7 +5,8 @@
 //! `compute_all` does:
 //!
 //! Calibration → Calculator (model) → Metal design retainers → Calculator mass
-//! → Metal design → Materials → Temperature design → Shaft clamps → sweeps.
+//! → Metal design → Materials → Temperature design → housing, gearbox, shaft joints
+//! → Shaft clamps → sweeps.
 //!
 //! Ported: every module except `fields3d` (M3): every sheet of the Python
 //! `compute_all` (Calibration, Calculator (model), Metal design retainers,
