@@ -8829,22 +8829,23 @@ mod tests {
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
     }
 
-    #[test]
-    fn the_gearbox_row_s_own_why_link_opens_the_torque_band_note() {
-        // BL-059: the gearbox check's Why link leads to the torque-band note, as the hot-low,
-        // hot-minimum and cold-high rows above it do, so those rows draw the note's title first.
-        // The copy clicked is the gearbox row's own: on the dashboard, below the row's label and
-        // above the next row's. The click edits nothing.
+    /// A dashboard row's Why links, for the row-link tests (BL-059, BL-064): every copy of the
+    /// reviewed note `id`'s title drawn on the dashboard, in paint order (top first), and the
+    /// row's own copies, those under `check`'s label and above the next row's label. Each copy is
+    /// where a click lands on it, its last character (`last_characters`). A row draws its Why
+    /// line whether or not its check fails.
+    fn row_s_why_links(
+        output: &egui::FullOutput,
+        check: &str,
+        id: &str,
+    ) -> (Vec<egui::Pos2>, Vec<egui::Pos2>) {
         use crate::gui::dashboard::DASHBOARD;
-        use crate::gui::guidance::TORQUE_BAND_NOTE;
         use crate::gui::typeset::glyph_safe;
-        let mut harness = Harness::on_screen(TALL);
-        let output = harness.frame(Vec::new());
-        let note = crate::gui::explorer::reviewed_note(TORQUE_BAND_NOTE)
-            .expect("the torque-band note is reviewed");
+        let note = crate::gui::explorer::reviewed_note(id)
+            .unwrap_or_else(|| panic!("the {id} note is reviewed"));
         let on_dashboard = |x: f32| x > TALL.x - DASHBOARD_WIDTH;
         let label_top = |path: &str| {
-            text_rects(&output, label_for(path))
+            text_rects(output, label_for(path))
                 .into_iter()
                 .find(|r| on_dashboard(r.center().x))
                 .unwrap_or_else(|| panic!("{path} on the dashboard"))
@@ -8852,24 +8853,49 @@ mod tests {
         };
         let index = DASHBOARD
             .iter()
-            .position(|&(path, _)| path == GEARBOX_CHECK)
-            .expect("the gearbox row");
-        let (row, next) = (label_top(GEARBOX_CHECK), label_top(DASHBOARD[index + 1].0));
-        let links: Vec<egui::Pos2> = last_characters(&output, &glyph_safe(note.title))
+            .position(|&(path, _)| path == check)
+            .unwrap_or_else(|| panic!("{check} is a dashboard row"));
+        let (next_path, _) = DASHBOARD
+            .get(index + 1)
+            .unwrap_or_else(|| panic!("a dashboard row after {check}"));
+        let (row, next) = (label_top(check), label_top(next_path));
+        let copies: Vec<egui::Pos2> = last_characters(output, &glyph_safe(note.title))
             .into_iter()
             .filter(|at| on_dashboard(at.x))
             .collect();
-        assert!(links[0].y < row, "the rows above draw it first: {links:?}");
-        let own: Vec<egui::Pos2> = links
+        let own = copies
             .iter()
             .copied()
             .filter(|at| at.y > row && at.y < next)
             .collect();
-        assert_eq!(own.len(), 1, "one link under the gearbox row: {links:?}");
-        harness.click(own[0]);
-        assert!(harness.panel.explorer.open);
-        assert_eq!(harness.panel.explorer.note(), Some(TORQUE_BAND_NOTE));
-        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+        (copies, own)
+    }
+
+    /// Clicks the note link at `at` and checks that the click opened note `id` in the explorer
+    /// and edited no input. The harness must hold the default design.
+    fn click_opens_note(harness: &mut Harness, at: egui::Pos2, id: &str) {
+        harness.click(at);
+        assert!(harness.panel.explorer.open, "{id}");
+        assert_eq!(harness.panel.explorer.note(), Some(id));
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default(), "{id}");
+    }
+
+    #[test]
+    fn the_gearbox_row_s_own_why_link_opens_the_torque_band_note() {
+        // BL-059: the gearbox check's Why link leads to the torque-band note, as the hot-low,
+        // hot-minimum and cold-high rows above it do, so those rows draw the note's title first.
+        // The copy clicked is the gearbox row's own: on the dashboard, below the row's label and
+        // above the next row's. The click edits nothing.
+        use crate::gui::guidance::TORQUE_BAND_NOTE;
+        let mut harness = Harness::on_screen(TALL);
+        let output = harness.frame(Vec::new());
+        let (copies, own) = row_s_why_links(&output, GEARBOX_CHECK, TORQUE_BAND_NOTE);
+        assert_eq!(own.len(), 1, "one link under the gearbox row: {copies:?}");
+        assert!(
+            copies[0].y < own[0].y,
+            "the rows above draw it first: {copies:?}"
+        );
+        click_opens_note(&mut harness, own[0], TORQUE_BAND_NOTE);
     }
 
     #[test]
@@ -8877,42 +8903,13 @@ mod tests {
         // BL-064: the shaft-joint row's Why link leads to the shaft-joint note, which no other
         // row links, so its title is drawn once on the dashboard, under the row's label and
         // above the next row's. The click edits nothing.
-        use crate::gui::dashboard::DASHBOARD;
-        use crate::gui::typeset::glyph_safe;
         const SHAFT_JOINT_CHECK: &str = "shaft_joint.check";
         let mut harness = Harness::on_screen(TALL);
         let output = harness.frame(Vec::new());
-        let note = crate::gui::explorer::reviewed_note("shaft_joint")
-            .expect("the shaft-joint note is reviewed");
-        let on_dashboard = |x: f32| x > TALL.x - DASHBOARD_WIDTH;
-        let label_top = |path: &str| {
-            text_rects(&output, label_for(path))
-                .into_iter()
-                .find(|r| on_dashboard(r.center().x))
-                .unwrap_or_else(|| panic!("{path} on the dashboard"))
-                .top()
-        };
-        let index = DASHBOARD
-            .iter()
-            .position(|&(path, _)| path == SHAFT_JOINT_CHECK)
-            .expect("the shaft-joint row");
-        let (row, next) = (
-            label_top(SHAFT_JOINT_CHECK),
-            label_top(DASHBOARD[index + 1].0),
-        );
-        let links: Vec<egui::Pos2> = last_characters(&output, &glyph_safe(note.title))
-            .into_iter()
-            .filter(|at| on_dashboard(at.x))
-            .collect();
-        assert_eq!(links.len(), 1, "one link to the note: {links:?}");
-        assert!(
-            links[0].y > row && links[0].y < next,
-            "under the shaft-joint row: {links:?}, row {row}, next {next}"
-        );
-        harness.click(links[0]);
-        assert!(harness.panel.explorer.open);
-        assert_eq!(harness.panel.explorer.note(), Some("shaft_joint"));
-        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+        let (copies, own) = row_s_why_links(&output, SHAFT_JOINT_CHECK, "shaft_joint");
+        assert_eq!(copies.len(), 1, "one link to the note: {copies:?}");
+        assert_eq!(own, copies, "under the shaft-joint row");
+        click_opens_note(&mut harness, own[0], "shaft_joint");
     }
 
     #[test]
