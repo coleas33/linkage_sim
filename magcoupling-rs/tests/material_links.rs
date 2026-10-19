@@ -13,7 +13,7 @@ use magcoupling::engine::api::{DesignInputs, compute_all, compute_all_with, part
 use magcoupling::engine::compat::parity_close;
 use magcoupling::engine::deviations::Deviations;
 use magcoupling::engine::material_library::{
-    BACK_IRON_CHOICES, CAP_HOUSING_CHOICES, SLEEVE_LINER_CHOICES, material,
+    BACK_IRON_CHOICES, CAP_HOUSING_CHOICES, SLEEVE_LINER_CHOICES, WORKBOOK_ALUMINIUM, material,
 };
 use magcoupling::engine::materials::PartMaterialInputs;
 use magcoupling::engine::meta::{InputSet, SetErrorKind, Value, input_rows, result_rows};
@@ -465,10 +465,10 @@ fn the_hub_material_follows_the_circuit_and_its_yield_the_metal_in_effect() {
         assert_eq!(hub.props, parts.body, "{code}");
         let id = match parts.back_iron.material {
             Some(m) if !m.ferromagnetic => m.id,
-            _ => "6061_T6",
+            _ => WORKBOOK_ALUMINIUM,
         };
         assert_eq!(hub.yield_MPa, library_yield(id), "{code}");
-        if id == "6061_T6" {
+        if id == WORKBOOK_ALUMINIUM {
             assert_eq!(
                 (hub.props.cte_per_C, hub.props.modulus_GPa, hub.yield_MPa),
                 (AL_HUB_CTE_PER_C, AL_HUB_MODULUS_GPA, 241.0),

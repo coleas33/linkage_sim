@@ -849,7 +849,7 @@ pub struct HubMaterial {
 
 /// The library id of the workbook's aluminium hub, cup and boss (Metal design C42, Temperature
 /// design C140, E18): the body with no back iron and no non-magnetic pick.
-const WORKBOOK_ALUMINIUM: &str = "6061_T6";
+pub const WORKBOOK_ALUMINIUM: &str = "6061_T6";
 
 impl PartProperties {
     /// The hub, cup and boss material in effect (BL-064): the steel values when the circuit
