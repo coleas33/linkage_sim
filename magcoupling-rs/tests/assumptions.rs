@@ -304,15 +304,6 @@ fn each_assumption_moves_a_result_at_the_default_design() {
     }
 }
 
-/// The rationale of the assumption `id`.
-fn rationale(id: &str) -> &'static str {
-    ASSUMPTIONS
-        .iter()
-        .find(|a| a.id == id)
-        .unwrap_or_else(|| panic!("{id}: no assumption"))
-        .rationale
-}
-
 #[test]
 fn every_label_and_rationale_reads_in_plain_words() {
     // Spec 3.4 and R10: the rationale is drawn under each assumption and is the hover text of a
@@ -336,7 +327,7 @@ fn the_shaft_joint_rationales_say_the_default_and_type_no_number() {
     // BL-064's four rationales says "The default" and types no number; the value shows on the
     // input's own row.
     for (id, _) in BL064_ROWS {
-        let text = rationale(id);
+        let text = row(id).rationale;
         assert!(!text.chars().any(|c| c.is_ascii_digit()), "{id}: {text}");
         assert!(text.contains("The default is "), "{id}: {text}");
     }
@@ -354,7 +345,7 @@ fn the_end_effect_and_calibration_rationales_state_what_was_checked() {
         .and_then(|(_, rest)| rest.split_once(" %"))
         .map(|(figure, _)| figure)
         .unwrap_or_else(|| panic!("no \"within N %\" in {band:?}"));
-    let end = rationale("end_effect");
+    let end = row("end_effect").rationale;
     assert!(
         end.contains(&format!("within {figure} % of free-space 3D")),
         "the note's band {figure} %: {end}"
@@ -367,7 +358,7 @@ fn the_end_effect_and_calibration_rationales_state_what_was_checked() {
     assert!(!end.contains("1 %"), "{end}");
     // PA-18: the measured factor goes to a design that matches the prototype's circuit, magnet
     // count and part, and nothing else is compared.
-    let cal = rationale("calibration_factor");
+    let cal = row("calibration_factor").rationale;
     for named in [
         "no magnetic steel",
         "magnets per ring",
