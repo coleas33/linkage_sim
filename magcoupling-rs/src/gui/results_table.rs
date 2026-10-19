@@ -1147,9 +1147,9 @@ mod tests {
             ABOVE_THE_GEARBOX_RATING, GEARBOX_CHECK_UNKNOWN, WITHIN_THE_GEARBOX_RATING,
         };
         // BL-059: the gearbox check is a Rust-only result, like the space claim. The CSV and
-        // JSON exports carry its engine label and verdict, last of the result groups (after the
-        // housing group, before the sweeps), with no unit and no spreadsheet cell; each of its
-        // three verdicts exports as the engine writes it.
+        // JSON exports carry its engine label and verdict, after the housing group and before the
+        // shaft joints (BL-064), with no unit and no spreadsheet cell; each of its three verdicts
+        // exports as the engine writes it.
         const PATH: &str = "gearbox.cold_high_check";
         let label = result_info(PATH).expect("a result").meta.label;
         let mut within = DesignInputs::default();
@@ -1182,7 +1182,7 @@ mod tests {
             );
             assert!(lines[row - 1].starts_with("housing."), "{}", lines[row - 1]);
             assert!(
-                lines[row + 1].starts_with("gap_sweep["),
+                lines[row + 1].starts_with("shaft_joint."),
                 "{}",
                 lines[row + 1]
             );

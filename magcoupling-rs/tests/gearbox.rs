@@ -342,14 +342,14 @@ fn the_check_is_a_rust_only_text_result_with_no_cell_after_the_housing_group() {
     assert_eq!((row.meta.cell, row.meta.unit), (None, ""));
     assert!(!row.meta.label.is_empty() && !row.meta.help.is_empty());
     assert!(matches!(row.value, Value::Text(_)), "{:?}", row.value);
-    // Schema order: the group follows the housing group, before the tables.
+    // Schema order: the group follows the housing group, before the shaft joints (BL-064).
     assert!(
         rows[at - 1].path.starts_with("housing."),
         "{}",
         rows[at - 1].path
     );
     assert!(
-        rows[at + 1].path.starts_with("gap_sweep["),
+        rows[at + 1].path.starts_with("shaft_joint."),
         "{}",
         rows[at + 1].path
     );

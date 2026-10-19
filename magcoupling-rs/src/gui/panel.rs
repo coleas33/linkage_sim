@@ -2379,7 +2379,7 @@ mod tests {
             "no row reported an edit"
         );
         assert!(!harness.panel.history.can_undo(&design));
-        // The workflow order, filtered by "." (in every path): all 172 rows, both vacuum
+        // The workflow order, filtered by "." (in every path): all 187 rows, both vacuum
         // permeabilities (under Calibration and model's Advanced heading when unfiltered).
         harness.panel.input_order = InputOrder::Workflow;
         harness.panel.input_filter = ".".to_owned();
@@ -2757,7 +2757,7 @@ mod tests {
         harness.click_text(FILTER_HINT);
         harness.frame(vec![egui::Event::Text("gearbox".to_owned())]);
         let output = harness.frame(Vec::new());
-        assert_eq!(count(&output, &format!("3 of {total} inputs")), 1);
+        assert_eq!(count(&output, &format!("4 of {total} inputs")), 1);
         assert_eq!(
             count(
                 &output,
@@ -2765,10 +2765,16 @@ mod tests {
             ),
             1
         );
+        // BL-064: the gearbox shaft's fitting temperature, under the shaft group.
+        assert_eq!(
+            count(&output, "Shaft and hub joint / Fitting temperatures"),
+            1
+        );
         for label in [
             "Gearbox ratio",
             "Gearbox efficiency",
             "Gearbox input torque rating",
+            "Gearbox shaft temperature at fitting",
         ] {
             assert_eq!(count(&output, label), 1, "{label}");
         }
@@ -2791,7 +2797,8 @@ mod tests {
         harness.click_text(InputOrder::Workbook.label());
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, "Coupling"), 1);
-        assert_eq!(count(&output, &format!("3 of {total} inputs")), 1);
+        assert_eq!(count(&output, "Shaft joints"), 1);
+        assert_eq!(count(&output, &format!("4 of {total} inputs")), 1);
         // No match says so; a blank filter brings the groups back.
         harness.panel.input_filter = "no such input".to_owned();
         let output = harness.frame(Vec::new());
@@ -4516,6 +4523,19 @@ mod tests {
             let output = harness.frame(Vec::new());
             assert_eq!(count(&output, label_for("coupling.bore_mm")), 1);
             assert_eq!(count(&output, label_for("coupling.keyway_depth_mm")), 1);
+            // BL-064: the shaft joints' key and the first rows of their shrink fit and fitting
+            // temperatures show in both states: the keyed shrink fits are the joints in force,
+            // not the paused clamp.
+            for path in [
+                "shaft_joint.key_width_mm",
+                "shaft_joint.key_contact_mm",
+                "shaft_joint.hub_interference_min_um",
+                "shaft_joint.hub_fit_max_C",
+            ] {
+                assert_eq!(count(&output, label_for(path)), 1, "{path}");
+            }
+            assert_eq!(count(&output, "Shrink fit"), 1);
+            assert_eq!(count(&output, "Fitting temperatures"), 1);
             assert_eq!(count(&output, "Clamp geometry"), shown);
             assert_eq!(count(&output, label_for("clamps.boss_od_mm")), shown);
             // By original sheet: the Shaft clamps group.

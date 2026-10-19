@@ -6,6 +6,7 @@ use magcoupling::compute_all;
 use magcoupling::engine::api::{DesignInputs, compute_all_with, headline};
 use magcoupling::engine::deviations::Deviations;
 use magcoupling::engine::meta::{FieldType, InputSet, NumOrText, SetErrorKind, Value, input_rows};
+use magcoupling::engine::shaft_joint::{FIT_SLIPS, UNKNOWN_NOT_A_NUMBER, UNKNOWN_SAFETY_FACTOR};
 
 #[test]
 fn an_invalid_adhesive_code_selects_no_adhesive() {
@@ -19,6 +20,44 @@ fn an_invalid_adhesive_code_selects_no_adhesive() {
             t.adhesive.lap_shear_MPa.is_nan() && t.summary.adhesive_limit_C.is_nan(),
             "{code}"
         );
+        // BL-064: no adhesive is no design limit, so the bonded hub has no allowed fitting
+        // temperature and the shaft joint check cannot be made.
+        let s = compute_all_with(&inputs, Deviations::NONE).shaft_joint;
+        assert!(s.hub_fit_allowed_C.is_nan(), "{code}");
+        assert_eq!(s.check, UNKNOWN_NOT_A_NUMBER, "{code}");
+    }
+}
+
+#[test]
+fn degenerate_shaft_joint_inputs_never_pass() {
+    // BL-064, review 2 SF-4: typed values no slider reaches. A bore of 0 gives an infinite
+    // contact pressure over no contact, a NaN holding from finite inputs: unknown, never a
+    // pass. A key wider than the bore's circumference (40 mm on Ø10) leaves no contact arc:
+    // holding 0 and a needed minimum of +inf, never a negative holding or window end. A safety
+    // factor of 0 or -1 reads unknown, never a pass with a key pressure below zero (ruling C-4,
+    // plan deviation PD-2).
+    let mut zero_bore = DesignInputs::default();
+    zero_bore.coupling.bore_mm = 0.0;
+    let s = compute_all(&zero_bore).shaft_joint;
+    assert!(s.hub_holding_Nm.is_nan());
+    assert_eq!(s.check, UNKNOWN_NOT_A_NUMBER);
+    let mut wide_key = DesignInputs::default();
+    wide_key.shaft_joint.key_width_mm = 40.0;
+    let s = compute_all(&wide_key).shaft_joint;
+    assert_eq!((s.hub_holding_Nm, s.cup_holding_Nm), (0.0, 0.0));
+    assert_eq!(
+        (s.hub_needed_um, s.cup_needed_um),
+        (f64::INFINITY, f64::INFINITY)
+    );
+    assert_eq!(
+        s.check,
+        format!("{FIT_SLIPS} (inner hub): holds 0.00 N·m against 7.65 N·m")
+    );
+    for factor in [0.0, -1.0] {
+        let mut inputs = DesignInputs::default();
+        inputs.shaft_joint.safety_factor = factor;
+        let s = compute_all(&inputs).shaft_joint;
+        assert_eq!(s.check, UNKNOWN_SAFETY_FACTOR, "{factor}");
     }
 }
 

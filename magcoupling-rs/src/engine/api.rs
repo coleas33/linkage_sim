@@ -34,6 +34,7 @@ use super::materials::{self, MaterialsInputs, MaterialsResults};
 use super::meta::{ResultSet, SetError, TableLayout, Value, inputs, results, validate};
 use super::metal_design::{self, MetalDesignInputs, MetalDesignResults, RetainerResults};
 use super::model::{self, CouplingInputs, MassResults, ModelResults};
+use super::shaft_joint::{self, ShaftJointInputs, ShaftJointLinks, ShaftJointResults};
 use super::sweeps::{self, SweepRow};
 use super::temperature::{self, TemperatureInputs, TemperatureResults};
 use super::warnings::{self, WarningResults};
@@ -49,6 +50,7 @@ inputs! {
             materials: MaterialsInputs,
             temperature: TemperatureInputs,
             clamps: ClampInputs,
+            shaft_joint: ShaftJointInputs,
         }
     }
 }
@@ -69,6 +71,7 @@ results! {
             warnings: WarningResults,
             housing: HousingResults,
             gearbox: GearboxResults,
+            shaft_joint: ShaftJointResults,
         }
         tables {
             gap_sweep: SweepRow => TableLayout::RowsDown { sheet: "Gap sweep", first_row: 6 },
@@ -134,6 +137,29 @@ pub fn headline(results: &DesignResults) -> Vec<(&'static str, Value)> {
         .iter()
         .map(|&(key, path)| (key, results.get(path).unwrap_or(Value::None)))
         .collect()
+}
+
+/// The engine values the shaft joint check read for `results` (BL-064), rebuilt from the design:
+/// each is an input or a result, so the guide and the tests can evaluate the joints' terms
+/// ([`shaft_joint::joints`]) as [`compute_all`] did.
+pub fn shaft_joint_links(inputs: &DesignInputs, results: &DesignResults) -> ShaftJointLinks {
+    ShaftJointLinks {
+        cold_high_Nm: results.metal.torque_cold_high_Nm,
+        bore_mm: inputs.coupling.bore_mm,
+        keyway_depth_mm: inputs.coupling.keyway_depth_mm,
+        hub_length_mm: results.housing.hub_length_mm,
+        inner_back_apothem_mm: inputs.coupling.inner_back_apothem_mm,
+        bond_inner_mm: inputs.metal.bond_inner_mm,
+        boss_length_mm: inputs.metal.boss_length_mm,
+        web_mm: inputs.metal.web_mm,
+        boss_od_mm: inputs.metal.boss_od_mm,
+        min_temp_C: inputs.metal.min_temp_C,
+        adhesive_limit_C: results.temperature.adhesive.design_limit_C,
+        inner_onset_single_ring_C: results.temperature.demag.inner_onset_single_ring_C,
+        part_modulus_GPa: results.shaft_joint.part_modulus_GPa,
+        part_cte_per_C: results.shaft_joint.part_cte_per_C,
+        part_yield_MPa: results.shaft_joint.part_yield_MPa,
+    }
 }
 
 impl DesignInputs {
@@ -357,6 +383,28 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
     let housing = housing::compute(&mdr, &axial);
     // BL-059: cold-high at the gearbox input against the gearbox input torque rating.
     let gearbox = gearbox::compute(mdr.cold_high_input_Nm, ci.gearbox_input_rating_Nm);
+    // BL-064: the keyed shrink fits of the inner hub on the wheel shaft and of the cup on the
+    // gearbox output shaft.
+    let shaft_joint = shaft_joint::compute(
+        &inputs.shaft_joint,
+        &ShaftJointLinks {
+            cold_high_Nm: mdr.torque_cold_high_Nm,
+            bore_mm: ci.bore_mm,
+            keyway_depth_mm: ci.keyway_depth_mm,
+            hub_length_mm: axial.hub_length_mm,
+            inner_back_apothem_mm: ci.inner_back_apothem_mm,
+            bond_inner_mm: md.bond_inner_mm,
+            boss_length_mm: md.boss_length_mm,
+            web_mm: md.web_mm,
+            boss_od_mm: md.boss_od_mm,
+            min_temp_C: md.min_temp_C,
+            adhesive_limit_C: temp.adhesive.design_limit_C,
+            inner_onset_single_ring_C: temp.demag.inner_onset_single_ring_C,
+            part_modulus_GPa: hub_material.props.modulus_GPa,
+            part_cte_per_C: hub_material.props.cte_per_C,
+            part_yield_MPa: hub_material.yield_MPa,
+        },
+    );
 
     let alloy = if inputs.clamps.alloy == 1 {
         &materials::AL7075
@@ -415,6 +463,7 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         warnings: warn,
         housing,
         gearbox,
+        shaft_joint,
         gap_sweep: gap,
         pole_sweep: pole,
     }

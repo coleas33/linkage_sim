@@ -3152,7 +3152,8 @@ mod tests {
         );
         assert_ne!(label_for(RING), size_controls::DIAMETER);
         // C-3 runs on the display labels: the inputs whose fix text adds a group heading are
-        // still the seven whose label another input's equals or ends with (map-help 3.5).
+        // the eight whose label another input's equals or ends with (map-help 3.5): BL-064's
+        // "Shaft key width" ends with the paused clamp's "Key width".
         let headed: Vec<&str> = InputCatalogue::get()
             .all()
             .map(|e| e.path.as_str())
@@ -3169,6 +3170,7 @@ mod tests {
                 "materials.steel.density_g_cm3",
                 "clamps.alloy",
                 "clamps.boss_od_mm",
+                "clamps.key_width_mm",
             ]
         );
     }
