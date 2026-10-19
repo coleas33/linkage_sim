@@ -5350,6 +5350,28 @@ mod tests {
         assert_eq!(shown(passing_design()), []);
     }
 
+    /// Asserts that one step of `fix` on `inputs` (whose results are `results`) reverses the
+    /// shaft joints' band: the stepped design reads the reversed band, amber.
+    fn assert_one_step_reverses_the_band(
+        inputs: &DesignInputs,
+        results: &DesignResults,
+        fix: (&str, Direction),
+    ) {
+        let [stepped] = &moves(inputs, results, fix.0, fix.1)[..] else {
+            panic!("one step of {}", fix.0)
+        };
+        let after = compute_all(stepped);
+        assert!(
+            after
+                .shaft_joint
+                .check
+                .starts_with(shaft_joint::UNKNOWN_BAND_REVERSED),
+            "{}",
+            after.shaft_joint.check
+        );
+        assert_eq!(level_of(SHAFT_JOINT, stepped, &after), Level::Caution);
+    }
+
     #[test]
     fn raising_a_minimum_is_not_offered_where_one_step_reverses_the_band() {
         // Review SF-10. The passing design with the inner hub's band at 10-10 µm slips. One step
@@ -5367,17 +5389,7 @@ mod tests {
         let slip =
             |d: &DesignInputs, r: &DesignResults| margin(SHAFT_JOINT, "inner hub slips", d, r);
         assert!(helps(&inputs, &results, raise_min, Some(&slip), false));
-        let [stepped] = &moves(&inputs, &results, raise_min.0, raise_min.1)[..] else {
-            panic!("one step of the minimum")
-        };
-        let after = compute_all(stepped);
-        assert!(
-            after
-                .shaft_joint
-                .check
-                .starts_with(shaft_joint::UNKNOWN_BAND_REVERSED)
-        );
-        assert_eq!(level_of(SHAFT_JOINT, stepped, &after), Level::Caution);
+        assert_one_step_reverses_the_band(&inputs, &results, raise_min);
         assert_eq!(
             fixes(joint, &inputs, &results, false),
             [(HUB_LENGTH, Direction::Raise), (FACE_GAP, Direction::Raise)]
@@ -5418,6 +5430,7 @@ mod tests {
         let fitting =
             |d: &DesignInputs, r: &DesignResults| margin(SHAFT_JOINT, "inner hub fitting", d, r);
         assert!(helps(&inputs, &results, lower_max, Some(&fitting), false));
+        assert_one_step_reverses_the_band(&inputs, &results, lower_max);
         assert!(moves(&inputs, &results, WHEEL_SHAFT, Direction::Lower).is_empty());
         let problem = shaft_joint_problem(&inputs, &results).unwrap();
         assert_in_order(
