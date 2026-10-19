@@ -316,7 +316,7 @@ mod tests {
         let cut_over = cell_text(&over);
         assert!(cut_over.ends_with(" [cut: 32767 characters]"), "{cut_over}");
         assert!(cut_over.encode_utf16().count() <= MAX_CELL_CHARS);
-        // A part name that long and the share link (about 2,500 characters, over Excel's 2,080
+        // A part name that long and the share link (about 2,650 characters, over Excel's 2,080
         // for a hyperlink: decision X-6) both write.
         let mut inputs = DesignInputs::default();
         inputs.coupling.magnets.part_inner = long.clone();

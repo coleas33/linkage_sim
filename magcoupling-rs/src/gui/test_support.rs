@@ -22,15 +22,17 @@ pub(crate) fn with_poles(npole: i64) -> crate::DesignInputs {
     inputs
 }
 
-/// A design that passes all 9 guided checks (`gui::guidance::CHECK_GUIDES`), each with room
+/// A design that passes all 10 guided checks (`gui::guidance::CHECK_GUIDES`), each with room
 /// to spare: the defaults with a 1.8 mm face gap (running clearance about 0.1 mm over its
 /// target), a 2.0 mm cup wall (the flux needs about 1.85 mm at that gap), a 1.6 N·m
 /// requirement (hot-low torque about 2.0 N·m, a quarter over it: a hotter-rated grade, weaker
 /// than N42SH, still meets it) and a 1.0 N·m gearbox input rating (cold-high at the gearbox
 /// input about 0.71 N·m, 29 % under it; the rating changes no other result than the
-/// workbook's gearbox reference, `model.gearbox_reference_Nm`, its only other reader). The
-/// guidance tests break one check of it at a time, so a fix that turns another check red
-/// shows.
+/// workbook's gearbox reference, `model.gearbox_reference_Nm`, its only other reader). Its
+/// shaft joints pass at the example's bands (BL-064: the inner hub holds about 9.48 N·m and
+/// the cup 16.90 N·m against 6.72 N·m; the inner hub would need about 93.3 °C to fit, against
+/// 100 °C allowed). The guidance tests break one check of it at a time, so a fix that turns
+/// another check red shows.
 pub(crate) fn passing_design() -> crate::DesignInputs {
     let mut inputs = crate::DesignInputs::default();
     inputs.metal.face_gap_mm = 1.8;
@@ -45,6 +47,26 @@ pub(crate) fn passing_design() -> crate::DesignInputs {
 pub(crate) fn hot_day(inputs: &mut crate::DesignInputs) {
     inputs.temperature.duty.hot_ambient_C = 80.0;
     inputs.temperature.duty.driving_rise_C = 60.0;
+}
+
+/// Library N42 blocks (rated 80 °C) in both rings: their magnet limit is below the hot-day
+/// start, and on the example design the inner ring's single-ring onset less the cure margin is
+/// the inner hub's allowed fitting temperature (BL-064).
+pub(crate) fn n42_parts(inputs: &mut crate::DesignInputs) {
+    inputs.coupling.magnets.part_inner = "B842".to_owned();
+    inputs.coupling.magnets.part_outer = "B842".to_owned();
+}
+
+/// Mixed rings on manual dimensions (both parts cleared): N42M in the inner ring, N35 in the
+/// outer. On [`passing_design`] the outer ring governs the magnets' limit, so the governing
+/// single-ring onset is not the inner ring's own, and the inner hub's allowed fitting
+/// temperature is still the inner ring's own onset less the cure margin (BL-064, the owner's
+/// ring ruling).
+pub(crate) fn mixed_rings(inputs: &mut crate::DesignInputs) {
+    inputs.coupling.magnets.part_inner.clear();
+    inputs.coupling.magnets.part_outer.clear();
+    inputs.coupling.magnets.grade_inner = "N42M".to_owned();
+    inputs.coupling.magnets.grade_outer = "N35".to_owned();
 }
 
 /// No screw fits a 12 mm clamp boss.
@@ -70,6 +92,27 @@ pub(crate) fn only_the_gearbox_fails() -> crate::DesignInputs {
     inputs
 }
 
+/// [`passing_design`] with the inner hub's minimum interference at 8 µm: smoothing and the
+/// hot end take all of it (its effective interference at the loosest is floored at 0), so the
+/// inner hub slips, and nothing else fails (BL-064).
+pub(crate) fn only_the_joint_fails() -> crate::DesignInputs {
+    let mut inputs = passing_design();
+    inputs.shaft_joint.hub_interference_min_um = 8.0;
+    inputs
+}
+
+/// The inner hub's minimum interference at 20 µm, over its default 18 µm maximum (BL-064): its
+/// band is reversed, so the inner hub is not judged.
+pub(crate) fn reversed_hub_band(inputs: &mut crate::DesignInputs) {
+    inputs.shaft_joint.hub_interference_min_um = 20.0;
+}
+
+/// The inner hub's maximum interference at 26 µm (BL-064): at its tightest its bore stress is
+/// above its limit, and fitting it needs more than its allowed temperature.
+pub(crate) fn hub_overstressed(inputs: &mut crate::DesignInputs) {
+    inputs.shaft_joint.hub_interference_max_um = 26.0;
+}
+
 /// The defaults at the clamp's limit: the clamp's safety factor raised until its capacity only
 /// just covers the requirement.
 pub(crate) fn clamp_at_its_limit() -> crate::DesignInputs {
@@ -79,6 +122,80 @@ pub(crate) fn clamp_at_its_limit() -> crate::DesignInputs {
         panic!("a screw fits the example design's clamp")
     };
     inputs.clamps.safety_factor = capacity / base.clamps.max_torque_Nm * (1.0 - 1e-9);
+    inputs
+}
+
+/// Whether `path` is one of the shaft joints' inputs or results (BL-064): their group's paths.
+pub(crate) fn is_shaft_joint(path: &str) -> bool {
+    path.starts_with("shaft_joint.")
+}
+
+/// The shaft joints' input rows of `inputs` (BL-064), in schema order.
+pub(crate) fn shaft_joint_input_rows(
+    inputs: &crate::DesignInputs,
+) -> Vec<crate::engine::meta::InputRow> {
+    crate::engine::meta::input_rows(inputs)
+        .into_iter()
+        .filter(|row| is_shaft_joint(&row.path))
+        .collect()
+}
+
+/// The shaft joints' result rows of `results` (BL-064), in schema order.
+pub(crate) fn shaft_joint_result_rows(
+    results: &crate::DesignResults,
+) -> Vec<crate::engine::meta::ResultRow> {
+    crate::engine::meta::result_rows(results)
+        .into_iter()
+        .filter(|row| is_shaft_joint(&row.path))
+        .collect()
+}
+
+/// The inputs side's workflow group `id` ([`crate::gui::inputs::WORKFLOW`]).
+pub(crate) fn workflow_group(id: &str) -> &'static crate::gui::inputs::WorkflowGroup {
+    crate::gui::inputs::WORKFLOW
+        .iter()
+        .find(|group| group.id == id)
+        .unwrap_or_else(|| panic!("no workflow group {id}"))
+}
+
+/// The slider range of the input at `path`.
+pub(crate) fn slider_range(path: &str) -> crate::engine::meta::SliderRange {
+    crate::gui::inputs::InputCatalogue::get()
+        .entry(path)
+        .and_then(|entry| entry.meta.range)
+        .unwrap_or_else(|| panic!("{path} has a slider"))
+}
+
+/// The defaults with every shaft joint input (BL-064) one slider step off its default: up, or
+/// down where up would leave the slider. Each input then reads back as itself, not its default.
+pub(crate) fn shaft_joints_off_default() -> crate::DesignInputs {
+    use crate::engine::meta::{InputSet, Value};
+    let mut inputs = crate::DesignInputs::default();
+    for row in shaft_joint_input_rows(&crate::DesignInputs::default()) {
+        let (Value::Num(x), Some(range)) = (row.value, row.meta.range) else {
+            panic!("{} is a number with a slider", row.path)
+        };
+        let step = if x + range.step <= range.max {
+            range.step
+        } else {
+            -range.step
+        };
+        inputs
+            .set(&row.path, Value::Num(x + step))
+            .expect("a value on the slider");
+    }
+    inputs
+}
+
+/// The defaults with a 16 mm bore in a 12 mm boss and no boss length (BL-064): the cup has no
+/// wall around its bore, so its holding, bore stress, needed and elastic results are not a
+/// number, and its key no bearing length (the web alone, 2.5 mm, under the 3 mm key), so its
+/// key pressure is +inf.
+pub(crate) fn cup_without_wall_or_key_bearing() -> crate::DesignInputs {
+    let mut inputs = crate::DesignInputs::default();
+    inputs.coupling.bore_mm = 16.0;
+    inputs.metal.boss_od_mm = 12.0;
+    inputs.metal.boss_length_mm = 0.0;
     inputs
 }
 

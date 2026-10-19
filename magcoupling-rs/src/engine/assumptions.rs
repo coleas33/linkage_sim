@@ -55,8 +55,8 @@ impl Assumption {
     }
 }
 
-/// The spec's v1 set, in the spec's order.
-pub const ASSUMPTIONS: [Assumption; 14] = [
+/// The spec's v1 set, in the spec's order, then the shaft joints' four (BL-064, spec 4.5).
+pub const ASSUMPTIONS: [Assumption; 18] = [
     Assumption {
         id: "harmonics",
         label: "Harmonics included",
@@ -154,6 +154,36 @@ pub const ASSUMPTIONS: [Assumption; 14] = [
         paths: &["clamps.preload_fraction"],
         rationale: "Screw preload as a share of the proof load (bolted-joint practice), capped by thread stripping in the aluminium.",
         source: "Workbook Shaft clamps!C29 (75 %); spec M1 (clamps).",
+    },
+    // BL-064: the shaft joints' keyed shrink fits. Rust-only inputs: each source cites the
+    // spec by name in place of a workbook cell (`tests/assumptions.rs`).
+    Assumption {
+        id: "fit_friction",
+        label: "Shrink-fit friction coefficient",
+        paths: &["shaft_joint.friction"],
+        rationale: "The friction between each rotor's bore and its shaft that turns the fit's grip into holding torque. The default is for dry, degreased steel on steel; oil, a coating or a finish in the bore lowers it, and the holding torque falls in proportion.",
+        source: "BL-064 shaft joint spec (`docs/superpowers/specs/2026-10-17-bl064-shaft-joint-design.md`); dry steel on steel: Gear Technology, Nov/Dec 2017 (0.145) and ANSI/AGMA 9003 (0.15).",
+    },
+    Assumption {
+        id: "fit_smoothing",
+        label: "Surface smoothing of the fit",
+        paths: &["shaft_joint.smoothing_um"],
+        rationale: "Interference lost as the surface peaks of bore and shaft flatten when the fit is made, taken off both ends of the measured band. The default is conservative for holding with ground and honed surfaces; a finer finish loses less, which raises the grip and the bore stress together.",
+        source: "BL-064 shaft joint spec; DIN 7190-1:2017 (smoothing 0.4·Rz per surface).",
+    },
+    Assumption {
+        id: "rotor_over_shaft",
+        label: "Rotor hotter than its shaft, running",
+        paths: &["shaft_joint.rotor_over_shaft_C"],
+        rationale: "Slip heating warms the rotors from the gap, so each rotor can run warmer than the shaft it sits on. Its bore then grows more than the shaft, and the grip at the hot end falls. The default is a placeholder until a measurement or a thermal model gives the difference.",
+        source: "BL-064 shaft joint spec (the hot end of the loosest fit, section 3.3).",
+    },
+    Assumption {
+        id: "joining_clearance",
+        label: "Joining clearance",
+        paths: &["shaft_joint.joining_clearance_um"],
+        rationale: "The gap each part needs over its shaft, after warming and cooling, to slide to its stop before the gap closes; one value for both joints. Too little and the part can seize half-way. The default is an assumed value for the example design's bore; less needs a guided, single fast push to a stop.",
+        source: "BL-064 shaft joint spec; DIN 7190-1:2017 §8.2 (the joining clearance enters the joining temperature).",
     },
 ];
 

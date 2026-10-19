@@ -4,6 +4,9 @@
 //! (`coupling.gearbox_input_rating_Nm`), owner decision 1A. A Rust-only result, tested here as
 //! the space claim is in `tests/sizing.rs`.
 
+mod common;
+
+use common::input_meta;
 use magcoupling::compute_all;
 use magcoupling::engine::api::DesignInputs;
 use magcoupling::engine::explain::probes::probe_designs;
@@ -57,10 +60,8 @@ fn custom_dimensions(grade: &str) -> DesignInputs {
 
 /// The rating's slider.
 fn rating_range() -> SliderRange {
-    input_rows(&DesignInputs::default())
-        .into_iter()
-        .find(|row| row.path == "coupling.gearbox_input_rating_Nm")
-        .and_then(|row| row.meta.range)
+    input_meta("coupling.gearbox_input_rating_Nm")
+        .range
         .expect("the gearbox input rating has a slider")
 }
 
@@ -342,14 +343,14 @@ fn the_check_is_a_rust_only_text_result_with_no_cell_after_the_housing_group() {
     assert_eq!((row.meta.cell, row.meta.unit), (None, ""));
     assert!(!row.meta.label.is_empty() && !row.meta.help.is_empty());
     assert!(matches!(row.value, Value::Text(_)), "{:?}", row.value);
-    // Schema order: the group follows the housing group, before the tables.
+    // Schema order: the group follows the housing group, before the shaft joints (BL-064).
     assert!(
         rows[at - 1].path.starts_with("housing."),
         "{}",
         rows[at - 1].path
     );
     assert!(
-        rows[at + 1].path.starts_with("gap_sweep["),
+        rows[at + 1].path.starts_with("shaft_joint."),
         "{}",
         rows[at + 1].path
     );

@@ -1146,10 +1146,11 @@ mod tests {
         use crate::engine::gearbox::{
             ABOVE_THE_GEARBOX_RATING, GEARBOX_CHECK_UNKNOWN, WITHIN_THE_GEARBOX_RATING,
         };
+        use crate::gui::test_support::is_shaft_joint;
         // BL-059: the gearbox check is a Rust-only result, like the space claim. The CSV and
-        // JSON exports carry its engine label and verdict, last of the result groups (after the
-        // housing group, before the sweeps), with no unit and no spreadsheet cell; each of its
-        // three verdicts exports as the engine writes it.
+        // JSON exports carry its engine label and verdict, after the housing group and before the
+        // shaft joints (BL-064), with no unit and no spreadsheet cell; each of its three verdicts
+        // exports as the engine writes it.
         const PATH: &str = "gearbox.cold_high_check";
         let label = result_info(PATH).expect("a result").meta.label;
         let mut within = DesignInputs::default();
@@ -1181,11 +1182,7 @@ mod tests {
                     .join(",")
             );
             assert!(lines[row - 1].starts_with("housing."), "{}", lines[row - 1]);
-            assert!(
-                lines[row + 1].starts_with("gap_sweep["),
-                "{}",
-                lines[row + 1]
-            );
+            assert!(is_shaft_joint(lines[row + 1]), "{}", lines[row + 1]);
             let json: Json = serde_json::from_str(&results_json(&design, &results)).unwrap();
             let entry = json["results"]
                 .as_array()
@@ -1197,6 +1194,99 @@ mod tests {
             assert_eq!(entry["value"], Json::from(verdict.as_str()));
             assert_eq!(entry["unit"], "");
             assert_eq!(entry["cell"], Json::Null);
+        }
+    }
+
+    #[test]
+    fn the_exports_carry_every_shaft_joint_input_and_result_with_no_cell() {
+        use crate::gui::session::design_from_json;
+        use crate::gui::test_support::{
+            cup_without_wall_or_key_bearing, is_shaft_joint, shaft_joint_input_rows,
+            shaft_joint_result_rows, shaft_joints_off_default,
+        };
+        // BL-064 (spec 7.15): the shaft joints' 15 inputs and 24 results are Rust-only. The CSV
+        // carries each result once, together and in schema order, after the gearbox check and
+        // before the sweeps, with its engine label, its value at full precision, its unit and no
+        // cell; the JSON the same, and its design every input with its value. Three designs:
+        // the defaults; every input one step off its default (the design reads back from the
+        // JSON as it was); and a bore of 16 mm in a 12 mm boss with no boss length, where the
+        // cup has no wall (its holding is not a number) and its key no bearing length (+inf):
+        // both export as text, never as a number or a JSON null.
+        for (inputs, edge) in [
+            (DesignInputs::default(), false),
+            (shaft_joints_off_default(), false),
+            (cup_without_wall_or_key_bearing(), true),
+        ] {
+            let design = Design {
+                inputs,
+                ..Design::default()
+            };
+            let results = compute_all(&design.inputs);
+            let rows = shaft_joint_result_rows(&results);
+            assert_eq!(rows.len(), 24);
+            assert!(rows.iter().all(|row| row.cell.is_none()));
+            // The CSV: the 24 lines together, between the gearbox check and the sweeps.
+            let csv = results_csv(&results);
+            let lines: Vec<&str> = csv.split("\r\n").collect();
+            let first = lines
+                .iter()
+                .position(|l| is_shaft_joint(l))
+                .expect("the shaft joints' CSV lines");
+            let end = first + rows.len();
+            for (line, row) in lines[first..end].iter().zip(&rows) {
+                let value = exact_value(&row.value);
+                let want = [row.path.as_str(), row.meta.label, &value, row.meta.unit, ""]
+                    .map(csv_field)
+                    .join(",");
+                assert_eq!(*line, want);
+            }
+            if edge {
+                // The edge design writes a value that is not a number and +inf as text.
+                assert!(results.shaft_joint.cup_holding_Nm.is_nan());
+                assert_eq!(results.shaft_joint.cup_key_pressure_MPa, f64::INFINITY);
+                let line = |path: &str| {
+                    lines[first..end]
+                        .iter()
+                        .find(|l| l.starts_with(&format!("{path},")))
+                        .unwrap_or_else(|| panic!("the CSV line of {path}"))
+                };
+                assert!(line("shaft_joint.cup_holding_Nm").contains(",NaN,"));
+                assert!(line("shaft_joint.cup_key_pressure_MPa").contains(",+inf,"));
+            }
+            assert!(
+                lines[first - 1].starts_with("gearbox.cold_high_check,"),
+                "{}",
+                lines[first - 1]
+            );
+            assert!(lines[end].starts_with("gap_sweep["), "{}", lines[end]);
+            // The JSON: the same rows in the same order, and the design's every input.
+            let json: Json = serde_json::from_str(&results_json(&design, &results)).unwrap();
+            let entries: Vec<&Json> = json["results"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|r| is_shaft_joint(r["path"].as_str().unwrap()))
+                .collect();
+            assert_eq!(entries.len(), 24);
+            for (entry, row) in entries.iter().zip(&rows) {
+                assert_eq!(entry["path"], row.path.as_str());
+                assert_eq!(entry["label"], row.meta.label);
+                assert_eq!(entry["value"], json_value(&row.value), "{}", row.path);
+                assert_eq!(entry["unit"], row.meta.unit);
+                assert_eq!(entry["cell"], Json::Null);
+            }
+            let shaft_inputs = shaft_joint_input_rows(&design.inputs);
+            assert_eq!(shaft_inputs.len(), 15);
+            for row in &shaft_inputs {
+                assert_eq!(
+                    json["design"]["inputs"][row.path.as_str()],
+                    json_value(&row.value),
+                    "{}",
+                    row.path
+                );
+            }
+            let read = design_from_json(&json["design"].to_string()).expect("the design reads");
+            assert_eq!(read.inputs.shaft_joint, design.inputs.shaft_joint);
         }
     }
 

@@ -1618,9 +1618,10 @@ mod tests {
     };
     use crate::gui::sizing::DEBOUNCE_S;
     use crate::gui::test_support::{
-        SCREEN, clamp_at_its_limit, drawn_texts, hot_day, key_event, key_tap, last_characters,
-        only_the_clamp_fails, primary_button, select_all, short_magnets, sized_frame,
-        sized_frame_at, text_center, text_rect, text_rects, tooltips_at_once, with_poles,
+        SCREEN, clamp_at_its_limit, drawn_texts, hot_day, hub_overstressed, key_event, key_tap,
+        last_characters, only_the_clamp_fails, only_the_joint_fails, primary_button, select_all,
+        short_magnets, sized_frame, sized_frame_at, text_center, text_rect, text_rects,
+        tooltips_at_once, with_poles,
     };
     use crate::headline;
 
@@ -2379,7 +2380,7 @@ mod tests {
             "no row reported an edit"
         );
         assert!(!harness.panel.history.can_undo(&design));
-        // The workflow order, filtered by "." (in every path): all 172 rows, both vacuum
+        // The workflow order, filtered by "." (in every path): all 187 rows, both vacuum
         // permeabilities (under Calibration and model's Advanced heading when unfiltered).
         harness.panel.input_order = InputOrder::Workflow;
         harness.panel.input_filter = ".".to_owned();
@@ -2757,7 +2758,7 @@ mod tests {
         harness.click_text(FILTER_HINT);
         harness.frame(vec![egui::Event::Text("gearbox".to_owned())]);
         let output = harness.frame(Vec::new());
-        assert_eq!(count(&output, &format!("3 of {total} inputs")), 1);
+        assert_eq!(count(&output, &format!("4 of {total} inputs")), 1);
         assert_eq!(
             count(
                 &output,
@@ -2765,10 +2766,16 @@ mod tests {
             ),
             1
         );
+        // BL-064: the gearbox shaft's fitting temperature, under the shaft group.
+        assert_eq!(
+            count(&output, "Shaft and hub joint / Fitting temperatures"),
+            1
+        );
         for label in [
             "Gearbox ratio",
             "Gearbox efficiency",
             "Gearbox input torque rating",
+            "Gearbox shaft temperature at fitting",
         ] {
             assert_eq!(count(&output, label), 1, "{label}");
         }
@@ -2791,7 +2798,8 @@ mod tests {
         harness.click_text(InputOrder::Workbook.label());
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, "Coupling"), 1);
-        assert_eq!(count(&output, &format!("3 of {total} inputs")), 1);
+        assert_eq!(count(&output, "Shaft joints"), 1);
+        assert_eq!(count(&output, &format!("4 of {total} inputs")), 1);
         // No match says so; a blank filter brings the groups back.
         harness.panel.input_filter = "no such input".to_owned();
         let output = harness.frame(Vec::new());
@@ -3128,8 +3136,9 @@ mod tests {
         // Short magnets (f_end < 0): the dashboard greys the rows computed from the pull-out,
         // without badges. In the table's headline (open) each check row carries exactly the
         // dashboard's badge, so the hot minimum (red by its text), the screw sized from the
-        // invalid pull-out and the gearbox check of a cold-high below zero (both green by their
-        // texts) carry none, and the failing filter leaves the hot minimum out.
+        // invalid pull-out, and the shaft joints and gearbox checks of a cold-high below zero
+        // (all three green by their texts) carry none, and the failing filter leaves the hot
+        // minimum out.
         let mut harness = Harness::new();
         harness.panel.inputs = short_magnets();
         harness.click_text(CentreView::Results.label());
@@ -3148,7 +3157,7 @@ mod tests {
             .iter()
             .filter(|line| CHECKS.contains(&line.path))
             .collect();
-        assert_eq!(checks.len(), 8);
+        assert_eq!(checks.len(), 9);
         for line in checks {
             let row = text_rects(&output, line.label)
                 .into_iter()
@@ -4288,6 +4297,32 @@ mod tests {
                     harness.frame(Vec::new());
                     texts.extend(drawn_texts(&harness.frame(Vec::new())));
                 }
+                // The shaft joints' guide (BL-064) counts while the section is paused: its
+                // Problem drawn, open under its red row, where the inner hub slips, where it is
+                // over its stress limit and cannot be fitted either, and on an uncooled wheel
+                // shaft.
+                let joint = crate::gui::guidance::guide("shaft_joint.check").expect("its guide");
+                let mut overstressed = DesignInputs::default();
+                hub_overstressed(&mut overstressed);
+                let mut uncooled = DesignInputs::default();
+                uncooled.shaft_joint.wheel_shaft_fit_C = 20.0;
+                for inputs in [only_the_joint_fails(), overstressed, uncooled] {
+                    harness.panel.inputs = inputs;
+                    harness.frame(Vec::new());
+                    let drawn = drawn_texts(&harness.frame(Vec::new()));
+                    let panel = &harness.panel;
+                    let problem =
+                        (joint.problem)(panel.inputs(), panel.results()).expect("the joints fail");
+                    assert!(drawn.contains(&problem), "{problem}");
+                    texts.extend(drawn);
+                }
+                // Not vacuous for the guide (ruling C-8): its label and Why are collected.
+                for text in [joint.label, joint.why] {
+                    assert!(
+                        texts.iter().any(|t| t.contains(text)),
+                        "{text:?} is not collected"
+                    );
+                }
                 // The teaching notes shown, their change entries as drawn, their Start here
                 // walk and its hover. No change entry or equation of theirs leads into the
                 // section.
@@ -4346,6 +4381,58 @@ mod tests {
                 }
                 let named: Vec<&String> = texts.iter().filter(|t| names_the_clamp(t)).collect();
                 assert!(named.is_empty(), "{named:#?}");
+                // Not vacuous for the shaft joints (BL-064), which show while the clamp is
+                // paused: the enumeration reaches the label and the help of each of their inputs
+                // and results, their two input sections and their groups' headings. A label or a
+                // help may sit inside a hover text. Four input labels are also their assumptions'
+                // names, so for those inputs it is the help that shows the input is collected.
+                use crate::gui::inputs::section_label;
+                use crate::gui::plain_text::help_for;
+                use crate::gui::result_groups::result_groups;
+                use crate::gui::test_support::{
+                    shaft_joint_input_rows, shaft_joint_result_rows, workflow_group,
+                };
+                let reaches = |text: &str| texts.iter().any(|t| t.contains(text));
+                let paths: Vec<String> = shaft_joint_input_rows(&DesignInputs::default())
+                    .into_iter()
+                    .map(|row| row.path)
+                    .chain(
+                        shaft_joint_result_rows(&compute_all(&DesignInputs::default()))
+                            .into_iter()
+                            .map(|row| row.path),
+                    )
+                    .collect();
+                assert_eq!(paths.len(), 15 + 24);
+                for path in &paths {
+                    for text in [label_for(path), help_for(path)] {
+                        assert!(reaches(text), "{path}: {text:?} is not collected");
+                    }
+                }
+                // Each heading whole, as the panel draws it: the two input sections and the
+                // original sheet's group by their labels, and the results table's chain group by
+                // its label and its row count, as the table draws a group's heading. Part of a
+                // text would not do: the check's label, "Shaft joints: keyed shrink fits",
+                // contains "Shaft joints".
+                let shaft = workflow_group("shaft");
+                let chain = result_groups()
+                    .iter()
+                    .find(|group| group.id == "shaft_joint" && !group.other)
+                    .expect("the Shaft joints chain");
+                let headings: Vec<String> = shaft
+                    .sections
+                    .iter()
+                    .filter(|section| ["shaft.fit", "shaft.fitting"].contains(&section.id))
+                    .map(|section| section.label.to_owned())
+                    .chain(section_label("shaft_joint").map(str::to_owned))
+                    .chain([format!("{} ({})", chain.label, chain.rows.len())])
+                    .collect();
+                assert_eq!(headings.len(), 4);
+                for heading in &headings {
+                    assert!(
+                        texts.contains(heading),
+                        "{heading:?} is not collected whole"
+                    );
+                }
             } else {
                 // Not vacuous: with the section shown, the same enumeration names the clamp and
                 // reaches each surface the pause hides.
@@ -4516,6 +4603,19 @@ mod tests {
             let output = harness.frame(Vec::new());
             assert_eq!(count(&output, label_for("coupling.bore_mm")), 1);
             assert_eq!(count(&output, label_for("coupling.keyway_depth_mm")), 1);
+            // BL-064: the shaft joints' key and the first rows of their shrink fit and fitting
+            // temperatures show in both states: the keyed shrink fits are the joints in force,
+            // not the paused clamp.
+            for path in [
+                "shaft_joint.key_width_mm",
+                "shaft_joint.key_contact_mm",
+                "shaft_joint.hub_interference_min_um",
+                "shaft_joint.hub_fit_max_C",
+            ] {
+                assert_eq!(count(&output, label_for(path)), 1, "{path}");
+            }
+            assert_eq!(count(&output, "Shrink fit"), 1);
+            assert_eq!(count(&output, "Fitting temperatures"), 1);
             assert_eq!(count(&output, "Clamp geometry"), shown);
             assert_eq!(count(&output, label_for("clamps.boss_od_mm")), shown);
             // By original sheet: the Shaft clamps group.
@@ -8727,22 +8827,23 @@ mod tests {
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
     }
 
-    #[test]
-    fn the_gearbox_row_s_own_why_link_opens_the_torque_band_note() {
-        // BL-059: the gearbox check's Why link leads to the torque-band note, as the hot-low,
-        // hot-minimum and cold-high rows above it do, so those rows draw the note's title first.
-        // The copy clicked is the gearbox row's own: on the dashboard, below the row's label and
-        // above the next row's. The click edits nothing.
+    /// A dashboard row's Why links, for the row-link tests (BL-059, BL-064): every copy of the
+    /// reviewed note `id`'s title drawn on the dashboard, in paint order (top first), and the
+    /// row's own copies, those under `check`'s label and above the next row's label. Each copy is
+    /// where a click lands on it, its last character (`last_characters`). A row draws its Why
+    /// line whether or not its check fails.
+    fn row_s_why_links(
+        output: &egui::FullOutput,
+        check: &str,
+        id: &str,
+    ) -> (Vec<egui::Pos2>, Vec<egui::Pos2>) {
         use crate::gui::dashboard::DASHBOARD;
-        use crate::gui::guidance::TORQUE_BAND_NOTE;
         use crate::gui::typeset::glyph_safe;
-        let mut harness = Harness::on_screen(TALL);
-        let output = harness.frame(Vec::new());
-        let note = crate::gui::explorer::reviewed_note(TORQUE_BAND_NOTE)
-            .expect("the torque-band note is reviewed");
+        let note = crate::gui::explorer::reviewed_note(id)
+            .unwrap_or_else(|| panic!("the {id} note is reviewed"));
         let on_dashboard = |x: f32| x > TALL.x - DASHBOARD_WIDTH;
         let label_top = |path: &str| {
-            text_rects(&output, label_for(path))
+            text_rects(output, label_for(path))
                 .into_iter()
                 .find(|r| on_dashboard(r.center().x))
                 .unwrap_or_else(|| panic!("{path} on the dashboard"))
@@ -8750,24 +8851,63 @@ mod tests {
         };
         let index = DASHBOARD
             .iter()
-            .position(|&(path, _)| path == GEARBOX_CHECK)
-            .expect("the gearbox row");
-        let (row, next) = (label_top(GEARBOX_CHECK), label_top(DASHBOARD[index + 1].0));
-        let links: Vec<egui::Pos2> = last_characters(&output, &glyph_safe(note.title))
+            .position(|&(path, _)| path == check)
+            .unwrap_or_else(|| panic!("{check} is a dashboard row"));
+        let (next_path, _) = DASHBOARD
+            .get(index + 1)
+            .unwrap_or_else(|| panic!("a dashboard row after {check}"));
+        let (row, next) = (label_top(check), label_top(next_path));
+        let copies: Vec<egui::Pos2> = last_characters(output, &glyph_safe(note.title))
             .into_iter()
             .filter(|at| on_dashboard(at.x))
             .collect();
-        assert!(links[0].y < row, "the rows above draw it first: {links:?}");
-        let own: Vec<egui::Pos2> = links
+        let own = copies
             .iter()
             .copied()
             .filter(|at| at.y > row && at.y < next)
             .collect();
-        assert_eq!(own.len(), 1, "one link under the gearbox row: {links:?}");
-        harness.click(own[0]);
-        assert!(harness.panel.explorer.open);
-        assert_eq!(harness.panel.explorer.note(), Some(TORQUE_BAND_NOTE));
-        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+        (copies, own)
+    }
+
+    /// Clicks the note link at `at` and checks that the click opened note `id` in the explorer
+    /// and edited no input. The harness must hold the default design.
+    fn click_opens_note(harness: &mut Harness, at: egui::Pos2, id: &str) {
+        harness.click(at);
+        assert!(harness.panel.explorer.open, "{id}");
+        assert_eq!(harness.panel.explorer.note(), Some(id));
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default(), "{id}");
+    }
+
+    #[test]
+    fn the_gearbox_row_s_own_why_link_opens_the_torque_band_note() {
+        // BL-059: the gearbox check's Why link leads to the torque-band note, as the hot-low,
+        // hot-minimum and cold-high rows above it do, so those rows draw the note's title first.
+        // The copy clicked is the gearbox row's own: on the dashboard, below the row's label and
+        // above the next row's. The click edits nothing.
+        use crate::gui::guidance::TORQUE_BAND_NOTE;
+        let mut harness = Harness::on_screen(TALL);
+        let output = harness.frame(Vec::new());
+        let (copies, own) = row_s_why_links(&output, GEARBOX_CHECK, TORQUE_BAND_NOTE);
+        assert_eq!(own.len(), 1, "one link under the gearbox row: {copies:?}");
+        assert!(
+            copies[0].y < own[0].y,
+            "the rows above draw it first: {copies:?}"
+        );
+        click_opens_note(&mut harness, own[0], TORQUE_BAND_NOTE);
+    }
+
+    #[test]
+    fn the_shaft_joint_row_s_why_link_opens_the_shaft_joint_note() {
+        // BL-064: the shaft-joint row's Why link leads to the shaft-joint note, which no other
+        // row links, so its title is drawn once on the dashboard, under the row's label and
+        // above the next row's. The click edits nothing.
+        const SHAFT_JOINT_CHECK: &str = "shaft_joint.check";
+        let mut harness = Harness::on_screen(TALL);
+        let output = harness.frame(Vec::new());
+        let (copies, own) = row_s_why_links(&output, SHAFT_JOINT_CHECK, "shaft_joint");
+        assert_eq!(copies.len(), 1, "one link to the note: {copies:?}");
+        assert_eq!(own, copies, "under the shaft-joint row");
+        click_opens_note(&mut harness, own[0], "shaft_joint");
     }
 
     #[test]
@@ -8816,10 +8956,10 @@ mod tests {
         let output = harness.frame(Vec::new());
         let status = design_status(harness.panel.inputs(), harness.panel.results(), false);
         // The workbook example fails its hot minimum, its clearance, its cup wall and its
-        // gearbox check.
+        // gearbox check, of the ten guided checks (the shaft joints pass).
         assert_eq!(
             (status.bad, status.caution, status.total, status.is_default),
-            (4, 0, 9, true)
+            (4, 0, 10, true)
         );
         assert_eq!(count(&output, &design_status_text(&status)), 1);
         // A fix: the cup wall at 2.4 mm (its rule asks for 2.0 mm and up).

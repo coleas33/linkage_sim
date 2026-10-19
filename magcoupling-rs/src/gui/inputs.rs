@@ -40,7 +40,7 @@ pub const KEY_DESIGN: [&str; 10] = [
 ];
 
 /// The heading of every input group and nested group, by path prefix, in the package's order.
-pub const SECTION_LABELS: [(&str, &str); 18] = [
+pub const SECTION_LABELS: [(&str, &str); 19] = [
     ("coupling", "Coupling"),
     ("coupling.magnets", "Magnets"),
     ("metal", "Metal design"),
@@ -59,6 +59,7 @@ pub const SECTION_LABELS: [(&str, &str); 18] = [
     ("temperature.thermal", "Thermal network"),
     ("temperature.adhesive_life", "Adhesive life"),
     ("clamps", "Shaft clamps"),
+    ("shaft_joint", "Shaft joints"),
 ];
 
 /// How the left side orders the design inputs (decision O-1): by design workflow (the default)
@@ -337,6 +338,37 @@ pub const WORKFLOW: [WorkflowGroup; 8] = [
                     "coupling.keyway_depth_mm",
                     "clamps.key_width_mm",
                     "clamps.key_contact_mm",
+                    "shaft_joint.key_width_mm",
+                    "shaft_joint.key_contact_mm",
+                ],
+            },
+            // BL-064: the keyed shrink fits in force come before the paused clamp, so the order
+            // shown is the same while the clamp is paused and not.
+            WorkflowSection {
+                id: "shaft.fit",
+                label: "Shrink fit",
+                advanced: false,
+                paths: &[
+                    "shaft_joint.hub_interference_min_um",
+                    "shaft_joint.hub_interference_max_um",
+                    "shaft_joint.cup_interference_min_um",
+                    "shaft_joint.cup_interference_max_um",
+                    "shaft_joint.safety_factor",
+                    "shaft_joint.friction",
+                    "shaft_joint.smoothing_um",
+                    "shaft_joint.rotor_over_shaft_C",
+                ],
+            },
+            WorkflowSection {
+                id: "shaft.fitting",
+                label: "Fitting temperatures",
+                advanced: false,
+                paths: &[
+                    "shaft_joint.hub_fit_max_C",
+                    "shaft_joint.cup_fit_max_C",
+                    "shaft_joint.wheel_shaft_fit_C",
+                    "shaft_joint.output_shaft_fit_C",
+                    "shaft_joint.joining_clearance_um",
                 ],
             },
             WorkflowSection {
@@ -1047,7 +1079,9 @@ mod tests {
             }
         }
         assert_eq!(shown.key_design, all.key_design);
-        // The clamp's own group goes; the shaft group keeps the bore and the keyway depth.
+        // The clamp's own group goes; the shaft joints' group stays (BL-064). The shaft group
+        // keeps the bore, the keyway depth and the shaft joints' key, then their shrink fit and
+        // fitting temperatures.
         let names: Vec<&str> = shown.groups.iter().map(|g| g.name.as_str()).collect();
         assert_eq!(
             names,
@@ -1056,18 +1090,28 @@ mod tests {
                 "metal",
                 "calibration",
                 "materials",
-                "temperature"
+                "temperature",
+                "shaft_joint"
             ]
         );
         let shaft = shown.workflow.iter().find(|g| g.name == "shaft").unwrap();
         assert_eq!(shaft.label, "Shaft and hub joint");
-        let rows: Vec<&str> = shaft
-            .sections
+        let sections: Vec<&str> = shaft.sections.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(sections, ["shaft", "shaft.fit", "shaft.fitting"]);
+        let rows: Vec<&str> = shaft.sections[0]
+            .entries
             .iter()
-            .flat_map(|s| s.entries.iter())
             .map(|e| e.path.as_str())
             .collect();
-        assert_eq!(rows, ["coupling.bore_mm", "coupling.keyway_depth_mm"]);
+        assert_eq!(
+            rows,
+            [
+                "coupling.bore_mm",
+                "coupling.keyway_depth_mm",
+                "shaft_joint.key_width_mm",
+                "shaft_joint.key_contact_mm"
+            ]
+        );
         // The screw classes only the clamp reads go with it.
         assert!(
             shown
@@ -1092,7 +1136,8 @@ mod tests {
                 "calibration",
                 "materials",
                 "temperature",
-                "clamps"
+                "clamps",
+                "shaft_joint"
             ]
         );
         for group in &catalogue.groups {
@@ -1643,10 +1688,12 @@ mod tests {
                 .flat_map(|m| m.entries.iter().map(|e| e.path.clone()))
                 .collect()
         };
+        // BL-064: the gearbox shaft's fitting temperature is labelled with "Gearbox" too.
         let gearbox = [
             "coupling.gear_ratio",
             "coupling.gear_efficiency",
             "coupling.gearbox_input_rating_Nm",
+            "shaft_joint.output_shaft_fit_C",
         ];
         // By label (and path), ignoring case and the surrounding blanks, in either order.
         assert_eq!(paths(InputOrder::Workflow, "  GEARBOX "), gearbox);
@@ -1667,13 +1714,19 @@ mod tests {
         );
         // Each run is headed by its group, and its section unless it is the group's own.
         let workflow = filter_inputs(catalogue.groups_in(InputOrder::Workflow), "gearbox");
-        assert_eq!(workflow.len(), 1);
+        assert_eq!(workflow.len(), 2);
         assert_eq!(
             workflow[0].heading(),
             "Requirements and operating conditions / Drive and gearbox"
         );
+        assert_eq!(
+            workflow[1].heading(),
+            "Shaft and hub joint / Fitting temperatures"
+        );
         let workbook = filter_inputs(catalogue.groups_in(InputOrder::Workbook), "gearbox");
+        assert_eq!(workbook.len(), 2);
         assert_eq!(workbook[0].heading(), "Coupling");
+        assert_eq!(workbook[1].heading(), "Shaft joints");
         // A blank filter matches every input; a filter nothing contains, none.
         for order in InputOrder::ALL {
             assert_eq!(paths(order, "").len(), catalogue.all().count());

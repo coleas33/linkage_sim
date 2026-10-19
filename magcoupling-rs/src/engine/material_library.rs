@@ -88,7 +88,8 @@ pub struct Material {
     /// Expansion coefficient [1e-6/K].
     pub cte_1e6_per_K: Sourced,
     pub modulus_GPa: Sourced,
-    /// Yield strength [MPa] (published minimum where one exists; not read by the engine).
+    /// Yield strength [MPa] (published minimum where one exists; the engine reads only the hub, cup
+    /// and boss material's, for the shaft joint check, through [`PartProperties::hub`]).
     pub yield_MPa: Sourced,
     pub cp_J_kgK: Sourced,
     /// The wall check's design flux density [T] (decision 20): workbook values only,
@@ -99,6 +100,14 @@ pub struct Material {
     pub needs_plating: bool,
     /// The report's resolutions (M#) and flags.
     pub notes: &'static str,
+}
+
+impl Material {
+    /// The yield strength [MPa], NaN where the library has none, as the shaft joint check reads
+    /// it.
+    pub fn yield_or_nan(&self) -> f64 {
+        self.yield_MPa.value.unwrap_or(f64::NAN)
+    }
 }
 
 /// Every library material, in the data file's order.
@@ -790,6 +799,12 @@ impl PartMaterial {
     pub fn label(&self) -> &'static str {
         self.material.map_or(NO_MATERIAL, |m| m.label)
     }
+
+    /// A library pick that is not ferromagnetic: as the back iron, it selects the free-space
+    /// circuit and is the body.
+    pub fn is_non_magnetic(&self) -> bool {
+        self.material.is_some_and(|m| !m.ferromagnetic)
+    }
 }
 
 /// What the parts' materials feed into the engine. `api::compute` builds it from
@@ -816,6 +831,47 @@ pub struct PartProperties {
     pub sleeve_liner: PartMaterial,
     /// The cap (expansion and modulus not read).
     pub cap: PartMaterial,
+}
+
+/// The hub, cup and boss material in effect (with every correction on; BL-064, spec
+/// section 4.1): what the shaft joint check and the material warnings read for the parts
+/// on the shafts.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[allow(non_snake_case)] // unit suffixes, as the engine's names
+pub struct HubMaterial {
+    /// The steel circuit's values ([`PartProperties::steel`]) when the circuit in effect is
+    /// steel, else the body's ([`PartProperties::body`]).
+    pub props: EngineProps,
+    /// The library yield strength [MPa] of the metal in effect: the back-iron pick's on the
+    /// steel circuit or when the pick is non-magnetic, else the workbook's aluminium (6061-T6);
+    /// NaN for a code outside the choices on the steel circuit (its values are NaN too).
+    pub yield_MPa: f64,
+}
+
+/// The library id of the workbook's aluminium hub, cup and boss (Metal design C42, Temperature
+/// design C140, E18): the body with no back iron and no non-magnetic pick.
+pub const WORKBOOK_ALUMINIUM: &str = "6061_T6";
+
+impl PartProperties {
+    /// The hub, cup and boss material in effect (BL-064): the steel values when the circuit
+    /// in effect is steel (`backiron == 1`), else the body's; the yield follows the material in
+    /// effect, not the pick: with no back iron (`coupling.backiron` 0) and a ferromagnetic pick
+    /// or a code outside the choices, the body is the workbook's aluminium, so its yield is
+    /// 6061-T6's.
+    pub fn hub(&self) -> HubMaterial {
+        let steel = self.backiron == 1;
+        let pick = self.back_iron.material;
+        let non_magnetic_pick = self.back_iron.is_non_magnetic();
+        let record = if steel || non_magnetic_pick {
+            pick
+        } else {
+            material(WORKBOOK_ALUMINIUM)
+        };
+        HubMaterial {
+            props: if steel { self.steel } else { self.body },
+            yield_MPa: record.map_or(f64::NAN, Material::yield_or_nan),
+        }
+    }
 }
 
 /// The workbook values of a part, as [`EngineProps`].
@@ -878,7 +934,7 @@ pub fn resolve(
         steel.modulus_GPa,
     );
     let back_iron = part(&BACK_IRON_CHOICES, choice.back_iron, workbook_steel);
-    let non_magnetic = back_iron.material.is_some_and(|m| !m.ferromagnetic);
+    let non_magnetic = back_iron.is_non_magnetic();
     let design_flux_T = match back_iron.material {
         Some(m) if !back_iron.is_default => m.design_flux_density_T.unwrap_or(steel.bsat_T),
         Some(_) => steel.bsat_T,
@@ -953,5 +1009,19 @@ mod tests {
             chosen(&BACK_IRON_CHOICES, 7).map(|m| m.ferromagnetic),
             Some(false)
         );
+    }
+
+    #[test]
+    fn the_yield_is_the_library_s_and_nan_where_it_has_none() {
+        // `Material::yield_or_nan`, read by `PartProperties::hub` and the explain tables. Every
+        // library material has a sourced yield today, so only a record without one reaches NaN.
+        for m in &MATERIALS {
+            assert_eq!(Some(m.yield_or_nan()), m.yield_MPa.value, "{}", m.id);
+        }
+        let unsourced = Material {
+            yield_MPa: NOT_SOURCED,
+            ..MATERIALS[0]
+        };
+        assert!(unsourced.yield_or_nan().is_nan());
     }
 }

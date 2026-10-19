@@ -8,9 +8,11 @@
 //! subscript and unit; ϑ temperature; φ electrical angle; τ_p pole pitch, τ a material's shear
 //! strength (`τ_{Al}`, `τ_{lap}`); c a specific heat (`c_{st}`), the end-effect coefficient
 //! (`c_{end}`) or a radial clearance (`c_{nom}`, `c_{res}`), told apart by subscript and unit; δ
-//! the skin depth (`δ`) or a radial movement (`δ_{shaft}`, `δ_{adv}`); r and R a radius
+//! the skin depth (`δ`), a radial movement (`δ_{shaft}`, `δ_{adv}`) or a shaft joint's diametral
+//! interference in µm (`δ_{min,hub}`, `δ_{need,cup}`, `δ_{sm}`); r and R a radius
 //! (`r_{mid}`, `R_g`), apart from the Calibration's measured-to-model ratio `r^{cal}`; Δ before a
-//! quantity's letter a difference: a rise (`Δϑ_{ss,est}`), or a margin or reserve, the limit or
+//! quantity's letter a difference: a rise (`Δϑ_{ss,est}`, `Δϑ_{rot}`), a shaft's diametral
+//! shrink (`Δd_{wheel}`), or a margin or reserve, the limit or
 //! claim minus the value (`Δϑ_{mag}`; the space claim's `ΔD`, `ΔL`, `ΔL_{bay}`, a diameter
 //! difference, not a radial one); Σ the summation operator only, never a quantity's symbol;
 //! `^{cal}` marks the Calibration prototype; a selector is an upright word (`faceted`), which the
@@ -25,7 +27,13 @@
 //! `a_i`), a harmonic amplitude (`A_{#}`), the area-lever product `A_L` or an area inside a
 //! formula (`[A_{cav}]`, `[A_{hub}]`). A Metal design row that restates a Temperature design or
 //! Calculator quantity carries `MD` (`ϑ_{op,MD}`; `f_{e,MD}` is the field frequency p n / 60
-//! the Temperature design calls `f_e`). Renaming any of these is M4's typesetting pass: a
+//! the Temperature design calls `f_e`). The shaft joints (BL-064) name their two joints `hub` (the
+//! inner hub) and `cup`, and their shafts `wheel` and `gbx` (the gearbox output); there E is an
+//! elastic modulus (`E_{part}`; `E_{slip,MD}` is an energy), α an expansion coefficient
+//! (`α_{part}`; elsewhere α is a Br temperature coefficient), σ a part's stress, yield or limit
+//! (`σ_{vM,hub}`, `σ_{y,part}`, `σ_{lim}`), p a pressure (`p_{key,hub}`; bare `p` is the pole-pair
+//! count), b and h the key's width and contact height (`b_{key}`, `h_{key}`; `b_i` is a bondline)
+//! and s the joining clearance (`s_{join}`). Renaming any of these is M4's typesetting pass: a
 //! symbol an A4 note quotes changes with the note, and a changed note goes back to Draft.
 
 /// (path, symbol markup), grouped by input group.
@@ -43,6 +51,7 @@ pub const SYMBOLS: &[(&str, &str)] = &[
     ("coupling.gear_ratio", "i_g"),
     ("coupling.gear_efficiency", "η_g"),
     ("coupling.bore_mm", "d_{bore}"),
+    ("coupling.keyway_depth_mm", "t_{kw}"),
     ("coupling.magnets.part_inner", "part_i"),
     ("coupling.magnets.part_outer", "part_o"),
     ("coupling.magnets.grade_inner", "grade_i"),
@@ -124,6 +133,8 @@ pub const SYMBOLS: &[(&str, &str)] = &[
     ("materials.steel.conductivity_S_m", "σ_{st,in}"),
     ("materials.steel.mu_r_incremental", "μ_{r,in}"),
     ("materials.steel.specific_heat_J_kgK", "c_{st,in}"),
+    ("materials.steel.cte_per_C", "α_{st,in}"),
+    ("materials.steel.modulus_GPa", "E_{st,in}"),
     ("materials.screws.proof_12_9_MPa", "σ_{p,12.9}"),
     ("materials.screws.proof_10_9_MPa", "σ_{p,10.9}"),
     ("materials.screws.yield_A4_70_MPa", "σ_{y,A4-70}"),
@@ -182,4 +193,20 @@ pub const SYMBOLS: &[(&str, &str)] = &[
     ("clamps.joint_screws", "n_{joint}"),
     ("clamps.joint_bolt_circle_mm", "D_{bc}"),
     ("clamps.joint_friction", "μ_{joint}"),
+    // shaft_joint (BL-064)
+    ("shaft_joint.hub_interference_min_um", "δ_{min,hub}"),
+    ("shaft_joint.hub_interference_max_um", "δ_{max,hub}"),
+    ("shaft_joint.cup_interference_min_um", "δ_{min,cup}"),
+    ("shaft_joint.cup_interference_max_um", "δ_{max,cup}"),
+    ("shaft_joint.safety_factor", "S_{fit}"),
+    ("shaft_joint.friction", "μ_{fit}"),
+    ("shaft_joint.smoothing_um", "δ_{sm}"),
+    ("shaft_joint.rotor_over_shaft_C", "Δϑ_{rot}"),
+    ("shaft_joint.key_width_mm", "b_{key}"),
+    ("shaft_joint.key_contact_mm", "h_{key}"),
+    ("shaft_joint.hub_fit_max_C", "ϑ_{lim,hub}"),
+    ("shaft_joint.cup_fit_max_C", "ϑ_{lim,cup}"),
+    ("shaft_joint.wheel_shaft_fit_C", "ϑ_{wheel}"),
+    ("shaft_joint.output_shaft_fit_C", "ϑ_{gbx}"),
+    ("shaft_joint.joining_clearance_um", "s_{join}"),
 ];

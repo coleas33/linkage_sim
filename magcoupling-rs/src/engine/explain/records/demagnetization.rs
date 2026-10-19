@@ -69,6 +69,24 @@ pub const RECORDS: &[Record] = &[
                      => 20 + frac([H_k] - [H_{ref,i}], [H_k] · abs({temperature.demag.inner_beta_per_C}) - [H_{ref,i}] · abs({model.inner_alpha_br_per_C}))
                         - {model.inner_tmax_C};
                      else => 0)"#).corrected(&[E20]),
+    // BL-064 (owner R-15 ring): the inner ring's own single-ring onset, whichever ring governs
+    // (temperature::ring_demag's fourth onset of the inner block). The inner magnet limit's
+    // record with the single-ring field in place of the skipping field, no design margin, and
+    // +inf (not the rating) for a positive beta; its `where` terms repeat that record's. The
+    // BL-064 spec (section 4.5) keeps the copy: the drift guard (tests/explain.rs,
+    // every_record_reproduces_the_engine_everywhere) holds both records to the engine, and a
+    // per-ring calibration-offset result would let them share the terms.
+    record("temperature.demag.inner_onset_single_ring_C", "ϑ_{sr,i}",
+        r#"cases({temperature.demag.inner_beta_per_C} > 0 => inf;
+               else => 20 + frac([H_k] - {temperature.demag.h_rev_single_ring_kA_m},
+                                 [H_k] · abs({temperature.demag.inner_beta_per_C}) - {temperature.demag.h_rev_single_ring_kA_m} · abs({model.inner_alpha_br_per_C}))
+                       - [Δϑ_{cal,i}])
+           where [H_k] = {temperature.demag.knee_fraction} * {temperature.demag.inner_hcj20_kA_m},
+                 [H_{ref,i}] = frac({model.inner_br_T}, 2 * {coupling.mu0}) / 1000,
+                 [Δϑ_{cal,i}] = cases({model.inner_tmax_C} != "n/a"
+                     => 20 + frac([H_k] - [H_{ref,i}], [H_k] · abs({temperature.demag.inner_beta_per_C}) - [H_{ref,i}] · abs({model.inner_alpha_br_per_C}))
+                        - {model.inner_tmax_C};
+                     else => 0)"#).corrected(&[E20]),
     record("temperature.demag.outer_magnet_limit_C", "ϑ_{lim,o}",
         r#"cases({temperature.demag.outer_beta_per_C} > 0
                    => cases({model.outer_tmax_C} != "n/a" => {model.outer_tmax_C}; else => inf);

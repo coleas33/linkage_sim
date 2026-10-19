@@ -3,13 +3,14 @@
 //!
 //! **Drift guard.** Every equation record is evaluated over the engine's own term values and
 //! must reproduce the engine's result by the parity rule (1e-9 relative, 1e-12 absolute;
-//! text exact), corrections on (`compute_all`, what users see), at: the defaults; every
-//! differential case (`tests/data/differential/*.json`, 3,391 cases, starting from the
-//! corrected defaults); and each of those again under every **augmentation**, the Rust-only
-//! inputs the Python generator never varies (the harmonic set, the back-iron material, the
-//! grade mode, the axial override, the coercivity from the inputs with two ferrite betas,
-//! the sleeve and cap materials, E17's free-space fields), without which the tau7-tau11
-//! records would compare 0 with 0 and the ferrite and material branches would never run.
+//! text exact), corrections on (`compute_all`, what users see), at: the defaults; the five
+//! probe designs; the edge points; every differential case (`tests/data/differential/*.json`,
+//! 3,391 cases, starting from the corrected defaults); and each of those again under every
+//! **augmentation**, the Rust-only inputs the Python generator never varies (the harmonic set,
+//! the back-iron material, the grade mode, the axial override, the coercivity from the inputs
+//! with two ferrite betas, the sleeve and cap materials, E17's free-space fields, the shaft
+//! joint inputs), without which the tau7-tau11 records would compare 0 with 0 and the ferrite,
+//! material and shaft joint branches would never run.
 //! Anti-vacuity checks require every `cases` arm of every record to be taken, every numeric
 //! record and every value term of every record to take two values, and the E7 angles to
 //! leave half a pitch.
@@ -24,13 +25,14 @@ mod common;
 use std::collections::{BTreeMap, BTreeSet};
 use std::f64::consts::FRAC_PI_2;
 
-use common::{differential_files, load_cases, report};
+use common::{differential_files, input_meta, load_cases, report};
 use magcoupling::engine::api::{DesignInputs, DesignResults, compute_all};
 use magcoupling::engine::assumptions::{self, ASSUMPTIONS};
 use magcoupling::engine::compat::parity_close;
 use magcoupling::engine::deviations::DeviationId;
-use magcoupling::engine::explain::markup::{Expr, Symbol};
+use magcoupling::engine::explain::markup::{Expr, Formula, Symbol};
 use magcoupling::engine::explain::notes::{Change, Sense, Step};
+use magcoupling::engine::explain::plain::TORQUE_ORDER_WORDS;
 use magcoupling::engine::explain::record::Eval;
 use magcoupling::engine::explain::registry::{Design, Registry, TermKind};
 use magcoupling::engine::explain::scope::{SCOPE, Status};
@@ -44,8 +46,11 @@ use magcoupling::engine::meta::{
     result_rows,
 };
 use magcoupling::engine::model::{ModelResults, blocks_fit};
+use magcoupling::engine::shaft_joint::{self, HubFitLimit};
 use magcoupling::engine::size_controls::with_ring_radius;
-use magcoupling::engine::temperature::{NO_COLD_ONSET, RING_INNER, RING_OUTER, demag_onset_C};
+use magcoupling::engine::temperature::{
+    CURE_MARGIN_MIN_C, NO_COLD_ONSET, RING_INNER, RING_OUTER, demag_onset_C,
+};
 
 /// One input set the guard evaluates at.
 struct Point {
@@ -155,6 +160,31 @@ fn augmentations() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
             ("coupling.magnets.axial_length_mm", Value::Num(20.0)),
         ],
     ));
+    // BL-064: the shaft joint inputs (Rust-only) off their defaults, each on its slider: a
+    // lower safety factor, a lower friction, a finer finish, a warmer rotor, a wider key with
+    // less contact, the bonded hub's limit at 110 °C and the bare cup's at 250 °C, the wheel
+    // shaft in dry ice and the gearbox shaft at its cold-spray floor (both below 265 K, the
+    // shrink's NIST arm), and less joining clearance.
+    v.push((
+        "shaft joint inputs",
+        vec![
+            ("shaft_joint.hub_interference_min_um", Value::Num(11.5)),
+            ("shaft_joint.hub_interference_max_um", Value::Num(20.0)),
+            ("shaft_joint.cup_interference_min_um", Value::Num(12.5)),
+            ("shaft_joint.cup_interference_max_um", Value::Num(25.0)),
+            ("shaft_joint.safety_factor", Value::Num(1.5)),
+            ("shaft_joint.friction", Value::Num(0.12)),
+            ("shaft_joint.smoothing_um", Value::Num(3.0)),
+            ("shaft_joint.rotor_over_shaft_C", Value::Num(30.0)),
+            ("shaft_joint.key_width_mm", Value::Num(4.0)),
+            ("shaft_joint.key_contact_mm", Value::Num(1.0)),
+            ("shaft_joint.hub_fit_max_C", Value::Num(110.0)),
+            ("shaft_joint.cup_fit_max_C", Value::Num(250.0)),
+            ("shaft_joint.wheel_shaft_fit_C", Value::Num(-78.0)),
+            ("shaft_joint.output_shaft_fit_C", Value::Num(-20.0)),
+            ("shaft_joint.joining_clearance_um", Value::Num(8.0)),
+        ],
+    ));
     v
 }
 
@@ -190,9 +220,34 @@ fn edge_points() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
         }
         (label, sets)
     };
+    // The shaft joint points (BL-064) check that they are where their label says too:
+    // `joint_edge` applies the sets to the defaults and asserts `holds` of the results there.
+    let joint_edge = |label: &'static str,
+                      sets: Vec<(&'static str, Value)>,
+                      holds: fn(&DesignResults) -> bool| {
+        let results = compute_all(&defaults_with(label, &sets));
+        assert!(
+            holds(&results),
+            "edge point {label} is not on its edge: {:?}",
+            results.shaft_joint
+        );
+        (label, sets)
+    };
     let num = Value::Num;
     let onset = default_num("temperature.demag.onset_skipping_C");
     let hot_day_start = default_num("temperature.duty.hot_day_start_C");
+    // The shaft joints' keyless no-wall points (ruling C-3): the cup's boss, and the inner hub's
+    // part diameter, 2 · (apothem − bondline), typed 1 mm under the bore and at it exactly.
+    let inputs = DesignInputs::default();
+    let bore = inputs.coupling.bore_mm;
+    let bond = inputs.metal.bond_inner_mm;
+    let apothem_under_bore = (bore - 1.0) / 2.0 + bond;
+    let apothem_at_bore = bore / 2.0 + bond;
+    assert_eq!(
+        2.0 * (apothem_at_bore - bond),
+        bore,
+        "the inner hub's no-wall point is not at the bore"
+    );
     vec![
         (
             // The outer ring (manual, ferrite's beta) has a 0/0 cold onset, so its cold limit is
@@ -454,6 +509,202 @@ fn edge_points() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
                 default_num("temperature.thermal.steady_est_C"),
             )],
         ),
+        (
+            // BL-064 (owner R-15 ring): the library's N42 block outside the default N42SH one.
+            // The outer ring governs (its magnet limit is the lower), so the inner ring's own
+            // single-ring onset (143.36 °C) differs from the governing one (69.83 °C): the
+            // inner onset's record must read the inner block, not the governing one
+            // (`tests/grades.rs` pins the ring and both onsets at this design).
+            "inner B842SH, outer B842: the outer ring governs",
+            vec![("coupling.magnets.part_outer", text("B842"))],
+        ),
+        // BL-064, the shaft joint records: the branches no differential case reaches (the
+        // shaft joint inputs are Rust-only; the "shaft joint inputs" augmentation moves them).
+        joint_edge(
+            // A 12 mm boss on a 16 mm bore: no wall around the cup's bore (bore over outer
+            // diameter at least 1), so its four Lamé rows are NaN; the inner hub's are numbers.
+            "shaft joints: bore 16 mm, boss 12 mm: no wall around the cup's bore",
+            vec![
+                ("coupling.bore_mm", num(16.0)),
+                ("metal.boss_od_mm", num(12.0)),
+            ],
+            only_the_cup_has_no_wall,
+        ),
+        joint_edge(
+            // A 2.1 mm keyway on a 16 mm bore cuts through the inner hub's 2.1 mm wall: its four
+            // Lamé rows are NaN; the cup's are numbers.
+            "shaft joints: bore 16 mm, keyway 2.1 mm: the keyway cuts through the inner hub's wall",
+            vec![
+                ("coupling.bore_mm", num(16.0)),
+                ("coupling.keyway_depth_mm", num(2.1)),
+            ],
+            only_the_inner_hub_has_no_wall,
+        ),
+        // Ruling C-3 (plan deviation PD-1): no wall wherever the part's outer diameter is not
+        // above the bore, a diameter typed below zero included. These six points are keyless,
+        // so the no-wall arm's first condition alone gives the NaN (the two points above are
+        // keyed, and there the keyway condition gives it too). Per joint, a diameter under the
+        // bore pins `D <= d` against `D <= 0` or no such condition; one at the bore pins it
+        // against `D < d` (in the holding and needed rows: with k_θ infinite there the stress
+        // rows are NaN either way); and one typed below zero pins it against the spec's first
+        // form `Q >= 1`, which would judge it (Q < 0 there). The negative designs are
+        // `tests/shaft_joint.rs`'s (`a_joint_with_no_wall_reads_nan_and_is_not_judged`).
+        joint_edge(
+            "shaft joints: keyless, boss 1 mm under the bore: no wall around the cup's bore",
+            vec![
+                ("coupling.keyway_depth_mm", num(0.0)),
+                ("metal.boss_od_mm", num(bore - 1.0)),
+            ],
+            only_the_cup_has_no_wall,
+        ),
+        joint_edge(
+            "shaft joints: keyless, boss at the bore: no wall around the cup's bore",
+            vec![
+                ("coupling.keyway_depth_mm", num(0.0)),
+                ("metal.boss_od_mm", num(bore)),
+            ],
+            only_the_cup_has_no_wall,
+        ),
+        joint_edge(
+            "shaft joints: keyless, boss -22 mm: no wall around the cup's bore",
+            vec![
+                ("coupling.keyway_depth_mm", num(0.0)),
+                ("metal.boss_od_mm", num(-22.0)),
+            ],
+            only_the_cup_has_no_wall,
+        ),
+        joint_edge(
+            "shaft joints: keyless, inner hub's diameter 1 mm under the bore: no wall around the inner hub's bore",
+            vec![
+                ("coupling.keyway_depth_mm", num(0.0)),
+                ("coupling.inner_back_apothem_mm", num(apothem_under_bore)),
+            ],
+            only_the_inner_hub_has_no_wall,
+        ),
+        joint_edge(
+            "shaft joints: keyless, inner hub's diameter at the bore: no wall around the inner hub's bore",
+            vec![
+                ("coupling.keyway_depth_mm", num(0.0)),
+                ("coupling.inner_back_apothem_mm", num(apothem_at_bore)),
+            ],
+            only_the_inner_hub_has_no_wall,
+        ),
+        joint_edge(
+            // The inner hub's part diameter, 2 · (apothem − bondline), is -40.4 mm here.
+            "shaft joints: keyless, inner back apothem -10.15 mm: no wall around the inner hub's bore",
+            vec![
+                ("coupling.keyway_depth_mm", num(0.0)),
+                ("coupling.inner_back_apothem_mm", num(-10.15)),
+            ],
+            only_the_inner_hub_has_no_wall,
+        ),
+        joint_edge(
+            // No keyway: no key term (both key pressures read 0) and no key arc off the contact.
+            "shaft joints: no keyway",
+            vec![("coupling.keyway_depth_mm", num(0.0))],
+            |r| {
+                (
+                    r.shaft_joint.hub_key_pressure_MPa,
+                    r.shaft_joint.cup_key_pressure_MPa,
+                ) == (0.0, 0.0)
+            },
+        ),
+        joint_edge(
+            // No boss: the cup's bore runs through its web alone, no longer than the key is
+            // wide, so the cup's key has no bearing length (+inf).
+            "shaft joints: boss length 0: the cup's key has no bearing length",
+            vec![("metal.boss_length_mm", num(0.0))],
+            |r| {
+                r.shaft_joint.cup_key_pressure_MPa == f64::INFINITY
+                    && r.shaft_joint.hub_key_pressure_MPa.is_finite()
+            },
+        ),
+        joint_edge(
+            // The hub length at its slider's bottom, 3 mm, the key's width: the inner hub's key
+            // has no bearing length (+inf).
+            "shaft joints: hub length 3 mm: the inner hub's key has no bearing length",
+            vec![("metal.hub_length_mm", num(3.0))],
+            |r| {
+                r.shaft_joint.hub_key_pressure_MPa == f64::INFINITY
+                    && r.shaft_joint.cup_key_pressure_MPa.is_finite()
+            },
+        ),
+        // A keyway shallower than the key's contact height caps the contact at its depth. Two
+        // depths, so the capped contact takes two values.
+        joint_edge(
+            "shaft joints: keyway 1 mm caps the key's contact height",
+            vec![("coupling.keyway_depth_mm", num(1.0))],
+            |r| key_contact_capped_at(r, 1.0),
+        ),
+        joint_edge(
+            "shaft joints: keyway 0.3 mm caps the key's contact height",
+            vec![("coupling.keyway_depth_mm", num(0.3))],
+            |r| key_contact_capped_at(r, 0.3),
+        ),
+        joint_edge(
+            // An uncooled wheel shaft: above 265 K the shrink is the linear expansion's, and at
+            // room temperature it is 0.
+            "shaft joints: wheel shaft at 20 °C",
+            vec![("shaft_joint.wheel_shaft_fit_C", num(shaft_joint::ROOM_C))],
+            |r| r.shaft_joint.wheel_shaft_shrink_um == 0.0,
+        ),
+        joint_edge(
+            // At 20 °C the linear arm is 0 whatever its coefficient; at the sliders' top both
+            // shafts grow, so the linear shrink arm is off its zero (the gearbox shaft's 20 °C
+            // default is the same degenerate point).
+            "shaft joints: both shafts at 40 °C: the linear shrink arm off its zero",
+            vec![
+                ("shaft_joint.wheel_shaft_fit_C", num(40.0)),
+                ("shaft_joint.output_shaft_fit_C", num(40.0)),
+            ],
+            |r| {
+                r.shaft_joint.wheel_shaft_shrink_um < 0.0
+                    && r.shaft_joint.output_shaft_shrink_um < 0.0
+            },
+        ),
+        joint_edge(
+            // No knee and no single-ring field (the coercivity from the inputs at 0 kA/m): the
+            // inner ring's single-ring onset is 0/0, so the bonded inner hub's allowed fitting
+            // temperature is not a number. `set` takes no NaN; finite inputs reach the record's
+            // last arm this way.
+            "shaft joints: the inner ring's single-ring onset 0/0",
+            vec![
+                ("temperature.demag.coercivity_source", Value::Int(0)),
+                ("temperature.demag.hcj20_kA_m", num(0.0)),
+                ("temperature.demag.h_rev_single_ring_kA_m", num(0.0)),
+            ],
+            |r| {
+                r.temperature.demag.inner_onset_single_ring_C.is_nan()
+                    && r.shaft_joint.hub_fit_allowed_C.is_nan()
+            },
+        ),
+        // The selected adhesive's design limit caps the bonded inner hub's fitting temperature,
+        // at two limits: DP460's 60 °C, and AA 326's 120 °C under the hub limit's slider top.
+        joint_edge(
+            "shaft joints: DP460 caps the inner hub's fitting temperature",
+            vec![("temperature.adhesive.selected", Value::Int(4))],
+            the_adhesive_caps_the_hub,
+        ),
+        joint_edge(
+            "shaft joints: hub limit 130 °C: AA 326 caps the inner hub's fitting temperature",
+            vec![("shaft_joint.hub_fit_max_C", num(130.0))],
+            the_adhesive_caps_the_hub,
+        ),
+        joint_edge(
+            // The library's N42 blocks in both rings: the inner ring's single-ring onset less the
+            // cure margin (59.83 °C) caps the bonded inner hub's fitting temperature (owner R-15).
+            "shaft joints: N42 blocks: the inner magnets' onset caps the inner hub's fitting temperature",
+            vec![
+                ("coupling.magnets.part_inner", text("B842")),
+                ("coupling.magnets.part_outer", text("B842")),
+            ],
+            |r| {
+                let cap = r.temperature.demag.inner_onset_single_ring_C - CURE_MARGIN_MIN_C;
+                r.shaft_joint.hub_fit_allowed_C == cap
+                    && cap < r.temperature.adhesive.design_limit_C
+                    && cap < DesignInputs::default().shaft_joint.hub_fit_max_C
+            },
+        ),
         // The clamp counts outside i64 (`saturation_artifact`), one point per kind, each
         // reaching every screw size the exemption's liveness assertion names.
         (
@@ -501,6 +752,66 @@ fn edge_points() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
             vec![("clamps.clamp_length_mm", Value::Num(1e300))],
         ),
     ]
+}
+
+/// The inner hub's and the cup's Lamé rows (holding, bore stress, needed minimum, elastic edge):
+/// NaN for a joint with no wall around its bore (BL-064).
+fn lame_rows(r: &DesignResults) -> [[f64; 4]; 2] {
+    let s = &r.shaft_joint;
+    [
+        [
+            s.hub_holding_Nm,
+            s.hub_bore_stress_MPa,
+            s.hub_needed_um,
+            s.hub_elastic_max_um,
+        ],
+        [
+            s.cup_holding_Nm,
+            s.cup_bore_stress_MPa,
+            s.cup_needed_um,
+            s.cup_elastic_max_um,
+        ],
+    ]
+}
+
+/// Whether the cup alone has no wall around its bore in `r`: its four Lamé rows NaN, the inner
+/// hub's numbers.
+fn only_the_cup_has_no_wall(r: &DesignResults) -> bool {
+    let [hub, cup] = lame_rows(r);
+    cup.iter().all(|x| x.is_nan()) && hub.iter().all(|x| x.is_finite())
+}
+
+/// Whether the inner hub alone has no wall around its bore in `r`: its four Lamé rows NaN, the
+/// cup's numbers.
+fn only_the_inner_hub_has_no_wall(r: &DesignResults) -> bool {
+    let [hub, cup] = lame_rows(r);
+    hub.iter().all(|x| x.is_nan()) && cup.iter().all(|x| x.is_finite())
+}
+
+/// Whether the key pressures of `r` are the defaults' with the key's contact height capped at
+/// a keyway `depth_mm` below it (the pressure is inversely proportional to the contact).
+fn key_contact_capped_at(r: &DesignResults, depth_mm: f64) -> bool {
+    let defaults = DesignInputs::default();
+    let contact_mm = defaults.shaft_joint.key_contact_mm;
+    let d = compute_all(&defaults).shaft_joint;
+    depth_mm < contact_mm
+        && close(
+            r.shaft_joint.hub_key_pressure_MPa,
+            d.hub_key_pressure_MPa * contact_mm / depth_mm,
+        )
+        && close(
+            r.shaft_joint.cup_key_pressure_MPa,
+            d.cup_key_pressure_MPa * contact_mm / depth_mm,
+        )
+}
+
+/// Whether the selected adhesive's design limit caps the bonded inner hub's allowed fitting
+/// temperature in `r`, below the inner magnets' single-ring onset less the cure margin (BL-064,
+/// owner R-15).
+fn the_adhesive_caps_the_hub(r: &DesignResults) -> bool {
+    let allowed = r.shaft_joint.hub_fit_allowed_C;
+    allowed == r.temperature.adhesive.design_limit_C
+        && allowed < r.temperature.demag.inner_onset_single_ring_C - CURE_MARGIN_MIN_C
 }
 
 /// The defaults with `sets` applied (`label` names the point in a refusal).
@@ -559,12 +870,19 @@ fn exact_input(
         })
 }
 
-/// The defaults, the edge points, then every differential case under every augmentation.
+/// The defaults, the probe designs (BL-064, spec 7.12: the shaft joint records at every probe),
+/// the edge points, then every differential case under every augmentation.
 fn guard_points() -> Vec<Point> {
     let mut points = vec![Point {
         label: "defaults".into(),
         inputs: DesignInputs::default(),
     }];
+    for (name, inputs) in probes::probe_designs() {
+        points.push(Point {
+            label: format!("probe design: {name}"),
+            inputs,
+        });
+    }
     for (label, sets) in edge_points() {
         points.push(Point {
             label: format!("edge point: {label}"),
@@ -770,8 +1088,8 @@ const UNREACHABLE_ARMS: &[(&str, usize, usize, &str)] = &[
 fn every_record_reproduces_the_engine_everywhere() {
     let registry = Registry::build();
     let points = guard_points();
-    // The defaults, the edge points, then every differential case under every augmentation
-    // (no stale count: the data files are regenerated).
+    // The defaults, the probe designs, the edge points, then every differential case under
+    // every augmentation (no stale count: the data files are regenerated).
     let cases: usize = differential_files()
         .into_iter()
         .map(|f| load_cases(f).len())
@@ -779,7 +1097,7 @@ fn every_record_reproduces_the_engine_everywhere() {
     assert!(cases > 0);
     assert_eq!(
         points.len(),
-        1 + edge_points().len() + cases * augmentations().len(),
+        1 + probes::probe_designs().len() + edge_points().len() + cases * augmentations().len(),
         "{} points",
         points.len()
     );
@@ -1036,6 +1354,138 @@ fn the_registry_is_consistent() {
         let want: BTreeSet<String> = up.intersection(&input_paths).cloned().collect();
         assert_eq!(r.upstream_inputs(t), Some(&want), "upstream inputs of {t}");
     }
+    assert_the_shaft_joint_records_draw_their_copies_alike(&r);
+}
+
+/// A formula as it is drawn, for comparing copies of a term: each `where` local named by its
+/// symbol, not by its place in the list (the inner hub's Lamé records bind `[D]` first, the
+/// cup's have none), and every `cases` numbered 0 (the number keys branch coverage and is
+/// never drawn).
+fn as_drawn(formula: &Formula) -> Formula {
+    let names: Vec<String> = formula.bindings.iter().map(|b| b.symbol.clone()).collect();
+    let mut drawn = formula.clone();
+    drawn.visit_mut(&mut |e| match e {
+        Expr::Local(i) => *e = Expr::Text(format!("[{}]", names[*i])),
+        Expr::Cases { id, .. } => *id = 0,
+        _ => {}
+    });
+    drawn
+}
+
+/// Names each copy that is not drawn as the first one.
+fn unlike_the_first<T: PartialEq>(what: &str, copies: &[(&str, T)]) -> Vec<String> {
+    let (first, form) = &copies[0];
+    copies[1..]
+        .iter()
+        .filter(|(_, other)| other != form)
+        .map(|(target, _)| format!("{what}: {target} is not drawn as {first}"))
+        .collect()
+}
+
+/// BL-064: the shaft joint records repeat terms that read the same inputs, since each record
+/// carries its own `where` terms (`records/shaft_joint.rs`, its module doc). Every copy must be
+/// drawn alike, so an edit to some copies and not the others fails here by name, even where
+/// the drift guard sees the same values (a no-wall condition's `<=` typed `<` in one record
+/// reads NaN either way). A `where` local has one form in every record that binds it, or one
+/// per joint for the four that read the joint's own outer diameter, length or shaft. Each
+/// joint's four Lamé records share their no-wall condition, the part-material records their
+/// material conditions, the two key records their formula and the two shafts' shrinks their
+/// NIST condition and arm.
+fn assert_the_shaft_joint_records_draw_their_copies_alike(r: &Registry) {
+    const HUB_LAME: [&str; 4] = [
+        "shaft_joint.hub_holding_Nm",
+        "shaft_joint.hub_needed_um",
+        "shaft_joint.hub_bore_stress_MPa",
+        "shaft_joint.hub_elastic_max_um",
+    ];
+    const CUP_LAME: [&str; 4] = [
+        "shaft_joint.cup_holding_Nm",
+        "shaft_joint.cup_needed_um",
+        "shaft_joint.cup_bore_stress_MPa",
+        "shaft_joint.cup_elastic_max_um",
+    ];
+    const MODULUS: &str = "shaft_joint.part_modulus_GPa";
+    const CTE: &str = "shaft_joint.part_cte_per_C";
+    const YIELD: &str = "shaft_joint.part_yield_MPa";
+    const HUB_KEY: &str = "shaft_joint.hub_key_pressure_MPa";
+    const CUP_KEY: &str = "shaft_joint.cup_key_pressure_MPa";
+    const WHEEL: &str = "shaft_joint.wheel_shaft_shrink_um";
+    const OUTPUT: &str = "shaft_joint.output_shaft_shrink_um";
+    // The locals that read the joint's own outer diameter ([Q]), length ([T_1], [l]) or shaft
+    // ([ϑ_K]).
+    const PER_JOINT: [&str; 4] = ["Q", "T_1", "l", "ϑ_K"];
+    let drawn = |target: &str| as_drawn(&r.equation_for(target).expect(target).formula);
+    let cases = |target: &str| match drawn(target).body {
+        Expr::Cases {
+            arms, otherwise, ..
+        } => (arms, *otherwise),
+        body => panic!("{target} is not a cases: {body:?}"),
+    };
+    // The condition of a record's `arm`-th `cases` arm, counted from 0.
+    let condition = |target: &'static str, arm: usize| (target, cases(target).0[arm].0.clone());
+
+    let mut locals: BTreeMap<(String, &str), Vec<(&str, Expr)>> = BTreeMap::new();
+    for eq in r.equations() {
+        let joint = match eq.target.as_str() {
+            t if t.starts_with("shaft_joint.hub_") || t == WHEEL => "the inner hub",
+            t if t.starts_with("shaft_joint.cup_") || t == OUTPUT => "the cup",
+            t if t.starts_with("shaft_joint.") => "both joints",
+            _ => continue,
+        };
+        for b in as_drawn(&eq.formula).bindings {
+            let scope = if PER_JOINT.contains(&b.symbol.as_str()) {
+                joint
+            } else {
+                "both joints"
+            };
+            locals
+                .entry((b.symbol, scope))
+                .or_default()
+                .push((eq.target.as_str(), b.expr));
+        }
+    }
+    // A binding after the first of its group is a copy; a result that shares a term lowers this.
+    let copies: usize = locals.values().map(|c| c.len() - 1).sum();
+    assert_eq!(copies, 54, "the copies of the where terms");
+    let mut unlike: Vec<String> = locals
+        .iter()
+        .flat_map(|((symbol, scope), c)| unlike_the_first(&format!("[{symbol}] ({scope})"), c))
+        .collect();
+    for (joint, lame) in [("the inner hub", HUB_LAME), ("the cup", CUP_LAME)] {
+        let no_wall: Vec<_> = lame.into_iter().map(|t| condition(t, 0)).collect();
+        unlike.extend(unlike_the_first(
+            &format!("{joint}'s no-wall condition"),
+            &no_wall,
+        ));
+    }
+    unlike.extend(unlike_the_first(
+        "the steel circuit with the default pick",
+        &[condition(MODULUS, 0), condition(CTE, 0)],
+    ));
+    unlike.extend(unlike_the_first(
+        "the steel circuit or a non-magnetic pick",
+        &[
+            condition(MODULUS, 1),
+            condition(CTE, 1),
+            condition(YIELD, 0),
+        ],
+    ));
+    unlike.extend(unlike_the_first(
+        "the key's formula",
+        &[
+            (HUB_KEY, drawn(HUB_KEY).body),
+            (CUP_KEY, drawn(CUP_KEY).body),
+        ],
+    ));
+    unlike.extend(unlike_the_first(
+        "the NIST condition",
+        &[condition(WHEEL, 0), condition(OUTPUT, 0)],
+    ));
+    unlike.extend(unlike_the_first(
+        "the NIST arm",
+        &[(WHEEL, cases(WHEEL).1), (OUTPUT, cases(OUTPUT).1)],
+    ));
+    assert!(unlike.is_empty(), "copies drawn unlike: {unlike:#?}");
 }
 
 /// The A4 accuracy gate for release (spec section 4, test 7), on since slice 2: every note a
@@ -1203,14 +1653,15 @@ fn every_note_s_review_date_is_recorded_in_its_section() {
     }
 }
 
-/// Spec 3.3 (R4), section 6 test 5 and ruling 11: the full Start here order is fourteen
-/// steps, the torque note first and the clamp note last; while the shaft-clamp section is
-/// paused `START_HERE` shows the first thirteen. Each note is a step once; with the six
-/// warning notes that is every note shown, in both switch states. (That each step's note
-/// explains its equation is `notes.rs`'s `ids_are_unique_and_every_link_resolves`.)
+/// Spec 3.3 (R4), section 6 test 5, ruling 11 and BL-064 (spec 6.1): the full Start here
+/// order is fifteen steps, the torque note first, the shaft-joint note just before the clamp
+/// note, the clamp note last; while the shaft-clamp section is paused `START_HERE` shows the
+/// first fourteen. Each note is a step once; with the six warning notes that is every note
+/// shown, in both switch states. (That each step's note explains its equation is `notes.rs`'s
+/// `ids_are_unique_and_every_link_resolves`.)
 #[test]
-fn start_here_is_fourteen_steps_and_thirteen_while_paused() {
-    const FULL: [&str; 14] = [
+fn start_here_is_fifteen_steps_and_fourteen_while_paused() {
+    const FULL: [&str; 15] = [
         "torque_from_shear",
         "harmonics",
         "back_iron_factor",
@@ -1224,6 +1675,7 @@ fn start_here_is_fourteen_steps_and_thirteen_while_paused() {
         "thermal_time_constant",
         "demagnetization",
         "ferrite_cold_demag",
+        "shaft_joint",
         "clamp_preload",
     ];
     let ids = |steps: &[(&'static str, &'static str)]| -> Vec<&'static str> {
@@ -1231,7 +1683,7 @@ fn start_here_is_fourteen_steps_and_thirteen_while_paused() {
     };
     assert_eq!(ids(notes::START_HERE_ALL), FULL);
     assert_eq!(ids(notes::start_here_for(false)), FULL);
-    assert_eq!(ids(notes::start_here_for(true)), FULL[..13].to_vec());
+    assert_eq!(ids(notes::start_here_for(true)), FULL[..14].to_vec());
     let warnings: Vec<&str> = magcoupling::engine::warnings::WARNING_RULES
         .iter()
         .map(|r| r.note_id)
@@ -1523,9 +1975,166 @@ fn explained_chains_have_every_record_and_scope_paths_exist() {
     let union: BTreeSet<&str> = SCOPE.iter().flat_map(|c| c.paths.iter().copied()).collect();
     assert_eq!(
         union.len(),
-        169,
-        "decision 31: the chains and the dashboard (report section 7), and plan A-3 decision G1's 10 new geometry callouts"
+        193,
+        "decision 31: the chains and the dashboard (report section 7), plan A-3 decision G1's 10 new geometry callouts, BL-064's inner-ring single-ring onset and its 23 shaft joint results"
     );
+}
+
+/// BL-064 (spec 4.5): the `shaft_joint` chain lists every numeric result of the shaft joint
+/// check in schema order, each with its record; the verdict, a text, has none. The chain sits
+/// after the geometry callouts and before the dashboard paths (the scope's "start here"
+/// order, then the dashboard).
+#[test]
+fn the_shaft_joint_chain_is_every_numeric_shaft_joint_result_in_schema_order() {
+    let r = Registry::build();
+    let numeric: Vec<String> = result_rows(&compute_all(&DesignInputs::default()))
+        .into_iter()
+        .filter(|row| row.path.starts_with("shaft_joint.") && matches!(row.value, Value::Num(_)))
+        .map(|row| row.path)
+        .collect();
+    assert_eq!(numeric.len(), 23, "{numeric:?}");
+    let chain = SCOPE
+        .iter()
+        .find(|c| c.id == "shaft_joint")
+        .expect("a shaft_joint chain");
+    assert_eq!(chain.status, Status::Explained);
+    let numeric: Vec<&str> = numeric.iter().map(String::as_str).collect();
+    assert_eq!(chain.paths, numeric.as_slice());
+    for path in chain.paths {
+        assert!(r.equation_for(path).is_some(), "{path} has no record");
+    }
+    assert!(
+        r.equation_for("shaft_joint.check").is_none(),
+        "the verdict is a text: no record"
+    );
+    let at = |id: &str| SCOPE.iter().position(|c| c.id == id).expect(id);
+    assert_eq!(at("shaft_joint"), at("geometry") + 1);
+    assert_eq!(at("dashboard"), at("shaft_joint") + 1);
+}
+
+/// The record of `target` evaluated over `values` (path, value) alone, with its trace.
+fn evaluate_over(r: &Registry, target: &str, values: &[(&str, f64)]) -> (Value, Trace) {
+    let eq = r.equation_for(target).expect("a record");
+    let src: BTreeMap<String, Value> = values
+        .iter()
+        .map(|&(path, x)| (path.to_owned(), Value::Num(x)))
+        .collect();
+    let mut trace = Trace::default();
+    let value = r
+        .evaluate(eq, &src, Some(&mut trace))
+        .unwrap_or_else(|e| panic!("{target}: {e}"));
+    (value, trace)
+}
+
+/// BL-064 (owner R-15 and its ring ruling): the bonded inner hub's allowed fitting temperature
+/// reads your limit, the selected adhesive's design limit and the inner ring's own single-ring
+/// onset (never the governing ring's), and its record is `shaft_joint::hub_fit_allowed`'s
+/// value: the lowest of the three, the onset less the cure margin, ties to the earlier, an
+/// onset of +inf never binding, and NaN when any of the three is NaN, in each position. The
+/// record also takes the arm of the limit the helper names, so a tie, whose value is the same
+/// from either arm, still names the right limit (T3 review M-2, from the review leftovers); a
+/// NaN takes the else arm. The drift guard reaches only a NaN onset (`set` takes no NaN); this
+/// reaches the other two.
+#[test]
+fn the_allowed_hub_temperature_record_is_the_helper_s_lowest_of_three() {
+    let r = Registry::build();
+    let target = "shaft_joint.hub_fit_allowed_C";
+    let paths = [
+        "shaft_joint.hub_fit_max_C",
+        "temperature.adhesive.design_limit_C",
+        "temperature.demag.inner_onset_single_ring_C",
+    ];
+    let terms: BTreeSet<&str> = r
+        .equation_for(target)
+        .expect("a record")
+        .terms
+        .iter()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(terms, BTreeSet::from(paths));
+    // The record's value and the arms its `cases` took: yours (0), the adhesive's (1), the
+    // onset's (2), in `hub_fit_allowed`'s tie order, then else.
+    let record = |[input, adhesive, onset]: [f64; 3]| {
+        let (value, trace) = evaluate_over(
+            &r,
+            target,
+            &[(paths[0], input), (paths[1], adhesive), (paths[2], onset)],
+        );
+        let arms: Vec<usize> = trace.arms.iter().map(|&(_, arm)| arm).collect();
+        match value {
+            Value::Num(x) => (x, arms),
+            other => panic!("{other:?}"),
+        }
+    };
+    let arm_of = |limit: HubFitLimit| match limit {
+        HubFitLimit::Yours => 0,
+        HubFitLimit::Adhesive => 1,
+        HubFitLimit::MagnetOnset => 2,
+    };
+    let else_arm = 3;
+    let margin = CURE_MARGIN_MIN_C;
+    for values in [
+        [100.0, 120.0, 143.3565],       // yours (the defaults)
+        [130.0, 120.0, 143.3565],       // the adhesive's
+        [100.0, 120.0, 69.8326],        // the onset's (N42 blocks)
+        [120.0, 120.0, 177.0],          // a tie: yours
+        [100.0, 177.0, 100.0 + margin], // a tie with the onset: yours
+        [130.0, 120.0, 120.0 + margin], // a tie of the adhesive's with the onset: the adhesive's
+        [150.0, 177.0, 143.3565],       // 2214 Hi-Temp, a typed 150 °C: the onset's
+        [100.0, 120.0, f64::INFINITY],  // ferrite: the onset never binds
+    ] {
+        let (want, limit) = shaft_joint::hub_fit_allowed(values[0], values[1], values[2]);
+        let (value, arms) = record(values);
+        assert_eq!(value.to_bits(), want.to_bits(), "{values:?}");
+        let limit = limit.unwrap_or_else(|| panic!("{values:?}: a limit binds"));
+        assert_eq!(arms, [arm_of(limit)], "{values:?}: {limit:?}");
+    }
+    for nan_at in 0..3 {
+        let mut values = [100.0, 120.0, 143.3565];
+        values[nan_at] = f64::NAN;
+        let (value, arms) = record(values);
+        assert!(value.is_nan(), "a NaN {}", paths[nan_at]);
+        assert_eq!(arms, [else_arm], "a NaN {}", paths[nan_at]);
+        assert_eq!(
+            shaft_joint::hub_fit_allowed(values[0], values[1], values[2]).1,
+            None
+        );
+    }
+}
+
+/// BL-064: each shaft's shrink record is the engine's `shaft_joint::shaft_shrink_um` at every
+/// step of its shaft's slider, NIST's arm below 265 K and the linear one above both taken, not
+/// only at the few temperatures the drift guard's points set.
+#[test]
+fn the_shaft_shrink_records_follow_the_engine_over_their_sliders() {
+    let r = Registry::build();
+    let bore = DesignInputs::default().coupling.bore_mm;
+    for (target, input) in [
+        (
+            "shaft_joint.wheel_shaft_shrink_um",
+            "shaft_joint.wheel_shaft_fit_C",
+        ),
+        (
+            "shaft_joint.output_shaft_shrink_um",
+            "shaft_joint.output_shaft_fit_C",
+        ),
+    ] {
+        let range = slider(input);
+        let steps = ((range.max - range.min) / range.step).round() as u32;
+        let mut arms = BTreeSet::new();
+        for k in 0..=steps {
+            let celsius = range.min + f64::from(k) * range.step;
+            let (got, trace) =
+                evaluate_over(&r, target, &[(input, celsius), ("coupling.bore_mm", bore)]);
+            let want = Value::Num(shaft_joint::shaft_shrink_um(celsius, bore));
+            assert!(
+                parity_close(&got, &want),
+                "{target} at {celsius} °C: {got:?}, engine {want:?}"
+            );
+            arms.extend(trace.arms);
+        }
+        assert_eq!(arms.len(), 2, "{target}: both arms over the slider");
+    }
 }
 
 #[test]
@@ -2058,10 +2667,8 @@ fn close(a: f64, b: f64) -> bool {
 
 /// The slider of the input at `path`, from its metadata.
 fn slider(path: &str) -> SliderRange {
-    input_rows(&DesignInputs::default())
-        .into_iter()
-        .find(|row| row.path == path)
-        .and_then(|row| row.meta.range)
+    input_meta(path)
+        .range
         .unwrap_or_else(|| panic!("{path} has no slider"))
 }
 
@@ -4036,6 +4643,381 @@ fn the_ferrite_note_s_entries_hold() {
 }
 
 // ---------------------------------------------------------------------------------------
+// BL-064: the shaft-joint note
+// ---------------------------------------------------------------------------------------
+
+/// The cure margin as the shaft-joint texts type it, "10 °C": the engine's
+/// `temperature::CURE_MARGIN_MIN_C`, which the bonded inner hub's fitting cap reads (owner
+/// R-15). Built from the constant, so a change to the margin fails every text that types it.
+fn cure_margin_words() -> String {
+    format!("{CURE_MARGIN_MIN_C} °C")
+}
+
+/// BL-064 (spec 6.1, 7.8 and 7.11): what the shaft-joint note says holds at the five probe
+/// designs. Sentence 1 quotes each joint's holding torque at its loosest against the torque each
+/// must hold, the safety factor times cold-high, which it names. Sentence 3 quotes the cup's
+/// bore stress against the limit in a "here" clause (review 5 SF-4, review 6 SF-1): per µm of
+/// effective interference each joint's bore stress is E·δ/d times √3/2, about 0.87 (a thick
+/// wall), to 1.0 (a thin one), for a steel part on the steel shaft (an aluminium body reads
+/// more at a thick wall, up to about 1.13, since the stiffer shaft takes less; at a thin wall
+/// every part reads about 1.0), so it follows interference over diameter and hardly the wall.
+/// Sentence 4 quotes the temperature the inner hub's fit would need beside the wheel shaft's
+/// live shrink, never the shaft's input temperature (review 4 MF-2, review 5 MF-2), against the
+/// allowed temperature, the lowest of the three limits it names (owner R-15). The cure margin's
+/// words, in sentence 4 and the first source, are asserted once, by
+/// `the_shaft_joint_texts_type_the_cure_margin_the_engine_keeps` (review MF-6). The watch-outs
+/// carry the owner's "Cup temp" decision (review MF-1), with any heat cure of the cup's magnets
+/// (the notes record's SF-1), and name the cooled wheel shaft and the bonded inner hub (review
+/// 2 SF-6a); nothing in the engine checks a seal, a bearing or fretting; the default wheel
+/// shaft is colder than the minimum magnet temperature; a ferrite ring's coercivity falls as it
+/// cools. A source names the ground shaft and honed bore the default smoothing rests on (the
+/// notes record's SF-3). No text of the note orders the torques (review 2 MF-1, spec 7.8). The
+/// note's physics review, round 1: a raised cup minimum moves neither the cup's bore stress nor
+/// its fitting temperature, and one step past the maximum reverses the band (MF-2); a warmer
+/// wheel shaft lowers the inner hub's fitting margin, and from -180 °C the default inner hub
+/// cannot be fitted (MF-1). The "at" of the change entries' "at or above it" and "at or below
+/// it" (the notes record's SF-4): a band whose ends are equal is judged.
+#[test]
+fn the_shaft_joint_note_s_claims_hold_at_every_probe_design() {
+    use magcoupling::engine::api::shaft_joint_links;
+    use magcoupling::engine::shaft_joint::{
+        CANNOT_BE_FITTED, CUP, INNER_HUB, SHAFT_JOINTS_PASS, UNKNOWN_BAND_REVERSED, hub_fit_allowed,
+    };
+    let note = notes::note("shaft_joint").expect("the shaft-joint note");
+    let s = note.sentences;
+    assert_eq!(
+        values_in(s[1]),
+        [
+            "shaft_joint.hub_holding_Nm",
+            "shaft_joint.cup_holding_Nm",
+            "shaft_joint.required_Nm"
+        ]
+    );
+    // Sentence 1 says what each joint must hold (the notes record's SF-2, from the review
+    // leftovers), as `r.required_Nm` is asserted below at every probe design.
+    assert!(
+        s[1].contains("{shaft_joint.required_Nm}, cold-high times the safety factor."),
+        "sentence 1 says what each joint must hold: {:?}",
+        s[1]
+    );
+    assert_eq!(
+        values_in(s[3]),
+        [
+            "shaft_joint.cup_bore_stress_MPa",
+            "shaft_joint.stress_limit_MPa"
+        ]
+    );
+    assert!(
+        s[3].contains("here") && s[3].contains("cup's"),
+        "sentence 3 names the joint whose stress it quotes, here: {:?}",
+        s[3]
+    );
+    assert_eq!(
+        values_in(s[4]),
+        [
+            "shaft_joint.hub_fit_temp_C",
+            "shaft_joint.wheel_shaft_shrink_um",
+            "shaft_joint.hub_fit_allowed_C"
+        ]
+    );
+    for words in [
+        "Here",
+        "wheel shaft",
+        "your limit",
+        "adhesive's",
+        "single-ring onset",
+    ] {
+        assert!(
+            s[4].contains(words),
+            "sentence 4 says {words:?}: {:?}",
+            s[4]
+        );
+    }
+    let [cup_side, wheel_side] = note.watch_out else {
+        panic!("two watch-outs: {:?}", note.watch_out);
+    };
+    // "heat cure": the cup's magnets are bonded on the fitted cup, so a heat-cured adhesive cures
+    // on the gearbox shaft (the notes record's SF-1, from the review leftovers).
+    for words in ["bare cup", "quickly", "heat cure", "gearbox seal"] {
+        assert!(cup_side.contains(words), "{words:?} in {cup_side:?}");
+    }
+    for words in [
+        "liquid nitrogen",
+        "wheel shaft",
+        "inner hub",
+        "minimum magnet temperature",
+    ] {
+        assert!(wheel_side.contains(words), "{words:?} in {wheel_side:?}");
+    }
+    // The smoothing source names the surfaces its default rests on (the notes record's SF-3, from
+    // the review leftovers), with the default typed as the engine keeps it.
+    let smoothing = format!(
+        "{} µm is conservative for holding with a ground shaft and honed bore",
+        DesignInputs::default().shaft_joint.smoothing_um
+    );
+    assert!(
+        note.sources
+            .iter()
+            .any(|source| source.contains(&smoothing)),
+        "a source says {smoothing:?}: {:?}",
+        note.sources
+    );
+    let entry = |input: &str| {
+        note.change
+            .iter()
+            .find(|c| c.input == input)
+            .unwrap_or_else(|| panic!("the {input} entry"))
+            .text
+    };
+    // The cup-minimum entry (physics review round 1, MF-2): the limit a raised minimum meets
+    // is the band's maximum; the stress limit and the fit are the maximum's own.
+    let cup_minimum = entry("shaft_joint.cup_interference_min_um");
+    assert!(cup_minimum.contains("at or above it"), "{cup_minimum:?}");
+    // The wheel-shaft entry (physics review round 1, MF-1; traps 9 and 14): the temperature the
+    // inner hub's fit would need, against the allowed one, never more heat for the bonded hub.
+    let wheel_shaft = entry("shaft_joint.wheel_shaft_fit_C");
+    assert!(
+        wheel_shaft.contains("would need")
+            && wheel_shaft.contains("allowed")
+            && !wheel_shaft.to_lowercase().contains("heat"),
+        "{wheel_shaft:?}"
+    );
+    for (name, inputs, results) in &probe_points() {
+        let r = &results.shaft_joint;
+        assert_eq!(
+            r.required_Nm,
+            inputs.shaft_joint.safety_factor * results.metal.torque_cold_high_Nm,
+            "{name}: each must hold the safety factor times cold-high"
+        );
+        // E [GPa] · δ [µm] / d [mm] in MPa per µm: GPa · 1000 × µm · 0.001.
+        let thin_wall = r.part_modulus_GPa / inputs.coupling.bore_mm;
+        for joint in shaft_joint::joints(&inputs.shaft_joint, &shaft_joint_links(inputs, results)) {
+            let share = joint.stress_per_um / thin_wall;
+            assert!(
+                (0.86..=1.0).contains(&share),
+                "{name}, {}: the bore stress is {share} of E·δ/d",
+                joint.name
+            );
+        }
+        let (allowed, _) = hub_fit_allowed(
+            inputs.shaft_joint.hub_fit_max_C,
+            results.temperature.adhesive.design_limit_C,
+            results.temperature.demag.inner_onset_single_ring_C,
+        );
+        assert_eq!(
+            r.hub_fit_allowed_C.to_bits(),
+            allowed.to_bits(),
+            "{name}: the allowed temperature is the lowest of the three"
+        );
+        assert!(
+            inputs.shaft_joint.wheel_shaft_fit_C < inputs.metal.min_temp_C,
+            "{name}: the wheel shaft is fitted colder than the minimum magnet temperature"
+        );
+        // One step of a raised cup minimum moves neither the cup's bore stress nor its fitting
+        // temperature, bit for bit: both read the band's maximum.
+        let raised = compute_all(&stepped(
+            inputs,
+            "shaft_joint.cup_interference_min_um",
+            Step::Raise,
+        ))
+        .shaft_joint;
+        for (what, before, after) in [
+            (
+                "bore stress",
+                r.cup_bore_stress_MPa,
+                raised.cup_bore_stress_MPa,
+            ),
+            (
+                "fitting temperature",
+                r.cup_fit_temp_C,
+                raised.cup_fit_temp_C,
+            ),
+        ] {
+            assert_eq!(
+                after.to_bits(),
+                before.to_bits(),
+                "{name}: the cup's {what}, {before} -> {after}"
+            );
+        }
+        // One step of a warmer wheel shaft: the need rises toward the allowed temperature, so
+        // the inner hub's fitting margin, allowed less needed, falls.
+        let warmer = compute_all(&stepped(
+            inputs,
+            "shaft_joint.wheel_shaft_fit_C",
+            Step::Raise,
+        ))
+        .shaft_joint;
+        assert!(
+            warmer.hub_fit_allowed_C - warmer.hub_fit_temp_C
+                < r.hub_fit_allowed_C - r.hub_fit_temp_C,
+            "{name}: the inner hub's fitting margin falls on a warmer wheel shaft"
+        );
+    }
+    // ... and past it: at the defaults, a wheel shaft at -180 °C leaves the inner hub unfittable.
+    let mut warm_shaft = DesignInputs::default();
+    warm_shaft.shaft_joint.wheel_shaft_fit_C = -180.0;
+    let check = compute_all(&warm_shaft).shaft_joint.check;
+    assert!(
+        check.starts_with(&format!("{CANNOT_BE_FITTED} ({INNER_HUB})")),
+        "{check}"
+    );
+    // At the defaults, the cup's minimum at its maximum (22 µm) and one step up: the band is
+    // reversed, and the check cannot be made.
+    let mut at_the_maximum = DesignInputs::default();
+    at_the_maximum.shaft_joint.cup_interference_min_um =
+        at_the_maximum.shaft_joint.cup_interference_max_um;
+    let past = stepped(
+        &at_the_maximum,
+        "shaft_joint.cup_interference_min_um",
+        Step::Raise,
+    );
+    assert_eq!(
+        compute_all(&past).shaft_joint.check,
+        format!("{UNKNOWN_BAND_REVERSED} ({CUP})")
+    );
+    // The "at" of "at or above it" and "at or below it" (the notes record's SF-4, from the review
+    // leftovers): a band whose ends are equal is judged, the cup at 22 to 22 µm and the inner hub
+    // at 13 to 13 µm, and both pass; one Lower of the inner hub's maximum from 13 µm, as its
+    // change entry steps, reverses its band.
+    assert_eq!(
+        compute_all(&at_the_maximum).shaft_joint.check,
+        SHAFT_JOINTS_PASS,
+        "the cup at {0} to {0} µm",
+        at_the_maximum.shaft_joint.cup_interference_max_um
+    );
+    let mut hub_at_its_minimum = DesignInputs::default();
+    hub_at_its_minimum.shaft_joint.hub_interference_max_um =
+        hub_at_its_minimum.shaft_joint.hub_interference_min_um;
+    assert_eq!(
+        compute_all(&hub_at_its_minimum).shaft_joint.check,
+        SHAFT_JOINTS_PASS,
+        "the inner hub at {0} to {0} µm",
+        hub_at_its_minimum.shaft_joint.hub_interference_min_um
+    );
+    let below = stepped(
+        &hub_at_its_minimum,
+        "shaft_joint.hub_interference_max_um",
+        Step::Lower,
+    );
+    assert_eq!(
+        compute_all(&below).shaft_joint.check,
+        format!("{UNKNOWN_BAND_REVERSED} ({INNER_HUB})")
+    );
+    // "off the gearbox seal and bearings; nothing checks them, the gearbox shaft or fretting": no
+    // result names a seal, a bearing or fretting (a check of one changes this watch-out).
+    let unchecked: Vec<String> = result_rows(&compute_all(&DesignInputs::default()))
+        .into_iter()
+        .map(|row| row.path)
+        .filter(|path| {
+            let path = path.to_lowercase();
+            ["seal", "bearing", "fretting"]
+                .iter()
+                .any(|word| path.contains(word))
+        })
+        .collect();
+    assert!(unchecked.is_empty(), "{unchecked:?}");
+    // "ferrite magnets lose coercivity cold": the ferrite probe's rings have a positive Hcj
+    // coefficient (the ferrite note's own claim, `the_ferrite_note_s_claims_hold`).
+    let ferrite = compute_all(&probe_inputs("Y30 ferrite, custom dimensions"));
+    assert!(ferrite.temperature.demag.inner_beta_per_C > 0.0);
+    // No order of the torques: cold-high can reach the joints; it is no bound on them.
+    let texts = note_texts_with_sources(note);
+    for banned in TORQUE_ORDER_WORDS {
+        for text in &texts {
+            assert!(
+                !text.to_lowercase().contains(banned),
+                "{banned:?} in {text:?}"
+            );
+        }
+    }
+}
+
+/// Every text of a note a reader sees: its title, sentences, change entries, watch-outs and
+/// sources.
+fn note_texts_with_sources(note: &notes::Note) -> Vec<&'static str> {
+    std::iter::once(note.title)
+        .chain(note_text::rendered_texts(note))
+        .chain(note.sources.iter().copied())
+        .collect()
+}
+
+/// Review 4, SF-3 (spec 7.11): the five shaft-joint texts that type the cure margin type the
+/// engine's: the helps of the bonded inner hub's fitting limit (`shaft_joint.hub_fit_max_C`)
+/// and of the allowed temperature (`shaft_joint.hub_fit_allowed_C`), the help of the inner
+/// ring's single-ring onset (`temperature.demag.inner_onset_single_ring_C`; G-3 SF-2, from the
+/// review leftovers: never a bare "stays below it"), the note's sentence 4 and the note's first
+/// source. A change to `CURE_MARGIN_MIN_C` fails all five.
+#[test]
+fn the_shaft_joint_texts_type_the_cure_margin_the_engine_keeps() {
+    let margin = cure_margin_words();
+    let defaults = DesignInputs::default();
+    let input_help = input_meta("shaft_joint.hub_fit_max_C").help;
+    let results = compute_all(&defaults);
+    let result_help = help_of(&results, "shaft_joint.hub_fit_allowed_C");
+    let onset_help = help_of(&results, "temperature.demag.inner_onset_single_ring_C");
+    let note = notes::note("shaft_joint").expect("the shaft-joint note");
+    // The onset clause, as three of the five texts type it.
+    let onset_words = format!("onset less {margin}");
+    for (what, text, words) in [
+        ("the input's help", input_help, &onset_words),
+        ("the result's help", result_help, &onset_words),
+        (
+            "the inner onset's help",
+            onset_help,
+            &format!("at least {margin} below"),
+        ),
+        ("sentence 4", note.sentences[4], &onset_words),
+        (
+            "the first source",
+            note.sources[0],
+            &format!("held {margin} below"),
+        ),
+    ] {
+        assert!(text.contains(words), "{what} says {words:?}: {text:?}");
+    }
+    assert!(!onset_help.contains("stays below it"), "{onset_help}");
+}
+
+/// The help of the result at `path` in `results`.
+fn help_of(results: &DesignResults, path: &str) -> &'static str {
+    result_rows(results)
+        .into_iter()
+        .find(|row| row.path == path)
+        .map(|row| row.meta.help)
+        .unwrap_or_else(|| panic!("{path} is a result"))
+}
+
+/// The B3 review's I-1, from the review leftovers (spec 6.3: nothing false at the five
+/// probes): the inner onset's help defines the onset by heating. A ferrite inner ring (a
+/// positive Hcj coefficient) never reaches its knee on heating, so the row reads +inf, yet it
+/// does demagnetize, on cooling: at the Y30 probe design the inner ring's own cold limit is
+/// above the design's coldest magnet temperature and the cold demagnetization check fails. A
+/// help that defined the onset without heating would read "never" there.
+#[test]
+fn the_inner_onset_help_ties_the_onset_to_heating() {
+    let design = probe_inputs("Y30 ferrite, custom dimensions");
+    let results = compute_all(&design);
+    let demag = &results.temperature.demag;
+    assert!(demag.inner_beta_per_C > 0.0, "a ferrite inner ring");
+    assert_eq!(
+        demag.inner_onset_single_ring_C,
+        f64::INFINITY,
+        "no onset on heating"
+    );
+    assert!(
+        design.metal.min_temp_C < num(demag.inner_cold_limit_C),
+        "the inner ring demagnetizes on cooling"
+    );
+    // The check's pass, from the engine: the same design at its cold limit (equality passes).
+    let mut at_limit = design.clone();
+    at_limit.metal.min_temp_C = num(demag.cold_limit_C);
+    let pass = compute_all(&at_limit).temperature.demag.cold_check;
+    assert_ne!(demag.cold_check, pass, "the cold check fails");
+    let help = help_of(&results, "temperature.demag.inner_onset_single_ring_C");
+    assert!(help.contains("demagnetizes when heated"), "{help}");
+}
+
+// ---------------------------------------------------------------------------------------
 // A3 traceability
 // ---------------------------------------------------------------------------------------
 
@@ -4338,7 +5320,7 @@ const INERT_INPUTS: &[(&str, &str)] = &[
     ),
     (
         "clamps.key_width_mm",
-        "only the drawing reads it (Python drawing.py); the key pressure divides by the contact height",
+        "the paused shaft-clamp section's key width: only its clamp drawing reads it (Python drawing.py), not the geometry view, whose key takes the shaft joints' own width (BL-064); the key pressure divides by the contact height",
     ),
 ];
 
@@ -4459,14 +5441,15 @@ const CANCELLATIONS: &[(&str, &str, &str)] = &[
 
 #[test]
 fn each_assumption_moves_what_depends_on_it_and_nothing_else() {
-    // Spec A3 testing: the fifteen assumption inputs (the fourteen rows; end effect is two),
-    // every one of them with explained results downstream now that every chain is explained.
+    // Spec A3 testing: the nineteen assumption inputs (the eighteen rows, BL-064's four among
+    // them; end effect is two), every one of them with explained results downstream now that
+    // every chain is explained.
     let r = Registry::build();
     let paths: Vec<String> = ASSUMPTIONS
         .iter()
         .flat_map(|a| a.paths.iter().map(|p| (*p).to_owned()))
         .collect();
-    assert_eq!(paths.len(), 15);
+    assert_eq!(paths.len(), 19);
     assert!(
         SCOPE.iter().all(|c| c.status == Status::Explained),
         "every chain of decision 31 is explained"

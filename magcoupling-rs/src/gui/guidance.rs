@@ -13,22 +13,22 @@
 //! A fix is an input path and a direction ([`fixes`]): a slider input raised or lowered, a
 //! choice or picker input changed, or a ring's magnet part taken to Custom dimensions with a
 //! grade rated hotter than the part ([`Direction::CustomHotterGrade`], the way past the
-//! hottest-rated library part). The temperature and space-claim guides pick their fixes by the
-//! terms of their verdicts that fail ([`Fixes::PerTerm`]: each temperature limit, ring by
-//! ring; each axis of the claim); every other guide has one list. A fix is shown only where
-//! its move helps: one slider step, or one other choice of its input alone (those two picks
-//! count as one), that turns no passing guided check red; a fix picked per term must also
-//! raise that term's margin, while each fix of a static list raises its check from a failing
-//! design to its slider's end (a test moves each there). No move leaves a ring's magnet
-//! without a rating, since the engine does not calibrate such a magnet's limit. These checks
-//! compute the design each move reaches, so the panel asks through a [`FixCache`]. A failing
-//! check left without a fix says so ([`NO_FIX`]), and two failing checks that pull one input
-//! both ways each say so ([`trade_offs`]), as does a fix that sets back another failing check
-//! ([`side_effects`]). A fix's text takes the input's label from the
-//! [`InputCatalogue`], or the Size tab's name for it ([`fix_text`]), so no guide types a
-//! label. The tests hold the fixes to helping: on each test design that fails a check, every
-//! failing term of the check has a shown fix that moves it toward passing, and no shown fix
-//! turns another check red.
+//! hottest-rated library part). The temperature, space-claim and shaft joints guides pick their
+//! fixes by the terms of their verdicts that fail ([`Fixes::PerTerm`]: each temperature limit,
+//! ring by ring; each axis of the claim; each term of each shaft joint); every other guide has
+//! one list. A fix is shown only where its move helps: one slider step, or one other choice of
+//! its input alone (those two picks count as one), that turns no passing guided check red; a
+//! fix picked per term must also raise that term's margin, while each fix of a static list
+//! raises its check from a failing design to its slider's end (a test moves each there). No
+//! move leaves a ring's magnet without a rating, since the engine does not calibrate such a
+//! magnet's limit. These checks compute the design each move reaches, so the panel asks through
+//! a [`FixCache`]. A failing check left without a fix says so ([`NO_FIX`]), and two failing
+//! checks that pull one input both ways each say so ([`trade_offs`]), as does a fix that sets
+//! back another failing check ([`side_effects`]). A fix's text takes the input's label from the
+//! [`InputCatalogue`], or the Size tab's name for it ([`fix_text`]), so no guide types a label.
+//! The tests hold the fixes to helping: on each test design that fails a check, every failing
+//! term of the check has a shown fix that moves it toward passing, and no shown fix turns
+//! another check red.
 //!
 //! What moves what (spec 3.3): [`Consequences`] are the lines under the Size tab's controls:
 //! two magnets fewer and two more (each one `compute_all` of the design with only the count
@@ -41,6 +41,7 @@
 //! `tests/python_schema.rs`): this is a GUI layer over them, in plain words
 //! ([`plain_text_violations`] lists what it must not say). No egui.
 
+use crate::engine::api::shaft_joint_links;
 use crate::engine::clamps::SCREW_SIZES;
 use crate::engine::deviations::Deviations;
 use crate::engine::grades::{GRADES, GradeFamily};
@@ -48,6 +49,9 @@ use crate::engine::library::{MAGNET_LIBRARY, lookup};
 use crate::engine::meta::{InputSet, NumOrText, ResultSet, SliderRange, Value};
 use crate::engine::model::{
     ResolvedMagnet, RingFit, blocks_fit, end_effect_in_range, resolve_magnets, ring_fits,
+};
+use crate::engine::shaft_joint::{
+    self, CannotBeMade, Cause, Floor, HubFitLimit, ImpossibleValue, JointTerms, NoWall,
 };
 use crate::engine::size_controls::{
     DiameterBreakdown, DiameterFit, FIT_TOLERANCE_MM, LengthBreakdown, diameter_breakdown,
@@ -111,8 +115,8 @@ pub enum Fixes {
     /// One list, whatever fails.
     Static(&'static [(&'static str, Direction)]),
     /// A list built from the terms of the check's verdict that fail, each fix checked against
-    /// the term it serves (the temperature and space-claim guides), with the shaft-clamp
-    /// section's pause ([`helps`]).
+    /// the term it serves (the temperature, space-claim and shaft joints guides), with the
+    /// shaft-clamp section's pause ([`helps`]).
     PerTerm(fn(&DesignInputs, &DesignResults, bool) -> Vec<(&'static str, Direction)>),
 }
 
@@ -144,6 +148,7 @@ const CLEARANCE: &str = "metal.clearance_check";
 const CUP_WALL: &str = "materials.cup_wall_check";
 const TEMPERATURE: &str = "temperature.summary.verdict";
 const CLAMP: &str = "clamps.recommended";
+const SHAFT_JOINT: &str = "shaft_joint.check";
 const GEARBOX: &str = "gearbox.cold_high_check";
 const SPACE_CLAIM: &str = "housing.space_claim_check";
 const END_EFFECT: &str = "model.end_effect_check";
@@ -213,6 +218,227 @@ const CLAMP_GUIDE: CheckGuide = CheckGuide {
     ]),
     learn: Learn::Note("clamp_preload"),
 };
+
+const SHAFT_JOINT_GUIDE: CheckGuide = CheckGuide {
+    check: SHAFT_JOINT,
+    label: "Shaft joints",
+    problem: shaft_joint_problem,
+    why: "A shrink fit's grip holds each rotor on its shaft; each fit must carry cold-high with margin when loosest, stay elastic when tightest, and be fitted within its allowed temperature.",
+    fixes: Fixes::PerTerm(shaft_joint_fixes),
+    learn: Learn::Note("shaft_joint"),
+};
+
+// The shaft joints' inputs the guide names (BL-064).
+const HUB_MIN: &str = "shaft_joint.hub_interference_min_um";
+const HUB_MAX: &str = "shaft_joint.hub_interference_max_um";
+const CUP_MIN: &str = "shaft_joint.cup_interference_min_um";
+const CUP_MAX: &str = "shaft_joint.cup_interference_max_um";
+const KEY_CONTACT: &str = "shaft_joint.key_contact_mm";
+const WHEEL_SHAFT: &str = "shaft_joint.wheel_shaft_fit_C";
+const GEARBOX_SHAFT: &str = "shaft_joint.output_shaft_fit_C";
+const HUB_LENGTH: &str = "metal.hub_length_mm";
+const BOSS_LENGTH: &str = "metal.boss_length_mm";
+const SAFETY_FACTOR: &str = "shaft_joint.safety_factor";
+const KEY_WIDTH: &str = "shaft_joint.key_width_mm";
+const WEB: &str = "metal.web_mm";
+// The shaft joints' results the guide quotes (BL-064): the torque each joint must hold, the
+// stress limit and the part's yield it comes from, and the inner hub's length in effect (the
+// magnets' length under the axial override).
+const REQUIRED: &str = "shaft_joint.required_Nm";
+const STRESS_LIMIT: &str = "shaft_joint.stress_limit_MPa";
+const PART_YIELD: &str = "shaft_joint.part_yield_MPa";
+const HUB_LENGTH_IN_EFFECT: &str = "housing.hub_length_mm";
+
+/// One shaft joint as its guide reads and names it (BL-064), in the engine's order
+/// ([`shaft_joint::joints`]: the inner hub, then the cup; a test holds the two to it).
+struct JointSide {
+    /// The joint's name in the engine's texts ([`shaft_joint::INNER_HUB`], [`shaft_joint::CUP`]).
+    name: &'static str,
+    /// The shaft it is fitted on.
+    shaft: &'static str,
+    /// Its band: the minimum and the maximum measured interference (inputs).
+    min: &'static str,
+    max: &'static str,
+    /// Its shaft's temperature at fitting (an input).
+    shaft_fit: &'static str,
+    /// Its results: the holding torque, the bore stress, the key pressure, the window's edges
+    /// (the smallest minimum that holds, the largest maximum within the stress limit and the
+    /// largest that can be fitted), the fitting temperature needed and the one allowed.
+    holding: &'static str,
+    stress: &'static str,
+    key: &'static str,
+    needed: &'static str,
+    elastic: &'static str,
+    fittable: &'static str,
+    fit_temp: &'static str,
+    fit_allowed: &'static str,
+    /// The fixes of each of its terms ([`JointSide::fixes`]; spec 5.2).
+    slip_fixes: &'static [(&'static str, Direction)],
+    stress_fixes: &'static [(&'static str, Direction)],
+    fitting_fixes: &'static [(&'static str, Direction)],
+    key_fixes: &'static [(&'static str, Direction)],
+}
+
+impl JointSide {
+    /// The fixes of the joint's `cause` term.
+    const fn fixes(&self, cause: Cause) -> &'static [(&'static str, Direction)] {
+        match cause {
+            Cause::Slips => self.slip_fixes,
+            Cause::BoreStress => self.stress_fixes,
+            Cause::CannotBeFitted => self.fitting_fixes,
+            Cause::Key => self.key_fixes,
+        }
+    }
+}
+
+/// The two shaft joints. A larger face gap lowers cold-high, and with it the torque each fit
+/// must hold; shorter magnets do too, but only the cup is offered them, since the inner hub
+/// lengthens with its magnets. Not offered (spec 5.2): the assumptions (friction, smoothing,
+/// the rotor-over-shaft allowance, the joining clearance), the safety factor, the allowed
+/// fitting temperatures, the back iron, the keyway depth and the magnets' part or grade.
+const JOINT_SIDES: [JointSide; 2] = [
+    JointSide {
+        name: shaft_joint::INNER_HUB,
+        shaft: "wheel shaft",
+        min: HUB_MIN,
+        max: HUB_MAX,
+        shaft_fit: WHEEL_SHAFT,
+        holding: "shaft_joint.hub_holding_Nm",
+        stress: "shaft_joint.hub_bore_stress_MPa",
+        key: "shaft_joint.hub_key_pressure_MPa",
+        needed: "shaft_joint.hub_needed_um",
+        elastic: "shaft_joint.hub_elastic_max_um",
+        fittable: "shaft_joint.hub_fittable_max_um",
+        fit_temp: "shaft_joint.hub_fit_temp_C",
+        fit_allowed: "shaft_joint.hub_fit_allowed_C",
+        slip_fixes: &[
+            (HUB_MIN, Direction::Raise),
+            (HUB_LENGTH, Direction::Raise),
+            (FACE_GAP, Direction::Raise),
+        ],
+        stress_fixes: &[(HUB_MAX, Direction::Lower)],
+        fitting_fixes: &[(HUB_MAX, Direction::Lower), (WHEEL_SHAFT, Direction::Lower)],
+        key_fixes: &[
+            (KEY_CONTACT, Direction::Raise),
+            (HUB_LENGTH, Direction::Raise),
+        ],
+    },
+    JointSide {
+        name: shaft_joint::CUP,
+        shaft: "gearbox shaft",
+        min: CUP_MIN,
+        max: CUP_MAX,
+        shaft_fit: GEARBOX_SHAFT,
+        holding: "shaft_joint.cup_holding_Nm",
+        stress: "shaft_joint.cup_bore_stress_MPa",
+        key: "shaft_joint.cup_key_pressure_MPa",
+        needed: "shaft_joint.cup_needed_um",
+        elastic: "shaft_joint.cup_elastic_max_um",
+        fittable: "shaft_joint.cup_fittable_max_um",
+        fit_temp: "shaft_joint.cup_fit_temp_C",
+        fit_allowed: "shaft_joint.cup_fit_allowed_C",
+        slip_fixes: &[
+            (CUP_MIN, Direction::Raise),
+            (BOSS_LENGTH, Direction::Raise),
+            (MAGNET_LENGTH, Direction::Lower),
+            (FACE_GAP, Direction::Raise),
+        ],
+        stress_fixes: &[(CUP_MAX, Direction::Lower)],
+        fitting_fixes: &[
+            (CUP_MAX, Direction::Lower),
+            (GEARBOX_SHAFT, Direction::Lower),
+        ],
+        key_fixes: &[
+            (KEY_CONTACT, Direction::Raise),
+            (BOSS_LENGTH, Direction::Raise),
+        ],
+    },
+];
+
+/// The shaft joints of a design as the engine judges them, inner hub first, rebuilt from its
+/// inputs and results ([`shaft_joint_links`]); while the check cannot be made, why, by the
+/// engine's own test ([`shaft_joint::cannot_be_made`]: a value it reads or works out is not a
+/// number, the safety factor is not above zero, an input is typed below what it can physically
+/// be, or the gearbox shaft is typed below its slider's bottom), where no term is judged.
+fn shaft_joints(
+    inputs: &DesignInputs,
+    results: &DesignResults,
+) -> Result<[JointTerms; 2], CannotBeMade> {
+    let links = shaft_joint_links(inputs, results);
+    let joints = shaft_joint::joints(&inputs.shaft_joint, &links);
+    match shaft_joint::cannot_be_made(&inputs.shaft_joint, &links, &joints) {
+        Some(reason) => Err(reason),
+        None => Ok(joints),
+    }
+}
+
+/// The index in [`JOINT_SIDES`] of the joint named `name`, and its side.
+fn joint_side(name: &str) -> Option<(usize, &'static JointSide)> {
+    JOINT_SIDES
+        .iter()
+        .enumerate()
+        .find(|(_, side)| side.name == name)
+}
+
+/// The shaft joints' fixes ([`Fixes::PerTerm`]): for each term a judged joint fails, in the
+/// badge's order ([`shaft_joint::failing`]), each of that joint's fixes for the term whose move
+/// helps ([`helps`] against the term's margin, [`JointTerms::margin`]), each fix once; none
+/// while the check cannot be made. Three are held back by rule (spec 5.2): raising a band's
+/// minimum or lowering its maximum where one step puts the minimum above the maximum (the row
+/// would read amber, and the margin's rise would count as help), and raising the key's contact
+/// height for a joint whose key has no bearing length while its contact height is above zero
+/// (no contact height gives that key any bearing area).
+fn shaft_joint_fixes(
+    inputs: &DesignInputs,
+    results: &DesignResults,
+    clamps_paused: bool,
+) -> Vec<(&'static str, Direction)> {
+    let Ok(joints) = shaft_joints(inputs, results) else {
+        return Vec::new();
+    };
+    let mut shown: Vec<(&'static str, Direction)> = Vec::new();
+    for (cause, joint) in shaft_joint::failing(&joints) {
+        let Some((index, side)) = joint_side(joint.name) else {
+            continue;
+        };
+        let margin = |design: &DesignInputs, after: &DesignResults| {
+            shaft_joint::joints(&design.shaft_joint, &shaft_joint_links(design, after))[index]
+                .margin(cause)
+        };
+        for &fix in side.fixes(cause) {
+            let contact_without_length = fix == (KEY_CONTACT, Direction::Raise)
+                && joint.key_bearing_mm <= 0.0
+                && joint.key_contact_mm > 0.0;
+            if !shown.contains(&fix)
+                && !contact_without_length
+                && !reverses_the_band(inputs, results, side, fix)
+                && helps(inputs, results, fix, Some(&margin), clamps_paused)
+            {
+                shown.push(fix);
+            }
+        }
+    }
+    shown
+}
+
+/// Whether one move of `fix`, an input of the band of `side`, puts the band's minimum above its
+/// maximum; `false` for any other input.
+fn reverses_the_band(
+    inputs: &DesignInputs,
+    results: &DesignResults,
+    side: &JointSide,
+    (path, direction): (&str, Direction),
+) -> bool {
+    if path != side.min && path != side.max {
+        return false;
+    }
+    moves(inputs, results, path, direction)
+        .iter()
+        .any(|design| {
+            let band = |path: &str| design.get(path).and_then(number).unwrap_or(f64::NAN);
+            band(side.min) > band(side.max)
+        })
+}
 
 const GEARBOX_GUIDE: CheckGuide = CheckGuide {
     check: GEARBOX,
@@ -306,15 +532,16 @@ const FIT_GUIDE: CheckGuide = CheckGuide {
     learn: Learn::None("No note covers block fit yet."),
 };
 
-/// The guides: the eight dashboard checks in the dashboard's order, then the Magnets fit row.
+/// The guides: the nine dashboard checks in the dashboard's order, then the Magnets fit row.
 /// Every Why and Problem template goes through the slice's physics review (spec G-3), and none
 /// says what spec section 8 rules out.
-pub static CHECK_GUIDES: [CheckGuide; 9] = [
+pub static CHECK_GUIDES: [CheckGuide; 10] = [
     HOT_MIN_GUIDE,
     CLEARANCE_GUIDE,
     CUP_WALL_GUIDE,
     TEMPERATURE_GUIDE,
     CLAMP_GUIDE,
+    SHAFT_JOINT_GUIDE,
     GEARBOX_GUIDE,
     SPACE_CLAIM_GUIDE,
     END_EFFECT_GUIDE,
@@ -361,6 +588,7 @@ pub static ROW_LEARN: [(&str, Learn); DASHBOARD.len()] = [
     ),
     (TEMPERATURE, TEMPERATURE_GUIDE.learn),
     (CLAMP, CLAMP_GUIDE.learn),
+    (SHAFT_JOINT, SHAFT_JOINT_GUIDE.learn),
     (GEARBOX, GEARBOX_GUIDE.learn),
     (SPACE_CLAIM, SPACE_CLAIM_GUIDE.learn),
     (END_EFFECT, END_EFFECT_GUIDE.learn),
@@ -485,8 +713,9 @@ fn fits_on_the_slider(inputs: &DesignInputs) -> bool {
 
 /// The Fix line of a failing check whose [`fixes`] are empty (spec 3.4 gives every block a
 /// Fix): its inputs are at their sliders' ends, have no better choice or would turn another
-/// check red, or a value the check needs is not a number, which the Problem names.
-pub const NO_FIX: &str = "No listed change helps from here: each is at its slider's end, has no better choice or would fail another check, or a value the check needs is not a number.";
+/// check red, or a value the check needs is not a number or is outside what it can be, which
+/// the Problem names.
+pub const NO_FIX: &str = "No listed change helps from here: each is at its slider's end, has no better choice or would fail another check, or a value the check needs is not a number or is outside what it can be.";
 
 /// The notes to draw under the fixes of the guide at `index`, where another failing check's
 /// fix moves one of its inputs the other way (spec review focus 4). `all` holds every guide's
@@ -892,6 +1121,11 @@ fn number(value: Value) -> Option<f64> {
         Value::Int(i) => Some(i as f64),
         Value::Text(_) | Value::None => None,
     }
+}
+
+/// The result at `path` as a number ([`number`]); NaN for a text, no value or an unknown path.
+fn result_number(results: &DesignResults, path: &str) -> f64 {
+    number(results.get(path).unwrap_or(Value::None)).unwrap_or(f64::NAN)
 }
 
 /// The number the input at `path` holds, or for an optional input left blank the result it
@@ -1377,7 +1611,6 @@ fn default_reverse_fields(inputs: &DesignInputs) -> bool {
 /// failing margin up to the minimum (9.96 read as "10.0" beside "at least 10.0 °C").
 fn cure_margin_texts(results: &DesignResults) -> (String, String) {
     const MARGIN: &str = "temperature.summary.cure_margin_C";
-    let onset = format_value(&Value::Num(results.temperature.demag.onset_single_ring_C));
     let margin = results.temperature.summary.cure_margin_C;
     let as_results = || {
         (
@@ -1385,9 +1618,9 @@ fn cure_margin_texts(results: &DesignResults) -> (String, String) {
             number_text(CURE_MARGIN_MIN_C, MARGIN),
         )
     };
-    match onset.split_once('.') {
-        Some((_, decimals)) if !onset.contains('e') && margin.is_finite() => {
-            let shown = fixed(margin, decimals.len());
+    match shown_decimals(results.temperature.demag.onset_single_ring_C) {
+        Some(decimals) if margin.is_finite() => {
+            let shown = fixed(margin, decimals);
             let rounded_up_to_pass = margin < CURE_MARGIN_MIN_C
                 && shown.parse::<f64>().is_ok_and(|x| x >= CURE_MARGIN_MIN_C);
             if rounded_up_to_pass {
@@ -1396,7 +1629,7 @@ fn cure_margin_texts(results: &DesignResults) -> (String, String) {
             let unit = result_info(MARGIN).map_or("", |info| info.meta.unit);
             (
                 with_unit(shown, unit),
-                with_unit(fixed(CURE_MARGIN_MIN_C, decimals.len()), unit),
+                with_unit(fixed(CURE_MARGIN_MIN_C, decimals), unit),
             )
         }
         _ => as_results(),
@@ -1499,10 +1732,10 @@ pub fn design_status(
     }
 }
 
-/// The design status line: "Example design: fails 4 of 9 checks", "Your design: fails
-/// 3 of 9 checks", "Your design: passes all 9 checks", each followed by ", 1 caution" or ", 2
+/// The design status line: "Example design: fails 4 of 10 checks", "Your design: fails
+/// 3 of 10 checks", "Your design: passes all 10 checks", each followed by ", 1 caution" or ", 2
 /// cautions" when a check asks for a look. The count is of the guides that count ([`counts`]):
-/// 8 while the shaft-clamp section is paused.
+/// 9 while the shaft-clamp section is paused.
 pub fn design_status_text(status: &DesignStatus) -> String {
     let design = if status.is_default {
         EXAMPLE_DESIGN
@@ -1541,10 +1774,17 @@ pub(crate) fn result_text(results: &DesignResults, path: &str) -> String {
 
 /// The input at `path` as a readout shows it: four significant digits, then its unit.
 fn input_text(inputs: &DesignInputs, path: &str) -> String {
-    let unit = InputCatalogue::get()
+    with_unit(
+        format_value(&inputs.get(path).unwrap_or(Value::None)),
+        input_unit(path),
+    )
+}
+
+/// The unit of the input at `path` (none for a path that is not an input).
+fn input_unit(path: &str) -> &'static str {
+    InputCatalogue::get()
         .entry(path)
-        .map_or("", |entry| entry.meta.unit);
-    with_unit(format_value(&inputs.get(path).unwrap_or(Value::None)), unit)
+        .map_or("", |entry| entry.meta.unit)
 }
 
 /// A number worked out here from results and inputs (no result holds it), in the unit of the
@@ -1572,8 +1812,7 @@ fn quoted_limit(x: f64, limited: f64) -> f64 {
     if !x.is_finite() || x <= 0.0 {
         return x;
     }
-    let step = last_digit_step(x);
-    let down = (x / step + LAST_DIGIT_NOISE).floor() * step;
+    let down = rounded_down(x);
     if quoted_value(down) < quoted_value(limited) {
         down
     } else {
@@ -1590,8 +1829,7 @@ fn quoted_load(x: f64, rating: f64) -> f64 {
     if !x.is_finite() || x <= 0.0 {
         return x;
     }
-    let step = last_digit_step(x);
-    let up = (x / step - LAST_DIGIT_NOISE).ceil() * step;
+    let up = rounded_up(x);
     if quoted_value(up) > quoted_value(rating) {
         up
     } else {
@@ -1599,8 +1837,63 @@ fn quoted_load(x: f64, rating: f64) -> f64 {
     }
 }
 
-/// The most decimals [`band_quotes`] gives a number near one: f64 holds no more of its digits.
+/// `x` rounded down to a multiple of `step`, float noise aside ([`LAST_DIGIT_NOISE`]): the one
+/// rounding-down rule of the quotes.
+fn floor_at(x: f64, step: f64) -> f64 {
+    (x / step + LAST_DIGIT_NOISE).floor() * step
+}
+
+/// `x` rounded up to a multiple of `step`, float noise aside ([`LAST_DIGIT_NOISE`]): the one
+/// rounding-up rule of the quotes.
+fn ceil_at(x: f64, step: f64) -> f64 {
+    (x / step - LAST_DIGIT_NOISE).ceil() * step
+}
+
+/// `x` rounded down at its last shown digit ([`floor_at`]); a number that is not finite or not
+/// positive as it is.
+fn rounded_down(x: f64) -> f64 {
+    if !x.is_finite() || x <= 0.0 {
+        return x;
+    }
+    floor_at(x, last_digit_step(x))
+}
+
+/// `x` rounded up at its last shown digit ([`ceil_at`]); a number that is not finite or not
+/// positive as it is.
+fn rounded_up(x: f64) -> f64 {
+    if !x.is_finite() || x <= 0.0 {
+        return x;
+    }
+    ceil_at(x, last_digit_step(x))
+}
+
+/// How many decimals the readouts show for `x` ([`format_value`]'s text): `None` where that
+/// text has no fixed decimals (an exponent, a whole number, or not a number).
+fn shown_decimals(x: f64) -> Option<usize> {
+    let text = format_value(&Value::Num(x));
+    match text.split_once('.') {
+        Some((_, decimals)) if !text.contains('e') => Some(decimals.len()),
+        _ => None,
+    }
+}
+
+/// The most decimals [`fewest_decimals_apart`] gives a number near one: f64 holds no more of
+/// its digits.
 const MOST_DECIMALS: usize = 15;
+
+/// The one search for more decimals of [`band_quotes`] and [`window_quotes`] (BL-059 NB-1): the
+/// fewest decimals, from `from` up to [`MOST_DECIMALS`], whose `quotes` read `apart`, with those
+/// quotes; else [`MOST_DECIMALS`] and its quotes.
+fn fewest_decimals_apart<T>(
+    from: usize,
+    quotes: impl Fn(usize) -> T,
+    apart: impl Fn(&T) -> bool,
+) -> (usize, T) {
+    (from..=MOST_DECIMALS)
+        .map(|decimals| (decimals, quotes(decimals)))
+        .find(|(_, quoted)| apart(quoted))
+        .unwrap_or_else(|| (MOST_DECIMALS, quotes(MOST_DECIMALS)))
+}
 
 /// The band and the widest band the rating allows, as gearbox Problem sentence 2's first remedy
 /// quotes them: the band as the readouts show it, the widest band rounded down past it
@@ -1622,17 +1915,14 @@ fn band_quotes(band: f64, widest: f64) -> (String, String) {
     // Both are from 1 to 1.0005, which the readouts show to three decimals: from four.
     let at = |decimals: usize| {
         let step = 10f64.powi(-(decimals as i32));
-        let down = ((widest / step + LAST_DIGIT_NOISE).floor() * step).max(1.0);
+        let down = floor_at(widest, step).max(1.0);
         (fixed(band, decimals), fixed(down, decimals))
     };
     let apart = |(here, limit): &(String, String)| {
         let value = |text: &str| text.parse().unwrap_or(f64::NAN);
         value(limit) < value(here)
     };
-    (SIGNIFICANT_DIGITS as usize..=MOST_DECIMALS)
-        .map(at)
-        .find(apart)
-        .unwrap_or_else(|| at(MOST_DECIMALS))
+    fewest_decimals_apart(SIGNIFICANT_DIGITS as usize, at, apart).1
 }
 
 /// A fraction as a percentage: four significant digits without trailing zeros (0.15 gives
@@ -1721,6 +2011,420 @@ fn clamp_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<Strin
     })
 }
 
+/// The shaft joints' Problem when the check cannot be made: a value it reads or works out is not
+/// a number (a bore typed at 0 reads only numbers, and its holding works out as NaN).
+const SHAFT_JOINT_NOT_A_NUMBER: &str =
+    "The shaft joint check cannot be made: a value it reads or works out is not a number.";
+
+/// The shaft joints' Problem when no sentence reads as failing although the check does
+/// ([`joined_or`]).
+const SHAFT_JOINT_FALLBACK: &str = "A shaft joint does not pass: see the shaft joint results.";
+
+/// The shaft joints' Problem (spec 5.2): while the check cannot be made (a value that is not a
+/// number, a safety factor not above zero, ruling C-4, an input typed below what it can
+/// physically be, its extension, or a gearbox shaft typed below its slider's bottom, build
+/// ruling B-5), its sentences alone ([`cannot_be_made_problem`]); else a
+/// sentence per term a judged joint fails, in the badge's order ([`shaft_joint::failing`]),
+/// with its live numbers; then, for each judged joint failing a slip, stress or fitting term,
+/// the window of measured interference that would work, or why there is none
+/// ([`window_sentence`]); then each joint that is not judged, and why
+/// ([`not_judged_sentences`]).
+fn shaft_joint_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<String> {
+    if !failing(SHAFT_JOINT, inputs, results) {
+        return None;
+    }
+    let joints = match shaft_joints(inputs, results) {
+        Ok(joints) => joints,
+        Err(reason) => return Some(cannot_be_made_problem(inputs, &reason)),
+    };
+    let mut sentences: Vec<String> = shaft_joint::failing(&joints)
+        .into_iter()
+        .filter_map(|(cause, joint)| {
+            let (_, side) = joint_side(joint.name)?;
+            Some(term_sentence(inputs, results, side, joint, cause))
+        })
+        .collect();
+    for (side, joint) in JOINT_SIDES.iter().zip(&joints) {
+        let windowed = joint.determinate()
+            && [Cause::Slips, Cause::BoreStress, Cause::CannotBeFitted]
+                .into_iter()
+                .any(|cause| joint.fails(cause));
+        if windowed {
+            sentences.extend(window_sentence(inputs, results, side));
+        }
+    }
+    for (side, joint) in JOINT_SIDES.iter().zip(&joints) {
+        sentences.extend(not_judged_sentences(inputs, side, joint));
+    }
+    Some(joined_or(sentences, SHAFT_JOINT_FALLBACK))
+}
+
+/// The shaft joints' Problem while the check cannot be made, with no fix: the not-a-number
+/// sentence; the safety factor's (ruling C-4); a sentence for each input typed below what it
+/// can physically be, in the inputs' order ([`impossible_value_sentence`]); or the gearbox
+/// shaft's below its slider's bottom, the coldest the check takes it since the gearbox's rated
+/// range is not checked (build ruling B-5), its value quoted so that it reads below that bottom
+/// ([`input_text_below`]).
+fn cannot_be_made_problem(inputs: &DesignInputs, reason: &CannotBeMade) -> String {
+    match reason {
+        CannotBeMade::NotANumber => SHAFT_JOINT_NOT_A_NUMBER.to_owned(),
+        CannotBeMade::SafetyFactor => format!(
+            "The safety factor, {}, is not above zero: enter at least 1.",
+            input_text(inputs, SAFETY_FACTOR)
+        ),
+        CannotBeMade::ImpossibleValues(values) => values
+            .iter()
+            .map(|value| impossible_value_sentence(inputs, value))
+            .collect::<Vec<_>>()
+            .join(" "),
+        CannotBeMade::GearboxShaftTooCold => {
+            let bottom = slider_bottom_text(GEARBOX_SHAFT);
+            format!(
+                "{}, {}, is below {bottom}, the coldest the gearbox shaft is taken, since its rated range is not checked: enter at least {bottom}, its slider's bottom.",
+                fix_label(GEARBOX_SHAFT),
+                input_text_below(inputs, GEARBOX_SHAFT, slider_bottom(GEARBOX_SHAFT)),
+            )
+        }
+    }
+}
+
+/// The bottom of the slider of the input at `path`. Panics where `path` is not an input with a
+/// slider: the guide asks only for those.
+fn slider_bottom(path: &str) -> f64 {
+    InputCatalogue::get()
+        .entry(path)
+        .and_then(|entry| entry.meta.range)
+        .map(|range| range.min)
+        .unwrap_or_else(|| panic!("{path} has a slider"))
+}
+
+/// The bottom of the slider of the input at `path` ([`slider_bottom`]), with its unit, as a
+/// readout shows it.
+fn slider_bottom_text(path: &str) -> String {
+    with_unit(
+        format_value(&Value::Num(slider_bottom(path))),
+        input_unit(path),
+    )
+}
+
+/// The input at `path`, typed below `bottom`, as a Problem quotes it (G-3 re-review of the
+/// review leftovers, MF-1): as its readout shows it where that reads below `bottom` as a readout
+/// shows it; else with the fewest more decimals that read it below ([`fewest_decimals_apart`]),
+/// rounded to the nearest as the readouts round, so it never reads as the bottom it is below,
+/// as [`apart_from`] keeps a failing result off its bound. A value not below `bottom`, or not a
+/// number, reads as its readout shows it.
+fn input_text_below(inputs: &DesignInputs, path: &str, bottom: f64) -> String {
+    let readout = input_text(inputs, path);
+    let Some(x) = inputs.get(path).and_then(number) else {
+        return readout;
+    };
+    let below_bottom = x < bottom;
+    if !below_bottom || quoted_value(x) < quoted_value(bottom) {
+        return readout;
+    }
+    let first = shown_decimals(x).map_or(SIGNIFICANT_DIGITS as usize, |decimals| decimals + 1);
+    let reads_below = |text: &String| text.parse().is_ok_and(|q: f64| q < quoted_value(bottom));
+    let (_, text) = fewest_decimals_apart(first, |decimals| fixed(x, decimals), reads_below);
+    with_unit(text, input_unit(path))
+}
+
+/// The sentence of an input typed below what it can physically be (the whole-branch review's
+/// MF-1): its name as the fixes give it ([`fix_label`]), its value, its floor, and its slider's
+/// bottom to enter instead, as the safety factor's sentence asks for at least its own. The
+/// sentence calls that number its slider's bottom: it is not the floor the sentence names, and
+/// for the two shafts it is a fitting temperature limit, which names its source (the text
+/// re-review, MF-1).
+fn impossible_value_sentence(inputs: &DesignInputs, value: &ImpossibleValue) -> String {
+    let path = format!("shaft_joint.{}", value.field);
+    let floor = match value.floor {
+        Floor::Zero => "below zero",
+        Floor::AboveZero => "zero or below",
+        Floor::AbsoluteZero => "below absolute zero",
+    };
+    format!(
+        "{}, {}, cannot physically be {floor}: enter at least {}, its slider's bottom.",
+        fix_label(&path),
+        input_text(inputs, &path),
+        slider_bottom_text(&path),
+    )
+}
+
+/// The sentence of a term `cause` the joint of `side` fails, its numbers live, a failing value
+/// never read equal to its bound ([`apart_from`]).
+fn term_sentence(
+    inputs: &DesignInputs,
+    results: &DesignResults,
+    side: &JointSide,
+    joint: &JointTerms,
+    cause: Cause,
+) -> String {
+    let name = side.name;
+    match cause {
+        Cause::Slips => format!(
+            "At its loosest the {name} holds {}, less than the {} it must hold: cold-high, {}, times the safety factor of {}.",
+            apart_from(results, side.holding, joint.required_Nm, false),
+            result_text(results, REQUIRED),
+            result_text(results, "metal.torque_cold_high_Nm"),
+            input_text(inputs, SAFETY_FACTOR),
+        ),
+        Cause::BoreStress => format!(
+            "At its tightest the {name}'s bore stress is {}, above the {} limit ({} yield with a margin).",
+            apart_from(results, side.stress, joint.stress_limit_MPa, true),
+            result_text(results, STRESS_LIMIT),
+            result_text(results, PART_YIELD),
+        ),
+        Cause::CannotBeFitted => format!(
+            "Fitting the {name} would need it at {} with the {} at {}, above the {} allowed: {}.",
+            apart_from(results, side.fit_temp, joint.fit_allowed_C, true),
+            side.shaft,
+            input_text(inputs, side.shaft_fit),
+            result_text(results, side.fit_allowed),
+            fitting_source(inputs, results, side),
+        ),
+        Cause::Key => key_sentence(inputs, results, side, joint),
+    }
+}
+
+/// What sets the allowed fitting temperature of the joint of `side` (trap 9): the cup's is your
+/// limit for the bare cup, whose number the sentence already quotes as the allowed temperature;
+/// the bonded inner hub's is the lowest of three (owner R-15), each with its live number, named
+/// by the engine's own rule ([`shaft_joint::hub_fit_allowed`]) on the engine's own links
+/// ([`shaft_joint_links`]), so the number and its name come from one place.
+fn fitting_source(inputs: &DesignInputs, results: &DesignResults, side: &JointSide) -> String {
+    if side.name != shaft_joint::INNER_HUB {
+        return "your limit for the bare cup".to_owned();
+    }
+    let links = shaft_joint_links(inputs, results);
+    let (_, limit) = shaft_joint::hub_fit_allowed(
+        inputs.shaft_joint.hub_fit_max_C,
+        links.adhesive_limit_C,
+        links.inner_onset_single_ring_C,
+    );
+    match limit {
+        Some(HubFitLimit::Yours) => format!(
+            "your limit for the bonded inner hub, {}",
+            input_text(inputs, "shaft_joint.hub_fit_max_C")
+        ),
+        Some(HubFitLimit::Adhesive) => format!(
+            "the selected adhesive's design limit, {}",
+            result_text(results, "temperature.adhesive.design_limit_C")
+        ),
+        Some(HubFitLimit::MagnetOnset) => {
+            let (onset, margin) = onset_texts(results);
+            format!("the magnets' single-ring onset, {onset}, less {margin}")
+        }
+        // Not reached: the check cannot be made while one of the three is not a number.
+        None => "a limit that is not a number".to_owned(),
+    }
+}
+
+/// The inner ring's single-ring onset and the cure margin as the bonded inner hub's fitting
+/// source quotes them (owner R-15), each with as many decimals as the allowed temperature
+/// shows, so the three numbers subtract ("above the 59.83 °C allowed: the magnets' single-ring
+/// onset, 69.83 °C, less 10.00 °C"), as [`cure_margin_texts`] quotes the cure margin. Both read
+/// as any result does where the allowed temperature's text has no fixed decimals.
+fn onset_texts(results: &DesignResults) -> (String, String) {
+    const ONSET: &str = "temperature.demag.inner_onset_single_ring_C";
+    match shown_decimals(results.shaft_joint.hub_fit_allowed_C) {
+        Some(decimals) => {
+            let unit = result_info(ONSET).map_or("", |info| info.meta.unit);
+            let onset = results.temperature.demag.inner_onset_single_ring_C;
+            (
+                with_unit(fixed(onset, decimals), unit),
+                with_unit(fixed(CURE_MARGIN_MIN_C, decimals), unit),
+            )
+        }
+        None => (
+            result_text(results, ONSET),
+            number_text(CURE_MARGIN_MIN_C, ONSET),
+        ),
+    }
+}
+
+/// The key term's sentence of the joint of `side` (spec 5.2): no contact height (it alone, where
+/// the key has no bearing length either: no length gives it bearing area without contact); no
+/// bearing length; else the key's pressure, alone, above the limit.
+fn key_sentence(
+    inputs: &DesignInputs,
+    results: &DesignResults,
+    side: &JointSide,
+    joint: &JointTerms,
+) -> String {
+    let name = side.name;
+    let key_width = input_text(inputs, KEY_WIDTH);
+    if joint.key_contact_mm <= 0.0 {
+        format!(
+            "The key has no bearing area in the {name}: its contact height, {}, is not above zero.",
+            input_text(inputs, KEY_CONTACT)
+        )
+    } else if joint.key_bearing_mm <= 0.0 && name == shaft_joint::INNER_HUB {
+        format!(
+            "The key has no bearing area in the inner hub: the hub, {} long, is no longer than the key is wide, {key_width}.",
+            result_text(results, HUB_LENGTH_IN_EFFECT)
+        )
+    } else if joint.key_bearing_mm <= 0.0 {
+        format!(
+            "The key has no bearing area in the cup: its boss and web, {} and {} long, together are no longer than the key is wide, {key_width}.",
+            input_text(inputs, BOSS_LENGTH),
+            input_text(inputs, WEB)
+        )
+    } else {
+        format!(
+            "Alone, the key would bear {} on the {name}, above the {} limit.",
+            apart_from(results, side.key, joint.stress_limit_MPa, true),
+            result_text(results, STRESS_LIMIT)
+        )
+    }
+}
+
+/// The window of measured interference that would work on the joint of `side` (spec 5.2):
+/// from the smallest minimum that holds to the smaller of the largest maximum within the stress
+/// limit and the largest that can be fitted, its clause naming the edge that binds, beside the
+/// joint's band; or, where the smallest minimum is above that, why no interference works, each
+/// edge below it named. The ends are quoted inward ([`window_quotes`], [`rounded_up`],
+/// [`rounded_down`]), so a band typed at them passes. `None` where the smallest minimum is not
+/// finite (a key wider than the bore's circumference leaves no contact): the slip sentence's
+/// holding of 0 says it.
+fn window_sentence(
+    inputs: &DesignInputs,
+    results: &DesignResults,
+    side: &JointSide,
+) -> Option<String> {
+    let (needed, elastic, fittable) = (
+        result_number(results, side.needed),
+        result_number(results, side.elastic),
+        result_number(results, side.fittable),
+    );
+    if !needed.is_finite() {
+        return None;
+    }
+    let name = side.name;
+    let (upper, clause) = if elastic <= fittable {
+        (elastic, "stay within the stress limit")
+    } else {
+        (fittable, "fit at the allowed temperature")
+    };
+    if needed <= upper {
+        let (low, high) = window_quotes(needed, upper, side.needed);
+        return Some(format!(
+            "On the {name}, a measured interference from {low} to {high} would hold and {clause} (its band is {} to {}).",
+            input_text(inputs, side.min),
+            input_text(inputs, side.max)
+        ));
+    }
+    let mut edges = Vec::new();
+    if elastic < needed {
+        edges.push(format!(
+            "its bore stress stays within the limit only up to {}",
+            number_text(rounded_down(elastic), side.elastic)
+        ));
+    }
+    // Strictly below 0 (review B5 I-1): at exactly 0 the bore at its allowed temperature opens
+    // the joining clearance on the shaft as set, no more, so the fitting edge is named.
+    if fittable < needed && fittable < 0.0 {
+        edges.push(format!(
+            "at its allowed temperature its bore does not even open the {} joining clearance on the {} as set",
+            input_text(inputs, "shaft_joint.joining_clearance_um"),
+            side.shaft
+        ));
+    } else if fittable < needed {
+        edges.push(format!(
+            "the {name} can be fitted only up to {}",
+            number_text(rounded_down(fittable), side.fittable)
+        ));
+    }
+    Some(format!(
+        "No measured interference works on the {name} here: holding needs at least {}, but {}.",
+        number_text(rounded_up(needed), side.needed),
+        listed(&edges, "and")
+    ))
+}
+
+/// A window's ends as the shaft joints' Problem quotes them, in the unit of the result at
+/// `unit_of` (review SF-11, as BL-059 quotes its band): `needed` rounded up and `upper` rounded
+/// down at each one's last shown digit, so a band typed at the quoted ends passes; where those
+/// read equal or crossed (a window narrower than the readouts' last digit), both with more
+/// decimals, as few as read them apart in order (BL-059 NB-1).
+fn window_quotes(needed: f64, upper: f64, unit_of: &str) -> (String, String) {
+    let (low, high) = (rounded_up(needed), rounded_down(upper));
+    if quoted_value(low) < quoted_value(high) {
+        return (number_text(low, unit_of), number_text(high, unit_of));
+    }
+    let at = |decimals: usize| {
+        let step = 10f64.powi(-(decimals as i32));
+        (ceil_at(needed, step), floor_at(upper, step))
+    };
+    let first = [low, high]
+        .into_iter()
+        .filter_map(shown_decimals)
+        .max()
+        .map_or(SIGNIFICANT_DIGITS as usize, |decimals| decimals + 1);
+    let (decimals, (low, high)) = fewest_decimals_apart(first, at, |&(low, high)| low < high);
+    let unit = result_info(unit_of).map_or("", |info| info.meta.unit);
+    (
+        with_unit(fixed(low, decimals), unit),
+        with_unit(fixed(high, decimals), unit),
+    )
+}
+
+/// Why the joint of `side` is not judged, if it is not (spec 4.3): no wall around its bore (the
+/// bore at least as wide as the part, or the keyway through the wall), its band reversed, or
+/// both. The cup's part is its boss, whose diameter the check takes for the web too, so the
+/// cup's no-wall sentences name the boss and say the web alone is not judged.
+fn not_judged_sentences(
+    inputs: &DesignInputs,
+    side: &JointSide,
+    joint: &JointTerms,
+) -> Vec<String> {
+    let name = side.name;
+    let bore = input_text(inputs, "coupling.bore_mm");
+    let keyway = input_text(inputs, "coupling.keyway_depth_mm");
+    let mut sentences = Vec::new();
+    match joint.no_wall {
+        Some(NoWall::BoreAsWideAsPart) if name == shaft_joint::INNER_HUB => sentences.push(format!(
+            "The inner hub's bore, {bore}, reaches the flats its magnets are bonded on, so it leaves no wall to grip the wheel shaft."
+        )),
+        Some(NoWall::BoreAsWideAsPart) => sentences.push(format!(
+            "The cup's bore, {bore}, is at least as wide as its boss, {}, so the boss leaves no wall to grip the gearbox shaft; the check does not judge the web alone.",
+            input_text(inputs, "metal.boss_od_mm")
+        )),
+        Some(NoWall::KeywayThroughWall) if name == shaft_joint::INNER_HUB => {
+            sentences.push(format!(
+                "The inner hub's keyway, {keyway} deep, cuts through the wall around its {bore} bore, so the fit has no closed ring to grip the wheel shaft."
+            ))
+        }
+        Some(NoWall::KeywayThroughWall) => sentences.push(format!(
+            "The cup's keyway, {keyway} deep, cuts through the boss's wall around its {bore} bore, so the boss has no closed ring to grip the gearbox shaft; the check does not judge the web alone."
+        )),
+        None => {}
+    }
+    if joint.band_reversed {
+        sentences.push(format!(
+            "The {name}'s minimum interference, {}, is above its maximum, {}: enter the band's smaller value as the minimum.",
+            input_text(inputs, side.min),
+            input_text(inputs, side.max)
+        ));
+    }
+    sentences
+}
+
+/// A failing value at `path` as a Problem quotes it beside its `bound` (BL-059 MF-1): as its
+/// readout shows it, or, where it would read the same as the bound, one last digit past it: up
+/// above a limit (`above`, [`quoted_load`]), down under a need ([`quoted_limit`]).
+fn apart_from(results: &DesignResults, path: &str, bound: f64, above: bool) -> String {
+    let x = result_number(results, path);
+    let reads_apart = if above {
+        quoted_value(x) > quoted_value(bound)
+    } else {
+        quoted_value(x) < quoted_value(bound)
+    };
+    match (reads_apart, above) {
+        (true, _) => result_text(results, path),
+        (false, true) => number_text(quoted_load(x, bound), path),
+        (false, false) => number_text(quoted_limit(x, bound), path),
+    }
+}
+
 /// The gearbox check's Problem when it cannot be made (it asks for a look): a value it
 /// compares is not a number.
 const GEARBOX_UNKNOWN: &str = "The gearbox check cannot be made: cold-high at the gearbox input or the rating is not a number.";
@@ -1730,16 +2434,11 @@ fn gearbox_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<Str
         Level::Good => None,
         Level::Caution => Some(GEARBOX_UNKNOWN.to_owned()),
         Level::Bad => {
-            let torque = results.metal.cold_high_input_Nm;
             let rating = inputs.coupling.gearbox_input_rating_Nm;
             // Where both read the same at four significant digits, cold-high is quoted one last
             // digit past the rating, as the badge and sentence 2 quote a torque on the gearbox
             // input (whole-branch review MF-1).
-            let torque_text = if quoted_value(torque) > quoted_value(rating) {
-                result_text(results, "metal.cold_high_input_Nm")
-            } else {
-                number_text(quoted_load(torque, rating), "metal.cold_high_input_Nm")
-            };
+            let torque_text = apart_from(results, "metal.cold_high_input_Nm", rating, true);
             let overload = format!(
                 "Cold-high at the gearbox input is {torque_text}, above its {} input rating.",
                 input_text(inputs, "coupling.gearbox_input_rating_Nm"),
@@ -2336,14 +3035,17 @@ mod tests {
     use crate::engine::explain::notes;
     use crate::engine::grades::Grade;
     use crate::engine::model::ring_fits;
+    use crate::engine::shaft_joint::CAUSES;
     use crate::engine::sizing::{SizingOutcome, solve};
     use crate::gui::dashboard::{CHECKS, DASHBOARD, FIX, dashboard_ui};
     use crate::gui::explorer::reviewed_note;
     use crate::gui::plain_text::label_for;
     use crate::gui::readouts::Readouts;
     use crate::gui::test_support::{
-        assert_glyphs, clamp_at_its_limit, drawn_texts, hot_day, only_the_clamp_fails,
-        only_the_gearbox_fails, passing_design, short_magnets, sized_frame, small_boss, with_poles,
+        assert_glyphs, clamp_at_its_limit, drawn_texts, hot_day, hub_overstressed, is_shaft_joint,
+        mixed_rings, n42_parts, only_the_clamp_fails, only_the_gearbox_fails, only_the_joint_fails,
+        passing_design, reversed_hub_band, shaft_joint_input_rows, shaft_joint_result_rows,
+        short_magnets, sized_frame, slider_range, small_boss, with_poles,
     };
     use std::collections::BTreeSet;
 
@@ -2358,14 +3060,6 @@ mod tests {
     /// The defaults with `edit` applied.
     fn design(edit: impl Fn(&mut DesignInputs)) -> DesignInputs {
         with(DesignInputs::default(), edit)
-    }
-
-    /// The slider range of the input at `path`.
-    fn slider_range(path: &str) -> SliderRange {
-        InputCatalogue::get()
-            .entry(path)
-            .and_then(|entry| entry.meta.range)
-            .unwrap_or_else(|| panic!("{path} has a slider"))
     }
 
     /// Every value on the slider of the input at `path`, bottom to top, one step apart, each the
@@ -2407,13 +3101,6 @@ mod tests {
     fn custom_hot_day(i: &mut DesignInputs) {
         hot_day(i);
         i.coupling.magnets.part_inner.clear();
-    }
-
-    /// Library N42 blocks (rated 80 °C) in both rings: their magnet limit is below the hot-day
-    /// start.
-    fn n42_parts(i: &mut DesignInputs) {
-        i.coupling.magnets.part_inner = "B842".to_owned();
-        i.coupling.magnets.part_outer = "B842".to_owned();
     }
 
     /// A long unbroken slip at a high slip speed: only the fault peak passes the magnet limit.
@@ -2674,6 +3361,45 @@ mod tests {
         i.metal.liner_mm = 0.0;
     }
 
+    /// The cup's minimum interference at 10 µm: at its loosest the cup slips.
+    fn cup_slips(i: &mut DesignInputs) {
+        i.shaft_joint.cup_interference_min_um = 10.0;
+    }
+
+    /// The cup's maximum interference at 26 µm: at its tightest its bore stress is above its
+    /// limit.
+    fn cup_overstressed(i: &mut DesignInputs) {
+        i.shaft_joint.cup_interference_max_um = 26.0;
+    }
+
+    /// The cup's maximum at 24 µm: its bore stress is above the limit (348.3 against 345.8 MPa)
+    /// and it still fits (296.4 against 300 °C).
+    fn cup_stress_alone(i: &mut DesignInputs) {
+        i.shaft_joint.cup_interference_max_um = 24.0;
+    }
+
+    /// The wheel shaft at 20 °C for fitting, not cooled: the inner hub cannot be fitted.
+    fn uncooled_wheel_shaft(i: &mut DesignInputs) {
+        i.shaft_joint.wheel_shaft_fit_C = 20.0;
+    }
+
+    /// The bare cup allowed only 250 °C for fitting: the cup cannot be fitted.
+    fn low_cup_fit_limit(i: &mut DesignInputs) {
+        i.shaft_joint.cup_fit_max_C = 250.0;
+    }
+
+    /// No boss length: the cup's boss and web are no longer than the key is wide, so the cup's
+    /// key has no bearing length (and the cup slips).
+    fn no_boss(i: &mut DesignInputs) {
+        i.metal.boss_length_mm = 0.0;
+    }
+
+    /// A 3 mm inner hub: no longer than the key is wide, so its key has no bearing length (and
+    /// it slips).
+    fn short_hub(i: &mut DesignInputs) {
+        i.metal.hub_length_mm = 3.0;
+    }
+
     /// Every design the tests use: the defaults (they fail four checks), a passing design,
     /// and for every check designs that fail it, most of them the passing design with one
     /// check broken.
@@ -2711,6 +3437,17 @@ mod tests {
             ("no_back_iron", breaking(no_back_iron)),
             ("bare_clearance", design(bare_clearance)),
             ("gearbox_only", only_the_gearbox_fails()),
+            // BL-064 (spec 7.9): the shaft joints, each design failing them alone. The inner hub
+            // slips; its bore stress and fitting temperature are over (a 26 µm maximum); it
+            // cannot be fitted on an uncooled wheel shaft; the cup's boss and web, and then the
+            // inner hub, are no longer than the key is wide (each also slips); the cup's bore
+            // stress alone is over (a 24 µm maximum).
+            ("joint_slips", only_the_joint_fails()),
+            ("joint_overstressed", breaking(hub_overstressed)),
+            ("joint_cannot_be_fitted", breaking(uncooled_wheel_shaft)),
+            ("cup_key_no_bearing_area", breaking(no_boss)),
+            ("inner_hub_key_no_bearing_area", breaking(short_hub)),
+            ("cup_stress_alone", breaking(cup_stress_alone)),
             // Two failing checks that pull one input apart (review focus 4).
             (
                 "length_conflict",
@@ -2723,9 +3460,210 @@ mod tests {
         ]
     }
 
+    /// A value typed below what its input can physically be: (an edit that types it so, the one
+    /// sentence the shaft joints' Problem then reads).
+    type ImpossibleValueCase = (fn(&mut DesignInputs), &'static str);
+
+    /// Each input a value can be typed below what it can physically be (the whole-branch
+    /// review's MF-1), in the inputs' order.
+    fn impossible_value_cases() -> [ImpossibleValueCase; 6] {
+        [
+            (
+                |i| i.shaft_joint.friction = -0.14,
+                "Shrink-fit friction coefficient, -0.1400, cannot physically be below zero: enter at least 0.05000, its slider's bottom.",
+            ),
+            (
+                |i| i.shaft_joint.smoothing_um = -3.0,
+                "Surface smoothing of the fit, -3.000 µm, cannot physically be below zero: enter at least 0 µm, its slider's bottom.",
+            ),
+            (
+                |i| i.shaft_joint.key_width_mm = 0.0,
+                "Shaft key width, 0 mm, cannot physically be zero or below: enter at least 1.000 mm, its slider's bottom.",
+            ),
+            (
+                |i| i.shaft_joint.wheel_shaft_fit_C = -300.0,
+                "Wheel shaft temperature at fitting, -300.0 °C, cannot physically be below absolute zero: enter at least -196.0 °C, its slider's bottom.",
+            ),
+            (
+                |i| i.shaft_joint.output_shaft_fit_C = -300.0,
+                "Gearbox shaft temperature at fitting, -300.0 °C, cannot physically be below absolute zero: enter at least -20.00 °C, its slider's bottom.",
+            ),
+            (
+                |i| i.shaft_joint.joining_clearance_um = -2.0,
+                "Joining clearance, -2.000 µm, cannot physically be below zero: enter at least 0 µm, its slider's bottom.",
+            ),
+        ]
+    }
+
+    /// Two values typed below what they can physically be at once ([`impossible_value_cases`]):
+    /// the gearbox shaft, then the friction, the other order than the inputs'.
+    fn two_impossible_values(i: &mut DesignInputs) {
+        let [friction, .., gearbox_shaft, _] = impossible_value_cases();
+        (gearbox_shaft.0)(i);
+        (friction.0)(i);
+    }
+
+    /// One design per sentence form of the shaft joints' Problem (spec 5.2), each the passing
+    /// design with joint inputs moved: (its name, the design, words its Problem holds, the
+    /// form's own). Few of them are in [`designs`]; their Problems join [`every_text`].
+    fn shaft_joint_problem_designs() -> Vec<(&'static str, DesignInputs, &'static str)> {
+        // Each value below what its input can physically be, its words its whole sentence.
+        let [
+            friction,
+            smoothing,
+            key_width,
+            wheel_shaft,
+            gearbox_shaft,
+            clearance,
+        ] = impossible_value_cases();
+        let typed = |name, (edit, sentence): ImpossibleValueCase| (name, breaking(edit), sentence);
+        vec![
+            (
+                "inner hub slips",
+                only_the_joint_fails(),
+                "At its loosest the inner hub holds",
+            ),
+            (
+                "cup slips",
+                breaking(cup_slips),
+                "At its loosest the cup holds",
+            ),
+            (
+                "inner hub overstressed",
+                breaking(hub_overstressed),
+                "the inner hub's bore stress is",
+            ),
+            (
+                "cup overstressed",
+                breaking(cup_overstressed),
+                "the cup's bore stress is",
+            ),
+            (
+                "uncooled wheel shaft",
+                breaking(uncooled_wheel_shaft),
+                "your limit for the bonded inner hub",
+            ),
+            (
+                "the adhesive's limit",
+                breaking(cool_adhesive),
+                "the selected adhesive's design limit",
+            ),
+            (
+                "the magnets' onset",
+                breaking(n42_parts),
+                "the magnets' single-ring onset",
+            ),
+            (
+                "cup cannot be fitted",
+                breaking(low_cup_fit_limit),
+                "your limit for the bare cup",
+            ),
+            (
+                "key above its limit",
+                breaking(|i| i.coupling.keyway_depth_mm = 0.3),
+                "Alone, the key would bear",
+            ),
+            (
+                "cup key without length",
+                breaking(no_boss),
+                "its boss and web",
+            ),
+            (
+                "inner hub key without length",
+                breaking(short_hub),
+                "is no longer than the key is wide",
+            ),
+            (
+                "key without contact",
+                breaking(|i| i.shaft_joint.key_contact_mm = 0.0),
+                "is not above zero",
+            ),
+            (
+                "no window under the stress limit",
+                breaking(|i| i.materials.parts.back_iron = 7),
+                "its bore stress stays within the limit only up to",
+            ),
+            (
+                "no window that can be fitted",
+                breaking(|i| i.shaft_joint.wheel_shaft_fit_C = -78.0),
+                "the inner hub can be fitted only up to",
+            ),
+            (
+                "no joining clearance",
+                breaking(uncooled_wheel_shaft),
+                "does not even open the",
+            ),
+            (
+                "not a number",
+                breaking(|i| i.temperature.adhesive.selected = 0),
+                "cannot be made",
+            ),
+            (
+                "safety factor not above zero",
+                breaking(|i| i.shaft_joint.safety_factor = 0.0),
+                "The safety factor,",
+            ),
+            typed("a friction below zero", friction),
+            typed("a smoothing below zero", smoothing),
+            typed("a key width of zero", key_width),
+            typed("a wheel shaft below absolute zero", wheel_shaft),
+            typed("a gearbox shaft below absolute zero", gearbox_shaft),
+            typed("a joining clearance below zero", clearance),
+            (
+                "two values it cannot physically be",
+                breaking(two_impossible_values),
+                "its slider's bottom. Gearbox shaft temperature at fitting",
+            ),
+            (
+                "gearbox shaft below its slider's bottom",
+                breaking(|i| i.shaft_joint.output_shaft_fit_C = -21.0),
+                "the coldest the gearbox shaft is taken",
+            ),
+            (
+                "cup without a wall",
+                breaking(|i| {
+                    i.coupling.bore_mm = 16.0;
+                    i.metal.boss_od_mm = 12.0;
+                }),
+                "is at least as wide as its boss",
+            ),
+            (
+                "inner hub keyway through its wall",
+                breaking(|i| {
+                    i.coupling.bore_mm = 16.0;
+                    i.coupling.keyway_depth_mm = 2.1;
+                }),
+                "cuts through the wall",
+            ),
+            (
+                "cup keyway through its boss's wall",
+                breaking(|i| i.metal.boss_od_mm = 12.0),
+                "cuts through the boss's wall",
+            ),
+            (
+                "inner hub without a wall",
+                breaking(|i| i.coupling.bore_mm = 21.0),
+                "reaches the flats",
+            ),
+            (
+                "reversed band",
+                breaking(reversed_hub_band),
+                "is above its maximum",
+            ),
+        ]
+    }
+
     /// The Problem of `check` for `inputs`.
     fn problem(check: &str, inputs: &DesignInputs) -> Option<String> {
         (guide(check).unwrap().problem)(inputs, &compute_all(inputs))
+    }
+
+    /// The index in [`CHECK_GUIDES`] of the guide of `check`.
+    fn guide_index(check: &str) -> usize {
+        CHECK_GUIDES
+            .iter()
+            .position(|g| g.check == check)
+            .unwrap_or_else(|| panic!("{check} has a guide"))
     }
 
     /// Every fix `g` can show: its list, or for a guide that picks its fixes per failing term
@@ -2737,6 +3675,10 @@ mod tests {
                 TemperatureTerm::ALL.iter().map(|t| t.fixes()).collect()
             }
             (Fixes::PerTerm(_), SPACE_CLAIM) => SPACE_CLAIM_AXES.to_vec(),
+            (Fixes::PerTerm(_), SHAFT_JOINT) => JOINT_SIDES
+                .iter()
+                .flat_map(|side| CAUSES.map(|cause| side.fixes(cause)))
+                .collect(),
             (Fixes::PerTerm(_), check) => panic!("{check}: the test lists no terms"),
         };
         let mut all = Vec::new();
@@ -2768,8 +3710,15 @@ mod tests {
             TEMPERATURE_FALLBACK,
             SPACE_CLAIM_FALLBACK,
             GEARBOX_UNKNOWN,
+            SHAFT_JOINT_NOT_A_NUMBER,
+            SHAFT_JOINT_FALLBACK,
         ] {
             texts.push(fallback.to_owned());
+        }
+        // Every sentence form of the shaft joints' Problem, most of which no design of
+        // `designs()` reaches.
+        for (_, inputs, _) in shaft_joint_problem_designs() {
+            texts.extend(shaft_joint_problem(&inputs, &compute_all(&inputs)));
         }
         for (_, learn) in &ROW_LEARN {
             if let Learn::None(reason) = learn {
@@ -3025,10 +3974,10 @@ mod tests {
     }
 
     /// The gearbox check (BL-059, replacing the test that said nothing checks a gearbox torque):
-    /// one dashboard row of its own, after the headline's rows and before the space claim, a
-    /// design check of the results, and a guide, between the clamp's and the space claim's,
-    /// whose Why link and its row's lead to the torque-band note, which owns cold-high at the
-    /// gearbox input. The ripple row stays a value with no check.
+    /// one dashboard row of its own, after the headline's rows and the shaft joints row and
+    /// before the space claim, a design check of the results, and a guide, between the shaft
+    /// joints' and the space claim's, whose Why link and its row's lead to the torque-band note,
+    /// which owns cold-high at the gearbox input. The ripple row stays a value with no check.
     #[test]
     fn the_gearbox_check_is_a_dashboard_row_with_its_guide() {
         let gearbox_rows: Vec<(usize, (&str, Option<&str>))> = DASHBOARD
@@ -3043,7 +3992,7 @@ mod tests {
             gearbox_rows,
             [
                 (5, ("model.gearbox_input_ripple_Nm", None)),
-                (15, (GEARBOX, Some(GEARBOX))),
+                (16, (GEARBOX, Some(GEARBOX))),
             ]
         );
         let checks: Vec<&str> = CHECKS
@@ -3060,9 +4009,118 @@ mod tests {
             .filter(|g| g.check.contains("gearbox"))
             .count();
         assert_eq!(guided, 1);
-        let at = |check: &str| CHECK_GUIDES.iter().position(|g| g.check == check).unwrap();
-        assert_eq!(at(GEARBOX), at(CLAMP) + 1);
-        assert_eq!(at(SPACE_CLAIM), at(GEARBOX) + 1);
+        assert_eq!(guide_index(GEARBOX), guide_index(SHAFT_JOINT) + 1);
+        assert_eq!(guide_index(SPACE_CLAIM), guide_index(GEARBOX) + 1);
+    }
+
+    /// The shaft joints check (BL-064): one dashboard row of its own at index 15, after the
+    /// headline's rows (the hidden clamp row last among them) and before the gearbox row; a
+    /// design check of the results, listed last (its group follows the gearbox's in the
+    /// schema); a guide between the clamp's and the gearbox's, labelled apart from the clamp's,
+    /// counted while the clamp section is paused, whose Why link is its row's.
+    #[test]
+    fn the_shaft_joint_check_is_a_dashboard_row_with_its_guide() {
+        let rows: Vec<(usize, (&str, Option<&str>))> = DASHBOARD
+            .iter()
+            .copied()
+            .enumerate()
+            .filter(|&(_, (row, check))| is_shaft_joint(row) || check.is_some_and(is_shaft_joint))
+            .collect();
+        assert_eq!(rows, [(15, (SHAFT_JOINT, Some(SHAFT_JOINT)))]);
+        assert_eq!(DASHBOARD[14].0, CLAMP);
+        assert_eq!(DASHBOARD[16].0, GEARBOX);
+        assert_eq!(CHECKS.last(), Some(&SHAFT_JOINT));
+        assert_eq!(CHECKS.iter().filter(|c| is_shaft_joint(c)).count(), 1);
+        let joint = guide(SHAFT_JOINT).expect("the shaft joints check has a guide");
+        assert_eq!(joint.label, "Shaft joints");
+        // The Why's subject is each fit, not its grip, and each fit has one allowed temperature
+        // (T5 text re-review SF-4).
+        assert!(
+            joint.why.contains("each fit must carry")
+                && joint.why.ends_with("within its allowed temperature."),
+            "{}",
+            joint.why
+        );
+        assert_eq!(row_learn(SHAFT_JOINT), Some(joint.learn));
+        assert!(counts(joint, true) && counts(joint, false));
+        assert_eq!(guide_index(SHAFT_JOINT), guide_index(CLAMP) + 1);
+        assert_eq!(guide_index(GEARBOX), guide_index(SHAFT_JOINT) + 1);
+    }
+
+    /// The guide's two joints are the engine's, in its order, and each path it reads is the
+    /// result or input of that joint: at the defaults and at a design where every number
+    /// differs between the joints, each result equals the engine's term bit for bit, and each
+    /// input (the band and the shaft's temperature at fitting) is the value the engine takes
+    /// for that joint.
+    #[test]
+    fn the_shaft_joint_sides_are_the_engine_s_joints() {
+        for inputs in [DesignInputs::default(), only_the_joint_fails()] {
+            let results = compute_all(&inputs);
+            let joints = shaft_joints(&inputs, &results).expect("a judged check");
+            let (_, specs) = shaft_joint::joint_specs(
+                &inputs.shaft_joint,
+                &shaft_joint_links(&inputs, &results),
+            );
+            let inputs_of = |spec: &shaft_joint::JointSpec| {
+                [
+                    spec.interference_min_um,
+                    spec.interference_max_um,
+                    spec.shaft_fit_C,
+                ]
+            };
+            // Every input differs between the joints, so a side reading the other's shows.
+            for (hub, cup) in inputs_of(&specs[0]).into_iter().zip(inputs_of(&specs[1])) {
+                assert_ne!(hub, cup);
+            }
+            for ((side, joint), spec) in JOINT_SIDES.iter().zip(&joints).zip(&specs) {
+                assert_eq!(side.name, joint.name);
+                assert_eq!(joint_side(joint.name).map(|(_, s)| s.name), Some(side.name));
+                let result = |path: &str| match results.get(path) {
+                    Some(Value::Num(x)) => x.to_bits(),
+                    other => panic!("{path}: {other:?}"),
+                };
+                for (path, term) in [
+                    (side.holding, joint.holding_Nm),
+                    (side.stress, joint.bore_stress_MPa),
+                    (side.key, joint.key_pressure_MPa),
+                    (side.needed, joint.needed_um),
+                    (side.elastic, joint.elastic_max_um),
+                    (side.fittable, joint.fittable_max_um),
+                    (side.fit_temp, joint.fit_temp_C),
+                    (side.fit_allowed, joint.fit_allowed_C),
+                ] {
+                    assert_eq!(result(path), term.to_bits(), "{}: {path}", side.name);
+                }
+                for (path, value) in [side.min, side.max, side.shaft_fit]
+                    .into_iter()
+                    .zip(inputs_of(spec))
+                {
+                    assert_eq!(
+                        inputs.get(path),
+                        Some(Value::Num(value)),
+                        "{}: {path}",
+                        side.name
+                    );
+                }
+            }
+        }
+        assert_eq!(joint_side("no such joint").map(|(i, _)| i), None);
+    }
+
+    /// BL-064 (spec 6.1 and 7.4): the shaft-joint row's Why link, its guide's and its
+    /// `ROW_LEARN` entry's, opens the shaft-joint note, which has passed its physics review and
+    /// explains the joint's holding torque, the number Start here opens it on.
+    #[test]
+    fn the_shaft_joint_row_s_why_link_opens_the_reviewed_shaft_joint_note() {
+        let shaft_joint = guide(SHAFT_JOINT).expect("the shaft joint check has a guide");
+        assert_eq!(shaft_joint.learn, Learn::Note("shaft_joint"));
+        assert_eq!(row_learn(SHAFT_JOINT), Some(shaft_joint.learn));
+        let note = reviewed_note("shaft_joint").expect("the shaft-joint note is reviewed");
+        assert!(
+            note.equations.contains(&"shaft_joint.hub_holding_Nm"),
+            "{:?}",
+            note.equations
+        );
     }
 
     // ------------------------------------------------------------------ the fix texts
@@ -3152,7 +4210,8 @@ mod tests {
         );
         assert_ne!(label_for(RING), size_controls::DIAMETER);
         // C-3 runs on the display labels: the inputs whose fix text adds a group heading are
-        // still the seven whose label another input's equals or ends with (map-help 3.5).
+        // the eight whose label another input's equals or ends with (map-help 3.5): BL-064's
+        // "Shaft key width" ends with the paused clamp's "Key width".
         let headed: Vec<&str> = InputCatalogue::get()
             .all()
             .map(|e| e.path.as_str())
@@ -3169,6 +4228,7 @@ mod tests {
                 "materials.steel.density_g_cm3",
                 "clamps.alloy",
                 "clamps.boss_od_mm",
+                "clamps.key_width_mm",
             ]
         );
     }
@@ -3251,6 +4311,23 @@ mod tests {
                 "gearbox input torque",
                 inputs.coupling.gearbox_input_rating_Nm - md.cold_high_input_Nm,
             )],
+            // The engine's four terms of each joint, with the guide's margins (spec 5.2). A joint
+            // that is not judged (no wall, a reversed band, or the check cannot be made) passes
+            // them; with no keyway the key terms pass with a margin of +inf.
+            SHAFT_JOINT => {
+                // Not judged while the check cannot be made (`shaft_joints` is an `Err`).
+                let judged = shaft_joints(inputs, results).is_ok();
+                let links = shaft_joint_links(inputs, results);
+                shaft_joint::joints(&inputs.shaft_joint, &links)
+                    .iter()
+                    .flat_map(|joint| {
+                        CAUSES.map(|cause| {
+                            let passes = !(judged && joint.determinate() && joint.fails(cause));
+                            term(&joint_term(joint.name, cause), joint.margin(cause), passes)
+                        })
+                    })
+                    .collect()
+            }
             END_EFFECT => vec![term("end-effect factor", m.f_end, m.f_end > 0.0)],
             // The engine's rule ring by ring; the margin is the flat's slack, or what is left
             // of the arcs' share of the circle.
@@ -3269,6 +4346,18 @@ mod tests {
         }
     }
 
+    /// The name of the shaft joint `joint`'s term `cause` in [`terms`]: "inner hub slips", "cup
+    /// bore stress", "inner hub fitting", "cup key".
+    fn joint_term(joint: &str, cause: Cause) -> String {
+        let term = match cause {
+            Cause::Slips => "slips",
+            Cause::BoreStress => "bore stress",
+            Cause::CannotBeFitted => "fitting",
+            Cause::Key => "key",
+        };
+        format!("{joint} {term}")
+    }
+
     /// The margin of the term `name` of `check`.
     fn margin(check: &str, name: &str, inputs: &DesignInputs, results: &DesignResults) -> f64 {
         terms(check, inputs, results)
@@ -3276,6 +4365,138 @@ mod tests {
             .find(|t| t.name == name)
             .unwrap_or_else(|| panic!("{check} has no term {name}"))
             .margin
+    }
+
+    /// The names of the terms of `check` that fail, in [`terms`]' order.
+    fn failing_term_names(
+        check: &str,
+        inputs: &DesignInputs,
+        results: &DesignResults,
+    ) -> Vec<String> {
+        terms(check, inputs, results)
+            .into_iter()
+            .filter(|t| !t.passes)
+            .map(|t| t.name)
+            .collect()
+    }
+
+    /// A reading of one shaft joint's terms that holds still wherever a sweep of
+    /// [`shaft_joint_sweeps`] finds its margin flat.
+    type JointReading = fn(&JointTerms) -> f64;
+
+    /// Every slider fix of the shaft joints' guide, with what to sweep it on (spec 5.2): (a design
+    /// that fails the check, the fix's input and direction, the term it moves, the reading that
+    /// holds still where that term's margin is flat). The reading is `None` where the margin
+    /// rises at every step. A margin is flat only where nothing the term reads moves: the bore
+    /// stress against the band's maximum where smoothing takes all of it (the effective
+    /// interference is floored at zero), the key against the contact height past the keyway depth
+    /// (the contact is capped there), and the inner hub's slip against the hub length where the
+    /// axial override sets the hub's length (BL-064). The hub's minimum goes past the band's
+    /// maximum (to the slider's 40 µm): the margin keeps rising, though the band then reads
+    /// reversed.
+    fn shaft_joint_sweeps() -> Vec<(
+        DesignInputs,
+        &'static str,
+        Direction,
+        &'static str,
+        Option<JointReading>,
+    )> {
+        use Direction::{Lower, Raise};
+        let effective_max: JointReading = |j| j.effective_max_um;
+        let contact: JointReading = |j| j.key_contact_mm;
+        let length: JointReading = |j| j.key_bearing_mm;
+        vec![
+            (
+                only_the_joint_fails(),
+                HUB_MIN,
+                Raise,
+                "inner hub slips",
+                None,
+            ),
+            (
+                only_the_joint_fails(),
+                HUB_LENGTH,
+                Raise,
+                "inner hub slips",
+                None,
+            ),
+            (
+                only_the_joint_fails(),
+                FACE_GAP,
+                Raise,
+                "inner hub slips",
+                None,
+            ),
+            (breaking(cup_slips), CUP_MIN, Raise, "cup slips", None),
+            (breaking(cup_slips), BOSS_LENGTH, Raise, "cup slips", None),
+            (breaking(cup_slips), MAGNET_LENGTH, Lower, "cup slips", None),
+            (
+                breaking(hub_overstressed),
+                HUB_MAX,
+                Lower,
+                "inner hub bore stress",
+                Some(effective_max),
+            ),
+            (
+                breaking(uncooled_wheel_shaft),
+                HUB_MAX,
+                Lower,
+                "inner hub fitting",
+                None,
+            ),
+            (
+                breaking(cup_overstressed),
+                CUP_MAX,
+                Lower,
+                "cup bore stress",
+                Some(effective_max),
+            ),
+            (
+                breaking(low_cup_fit_limit),
+                CUP_MAX,
+                Lower,
+                "cup fitting",
+                None,
+            ),
+            (
+                breaking(uncooled_wheel_shaft),
+                WHEEL_SHAFT,
+                Lower,
+                "inner hub fitting",
+                None,
+            ),
+            (
+                breaking(low_cup_fit_limit),
+                GEARBOX_SHAFT,
+                Lower,
+                "cup fitting",
+                None,
+            ),
+            // 50.8 mm magnets: the cup's key alone bears about 390 MPa at a 1.2 mm contact,
+            // under the 1.7 mm keyway depth that caps it.
+            (
+                breaking(long_magnets),
+                KEY_CONTACT,
+                Raise,
+                "cup key",
+                Some(contact),
+            ),
+            (breaking(no_boss), BOSS_LENGTH, Raise, "cup key", None),
+            (
+                breaking(short_hub),
+                HUB_LENGTH,
+                Raise,
+                "inner hub key",
+                None,
+            ),
+            (
+                breaking(|i| i.coupling.magnets.axial_length_mm = Some(40.0)),
+                HUB_LENGTH,
+                Raise,
+                "inner hub slips",
+                Some(length),
+            ),
+        ]
     }
 
     #[test]
@@ -3475,11 +4696,18 @@ mod tests {
                 "inner ring",
             ),
         ];
-        // The table holds every slider fix of every guide, once.
+        // The table holds every slider fix of every guide once, the shaft joints' apart: those
+        // are in `shaft_joint_sweeps`, whose test asks the same of each over its whole slider.
         let key = |check: &'static str, path: &'static str, direction: Direction| {
             (check, path, direction == Direction::Raise)
         };
-        let listed: BTreeSet<_> = cases.iter().map(|&(c, _, p, d, _)| key(c, p, d)).collect();
+        let mut listed: BTreeSet<_> = cases.iter().map(|&(c, _, p, d, _)| key(c, p, d)).collect();
+        assert_eq!(listed.len(), cases.len());
+        listed.extend(
+            shaft_joint_sweeps()
+                .into_iter()
+                .map(|(_, path, direction, _, _)| key(SHAFT_JOINT, path, direction)),
+        );
         let slider_fixes: BTreeSet<_> = CHECK_GUIDES
             .iter()
             .flat_map(|g| {
@@ -3490,7 +4718,6 @@ mod tests {
             })
             .collect();
         assert_eq!(listed, slider_fixes);
-        assert_eq!(listed.len(), cases.len());
         for (check, failing_design, path, direction, term) in cases {
             let before = compute_all(&failing_design);
             assert_ne!(
@@ -3945,10 +5172,7 @@ mod tests {
             level_of(GEARBOX, stepped, &compute_all(stepped)),
             Level::Bad
         );
-        let hot_min = CHECK_GUIDES
-            .iter()
-            .position(|g| g.check == HOT_MIN)
-            .unwrap();
+        let hot_min = guide_index(HOT_MIN);
         let problem = hot_min_problem(&inputs, &results).unwrap();
         for paused in [false, true] {
             assert!(
@@ -3977,10 +5201,7 @@ mod tests {
         let results = compute_all(&inputs);
         assert_eq!(level_of(HOT_MIN, &inputs, &results), Level::Good);
         assert_eq!(level_of(GEARBOX, &inputs, &results), Level::Bad);
-        let gearbox = CHECK_GUIDES
-            .iter()
-            .position(|g| g.check == GEARBOX)
-            .unwrap();
+        let gearbox = guide_index(GEARBOX);
         let problem = gearbox_problem(&inputs, &results).unwrap();
         let conflict = gearbox_conflict(&inputs, &results).expect("no geometry passes both");
         assert!(problem.ends_with(&format!(" {conflict}")), "{problem}");
@@ -4027,6 +5248,633 @@ mod tests {
     }
 
     #[test]
+    fn the_shaft_joints_fail_on_these_test_designs_and_pass_on_every_other() {
+        // Spec 7.9, the test designs re-probed: without back iron both aluminium parts slip;
+        // 50.8 mm magnets make the cup slip and its key alone bear too much (the cup does not
+        // lengthen with the magnets); DP460's design limit, and the inner ring's single-ring onset
+        // of library N42 blocks (owner R-15), keep the inner hub from being fitted; and the six
+        // designs that break the joint alone. Every other test design passes, its check reading
+        // the pass, never unknown (a joint that is not judged fails no term), the short magnets'
+        // greyed row too (a cold-high below zero asks nothing of a fit). The two key designs
+        // move a `metal.*` input, which other checks read too, and still fail the joint alone.
+        let key_alone = ["cup_key_no_bearing_area", "inner_hub_key_no_bearing_area"];
+        let want: Vec<(&str, Vec<String>)> = [
+            ("n42_parts", &["inner hub fitting"][..]),
+            ("cool_adhesive", &["inner hub fitting"]),
+            ("long_magnets", &["cup slips", "cup key"]),
+            ("no_back_iron", &["inner hub slips", "cup slips"]),
+            ("joint_slips", &["inner hub slips"]),
+            (
+                "joint_overstressed",
+                &["inner hub bore stress", "inner hub fitting"],
+            ),
+            ("joint_cannot_be_fitted", &["inner hub fitting"]),
+            ("cup_key_no_bearing_area", &["cup slips", "cup key"]),
+            (
+                "inner_hub_key_no_bearing_area",
+                &["inner hub slips", "inner hub key"],
+            ),
+            ("cup_stress_alone", &["cup bore stress"]),
+        ]
+        .into_iter()
+        .map(|(name, terms)| (name, terms.iter().map(|t| (*t).to_owned()).collect()))
+        .collect();
+        let failing: Vec<(&str, Vec<String>)> = designs()
+            .into_iter()
+            .filter_map(|(name, inputs)| {
+                let results = compute_all(&inputs);
+                let failing = failing_term_names(SHAFT_JOINT, &inputs, &results);
+                if failing.is_empty() {
+                    assert_eq!(
+                        results.shaft_joint.check,
+                        shaft_joint::SHAFT_JOINTS_PASS,
+                        "{name}"
+                    );
+                }
+                if key_alone.contains(&name) {
+                    let red: Vec<&str> = CHECK_GUIDES
+                        .iter()
+                        .filter(|g| level(g, &inputs, &results) == Level::Bad)
+                        .map(|g| g.check)
+                        .collect();
+                    assert_eq!(red, [SHAFT_JOINT], "{name}");
+                }
+                (!failing.is_empty()).then_some((name, failing))
+            })
+            .collect();
+        assert_eq!(failing, want);
+    }
+
+    /// The inner hub's slip fixes, as the guide shows them where each helps (spec 5.2): its
+    /// minimum up, the hub longer, the face gap wider.
+    const HUB_SLIP_FIXES: [(&str, Direction); 3] = [
+        (HUB_MIN, Direction::Raise),
+        (HUB_LENGTH, Direction::Raise),
+        (FACE_GAP, Direction::Raise),
+    ];
+
+    /// The cup's slip fixes, as the guide shows them where each helps (spec 5.2): its minimum
+    /// up, the boss longer, the magnets shorter, the face gap wider.
+    const CUP_SLIP_FIXES: [(&str, Direction); 4] = [
+        (CUP_MIN, Direction::Raise),
+        (BOSS_LENGTH, Direction::Raise),
+        (MAGNET_LENGTH, Direction::Lower),
+        (FACE_GAP, Direction::Raise),
+    ];
+
+    #[test]
+    fn the_shaft_joint_fixes_follow_the_failing_terms() {
+        // Spec 5.2: each failing term's fixes, joint by joint, each shown only where one step
+        // moves that term toward passing and turns no passing check red, each once, in the
+        // badge's order (the slips first, the inner hub's before the cup's).
+        use Direction::{Lower, Raise};
+        let joint = guide(SHAFT_JOINT).unwrap();
+        let shown = |inputs: DesignInputs| fixes(joint, &inputs, &compute_all(&inputs), false);
+        assert_eq!(shown(only_the_joint_fails()), HUB_SLIP_FIXES);
+        assert_eq!(shown(breaking(cup_slips)), CUP_SLIP_FIXES);
+        // The inner hub's bore stress and fitting temperature: its maximum down; its wheel shaft
+        // is at the slider's bottom already.
+        assert_eq!(shown(breaking(hub_overstressed)), [(HUB_MAX, Lower)]);
+        // The cup's bore stress alone: its maximum down.
+        assert_eq!(shown(breaking(cup_stress_alone)), [(CUP_MAX, Lower)]);
+        // An uncooled wheel shaft: the maximum down, or the shaft colder.
+        assert_eq!(
+            shown(breaking(uncooled_wheel_shaft)),
+            [(HUB_MAX, Lower), (WHEEL_SHAFT, Lower)]
+        );
+        // The bare cup allowed 250 °C: its maximum down, or the gearbox shaft colder (to the
+        // slider's -20 °C).
+        assert_eq!(
+            shown(breaking(low_cup_fit_limit)),
+            [(CUP_MAX, Lower), (GEARBOX_SHAFT, Lower)]
+        );
+        // No back iron: both aluminium parts slip; the face gap once, under the inner hub.
+        let mut both = HUB_SLIP_FIXES.to_vec();
+        both.extend([
+            (CUP_MIN, Raise),
+            (BOSS_LENGTH, Raise),
+            (MAGNET_LENGTH, Lower),
+        ]);
+        assert_eq!(shown(breaking(no_back_iron)), both);
+        // 50.8 mm magnets: the cup slips and its key alone bears too much.
+        let mut long = CUP_SLIP_FIXES.to_vec();
+        long.push((KEY_CONTACT, Raise));
+        assert_eq!(shown(breaking(long_magnets)), long);
+        assert_eq!(shown(passing_design()), []);
+    }
+
+    /// Asserts that one step of `fix` on `inputs` (whose results are `results`) reverses the
+    /// shaft joints' band: the stepped design reads the reversed band, amber.
+    fn assert_one_step_reverses_the_band(
+        inputs: &DesignInputs,
+        results: &DesignResults,
+        fix: (&str, Direction),
+    ) {
+        let [stepped] = &moves(inputs, results, fix.0, fix.1)[..] else {
+            panic!("one step of {}", fix.0)
+        };
+        let after = compute_all(stepped);
+        assert!(
+            after
+                .shaft_joint
+                .check
+                .starts_with(shaft_joint::UNKNOWN_BAND_REVERSED),
+            "{}",
+            after.shaft_joint.check
+        );
+        assert_eq!(level_of(SHAFT_JOINT, stepped, &after), Level::Caution);
+    }
+
+    #[test]
+    fn raising_a_minimum_is_not_offered_where_one_step_reverses_the_band() {
+        // Review SF-10. The passing design with the inner hub's band at 10-10 µm slips. One step
+        // up on the minimum (10.5 µm) raises the slip margin, so `helps` alone would show it, but
+        // it puts the minimum above the maximum, and the row would read amber, not green. The
+        // hub length and the face gap are shown; the window sentence names the band to enter.
+        // With a step of room in the band, the minimum is offered.
+        let joint = guide(SHAFT_JOINT).unwrap();
+        let inputs = breaking(|i| {
+            i.shaft_joint.hub_interference_min_um = 10.0;
+            i.shaft_joint.hub_interference_max_um = 10.0;
+        });
+        let results = compute_all(&inputs);
+        let raise_min = (HUB_MIN, Direction::Raise);
+        let slip =
+            |d: &DesignInputs, r: &DesignResults| margin(SHAFT_JOINT, "inner hub slips", d, r);
+        assert!(helps(&inputs, &results, raise_min, Some(&slip), false));
+        assert_one_step_reverses_the_band(&inputs, &results, raise_min);
+        assert_eq!(
+            fixes(joint, &inputs, &results, false),
+            [(HUB_LENGTH, Direction::Raise), (FACE_GAP, Direction::Raise)]
+        );
+        let text = shaft_joint_problem(&inputs, &results).unwrap();
+        let band = format!(
+            "(its band is {} to {})",
+            input_text(&inputs, HUB_MIN),
+            input_text(&inputs, HUB_MAX)
+        );
+        assert!(text.contains(&band), "{band} in {text}");
+        let roomy = with(inputs, |i| i.shaft_joint.hub_interference_max_um = 10.5);
+        let shown = fixes(joint, &roomy, &compute_all(&roomy), false);
+        assert!(shown.contains(&raise_min), "{shown:?}");
+    }
+
+    #[test]
+    fn lowering_a_maximum_is_not_offered_where_one_step_reverses_the_band() {
+        // Review 2, SF-2, the mirror. The passing design with DP460 and the inner hub's band at
+        // 18-18 µm fails on fitting alone (93.3 against 60.0 °C). One step down on the maximum
+        // raises the fitting margin but reverses the band, and the wheel shaft is at its slider's
+        // bottom: no fix, and the open block draws the no-fix line with the clamp section shown
+        // and paused; the window sentence names the band to enter (11.14 to 13.90 µm). With a
+        // step of room in the band, the maximum is offered.
+        let joint = guide(SHAFT_JOINT).unwrap();
+        let inputs = breaking(|i| {
+            cool_adhesive(i);
+            i.shaft_joint.hub_interference_min_um = 18.0;
+        });
+        let results = compute_all(&inputs);
+        let red: Vec<&str> = CHECK_GUIDES
+            .iter()
+            .filter(|g| level(g, &inputs, &results) == Level::Bad)
+            .map(|g| g.check)
+            .collect();
+        assert_eq!(red, [SHAFT_JOINT]);
+        let lower_max = (HUB_MAX, Direction::Lower);
+        let fitting =
+            |d: &DesignInputs, r: &DesignResults| margin(SHAFT_JOINT, "inner hub fitting", d, r);
+        assert!(helps(&inputs, &results, lower_max, Some(&fitting), false));
+        assert_one_step_reverses_the_band(&inputs, &results, lower_max);
+        assert!(moves(&inputs, &results, WHEEL_SHAFT, Direction::Lower).is_empty());
+        let problem = shaft_joint_problem(&inputs, &results).unwrap();
+        assert_in_order(
+            &problem,
+            &[
+                "from 11.14 µm to 13.90 µm",
+                "(its band is 18.00 µm to 18.00 µm)",
+            ],
+        );
+        let index = guide_index(SHAFT_JOINT);
+        for paused in [false, true] {
+            assert_open_block_draws_no_fix(&inputs, &results, index, &problem, paused);
+        }
+        let roomy = with(inputs, |i| i.shaft_joint.hub_interference_min_um = 17.5);
+        assert_eq!(
+            fixes(joint, &roomy, &compute_all(&roomy), false),
+            [lower_max]
+        );
+    }
+
+    #[test]
+    fn raising_the_key_contact_is_not_offered_where_the_key_has_no_bearing_length() {
+        // Spec 5.2 (review MF-2, SF-2): a key no longer than its joint's engaged length less its
+        // width has no bearing length, and no contact height gives it bearing area, though the
+        // key margin rises with the height. Only the length fix is shown: the boss for the cup,
+        // the hub for the inner hub. With the shared contact height typed 0, the contact is what
+        // each key lacks: its fix is shown, and each key sentence is the contact one, never the
+        // length one beside it (review 2, SF-5); a contact typed below zero reads as typed, and
+        // as spec 5.2 says (build ruling B-5), it is judged and its fix shown (one step up lands
+        // on the slider's bottom, where both keys bear), while under an unknown no fix shows.
+        let joint = guide(SHAFT_JOINT).unwrap();
+        let contact = (KEY_CONTACT, Direction::Raise);
+        for (name, inputs, term, length) in [
+            (
+                "cup",
+                breaking(no_boss),
+                "cup key",
+                (BOSS_LENGTH, Direction::Raise),
+            ),
+            (
+                "inner hub",
+                breaking(short_hub),
+                "inner hub key",
+                (HUB_LENGTH, Direction::Raise),
+            ),
+        ] {
+            let results = compute_all(&inputs);
+            let key = |d: &DesignInputs, r: &DesignResults| margin(SHAFT_JOINT, term, d, r);
+            assert!(key(&inputs, &results).is_finite(), "{name}");
+            assert!(
+                helps(&inputs, &results, contact, Some(&key), false),
+                "{name}"
+            );
+            let shown = fixes(joint, &inputs, &results, false);
+            assert!(!shown.contains(&contact), "{name}: {shown:?}");
+            assert!(shown.contains(&length), "{name}: {shown:?}");
+        }
+        let no_contact = breaking(|i| {
+            no_boss(i);
+            i.shaft_joint.key_contact_mm = 0.0;
+        });
+        let results = compute_all(&no_contact);
+        assert!(fixes(joint, &no_contact, &results, false).contains(&contact));
+        let text = shaft_joint_problem(&no_contact, &results).unwrap();
+        for name in [shaft_joint::INNER_HUB, shaft_joint::CUP] {
+            let sentence = format!(
+                "The key has no bearing area in the {name}: its contact height, {}, is not above zero.",
+                input_text(&no_contact, KEY_CONTACT)
+            );
+            assert!(text.contains(&sentence), "{sentence} in {text}");
+        }
+        assert!(!text.contains("its boss and web"), "{text}");
+        let negative = breaking(|i| i.shaft_joint.key_contact_mm = -0.5);
+        let text = problem(SHAFT_JOINT, &negative).unwrap();
+        let typed = format!(
+            "its contact height, {}, is not above zero",
+            input_text(&negative, KEY_CONTACT)
+        );
+        assert!(text.contains(&typed), "{typed} in {text}");
+        let results = compute_all(&negative);
+        assert_eq!(level_of(SHAFT_JOINT, &negative, &results), Level::Bad);
+        assert_eq!(fixes(joint, &negative, &results, false), [contact]);
+        let unknown = with(negative, |i| i.shaft_joint.safety_factor = 0.0);
+        let results = compute_all(&unknown);
+        assert_eq!(level_of(SHAFT_JOINT, &unknown, &results), Level::Caution);
+        assert_eq!(fixes(joint, &unknown, &results, false), []);
+    }
+
+    #[test]
+    fn with_no_keyway_both_key_terms_pass_with_an_infinite_margin() {
+        // Review 2, SF-5c: without a keyway the key term does not apply; its margin is +inf,
+        // never the -inf a contact capped at a zero depth would give, so no fix chases it.
+        let keyless = breaking(|i| i.coupling.keyway_depth_mm = 0.0);
+        let results = compute_all(&keyless);
+        let terms = terms(SHAFT_JOINT, &keyless, &results);
+        assert_eq!(terms.len(), 8);
+        for name in ["inner hub key", "cup key"] {
+            let t = terms.iter().find(|t| t.name == name).unwrap();
+            assert!(t.passes && t.margin == f64::INFINITY, "{name}: {t:?}");
+        }
+        assert_eq!(results.shaft_joint.check, shaft_joint::SHAFT_JOINTS_PASS);
+    }
+
+    #[test]
+    fn each_shaft_joint_fix_moves_its_term_toward_passing_all_along_its_slider() {
+        // Spec 5.2: each margin is monotone over its fix's whole slider, every value at the
+        // slider's own step from bottom to top, rising the way the fix moves, and flat only where
+        // its case's reading holds still (`shaft_joint_sweeps`). As
+        // `every_fix_moves_its_check_toward_passing_over_its_slider` asks of the other guides'
+        // fixes, each case's design fails the check, and the fix's input at its slider's end in
+        // the fix's direction gives a larger margin than the design's own.
+        let cases = shaft_joint_sweeps();
+        // Every slider fix of the guide is swept.
+        let swept: BTreeSet<(&str, bool)> = cases
+            .iter()
+            .map(|&(_, path, direction, _, _)| (path, direction == Direction::Raise))
+            .collect();
+        let listed: BTreeSet<(&str, bool)> = possible_fixes(guide(SHAFT_JOINT).unwrap())
+            .into_iter()
+            .map(|(path, direction)| (path, direction == Direction::Raise))
+            .collect();
+        assert_eq!(swept, listed);
+        for (base, path, direction, term, flat_reading) in cases {
+            let before = compute_all(&base);
+            assert_ne!(
+                level_of(SHAFT_JOINT, &base, &before),
+                Level::Good,
+                "{term} against {path}: the case's design fails the check"
+            );
+            let from = margin(SHAFT_JOINT, term, &base, &before);
+            let index = usize::from(term.starts_with(shaft_joint::CUP));
+            let mut values = slider_values(path);
+            if direction == Direction::Lower {
+                values.reverse();
+            }
+            let at = |x: f64| {
+                let design = with_number(&base, path, x).unwrap();
+                let results = compute_all(&design);
+                let joints =
+                    shaft_joint::joints(&design.shaft_joint, &shaft_joint_links(&design, &results));
+                (margin(SHAFT_JOINT, term, &design, &results), joints[index])
+            };
+            let (mut last, mut last_joint) = at(values[0]);
+            let mut case_flats = 0;
+            for &x in &values[1..] {
+                let (now, joint) = at(x);
+                let what = format!("{term} against {path} at {x}: {last} -> {now}");
+                assert!(now >= last, "{what}");
+                if now == last {
+                    let reading = flat_reading.unwrap_or_else(|| panic!("flat: {what}"));
+                    assert_eq!(reading(&joint), reading(&last_joint), "{what}");
+                    case_flats += 1;
+                }
+                (last, last_joint) = (now, joint);
+            }
+            assert!(
+                last > from,
+                "{}: moves the {term} margin {from} -> {last}",
+                fix_text(path, direction)
+            );
+            // Each case with a reading reaches its own flat (the floor, the cap or the override).
+            assert_eq!(
+                case_flats > 0,
+                flat_reading.is_some(),
+                "{term} against {path}"
+            );
+        }
+    }
+
+    /// The defaults with the cup's minimum interference 0.001 µm above the smallest that holds:
+    /// one step of longer magnets raises cold-high, and with it the torque the cup must hold,
+    /// past what it holds (spec 7.9, near the joint limit; the cup does not lengthen with the
+    /// magnets).
+    fn near_the_joint_limit() -> DesignInputs {
+        let needed = compute_all(&DesignInputs::default())
+            .shaft_joint
+            .cup_needed_um;
+        design(|i| i.shaft_joint.cup_interference_min_um = needed + 0.001)
+    }
+
+    #[test]
+    fn near_the_joint_limit_the_hot_minimum_guide_shows_no_fix() {
+        // Spec 7.9 and R-7, a test of its own as BL-059's: the cup holds just above what it
+        // must and the hot minimum fails. One step of longer magnets, the hot minimum's only fix,
+        // makes the cup slip (its badge reads two numbers apart), so `helps` holds the fix back
+        // and the hot minimum's open block draws the no-fix line, with the shaft-clamp section
+        // shown and paused. The joint stays green. With half a micrometre more on the cup's
+        // minimum, the fix shows again.
+        let inputs = near_the_joint_limit();
+        let results = compute_all(&inputs);
+        assert_eq!(level_of(SHAFT_JOINT, &inputs, &results), Level::Good);
+        assert_eq!(level_of(HOT_MIN, &inputs, &results), Level::Bad);
+        let longer = (MAGNET_LENGTH, Direction::Raise);
+        let [stepped] = &moves(&inputs, &results, longer.0, longer.1)[..] else {
+            panic!("one step of longer magnets")
+        };
+        let after = compute_all(stepped);
+        assert_eq!(level_of(SHAFT_JOINT, stepped, &after), Level::Bad);
+        assert_eq!(
+            after.shaft_joint.check,
+            format!(
+                "{} ({}): holds 7.64 N·m against 7.65 N·m",
+                shaft_joint::FIT_SLIPS,
+                shaft_joint::CUP
+            )
+        );
+        let hot_min = guide_index(HOT_MIN);
+        let problem = hot_min_problem(&inputs, &results).unwrap();
+        for paused in [false, true] {
+            assert!(
+                !helps(&inputs, &results, longer, None, paused),
+                "paused {paused}"
+            );
+            assert_open_block_draws_no_fix(&inputs, &results, hot_min, &problem, paused);
+        }
+        let roomier = with(inputs, |i| i.shaft_joint.cup_interference_min_um += 0.5);
+        let results = compute_all(&roomier);
+        assert_eq!(fixes(&HOT_MIN_GUIDE, &roomier, &results, false), [longer]);
+    }
+
+    #[test]
+    fn where_the_magnets_onset_binds_the_joint_offers_its_band_not_the_grade() {
+        // Owner R-15 and its ring ruling (spec 5.2, "Where the onset binds"; 7.9). Library N42
+        // blocks in both rings cap the bonded inner hub's allowed fitting temperature at the
+        // inner ring's own single-ring onset, 69.83 °C, less the cure margin: 59.83 °C against
+        // the 93.27 °C its fit needs. The joint fails on that term alone; the temperature check
+        // stays amber. One step down on the hub's maximum raises the fitting margin and turns
+        // nothing red, so it is shown; the wheel shaft is at its slider's bottom. The magnets'
+        // part or grade is the temperature guide's fix, never the joint's. N50M on manual
+        // dimensions too: its onset, 98.80 °C, is above the need; only the onset less the margin,
+        // 88.80 °C, is below it (the cup wall fails there too: the joint alone is asserted). The
+        // step down raises each fitting margin as spec 5.2 and 7.9 give it: -33.43 to -29.37 °C
+        // and -4.46 to -0.40 °C.
+        let joint = guide(SHAFT_JOINT).unwrap();
+        for (name, inputs, want_onset, want_margins) in [
+            ("n42_parts", breaking(n42_parts), 69.8326, [-33.43, -29.37]),
+            (
+                "N50M",
+                breaking(|i| graded(i, "N50M")),
+                98.8029,
+                [-4.46, -0.40],
+            ),
+        ] {
+            let results = compute_all(&inputs);
+            let s = &results.shaft_joint;
+            let onset = results.temperature.demag.inner_onset_single_ring_C;
+            assert!((onset - want_onset).abs() < 1e-4, "{name}: {onset}");
+            assert_eq!(s.hub_fit_allowed_C, onset - CURE_MARGIN_MIN_C, "{name}");
+            assert!((s.hub_fit_temp_C - 93.2674).abs() < 1e-4, "{name}");
+            assert_eq!(
+                s.check,
+                format!(
+                    "{} ({}): needs 93.3 °C against {} °C",
+                    shaft_joint::CANNOT_BE_FITTED,
+                    shaft_joint::INNER_HUB,
+                    fixed(onset - CURE_MARGIN_MIN_C, 1)
+                ),
+                "{name}"
+            );
+            let failing = failing_term_names(SHAFT_JOINT, &inputs, &results);
+            assert_eq!(failing, ["inner hub fitting"], "{name}");
+            assert_eq!(
+                level_of(TEMPERATURE, &inputs, &results),
+                Level::Caution,
+                "{name}"
+            );
+            let shown = fixes(joint, &inputs, &results, false);
+            assert_eq!(shown, [(HUB_MAX, Direction::Lower)], "{name}");
+            let fitting =
+                |d: &DesignInputs| margin(SHAFT_JOINT, "inner hub fitting", d, &compute_all(d));
+            let [stepped] = &moves(&inputs, &results, HUB_MAX, Direction::Lower)[..] else {
+                panic!("{name}: one step down")
+            };
+            let margins = [fitting(&inputs), fitting(stepped)];
+            for (margin, want) in margins.into_iter().zip(want_margins) {
+                assert!((margin - want).abs() < 5e-3, "{name}: {margins:?}");
+            }
+            assert!(
+                moves(&inputs, &results, WHEEL_SHAFT, Direction::Lower).is_empty(),
+                "{name}"
+            );
+        }
+        for path in PART_PATHS.into_iter().chain(GRADE_PATHS) {
+            assert!(
+                possible_fixes(joint).iter().all(|&(p, _)| p != path),
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn with_a_cool_adhesive_the_inner_hub_cannot_be_fitted_and_its_maximum_comes_down() {
+        // Review MF-5 (spec 7.9): DP460's 60 °C design limit caps the bonded inner hub's allowed
+        // fitting temperature below the 93.27 °C its fit needs, the only failing term; one step
+        // down on its maximum takes the need to 89.20 °C, and that fix is shown; the wheel shaft
+        // is at its slider's bottom.
+        let inputs = breaking(cool_adhesive);
+        let results = compute_all(&inputs);
+        let failing = failing_term_names(SHAFT_JOINT, &inputs, &results);
+        assert_eq!(failing, ["inner hub fitting"]);
+        assert_eq!(
+            fixes(guide(SHAFT_JOINT).unwrap(), &inputs, &results, false),
+            [(HUB_MAX, Direction::Lower)]
+        );
+        let [stepped] = &moves(&inputs, &results, HUB_MAX, Direction::Lower)[..] else {
+            panic!("one step down")
+        };
+        let need = |r: &DesignResults| format_value(&Value::Num(r.shaft_joint.hub_fit_temp_C));
+        assert_eq!(
+            (need(&results), need(&compute_all(stepped))),
+            ("93.27".to_owned(), "89.20".to_owned())
+        );
+    }
+
+    #[test]
+    fn the_default_inner_hub_band_is_two_steps_from_failing_on_fitting() {
+        // Review focus (spec R-9): the example's inner hub band sits 0.83 µm under its fitting
+        // edge. One step up on its maximum (18.5 µm) still passes; two (19 µm) fail on fitting,
+        // 101.4 against 100.0 °C, and the guide offers the band back down: not the wheel shaft,
+        // already at its slider's bottom, nor the allowed temperature (a limit, not a lever).
+        let one = design(|i| i.shaft_joint.hub_interference_max_um = 18.5);
+        assert_eq!(
+            compute_all(&one).shaft_joint.check,
+            shaft_joint::SHAFT_JOINTS_PASS
+        );
+        let two = design(|i| i.shaft_joint.hub_interference_max_um = 19.0);
+        let results = compute_all(&two);
+        assert_eq!(
+            results.shaft_joint.check,
+            format!(
+                "{} ({}): needs 101.4 °C against 100.0 °C",
+                shaft_joint::CANNOT_BE_FITTED,
+                shaft_joint::INNER_HUB
+            )
+        );
+        assert_eq!(
+            fixes(guide(SHAFT_JOINT).unwrap(), &two, &results, false),
+            [(HUB_MAX, Direction::Lower)]
+        );
+        let text = problem(SHAFT_JOINT, &two).unwrap();
+        assert!(
+            text.contains("your limit for the bonded inner hub"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn a_joint_that_is_not_judged_keeps_out_of_the_other_joint_s_badge_and_fixes() {
+        // Spec 4.3 (review SF-8): beside a joint that fails, a joint that is not judged turns
+        // nothing red and offers no fix; the badge and the fixes are the failing joint's, and its
+        // Problem gives the failing joint's causes and window first, then why the other is not
+        // judged. A reversed inner hub band with the cup slipping; the cup without a wall (bore
+        // 16 mm, boss 12 mm) with the inner hub slipping. Without the failing joint (the hub's
+        // minimum at 15 µm holds on the 16 mm bore) each reads amber with no fix.
+        fn no_wall(i: &mut DesignInputs) {
+            i.coupling.bore_mm = 16.0;
+            i.metal.boss_od_mm = 12.0;
+        }
+        fn no_wall_alone(i: &mut DesignInputs) {
+            no_wall(i);
+            i.shaft_joint.hub_interference_min_um = 15.0;
+        }
+        let joint = guide(SHAFT_JOINT).unwrap();
+        let cases = [
+            (
+                breaking(|i| {
+                    reversed_hub_band(i);
+                    cup_slips(i);
+                }),
+                shaft_joint::CUP,
+                CUP_SLIP_FIXES.to_vec(),
+                [
+                    "At its loosest the cup holds",
+                    "On the cup, a measured interference",
+                    "The inner hub's minimum interference",
+                ],
+            ),
+            (
+                breaking(no_wall),
+                shaft_joint::INNER_HUB,
+                HUB_SLIP_FIXES.to_vec(),
+                [
+                    "At its loosest the inner hub holds",
+                    "On the inner hub, a measured interference",
+                    "The cup's bore",
+                ],
+            ),
+        ];
+        for (inputs, failing, want, order) in cases {
+            let results = compute_all(&inputs);
+            let badge = &results.shaft_joint.check;
+            assert!(
+                badge.starts_with(&format!("{} ({failing})", shaft_joint::FIT_SLIPS)),
+                "{badge}"
+            );
+            assert_eq!(level_of(SHAFT_JOINT, &inputs, &results), Level::Bad);
+            assert_eq!(fixes(joint, &inputs, &results, false), want, "{badge}");
+            assert_in_order(&shaft_joint_problem(&inputs, &results).unwrap(), &order);
+        }
+        for edit in [reversed_hub_band as fn(&mut DesignInputs), no_wall_alone] {
+            let inputs = breaking(edit);
+            let results = compute_all(&inputs);
+            assert_eq!(level_of(SHAFT_JOINT, &inputs, &results), Level::Caution);
+            assert_eq!(fixes(joint, &inputs, &results, false), []);
+        }
+        // Neither judged (the whole-branch review's suggestion 1): the inner hub's band reversed
+        // and the cup without a wall. The row reads amber with no fix, and the Problem is the two
+        // not-judged sentences alone, the inner hub's first.
+        let neither = breaking(|i| {
+            reversed_hub_band(i);
+            no_wall(i);
+        });
+        let results = compute_all(&neither);
+        assert_eq!(level_of(SHAFT_JOINT, &neither, &results), Level::Caution);
+        assert_eq!(fixes(joint, &neither, &results, false), []);
+        let text = shaft_joint_problem(&neither, &results).unwrap();
+        assert_in_order(
+            &text,
+            &["The inner hub's minimum interference", "The cup's bore"],
+        );
+        assert!(!text.contains("At its loosest"), "{text}");
+        let joints = shaft_joints(&neither, &results).expect("the check can be made");
+        let sentences: Vec<String> = JOINT_SIDES
+            .iter()
+            .zip(&joints)
+            .flat_map(|(side, joint)| not_judged_sentences(&neither, side, joint))
+            .collect();
+        assert_eq!(text, sentences.join(" "));
+    }
+
+    #[test]
     fn two_failing_checks_that_pull_one_input_apart_say_so() {
         // Spec review focus 4: the default design's first screen once said "lower the gap" for
         // the hot-low torque and "raise the gap" for the clearance. A fix whose step turns a
@@ -4034,12 +5882,14 @@ mod tests {
         // both ways when two checks that pull it apart both fail already: here the hot-low
         // torque against the gearbox check, on the example design and wherever both fail (magnet
         // length: no magnet size passes both), and against an overall-length claim the stack is
-        // over (magnet length), and the blocks against a diameter claim (Outside diameter). Each
-        // fix helps its own check, so both stay, and each of the two blocks says, in the same
-        // words, that the input pulls two ways and another input has to settle one of them
-        // (`trade_offs`).
-        let pulled_apart: [(&str, &[&str]); 4] = [
+        // over (magnet length), the hot-low torque against the cup's slip without back iron
+        // (magnet length: the cup does not lengthen with the magnets, BL-064), and the blocks
+        // against a diameter claim (Outside diameter). Each fix helps its own check, so both
+        // stay, and each of the two blocks says, in the same words, that the input pulls two ways
+        // and another input has to settle one of them (`trade_offs`).
+        let pulled_apart: [(&str, &[&str]); 5] = [
             ("defaults", &[MAGNET_LENGTH]),
+            ("no_back_iron", &[MAGNET_LENGTH]),
             ("bare_clearance", &[MAGNET_LENGTH]),
             ("length_conflict", &[MAGNET_LENGTH]),
             ("diameter_conflict", &[RING]),
@@ -4102,32 +5952,41 @@ mod tests {
         // The cases in words. The overall-length claim: the space claim's note in its block and
         // in the hot-low torque's, which also carries the gearbox check's (it lowers the
         // magnets too).
-        let at = |check| CHECK_GUIDES.iter().position(|g| g.check == check).unwrap();
         let length = design(|i| i.metal.max_overall_axial_mm = 30.0);
         let results = compute_all(&length);
         let all = all_fixes(&length, &results, false);
         let space = "One input pulls two ways (Axial magnet length, both rings): Hot-low torque needs it raised and Space claim needs it lowered, so change another input to settle one of them.";
         let gearbox = note(MAGNET_LENGTH, HOT_MIN_GUIDE.label, GEARBOX_GUIDE.label);
-        assert_eq!(trade_offs(&all, at(HOT_MIN)), [gearbox.as_str(), space]);
-        assert_eq!(trade_offs(&all, at(GEARBOX)), [gearbox.as_str()]);
-        assert_eq!(trade_offs(&all, at(SPACE_CLAIM)), [space]);
+        assert_eq!(
+            trade_offs(&all, guide_index(HOT_MIN)),
+            [gearbox.as_str(), space]
+        );
+        assert_eq!(trade_offs(&all, guide_index(GEARBOX)), [gearbox.as_str()]);
+        assert_eq!(trade_offs(&all, guide_index(SPACE_CLAIM)), [space]);
         // The example design: the hot-low torque against the gearbox check alone, the same note
         // in both blocks.
         let defaults = DesignInputs::default();
         let all = all_fixes(&defaults, &compute_all(&defaults), false);
-        assert_eq!(trade_offs(&all, at(HOT_MIN)), [gearbox.as_str()]);
-        assert_eq!(trade_offs(&all, at(GEARBOX)), [gearbox.as_str()]);
+        assert_eq!(trade_offs(&all, guide_index(HOT_MIN)), [gearbox.as_str()]);
+        assert_eq!(trade_offs(&all, guide_index(GEARBOX)), [gearbox.as_str()]);
+        // No back iron: the cup slips (BL-064) beside the failing hot-low torque, the same note
+        // in both blocks.
+        let aluminium = breaking(no_back_iron);
+        let all = all_fixes(&aluminium, &compute_all(&aluminium), false);
+        let joint = note(MAGNET_LENGTH, HOT_MIN_GUIDE.label, SHAFT_JOINT_GUIDE.label);
+        assert_eq!(trade_offs(&all, guide_index(HOT_MIN)), [joint.as_str()]);
+        assert_eq!(trade_offs(&all, guide_index(SHAFT_JOINT)), [joint.as_str()]);
         let crowded = with(with_poles(12), |i| i.metal.max_diameter_mm = 42.0);
         let results = compute_all(&crowded);
         let all = all_fixes(&crowded, &results, false);
         let expected = [
             "One input pulls two ways (Outside diameter): Magnets fit needs it raised and Space claim needs it lowered, so change another input to settle one of them.",
         ];
-        assert_eq!(trade_offs(&all, at(FIT_CHECK)), expected);
-        assert_eq!(trade_offs(&all, at(SPACE_CLAIM)), expected);
+        assert_eq!(trade_offs(&all, guide_index(FIT_CHECK)), expected);
+        assert_eq!(trade_offs(&all, guide_index(SPACE_CLAIM)), expected);
         // An index past the guides, or lists shorter than the guides, read as no note.
         assert!(trade_offs(&all, CHECK_GUIDES.len()).is_empty());
-        assert!(trade_offs(&all[..1], at(SPACE_CLAIM)).is_empty());
+        assert!(trade_offs(&all[..1], guide_index(SPACE_CLAIM)).is_empty());
     }
 
     #[test]
@@ -4294,6 +6153,16 @@ mod tests {
             (with(with_poles(40), arcs), FIT_CHECK, Bad),
             (design(bare_clearance), CLEARANCE, Bad),
             (only_the_gearbox_fails(), GEARBOX, Bad),
+            (only_the_joint_fails(), SHAFT_JOINT, Bad),
+            (breaking(no_back_iron), SHAFT_JOINT, Bad),
+            (breaking(cool_adhesive), SHAFT_JOINT, Bad),
+            (breaking(n42_parts), SHAFT_JOINT, Bad),
+            (breaking(reversed_hub_band), SHAFT_JOINT, Caution),
+            (
+                breaking(|i| i.temperature.adhesive.selected = 0),
+                SHAFT_JOINT,
+                Caution,
+            ),
         ] {
             let results = compute_all(&inputs);
             assert_eq!(level_of(check, &inputs, &results), want, "{check}");
@@ -4359,6 +6228,16 @@ mod tests {
                 &["metal.cold_high_input_Nm"],
             ),
             (
+                SHAFT_JOINT,
+                design(|i| i.shaft_joint.hub_interference_min_um = 10.0),
+                design(|i| i.shaft_joint.hub_interference_min_um = 9.0),
+                &[
+                    "shaft_joint.hub_holding_Nm",
+                    "shaft_joint.required_Nm",
+                    "metal.torque_cold_high_Nm",
+                ],
+            ),
+            (
                 SPACE_CLAIM,
                 breaking(large_cap),
                 breaking(|i| i.metal.cap_od_mm = 45.0),
@@ -4408,6 +6287,33 @@ mod tests {
                 }
             }
         }
+        // The shaft joints' window is worked out from the results: its lower end the smallest
+        // minimum that holds, rounded up, its upper end the smaller of the two upper edges,
+        // rounded down (spec 5.2), at two designs whose windows differ.
+        let edits: [fn(&mut DesignInputs); 2] = [
+            |i| i.shaft_joint.hub_interference_min_um = 10.0,
+            |i| {
+                i.shaft_joint.hub_interference_min_um = 10.0;
+                i.shaft_joint.wheel_shaft_fit_C = -150.0;
+            },
+        ];
+        let mut windows = Vec::new();
+        for edit in edits {
+            let inputs = design(edit);
+            let results = compute_all(&inputs);
+            let text = problem(SHAFT_JOINT, &inputs).expect("the inner hub slips");
+            let s = &results.shaft_joint;
+            let upper = s.hub_elastic_max_um.min(s.hub_fittable_max_um);
+            let window = [
+                number_text(rounded_up(s.hub_needed_um), "shaft_joint.hub_needed_um"),
+                number_text(rounded_down(upper), "shaft_joint.hub_needed_um"),
+            ];
+            for quoted in &window {
+                assert!(text.contains(quoted.as_str()), "{quoted} in {text}");
+            }
+            windows.push(window);
+        }
+        assert_ne!(windows[0], windows[1], "the two windows differ");
         // The gearbox Problem's sentence 2 (owner decision 4A) quotes numbers worked out from
         // the results: two designs with different bands (a warmer minimum temperature narrows
         // it) quote different numbers, each its own.
@@ -4695,10 +6601,8 @@ mod tests {
                 .unwrap_or_else(|| panic!("{name}: {text} after byte {from} of {conflict}"));
             from += at + text.len();
         }
-        // A number as quoted, without its unit.
-        let number = |text: &str| -> f64 { text.split(' ').next().unwrap().parse().unwrap() };
         for b in numbers.bounds(inputs.coupling.gearbox_input_rating_Nm) {
-            let (shown, against) = (number(&b.text), number(&b.against));
+            let (shown, against) = (leading_number(&b.text), leading_number(&b.against));
             // How far the quoted value is from the value, in last shown digits: the coarser of
             // the two, as at a decade (0.99999 quoted 1.001 is one digit of 1.001 past 1.000).
             let step = last_digit_step(b.value).max(last_digit_step(shown));
@@ -5595,20 +7499,42 @@ mod tests {
     }
 
     #[test]
+    fn the_no_fix_line_covers_a_value_outside_what_it_can_be() {
+        // The shaft joints' check cannot be made with a friction typed below zero (the
+        // whole-branch review's MF-1), a safety factor not above zero (ruling C-4) or a gearbox
+        // shaft typed below its slider's bottom (build ruling B-5); its Problem says so and it
+        // has no fix, so the Fix line must name that case as well (the fix wave's text
+        // re-review, MF-2).
+        let joint = guide(SHAFT_JOINT).unwrap();
+        type Edit = fn(&mut DesignInputs);
+        let edits: [Edit; 3] = [
+            |i| i.shaft_joint.friction = -0.14,
+            |i| i.shaft_joint.safety_factor = 0.0,
+            |i| i.shaft_joint.output_shaft_fit_C = -21.0,
+        ];
+        for edit in edits {
+            let inputs = breaking(edit);
+            let results = compute_all(&inputs);
+            assert!((joint.problem)(&inputs, &results).is_some());
+            assert_eq!(fixes(joint, &inputs, &results, false), []);
+        }
+        assert!(NO_FIX.contains("outside what it can be"), "{NO_FIX}");
+    }
+
+    #[test]
     fn the_outside_diameter_is_not_lowered_past_the_minimum_od() {
         // `fixes` steps the Outside diameter over its slider without the panel's Minimum OD;
         // the panel's raised floor stops that slider, so "Lower Outside diameter" goes there.
         // A raise of it (the fit's) and every other fix stay.
         let lower_ring = (RING, Direction::Lower);
         let raise_ring = (RING, Direction::Raise);
-        let index = |check: &str| CHECK_GUIDES.iter().position(|g| g.check == check).unwrap();
         for (inputs, check, fix) in [
             (breaking(large_ring), SPACE_CLAIM, lower_ring),
             (with_poles(12), FIT_CHECK, raise_ring),
         ] {
             let results = compute_all(&inputs);
             let all = all_fixes(&inputs, &results, false);
-            assert!(all[index(check)].contains(&fix), "{check}: {all:?}");
+            assert!(all[guide_index(check)].contains(&fix), "{check}: {all:?}");
             let diameter = dimensions(&inputs).unwrap().diameter_mm;
             // No floor, or one below the diameter: the slider can still go down.
             for minimum in [None, Some(diameter - 1.0)] {
@@ -5867,6 +7793,720 @@ mod tests {
         assert_eq!(problem(CUP_WALL, &inputs), None);
     }
 
+    #[test]
+    fn every_shaft_joint_problem_form_is_reached() {
+        // Spec 5.2 and 4.3: a design for each sentence form; each fails the check (red, or amber
+        // for the forms of a joint that is not judged and of a value that is not a number), and
+        // its Problem holds the form's words, never the fallback.
+        for (name, inputs, words) in shaft_joint_problem_designs() {
+            let results = compute_all(&inputs);
+            assert_ne!(
+                level_of(SHAFT_JOINT, &inputs, &results),
+                Level::Good,
+                "{name}"
+            );
+            let text = shaft_joint_problem(&inputs, &results)
+                .unwrap_or_else(|| panic!("{name}: no Problem"));
+            assert!(text.contains(words), "{name}: {words:?} in {text}");
+            assert_ne!(text, SHAFT_JOINT_FALLBACK, "{name}");
+        }
+    }
+
+    #[test]
+    fn the_shaft_joint_problem_is_some_exactly_when_the_check_fails_or_cannot_be_made() {
+        // Red with a joint that fails; amber while a joint is not judged, or while the check
+        // cannot be made (then that sentence alone, and no fix); green, with no Problem, while it
+        // passes and while the end-effect model is out of range (the row is greyed, whatever its
+        // text: a bore stress above its limit reads red there).
+        use Level::{Bad, Caution, Good};
+        let joint = guide(SHAFT_JOINT).unwrap();
+        let not_a_number = breaking(|i| i.temperature.adhesive.selected = 0);
+        let bore_0 = breaking(|i| i.coupling.bore_mm = 0.0);
+        let no_factor = breaking(|i| i.shaft_joint.safety_factor = 0.0);
+        let negative_friction = breaking(|i| i.shaft_joint.friction = -0.14);
+        let frictionless = breaking(|i| i.shaft_joint.friction = 0.0);
+        let overstressed_short = with(short_magnets(), hub_overstressed);
+        for (name, inputs, want) in [
+            ("defaults", DesignInputs::default(), Good),
+            ("passing", passing_design(), Good),
+            ("joint only", only_the_joint_fails(), Bad),
+            ("not a number", not_a_number.clone(), Caution),
+            ("bore 0", bore_0.clone(), Caution),
+            ("safety factor 0", no_factor.clone(), Caution),
+            ("friction below zero", negative_friction.clone(), Caution),
+            ("friction 0", frictionless.clone(), Bad),
+            ("reversed band", breaking(reversed_hub_band), Caution),
+            ("short magnets", short_magnets(), Good),
+            (
+                "short magnets overstressed",
+                overstressed_short.clone(),
+                Good,
+            ),
+        ] {
+            let results = compute_all(&inputs);
+            assert_eq!(level(joint, &inputs, &results), want, "{name}");
+            assert_eq!(
+                (joint.problem)(&inputs, &results).is_some(),
+                want != Good,
+                "{name}"
+            );
+        }
+        let results = compute_all(&overstressed_short);
+        assert!(
+            results
+                .shaft_joint
+                .check
+                .starts_with(shaft_joint::BORE_OVER_ITS_LIMIT),
+            "{}",
+            results.shaft_joint.check
+        );
+        let results = compute_all(&not_a_number);
+        assert_eq!(results.shaft_joint.check, shaft_joint::UNKNOWN_NOT_A_NUMBER);
+        assert_eq!(
+            shaft_joint_problem(&not_a_number, &results).as_deref(),
+            Some(SHAFT_JOINT_NOT_A_NUMBER)
+        );
+        assert_eq!(fixes(joint, &not_a_number, &results, false), []);
+        // A bore typed at 0 (review focus 1): every input and engine value the check reads is a
+        // number; a term it works out is not (the holding: an infinite contact pressure per µm
+        // times a contact arc of 0), so the sentence names both.
+        let results = compute_all(&bore_0);
+        let mut input_nan = false;
+        bore_0.shaft_joint.visit("", &mut |_, _, value| {
+            input_nan |= matches!(value, Value::Num(x) if x.is_nan());
+        });
+        assert!(!input_nan);
+        let links = shaft_joint_links(&bore_0, &results);
+        assert!(links.values().iter().all(|x| !x.is_nan()), "{links:?}");
+        assert_eq!(results.shaft_joint.check, shaft_joint::UNKNOWN_NOT_A_NUMBER);
+        let text = shaft_joint_problem(&bore_0, &results).unwrap();
+        assert_eq!(text, SHAFT_JOINT_NOT_A_NUMBER);
+        assert!(text.contains("a value it reads or works out"), "{text}");
+        assert_eq!(fixes(joint, &bore_0, &results, false), []);
+        // The cup's boss typed at or below zero (plan deviation PD-1): no wall, and the sentence
+        // names the boss, never the web, which the check does not judge alone.
+        for boss in [0.0, -22.0] {
+            let inputs = breaking(|i| i.metal.boss_od_mm = boss);
+            let results = compute_all(&inputs);
+            assert_eq!(
+                results.shaft_joint.check,
+                format!("{} ({})", shaft_joint::UNKNOWN_NO_WALL, shaft_joint::CUP)
+            );
+            assert_eq!(level(joint, &inputs, &results), Caution, "{boss}");
+            assert_eq!(
+                shaft_joint_problem(&inputs, &results),
+                Some(format!(
+                    "The cup's bore, {}, is at least as wide as its boss, {}, so the boss leaves no wall to grip the gearbox shaft; the check does not judge the web alone.",
+                    input_text(&inputs, "coupling.bore_mm"),
+                    input_text(&inputs, "metal.boss_od_mm")
+                ))
+            );
+            assert_eq!(fixes(joint, &inputs, &results, false), [], "{boss}");
+        }
+        // A safety factor typed at or below zero (ruling C-4): its sentence alone, and no fix.
+        let results = compute_all(&no_factor);
+        assert_eq!(
+            results.shaft_joint.check,
+            shaft_joint::UNKNOWN_SAFETY_FACTOR
+        );
+        assert_eq!(
+            shaft_joint_problem(&no_factor, &results),
+            Some(format!(
+                "The safety factor, {}, is not above zero: enter at least 1.",
+                input_text(&no_factor, "shaft_joint.safety_factor")
+            ))
+        );
+        assert_eq!(fixes(joint, &no_factor, &results, false), []);
+        // A friction typed below zero (the whole-branch review's MF-1, ruling C-4 extended): its
+        // sentence alone, and no fix. Judged, it quoted a holding below zero, a window that no
+        // interference gives, and raising either band's minimum, which holds less still.
+        let results = compute_all(&negative_friction);
+        assert_eq!(
+            results.shaft_joint.check,
+            shaft_joint::UNKNOWN_IMPOSSIBLE_VALUE
+        );
+        let text = shaft_joint_problem(&negative_friction, &results).unwrap();
+        assert_eq!(
+            text,
+            "Shrink-fit friction coefficient, -0.1400, cannot physically be below zero: enter at least 0.05000, its slider's bottom."
+        );
+        for words in ["would hold", "holds", "measured interference"] {
+            assert!(!text.contains(words), "{words:?} in {text}");
+        }
+        assert_eq!(fixes(joint, &negative_friction, &results, false), []);
+        // A friction of exactly 0 is judged: each joint holds 0 N·m, which its sentence says;
+        // no interference holds without friction, so no window shows and no fix helps.
+        let results = compute_all(&frictionless);
+        assert_eq!(
+            (
+                results.shaft_joint.hub_holding_Nm,
+                results.shaft_joint.cup_holding_Nm
+            ),
+            (0.0, 0.0)
+        );
+        let text = shaft_joint_problem(&frictionless, &results).unwrap();
+        assert_in_order(
+            &text,
+            &[
+                "At its loosest the inner hub holds 0 N·m",
+                "At its loosest the cup holds 0 N·m",
+            ],
+        );
+        for words in ["would hold", "No measured interference works"] {
+            assert!(!text.contains(words), "{words:?} in {text}");
+        }
+        assert_eq!(fixes(joint, &frictionless, &results, false), []);
+    }
+
+    #[test]
+    fn each_value_below_what_its_input_can_physically_be_has_its_own_sentence() {
+        // The whole-branch review's MF-1 (ruling C-4 extended): one sentence for each input
+        // typed below what it can physically be, in the inputs' order, each with its label, its
+        // value, its floor and its slider's bottom; nothing else, and no fix.
+        let joint = guide(SHAFT_JOINT).unwrap();
+        let cases = impossible_value_cases();
+        for (edit, sentence) in cases {
+            let inputs = breaking(edit);
+            let results = compute_all(&inputs);
+            assert_eq!(
+                results.shaft_joint.check,
+                shaft_joint::UNKNOWN_IMPOSSIBLE_VALUE,
+                "{sentence}"
+            );
+            assert_eq!(
+                level(joint, &inputs, &results),
+                Level::Caution,
+                "{sentence}"
+            );
+            assert_eq!(
+                shaft_joint_problem(&inputs, &results).as_deref(),
+                Some(sentence)
+            );
+            assert_eq!(fixes(joint, &inputs, &results, false), [], "{sentence}");
+        }
+        // Two at once, typed in the other order: both sentences, in the inputs' order.
+        let inputs = breaking(two_impossible_values);
+        let results = compute_all(&inputs);
+        assert_eq!(
+            shaft_joint_problem(&inputs, &results).as_deref(),
+            Some(format!("{} {}", cases[0].1, cases[4].1).as_str())
+        );
+        assert_eq!(fixes(joint, &inputs, &results, false), []);
+    }
+
+    #[test]
+    fn a_gearbox_shaft_below_its_slider_s_bottom_has_its_own_sentence() {
+        // Build ruling B-5: the gearbox's rated range is not checked, so the check takes its
+        // output shaft no colder than its slider's bottom. Typed below it, the check cannot be
+        // made: one sentence that names the slider's bottom as the coldest the shaft is taken,
+        // and no fix. At its slider's bottom the joint is judged.
+        let joint = guide(SHAFT_JOINT).unwrap();
+        let inputs = breaking(|i| i.shaft_joint.output_shaft_fit_C = -21.0);
+        let results = compute_all(&inputs);
+        assert_eq!(
+            results.shaft_joint.check,
+            shaft_joint::UNKNOWN_GEARBOX_SHAFT_TOO_COLD
+        );
+        assert_eq!(level(joint, &inputs, &results), Level::Caution);
+        assert_eq!(
+            shaft_joint_problem(&inputs, &results).as_deref(),
+            Some(
+                "Gearbox shaft temperature at fitting, -21.00 °C, is below -20.00 °C, the coldest the gearbox shaft is taken, since its rated range is not checked: enter at least -20.00 °C, its slider's bottom."
+            )
+        );
+        assert_eq!(fixes(joint, &inputs, &results, false), []);
+        let at_bottom = breaking(|i| {
+            i.shaft_joint.output_shaft_fit_C = shaft_joint::OUTPUT_SHAFT_COLDEST_C;
+        });
+        let results = compute_all(&at_bottom);
+        assert_eq!(results.shaft_joint.check, shaft_joint::SHAFT_JOINTS_PASS);
+        assert_eq!(shaft_joint_problem(&at_bottom, &results), None);
+    }
+
+    #[test]
+    fn a_gearbox_shaft_just_below_its_slider_s_bottom_is_quoted_below_it() {
+        // G-3 re-review of the review leftovers, MF-1: typed in (-20.005, -20) °C, the gearbox
+        // shaft reads "-20.00 °C" at the readout's four significant digits, the bottom it is
+        // below. The Problem quotes it as the readout shows it where that reads below the
+        // bottom, else with the fewest more decimals that do, rounded as the readouts round,
+        // never onto the bottom.
+        let coldest = shaft_joint::OUTPUT_SHAFT_COLDEST_C;
+        let problem_at = |celsius: f64| {
+            let inputs = breaking(|i| i.shaft_joint.output_shaft_fit_C = celsius);
+            shaft_joint_problem(&inputs, &compute_all(&inputs)).expect("it cannot be made")
+        };
+        assert_eq!(
+            problem_at(coldest - 0.001),
+            "Gearbox shaft temperature at fitting, -20.001 °C, is below -20.00 °C, the coldest the gearbox shaft is taken, since its rated range is not checked: enter at least -20.00 °C, its slider's bottom."
+        );
+        // The value as the sentence quotes it: between the label's comma and its unit.
+        let opening = format!("{}, ", fix_label(GEARBOX_SHAFT));
+        let quoted = |problem: &str| {
+            problem
+                .strip_prefix(opening.as_str())
+                .and_then(|rest| rest.split_once(" °C, is below "))
+                .map(|(value, _)| value.to_owned())
+                .unwrap_or_else(|| panic!("{problem}"))
+        };
+        // The review's probes, and two that the readout already reads below.
+        for under in [0.001, 0.004, 0.005, 1e-9, 0.5, 1.0] {
+            let celsius = coldest - under;
+            let problem = problem_at(celsius);
+            let text = quoted(&problem);
+            let value: f64 = text.parse().unwrap_or_else(|_| panic!("{problem}"));
+            assert!(value < coldest, "{problem}");
+            let readout = format_value(&Value::Num(celsius));
+            if quoted_value(celsius) < coldest {
+                assert_eq!(text, readout, "{problem}");
+            } else {
+                // As few decimals as read it below: one fewer reads the bottom.
+                let decimals = text.split_once('.').map_or(0, |(_, digits)| digits.len());
+                assert_eq!(text, fixed(celsius, decimals), "{problem}");
+                assert_eq!(
+                    fixed(celsius, decimals - 1).parse::<f64>(),
+                    Ok(coldest),
+                    "{problem}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "has a slider")]
+    fn the_slider_bottom_of_a_path_without_a_slider_panics() {
+        // Re-review note 5: a sentence quotes a slider's bottom only for an input with a slider;
+        // any other path is a mistake in the guide, never a "NaN" on screen.
+        slider_bottom_text("shaft_joint.check");
+    }
+
+    /// Asserts that `text` holds each of `parts`, in their order.
+    fn assert_in_order(text: &str, parts: &[&str]) {
+        let mut rest = text;
+        for part in parts {
+            let at = rest
+                .find(part)
+                .unwrap_or_else(|| panic!("{part:?}, in order, in {text}"));
+            rest = &rest[at + part.len()..];
+        }
+    }
+
+    /// The number a quoted value starts with, its unit after a space dropped ("12.09 µm" reads
+    /// 12.09).
+    fn leading_number(text: &str) -> f64 {
+        text.split(' ')
+            .next()
+            .and_then(|number| number.parse().ok())
+            .unwrap_or_else(|| panic!("{text:?} starts with a number"))
+    }
+
+    #[test]
+    fn the_shaft_joint_problem_quotes_the_live_numbers() {
+        // Spec 5.2 and 7.8: each number as the readouts show it (four significant digits); the
+        // window's ends quoted inward (review SF-11: the results 12.0815 and 18.8281 µm read
+        // 12.09 and 18.82 µm), the edge that binds named; the source of the inner hub's allowed
+        // fitting temperature named with its live number, the onset's margin written from
+        // CURE_MARGIN_MIN_C with the allowed temperature's decimals (owner R-15).
+        let margin = |decimals: usize| with_unit(fixed(CURE_MARGIN_MIN_C, decimals), "°C");
+        let text = |inputs: DesignInputs| problem(SHAFT_JOINT, &inputs).expect("it fails");
+        let hub_min_10 = text(design(|i| i.shaft_joint.hub_interference_min_um = 10.0));
+        assert_in_order(
+            &hub_min_10,
+            &[
+                "At its loosest the inner hub holds 3.482 N·m",
+                "7.647 N·m",
+                "cold-high, 3.823 N·m",
+                "safety factor of 2.000",
+                "On the inner hub, a measured interference from 12.09 µm to 18.82 µm",
+                "fit at the allowed temperature",
+                "(its band is 10.00 µm to 18.00 µm)",
+            ],
+        );
+        // With a window there is no empty-window sentence (spec 7.8).
+        assert!(
+            !hub_min_10.contains("No measured interference works"),
+            "{hub_min_10}"
+        );
+        // 304 back iron: no window on either joint, each edge below the need named.
+        assert_in_order(
+            &text(design(|i| i.materials.parts.back_iron = 7)),
+            &[
+                "No measured interference works on the inner hub here: holding needs at least 16.31 µm, but its bore stress stays within the limit only up to 11.72 µm.",
+                "No measured interference works on the cup here: holding needs at least 15.80 µm, but its bore stress stays within the limit only up to 11.74 µm.",
+            ],
+        );
+        // An uncooled wheel shaft (review MF-6, SF-12, review 2 SF-6b).
+        assert_in_order(
+            &text(design(uncooled_wheel_shaft)),
+            &[
+                "Fitting the inner hub would need it at 247.6 °C with the wheel shaft at 20.00 °C, above the 100.0 °C allowed: your limit for the bonded inner hub, 100.0 °C.",
+                "holding needs at least 12.09 µm, but at its allowed temperature its bore does not even open the 10.00 µm joining clearance on the wheel shaft as set.",
+            ],
+        );
+        // The cup's clearance form, its limit at its slider's bottom (G-3 SF-5; review B5 M-2).
+        let bottom = |path: &str| slider_range(path).min;
+        let cup_at_bottom = |i: &mut DesignInputs| {
+            i.shaft_joint.cup_fit_max_C = bottom("shaft_joint.cup_fit_max_C");
+        };
+        assert_in_order(
+            &text(design(cup_at_bottom)),
+            &[
+                "holding needs at least 11.31 µm, but at its allowed temperature its bore does not even open the 10.00 µm joining clearance on the gearbox shaft as set.",
+            ],
+        );
+        // A fittable interference of exactly 0, each joint on its sliders (review B5 I-1): with
+        // the joining clearance at its slider's bottom, 0 µm, the bore at its allowed temperature
+        // on the shaft as set is line to line, which that clearance needs, so the fitting edge is
+        // named, never the clearance.
+        let no_clearance = |i: &mut DesignInputs| {
+            i.shaft_joint.joining_clearance_um = bottom("shaft_joint.joining_clearance_um");
+        };
+        let cup_line_to_line = design(|i| {
+            cup_at_bottom(i);
+            no_clearance(i);
+        });
+        assert_eq!(
+            compute_all(&cup_line_to_line)
+                .shaft_joint
+                .cup_fittable_max_um,
+            0.0
+        );
+        assert_in_order(
+            &text(cup_line_to_line),
+            &["holding needs at least 11.31 µm, but the cup can be fitted only up to 0 µm."],
+        );
+        let hub_line_to_line = design(|i| {
+            uncooled_wheel_shaft(i);
+            i.shaft_joint.hub_fit_max_C = bottom("shaft_joint.hub_fit_max_C");
+            no_clearance(i);
+        });
+        assert_eq!(
+            compute_all(&hub_line_to_line)
+                .shaft_joint
+                .hub_fittable_max_um,
+            0.0
+        );
+        assert_in_order(
+            &text(hub_line_to_line),
+            &["holding needs at least 12.09 µm, but the inner hub can be fitted only up to 0 µm."],
+        );
+        // DP460: the adhesive's design limit binds.
+        assert_in_order(
+            &text(breaking(cool_adhesive)),
+            &[
+                "would need it at 93.27 °C with the wheel shaft at -196.0 °C, above the 60.00 °C allowed: the selected adhesive's design limit, 60.00 °C.",
+                "from 11.14 µm to 13.90 µm would hold and fit at the allowed temperature (its band is 13.00 µm to 18.00 µm)",
+            ],
+        );
+        // Library N42 parts (owner R-15): the inner ring's onset less the margin binds.
+        assert_in_order(
+            &text(breaking(n42_parts)),
+            &[
+                &format!(
+                    "above the 59.83 °C allowed: the magnets' single-ring onset, 69.83 °C, less {}.",
+                    margin(2)
+                ),
+                "from 11.62 µm to 13.88 µm",
+            ],
+        );
+        // N50M on manual dimensions: its onset is above the need, the onset less the margin
+        // below it.
+        assert_in_order(
+            &text(breaking(|i| graded(i, "N50M"))),
+            &[
+                &format!(
+                    "above the 88.80 °C allowed: the magnets' single-ring onset, 98.80 °C, less {}.",
+                    margin(2)
+                ),
+                "from 12.21 µm to 17.45 µm",
+            ],
+        );
+        // 2214 Hi-Temp (177 °C) and the hub's limit typed at 150 °C: the onset less the margin,
+        // 133.4 °C, binds; the margin takes the allowed temperature's one decimal (review 4,
+        // SF-5).
+        assert_in_order(
+            &text(breaking(|i| {
+                i.temperature.adhesive.selected = 3;
+                i.shaft_joint.hub_fit_max_C = 150.0;
+                hub_overstressed(i);
+            })),
+            &[&format!(
+                "above the 133.4 °C allowed: the magnets' single-ring onset, 143.4 °C, less {}.",
+                margin(1)
+            )],
+        );
+        // Mixed rings (owner R-15 ring ruling): the inner N42M's own onset, never the outer
+        // N35's 59.93 °C.
+        let mixed = text(breaking(mixed_rings));
+        assert_in_order(
+            &mixed,
+            &[&format!(
+                "above the 81.35 °C allowed: the magnets' single-ring onset, 91.35 °C, less {}.",
+                margin(2)
+            )],
+        );
+        assert!(!mixed.contains("59.93"), "{mixed}");
+        // Spec 7.2 (review 2, SF-4): a key typed wider than the bore's circumference (40 mm on Ø10)
+        // leaves no contact arc: each slip sentence says the joint holds 0, and no window sentence
+        // follows (its smallest minimum is +inf).
+        let wide = text(design(|i| i.shaft_joint.key_width_mm = 40.0));
+        assert!(
+            wide.starts_with("At its loosest the inner hub holds 0 N·m"),
+            "{wide}"
+        );
+        assert!(!wide.contains("measured interference"), "{wide}");
+        // No wall around a bore, on the sliders (spec 4.3). The cup's sentences name its boss,
+        // whose diameter the check takes for the boss and the web alike, and say the web alone
+        // is not judged; the inner hub's diameter is its own along its length.
+        assert_in_order(
+            &text(breaking(|i| {
+                i.coupling.bore_mm = 16.0;
+                i.metal.boss_od_mm = 12.0;
+            })),
+            &[
+                "The cup's bore, 16.00 mm, is at least as wide as its boss, 12.00 mm, so the boss leaves no wall to grip the gearbox shaft; the check does not judge the web alone.",
+            ],
+        );
+        assert_eq!(
+            text(breaking(|i| i.metal.boss_od_mm = 12.0)),
+            "The cup's keyway, 1.700 mm deep, cuts through the boss's wall around its 10.00 mm bore, so the boss has no closed ring to grip the gearbox shaft; the check does not judge the web alone."
+        );
+        assert_eq!(
+            text(breaking(|i| {
+                i.coupling.bore_mm = 16.0;
+                i.coupling.keyway_depth_mm = 2.1;
+            })),
+            "The inner hub's keyway, 2.100 mm deep, cuts through the wall around its 16.00 mm bore, so the fit has no closed ring to grip the wheel shaft."
+        );
+        // Spec 7.1: at a 26 µm hub maximum the badge is the bore stress; the fitting cause follows it
+        // in the Problem, then the window.
+        assert_in_order(
+            &text(design(hub_overstressed)),
+            &[
+                "At its tightest the inner hub's bore stress is 385.1 MPa",
+                "Fitting the inner hub would need it at 158.3 °C",
+                "(its band is 13.00 µm to 26.00 µm)",
+            ],
+        );
+        // Review T5 5: the stress sentence's limit and yield, and the numbers of both no-length
+        // key sentences, pinned, as `result_text` and `input_text` show a mistyped path as a
+        // dash without failing.
+        assert_in_order(
+            &text(breaking(cup_overstressed)),
+            &[
+                "At its tightest the cup's bore stress is 384.0 MPa, above the 345.8 MPa limit (415.0 MPa yield with a margin).",
+            ],
+        );
+        assert_in_order(
+            &text(breaking(no_boss)),
+            &[
+                "The key has no bearing area in the cup: its boss and web, 0 mm and 2.500 mm long, together are no longer than the key is wide, 3.000 mm.",
+            ],
+        );
+        assert_in_order(
+            &text(breaking(short_hub)),
+            &[
+                "The key has no bearing area in the inner hub: the hub, 3.000 mm long, is no longer than the key is wide, 3.000 mm.",
+            ],
+        );
+    }
+
+    #[test]
+    fn a_shaft_joint_window_typed_at_its_quoted_ends_passes() {
+        // Review SF-11: the window is quoted inward, so a band typed at its quoted ends holds,
+        // stays within the stress limit and fits. At the defaults: 12.09 to 18.82 µm on the
+        // inner hub, 11.31 to 23.86 µm on the cup.
+        let defaults = DesignInputs::default();
+        let s = compute_all(&defaults).shaft_joint;
+        let ends = |needed: f64, elastic: f64, fittable: f64| {
+            let (low, high) =
+                window_quotes(needed, elastic.min(fittable), "shaft_joint.hub_needed_um");
+            (leading_number(&low), leading_number(&high))
+        };
+        let hub = ends(s.hub_needed_um, s.hub_elastic_max_um, s.hub_fittable_max_um);
+        let cup = ends(s.cup_needed_um, s.cup_elastic_max_um, s.cup_fittable_max_um);
+        assert_eq!((hub, cup), ((12.09, 18.82), (11.31, 23.86)));
+        let typed = design(|i| {
+            i.shaft_joint.hub_interference_min_um = hub.0;
+            i.shaft_joint.hub_interference_max_um = hub.1;
+            i.shaft_joint.cup_interference_min_um = cup.0;
+            i.shaft_joint.cup_interference_max_um = cup.1;
+        });
+        assert_eq!(
+            compute_all(&typed).shaft_joint.check,
+            shaft_joint::SHAFT_JOINTS_PASS
+        );
+    }
+
+    #[test]
+    fn a_window_narrower_than_the_last_shown_digit_quotes_its_ends_with_more_decimals() {
+        // BL-059 NB-1, spec 5.2: where the ends rounded inward at the readouts' digits would read
+        // equal or crossed, both take more decimals, as few as read them apart in order.
+        let unit = "shaft_joint.hub_needed_um";
+        let quotes = |needed: f64, upper: f64| window_quotes(needed, upper, unit);
+        assert_eq!(
+            quotes(12.0815, 18.8281),
+            ("12.09 µm".into(), "18.82 µm".into())
+        );
+        assert_eq!(
+            quotes(12.0815, 12.0850),
+            ("12.082 µm".into(), "12.085 µm".into())
+        );
+        assert_eq!(
+            quotes(12.081512, 12.081588),
+            ("12.08152 µm".into(), "12.08158 µm".into())
+        );
+        // Below 10 µm the readouts show three decimals: from four.
+        assert_eq!(
+            quotes(9.62012, 9.62088),
+            ("9.6202 µm".into(), "9.6208 µm".into())
+        );
+    }
+
+    #[test]
+    fn a_failing_shaft_joint_number_never_reads_equal_to_its_bound() {
+        // BL-059 MF-1, spec 5.2: a holding read equal to the need is quoted one last digit under
+        // it, a stress, a fitting temperature or a key pressure read equal to its limit one last
+        // digit over it. The results are set by hand: no design on the sliders lands there.
+        let inputs = only_the_joint_fails();
+        let mut results = compute_all(&inputs);
+        let s = &mut results.shaft_joint;
+        s.hub_holding_Nm = s.required_Nm - 1e-6;
+        s.hub_bore_stress_MPa = s.stress_limit_MPa + 1e-6;
+        s.hub_fit_temp_C = s.hub_fit_allowed_C + 1e-6;
+        s.hub_key_pressure_MPa = s.stress_limit_MPa + 1e-6;
+        let s = &results.shaft_joint;
+        let read = |path: &str| result_text(&results, path);
+        for (path, bound, above, bound_path) in [
+            (
+                "shaft_joint.hub_holding_Nm",
+                s.required_Nm,
+                false,
+                "shaft_joint.required_Nm",
+            ),
+            (
+                "shaft_joint.hub_bore_stress_MPa",
+                s.stress_limit_MPa,
+                true,
+                "shaft_joint.stress_limit_MPa",
+            ),
+            (
+                "shaft_joint.hub_fit_temp_C",
+                s.hub_fit_allowed_C,
+                true,
+                "shaft_joint.hub_fit_allowed_C",
+            ),
+            (
+                "shaft_joint.hub_key_pressure_MPa",
+                s.stress_limit_MPa,
+                true,
+                "shaft_joint.stress_limit_MPa",
+            ),
+        ] {
+            assert_eq!(
+                read(path),
+                read(bound_path),
+                "{path}: the readouts read equal"
+            );
+            let quoted = apart_from(&results, path, bound, above);
+            assert_ne!(quoted, read(bound_path), "{path}");
+            let (q, b) = (leading_number(&quoted), leading_number(&read(bound_path)));
+            assert!(
+                if above { q > b } else { q < b },
+                "{path}: {quoted} against {}",
+                read(bound_path)
+            );
+        }
+        // Apart already: as the readout shows it.
+        assert_eq!(
+            apart_from(
+                &compute_all(&inputs),
+                "shaft_joint.hub_holding_Nm",
+                6.72,
+                false
+            ),
+            result_text(&compute_all(&inputs), "shaft_joint.hub_holding_Nm")
+        );
+    }
+
+    /// The shaft joints' texts are static where they can be, so they hold at every reachable
+    /// input (review 2, MF-1; BL-067): cold-high "can reach" a joint, it is no bound, and with
+    /// the operating temperature below the minimum (each on its slider) the operating pull-out
+    /// with its allowance is above it. No text the check shows may call any torque the
+    /// strongest or the most expected (`plain::TORQUE_ORDER_WORDS`).
+    #[test]
+    fn the_shaft_joint_texts_never_order_the_torques() {
+        use crate::engine::explain::plain::TORQUE_ORDER_WORDS;
+        let mut corner = DesignInputs::default();
+        for (path, x) in [
+            ("coupling.op_temp_C", -40.0),
+            ("metal.min_temp_C", 20.0),
+            ("metal.variation", 0.1),
+        ] {
+            let range = slider_range(path);
+            assert!(
+                range.min <= x && x <= range.max,
+                "{path}: {x} on its slider"
+            );
+            corner = with_number(&corner, path, x).unwrap_or_else(|| panic!("{path}: {x}"));
+        }
+        let results = compute_all(&corner);
+        let allowance = 1.0 + corner.metal.variation;
+        assert!(
+            results.model.pullout_Nm * allowance > results.metal.torque_cold_high_Nm,
+            "the operating pull-out with its allowance, {}, above cold-high, {}",
+            results.model.pullout_Nm * allowance,
+            results.metal.torque_cold_high_Nm
+        );
+        let mut texts: Vec<String> = Vec::new();
+        for row in shaft_joint_input_rows(&corner) {
+            texts.extend([row.meta.label.to_owned(), row.meta.help.to_owned()]);
+        }
+        for row in shaft_joint_result_rows(&results) {
+            texts.extend([row.meta.label.to_owned(), row.meta.help.to_owned()]);
+        }
+        texts.extend(
+            [
+                shaft_joint::SHAFT_JOINTS_PASS,
+                shaft_joint::UNKNOWN_NOT_A_NUMBER,
+                shaft_joint::UNKNOWN_NO_WALL,
+                shaft_joint::UNKNOWN_BAND_REVERSED,
+                shaft_joint::UNKNOWN_SAFETY_FACTOR,
+                shaft_joint::UNKNOWN_IMPOSSIBLE_VALUE,
+                shaft_joint::UNKNOWN_GEARBOX_SHAFT_TOO_COLD,
+                shaft_joint::FIT_SLIPS,
+                shaft_joint::BORE_OVER_ITS_LIMIT,
+                shaft_joint::CANNOT_BE_FITTED,
+                shaft_joint::KEY_OVER_ITS_LIMIT,
+                shaft_joint::KEY_HAS_NO_BEARING_AREA,
+                SHAFT_JOINT_GUIDE.label,
+                SHAFT_JOINT_GUIDE.why,
+                SHAFT_JOINT_NOT_A_NUMBER,
+                SHAFT_JOINT_FALLBACK,
+            ]
+            .map(str::to_owned),
+        );
+        let corner_failing = with(corner, |i| i.shaft_joint.hub_interference_min_um = 8.0);
+        let designs = designs()
+            .into_iter()
+            .map(|(_, inputs)| inputs)
+            .chain(
+                shaft_joint_problem_designs()
+                    .into_iter()
+                    .map(|(_, inputs, _)| inputs),
+            )
+            .chain([corner_failing]);
+        for inputs in designs {
+            texts.extend(problem(SHAFT_JOINT, &inputs));
+        }
+        assert!(texts.len() > 50, "{}", texts.len());
+        for text in texts {
+            let lower = text.to_lowercase();
+            for word in TORQUE_ORDER_WORDS {
+                assert!(!lower.contains(word), "{word:?} in {text:?}");
+            }
+        }
+    }
+
     // ------------------------------------------------------------------ the design status
 
     #[test]
@@ -5878,28 +8518,28 @@ mod tests {
             DesignStatus {
                 bad: 4,
                 caution: 0,
-                total: 9,
+                total: 10,
                 is_default: true
             }
         );
         assert_eq!(
             design_status_text(&defaults),
-            "Example design: fails 4 of 9 checks"
+            "Example design: fails 4 of 10 checks"
         );
         // One fix: the cup wall at its suggested 2.0 mm.
         let fixed = status(&design(|i| i.metal.cup_wall_corner_mm = 2.0));
         assert_eq!(
             design_status_text(&fixed),
-            "Your design: fails 3 of 9 checks"
+            "Your design: fails 3 of 10 checks"
         );
         assert_eq!(
             design_status_text(&status(&passing_design())),
-            "Your design: passes all 9 checks"
+            "Your design: passes all 10 checks"
         );
         // Cautions are counted apart from the failures.
         assert_eq!(
             design_status_text(&status(&design(hot_day))),
-            "Your design: fails 4 of 9 checks, 1 caution"
+            "Your design: fails 4 of 10 checks, 1 caution"
         );
         let two_cautions = design(|i| {
             hot_day(i);
@@ -5907,13 +8547,13 @@ mod tests {
         });
         assert_eq!(
             design_status_text(&status(&two_cautions)),
-            "Your design: fails 4 of 9 checks, 2 cautions"
+            "Your design: fails 4 of 10 checks, 2 cautions"
         );
         // The Magnets fit row counts as a check: 40 blocks fail it, the hot-low torque and the
-        // clearance, and pass the cup wall and the gearbox check.
+        // clearance, and pass the cup wall, the shaft joints and the gearbox check.
         assert_eq!(
             design_status_text(&status(&with_poles(40))),
-            "Your design: fails 3 of 9 checks"
+            "Your design: fails 3 of 10 checks"
         );
         // Any edit leaves the example, even one that keeps the counts.
         let edited = status(&design(|i| i.metal.hardware_g = 7.0));
@@ -5961,23 +8601,23 @@ mod tests {
         let results = compute_all(&inputs);
         assert_eq!(level(guide(CLAMP).unwrap(), &inputs, &results), Level::Bad);
         let shown = design_status(&inputs, &results, false);
-        assert_eq!((shown.bad, shown.caution, shown.total), (1, 0, 9));
+        assert_eq!((shown.bad, shown.caution, shown.total), (1, 0, 10));
         assert_eq!(
             design_status_text(&shown),
-            "Your design: fails 1 of 9 checks"
+            "Your design: fails 1 of 10 checks"
         );
         let paused = design_status(&inputs, &results, true);
-        assert_eq!((paused.bad, paused.caution, paused.total), (0, 0, 8));
+        assert_eq!((paused.bad, paused.caution, paused.total), (0, 0, 9));
         assert_eq!(
             design_status_text(&paused),
-            "Your design: passes all 8 checks"
+            "Your design: passes all 9 checks"
         );
         // The example design fails the same four checks either way.
         let defaults = DesignInputs::default();
         let results = compute_all(&defaults);
         assert_eq!(
             design_status_text(&design_status(&defaults, &results, true)),
-            "Example design: fails 4 of 8 checks"
+            "Example design: fails 4 of 9 checks"
         );
     }
 
@@ -5993,15 +8633,15 @@ mod tests {
         let defaults = DesignInputs::default();
         assert_eq!(
             status(&defaults, true),
-            "Example design: fails 4 of 8 checks"
+            "Example design: fails 4 of 9 checks"
         );
         assert_eq!(
             status(&defaults, false),
-            "Example design: fails 4 of 9 checks"
+            "Example design: fails 4 of 10 checks"
         );
         let passing = passing_design();
-        assert_eq!(status(&passing, true), "Your design: passes all 8 checks");
-        assert_eq!(status(&passing, false), "Your design: passes all 9 checks");
+        assert_eq!(status(&passing, true), "Your design: passes all 9 checks");
+        assert_eq!(status(&passing, false), "Your design: passes all 10 checks");
         let gearbox_only = only_the_gearbox_fails();
         let results = compute_all(&gearbox_only);
         let failing: Vec<(&str, Level)> = CHECK_GUIDES
@@ -6012,22 +8652,66 @@ mod tests {
         assert_eq!(failing, [(GEARBOX, Level::Bad)]);
         assert_eq!(
             status(&gearbox_only, true),
-            "Your design: fails 1 of 8 checks"
-        );
-        assert_eq!(
-            status(&gearbox_only, false),
             "Your design: fails 1 of 9 checks"
         );
         assert_eq!(
+            status(&gearbox_only, false),
+            "Your design: fails 1 of 10 checks"
+        );
+        assert_eq!(
             status(&breaking(unknown_rating), true),
-            "Your design: passes all 8 checks, 1 caution"
+            "Your design: passes all 9 checks, 1 caution"
+        );
+    }
+
+    #[test]
+    fn the_shaft_joint_check_counts_in_the_status_whether_the_clamp_section_shows_or_not() {
+        // BL-064 (spec 7.7): counted, and outside the clamp section, so the pause takes only the
+        // clamp out of the count. The example design passes it; with the passing design's inner
+        // hub minimum at 8 µm it fails alone, red; a reversed band asks for a look; with the
+        // clamp also failing, the clamp still moves no count while paused.
+        let status = |inputs: &DesignInputs, paused: bool| {
+            design_status_text(&design_status(inputs, &compute_all(inputs), paused))
+        };
+        let defaults = DesignInputs::default();
+        let results = compute_all(&defaults);
+        assert_eq!(level_of(SHAFT_JOINT, &defaults, &results), Level::Good);
+        let joint_only = only_the_joint_fails();
+        let results = compute_all(&joint_only);
+        let failing: Vec<(&str, Level)> = CHECK_GUIDES
+            .iter()
+            .map(|g| (g.check, level(g, &joint_only, &results)))
+            .filter(|&(_, badge)| badge != Level::Good)
+            .collect();
+        assert_eq!(failing, [(SHAFT_JOINT, Level::Bad)]);
+        assert_eq!(
+            status(&joint_only, true),
+            "Your design: fails 1 of 9 checks"
+        );
+        assert_eq!(
+            status(&joint_only, false),
+            "Your design: fails 1 of 10 checks"
+        );
+        let reversed = breaking(reversed_hub_band);
+        assert_eq!(
+            status(&reversed, true),
+            "Your design: passes all 9 checks, 1 caution"
+        );
+        let with_the_clamp = with(only_the_joint_fails(), small_boss);
+        assert_eq!(
+            status(&with_the_clamp, true),
+            "Your design: fails 1 of 9 checks"
+        );
+        assert_eq!(
+            status(&with_the_clamp, false),
+            "Your design: fails 2 of 10 checks"
         );
     }
 
     #[test]
     fn a_paused_clamp_offers_no_fix_and_holds_back_no_other_guide_s_fix() {
         let (clamp, hot) = (guide(CLAMP).unwrap(), guide(HOT_MIN).unwrap());
-        let index = CHECK_GUIDES.iter().position(|g| g.check == CLAMP).unwrap();
+        let index = guide_index(CLAMP);
         // Its own fixes: shown while the section shows, none while it is paused.
         let inputs = only_the_clamp_fails();
         let results = compute_all(&inputs);
@@ -6053,7 +8737,7 @@ mod tests {
         let inputs = only_the_clamp_fails();
         let results = compute_all(&inputs);
         let mut cache = FixCache::default();
-        let index = CHECK_GUIDES.iter().position(|g| g.check == CLAMP).unwrap();
+        let index = guide_index(CLAMP);
         assert!(!cache.get(&inputs, &results, false)[index].is_empty());
         assert!(cache.get(&inputs, &results, true)[index].is_empty());
         assert_eq!(cache.computed, 2);
@@ -6788,10 +9472,7 @@ mod tests {
         // gap fix is shown beside a hot-low torque that is not passing, a note says so.
         let note =
             "Raising Magnet face gap also lowers the pull-out, so Hot-low torque falls further.";
-        let clearance = CHECK_GUIDES
-            .iter()
-            .position(|g| g.check == CLEARANCE)
-            .unwrap();
+        let clearance = guide_index(CLEARANCE);
         let gap = (FACE_GAP, Direction::Raise);
         let notes_of = |inputs: &DesignInputs| {
             let results = compute_all(inputs);
@@ -6828,10 +9509,7 @@ mod tests {
         assert!(notes.is_empty(), "{notes:?}");
         // The gearbox guide's gap fix, shown at the defaults beside the failing hot-low torque,
         // brings the same note; no other guide gets it, and an index past the guides gets none.
-        let gearbox = CHECK_GUIDES
-            .iter()
-            .position(|g| g.check == GEARBOX)
-            .unwrap();
+        let gearbox = guide_index(GEARBOX);
         let results = compute_all(&defaults);
         let all = all_fixes(&defaults, &results, false);
         assert!(all[gearbox].contains(&gap), "{:?}", all[gearbox]);
@@ -6850,10 +9528,7 @@ mod tests {
         let retention = "A thinner sleeve or liner holds the magnets less securely; no check here covers that, so confirm it separately.";
         let gap_note =
             "Raising Magnet face gap also lowers the pull-out, so Hot-low torque falls further.";
-        let clearance = CHECK_GUIDES
-            .iter()
-            .position(|g| g.check == CLEARANCE)
-            .unwrap();
+        let clearance = guide_index(CLEARANCE);
         let notes_of = |inputs: &DesignInputs| {
             let results = compute_all(inputs);
             let all = all_fixes(inputs, &results, false);

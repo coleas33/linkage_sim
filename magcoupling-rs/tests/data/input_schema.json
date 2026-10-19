@@ -3188,6 +3188,276 @@
       "rust_only": false,
       "type": "f64",
       "unit": "-"
+    },
+    {
+      "assumption": false,
+      "cell": null,
+      "choices": [],
+      "default": 13.0,
+      "help": "The smallest measured diametral interference of the inner hub on the wheel shaft: shaft diameter less bore, both measured. Holding is checked at it.",
+      "label": "Inner hub interference, minimum",
+      "path": "shaft_joint.hub_interference_min_um",
+      "range": {
+        "log": false,
+        "max": 40.0,
+        "min": 0.0,
+        "step": 0.5
+      },
+      "rust_only": true,
+      "type": "f64",
+      "unit": "µm"
+    },
+    {
+      "assumption": false,
+      "cell": null,
+      "choices": [],
+      "default": 18.0,
+      "help": "The largest measured diametral interference of the inner hub. Its bore stress and fitting temperature are checked at it.",
+      "label": "Inner hub interference, maximum",
+      "path": "shaft_joint.hub_interference_max_um",
+      "range": {
+        "log": false,
+        "max": 40.0,
+        "min": 0.0,
+        "step": 0.5
+      },
+      "rust_only": true,
+      "type": "f64",
+      "unit": "µm"
+    },
+    {
+      "assumption": false,
+      "cell": null,
+      "choices": [],
+      "default": 15.0,
+      "help": "The smallest measured diametral interference of the cup's boss on the gearbox shaft. Holding is checked at it.",
+      "label": "Cup interference, minimum",
+      "path": "shaft_joint.cup_interference_min_um",
+      "range": {
+        "log": false,
+        "max": 40.0,
+        "min": 0.0,
+        "step": 0.5
+      },
+      "rust_only": true,
+      "type": "f64",
+      "unit": "µm"
+    },
+    {
+      "assumption": false,
+      "cell": null,
+      "choices": [],
+      "default": 22.0,
+      "help": "The largest measured diametral interference of the cup. Its bore stress and fitting temperature are checked at it.",
+      "label": "Cup interference, maximum",
+      "path": "shaft_joint.cup_interference_max_um",
+      "range": {
+        "log": false,
+        "max": 40.0,
+        "min": 0.0,
+        "step": 0.5
+      },
+      "rust_only": true,
+      "type": "f64",
+      "unit": "µm"
+    },
+    {
+      "assumption": false,
+      "cell": null,
+      "choices": [],
+      "default": 2.0,
+      "help": "The fit alone must hold cold-high times this, and the key alone is checked at the same torque. While the coupling slips, the torque can reverse many times.",
+      "label": "Shaft joint safety factor",
+      "path": "shaft_joint.safety_factor",
+      "range": {
+        "log": false,
+        "max": 4.0,
+        "min": 1.0,
+        "step": 0.1
+      },
+      "rust_only": true,
+      "type": "f64",
+      "unit": "-"
+    },
+    {
+      "assumption": true,
+      "cell": null,
+      "choices": [],
+      "default": 0.14,
+      "help": "The default is for dry, degreased steel on steel. Holding torque scales with it; oil or a coating in the bore lowers it.",
+      "label": "Shrink-fit friction coefficient",
+      "path": "shaft_joint.friction",
+      "range": {
+        "log": false,
+        "max": 0.3,
+        "min": 0.05,
+        "step": 0.01
+      },
+      "rust_only": true,
+      "type": "f64",
+      "unit": "-"
+    },
+    {
+      "assumption": true,
+      "cell": null,
+      "choices": [],
+      "default": 5.0,
+      "help": "Interference lost as surface peaks flatten when fitted. It lowers both the grip and the bore stress; a ground shaft and honed bore lose less.",
+      "label": "Surface smoothing of the fit",
+      "path": "shaft_joint.smoothing_um",
+      "range": {
+        "log": false,
+        "max": 15.0,
+        "min": 0.0,
+        "step": 0.1
+      },
+      "rust_only": true,
+      "type": "f64",
+      "unit": "µm"
+    },
+    {
+      "assumption": true,
+      "cell": null,
+      "choices": [],
+      "default": 20.0,
+      "help": "How much hotter each rotor may run than its shaft from slip heating. A warmer rotor's bore grows, so the grip at the hot end falls.",
+      "label": "Rotor hotter than its shaft, running",
+      "path": "shaft_joint.rotor_over_shaft_C",
+      "range": {
+        "log": false,
+        "max": 60.0,
+        "min": 0.0,
+        "step": 1.0
+      },
+      "rust_only": true,
+      "type": "f64",
+      "unit": "°C"
+    },
+    {
+      "assumption": false,
+      "cell": null,
+      "choices": [],
+      "default": 3.0,
+      "help": "Width of the parallel key in both joints (DIN 6885-1 gives 3 mm for a 10 mm shaft). Its slot takes this much of the fit's contact.",
+      "label": "Shaft key width",
+      "path": "shaft_joint.key_width_mm",
+      "range": {
+        "log": false,
+        "max": 6.0,
+        "min": 1.0,
+        "step": 0.5
+      },
+      "rust_only": true,
+      "type": "f64",
+      "unit": "mm"
+    },
+    {
+      "assumption": false,
+      "cell": null,
+      "choices": [],
+      "default": 1.2,
+      "help": "Height of the key face bearing on the inner hub and the cup, capped at the keyway depth (DIN 6885-1 gives 1.2 mm for 10 mm).",
+      "label": "Shaft key contact height",
+      "path": "shaft_joint.key_contact_mm",
+      "range": {
+        "log": false,
+        "max": 3.0,
+        "min": 0.5,
+        "step": 0.1
+      },
+      "rust_only": true,
+      "type": "f64",
+      "unit": "mm"
+    },
+    {
+      "assumption": false,
+      "cell": null,
+      "choices": [],
+      "default": 100.0,
+      "help": "Its magnets are bonded before fitting. The check caps it at the adhesive's design limit and the inner ring's single-ring onset less 10 °C; bond strain is not checked.",
+      "label": "Hottest the bonded inner hub may be for fitting",
+      "path": "shaft_joint.hub_fit_max_C",
+      "range": {
+        "log": false,
+        "max": 130.0,
+        "min": 20.0,
+        "step": 1.0
+      },
+      "rust_only": true,
+      "type": "f64",
+      "unit": "°C"
+    },
+    {
+      "assumption": false,
+      "cell": null,
+      "choices": [],
+      "default": 300.0,
+      "help": "The cup is fitted before its magnets are bonded. Stay below the treatment temperatures of its material and finish, and keep the heat off the gearbox seal.",
+      "label": "Hottest the bare cup may be for fitting",
+      "path": "shaft_joint.cup_fit_max_C",
+      "range": {
+        "log": false,
+        "max": 400.0,
+        "min": 20.0,
+        "step": 5.0
+      },
+      "rust_only": true,
+      "type": "f64",
+      "unit": "°C"
+    },
+    {
+      "assumption": false,
+      "cell": null,
+      "choices": [],
+      "default": -196.0,
+      "help": "A cooled shaft shrinks, so the temperature the inner hub's fit would need falls. Dry ice is about -78 °C; liquid nitrogen is -196 °C.",
+      "label": "Wheel shaft temperature at fitting",
+      "path": "shaft_joint.wheel_shaft_fit_C",
+      "range": {
+        "log": false,
+        "max": 40.0,
+        "min": -196.0,
+        "step": 1.0
+      },
+      "rust_only": true,
+      "type": "f64",
+      "unit": "°C"
+    },
+    {
+      "assumption": false,
+      "cell": null,
+      "choices": [],
+      "default": 20.0,
+      "help": "The gearbox output shaft cannot be immersed. Cold spray can take it to about -20 °C, the slider's bottom; never below the gearbox's rated range.",
+      "label": "Gearbox shaft temperature at fitting",
+      "path": "shaft_joint.output_shaft_fit_C",
+      "range": {
+        "log": false,
+        "max": 40.0,
+        "min": -20.0,
+        "step": 1.0
+      },
+      "rust_only": true,
+      "type": "f64",
+      "unit": "°C"
+    },
+    {
+      "assumption": true,
+      "cell": null,
+      "choices": [],
+      "default": 10.0,
+      "help": "Clearance each part needs over its shaft to slide on before it grips; one value for both joints. Less needs a guided, single fast push to a stop.",
+      "label": "Joining clearance",
+      "path": "shaft_joint.joining_clearance_um",
+      "range": {
+        "log": false,
+        "max": 30.0,
+        "min": 0.0,
+        "step": 0.5
+      },
+      "rust_only": true,
+      "type": "f64",
+      "unit": "µm"
     }
   ]
 }

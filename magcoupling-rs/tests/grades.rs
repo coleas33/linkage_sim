@@ -348,6 +348,14 @@ fn mixed_rings_each_take_their_own_alpha_and_density_either_way_round() {
             "{label}"
         );
         assert_eq!(demag.alpha_br, ndfeb.0, "{label}");
+        // BL-064 (owner R-15 ring): the inner ring's own single-ring onset, whichever ring
+        // governs: the NdFeB ring's inside, the ferrite's +inf inside (no knee on heating).
+        let inner_onset = if y30_inner {
+            f64::INFINITY
+        } else {
+            default_demag.onset_single_ring_C
+        };
+        assert_eq!(demag.inner_onset_single_ring_C, inner_onset, "{label}");
         assert_eq!(
             (
                 demag.onset_aligned_C,
@@ -380,6 +388,122 @@ fn mixed_rings_each_take_their_own_alpha_and_density_either_way_round() {
             r.temperature.adhesive.block_mass_g,
             volume_i * rho_i,
             "{label}"
+        );
+    }
+}
+
+#[test]
+fn the_inner_ring_s_own_single_ring_onset_whichever_ring_governs() {
+    // BL-064 (owner R-15 ring): `temperature.demag.inner_onset_single_ring_C` is the inner
+    // ring's own single-ring onset, whichever ring governs the demagnetization block (the ring
+    // with the lower magnet limit, the inner on a tie). It reads the inner ring's block only:
+    // the same as with the inner ring's part or grade on both rings, bit for bit. Where the
+    // inner ring governs it is `onset_single_ring_C` bit for bit; where the outer governs the
+    // two differ. Each pin asserts the ring that governs and both onsets, so a mistyped part
+    // name or grade id (read as a magnet with no grade) fails it.
+    use magcoupling::engine::explain::probes::probe_designs;
+    use magcoupling::engine::temperature::{RING_INNER, RING_OUTER};
+    use magcoupling::{DesignInputs, compute_all};
+    let library = |inner: &str, outer: &str| {
+        let mut d = DesignInputs::default();
+        d.coupling.magnets.part_inner = inner.to_owned();
+        d.coupling.magnets.part_outer = outer.to_owned();
+        d
+    };
+    let manual = |inner: &str, outer: &str| {
+        let mut d = DesignInputs::default();
+        let m = &mut d.coupling.magnets;
+        m.part_inner.clear();
+        m.part_outer.clear();
+        m.grade_inner = inner.to_owned();
+        m.grade_outer = outer.to_owned();
+        d
+    };
+    // (design, the inner ring on both rings, the ring that governs, the governing onset, the
+    // inner ring's own onset [°C], to 4 decimals).
+    let cases = [
+        (
+            "the defaults (B842SH both)",
+            DesignInputs::default(),
+            library("B842SH", "B842SH"),
+            RING_INNER,
+            143.3565,
+            143.3565,
+        ),
+        // The library's N42 block outside: its limit is lower, so it governs.
+        (
+            "inner B842SH, outer B842",
+            library("B842SH", "B842"),
+            library("B842SH", "B842SH"),
+            RING_OUTER,
+            69.8326,
+            143.3565,
+        ),
+        (
+            "inner B842, outer B842SH",
+            library("B842", "B842SH"),
+            library("B842", "B842"),
+            RING_INNER,
+            69.8326,
+            69.8326,
+        ),
+        // SmCo 2:17-30 outside: its magnet limit (from the skipping field) is the lower, but its
+        // single-ring onset the higher, so the governing onset is above the inner ring's own.
+        (
+            "manual N42H inside, SmCo_2_17_30 outside",
+            manual("N42H", "SmCo_2_17_30"),
+            manual("N42H", "N42H"),
+            RING_OUTER,
+            191.8772,
+            112.8297,
+        ),
+        // SmCo 2:17-26 outside a manual N50M ring: the N50M ring governs.
+        (
+            "manual N50M inside, SmCo_2_17_26 outside",
+            manual("N50M", "SmCo_2_17_26"),
+            manual("N50M", "N50M"),
+            RING_INNER,
+            98.8029,
+            98.8029,
+        ),
+    ];
+    for (label, design, inner_on_both, ring, governing, inner) in cases {
+        let demag = compute_all(&design).temperature.demag;
+        assert_eq!(demag.demag_ring, ring, "{label}");
+        assert!(
+            (demag.onset_single_ring_C - governing).abs() < 5e-5,
+            "{label}: {}",
+            demag.onset_single_ring_C
+        );
+        assert!(
+            (demag.inner_onset_single_ring_C - inner).abs() < 5e-5,
+            "{label}: {}",
+            demag.inner_onset_single_ring_C
+        );
+        let own = compute_all(&inner_on_both).temperature.demag;
+        assert_eq!(
+            own.demag_ring, RING_INNER,
+            "{label}: a tie names the inner ring"
+        );
+        assert_eq!(
+            demag.inner_onset_single_ring_C.to_bits(),
+            own.onset_single_ring_C.to_bits(),
+            "{label}: the inner ring's block alone"
+        );
+        assert_eq!(
+            demag.inner_onset_single_ring_C.to_bits() == demag.onset_single_ring_C.to_bits(),
+            ring == RING_INNER,
+            "{label}"
+        );
+    }
+    // The five probe designs: the inner ring governs at each, so the two are one value.
+    for (name, design) in probe_designs() {
+        let demag = compute_all(&design).temperature.demag;
+        assert_eq!(demag.demag_ring, RING_INNER, "{name}");
+        assert_eq!(
+            demag.inner_onset_single_ring_C.to_bits(),
+            demag.onset_single_ring_C.to_bits(),
+            "{name}"
         );
     }
 }

@@ -575,11 +575,41 @@ mod tests {
     }
 
     #[test]
+    fn a_design_file_and_a_share_link_from_before_the_shaft_joints_load_them_at_their_defaults() {
+        // BL-064 adds fifteen inputs with no version bump: a reader takes a missing path at its
+        // default (decision M41-5). The link above was written before them; so is this file,
+        // the link's own text with one input edited.
+        use crate::gui::test_support::is_shaft_joint;
+        let bytes = LINK_BASE64.decode(DEFAULT_PAYLOAD_49FBD3F).unwrap();
+        let mut text = String::new();
+        DeflateDecoder::new(&bytes[..])
+            .read_to_string(&mut text)
+            .unwrap();
+        let json: Json = serde_json::from_str(&text).unwrap();
+        let inputs = json["inputs"].as_object().unwrap();
+        assert!(!inputs.keys().any(|path| is_shaft_joint(path)));
+        assert_eq!(inputs["coupling.npole"], 10);
+        let older = text.replace("\"coupling.npole\":10", "\"coupling.npole\":12");
+        assert_ne!(older, text, "the file names the pole count");
+        for (loaded, npole) in [
+            (decode_share_payload(DEFAULT_PAYLOAD_49FBD3F).unwrap(), 10),
+            (design_from_json(&older).unwrap(), 12),
+        ] {
+            assert_eq!(loaded.inputs.coupling.npole, npole);
+            assert_eq!(
+                loaded.inputs.shaft_joint,
+                crate::engine::shaft_joint::ShaftJointInputs::default()
+            );
+        }
+    }
+
+    #[test]
     fn a_share_link_of_the_default_design_stays_short() {
-        // Decision M41-5 quotes this length (2,462 characters at the time of writing): the
-        // whole design is in the link.
+        // Decision M41-5 quoted this length as 2,462 characters; BL-064's fifteen shaft joint
+        // inputs take it to 2,643 (the whole design is in the link), so the guard moves from
+        // 2,500 to 2,700.
         let payload = encode_share_payload(&Design::default());
-        assert!(payload.len() < 2_500, "{} characters", payload.len());
+        assert!(payload.len() < 2_700, "{} characters", payload.len());
     }
 
     #[test]

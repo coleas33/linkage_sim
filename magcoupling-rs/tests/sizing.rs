@@ -8,10 +8,11 @@ use magcoupling::engine::gearbox::ABOVE_THE_GEARBOX_RATING;
 use magcoupling::engine::housing::{INSIDE_THE_SPACE_CLAIM, SPACE_CLAIM_UNKNOWN};
 use magcoupling::engine::meta::NumOrText;
 use magcoupling::engine::meta::SetErrorKind;
-use magcoupling::engine::meta::{SliderRange, Value, result_rows};
+use magcoupling::engine::meta::{InputSet, SliderRange, Value, input_rows, result_rows};
 use magcoupling::engine::model::{
     END_EFFECT_OUT_OF_RANGE, RingFit, blocks_fit, pitch_share, ring_fits,
 };
+use magcoupling::engine::shaft_joint::SHAFT_JOINTS_PASS;
 use magcoupling::engine::sizing::{
     FreeVariable, SCAN_CELLS, SizingError, SizingOutcome, SizingPoint, VALUE_TOLERANCE_MM,
     is_valid, solve, solve_in,
@@ -1160,14 +1161,9 @@ fn a_design_sized_by_length_grows_its_housing_and_can_exceed_the_space_claim() {
     }
 }
 
-#[test]
-fn auto_sizes_for_the_hot_minimum_alone_and_the_gearbox_check_fails_there() {
-    // BL-059, owner decision 5A: Auto still sizes for the hot minimum check alone. Sized by
-    // length to its own requirement (the Size tab's Auto on length searches the length slider,
-    // as `solve` does), the default design's magnets reach 13.77 mm and hot-low meets the
-    // requirement; cold-high at the gearbox input, about 0.88 N·m, is above the 0.6 N·m input
-    // rating there. Cold-high over hot-low does not depend on the geometry, so no length passes
-    // both, and the gearbox check is red at Auto's answer.
+/// Auto on length at the defaults, sized to their own requirement (the Size tab's Auto on length
+/// searches the length slider, as `solve` does): the magnets reach 13.77 mm.
+fn auto_on_length_at_the_defaults() -> SizingPoint {
     let base = DesignInputs::default();
     let p = solved(solve(
         &base,
@@ -1175,6 +1171,18 @@ fn auto_sizes_for_the_hot_minimum_alone_and_the_gearbox_check_fails_there() {
         base.metal.required_min_Nm,
     ));
     assert!((p.value - 13.77).abs() < 0.005, "{}", p.value);
+    p
+}
+
+#[test]
+fn auto_sizes_for_the_hot_minimum_alone_and_the_gearbox_check_fails_there() {
+    // BL-059, owner decision 5A: Auto still sizes for the hot minimum check alone. Sized by
+    // length to its own requirement, the default design's magnets reach 13.77 mm and hot-low
+    // meets the requirement; cold-high at the gearbox input, about 0.88 N·m, is above the
+    // 0.6 N·m input rating there. Cold-high over hot-low does not depend on the geometry, so no
+    // length passes both, and the gearbox check is red at Auto's answer.
+    let base = DesignInputs::default();
+    let p = auto_on_length_at_the_defaults();
     let r = compute_all(&p.inputs);
     assert_eq!(r.metal.hot_min_check, "Estimate covers hot min");
     assert!(r.metal.cold_high_input_Nm > base.coupling.gearbox_input_rating_Nm);
@@ -1185,6 +1193,71 @@ fn auto_sizes_for_the_hot_minimum_alone_and_the_gearbox_check_fails_there() {
         "{}",
         r.gearbox.cold_high_check
     );
+}
+
+#[test]
+fn auto_reads_no_shaft_joint_input_and_both_joints_hold_at_its_answer() {
+    // BL-064, decision 21: Auto is unchanged. It sizes for the hot minimum alone and reads no
+    // shaft joint input: with each of the 15 at either end of its slider, Auto on length finds
+    // the same length and the same hot-low torque, bit for bit. At its answer for the defaults
+    // (13.7695 mm) both joints hold, the inner hub 10.2647 N·m and the cup 16.8990 N·m against
+    // the 8.3654 N·m each must hold (the inner hub lengthens with the magnets, the cup's boss
+    // does not), and the check passes. Not vacuous: there, each input moves the joints' results
+    // exactly when it leaves its default.
+    let base = DesignInputs::default();
+    let p = auto_on_length_at_the_defaults();
+    let joints = compute_all(&p.inputs).shaft_joint;
+    assert_eq!(joints.check, SHAFT_JOINTS_PASS);
+    for (got, want) in [
+        (joints.hub_holding_Nm, 10.2647),
+        (joints.cup_holding_Nm, 16.8990),
+        (joints.required_Nm, 8.3654),
+    ] {
+        assert!((got - want).abs() < 5e-5, "{got} against {want}");
+    }
+    // The mechanism behind the literals (T4 review 6, from the review leftovers): the cup's boss
+    // does not lengthen with the magnets, so its holding is the defaults' bit for bit, and each
+    // joint must hold the safety factor times cold-high at Auto's answer.
+    assert_eq!(
+        joints.cup_holding_Nm.to_bits(),
+        compute_all(&base).shaft_joint.cup_holding_Nm.to_bits(),
+        "the cup's holding at Auto's answer and at the defaults"
+    );
+    assert_eq!(
+        joints.required_Nm.to_bits(),
+        (p.inputs.shaft_joint.safety_factor * compute_all(&p.inputs).metal.torque_cold_high_Nm)
+            .to_bits(),
+        "the safety factor times cold-high"
+    );
+    for row in input_rows(&base)
+        .into_iter()
+        .filter(|row| row.path.starts_with("shaft_joint."))
+    {
+        let range = row.meta.range.expect("a slider");
+        for value in [range.min, range.max] {
+            let mut edited = base.clone();
+            edited
+                .set(&row.path, Value::Num(value))
+                .expect("a value on the slider");
+            let q = solved(solve(
+                &edited,
+                FreeVariable::AxialLength,
+                base.metal.required_min_Nm,
+            ));
+            assert_eq!(
+                (q.value.to_bits(), q.torque_hot_low_Nm.to_bits()),
+                (p.value.to_bits(), p.torque_hot_low_Nm.to_bits()),
+                "{} at {value}",
+                row.path
+            );
+            assert_eq!(
+                compute_all(&q.inputs).shaft_joint != joints,
+                Value::Num(value) != row.value,
+                "{} at {value}",
+                row.path
+            );
+        }
+    }
 }
 
 #[test]

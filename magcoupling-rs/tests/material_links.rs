@@ -9,11 +9,11 @@ mod common;
 use std::collections::{BTreeMap, BTreeSet};
 
 use common::{cell_values_for, num, plain_problems};
-use magcoupling::engine::api::{DesignInputs, compute_all, compute_all_with};
+use magcoupling::engine::api::{DesignInputs, compute_all, compute_all_with, parts_in_effect};
 use magcoupling::engine::compat::parity_close;
 use magcoupling::engine::deviations::Deviations;
 use magcoupling::engine::material_library::{
-    BACK_IRON_CHOICES, CAP_HOUSING_CHOICES, SLEEVE_LINER_CHOICES, material,
+    BACK_IRON_CHOICES, CAP_HOUSING_CHOICES, SLEEVE_LINER_CHOICES, WORKBOOK_ALUMINIUM, material,
 };
 use magcoupling::engine::materials::PartMaterialInputs;
 use magcoupling::engine::meta::{InputSet, SetErrorKind, Value, input_rows, result_rows};
@@ -413,4 +413,118 @@ fn every_warning_text_reads_in_plain_words() {
         }
     }
     assert!(failures.is_empty(), "{failures:#?}");
+}
+
+/// The library yield strength of material `id` [MPa].
+fn library_yield(id: &str) -> f64 {
+    material(id)
+        .and_then(|m| m.yield_MPa.value)
+        .unwrap_or_else(|| panic!("{id} has a yield"))
+}
+
+#[test]
+fn the_hub_material_follows_the_circuit_and_its_yield_the_metal_in_effect() {
+    // BL-064 (spec section 4.1): the shaft joint check reads the hub, cup and boss material in
+    // effect, `PartProperties::hub`: the steel values on the steel circuit, else the body's,
+    // with the library yield of the metal in effect, not of the pick.
+    use magcoupling::engine::temperature::{AL_HUB_CTE_PER_C, AL_HUB_MODULUS_GPA};
+    // The default: the Materials inputs (12.3e-6 /°C, 205 GPa) and the library's 4140 yield.
+    let default = parts_in_effect(&DesignInputs::default()).hub();
+    assert_eq!(
+        (
+            default.props.cte_per_C,
+            default.props.modulus_GPa,
+            default.yield_MPa
+        ),
+        (12.3e-6, 205.0, 415.0)
+    );
+    // Each pick: a ferromagnetic one keeps the steel circuit and gives the steel values; a
+    // non-magnetic one (304, 6061) selects the free-space circuit and is the body. Either way
+    // the yield is the pick's own.
+    for (code, id) in BACK_IRON_CHOICES {
+        let parts = parts_in_effect(&with_back_iron(code));
+        let hub = parts.hub();
+        let ferromagnetic = material(id).expect(id).ferromagnetic;
+        assert_eq!(parts.backiron, i64::from(ferromagnetic), "{id}");
+        let props = if ferromagnetic {
+            parts.steel
+        } else {
+            parts.body
+        };
+        assert_eq!(hub.props, props, "{id}");
+        assert_eq!(hub.yield_MPa, library_yield(id), "{id}");
+    }
+    // No back iron (`coupling.backiron` 0): the body is the workbook's aluminium whatever a
+    // ferromagnetic pick or a code outside the choices says, so the yield is 6061-T6's, not
+    // the pick's; a non-magnetic pick is the body itself, with its own yield.
+    for code in (1..=8).chain([99]) {
+        let mut inputs = with_back_iron(code);
+        inputs.coupling.backiron = 0;
+        let parts = parts_in_effect(&inputs);
+        let hub = parts.hub();
+        assert_eq!(hub.props, parts.body, "{code}");
+        let id = match parts.back_iron.material {
+            Some(m) if !m.ferromagnetic => m.id,
+            _ => WORKBOOK_ALUMINIUM,
+        };
+        assert_eq!(hub.yield_MPa, library_yield(id), "{code}");
+        if id == WORKBOOK_ALUMINIUM {
+            assert_eq!(
+                (hub.props.cte_per_C, hub.props.modulus_GPa, hub.yield_MPa),
+                (AL_HUB_CTE_PER_C, AL_HUB_MODULUS_GPA, 241.0),
+                "{code}"
+            );
+        }
+    }
+    // On the steel circuit a code outside the choices gives NaN values and a NaN yield (decision
+    // D3: never another material), so the shaft joint check reads unknown.
+    let unknown = parts_in_effect(&with_back_iron(99)).hub();
+    assert!(
+        unknown.props.cte_per_C.is_nan()
+            && unknown.props.modulus_GPa.is_nan()
+            && unknown.yield_MPa.is_nan(),
+        "{unknown:?}"
+    );
+}
+
+#[test]
+fn the_expansion_warning_reads_the_hub_material_in_effect_unchanged() {
+    // BL-064: the material warnings read `PartProperties::hub` (one rule for the warnings and
+    // the shaft joint check). The value is the one they read before, bit for bit (the steel's
+    // expansion on the steel circuit, else the body's), and the expansion warning fires exactly
+    // when it is further than the limit from the magnets'.
+    use magcoupling::engine::warnings::CTE_MISMATCH_LIMIT_PER_C;
+    let mut designs = Vec::new();
+    for backiron in [1, 0] {
+        for code in (1..=8).chain([99]) {
+            let mut inputs = with_back_iron(code);
+            inputs.coupling.backiron = backiron;
+            designs.push((
+                format!("back iron {code}, circuit input {backiron}"),
+                inputs,
+            ));
+        }
+    }
+    let mut typed = DesignInputs::default();
+    typed.materials.steel.cte_per_C = 16e-6;
+    designs.push(("4140 expansion typed 16e-6".to_owned(), typed));
+    let mut fired_count = 0;
+    for (label, inputs) in designs {
+        let parts = parts_in_effect(&inputs);
+        let before = if parts.backiron == 1 {
+            parts.steel.cte_per_C
+        } else {
+            parts.body.cte_per_C
+        };
+        let hub_cte = parts.hub().props.cte_per_C;
+        assert_eq!(hub_cte.to_bits(), before.to_bits(), "{label}");
+        let mismatch = (hub_cte - inputs.temperature.mismatch.ndfeb_cte_per_C).abs()
+            > CTE_MISMATCH_LIMIT_PER_C;
+        let fires = fired(&inputs).contains(&"cte_mismatch_with_magnets");
+        assert_eq!(fires, mismatch, "{label}");
+        fired_count += usize::from(fires);
+    }
+    // Not vacuous: the aluminium and 304 bodies and the typed expansion fire it (9 with no
+    // back iron, 304 and 6061 on the steel circuit input, the typed 4140).
+    assert_eq!(fired_count, 12);
 }

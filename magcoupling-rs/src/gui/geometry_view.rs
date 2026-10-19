@@ -153,7 +153,7 @@ pub(crate) fn arrowhead(painter: &egui::Painter, tip: Pos2, dir: Vec2, stroke: S
 }
 
 /// Draws the geometry of the design shown (`inputs` and the `results` computed from them),
-/// without the paused shaft-clamp section's parts while `clamps_paused` ([`geometry`]), each
+/// without the clamp-boss design check while `clamps_paused` ([`geometry`]), each
 /// callout a readout (`readouts`), and returns what it drew.
 pub fn geometry_ui(
     ui: &mut egui::Ui,

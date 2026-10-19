@@ -1,7 +1,8 @@
 //! The static engine tables a formula can read with `table("name", key, "field")`: the
 //! magnet library, the grade table, the part materials (back iron, sleeve and liner, cap and
-//! housing), the aluminium alloys, the adhesives and the clamp screw sizes, each field as the
-//! engine uses it with every approved correction on (the explorer describes what users see).
+//! housing; the back iron's modulus, expansion and yield for the shaft joints), the aluminium
+//! alloys, the adhesives and the clamp screw sizes, each field as the engine uses it with every
+//! approved correction on (the explorer describes what users see).
 //!
 //! A lookup returns `none` when the key is not in the table (a part name that is not a
 //! library part, a blank grade, a selector code outside the choices), which is how the
@@ -51,6 +52,9 @@ pub const TABLE_FIELDS: &[TableField] = &[
     TableField { table: "back_iron", field: "density_g_mm3", symbol: "ρ_{BI}", unit: "g/mm³", label: "Back-iron material density (library)" },
     TableField { table: "back_iron", field: "cp_J_kgK", symbol: "c_{BI}", unit: "J/(kg·K)", label: "Back-iron material specific heat (library)" },
     TableField { table: "back_iron", field: "design_flux_density_T", symbol: "B_{des,BI}", unit: "T", label: "Back-iron material design flux density (decision 20; none where the workbook gives none)" },
+    TableField { table: "back_iron", field: "modulus_GPa", symbol: "E_{BI}", unit: "GPa", label: "Back-iron material elastic modulus (library)" },
+    TableField { table: "back_iron", field: "cte_per_C", symbol: "α_{BI}", unit: "1/°C", label: "Back-iron material expansion coefficient (library)" },
+    TableField { table: "back_iron", field: "yield_MPa", symbol: "σ_{y,BI}", unit: "MPa", label: "Back-iron material yield strength (library: the published minimum where one exists)" },
     TableField { table: "sleeve_liner", field: "sigma_S_m", symbol: "σ_{SL}", unit: "S/m", label: "Sleeve and liner material conductivity (library)" },
     TableField { table: "sleeve_liner", field: "density_g_mm3", symbol: "ρ_{SL}", unit: "g/mm³", label: "Sleeve and liner material density (library)" },
     TableField { table: "sleeve_liner", field: "cp_J_kgK", symbol: "c_{SL}", unit: "J/(kg·K)", label: "Sleeve and liner material specific heat (library)" },
@@ -132,6 +136,10 @@ pub fn lookup(table: &str, key: &Value, field_name: &str) -> Result<Option<Value
                 "density_g_mm3" => num(m.engine.density_g_mm3),
                 "cp_J_kgK" => num(m.engine.cp_J_kgK),
                 "design_flux_density_T" => m.design_flux_density_T.map_or(Value::None, num),
+                "modulus_GPa" => num(m.engine.modulus_GPa),
+                "cte_per_C" => num(m.engine.cte_per_C),
+                // As `PartProperties::hub` reads it: NaN where the library has no yield.
+                "yield_MPa" => num(m.yield_or_nan()),
                 _ => unreachable!("checked against TABLE_FIELDS"),
             })
         }
@@ -233,6 +241,37 @@ mod tests {
             .filter(|&c| ferro(c) == Some(Value::Int(0)))
             .collect();
         assert_eq!(non.len(), 2, "304 and 6061 (spec A5)");
+    }
+
+    #[test]
+    fn the_back_iron_table_reads_each_pick_s_modulus_expansion_and_yield() {
+        // BL-064: the shaft joint records read the hub, cup and boss material in effect
+        // (`PartProperties::hub`): a pick's engine modulus and expansion, and its library yield.
+        let read = |code: i64, field: &str| match lookup("back_iron", &Value::Int(code), field) {
+            Ok(Some(Value::Num(x))) => x,
+            other => panic!("back_iron {code} {field}: {other:?}"),
+        };
+        for &(code, id) in &BACK_IRON_CHOICES {
+            let m = chosen(&BACK_IRON_CHOICES, code).expect("a choice names a material");
+            assert_eq!(read(code, "modulus_GPa"), m.engine.modulus_GPa, "{id}");
+            assert_eq!(read(code, "cte_per_C"), m.engine.cte_per_C, "{id}");
+            assert_eq!(
+                read(code, "yield_MPa"),
+                m.yield_MPa
+                    .value
+                    .expect("every back iron has a library yield"),
+                "{id}"
+            );
+        }
+        // The default pick's library values: 4140 annealed, 205 GPa, 12.3e-6 /°C, 415 MPa.
+        assert_eq!(
+            (
+                read(1, "modulus_GPa"),
+                read(1, "cte_per_C"),
+                read(1, "yield_MPa")
+            ),
+            (205.0, 12.3e-6, 415.0)
+        );
     }
 
     #[test]

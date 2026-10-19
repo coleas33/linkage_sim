@@ -1,6 +1,7 @@
 //! The groups of the results table (decision O-6): the headline first (the dashboard's rows,
 //! [`DASHBOARD`]), then the physics chains: the A-3 chains of the explorer's scope ([`SCOPE`]:
-//! torque, temperature, demagnetization, slip heating, clamps, geometry) and two of results the
+//! torque, temperature, demagnetization, slip heating, clamps, geometry, and BL-064's shaft
+//! joints) and two of results the
 //! scope leaves out (adhesive, mass), each chain also taking the results of its nested groups
 //! ([`CHAIN_PREFIXES`]: the cold demagnetization limits, the slip temperatures, the adhesive and
 //! bond screens); then every other result under its package group, the "Other results". Every
@@ -27,7 +28,7 @@ pub const OTHER_RESULTS: &str = "Other results";
 /// explorer's scope in its order (its `dashboard` entry is the headline's), with the adhesive
 /// after slip heating and the mass last. `adhesive` and `mass` are no chain of the scope: only
 /// [`CHAIN_PREFIXES`] fills them.
-pub const CHAIN_LABELS: [(&str, &str); 8] = [
+pub const CHAIN_LABELS: [(&str, &str); 9] = [
     ("torque", "Torque"),
     ("temperature", "Temperature"),
     ("demagnetization", "Demagnetization"),
@@ -35,6 +36,7 @@ pub const CHAIN_LABELS: [(&str, &str); 8] = [
     ("adhesive", "Adhesive"),
     ("clamps", "Clamps"),
     ("geometry", "Geometry"),
+    ("shaft_joint", "Shaft joints"),
     ("mass", "Mass"),
 ];
 
@@ -71,7 +73,7 @@ pub const CHAIN_PREFIXES: [(&str, &str); 19] = [
 
 /// The heading of each package group of the other results, by the first segment of the path
 /// (a table's index dropped: `gap_sweep[3].f_end` is in `gap_sweep`), in schema order.
-pub const PACKAGE_LABELS: [(&str, &str); 13] = [
+pub const PACKAGE_LABELS: [(&str, &str); 14] = [
     ("calibration", "Calibration"),
     ("model", "Coupling model"),
     ("mass", "Mass"),
@@ -83,6 +85,7 @@ pub const PACKAGE_LABELS: [(&str, &str); 13] = [
     ("warnings", "Material warnings"),
     ("housing", "Housing"),
     ("gearbox", "Gearbox"),
+    ("shaft_joint", "Shaft joints"),
     ("gap_sweep", "Gap sweep"),
     ("pole_sweep", "Pole sweep"),
 ];
@@ -252,7 +255,7 @@ mod tests {
         let groups = result_groups();
         let ids: Vec<&str> = groups.iter().map(|g| g.id).collect();
         assert_eq!(
-            ids[..9],
+            ids[..10],
             [
                 "headline",
                 "torque",
@@ -262,11 +265,12 @@ mod tests {
                 "adhesive",
                 "clamps",
                 "geometry",
+                "shaft_joint",
                 "mass"
             ]
         );
-        assert!(groups[..9].iter().all(|g| !g.other));
-        assert!(groups[9..].iter().all(|g| g.other));
+        assert!(groups[..10].iter().all(|g| !g.other));
+        assert!(groups[10..].iter().all(|g| g.other));
         // A group is known by its id and its section.
         let mut keys: Vec<(bool, &str)> = groups.iter().map(|g| (g.other, g.id)).collect();
         keys.sort_unstable();
@@ -307,6 +311,31 @@ mod tests {
             group_of("temperature.demag.inner_magnet_limit_C"),
             "demagnetization"
         );
+        // BL-064 (owner R-15 ring): the inner ring's own single-ring onset is a path of the
+        // demagnetization chain.
+        assert_eq!(
+            group_of("temperature.demag.inner_onset_single_ring_C"),
+            "demagnetization"
+        );
+        // BL-064: the shaft joints' numeric results are the shaft_joint chain, between the
+        // geometry callouts and the mass. A chain and a package share the id, so `section` reads
+        // the group's `other` flag too.
+        let section = |path: &str| {
+            groups
+                .iter()
+                .find(|g| g.rows.iter().any(|&i| entries[i].path == path))
+                .map(|g| (g.id, g.other))
+                .unwrap_or_else(|| panic!("{path} in no group"))
+        };
+        for path in [
+            "shaft_joint.required_Nm",
+            "shaft_joint.hub_holding_Nm",
+            "shaft_joint.cup_fit_allowed_C",
+        ] {
+            assert_eq!(section(path), ("shaft_joint", false), "{path}");
+        }
+        // The verdict is no chain path: it is a dashboard row, so the headline's (BL-064).
+        assert_eq!(section("shaft_joint.check"), ("headline", false));
         assert_eq!(
             group_of("temperature.summary.peak_with_fault_C"),
             "slip_heating"

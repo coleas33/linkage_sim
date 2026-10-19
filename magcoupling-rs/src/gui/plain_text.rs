@@ -261,11 +261,11 @@ const HELP: &[(&str, &str)] = &[
     // Shaft and hub joint.
     (
         "coupling.bore_mm",
-        "Diameter of the shaft in the hub bore. Larger thins the hub wall: the hub check can fail, and the wall past the keyway can break through.",
+        "Diameter of both shafts in the inner hub's and cup's bores. Larger thins the walls: the hub check can fail, and the wall past the keyway can break through.",
     ),
     (
         "coupling.keyway_depth_mm",
-        "Depth of the key slot cut into the hub bore. Deeper leaves a thinner hub wall past the key, and too deep breaks through the hub.",
+        "Depth of the key slot in the inner hub's and the cup's bores; it caps the key's contact height. Deeper thins the wall past the key; too deep breaks through.",
     ),
     (
         "clamps.key_width_mm",
@@ -473,7 +473,7 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "metal.boss_length_mm",
-        "Axial length of the shaft boss behind the rear wall: it adds to the overall length and the boss mass, not to the large-diameter length.",
+        "Axial length of the shaft boss behind the rear wall: longer adds overall length and boss mass, not large-diameter length, and lets the cup's fit hold more.",
     ),
     (
         "metal.boss_od_mm",
@@ -661,7 +661,7 @@ const HELP: &[(&str, &str)] = &[
     (
         "temperature.demag.h_rev_single_ring_kA_m",
         concat!(
-            "Worst reverse field on a single ring during adhesive cure; higher lowers the cure margin. ",
+            "Single-ring reverse field; higher lowers the cure margin and can lower the inner hub's allowed fitting temperature. ",
             stored_3d_caveat!()
         ),
     ),
@@ -1426,6 +1426,7 @@ mod batch_b_tests {
     use crate::engine::meta::{InputSet, ResultSet, Value};
     use crate::engine::size_controls::{dimensions, resize_diameter, with_ring_radius};
     use crate::gui::inputs::WORKFLOW;
+    use crate::gui::test_support::n42_parts;
     use crate::{DesignInputs, compute_all};
     use std::collections::BTreeSet;
 
@@ -1590,6 +1591,8 @@ mod batch_b_tests {
             "class A4-70" => set("clamps.screw_class", Value::Int(3)),
             "coercivity inputs" => set("temperature.demag.coercivity_source", Value::Int(0)),
             "measured drag" => set("metal.measured_drag_Nm", Value::Num(0.05)),
+            "shallow keyway" => set("coupling.keyway_depth_mm", Value::Num(1.0)),
+            "N42 parts" => n42_parts(&mut inputs),
             "manual, no grade" => {
                 set("coupling.magnets.part_inner", Value::Text(String::new()));
                 set("coupling.magnets.part_outer", Value::Text(String::new()));
@@ -1710,6 +1713,7 @@ mod batch_b_tests {
         ("metal.boss_length_mm", "example", "metal.axial_stack_mm", Up),
         ("metal.boss_length_mm", "example", "metal.large_dia_stack_mm", Stays),
         ("metal.boss_length_mm", "example", "mass.boss_g", Up),
+        ("metal.boss_length_mm", "example", "shaft_joint.cup_holding_Nm", Up),
         ("metal.boss_od_mm", "example", "mass.boss_g", Up),
         ("metal.boss_od_mm", "example", "metal.adapter_g", Up),
         ("metal.cap_axial_mm", "example", "metal.axial_stack_mm", Up),
@@ -1774,6 +1778,8 @@ mod batch_b_tests {
         ("temperature.demag.h_rev_likepole_kA_m", "Y30 grades", "temperature.demag.cold_limit_C", Up),
         ("temperature.demag.h_rev_single_ring_kA_m", "example", "temperature.summary.cure_margin_C", Down),
         ("temperature.demag.h_rev_single_ring_kA_m", "example", "temperature.summary.magnet_limit_C", Stays),
+        ("temperature.demag.h_rev_single_ring_kA_m", "example", "shaft_joint.hub_fit_allowed_C", Stays),
+        ("temperature.demag.h_rev_single_ring_kA_m", "N42 parts", "shaft_joint.hub_fit_allowed_C", Down),
         // Overrides: placeholders and assumed values
         ("temperature.duty.driving_rise_C", "example", "temperature.thermal.start_C", Up),
         ("temperature.duty.driving_rise_C", "example", "temperature.summary.hot_day_start_C", Up),
@@ -1966,12 +1972,49 @@ mod batch_b_tests {
         }
     }
 
+    /// The batch-B helps that name the shaft joint their input feeds (BL-064, G-3 round 2 SF-9
+    /// and SF-10), as (input, the help's words, the result those words are about, the way they
+    /// say it moves as the input rises). "can lower" holds where the onset binds (library N42
+    /// parts in both rings) and not at the defaults, where it stays.
+    const JOINT_WORDS: &[(&str, &str, &str, Moves)] = &[
+        (
+            "metal.boss_length_mm",
+            "lets the cup's fit hold more",
+            "shaft_joint.cup_holding_Nm",
+            Up,
+        ),
+        (
+            "temperature.demag.h_rev_single_ring_kA_m",
+            "can lower the inner hub's allowed fitting temperature",
+            "shaft_joint.hub_fit_allowed_C",
+            Down,
+        ),
+    ];
+
+    /// Each of [`JOINT_WORDS`] is in its help and has its claim, that way, in [`CLAIMS`].
+    #[test]
+    fn batch_b_helps_name_the_shaft_joint_they_feed() {
+        for &(input, words, result, moves) in JOINT_WORDS {
+            let help = help_for(input);
+            assert!(help.contains(words), "{input}: {help}");
+            assert!(
+                CLAIMS.iter().any(|&(claimed, _, moved, way)| {
+                    claimed == input && moved == result && way == moves
+                }),
+                "{input}: no claim that {result} moves {moves:?}"
+            );
+        }
+    }
+
     /// Ruling 11 (3A): the texts that named the clamp as a cost now name what rises in its
     /// place, the shaft-joint and gearbox loads: the cold-high torque, which whatever holds the
     /// hub on the shaft and the gearbox output both carry, and its value at the gearbox input.
     /// Each claim holds one slider step up on a design where the input is free. The bore help's
     /// two limits hold at the bore's slider top: the hub check fails on the 8-magnet probe
     /// design, keyed or keyless, and the wall past the keyway breaks through on the smallest ring.
+    /// The bore's and the keyway's helps name both joints (G-3 round 2 SF-7, SF-8), and the
+    /// keyway's says it caps the key's contact height: both key pressures follow the keyway only
+    /// where it is shallower than the contact height.
     #[test]
     fn the_joint_neutral_texts_claim_what_the_engine_does() {
         use crate::engine::explain::notes::Step;
@@ -2012,11 +2055,27 @@ mod batch_b_tests {
         rise(&example, &longer, length);
         let overall = |inputs: &DesignInputs| dimensions(inputs).expect("a size").overall_length_mm;
         assert!(overall(&longer) > overall(&example));
-        // A larger bore thins the hub wall past the keyway; at its slider top it breaks through
-        // the smallest ring's hub, the keyway at its default.
+        // The bore is both shafts' diameter (G-3 round 2 SF-7): its help says so, and both joints'
+        // fits read it. A larger bore thins the hub wall under the magnets and past the keyway;
+        // at its slider top the wall past the keyway breaks through the smallest ring's hub, the
+        // keyway at its default.
+        assert!(
+            help_for("coupling.bore_mm").starts_with("Diameter of both shafts"),
+            "{}",
+            help_for("coupling.bore_mm")
+        );
         let wall = "model.hub_wall_past_key_mm";
+        let hub_wall = "model.hub_wall_mm";
         let wider = raised(&example, "coupling.bore_mm");
         assert!(number(&wider, wall) < number(&example, wall));
+        assert!(number(&wider, hub_wall) < number(&example, hub_wall));
+        for holding in ["shaft_joint.hub_holding_Nm", "shaft_joint.cup_holding_Nm"] {
+            assert_ne!(
+                number(&wider, holding),
+                number(&example, holding),
+                "{holding}: the fit sits on the bore"
+            );
+        }
         let range = |path: &str| {
             InputCatalogue::get()
                 .entry(path)
@@ -2044,7 +2103,6 @@ mod batch_b_tests {
             bore_help.contains(&label_for(hub_check).to_lowercase()),
             "the bore help names the {hub_check} row: {bore_help}"
         );
-        let hub_wall = "model.hub_wall_mm";
         let (_, eight) = probe_designs()
             .into_iter()
             .find(|(name, _)| *name == "8 magnets per ring")
@@ -2074,6 +2132,40 @@ mod batch_b_tests {
             assert!(
                 number(&widest, wall) > 0.0,
                 "keyway {keyway} mm: {wall} at the widest bore"
+            );
+        }
+        // The keyway is cut in both bores and caps the key's contact height (G-3 round 2 SF-8).
+        // One step deeper thins the hub wall past the key. On the example design the contact
+        // height is under the keyway, so both joints' key pressures stay bit for bit; on a
+        // keyway shallower than the contact height, one step deeper lowers both.
+        let keyway = "coupling.keyway_depth_mm";
+        let keyway_help = help_for(keyway);
+        assert!(
+            keyway_help.contains("in the inner hub's and the cup's bores")
+                && keyway_help.contains("caps the key's contact height"),
+            "{keyway_help}"
+        );
+        let shallow = claim_design("shallow keyway");
+        assert!(
+            shallow.coupling.keyway_depth_mm < example.shaft_joint.key_contact_mm
+                && example.shaft_joint.key_contact_mm < example.coupling.keyway_depth_mm,
+            "the contact height lies between the shallow keyway and the example's"
+        );
+        let deeper = raised(&example, keyway);
+        assert!(number(&deeper, wall) < number(&example, wall));
+        let shallow_deeper = raised(&shallow, keyway);
+        for pressure in [
+            "shaft_joint.hub_key_pressure_MPa",
+            "shaft_joint.cup_key_pressure_MPa",
+        ] {
+            assert_eq!(
+                number(&deeper, pressure),
+                number(&example, pressure),
+                "{pressure}: the contact height is under the keyway"
+            );
+            assert!(
+                number(&shallow_deeper, pressure) < number(&shallow, pressure),
+                "{pressure}: the keyway caps the contact height"
             );
         }
     }

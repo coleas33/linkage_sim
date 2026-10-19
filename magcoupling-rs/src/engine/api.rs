@@ -5,7 +5,8 @@
 //! `compute_all` does:
 //!
 //! Calibration → Calculator (model) → Metal design retainers → Calculator mass
-//! → Metal design → Materials → Temperature design → Shaft clamps → sweeps.
+//! → Metal design → Materials → Temperature design → housing, gearbox, shaft joints
+//! → Shaft clamps → sweeps.
 //!
 //! Ported: every module except `fields3d` (M3): every sheet of the Python
 //! `compute_all` (Calibration, Calculator (model), Metal design retainers,
@@ -29,11 +30,12 @@ use super::deviations::{REGISTRY, restore_workbook_defaults};
 use super::gearbox::{self, GearboxResults};
 use super::grades;
 use super::housing::{self, HousingResults};
-use super::material_library;
+use super::material_library::{self, HubMaterial, PartProperties};
 use super::materials::{self, MaterialsInputs, MaterialsResults};
 use super::meta::{ResultSet, SetError, TableLayout, Value, inputs, results, validate};
 use super::metal_design::{self, MetalDesignInputs, MetalDesignResults, RetainerResults};
 use super::model::{self, CouplingInputs, MassResults, ModelResults};
+use super::shaft_joint::{self, ShaftJointInputs, ShaftJointLinks, ShaftJointResults};
 use super::sweeps::{self, SweepRow};
 use super::temperature::{self, TemperatureInputs, TemperatureResults};
 use super::warnings::{self, WarningResults};
@@ -49,6 +51,7 @@ inputs! {
             materials: MaterialsInputs,
             temperature: TemperatureInputs,
             clamps: ClampInputs,
+            shaft_joint: ShaftJointInputs,
         }
     }
 }
@@ -69,6 +72,7 @@ results! {
             warnings: WarningResults,
             housing: HousingResults,
             gearbox: GearboxResults,
+            shaft_joint: ShaftJointResults,
         }
         tables {
             gap_sweep: SweepRow => TableLayout::RowsDown { sheet: "Gap sweep", first_row: 6 },
@@ -136,6 +140,66 @@ pub fn headline(results: &DesignResults) -> Vec<(&'static str, Value)> {
         .collect()
 }
 
+/// The engine values the shaft joint check read for `results` (BL-064), rebuilt from the design's
+/// inputs, results and parts in effect ([`parts_in_effect`]) by the one builder [`compute_all`]
+/// fills them with, so the guide and the tests can evaluate the joints' terms
+/// ([`shaft_joint::joints`]) as [`compute_all`] did.
+pub fn shaft_joint_links(inputs: &DesignInputs, results: &DesignResults) -> ShaftJointLinks {
+    joint_links(
+        inputs,
+        &parts_in_effect(inputs).hub(),
+        results.metal.torque_cold_high_Nm,
+        results.housing.hub_length_mm,
+        &results.temperature,
+    )
+}
+
+/// The parts' materials in effect for `inputs` (Addendum A5): the part selectors resolved
+/// against the inputs, as [`compute_all`] reads them.
+pub fn parts_in_effect(inputs: &DesignInputs) -> PartProperties {
+    material_library::resolve(
+        &inputs.materials.parts,
+        &inputs.materials.steel,
+        inputs.coupling.backiron,
+        &inputs.metal,
+        &inputs.temperature.slip_loss,
+        &inputs.temperature.thermal,
+    )
+}
+
+/// The 15 engine values the shaft joint check reads (BL-064), filled in one place for `compute`
+/// and [`shaft_joint_links`]: the bore, keyway depth and inner back apothem, and the inner
+/// bondline, boss length, web, boss diameter and minimum temperature, are the inputs (`compute`'s
+/// copies of the coupling and metal design groups leave all eight as typed); the adhesive's
+/// design limit and the inner ring's own single-ring onset are `temperature`'s; the three part
+/// values are `hub`'s, the hub, cup and boss material in effect.
+#[allow(non_snake_case)] // unit suffixes, as the engine's names
+fn joint_links(
+    inputs: &DesignInputs,
+    hub: &HubMaterial,
+    cold_high_Nm: f64,
+    hub_length_mm: f64,
+    temperature: &TemperatureResults,
+) -> ShaftJointLinks {
+    ShaftJointLinks {
+        cold_high_Nm,
+        bore_mm: inputs.coupling.bore_mm,
+        keyway_depth_mm: inputs.coupling.keyway_depth_mm,
+        hub_length_mm,
+        inner_back_apothem_mm: inputs.coupling.inner_back_apothem_mm,
+        bond_inner_mm: inputs.metal.bond_inner_mm,
+        boss_length_mm: inputs.metal.boss_length_mm,
+        web_mm: inputs.metal.web_mm,
+        boss_od_mm: inputs.metal.boss_od_mm,
+        min_temp_C: inputs.metal.min_temp_C,
+        adhesive_limit_C: temperature.adhesive.design_limit_C,
+        inner_onset_single_ring_C: temperature.demag.inner_onset_single_ring_C,
+        part_modulus_GPa: hub.props.modulus_GPa,
+        part_cte_per_C: hub.props.cte_per_C,
+        part_yield_MPa: hub.yield_MPa,
+    }
+}
+
 impl DesignInputs {
     /// Every selector code among its choices and every number finite (see
     /// [`crate::engine::meta::validate`]). Decision D3: `compute_all` never
@@ -150,14 +214,7 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
     let (cal_in, mat_in) = (&inputs.calibration, &inputs.materials);
     // Addendum A5: the parts' materials in effect. At the default choices every value is
     // the input it stands for, so the copies below equal the inputs bit for bit.
-    let parts = material_library::resolve(
-        &mat_in.parts,
-        &mat_in.steel,
-        inputs.coupling.backiron,
-        &inputs.metal,
-        &inputs.temperature.slip_loss,
-        &inputs.temperature.thermal,
-    );
+    let parts = parts_in_effect(inputs);
     let ci = &CouplingInputs {
         backiron: parts.backiron,
         ..inputs.coupling.clone()
@@ -336,6 +393,9 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
     let temp = temperature::compute(&ti, &links, dev);
     // Addendum A5: the material consequence warnings, on the materials in effect.
     let back_iron = parts.back_iron.material;
+    // The hub, cup and boss material in effect (BL-064: one rule for the warnings and the shaft
+    // joints).
+    let hub_material = parts.hub();
     let warn = warnings::compute(&warnings::WarningInputs {
         circuit_backiron: parts.backiron,
         sleeve_ferromagnetic: parts.sleeve_liner.material.is_some_and(|m| m.ferromagnetic),
@@ -346,11 +406,7 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
             .is_some_and(|m| parts.back_iron.is_default || m.design_flux_density_T.is_some()),
         back_iron_needs_plating: back_iron.is_some_and(|m| m.needs_plating),
         plating_mm: mat_in.nickel.thickness_mm,
-        hub_cte_per_C: if parts.backiron == 1 {
-            parts.steel.cte_per_C
-        } else {
-            parts.body.cte_per_C
-        },
+        hub_cte_per_C: hub_material.props.cte_per_C,
         magnet_cte_per_C: ti.mismatch.ndfeb_cte_per_C,
     });
 
@@ -358,6 +414,18 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
     let housing = housing::compute(&mdr, &axial);
     // BL-059: cold-high at the gearbox input against the gearbox input torque rating.
     let gearbox = gearbox::compute(mdr.cold_high_input_Nm, ci.gearbox_input_rating_Nm);
+    // BL-064: the keyed shrink fits of the inner hub on the wheel shaft and of the cup on the
+    // gearbox output shaft.
+    let shaft_joint = shaft_joint::compute(
+        &inputs.shaft_joint,
+        &joint_links(
+            inputs,
+            &hub_material,
+            mdr.torque_cold_high_Nm,
+            axial.hub_length_mm,
+            &temp,
+        ),
+    );
 
     let alloy = if inputs.clamps.alloy == 1 {
         &materials::AL7075
@@ -416,6 +484,7 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         warnings: warn,
         housing,
         gearbox,
+        shaft_joint,
         gap_sweep: gap,
         pole_sweep: pole,
     }

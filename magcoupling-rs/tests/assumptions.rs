@@ -12,28 +12,27 @@ mod common;
 
 use std::collections::BTreeSet;
 
-use common::plain_problems;
+use common::{input_meta, plain_problems};
 use magcoupling::engine::api::{DesignInputs, compute_all};
 use magcoupling::engine::assumptions::{
-    ASSUMPTIONS, any_modified, modified, reset_to_workbook_defaults, states,
+    ASSUMPTIONS, Assumption, any_modified, modified, reset_to_workbook_defaults, states,
 };
 use magcoupling::engine::deviations::Deviations;
 use magcoupling::engine::explain::probes;
-use magcoupling::engine::meta::{FieldType, InputMeta, InputSet, Value, input_rows, result_rows};
+use magcoupling::engine::meta::{FieldType, InputSet, Value, input_rows, result_rows};
 
-/// The metadata of the input at `path`.
-fn meta(path: &str) -> &'static InputMeta {
-    input_rows(&DesignInputs::default())
-        .into_iter()
-        .find(|r| r.path == path)
-        .unwrap_or_else(|| panic!("{path}: not an input"))
-        .meta
+/// The assumption row `id`.
+fn row(id: &str) -> &'static Assumption {
+    ASSUMPTIONS
+        .iter()
+        .find(|a| a.id == id)
+        .unwrap_or_else(|| panic!("{id}: no assumption"))
 }
 
 /// A value of the input at `path` other than its default, inside its slider or among its
 /// choices: the range end farther from the default, or the first other choice.
 fn other_value(path: &str) -> Value {
-    let m = meta(path);
+    let m = input_meta(path);
     let default = DesignInputs::default().get(path).expect("an input");
     if !m.choices.is_empty() {
         let code = m
@@ -56,6 +55,24 @@ fn other_value(path: &str) -> Value {
     })
 }
 
+/// The words every BL-064 shaft joint assumption's source carries, citing the spec by name.
+const BL064_SOURCE: &str = "BL-064 shaft joint spec";
+
+/// What the source of an assumption on a Rust-only input (no workbook cell) cites in place of
+/// a cell: the spec that added the input.
+const RUST_ONLY_SOURCES: [&str; 2] = ["Addendum A3", BL064_SOURCE];
+
+/// The BL-064 spec's path from the repository root, which the friction row's source names.
+const BL064_SPEC: &str = "docs/superpowers/specs/2026-10-17-bl064-shaft-joint-design.md";
+
+/// BL-064's four shaft joint assumptions (spec 4.5), each with the one input it sets.
+const BL064_ROWS: [(&str, &str); 4] = [
+    ("fit_friction", "shaft_joint.friction"),
+    ("fit_smoothing", "shaft_joint.smoothing_um"),
+    ("rotor_over_shaft", "shaft_joint.rotor_over_shaft_C"),
+    ("joining_clearance", "shaft_joint.joining_clearance_um"),
+];
+
 #[test]
 fn every_flagged_input_is_in_exactly_one_row() {
     let flagged: BTreeSet<String> = input_rows(&DesignInputs::default())
@@ -68,7 +85,10 @@ fn every_flagged_input_is_in_exactly_one_row() {
         assert!(!a.paths.is_empty(), "{}", a.id);
         for &path in a.paths {
             assert!(listed.insert(path.to_owned()), "{path} is in two rows");
-            assert!(meta(path).assumption, "{path} is not flagged .assumption()");
+            assert!(
+                input_meta(path).assumption,
+                "{path} is not flagged .assumption()"
+            );
         }
     }
     assert_eq!(listed, flagged);
@@ -79,7 +99,9 @@ fn the_rows_are_the_spec_v1_set() {
     // Spec A3, in its order: harmonics included, end-effect coefficient, calibration factor,
     // production variation, Br and Hcj temperature coefficients, demag knee fraction, demag
     // margin, back-iron design flux density, thermal conductance, driving rise, slip-event
-    // duration, clamp friction coefficient, preload fraction of proof load.
+    // duration, clamp friction coefficient, preload fraction of proof load; then BL-064's four
+    // (spec 4.5): the shrink-fit friction, the surface smoothing, the rotor hotter than its
+    // shaft and the joining clearance.
     let ids: Vec<&str> = ASSUMPTIONS.iter().map(|a| a.id).collect();
     assert_eq!(
         ids,
@@ -98,11 +120,15 @@ fn the_rows_are_the_spec_v1_set() {
             "slip_event_duration",
             "clamp_friction",
             "preload_fraction",
+            "fit_friction",
+            "fit_smoothing",
+            "rotor_over_shaft",
+            "joining_clearance",
         ]
     );
     // The end-effect coefficient is the Calculator's and the Calibration's (report 6.5);
     // the clamp friction is the shaft-to-bore input, not the adapter joint's C66.
-    let paths = |id: &str| ASSUMPTIONS.iter().find(|a| a.id == id).unwrap().paths;
+    let paths = |id: &str| row(id).paths;
     assert_eq!(paths("end_effect"), ["coupling.c_end", "calibration.c_end"]);
     assert_eq!(paths("clamp_friction"), ["clamps.friction"]);
     assert_eq!(paths("harmonics"), ["coupling.max_harmonic"]);
@@ -120,18 +146,48 @@ fn every_row_has_a_label_rationale_source_and_one_unit() {
         ] {
             assert!(!text.trim().is_empty(), "{}: empty {what}", a.id);
         }
-        let unit = meta(a.paths[0]).unit;
+        let unit = input_meta(a.paths[0]).unit;
         for &path in a.paths {
-            let m = meta(path);
+            let m = input_meta(path);
             assert_eq!(m.unit, unit, "{}: {path} has another unit", a.id);
             // The source cites the workbook cell of every workbook input it sets; a Rust-only
-            // input (the harmonic set) has none and cites the spec.
+            // input has none and cites its spec instead: Addendum A3 (the harmonic set) or the
+            // BL-064 shaft joint spec (the shaft joints' four; review 2, MF-3).
             match m.cell {
                 Some(cell) => assert!(a.source.contains(cell), "{}: source omits {cell}", a.id),
-                None => assert!(a.source.contains("Addendum A3"), "{}", a.id),
+                None => assert!(
+                    RUST_ONLY_SOURCES.iter().any(|s| a.source.contains(s)),
+                    "{}: a Rust-only input's source cites none of {RUST_ONLY_SOURCES:?}",
+                    a.id
+                ),
             }
         }
     }
+}
+
+#[test]
+fn the_shaft_joint_rows_are_rust_only_and_cite_the_bl064_spec() {
+    // BL-064 (spec 4.5, review 2 MF-3): one row per shaft joint assumption, each on one
+    // Rust-only input with no workbook cell, each source citing the spec by name (the G-3
+    // review does not cover sources, so the words are pinned here); the friction row also names
+    // the spec's file, which exists. None is hidden while the shaft-clamp section is paused.
+    for (id, path) in BL064_ROWS {
+        let a = row(id);
+        assert_eq!(a.paths, [path], "{id}");
+        let m = input_meta(path);
+        assert!(m.rust_only && m.cell.is_none(), "{path}");
+        assert!(a.source.contains(BL064_SOURCE), "{id}: {}", a.source);
+        assert!(a.shown(true) && a.shown(false), "{id}");
+    }
+    assert!(
+        row("fit_friction").source.contains(BL064_SPEC),
+        "{}",
+        row("fit_friction").source
+    );
+    let spec = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join(BL064_SPEC);
+    assert!(spec.is_file(), "{} is not a file", spec.display());
 }
 
 #[test]
@@ -160,7 +216,7 @@ fn nothing_is_modified_at_the_defaults() {
         assert_eq!(s.assumption, a);
         assert!(!s.modified, "{}", a.id);
         assert_eq!(s.values, s.defaults, "{}", a.id);
-        assert_eq!(s.unit, meta(a.paths[0]).unit);
+        assert_eq!(s.unit, input_meta(a.paths[0]).unit);
         assert_eq!(s.values.len(), a.paths.len());
     }
 }
@@ -242,19 +298,10 @@ fn each_assumption_moves_a_result_at_the_default_design() {
     // Every assumption is numeric (tests/schema.rs); the harmonic set is the one selector.
     for a in &ASSUMPTIONS {
         for &path in a.paths {
-            let m = meta(path);
+            let m = input_meta(path);
             assert!(matches!(m.ty, FieldType::F64 | FieldType::I64), "{path}");
         }
     }
-}
-
-/// The rationale of the assumption `id`.
-fn rationale(id: &str) -> &'static str {
-    ASSUMPTIONS
-        .iter()
-        .find(|a| a.id == id)
-        .unwrap_or_else(|| panic!("{id}: no assumption"))
-        .rationale
 }
 
 #[test]
@@ -275,6 +322,18 @@ fn every_label_and_rationale_reads_in_plain_words() {
 }
 
 #[test]
+fn the_shaft_joint_rationales_say_the_default_and_type_no_number() {
+    // G-3 review MF-4 (c-f): a typed default goes stale when the default moves, so each of
+    // BL-064's four rationales says "The default" and types no number; the value shows on the
+    // input's own row.
+    for (id, _) in BL064_ROWS {
+        let text = row(id).rationale;
+        assert!(!text.chars().any(|c| c.is_ascii_digit()), "{id}: {text}");
+        assert!(text.contains("The default is "), "{id}: {text}");
+    }
+}
+
+#[test]
 fn the_end_effect_and_calibration_rationales_state_what_was_checked() {
     // R10, as the reviewed end-effect note states it (whole-branch review MF-5, deviation D-5:
     // the note's per-note physics review replaced R10's literal "within 2 %"): the band against
@@ -286,7 +345,7 @@ fn the_end_effect_and_calibration_rationales_state_what_was_checked() {
         .and_then(|(_, rest)| rest.split_once(" %"))
         .map(|(figure, _)| figure)
         .unwrap_or_else(|| panic!("no \"within N %\" in {band:?}"));
-    let end = rationale("end_effect");
+    let end = row("end_effect").rationale;
     assert!(
         end.contains(&format!("within {figure} % of free-space 3D")),
         "the note's band {figure} %: {end}"
@@ -299,7 +358,7 @@ fn the_end_effect_and_calibration_rationales_state_what_was_checked() {
     assert!(!end.contains("1 %"), "{end}");
     // PA-18: the measured factor goes to a design that matches the prototype's circuit, magnet
     // count and part, and nothing else is compared.
-    let cal = rationale("calibration_factor");
+    let cal = row("calibration_factor").rationale;
     for named in [
         "no magnetic steel",
         "magnets per ring",

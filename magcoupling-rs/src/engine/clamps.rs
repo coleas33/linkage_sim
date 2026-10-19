@@ -38,14 +38,18 @@ use super::meta::{
 /// The shaft-clamp section is paused (the owner, 2026-10-15: "Get rid of the clamping with
 /// screw section for now. Put all of that on pause, we will likely use permanent shrink fit or
 /// other method"). While it is, the panel leaves out every input and result of [`SECTION`]:
-/// the slotted clamp, the shaft key and the adapter-joint screws (their input groups, the Clamp
-/// view, the dashboard's clamp rows and their check guide, the results table's clamp rows, the
-/// clamp assumptions, the keyway in the geometry drawing and its boss design check, the
+/// the slotted clamp, its shaft key inputs and the adapter-joint screws (their input groups,
+/// the Clamp view, the dashboard's clamp rows and their check guide, the results table's clamp
+/// rows, the clamp assumptions, the geometry drawing's clamp-boss design check, the
 /// `clamp_preload` teaching note and its Start here step), and the clamp checks count toward
 /// no verdict. The engine still computes the section, and design files, share links and the
-/// exports keep every clamp input and result.
+/// exports keep every clamp input and result. The geometry drawing's key is the shaft joints'
+/// (`shaft_joint.key_width_mm`), drawn in both states.
 ///
-/// Set false to bring the section back: no other code edit is needed.
+/// BL-064 keeps the section paused (owner decision 6A, 2026-10-17): both rotors are held by
+/// keyed shrink fits, which `engine::shaft_joint` checks. Set false to bring the section back:
+/// no other code edit is needed, and the panel then shows the clamp beside the shrink-fit
+/// check, two joint methods for one joint.
 pub const PAUSED: bool = true;
 
 /// The path prefixes of the paused section ([`PAUSED`]): the 'Shaft clamps' sheet's inputs and

@@ -147,13 +147,14 @@ pub struct Note {
 /// the gearbox check, and the open question of which datasheet figure the rating is. Typed once.
 pub const GEARBOX_CHECK_SOURCE: &str = "Design ruling of 2026-10-16: the gearbox check compares cold-high at the gearbox input with the gearbox input torque rating; which datasheet figure that rating is (input or output side; nominal, acceleration or emergency stop) is still to be confirmed";
 
-/// Every note: 20, the cap the completeness test holds (15 to 20): the spec's list
-/// (harmonics, back iron, pull-out against angle, end effect, Br(T), demagnetization, slip
-/// heating, the slip temperature, the shaft clamp and the six A5 warnings), ferrite's cold
-/// side (spec A6), the one-point calibration, and slice 2's three: how the coupling makes
-/// torque, the hot-low and cold-high band, and what happens when the coupling slips. The
-/// clamp note stays here, but is not shown while the shaft-clamp section is paused
-/// ([`shown`]).
+/// Every note: 21, the cap the completeness test holds (15 to 21; the owner raised it from 20
+/// for the shaft joints, BL-064): the spec's list (harmonics, back iron, pull-out against
+/// angle, end effect, Br(T), demagnetization, slip heating, the slip temperature, the shaft
+/// clamp and the six A5 warnings), ferrite's cold side (spec A6), the one-point calibration,
+/// slice 2's three (how the coupling makes torque, the hot-low and cold-high band, and what
+/// happens when the coupling slips), and the keyed shrink fits that hold the rotors on their
+/// shafts (BL-064). The clamp note stays here, but is not shown while the shaft-clamp section
+/// is paused ([`shown`]).
 pub const NOTES: &[Note] = &[
     Note {
         id: "torque_from_shear",
@@ -896,6 +897,97 @@ pub const NOTES: &[Note] = &[
         },
     },
     Note {
+        id: "shaft_joint",
+        title: "Shaft joints: a keyed shrink fit",
+        // The shaft joint check's 23 numeric results, in their schema order, and the inner
+        // ring's own single-ring onset that caps the bonded inner hub's fitting temperature
+        // (owner R-15 and its ring ruling): the reviewed demagnetization note keeps the
+        // governing onset and the per-ring magnet limits.
+        equations: &[
+            "shaft_joint.required_Nm",
+            "shaft_joint.part_modulus_GPa",
+            "shaft_joint.part_cte_per_C",
+            "shaft_joint.part_yield_MPa",
+            "shaft_joint.stress_limit_MPa",
+            "shaft_joint.hub_holding_Nm",
+            "shaft_joint.cup_holding_Nm",
+            "shaft_joint.hub_bore_stress_MPa",
+            "shaft_joint.cup_bore_stress_MPa",
+            "shaft_joint.hub_key_pressure_MPa",
+            "shaft_joint.cup_key_pressure_MPa",
+            "shaft_joint.hub_needed_um",
+            "shaft_joint.cup_needed_um",
+            "shaft_joint.hub_elastic_max_um",
+            "shaft_joint.cup_elastic_max_um",
+            "shaft_joint.wheel_shaft_shrink_um",
+            "shaft_joint.output_shaft_shrink_um",
+            "shaft_joint.hub_fittable_max_um",
+            "shaft_joint.cup_fittable_max_um",
+            "shaft_joint.hub_fit_temp_C",
+            "shaft_joint.cup_fit_temp_C",
+            "shaft_joint.hub_fit_allowed_C",
+            "shaft_joint.cup_fit_allowed_C",
+            "temperature.demag.inner_onset_single_ring_C",
+        ],
+        sentences: &[
+            "A shrink fit holds each rotor on its shaft: the bore is made smaller than the shaft, and friction from the grip carries the torque.",
+            "At its loosest the inner hub holds {shaft_joint.hub_holding_Nm} here and the cup {shaft_joint.cup_holding_Nm}; each must hold {shaft_joint.required_Nm}, cold-high times the safety factor.",
+            "Measured interference is not what grips: smoothing takes micrometres off at fitting, and a rotor running warmer than its shaft loses more.",
+            "Tighter is not safer here: the cup's bore stress, {shaft_joint.cup_bore_stress_MPa} against {shaft_joint.stress_limit_MPa}, follows interference over diameter, hardly the wall.",
+            "Here the inner hub would need {shaft_joint.hub_fit_temp_C} on the wheel shaft shrunk {shaft_joint.wheel_shaft_shrink_um}; allowed: {shaft_joint.hub_fit_allowed_C}, lowest of your limit, adhesive's, single-ring onset less 10 °C.",
+        ],
+        change: &[
+            Change {
+                input: "shaft_joint.cup_interference_min_um",
+                step: Step::Raise,
+                aim: Some(("shaft_joint.cup_holding_Nm", Sense::Up)),
+                text: "the cup grips harder at its loosest; its maximum must stay at or above it, within the stress limit, and still fit.",
+            },
+            Change {
+                input: "shaft_joint.hub_interference_max_um",
+                step: Step::Lower,
+                aim: Some(("shaft_joint.hub_bore_stress_MPa", Sense::Down)),
+                text: "the inner hub's bore stress and the temperature its fit would need both fall; its minimum must stay at or below it.",
+            },
+            Change {
+                input: "shaft_joint.wheel_shaft_fit_C",
+                step: Step::Raise,
+                aim: Some(("shaft_joint.hub_fit_temp_C", Sense::Up)),
+                text: "a warmer wheel shaft shrinks less, so the temperature the inner hub's fit would need rises, toward or past the allowed one.",
+            },
+            Change {
+                input: "metal.boss_length_mm",
+                step: Step::Raise,
+                aim: Some(("shaft_joint.cup_holding_Nm", Sense::Up)),
+                text: "a longer boss grips over more length; the overall length grows.",
+            },
+            Change {
+                input: "shaft_joint.smoothing_um",
+                step: Step::Lower,
+                aim: Some(("shaft_joint.cup_holding_Nm", Sense::Up)),
+                text: "only with a measured finish: the grip rises, and so does the bore stress.",
+            },
+        ],
+        watch_out: &[
+            "Fit the bare cup quickly and keep its heat, and any heat cure of its magnets, off the gearbox seal and bearings; nothing checks them, the gearbox shaft or fretting.",
+            "A wheel shaft cooled in liquid nitrogen can chill the bonded inner hub below the minimum magnet temperature, widening the bond's cold swing; ferrite magnets lose coercivity cold.",
+        ],
+        diagram: None,
+        sources: &[
+            "The owner's decisions of 2026-10-17: a keyed shrink fit on both rotors, the interference bands, the fitting order and temperatures, and the bonded inner hub held 10 °C below its magnets' single-ring onset, the margin the adhesive cure keeps",
+            "Lamé thick-cylinder fit pressure and bore stress (Shigley; Roark)",
+            "DIN 7190-1:2017 interference fits: the 0.4·Rz smoothing rule, by which 5 µm is conservative for holding with a ground shaft and honed bore; the joining clearance",
+            "DIN 6885-1 parallel keys: 3 × 3 for shafts over 8 up to 10 mm",
+            "NIST cryogenic material properties: nickel steel Fe-2.25Ni, linear expansion",
+            "Friction of dry steel on steel: Gear Technology, Nov/Dec 2017 (0.145); ANSI/AGMA 9003 (0.15)",
+        ],
+        review: Review::Reviewed {
+            reviewer: "physics reviewer (session model)",
+            date: "2026-10-19",
+            record: "docs/analyses/2026-10-14-magcoupler-notes-review.md#shaft_joint",
+        },
+    },
+    Note {
         id: "clamp_preload",
         title: "Clamp preload and friction",
         equations: &[
@@ -1193,10 +1285,11 @@ pub const NOTES: &[Note] = &[
     },
 ];
 
-/// The full suggested reading order (slice-2 spec 3.3, 14 steps: how torque is made, the
-/// torque chain, temperature and the torque band, slipping and its heat, demagnetization,
-/// the clamp): (note id, the equation it opens). The clamp step stays last: while the
-/// shaft-clamp section is paused, [`START_HERE`] is the first 13 ([`start_here_for`]).
+/// The full suggested reading order (slice-2 spec 3.3 and BL-064, 15 steps: how torque is
+/// made, the torque chain, temperature and the torque band, slipping and its heat,
+/// demagnetization, the shaft joints, the clamp): (note id, the equation it opens). The clamp
+/// step stays last: while the shaft-clamp section is paused, [`START_HERE`] is the first 14
+/// ([`start_here_for`]).
 pub const START_HERE_ALL: &[(&str, &str)] = &[
     ("torque_from_shear", "model.torque_2d_Nm"),
     ("harmonics", "model.tau_Pa"),
@@ -1214,6 +1307,7 @@ pub const START_HERE_ALL: &[(&str, &str)] = &[
     ),
     ("demagnetization", "temperature.demag.onset_skipping_C"),
     ("ferrite_cold_demag", "temperature.demag.cold_check"),
+    ("shaft_joint", "shaft_joint.hub_holding_Nm"),
     ("clamp_preload", "clamps.capacity_Nm"),
 ];
 
@@ -1404,8 +1498,8 @@ mod tests {
             Some("end_effect")
         );
         assert!(
-            (15..=20).contains(&NOTES.len()),
-            "spec A4: about 15 to 20 notes"
+            (15..=21).contains(&NOTES.len()),
+            "spec A4: about 15 to 20 notes; the owner raised the cap to 21 for the shaft joints (BL-064)"
         );
         for n in NOTES {
             assert!(
@@ -1554,6 +1648,51 @@ mod tests {
         );
     }
 
+    /// BL-064 (spec 6.1, owner decision 8A): the shaft-joint note keeps the slice-2 caps and a
+    /// plain sentence 0; it owns every numeric result of the shaft joint check, in their schema
+    /// order, and the inner ring's own single-ring onset the bonded inner hub's cap reads (owner
+    /// R-15 ring; the demagnetization note keeps the governing onset); and it is Start here's step
+    /// just before the clamp note's, opening the inner hub's holding torque, so it is the last
+    /// step shown while the shaft-clamp section is paused.
+    #[test]
+    fn the_shaft_joint_note_keeps_the_caps_owns_the_joint_rows_and_precedes_the_clamp_step() {
+        use crate::engine::meta::{FieldType, result_rows};
+        let n = note("shaft_joint").expect("the shaft-joint note");
+        assert_eq!(cap_problems(n), Vec::<String>::new());
+        assert_eq!(sentence_zero_problems(n.sentences[0]), Vec::<&str>::new());
+        let results = crate::compute_all(&crate::DesignInputs::default());
+        let mut rows: Vec<String> = result_rows(&results)
+            .into_iter()
+            .filter(|r| r.path.starts_with("shaft_joint.") && r.meta.ty == FieldType::F64)
+            .map(|r| r.path)
+            .collect();
+        assert_eq!(rows.len(), 23, "the check's numeric results: {rows:?}");
+        rows.push("temperature.demag.inner_onset_single_ring_C".to_owned());
+        assert_eq!(n.equations, rows.as_slice());
+        for path in &rows {
+            assert_eq!(
+                note_for_any_status(path).map(|m| m.id),
+                Some("shaft_joint"),
+                "{path}: one note owns it"
+            );
+        }
+        for paused in [false, true] {
+            let steps = start_here_for(paused);
+            let ids: Vec<&str> = steps.iter().map(|&(id, _)| id).collect();
+            let at = ids
+                .iter()
+                .position(|&id| id == "shaft_joint")
+                .unwrap_or_else(|| panic!("no shaft-joint step: {ids:?}"));
+            assert_eq!(steps[at].1, "shaft_joint.hub_holding_Nm");
+            assert_eq!(ids[at - 1], "ferrite_cold_demag", "{ids:?}");
+            assert_eq!(
+                ids.get(at + 1).copied(),
+                (!paused).then_some(PAUSED_NOTE),
+                "the clamp's step follows it, and only while the section shows: {ids:?}"
+            );
+        }
+    }
+
     #[test]
     fn the_rewritten_notes_type_no_editable_default() {
         // Spec section 8 (slice 1, trap 6) and audit theme T6: a note never presents an
@@ -1601,9 +1740,10 @@ mod tests {
         }
     }
 
-    /// Slice-2 spec 3.3: Start here's 14 steps, in this order. A step whose note a later task of
-    /// the slice adds is skipped until then, so every task keeps the order (T18 asserts all 14).
-    const SLICE_2_ORDER: [&str; 14] = [
+    /// Slice-2 spec 3.3: Start here's steps, in this order, with BL-064's shaft-joint step just
+    /// before the clamp's (15). A step whose note a later task adds is skipped until then, so
+    /// every task keeps the order (`tests/explain.rs` asserts all 15).
+    const SLICE_2_ORDER: [&str; 15] = [
         "torque_from_shear",
         "harmonics",
         "back_iron_factor",
@@ -1617,6 +1757,7 @@ mod tests {
         "thermal_time_constant",
         "demagnetization",
         "ferrite_cold_demag",
+        "shaft_joint",
         "clamp_preload",
     ];
 

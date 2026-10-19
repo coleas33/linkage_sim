@@ -576,7 +576,7 @@ mod tests {
     use crate::engine::assumptions::ASSUMPTIONS;
     use crate::engine::sizing::FreeVariable;
     use crate::gui::dashboard::{CHECKS, DASHBOARD, check_level};
-    use crate::gui::test_support::{short_magnets, snapshot};
+    use crate::gui::test_support::{only_the_joint_fails, passing_design, short_magnets, snapshot};
 
     fn sheet<'s>(book: &'s [Sheet], name: &str) -> &'s Sheet {
         book.iter()
@@ -1191,68 +1191,314 @@ mod tests {
         }
     }
 
+    /// Asserts the Summary of `inputs` lists one row per dashboard row, then a blank, and that
+    /// the row of the Rust-only check at `path` sits between `neighbours`: its engine label and
+    /// text, no unit, its badge's `level`, Rust-only for the cell, its path, no correction and
+    /// `note`; and that the Results sheet's row carries the same level.
+    fn assert_summary_check_row(
+        inputs: &DesignInputs,
+        path: &str,
+        neighbours: (&str, &str),
+        level: Option<Level>,
+        note: &str,
+    ) {
+        let results = compute_all(inputs);
+        let book = sheets(&snapshot(inputs, &results));
+        let rows = &sheet(&book, SUMMARY_SHEET).rows;
+        let header = rows
+            .iter()
+            .position(|r| r.first().map(Cell::as_text) == Some(DASHBOARD_COLUMNS[0]))
+            .unwrap();
+        let dashboard = &rows[header + 1..header + 1 + DASHBOARD.len()];
+        assert_eq!(
+            rows[header + 1 + DASHBOARD.len()],
+            Vec::<Cell>::new(),
+            "one row per dashboard row, then a blank"
+        );
+        let path_column = column(&DASHBOARD_COLUMNS, "Path");
+        let paths: Vec<&str> = dashboard
+            .iter()
+            .map(|row| row[path_column].as_text())
+            .collect();
+        let at = paths
+            .iter()
+            .position(|&p| p == path)
+            .unwrap_or_else(|| panic!("the row of {path}"));
+        assert_eq!((paths[at - 1], paths[at + 1]), neighbours, "{path}");
+        let Some(Value::Text(text)) = results.get(path) else {
+            panic!("{path} is text")
+        };
+        assert_eq!(
+            dashboard[at],
+            [
+                Cell::text(result_info(path).expect("a result").meta.label),
+                Cell::text(text),
+                Cell::empty(),
+                level_cell(level),
+                Cell::text(RUST_ONLY),
+                Cell::text(path),
+                Cell::empty(),
+                Cell::text(note),
+            ],
+            "{path}"
+        );
+        let results_sheet = sheet(&book, RESULTS_SHEET);
+        let row = row_of(results_sheet, column(&RESULT_COLUMNS, "Path"), path);
+        assert_eq!(row[column(&RESULT_COLUMNS, "Check")], level_cell(level));
+        assert_eq!(
+            row[column(&RESULT_COLUMNS, "Workbook cell")],
+            Cell::text(RUST_ONLY)
+        );
+    }
+
     #[test]
-    fn the_summary_lists_eighteen_dashboard_rows_with_the_gearbox_badge() {
-        // BL-059: the dashboard gains the gearbox check, so the Summary lists 18 rows, the
-        // gearbox's between the clamp's and the space claim's: its engine label and verdict, no
-        // unit, its badge's level, Rust-only for the cell, its path and no correction. It is red
-        // at the defaults, green with a 1.0 N·m rating, and greyed with no level while the
-        // end-effect model is out of range; the Results sheet's row carries the same level.
+    fn the_summary_lists_nineteen_dashboard_rows_with_the_gearbox_badge() {
+        // BL-059: the gearbox's row, between the shaft joints' (BL-064) and the space claim's.
+        // It is red at the defaults, green with a 1.0 N·m rating, and greyed with no level while
+        // the end-effect model is out of range.
+        assert_eq!(DASHBOARD.len(), 19);
         const PATH: &str = "gearbox.cold_high_check";
-        let label = result_info(PATH).expect("a result").meta.label;
+        let neighbours = ("shaft_joint.check", "housing.space_claim_check");
         let mut within = DesignInputs::default();
         within.coupling.gearbox_input_rating_Nm = 1.0;
-        let path_column = column(&DASHBOARD_COLUMNS, "Path");
         for (inputs, level, note) in [
             (DesignInputs::default(), Some(Level::Bad), ""),
             (within, Some(Level::Good), ""),
             (short_magnets(), None, GREYED_NOTE),
         ] {
+            assert_summary_check_row(&inputs, PATH, neighbours, level, note);
+        }
+    }
+
+    #[test]
+    fn the_summary_lists_the_shaft_joints_row_with_its_badge_and_the_stored_3d_note() {
+        // BL-064 (spec 7.15; owner R-15): the shaft joints' row, between the clamp's and the
+        // gearbox's. It reads a stored 3D field, so its note column carries the stored-3D label,
+        // green at the defaults and at the passing design, red where the inner hub slips; while
+        // the end-effect model is out of range it is greyed with no level, and the greyed note
+        // wins.
+        const PATH: &str = "shaft_joint.check";
+        let neighbours = ("clamps.recommended", "gearbox.cold_high_check");
+        for (inputs, level, note) in [
+            (DesignInputs::default(), Some(Level::Good), STORED_3D_LABEL),
+            (passing_design(), Some(Level::Good), STORED_3D_LABEL),
+            (only_the_joint_fails(), Some(Level::Bad), STORED_3D_LABEL),
+            (short_magnets(), None, GREYED_NOTE),
+        ] {
+            assert_summary_check_row(&inputs, PATH, neighbours, level, note);
+        }
+    }
+
+    /// The lines of `sheet` from its group heading `heading` up to the next group heading: each
+    /// heading's text, each input or result row's path (column `path`).
+    fn group_lines<'s>(sheet: &'s Sheet, path: usize, heading: &'s str) -> Vec<&'s str> {
+        let start = sheet
+            .rows
+            .iter()
+            .position(|row| row[0].style == CellStyle::Group && row[0].as_text() == heading)
+            .unwrap_or_else(|| panic!("no group heading {heading}"));
+        let mut lines = vec![heading];
+        for row in &sheet.rows[start + 1..] {
+            match row[0].style {
+                CellStyle::Group => break,
+                CellStyle::Section => lines.push(row[0].as_text()),
+                _ => lines.push(row[path].as_text()),
+            }
+        }
+        lines
+    }
+
+    #[test]
+    fn the_inputs_and_results_sheets_carry_every_shaft_joint_row() {
+        use crate::engine::explain::scope::SCOPE;
+        use crate::gui::inputs::section_label;
+        use crate::gui::result_groups::CHAIN_LABELS;
+        use crate::gui::test_support::{
+            cup_without_wall_or_key_bearing, shaft_joint_input_rows, shaft_joint_result_rows,
+            shaft_joints_off_default, workflow_group,
+        };
+        // BL-064 (spec 5.3, 5.4 and 7.15): each of the shaft joints' 15 inputs and 24 results
+        // has one row, with its value and unit and no workbook cell. The Inputs sheet lays the
+        // inputs out as the inputs side does: in the workflow order the key's two rows follow
+        // the keyway depth (and the paused clamp's key rows, which the exports keep), then the
+        // "Shrink fit" and "Fitting temperatures" sections; in the original-sheet order they
+        // are the "Shaft joints" group, in schema order. The four assumptions are flagged. The
+        // Results sheet lists the 23 numbers under the "Shaft joints" chain, between Geometry and
+        // Mass; a value that is not a number and +inf are the CSV's text. The headings are read
+        // from where the page takes them (the G-3 review may reword them); the paths are pinned.
+        const FIT: [&str; 8] = [
+            "shaft_joint.hub_interference_min_um",
+            "shaft_joint.hub_interference_max_um",
+            "shaft_joint.cup_interference_min_um",
+            "shaft_joint.cup_interference_max_um",
+            "shaft_joint.safety_factor",
+            "shaft_joint.friction",
+            "shaft_joint.smoothing_um",
+            "shaft_joint.rotor_over_shaft_C",
+        ];
+        const FITTING: [&str; 5] = [
+            "shaft_joint.hub_fit_max_C",
+            "shaft_joint.cup_fit_max_C",
+            "shaft_joint.wheel_shaft_fit_C",
+            "shaft_joint.output_shaft_fit_C",
+            "shaft_joint.joining_clearance_um",
+        ];
+        const ASSUMED: [&str; 4] = [
+            "shaft_joint.friction",
+            "shaft_joint.smoothing_um",
+            "shaft_joint.rotor_over_shaft_C",
+            "shaft_joint.joining_clearance_um",
+        ];
+        let schema: Vec<String> = shaft_joint_input_rows(&DesignInputs::default())
+            .into_iter()
+            .map(|row| row.path)
+            .collect();
+        assert_eq!(schema.len(), 15);
+        let shaft = workflow_group("shaft");
+        let section = |id: &str| {
+            shaft
+                .sections
+                .iter()
+                .find(|section| section.id == id)
+                .unwrap_or_else(|| panic!("no section {id}"))
+                .label
+        };
+        let chain_label = |id: &str| {
+            CHAIN_LABELS
+                .iter()
+                .find(|&&(chain, _)| chain == id)
+                .unwrap_or_else(|| panic!("no chain {id}"))
+                .1
+        };
+        let heading = section_label("shaft_joint").expect("the shaft joints' heading");
+        let input_path = column(&INPUT_COLUMNS, "Path");
+        for inputs in [DesignInputs::default(), shaft_joints_off_default()] {
+            let results = compute_all(&inputs);
+            let changed = inputs != DesignInputs::default();
+            for order in InputOrder::ALL {
+                let mut shot = snapshot(&inputs, &results);
+                shot.input_order = order;
+                let book = sheets(&shot);
+                let sheet = sheet(&book, INPUTS_SHEET);
+                for path in &schema {
+                    let entry = InputCatalogue::get().entry(path).expect("an input");
+                    assert_eq!(
+                        row_of(sheet, input_path, path),
+                        &vec![
+                            Cell::text(entry.meta.label),
+                            value_cell(&inputs.get(path).expect("an input")),
+                            Cell::text(entry.meta.unit),
+                            Cell::text(RUST_ONLY),
+                            Cell::text(path.clone()),
+                            flag(changed),
+                            flag(ASSUMED.contains(&path.as_str())),
+                            flag(false),
+                            flag(false),
+                            Cell::empty(),
+                        ],
+                        "{order:?}"
+                    );
+                }
+                let want: Vec<&str> = match order {
+                    InputOrder::Workflow => [
+                        shaft.label,
+                        "coupling.bore_mm",
+                        "coupling.keyway_depth_mm",
+                        "clamps.key_width_mm",
+                        "clamps.key_contact_mm",
+                        "shaft_joint.key_width_mm",
+                        "shaft_joint.key_contact_mm",
+                        section("shaft.fit"),
+                    ]
+                    .into_iter()
+                    .chain(FIT)
+                    .chain([section("shaft.fitting")])
+                    .chain(FITTING)
+                    .collect(),
+                    InputOrder::Workbook => [heading]
+                        .into_iter()
+                        .chain(schema.iter().map(String::as_str))
+                        .collect(),
+                };
+                // The workflow group goes on with the paused clamp's sections after these.
+                let lines = group_lines(sheet, input_path, want[0]);
+                assert_eq!(lines[..want.len().min(lines.len())], want[..], "{order:?}");
+                if order == InputOrder::Workbook {
+                    assert_eq!(
+                        lines.len(),
+                        want.len(),
+                        "the group ends with the joints' inputs"
+                    );
+                }
+            }
+        }
+        // The Results sheet: the chain's 23 numbers under its heading, then the check's row.
+        let chain = SCOPE
+            .iter()
+            .find(|chain| chain.id == "shaft_joint")
+            .expect("the shaft joints' chain");
+        let mut numbers: Vec<&str> = chain.paths.to_vec();
+        numbers.sort_unstable();
+        let mut want: Vec<String> = shaft_joint_result_rows(&compute_all(&DesignInputs::default()))
+            .into_iter()
+            .map(|row| row.path)
+            .filter(|path| path != "shaft_joint.check")
+            .collect();
+        want.sort_unstable();
+        assert_eq!(numbers, want, "the chain is the 23 numbers");
+        let result_path = column(&RESULT_COLUMNS, "Path");
+        let check = column(&RESULT_COLUMNS, "Check");
+        for (inputs, edge) in [
+            (DesignInputs::default(), false),
+            (cup_without_wall_or_key_bearing(), true),
+        ] {
             let results = compute_all(&inputs);
             let book = sheets(&snapshot(&inputs, &results));
-            let rows = &sheet(&book, SUMMARY_SHEET).rows;
-            let header = rows
+            let sheet = sheet(&book, RESULTS_SHEET);
+            let group_headings: Vec<&str> = sheet
+                .rows
                 .iter()
-                .position(|r| r.first().map(Cell::as_text) == Some(DASHBOARD_COLUMNS[0]))
-                .unwrap();
-            let dashboard = &rows[header + 1..header + 1 + 18];
-            assert_eq!(
-                rows[header + 1 + 18],
-                Vec::<Cell>::new(),
-                "18 rows, then a blank"
-            );
-            let paths: Vec<&str> = dashboard
-                .iter()
-                .map(|row| row[path_column].as_text())
+                .filter(|row| row[0].style == CellStyle::Group)
+                .map(|row| row[0].as_text())
                 .collect();
-            let at = paths
+            let at = group_headings
                 .iter()
-                .position(|&path| path == PATH)
-                .expect("the gearbox row");
+                .position(|&heading| heading == chain_label("shaft_joint"))
+                .expect("the shaft joints' chain heading");
             assert_eq!(
-                (paths[at - 1], paths[at + 1]),
-                ("clamps.recommended", "housing.space_claim_check")
+                (group_headings[at - 1], group_headings[at + 1]),
+                (chain_label("geometry"), chain_label("mass"))
             );
             assert_eq!(
-                dashboard[at],
-                [
-                    Cell::text(label),
-                    Cell::text(results.gearbox.cold_high_check.clone()),
-                    Cell::empty(),
-                    level_cell(level),
-                    Cell::text(RUST_ONLY),
-                    Cell::text(PATH),
-                    Cell::empty(),
-                    Cell::text(note),
-                ]
+                group_lines(sheet, result_path, chain_label("shaft_joint"))[1..],
+                chain.paths[..]
             );
-            let results_sheet = sheet(&book, RESULTS_SHEET);
-            let row = row_of(results_sheet, column(&RESULT_COLUMNS, "Path"), PATH);
-            assert_eq!(row[column(&RESULT_COLUMNS, "Check")], level_cell(level));
-            assert_eq!(
-                row[column(&RESULT_COLUMNS, "Workbook cell")],
-                Cell::text(RUST_ONLY)
-            );
+            for path in chain.paths.iter().chain(["shaft_joint.check"].iter()) {
+                let info = result_info(path).expect("a result");
+                let row = row_of(sheet, result_path, path);
+                assert_eq!(row[0], Cell::text(info.meta.label), "{path}");
+                assert_eq!(row[1], value_cell(&results.get(path).unwrap()), "{path}");
+                assert_eq!(row[2], Cell::text(info.meta.unit), "{path}");
+                let level = if CHECKS.contains(path) {
+                    level_cell(check_level(&results, path))
+                } else {
+                    Cell::empty()
+                };
+                assert_eq!(row[check], level, "{path}");
+                assert_eq!(row[4], Cell::text(RUST_ONLY), "{path}");
+                assert_eq!(row[6], Cell::empty(), "{path}");
+            }
+            if edge {
+                // The edge design writes a value that is not a number and +inf as the CSV's text.
+                assert_eq!(
+                    row_of(sheet, result_path, "shaft_joint.cup_holding_Nm")[1],
+                    Cell::text("NaN")
+                );
+                assert_eq!(
+                    row_of(sheet, result_path, "shaft_joint.cup_key_pressure_MPa")[1],
+                    Cell::text("+inf")
+                );
+            }
         }
     }
 

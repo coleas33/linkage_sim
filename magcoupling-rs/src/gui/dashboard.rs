@@ -2,19 +2,21 @@
 //! badges derived from check verdicts; corrected values carry a 'corrected vs workbook' marker
 //! with the deviation in its tooltip").
 //!
-//! [`DASHBOARD`] lists its rows: the 15 headline numbers in Python's order, then the gearbox
-//! check (BL-059), the A1 space claim badge and the audit M9 end-effect flag. A row's badge
-//! comes from a check verdict ([`verdict_level`]); its marker from the deviation registry
-//! ([`crate::gui::corrections`]). Two notes from the user's decisions of 2026-09-30:
+//! [`DASHBOARD`] lists its rows: the 15 headline numbers in Python's order, then the shaft
+//! joints check (BL-064), the gearbox check (BL-059), the A1 space claim badge and the audit M9
+//! end-effect flag. A row's badge comes from a check verdict ([`verdict_level`]); its marker
+//! from the deviation registry ([`crate::gui::corrections`]). Two notes from the user's
+//! decisions of 2026-09-30:
 //!
 //! - **End effect (audit M9).** When f_end ≤ 0 the pull-out and the numbers computed from it
 //!   ([`END_EFFECT_ROWS`]) are greyed, without a badge, under the banner "End-effect model out
 //!   of range", which carries a "Why: <note>" link to the end-effect check's note (slice-2 spec
 //!   3.7; `end_effect_banner_ui` draws it here and over the centre region).
-//! - **Stored 3D values.** The temperature rows that read the stored 3D fields
-//!   ([`STORED_3D_ROWS`]) carry the label [`STORED_3D_LABEL`]: the fields
-//!   ([`STORED_3D_INPUTS`]) are 3D results for the example design and stay fixed when the
-//!   design changes; no live 3D model runs.
+//! - **Stored 3D values.** The temperature rows and the shaft joints row that read the stored
+//!   3D fields ([`STORED_3D_ROWS`]; the shaft joints row through the inner ring's single-ring
+//!   onset, which caps the bonded inner hub's fitting temperature, owner R-15) carry the label
+//!   [`STORED_3D_LABEL`]: the fields ([`STORED_3D_INPUTS`]) are 3D results for the example
+//!   design and stay fixed when the design changes; no live 3D model runs.
 //!
 //! Over the rows, the material warnings that fire (spec Addendum A5: "plain language,
 //! colour-coded, linked to their teaching note"): each rule's text in its severity's colour (a
@@ -46,6 +48,7 @@ use crate::engine::explain::notes;
 use crate::engine::materials::CUP_WALL_TOO_THIN;
 use crate::engine::meta::{ResultMeta, ResultSet, Value, result_rows};
 use crate::engine::model::END_EFFECT_OUT_OF_RANGE;
+use crate::engine::shaft_joint;
 use crate::engine::warnings::{Severity, WARNING_RULES, WarningRule};
 use crate::gui::corrections::{CorrectionIndex, Mark, marker_text, marker_tooltip};
 use crate::gui::explorer::reviewed_note;
@@ -152,7 +155,7 @@ const TEMPERATURE_VERDICT: &str = "temperature.summary.verdict";
 
 /// The dashboard rows: (result path, the check whose verdict gives its badge). The first 15
 /// are `HEADLINE`, in order (a test checks).
-pub const DASHBOARD: [(&str, Option<&str>); 18] = [
+pub const DASHBOARD: [(&str, Option<&str>); 19] = [
     ("model.pullout_Nm", None),
     ("model.pullout_20C_Nm", None),
     ("metal.torque_hot_low_Nm", Some("metal.hot_min_check")),
@@ -177,6 +180,7 @@ pub const DASHBOARD: [(&str, Option<&str>); 18] = [
     ),
     (TEMPERATURE_VERDICT, Some(TEMPERATURE_VERDICT)),
     ("clamps.recommended", Some("clamps.recommended")),
+    ("shaft_joint.check", Some("shaft_joint.check")),
     ("gearbox.cold_high_check", Some("gearbox.cold_high_check")),
     (
         "housing.space_claim_check",
@@ -187,11 +191,14 @@ pub const DASHBOARD: [(&str, Option<&str>); 18] = [
 
 /// The dashboard rows computed from the pull-out, greyed when f_end ≤ 0 (audit M9): the rows
 /// that move with the end-effect coefficient (a test probes them at back iron 1 and 0), the
-/// headline's and the gearbox check, computed from cold-high. Per-row greying of the results
-/// table waits for plan A-3's dependency graph; the table shows the banner instead (decision
-/// M41-11), and its three checks among these rows (the hot minimum, the recommended screw, the
-/// gearbox check) give no badge there either ([`greyed_by_end_effect`]).
-pub const END_EFFECT_ROWS: [&str; 8] = [
+/// headline's and the shaft joints and gearbox checks, both computed from cold-high. The whole
+/// shaft joints row greys, its stress and fitting terms too, which do not read cold-high: one
+/// row cannot grey in part, and the end-effect check fails there under its banner (BL-064).
+/// Per-row greying of the results table waits for plan A-3's dependency graph; the table shows
+/// the banner instead (decision M41-11), and its four checks among these rows (the hot minimum,
+/// the recommended screw, the shaft joints, the gearbox check) give no badge there either
+/// ([`greyed_by_end_effect`]).
+pub const END_EFFECT_ROWS: [&str; 9] = [
     "model.pullout_Nm",
     "model.pullout_20C_Nm",
     "metal.torque_hot_low_Nm",
@@ -199,28 +206,34 @@ pub const END_EFFECT_ROWS: [&str; 8] = [
     "metal.torque_cold_high_Nm",
     "model.gearbox_input_ripple_Nm",
     "clamps.recommended",
+    "shaft_joint.check",
     "gearbox.cold_high_check",
 ];
 
 /// The dashboard rows that read the workbook's stored 3D fields (the reverse fields of the
-/// demagnetization check and the slip-loss fields): the headline rows that move with them (a
-/// test probes each at its slider ends).
-pub const STORED_3D_ROWS: [&str; 3] = [
+/// demagnetization check and the slip-loss fields): the dashboard rows that move with them (a
+/// test probes each at its slider ends). The three temperature rows, and the shaft joints row:
+/// the bonded inner hub's allowed fitting temperature is capped at the inner ring's single-ring
+/// onset less the cure margin (owner R-15), and the onset follows the stored single-ring
+/// reverse field.
+pub const STORED_3D_ROWS: [&str; 4] = [
     "temperature.summary.governing_limit_C",
     "temperature.summary.margin_hot_day_C",
     TEMPERATURE_VERDICT,
+    "shaft_joint.check",
 ];
 
 /// The label of the stored-3D rows.
 pub const STORED_3D_LABEL: &str = "Fixed 3D fields from the example design";
 
 /// Its hover text.
-pub const STORED_3D_NOTE: &str = "The temperature checks use the demagnetization reverse fields and the slip-heating fields, computed in 3D for the example design. Those fields stay fixed when you change the geometry, magnet count or grade; for another design, enter its own 3D fields to check the limits.";
+pub const STORED_3D_NOTE: &str = "The temperature checks use the demagnetization reverse fields and the slip-heating fields, computed in 3D for the example design. The bonded inner hub's allowed fitting temperature, on the shaft joints row, uses one of the reverse fields too. Those fields stay fixed when you change the geometry, magnet count or grade; for another design, enter its own 3D fields to check the limits.";
 
 /// The stored 3D inputs: the four reverse fields of the demagnetization check and the
 /// slip-loss fields (the steel circuit's eleven, and the three free-space ones). They are 3D
 /// results for the example design and stay fixed when the design changes
-/// ([`STORED_3D_SENTENCE`]); [`STORED_3D_ROWS`] are the headline rows that move with them.
+/// ([`STORED_3D_SENTENCE`]); [`STORED_3D_ROWS`] are the dashboard rows that move with them:
+/// the temperature rows and the shaft joints row.
 pub const STORED_3D_INPUTS: [&str; 14] = [
     "temperature.demag.h_rev_aligned_kA_m",
     "temperature.demag.h_rev_pullout_kA_m",
@@ -256,11 +269,11 @@ pub const MARKER_LEGEND: &str = "E-numbers beside a value are corrections to the
 
 /// Every design-level check of the results, in schema order (decision O-3): the dashboard's
 /// verdicts, the coupling model's, the temperature design's and the clamp's checks and
-/// screens, the material warnings, the space claim and the gearbox check. Each gives a badge
-/// level ([`verdict_level`]): the results table shows it, and its failing filter lists the
-/// checks that fail ([`failing_checks`]). The clamp table's per-size checks and the sweeps'
-/// status texts rate candidates, not the design, so they are left out.
-pub const CHECKS: [&str; 31] = [
+/// screens, the material warnings, the space claim, the gearbox check and the shaft joints
+/// check. Each gives a badge level ([`verdict_level`]): the results table shows it, and its
+/// failing filter lists the checks that fail ([`failing_checks`]). The clamp table's per-size
+/// checks and the sweeps' status texts rate candidates, not the design, so they are left out.
+pub const CHECKS: [&str; 32] = [
     "calibration.end_effect_check",
     "model.inner_flat_check",
     "model.outer_flat_check",
@@ -292,6 +305,7 @@ pub const CHECKS: [&str; 31] = [
     "warnings.cte_mismatch_with_magnets",
     "housing.space_claim_check",
     "gearbox.cold_high_check",
+    "shaft_joint.check",
 ];
 
 /// The badge level of a check's verdict text; `None` (no badge) for a path that is no check, a
@@ -303,6 +317,14 @@ pub fn verdict_level(path: &str, text: &str) -> Option<Level> {
     const HOT_DAY: [&str; 2] = [
         "temperature.summary.torque_hot_day_note",
         "temperature.magnet_life.torque_hot_day_check",
+    ];
+    // BL-064: each failing shaft joint text starts with its cause's constant.
+    const SHAFT_JOINT_FAILS: [&str; 5] = [
+        shaft_joint::FIT_SLIPS,
+        shaft_joint::BORE_OVER_ITS_LIMIT,
+        shaft_joint::CANNOT_BE_FITTED,
+        shaft_joint::KEY_OVER_ITS_LIMIT,
+        shaft_joint::KEY_HAS_NO_BEARING_AREA,
     ];
     match (path, text) {
         ("calibration.end_effect_check", "OK") => Some(Good),
@@ -379,6 +401,16 @@ pub fn verdict_level(path: &str, text: &str) -> Option<Level> {
         ("gearbox.cold_high_check", t)
             if t.starts_with(crate::engine::gearbox::ABOVE_THE_GEARBOX_RATING) =>
         {
+            Some(Bad)
+        }
+        ("shaft_joint.check", shaft_joint::SHAFT_JOINTS_PASS) => Some(Good),
+        // Every unknown form: not a number, a safety factor not above zero (ruling C-4), a value
+        // outside what it can physically be (its extension), a gearbox shaft below its slider's
+        // bottom (build ruling B-5), no wall around a bore, a reversed band.
+        ("shaft_joint.check", t) if t.starts_with(shaft_joint::SHAFT_JOINT_UNKNOWN) => {
+            Some(Caution)
+        }
+        ("shaft_joint.check", t) if SHAFT_JOINT_FAILS.iter().any(|&f| t.starts_with(f)) => {
             Some(Bad)
         }
         ("model.end_effect_check", "OK") => Some(Good),
@@ -681,7 +713,7 @@ pub fn shown_lines(results: &DesignResults, clamps_paused: bool) -> Vec<Dashboar
 /// end-effect banner when f_end <= 0, then a row per line (badge and label, then the value and,
 /// with the spreadsheet details, its correction ids under a one-line legend, so a narrow side
 /// still reads) with its Why line, a guided check's
-/// block over its Why line, the stored-3D label after the last temperature row, and the
+/// block over its Why line, the stored-3D label after the last stored-3D row, and the
 /// Magnets fit row last. `fixes` holds every guide's fixes in [`CHECK_GUIDES`]' order
 /// (`guidance::FixCache`). Each result row is a readout (`readouts`): its hover text and
 /// equation while hovered, a click opens it in the Equation panel. While the shaft-clamp
@@ -1008,9 +1040,10 @@ mod tests {
     use crate::gui::guidance::{CHECK_GUIDES, Direction, Fixes, ROW_LEARN, all_fixes, trade_offs};
     use crate::gui::readouts::ReadoutEvents;
     use crate::gui::test_support::{
-        assert_glyphs, drawn_texts, hover_frames, only_the_clamp_fails, only_the_gearbox_fails,
-        passing_design, primary_button, short_magnets, sized_frame, text_center, text_color,
-        text_rect, tooltips_at_once, with_poles,
+        assert_glyphs, drawn_texts, hover_frames, hub_overstressed, only_the_clamp_fails,
+        only_the_gearbox_fails, only_the_joint_fails, passing_design, primary_button,
+        reversed_hub_band, short_magnets, sized_frame, text_center, text_color, text_rect,
+        tooltips_at_once, with_poles,
     };
     use std::collections::BTreeSet;
 
@@ -1022,6 +1055,7 @@ mod tests {
         assert_eq!(
             paths[15..],
             [
+                "shaft_joint.check",
                 "gearbox.cold_high_check",
                 "housing.space_claim_check",
                 "model.end_effect_check"
@@ -1110,6 +1144,87 @@ mod tests {
         assert_eq!(gearbox(f64::INFINITY, 0.6), Some(Bad));
         assert_eq!(gearbox(f64::NAN, 0.6), Some(Caution));
         assert_eq!(gearbox(0.6, f64::NAN), Some(Caution));
+        // BL-064 (spec 7.5): every text form the shaft joints check writes, each reached as the
+        // badge by a design from the defaults, and its level: the pass; the five failing causes
+        // (the key's two at a 0.3 mm keyway and at a contact height typed 0); the six unknown
+        // forms (a value that is not a number, a safety factor typed 0 (ruling C-4), a friction
+        // typed below zero (its extension, the whole-branch review's MF-1), a gearbox shaft
+        // typed below its slider's bottom (build ruling B-5), no wall around a bore, a reversed
+        // band). So no form is classified from a constant alone.
+        type Edit = fn(&mut DesignInputs);
+        let joint_forms: [(Edit, &str, Level); 12] = [
+            (|_| {}, shaft_joint::SHAFT_JOINTS_PASS, Good),
+            (
+                |i| i.shaft_joint.hub_interference_min_um = 8.0,
+                shaft_joint::FIT_SLIPS,
+                Bad,
+            ),
+            (hub_overstressed, shaft_joint::BORE_OVER_ITS_LIMIT, Bad),
+            (
+                |i| i.shaft_joint.wheel_shaft_fit_C = 20.0,
+                shaft_joint::CANNOT_BE_FITTED,
+                Bad,
+            ),
+            (
+                |i| i.coupling.keyway_depth_mm = 0.3,
+                shaft_joint::KEY_OVER_ITS_LIMIT,
+                Bad,
+            ),
+            (
+                |i| i.shaft_joint.key_contact_mm = 0.0,
+                shaft_joint::KEY_HAS_NO_BEARING_AREA,
+                Bad,
+            ),
+            (
+                |i| i.temperature.adhesive.selected = 0,
+                shaft_joint::UNKNOWN_NOT_A_NUMBER,
+                Caution,
+            ),
+            (
+                |i| i.shaft_joint.safety_factor = 0.0,
+                shaft_joint::UNKNOWN_SAFETY_FACTOR,
+                Caution,
+            ),
+            (
+                |i| i.shaft_joint.friction = -0.14,
+                shaft_joint::UNKNOWN_IMPOSSIBLE_VALUE,
+                Caution,
+            ),
+            (
+                |i| i.shaft_joint.output_shaft_fit_C = -21.0,
+                shaft_joint::UNKNOWN_GEARBOX_SHAFT_TOO_COLD,
+                Caution,
+            ),
+            (
+                |i| {
+                    i.coupling.bore_mm = 16.0;
+                    i.metal.boss_od_mm = 12.0;
+                    i.shaft_joint.hub_interference_min_um = 15.0;
+                },
+                shaft_joint::UNKNOWN_NO_WALL,
+                Caution,
+            ),
+            (
+                reversed_hub_band,
+                shaft_joint::UNKNOWN_BAND_REVERSED,
+                Caution,
+            ),
+        ];
+        for (edit, start, want) in joint_forms {
+            let results = compute_all(&design(edit));
+            let text = &results.shaft_joint.check;
+            assert!(text.starts_with(start), "{text:?} starts with {start:?}");
+            assert_eq!(
+                verdict_level("shaft_joint.check", text),
+                Some(want),
+                "{text:?}"
+            );
+            assert_eq!(
+                check_level(&results, "shaft_joint.check"),
+                Some(want),
+                "{text:?}"
+            );
+        }
         // No back iron (E9): the wall rule does not apply, so the check gives no badge.
         let text = compute_all(&design(|i| i.coupling.backiron = 0))
             .materials
@@ -1358,6 +1473,18 @@ mod tests {
             ),
             None
         );
+        assert_eq!(
+            verdict_level("gearbox.cold_high_check", shaft_joint::SHAFT_JOINTS_PASS),
+            None
+        );
+        assert_eq!(
+            verdict_level(
+                "shaft_joint.check",
+                crate::engine::gearbox::WITHIN_THE_GEARBOX_RATING
+            ),
+            None
+        );
+        assert_eq!(verdict_level("shaft_joint.check", "OK"), None);
         assert_eq!(verdict_level("warnings.no_such_rule", "text"), None);
         assert_eq!(check_level(&manual, "model.pullout_Nm"), None);
     }
@@ -1377,12 +1504,13 @@ mod tests {
             last = index;
             assert!(matches!(rows[index].value, Value::Text(_)), "{check}");
         }
-        // A new check (a text named *_check, *_screen, *verdict or *reading, or a warning)
-        // fails here until it is listed and classified. The clamp table's and the sweeps' rows
-        // rate candidates, not the design.
+        // A new check (a text named check, *_check, *_screen, *verdict or *reading, or a
+        // warning) fails here until it is listed and classified. The clamp table's and the
+        // sweeps' rows rate candidates, not the design.
         for row in &rows {
             let name = row.path.rsplit('.').next().unwrap();
-            let named = name.ends_with("_check")
+            let named = name == "check"
+                || name.ends_with("_check")
                 || name.ends_with("_screen")
                 || name.ends_with("verdict")
                 || name.ends_with("reading")
@@ -1494,16 +1622,23 @@ mod tests {
             vec![0.0, 0.05, 0.3, 0.5]
         });
         assert_eq!(moved, END_EFFECT_ROWS.into_iter().collect());
-        // The headline's rows, and one row past it: the gearbox check, computed from cold-high.
+        // The headline's rows, and two rows past it: the shaft joints and the gearbox checks,
+        // both computed from cold-high.
         let past_the_headline: Vec<&str> = END_EFFECT_ROWS
             .into_iter()
             .filter(|row| !HEADLINE.iter().any(|&(_, path)| path == *row))
             .collect();
-        assert_eq!(past_the_headline, ["gearbox.cold_high_check"]);
+        assert_eq!(
+            past_the_headline,
+            ["shaft_joint.check", "gearbox.cold_high_check"]
+        );
     }
 
     #[test]
-    fn the_stored_3d_rows_are_the_headline_rows_that_move_with_the_stored_3d_inputs() {
+    fn the_stored_3d_rows_are_the_dashboard_rows_that_move_with_the_stored_3d_inputs() {
+        // Owner R-15: the shaft joints row is one of them, through the inner ring's single-ring
+        // onset that caps the bonded inner hub's fitting temperature (it moves with the
+        // single-ring reverse field at its slider's top, back iron 1).
         let inputs: Vec<String> = STORED_3D_INPUTS.map(str::to_owned).to_vec();
         let catalogue = crate::gui::inputs::InputCatalogue::get();
         let moved = dashboard_moved_by(&inputs, |path| {
@@ -1570,6 +1705,16 @@ mod tests {
                 assert!(!sentence.contains("limit"), "{sentence}");
             }
         }
+        // The shaft joints row's sentence calls the bonded hub's cap by the name the result row
+        // and the Problem give it, never a third name (T5 text re-review SF-5), and so does the
+        // help of the reverse field that sets it (G-3 re-review of the review leftovers, MF-2).
+        assert!(
+            STORED_3D_NOTE.contains("The bonded inner hub's allowed fitting temperature, on the shaft joints row, uses one of the reverse fields too.")
+                && !STORED_3D_NOTE.contains("fitting limit"),
+            "{STORED_3D_NOTE}"
+        );
+        let single_ring = help_for("temperature.demag.h_rev_single_ring_kA_m");
+        assert!(!single_ring.contains("fitting limit"), "{single_ring}");
     }
 
     #[test]
@@ -1620,12 +1765,49 @@ mod tests {
             "Rust-only: no cell"
         );
         assert_eq!(line("model.end_effect_check").level, Some(Level::Good));
+        // BL-064: the shaft joints pass at the example design, Rust-only.
+        let joint = line("shaft_joint.check");
+        assert_eq!(joint.value, crate::engine::shaft_joint::SHAFT_JOINTS_PASS);
+        assert_eq!(joint.level, Some(Level::Good));
+        assert_eq!(joint.marker, "", "Rust-only: no cell");
         assert!(lines.iter().all(|l| !l.greyed));
         for path in STORED_3D_ROWS {
             assert!(line(path).stored_3d);
             assert!(line(path).tooltip(false).contains(STORED_3D_LABEL));
         }
-        assert_eq!(lines.iter().filter(|l| l.stored_3d).count(), 3);
+        assert_eq!(lines.iter().filter(|l| l.stored_3d).count(), 4);
+        // The stored-3D label is drawn after the last stored-3D row shown: the shaft joints row,
+        // whether the clamp section shows or not (owner R-15).
+        for paused in [true, false] {
+            let shown = shown_lines(&compute_all(&DesignInputs::default()), paused);
+            let last = shown.iter().rev().find(|l| l.stored_3d).map(|l| l.path);
+            assert_eq!(last, Some("shaft_joint.check"), "paused {paused}");
+        }
+    }
+
+    #[test]
+    fn the_stored_3d_label_is_drawn_once_under_the_shaft_joints_row() {
+        // Owner R-15: one label, after the last stored-3D row, now the shaft joints row: below
+        // its label and above the gearbox row's, whether the clamp section shows or not.
+        let ctx = egui::Context::default();
+        for paused in [true, false] {
+            let output = dashboard_frame_with(&ctx, &DesignInputs::default(), paused);
+            let texts = drawn_texts(&output);
+            let count = texts.iter().filter(|t| *t == STORED_3D_LABEL).count();
+            assert_eq!(count, 1, "paused {paused}");
+            let y = |text: &str| {
+                text_rect(&output, text)
+                    .unwrap_or_else(|| panic!("{text:?} drawn"))
+                    .center()
+                    .y
+            };
+            let label = y(STORED_3D_LABEL);
+            assert!(label > y(label_for("shaft_joint.check")), "paused {paused}");
+            assert!(
+                label < y(label_for("gearbox.cold_high_check")),
+                "paused {paused}"
+            );
+        }
     }
 
     #[test]
@@ -1660,7 +1842,7 @@ mod tests {
     fn out_of_range_end_effect_drops_the_pull_out_checks_from_the_table_and_the_failing_filter() {
         // The twin of the test above for the results table's badges and its failing filter
         // (both read `check_level`): a verdict computed from an invalid pull-out is no verdict,
-        // so the three checks among the greyed rows give no badge and are not listed as failing.
+        // so the four checks among the greyed rows give no badge and are not listed as failing.
         use Level::{Bad, Caution};
         let results = compute_all(&short_magnets());
         assert!(end_effect_out_of_range(&results).is_some());
@@ -1673,12 +1855,14 @@ mod tests {
             [
                 "metal.hot_min_check",
                 "clamps.recommended",
+                "shaft_joint.check",
                 "gearbox.cold_high_check"
             ]
         );
         for path in &greyed {
             assert!(greyed_by_end_effect(&results, path), "{path}");
-            // The verdict has a level of its own (red, green and green here): the rule drops it.
+            // The verdict has a level of its own (red, then green three times here): the rule
+            // drops it.
             let Some(Value::Text(text)) = results.get(path) else {
                 panic!("{path} is text")
             };
@@ -1713,12 +1897,17 @@ mod tests {
             }
         }
         // In range nothing is dropped: the defaults' hot minimum is red, the screw green, the
-        // gearbox check red.
+        // shaft joints green, the gearbox check red.
         let defaults = compute_all(&DesignInputs::default());
         assert!(!greyed_by_end_effect(&defaults, "metal.hot_min_check"));
         assert_eq!(check_level(&defaults, "metal.hot_min_check"), Some(Bad));
         assert_eq!(
             check_level(&defaults, "clamps.recommended"),
+            Some(Level::Good)
+        );
+        assert!(!greyed_by_end_effect(&defaults, "shaft_joint.check"));
+        assert_eq!(
+            check_level(&defaults, "shaft_joint.check"),
             Some(Level::Good)
         );
         assert!(!greyed_by_end_effect(&defaults, "gearbox.cold_high_check"));
@@ -1767,6 +1956,58 @@ mod tests {
                 failing_checks(&results, false)
                     .iter()
                     .all(|&(path, _)| path != gearbox)
+            );
+            assert_eq!(guidance::level(guide, &inputs, &results), Level::Good);
+            assert_eq!((guide.problem)(&inputs, &results), None);
+            statuses.push(design_status(&inputs, &results, false));
+        }
+        assert_eq!(statuses[0], statuses[1]);
+    }
+
+    #[test]
+    fn out_of_range_end_effect_greys_the_shaft_joint_check_whatever_its_text_reads() {
+        // BL-064 (spec 5.1, 7.6). The check reads cold-high, which comes from the pull-out: on
+        // short magnets it is below zero, so the engine's text reads a pass from a meaningless
+        // number. The whole row greys, so a bore stress above its limit, which does not read
+        // cold-high, is hidden there too (review 2, SF-13: one row cannot grey in part; the
+        // end-effect check fails there under its banner). Either way the row is greyed without
+        // a badge, keeps its stored-3D note beside the greyed one, has no level in the
+        // dashboard, the results table or its failing filter, its guide shows no Problem, and
+        // the status line counts it neither way.
+        use crate::engine::shaft_joint::{BORE_OVER_ITS_LIMIT, SHAFT_JOINTS_PASS};
+        use crate::gui::results_table::{entry_index, entry_level, table_entries};
+        let joint = "shaft_joint.check";
+        let guide = guidance::guide(joint).expect("the shaft joints check's guide");
+        let entry = &table_entries()[entry_index(joint).expect("the shaft joints check's row")];
+        let mut overstressed = short_magnets();
+        hub_overstressed(&mut overstressed);
+        let mut statuses = Vec::new();
+        for (inputs, text) in [
+            (short_magnets(), SHAFT_JOINTS_PASS),
+            (overstressed, BORE_OVER_ITS_LIMIT),
+        ] {
+            let results = compute_all(&inputs);
+            assert!(end_effect_out_of_range(&results).is_some());
+            assert!(results.metal.torque_cold_high_Nm < 0.0);
+            let verdict = &results.shaft_joint.check;
+            assert!(verdict.starts_with(text), "{verdict}");
+            assert!(verdict_level(joint, verdict).is_some(), "{verdict}");
+            assert!(greyed_by_end_effect(&results, joint));
+            assert_eq!(check_level(&results, joint), None);
+            let line = dashboard_lines(&results)
+                .into_iter()
+                .find(|l| l.path == joint)
+                .expect("the shaft joints row");
+            assert!(line.greyed && line.stored_3d);
+            assert_eq!(line.level, None);
+            let hover = line.tooltip(false);
+            assert!(hover.contains(END_EFFECT_OUT_OF_RANGE), "{hover}");
+            assert!(hover.contains(STORED_3D_LABEL), "{hover}");
+            assert_eq!(entry_level(&results, entry), None);
+            assert!(
+                failing_checks(&results, false)
+                    .iter()
+                    .all(|&(path, _)| path != joint)
             );
             assert_eq!(guidance::level(guide, &inputs, &results), Level::Good);
             assert_eq!((guide.problem)(&inputs, &results), None);
@@ -2077,7 +2318,7 @@ mod tests {
         }
         assert_eq!(
             design_status_text(&design_status(&inputs, &results, true)),
-            "Your design: passes all 8 checks"
+            "Your design: passes all 9 checks"
         );
     }
 
@@ -2144,6 +2385,8 @@ mod tests {
             }),
             design(|i| i.metal.max_diameter_mm = f64::NAN),
             design(|i| i.coupling.backiron = 0),
+            only_the_joint_fails(),
+            design(reversed_hub_band),
         ] {
             let results = compute_all(&inputs);
             for line in dashboard_lines(&results) {
@@ -2324,6 +2567,8 @@ mod tests {
         let visuals = ctx.style().visuals.clone();
         let mut passing_hot_day = passing_design();
         passing_hot_day.temperature.duty = hot_day().temperature.duty;
+        let mut passing_reversed = passing_design();
+        reversed_hub_band(&mut passing_reversed);
         let cases = [
             // The workbook example: four red checks.
             (DesignInputs::default(), 4, 0, Level::Bad),
@@ -2337,6 +2582,11 @@ mod tests {
             (passing_design(), 0, 0, Level::Good),
             // The passing design with the example's gearbox rating: the gearbox check alone.
             (only_the_gearbox_fails(), 1, 0, Level::Bad),
+            // The passing design with the inner hub's minimum at 8 µm: the shaft joints alone.
+            (only_the_joint_fails(), 1, 0, Level::Bad),
+            // The passing design with the inner hub's band reversed: the shaft joints ask for a
+            // look.
+            (passing_reversed, 0, 1, Level::Caution),
             // The hot day's temperature verdict is amber, counted apart from the red.
             (hot_day(), 4, 1, Level::Bad),
             // The passing design on the hot day: amber alone.
