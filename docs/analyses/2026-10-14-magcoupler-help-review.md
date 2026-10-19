@@ -2815,3 +2815,109 @@ include one BL-064 record, and "A-3 scope" is the historic name. T2 and T3 rewri
 - "Inner ring: single-ring onset" matches the Problem's "the magnets' single-ring onset" (spec 5.2), so a reader can
   find the quoted onset in the results table.
 - "on its carrier" matches the input label "single ring on its carrier".
+
+### Re-review after a change by the implementer after its review (2026-10-18)
+
+BL-064 Task 2 (commit 02277cd) added the shaft joint check (`engine/shaft_joint.rs`): the 15 Rust-only
+`shaft_joint` inputs and the 24 results with their labels and helps, the verdict texts, the input group heading "Shaft
+joints", the inputs panel's sections "Shrink fit" and "Fitting temperatures", the results heading "Shaft joints", and the doc
+texts around them (the README rows, the crate doc in `src/lib.rs`, `docs/ai/02-system.yaml` and
+`docs/ai/03-structure.yaml`). The labels, helps and verdict texts stay drafts until Task 8's G-3 review. They had a
+G-3 text re-review in a fresh context at HEAD 02277cd. The reviewer's report for the record follows unchanged (full
+answer: `.superpowers/sdd/2026-10-18-bl064-shaft-joint/textreview-T2-a-change-by-the-implementer-after-its-review-1.md`).
+
+- Reviewer: fresh context, session model, 2026-10-18; G-3 text re-review of BL-064 Task 2's texts (round 1). There
+  was no note text to review: the note `shaft_joint` arrives in Task 7 (the note dump names no note).
+- Verdict: MUST_FIX, one item. Every on-screen draft is true at the defaults and the five probe designs, no trap is
+  broken and no cap is exceeded (the longest helps are 30 words, the schema guard green). The one false text was a
+  README number.
+- Must-fix applied in this round:
+  - MF-1 (`magcoupling-rs/README.md`, the `tests/shaft_joint.rs` row): the row called 6.3647 N·m cold-high, but that
+    is the required torque, twice cold-high. The test asserts cold-high 3.1823 N·m and required 6.3647 N·m
+    (`tests/shaft_joint.rs:407-409`). Old: "the BL-067 corner reads cold-high (6.3647 N·m) and passes;" New: "the BL-067 corner reads cold-high (3.1823 N·m, so 6.3647 N·m required) and passes;". Docs only: no test, count or on-screen text moves, and
+    `input_schema.json` is not re-blessed.
+- Should-fix offered, none applied in this round; they stay open for the controller (SF-1 to SF-8 for Task 8's G-3
+  review, SF-9 for the Task 2 fix round or Task 9):
+  - SF-1 (`shaft_joint.cup_fit_max_C` help): "the steel's" names the wrong material when the cup is 6061-T6.
+    Offered (28 words, 2 sentences): "The cup is fitted before its magnets are bonded. Stay below the treatment temperatures of its material and its finish, and keep the heat off the gearbox seal."
+  - SF-2 (`shaft_joint.hub_fit_allowed_C` help): "the magnets'" is ambiguous with mixed rings. Offered (30 words,
+    1 sentence): "The lowest of your limit for the bonded inner hub, the selected adhesive's design limit and the inner ring's single-ring onset less 10 °C; not a number if any is." Optional, same count: "the magnets'" becomes "its magnets'" in the `hub_fit_max_C` input
+    help (an input help change re-blesses `input_schema.json`, which Task 8 may do).
+  - SF-3 (the two shaft shrink helps): the published low-temperature data hold only below -8 °C, and a constant
+    coefficient applies above. Offered for the wheel shaft (30 words, 1 sentence), the gearbox shaft's the same with
+    "gearbox" for "wheel": "The wheel shaft's diameter shrink from 20 °C to its fitting temperature: published data for a nickel steel below -8 °C, a constant expansion coefficient above; negative when it grows."
+  - SF-4 (`shaft_joint.wheel_shaft_fit_C` help): at the default -196 °C the help does not say that a cooled shaft can
+    chill the bonded inner hub below the minimum magnet temperature, and "needs less heat" becomes "needs less
+    warming". Offered (30 words, 2 sentences): "A cooled shaft shrinks, so the inner hub needs less warming but may chill below the minimum magnet temperature. Liquid nitrogen is -196 °C; dry ice is about -78 °C."
+  - SF-5 (`shaft_joint.output_shaft_fit_C` help, low priority): the slider's bottom, -20 °C, may be below the
+    gearbox's lowest rated temperature. Offered (30 words, 2 sentences): "The gearbox output shaft cannot be immersed. Cold spray can take it to -20 °C, the slider's bottom, but never below the gearbox's lowest rated temperature, which may be warmer."
+  - SF-6 (`shaft_joint.stress_limit_MPa` help): "with a margin" is vague and the key is not named. Offered (28 words,
+    2 sentences): "The part's yield strength divided by 1.2. The bore stress at the tightest fit, and the key's pressure alone, must not exceed it, so the part stays elastic." If adopted, a test holds the quoted 1.2 to `YIELD_FACTOR`.
+  - SF-7 (`shaft_joint.part_yield_MPa` help): "while the condition is open" is shorthand. Offered (26 words,
+    1 sentence): "The library's yield strength of the inner hub and cup material in effect; for 4140, the annealed value, conservative while its heat treatment is not known."
+  - SF-8 (the two holding helps): "rotor warmer than shaft" applies only at the hot end. Offered for the inner hub
+    (29 words, 1 sentence), the cup's the same with "the cup's fit" (28 words): "Torque the inner hub's fit holds without slipping at its loosest: minimum measured interference less smoothing, cold or hot with the rotor warmer than its shaft, whichever loosens more."
+  - SF-9 (`docs/ai/02-system.yaml`, the BL-067 citation; not Task 8's): BL-067 is the operating temperature below the
+    minimum, not backlash, resonance or re-lock. Old: "it is not a bound on them (backlash, resonance and re-lock can exceed it on the gearbox side; BL-067)." New: "it is not a bound on them (backlash, resonance and re-lock can exceed it on the gearbox side; with the operating temperature below the minimum, so can the operating pull-out, BL-067)."
+- Text changed in this round: the README row of MF-1 only.
+
+**Report for the record (as returned).**
+
+**R-1. What was verified true.**
+- **Every label and help against the engine:**
+  - the Lamé pressure and the bore von Mises;
+  - the holding torque with the key arc floored;
+  - the key alone: 0 with no keyway, +inf with no bearing area;
+  - the needed, elastic and fittable window ends;
+  - the needed fitting temperature;
+  - `hub_fit_allowed` (NaN first, `CURE_MARGIN_MIN_C` = 10, `temperature.rs:748`);
+  - the expansion claim: a higher α loosens hot, a lower one loosens cold;
+  - the modulus claim: pressure rises with E;
+  - the part material rule of `PartProperties::hub`.
+- **The verdict texts and badge tails** against `verdict` and `text`. The cause order, NaN first, then the safety
+  factor, then no wall, then the reversed band.
+- **The traps.**
+  - None of these appear in any T2 text: "clamp", "safe", "strongest", "at most", "up to", "most expected", "heat the
+    hub", "protect", "permanent", induction, the grade's 150 °C, a fit class, a ratio, "BL-064", U+2192 or U+2300.
+  - The bath temperatures use the house minus sign.
+  - The fitting order is the owner's.
+  - Each fitting-temperature help names its source.
+  - The keyway corner is said to be left out.
+  - The fit and the key are never added.
+- **README (a), (c)-(k) and (m), the crate doc, `02-system.yaml` (a) and (c) and `03-structure.yaml` (a)-(d)** match
+  the code and the tests:
+  - the 15 links;
+  - 393 of 1,112;
+  - 2,643 characters, guard 2,700;
+  - the four "gearbox" matches;
+  - the old link and a file loading the joint inputs at their defaults;
+  - the robustness cases.
+  "The first top-level Rust-only input group" is true: every earlier group in `DesignInputs` is Python-ported.
+
+**R-2. Forward references, true at merge** (as in the T1 review's R-2).
+- README edit (l) describes the CSV and JSON export test of the 24 results and 15 inputs. That test is T4's
+  `the_exports_carry_every_shaft_joint_input_and_result_with_no_cell` (`task-4-brief.md:381-470`, which matches every
+  clause). At `02277cd` no test asserts it.
+- BL-070 is cited in the module doc and in `02-system.yaml` (b). It is created in T9.
+
+**R-3. Caps.**
+- All 39 helps: at most 30 words and 1-2 sentences. At the cap of 30: `hub_bore_stress_MPa`, both `*_fit_temp_C`, and
+  `check`.
+- All 15 input defaults sit on their slider grids (tested).
+
+**R-4. Minor wording, the G-3 reviewer's call.**
+- **`key_contact_mm`: "DIN 6885-1 gives 1.2 mm for 10 mm".** 1.2 mm is the 3 × 3 row's h − t1 (3 − 1.8;
+  `research-physics.md:295-297`), not a tabulated value. It is true as "gives".
+- **The key pressure helps.** "were the key to carry the torque alone" means the required torque.
+- **The section "Fitting temperatures"** holds the joining clearance, in µm (spec 5.3 places it there).
+- **README edit (f)'s parenthetical** ("the bore and the shaft key") leaves out the keyway depth. That is incomplete,
+  not false.
+- **"inf" in the badge.** An infinite cold-high quotes "against inf N·m" (`tests/shaft_joint.rs:1481`), while the key
+  helps write "+inf". It is reachable only through a non-finite engine value.
+
+**R-5. The typed "10 °C".** It appears in two helps (`hub_fit_max_C`, `hub_fit_allowed_C`), and no test ties it to the
+constant. `CURE_MARGIN_MIN_C` is the workbook's Temperature design C25 and is Python-locked, so in practice it cannot
+drift. The note's copy is pinned in T7 (spec 7.11).
+
+**R-6. No model question arises.** None of the texts asks to change the engine. R-14 (the hot-end form) and R-1 (the
+stress side's smoothing) stay with T7's physics review, as planned.
