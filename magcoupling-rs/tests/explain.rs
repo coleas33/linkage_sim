@@ -4660,18 +4660,19 @@ fn cure_margin_words() -> String {
 /// 1.0 (a thin one), so it follows interference over diameter and hardly the wall. Sentence 4
 /// quotes the temperature the inner hub's fit would need beside the wheel shaft's live shrink,
 /// never the shaft's input temperature (review 4 MF-2, review 5 MF-2), against the allowed
-/// temperature, the lowest of the three limits it names with the cure margin typed as the
-/// engine keeps it (owner R-15; review MF-6). The watch-outs carry the owner's "Cup temp"
-/// decision (review MF-1), with any heat cure of the cup's magnets (the notes record's SF-1),
-/// and name the cooled wheel shaft and the bonded inner hub (review 2 SF-6a); nothing in the
-/// engine checks a seal, a bearing or fretting; the default wheel shaft is colder than the
-/// minimum magnet temperature; a ferrite ring's coercivity falls as it cools. A source names
-/// the ground shaft and honed bore the default smoothing rests on (the notes record's SF-3). No
-/// text of the note orders the torques (review 2 MF-1, spec 7.8). The note's physics review,
-/// round 1: a raised cup minimum moves neither the cup's bore stress nor its fitting
-/// temperature, and one step past the maximum reverses the band (MF-2); a warmer wheel shaft
-/// lowers the inner hub's fitting margin, and from -180 °C the default inner hub cannot be fitted
-/// (MF-1).
+/// temperature, the lowest of the three limits it names (owner R-15). The cure margin's words,
+/// in sentence 4 and the first source, are asserted once, by
+/// `the_shaft_joint_texts_type_the_cure_margin_the_engine_keeps` (review MF-6). The watch-outs
+/// carry the owner's "Cup temp" decision (review MF-1), with any heat cure of the cup's magnets
+/// (the notes record's SF-1), and name the cooled wheel shaft and the bonded inner hub (review
+/// 2 SF-6a); nothing in the engine checks a seal, a bearing or fretting; the default wheel
+/// shaft is colder than the minimum magnet temperature; a ferrite ring's coercivity falls as it
+/// cools. A source names the ground shaft and honed bore the default smoothing rests on (the
+/// notes record's SF-3). No text of the note orders the torques (review 2 MF-1, spec 7.8). The
+/// note's physics review, round 1: a raised cup minimum moves neither the cup's bore stress nor
+/// its fitting temperature, and one step past the maximum reverses the band (MF-2); a warmer
+/// wheel shaft lowers the inner hub's fitting margin, and from -180 °C the default inner hub
+/// cannot be fitted (MF-1).
 #[test]
 fn the_shaft_joint_note_s_claims_hold_at_every_probe_design() {
     use magcoupling::engine::api::shaft_joint_links;
@@ -4715,14 +4716,12 @@ fn the_shaft_joint_note_s_claims_hold_at_every_probe_design() {
             "shaft_joint.hub_fit_allowed_C"
         ]
     );
-    let margin = cure_margin_words();
     for words in [
         "Here",
         "wheel shaft",
         "your limit",
         "adhesive's",
         "single-ring onset",
-        &format!("onset less {margin}"),
     ] {
         assert!(
             s[4].contains(words),
@@ -4746,13 +4745,6 @@ fn the_shaft_joint_note_s_claims_hold_at_every_probe_design() {
     ] {
         assert!(wheel_side.contains(words), "{words:?} in {wheel_side:?}");
     }
-    assert!(
-        note.sources
-            .iter()
-            .any(|source| source.contains(&format!("held {margin} below"))),
-        "a source names the margin: {:?}",
-        note.sources
-    );
     // The smoothing source names the surfaces its default rests on (the notes record's SF-3, from
     // the review leftovers), with the default typed as the engine keeps it.
     let smoothing = format!(
@@ -4932,34 +4924,24 @@ fn the_shaft_joint_texts_type_the_cure_margin_the_engine_keeps() {
     let result_help = help_of(&results, "shaft_joint.hub_fit_allowed_C");
     let onset_help = help_of(&results, "temperature.demag.inner_onset_single_ring_C");
     let note = notes::note("shaft_joint").expect("the shaft-joint note");
+    // The onset clause, as three of the five texts type it.
+    let onset_words = format!("onset less {margin}");
     for (what, text, words) in [
-        (
-            "the input's help",
-            input_help,
-            format!("onset less {margin}"),
-        ),
-        (
-            "the result's help",
-            result_help,
-            format!("onset less {margin}"),
-        ),
+        ("the input's help", input_help, &onset_words),
+        ("the result's help", result_help, &onset_words),
         (
             "the inner onset's help",
             onset_help,
-            format!("at least {margin} below"),
+            &format!("at least {margin} below"),
         ),
-        (
-            "sentence 4",
-            note.sentences[4],
-            format!("onset less {margin}"),
-        ),
+        ("sentence 4", note.sentences[4], &onset_words),
         (
             "the first source",
             note.sources[0],
-            format!("held {margin} below"),
+            &format!("held {margin} below"),
         ),
     ] {
-        assert!(text.contains(&words), "{what} says {words:?}: {text:?}");
+        assert!(text.contains(words), "{what} says {words:?}: {text:?}");
     }
     assert!(!onset_help.contains("stays below it"), "{onset_help}");
 }
