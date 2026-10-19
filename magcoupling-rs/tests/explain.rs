@@ -4659,12 +4659,12 @@ fn cure_margin_words() -> String {
 /// bore stress against the limit in a "here" clause (review 5 SF-4, review 6 SF-1): per µm of
 /// effective interference each joint's bore stress is E·δ/d times √3/2, about 0.87 (a thick
 /// wall), to 1.0 (a thin one), for a steel part on the steel shaft (an aluminium body reads
-/// 1.005 to 1.127: the stiffer shaft takes less), so it follows interference over diameter and
-/// hardly the wall. Sentence 4
-/// quotes the temperature the inner hub's fit would need beside the wheel shaft's live shrink,
-/// never the shaft's input temperature (review 4 MF-2, review 5 MF-2), against the allowed
-/// temperature, the lowest of the three limits it names (owner R-15). The cure margin's words,
-/// in sentence 4 and the first source, are asserted once, by
+/// more at a thick wall, up to about 1.13, since the stiffer shaft takes less; at a thin wall
+/// every part reads about 1.0), so it follows interference over diameter and hardly the wall.
+/// Sentence 4 quotes the temperature the inner hub's fit would need beside the wheel shaft's
+/// live shrink, never the shaft's input temperature (review 4 MF-2, review 5 MF-2), against the
+/// allowed temperature, the lowest of the three limits it names (owner R-15). The cure margin's
+/// words, in sentence 4 and the first source, are asserted once, by
 /// `the_shaft_joint_texts_type_the_cure_margin_the_engine_keeps` (review MF-6). The watch-outs
 /// carry the owner's "Cup temp" decision (review MF-1), with any heat cure of the cup's magnets
 /// (the notes record's SF-1), and name the cooled wheel shaft and the bonded inner hub (review
