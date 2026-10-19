@@ -4040,13 +4040,30 @@ mod tests {
 
     /// The guide's two joints are the engine's, in its order, and each path it reads is the
     /// result or input of that joint: at the defaults and at a design where every number
-    /// differs between the joints, each result equals the engine's term bit for bit.
+    /// differs between the joints, each result equals the engine's term bit for bit, and each
+    /// input (the band and the shaft's temperature at fitting) is the value the engine takes
+    /// for that joint.
     #[test]
     fn the_shaft_joint_sides_are_the_engine_s_joints() {
         for inputs in [DesignInputs::default(), only_the_joint_fails()] {
             let results = compute_all(&inputs);
             let joints = shaft_joints(&inputs, &results).expect("a judged check");
-            for (side, joint) in JOINT_SIDES.iter().zip(&joints) {
+            let (_, specs) = shaft_joint::joint_specs(
+                &inputs.shaft_joint,
+                &shaft_joint_links(&inputs, &results),
+            );
+            let inputs_of = |spec: &shaft_joint::JointSpec| {
+                [
+                    spec.interference_min_um,
+                    spec.interference_max_um,
+                    spec.shaft_fit_C,
+                ]
+            };
+            // Every input differs between the joints, so a side reading the other's shows.
+            for (hub, cup) in inputs_of(&specs[0]).into_iter().zip(inputs_of(&specs[1])) {
+                assert_ne!(hub, cup);
+            }
+            for ((side, joint), spec) in JOINT_SIDES.iter().zip(&joints).zip(&specs) {
                 assert_eq!(side.name, joint.name);
                 assert_eq!(joint_side(joint.name).map(|(_, s)| s.name), Some(side.name));
                 let result = |path: &str| match results.get(path) {
@@ -4065,8 +4082,16 @@ mod tests {
                 ] {
                     assert_eq!(result(path), term.to_bits(), "{}: {path}", side.name);
                 }
-                for path in [side.min, side.max, side.shaft_fit] {
-                    assert!(InputCatalogue::get().entry(path).is_some(), "{path}");
+                for (path, value) in [side.min, side.max, side.shaft_fit]
+                    .into_iter()
+                    .zip(inputs_of(spec))
+                {
+                    assert_eq!(
+                        inputs.get(path),
+                        Some(Value::Num(value)),
+                        "{}: {path}",
+                        side.name
+                    );
                 }
             }
         }
@@ -6237,19 +6262,23 @@ mod tests {
                 i.shaft_joint.wheel_shaft_fit_C = -150.0;
             },
         ];
+        let mut windows = Vec::new();
         for edit in edits {
             let inputs = design(edit);
             let results = compute_all(&inputs);
             let text = problem(SHAFT_JOINT, &inputs).expect("the inner hub slips");
             let s = &results.shaft_joint;
             let upper = s.hub_elastic_max_um.min(s.hub_fittable_max_um);
-            for quoted in [
+            let window = [
                 number_text(rounded_up(s.hub_needed_um), "shaft_joint.hub_needed_um"),
                 number_text(rounded_down(upper), "shaft_joint.hub_needed_um"),
-            ] {
-                assert!(text.contains(&quoted), "{quoted} in {text}");
+            ];
+            for quoted in &window {
+                assert!(text.contains(quoted.as_str()), "{quoted} in {text}");
             }
+            windows.push(window);
         }
+        assert_ne!(windows[0], windows[1], "the two windows differ");
         // The gearbox Problem's sentence 2 (owner decision 4A) quotes numbers worked out from
         // the results: two designs with different bands (a warmer minimum temperature narrows
         // it) quote different numbers, each its own.
