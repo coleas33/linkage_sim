@@ -5496,7 +5496,7 @@ Rounds: 2. Verdict: PASS.
   `the_shaft_joint_note_draws_the_fit_temperature_beside_the_wheel_shaft_s_shrink` (`gui/explorer.rs`)
   pins sentence 4 as drawn at the defaults, at library N42 parts and on a 20 and a 40 °C wheel
   shaft. `every_change_entry_moves_its_aim_the_way_it_says` holds the five aims at the five probe
-  designs. Each failed on the missing note and passes on the shipped text.
+  designs. The new tests each failed on the missing note, and all four pass on the shipped text.
 - Sign-off: no new sign-off sheet (spec 6.1, decision 23). The owner's review of the BL-064 diff is
   this note's sign-off; the sheet generator marks it "(added after slice 2; its own physics review
   is its record)", and `docs/analyses/2026-10-14-magcoupler-notes-signoff.md` stays the slice-2
