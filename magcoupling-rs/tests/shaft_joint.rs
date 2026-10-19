@@ -11,7 +11,7 @@ use magcoupling::compute_all;
 use magcoupling::engine::api::{DesignInputs, shaft_joint_links};
 use magcoupling::engine::compat::py_min;
 use magcoupling::engine::explain::probes::probe_designs;
-use magcoupling::engine::meta::{InputSet, SliderRange, Value, input_rows, result_rows};
+use magcoupling::engine::meta::{InputMeta, InputSet, SliderRange, Value, input_rows, result_rows};
 use magcoupling::engine::shaft_joint::{
     self, BORE_OVER_ITS_LIMIT, CANNOT_BE_FITTED, CAUSES, CUP, Cause, FIT_SLIPS, HubFitLimit,
     INNER_HUB, JointCommon, JointSpec, JointTerms, KEY_HAS_NO_BEARING_AREA, KEY_OVER_ITS_LIMIT,
@@ -117,12 +117,19 @@ fn quoted(text: &str) -> (f64, f64) {
     (number(value), number(limit))
 }
 
-/// An input's slider.
-fn slider(path: &str) -> SliderRange {
+/// The metadata of the input at `path`.
+fn input_meta(path: &str) -> &'static InputMeta {
     input_rows(&DesignInputs::default())
         .into_iter()
         .find(|row| row.path == path)
-        .and_then(|row| row.meta.range)
+        .unwrap_or_else(|| panic!("{path} is an input"))
+        .meta
+}
+
+/// An input's slider.
+fn slider(path: &str) -> SliderRange {
+    input_meta(path)
+        .range
         .unwrap_or_else(|| panic!("{path} has a slider"))
 }
 
@@ -133,6 +140,15 @@ fn slider_values(path: &str) -> Vec<f64> {
     (0..=steps)
         .map(|k| range.min + f64::from(k) * range.step)
         .collect()
+}
+
+/// The help of the result at `path`.
+fn result_help(path: &str) -> &'static str {
+    result_rows(&compute_all(&DesignInputs::default()))
+        .into_iter()
+        .find(|row| row.path == path)
+        .map(|row| row.meta.help)
+        .unwrap_or_else(|| panic!("{path} is a result"))
 }
 
 #[test]
@@ -309,6 +325,107 @@ fn the_verdict_texts_are_the_spec_s() {
     ] {
         assert!(!text.to_lowercase().contains("clamp"), "{text}");
         assert!(!text.contains('_') && !text.contains('!'), "{text}");
+    }
+}
+
+#[test]
+fn the_safety_factor_help_says_a_slip_can_reverse_the_torque_not_that_each_does() {
+    // G-3 review MF-1: the swing runs at the pole-pair slip frequency for the slip duration.
+    // At the defaults that is 16.7 cycles per event; at the slip speed's slider bottom it is
+    // under one, so a slip can reverse the torque many times, and need not.
+    let cycles =
+        |inputs: &DesignInputs| compute_all(inputs).metal.slip_freq_Hz * inputs.metal.slip_event_s;
+    assert_near(
+        cycles(&DesignInputs::default()),
+        16.6667,
+        5e-5,
+        "the defaults",
+    );
+    let slowest = design(|i| i.metal.slip_rpm = slider("metal.slip_rpm").min);
+    assert_near(cycles(&slowest), 0.83333, 5e-6, "the slowest slip");
+    let help = input_meta("shaft_joint.safety_factor").help;
+    assert!(!help.contains("each slip"), "{help}");
+    assert!(
+        help.contains("A slip can reverse the torque many times."),
+        "{help}"
+    );
+}
+
+#[test]
+fn the_holding_helps_put_the_rotor_allowance_at_the_hot_end_alone() {
+    // G-3 review MF-2 (spec 3.3): the loosest fit is the cold end or the hot end, whichever
+    // loosens it more, and only the hot end has the rotor warmer than its shaft. 4140 (the
+    // defaults) loosens hot, so the allowance lowers its holding. 416 (pick 4) loosens cold up
+    // to the default allowance, so there the holding is bit for bit the same at 0 and 20 °C;
+    // at the slider's top the hot end takes over.
+    let holding = |back_iron: i64, over: f64| {
+        let r = compute_all(&design(|i| {
+            i.materials.parts.back_iron = back_iron;
+            i.shaft_joint.rotor_over_shaft_C = over;
+        }))
+        .shaft_joint;
+        [r.hub_holding_Nm, r.cup_holding_Nm]
+    };
+    let shipped = DesignInputs::default().materials.parts.back_iron;
+    let [hub_cool, _] = holding(shipped, 0.0);
+    let [hub_warm, _] = holding(shipped, 20.0);
+    assert_near(hub_cool, 14.41, 5e-3, "4140 with no allowance");
+    assert!(
+        hub_warm < hub_cool,
+        "4140 at the default allowance: {hub_warm}"
+    );
+    let top = slider("shaft_joint.rotor_over_shaft_C").max;
+    let [no_allowance, at_default, at_top] = [0.0, 20.0, top].map(|over| holding(4, over));
+    assert_eq!(no_allowance.map(f64::to_bits), at_default.map(f64::to_bits));
+    assert_near(at_default[0], 14.0443, 5e-5, "416");
+    assert!(
+        at_top[0] < at_default[0] && at_top[1] < at_default[1],
+        "{at_top:?}"
+    );
+    for path in ["shaft_joint.hub_holding_Nm", "shaft_joint.cup_holding_Nm"] {
+        let help = result_help(path);
+        assert!(
+            help.contains(
+                "cold, or hot with the rotor warmer than its shaft, whichever loosens it more."
+            ),
+            "{path}: {help}"
+        );
+    }
+}
+
+#[test]
+fn the_bare_cup_s_limit_help_names_no_steel_as_the_cup_can_be_aluminium() {
+    // G-3 review MF-3: with no back iron, or the 6061 pick, the cup is the library's 6061-T6
+    // (pinned by `the_304_and_aluminium_windows_are_empty`), so the help of its fitting limit
+    // names the cup's own material, never a steel.
+    let help = input_meta("shaft_joint.cup_fit_max_C").help;
+    assert!(!help.contains("steel"), "{help}");
+    assert!(
+        help.contains("the treatment temperatures of its material and finish"),
+        "{help}"
+    );
+}
+
+#[test]
+fn the_shaft_shrink_helps_count_from_room_temperature_and_type_no_number() {
+    // G-3 review MF-4 (a, b): each shaft's shrink is zero at room temperature, `ROOM_C` (pinned
+    // in the NIST shrink test below), which the helps name in words and never type.
+    for (path, shaft) in [
+        ("shaft_joint.wheel_shaft_shrink_um", "wheel"),
+        ("shaft_joint.output_shaft_shrink_um", "gearbox"),
+    ] {
+        let help = result_help(path);
+        assert!(!help.chars().any(|c| c.is_ascii_digit()), "{path}: {help}");
+        assert!(
+            help.contains(&format!(
+                "How much the {shaft} shaft's diameter shrinks from room temperature"
+            )),
+            "{path}: {help}"
+        );
+        assert!(
+            help.contains("negative above room temperature"),
+            "{path}: {help}"
+        );
     }
 }
 

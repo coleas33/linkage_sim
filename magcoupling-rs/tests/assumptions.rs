@@ -66,6 +66,14 @@ const RUST_ONLY_SOURCES: [&str; 2] = ["Addendum A3", BL064_SOURCE];
 /// The BL-064 spec's path from the repository root, which the friction row's source names.
 const BL064_SPEC: &str = "docs/superpowers/specs/2026-10-17-bl064-shaft-joint-design.md";
 
+/// BL-064's four shaft joint assumptions (spec 4.5), each with the one input it sets.
+const BL064_ROWS: [(&str, &str); 4] = [
+    ("fit_friction", "shaft_joint.friction"),
+    ("fit_smoothing", "shaft_joint.smoothing_um"),
+    ("rotor_over_shaft", "shaft_joint.rotor_over_shaft_C"),
+    ("joining_clearance", "shaft_joint.joining_clearance_um"),
+];
+
 #[test]
 fn every_flagged_input_is_in_exactly_one_row() {
     let flagged: BTreeSet<String> = input_rows(&DesignInputs::default())
@@ -167,12 +175,7 @@ fn the_shaft_joint_rows_are_rust_only_and_cite_the_bl064_spec() {
             .find(|a| a.id == id)
             .unwrap_or_else(|| panic!("{id}: no assumption"))
     };
-    for (id, path) in [
-        ("fit_friction", "shaft_joint.friction"),
-        ("fit_smoothing", "shaft_joint.smoothing_um"),
-        ("rotor_over_shaft", "shaft_joint.rotor_over_shaft_C"),
-        ("joining_clearance", "shaft_joint.joining_clearance_um"),
-    ] {
+    for (id, path) in BL064_ROWS {
         let a = row(id);
         assert_eq!(a.paths, [path], "{id}");
         let m = meta(path);
@@ -329,6 +332,18 @@ fn every_label_and_rationale_reads_in_plain_words() {
         }
     }
     assert!(failures.is_empty(), "{failures:#?}");
+}
+
+#[test]
+fn the_shaft_joint_rationales_say_the_default_and_type_no_number() {
+    // G-3 review MF-4 (c-f): a typed default goes stale when the default moves, so each of
+    // BL-064's four rationales says "The default" and types no number; the value shows on the
+    // input's own row.
+    for (id, _) in BL064_ROWS {
+        let text = rationale(id);
+        assert!(!text.chars().any(|c| c.is_ascii_digit()), "{id}: {text}");
+        assert!(text.contains("The default is "), "{id}: {text}");
+    }
 }
 
 #[test]

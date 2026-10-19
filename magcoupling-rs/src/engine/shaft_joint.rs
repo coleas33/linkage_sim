@@ -58,7 +58,7 @@ inputs! {
                 "The largest measured diametral interference of the cup. Its bore stress and fitting temperature are checked at it.")
                 .range(0.0, 40.0, 0.5),
             safety_factor: f64 = 2.0 => param_rust_only("-", "Shaft joint safety factor",
-                "The fit alone must hold cold-high times this, and the key alone is checked at the same torque. The torque reverses many times in each slip.")
+                "The fit alone must hold cold-high times this, and the key alone is checked at the same torque. A slip can reverse the torque many times.")
                 .range(1.0, 4.0, 0.1),
             friction: f64 = 0.14 => param_rust_only("-", "Shrink-fit friction coefficient",
                 "Steel on steel, dry and degreased. Holding torque scales with it; oil or a coating in the bore lowers it.")
@@ -82,7 +82,7 @@ inputs! {
                 "Its magnets are bonded before fitting. The check caps it at the adhesive's design limit and at the magnets' single-ring onset less 10 °C.")
                 .range(20.0, 130.0, 1.0),
             cup_fit_max_C: f64 = 300.0 => param_rust_only("°C", "Hottest the bare cup may be for fitting",
-                "The cup is fitted before its magnets are bonded. Stay below the steel's and its finish's treatment temperatures, and keep the heat off the gearbox seal.")
+                "The cup is fitted before its magnets are bonded. Stay below the treatment temperatures of its material and finish, and keep the heat off the gearbox seal.")
                 .range(20.0, 400.0, 5.0),
             wheel_shaft_fit_C: f64 = -196.0 => param_rust_only("°C", "Wheel shaft temperature at fitting",
                 "A cooled shaft shrinks, so the inner hub needs less heat. Dry ice is about -78 °C; liquid nitrogen is -196 °C.")
@@ -113,9 +113,9 @@ results! {
             stress_limit_MPa: f64 => out_rust_only("MPa", "Bore stress limit",
                 "The part's yield strength with a margin. At the tightest fit the bore stress must not exceed it, so the part stays elastic and keeps its grip."),
             hub_holding_Nm: f64 => out_rust_only("N·m", "Inner hub holding torque at its loosest",
-                "Torque the inner hub's fit holds without slipping at its loosest: minimum measured interference less smoothing, at the temperature end that loosens it more, rotor warmer than shaft."),
+                "Torque the inner hub's fit holds without slipping at its loosest: minimum measured interference less smoothing, cold, or hot with the rotor warmer than its shaft, whichever loosens it more."),
             cup_holding_Nm: f64 => out_rust_only("N·m", "Cup holding torque at its loosest",
-                "Torque the cup's fit holds without slipping at its loosest: minimum measured interference less smoothing, at the temperature end that loosens it more, rotor warmer than shaft."),
+                "Torque the cup's fit holds without slipping at its loosest: minimum measured interference less smoothing, cold, or hot with the rotor warmer than its shaft, whichever loosens it more."),
             hub_bore_stress_MPa: f64 => out_rust_only("MPa", "Inner hub bore stress at its tightest",
                 "Von Mises stress at the inner hub's bore at its tightest: maximum measured interference less smoothing, at the temperature end that tightens it more. The keyway corner is not included."),
             cup_bore_stress_MPa: f64 => out_rust_only("MPa", "Cup bore stress at its tightest",
@@ -133,9 +133,9 @@ results! {
             cup_elastic_max_um: f64 => out_rust_only("µm", "Cup largest measured interference within the stress limit",
                 "The highest the band's maximum may be for the cup's bore stress to stay within its limit, with smoothing and temperature included. One upper end of the window."),
             wheel_shaft_shrink_um: f64 => out_rust_only("µm", "Wheel shaft shrink at its fitting temperature",
-                "How much the wheel shaft's diameter shrinks from 20 °C to its fitting temperature, from published low-temperature data for a nickel steel; negative above 20 °C, where it grows."),
+                "How much the wheel shaft's diameter shrinks from room temperature to its fitting temperature, from published low-temperature data for a nickel steel; negative above room temperature, where it grows."),
             output_shaft_shrink_um: f64 => out_rust_only("µm", "Gearbox shaft shrink at its fitting temperature",
-                "How much the gearbox shaft's diameter shrinks from 20 °C to its fitting temperature, from published low-temperature data for a nickel steel; negative above 20 °C, where it grows."),
+                "How much the gearbox shaft's diameter shrinks from room temperature to its fitting temperature, from published low-temperature data for a nickel steel; negative above room temperature, where it grows."),
             hub_fittable_max_um: f64 => out_rust_only("µm", "Inner hub largest measured interference that can be fitted",
                 "The highest the band's maximum may be for the inner hub to be fitted: what its allowed temperature and the wheel shaft's shrink open, less the joining clearance."),
             cup_fittable_max_um: f64 => out_rust_only("µm", "Cup largest measured interference that can be fitted",

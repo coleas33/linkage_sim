@@ -3266,7 +3266,7 @@
       "cell": null,
       "choices": [],
       "default": 2.0,
-      "help": "The fit alone must hold cold-high times this, and the key alone is checked at the same torque. The torque reverses many times in each slip.",
+      "help": "The fit alone must hold cold-high times this, and the key alone is checked at the same torque. A slip can reverse the torque many times.",
       "label": "Shaft joint safety factor",
       "path": "shaft_joint.safety_factor",
       "range": {
@@ -3392,7 +3392,7 @@
       "cell": null,
       "choices": [],
       "default": 300.0,
-      "help": "The cup is fitted before its magnets are bonded. Stay below the steel's and its finish's treatment temperatures, and keep the heat off the gearbox seal.",
+      "help": "The cup is fitted before its magnets are bonded. Stay below the treatment temperatures of its material and finish, and keep the heat off the gearbox seal.",
       "label": "Hottest the bare cup may be for fitting",
       "path": "shaft_joint.cup_fit_max_C",
       "range": {
