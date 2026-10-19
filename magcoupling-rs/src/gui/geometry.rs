@@ -1021,9 +1021,10 @@ mod tests {
     fn the_key_takes_the_shaft_joints_width_and_never_the_paused_clamp_s() {
         // BL-064 (spec 5.4): the key's sides sit at half the shaft joints' key width either side
         // of the x axis, from where they cross the bore to the keyway's depth past it, in both
-        // states; the paused clamp's own key width moves nothing in the drawing; with no keyway
-        // there is no key (ruling C-5), nor at a key width of 0 or less (build ruling B-5), and
-        // a keyway depth that is not a number keeps its "not drawn" note (plan review 3A).
+        // states; the paused clamp's own key width moves nothing in the drawing; with no keyway (a
+        // depth of 0 or less) there is no key (ruling C-5), nor at a key width of 0 or less (build
+        // ruling B-5), and a keyway depth that is not a number keeps its "not drawn" note (plan
+        // review 3A).
         let defaults = DesignInputs::default();
         let bore = defaults.coupling.bore_mm / 2.0;
         let tip = bore + defaults.coupling.keyway_depth_mm;
@@ -1080,11 +1081,13 @@ mod tests {
                     g.notes
                 );
             }
-            // No keyway (depth 0): the shaft joints have no key term, so no key is drawn (ruling
-            // C-5, plan deviation PD-3).
-            let keyless = design(|i| i.coupling.keyway_depth_mm = 0.0);
-            let g = geometry(&keyless, &compute_all(&keyless), paused);
-            assert!(keys(&g).is_empty(), "keyway 0, paused {paused}");
+            // No keyway (a depth of 0, or one typed below it): the shaft joints have no key term,
+            // so no key is drawn (ruling C-5, plan deviation PD-3).
+            for depth in [0.0, -1.0] {
+                let keyless = design(|i| i.coupling.keyway_depth_mm = depth);
+                let g = geometry(&keyless, &compute_all(&keyless), paused);
+                assert!(keys(&g).is_empty(), "keyway {depth}, paused {paused}");
+            }
             // A key width typed at 0 or less: no key either (build ruling B-5, as PD-3 at a depth
             // of 0 or less), never a flat or a mirrored one, and no "not drawn" note, as nothing
             // that is not a number was dropped.
