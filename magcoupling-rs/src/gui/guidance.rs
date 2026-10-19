@@ -5461,7 +5461,9 @@ mod tests {
         // key margin rises with the height. Only the length fix is shown: the boss for the cup,
         // the hub for the inner hub. With the shared contact height typed 0, the contact is what
         // each key lacks: its fix is shown, and each key sentence is the contact one, never the
-        // length one beside it (review 2, SF-5); a contact typed below zero reads as typed.
+        // length one beside it (review 2, SF-5); a contact typed below zero reads as typed, and
+        // as spec 5.2 says (build ruling B-5), it is judged and its fix shown (one step up lands
+        // on the slider's bottom, where both keys bear), while under an unknown no fix shows.
         let joint = guide(SHAFT_JOINT).unwrap();
         let contact = (KEY_CONTACT, Direction::Raise);
         for (name, inputs, term, length) in [
@@ -5511,6 +5513,13 @@ mod tests {
             input_text(&negative, KEY_CONTACT)
         );
         assert!(text.contains(&typed), "{typed} in {text}");
+        let results = compute_all(&negative);
+        assert_eq!(level_of(SHAFT_JOINT, &negative, &results), Level::Bad);
+        assert_eq!(fixes(joint, &negative, &results, false), [contact]);
+        let unknown = with(negative, |i| i.shaft_joint.safety_factor = 0.0);
+        let results = compute_all(&unknown);
+        assert_eq!(level_of(SHAFT_JOINT, &unknown, &results), Level::Caution);
+        assert_eq!(fixes(joint, &unknown, &results, false), []);
     }
 
     #[test]
