@@ -3644,6 +3644,14 @@ mod tests {
         (guide(check).unwrap().problem)(inputs, &compute_all(inputs))
     }
 
+    /// The index in [`CHECK_GUIDES`] of the guide of `check`.
+    fn guide_index(check: &str) -> usize {
+        CHECK_GUIDES
+            .iter()
+            .position(|g| g.check == check)
+            .unwrap_or_else(|| panic!("{check} has a guide"))
+    }
+
     /// Every fix `g` can show: its list, or for a guide that picks its fixes per failing term
     /// every term's, each once.
     fn possible_fixes(g: &CheckGuide) -> Vec<(&'static str, Direction)> {
@@ -3987,9 +3995,8 @@ mod tests {
             .filter(|g| g.check.contains("gearbox"))
             .count();
         assert_eq!(guided, 1);
-        let at = |check: &str| CHECK_GUIDES.iter().position(|g| g.check == check).unwrap();
-        assert_eq!(at(GEARBOX), at(SHAFT_JOINT) + 1);
-        assert_eq!(at(SPACE_CLAIM), at(GEARBOX) + 1);
+        assert_eq!(guide_index(GEARBOX), guide_index(SHAFT_JOINT) + 1);
+        assert_eq!(guide_index(SPACE_CLAIM), guide_index(GEARBOX) + 1);
     }
 
     /// The shaft joints check (BL-064): one dashboard row of its own at index 15, after the
@@ -4033,9 +4040,8 @@ mod tests {
         // Its reviewed note, the shaft-joint note, is its Why link (plan Task 7).
         assert_eq!(joint.learn, Learn::Note("shaft_joint"));
         assert!(counts(joint, true) && counts(joint, false));
-        let at = |check: &str| CHECK_GUIDES.iter().position(|g| g.check == check).unwrap();
-        assert_eq!(at(SHAFT_JOINT), at(CLAMP) + 1);
-        assert_eq!(at(GEARBOX), at(SHAFT_JOINT) + 1);
+        assert_eq!(guide_index(SHAFT_JOINT), guide_index(CLAMP) + 1);
+        assert_eq!(guide_index(GEARBOX), guide_index(SHAFT_JOINT) + 1);
     }
 
     /// The guide's two joints are the engine's, in its order, and each path it reads is the
@@ -5163,10 +5169,7 @@ mod tests {
             level_of(GEARBOX, stepped, &compute_all(stepped)),
             Level::Bad
         );
-        let hot_min = CHECK_GUIDES
-            .iter()
-            .position(|g| g.check == HOT_MIN)
-            .unwrap();
+        let hot_min = guide_index(HOT_MIN);
         let problem = hot_min_problem(&inputs, &results).unwrap();
         for paused in [false, true] {
             assert!(
@@ -5195,10 +5198,7 @@ mod tests {
         let results = compute_all(&inputs);
         assert_eq!(level_of(HOT_MIN, &inputs, &results), Level::Good);
         assert_eq!(level_of(GEARBOX, &inputs, &results), Level::Bad);
-        let gearbox = CHECK_GUIDES
-            .iter()
-            .position(|g| g.check == GEARBOX)
-            .unwrap();
+        let gearbox = guide_index(GEARBOX);
         let problem = gearbox_problem(&inputs, &results).unwrap();
         let conflict = gearbox_conflict(&inputs, &results).expect("no geometry passes both");
         assert!(problem.ends_with(&format!(" {conflict}")), "{problem}");
@@ -5302,6 +5302,23 @@ mod tests {
         assert_eq!(failing, want);
     }
 
+    /// The inner hub's slip fixes, as the guide shows them where each helps (spec 5.2): its
+    /// minimum up, the hub longer, the face gap wider.
+    const HUB_SLIP_FIXES: [(&str, Direction); 3] = [
+        (HUB_MIN, Direction::Raise),
+        (HUB_LENGTH, Direction::Raise),
+        (FACE_GAP, Direction::Raise),
+    ];
+
+    /// The cup's slip fixes, as the guide shows them where each helps (spec 5.2): its minimum
+    /// up, the boss longer, the magnets shorter, the face gap wider.
+    const CUP_SLIP_FIXES: [(&str, Direction); 4] = [
+        (CUP_MIN, Direction::Raise),
+        (BOSS_LENGTH, Direction::Raise),
+        (MAGNET_LENGTH, Direction::Lower),
+        (FACE_GAP, Direction::Raise),
+    ];
+
     #[test]
     fn the_shaft_joint_fixes_follow_the_failing_terms() {
         // Spec 5.2: each failing term's fixes, joint by joint, each shown only where one step
@@ -5310,15 +5327,8 @@ mod tests {
         use Direction::{Lower, Raise};
         let joint = guide(SHAFT_JOINT).unwrap();
         let shown = |inputs: DesignInputs| fixes(joint, &inputs, &compute_all(&inputs), false);
-        let hub_slip = [(HUB_MIN, Raise), (HUB_LENGTH, Raise), (FACE_GAP, Raise)];
-        let cup_slip = [
-            (CUP_MIN, Raise),
-            (BOSS_LENGTH, Raise),
-            (MAGNET_LENGTH, Lower),
-            (FACE_GAP, Raise),
-        ];
-        assert_eq!(shown(only_the_joint_fails()), hub_slip);
-        assert_eq!(shown(breaking(cup_slips)), cup_slip);
+        assert_eq!(shown(only_the_joint_fails()), HUB_SLIP_FIXES);
+        assert_eq!(shown(breaking(cup_slips)), CUP_SLIP_FIXES);
         // The inner hub's bore stress and fitting temperature: its maximum down; its wheel shaft
         // is at the slider's bottom already.
         assert_eq!(shown(breaking(hub_overstressed)), [(HUB_MAX, Lower)]);
@@ -5336,7 +5346,7 @@ mod tests {
             [(CUP_MAX, Lower), (GEARBOX_SHAFT, Lower)]
         );
         // No back iron: both aluminium parts slip; the face gap once, under the inner hub.
-        let mut both = hub_slip.to_vec();
+        let mut both = HUB_SLIP_FIXES.to_vec();
         both.extend([
             (CUP_MIN, Raise),
             (BOSS_LENGTH, Raise),
@@ -5344,7 +5354,7 @@ mod tests {
         ]);
         assert_eq!(shown(breaking(no_back_iron)), both);
         // 50.8 mm magnets: the cup slips and its key alone bears too much.
-        let mut long = cup_slip.to_vec();
+        let mut long = CUP_SLIP_FIXES.to_vec();
         long.push((KEY_CONTACT, Raise));
         assert_eq!(shown(breaking(long_magnets)), long);
         assert_eq!(shown(passing_design()), []);
@@ -5440,10 +5450,7 @@ mod tests {
                 "(its band is 18.00 µm to 18.00 µm)",
             ],
         );
-        let index = CHECK_GUIDES
-            .iter()
-            .position(|g| g.check == SHAFT_JOINT)
-            .unwrap();
+        let index = guide_index(SHAFT_JOINT);
         for paused in [false, true] {
             assert_open_block_draws_no_fix(&inputs, &results, index, &problem, paused);
         }
@@ -5640,10 +5647,7 @@ mod tests {
                 shaft_joint::CUP
             )
         );
-        let hot_min = CHECK_GUIDES
-            .iter()
-            .position(|g| g.check == HOT_MIN)
-            .unwrap();
+        let hot_min = guide_index(HOT_MIN);
         let problem = hot_min_problem(&inputs, &results).unwrap();
         for paused in [false, true] {
             assert!(
@@ -5791,7 +5795,6 @@ mod tests {
         // judged. A reversed inner hub band with the cup slipping; the cup without a wall (bore
         // 16 mm, boss 12 mm) with the inner hub slipping. Without the failing joint (the hub's
         // minimum at 15 µm holds on the 16 mm bore) each reads amber with no fix.
-        use Direction::{Lower, Raise};
         fn reversed(i: &mut DesignInputs) {
             i.shaft_joint.hub_interference_min_um = 20.0;
         }
@@ -5811,12 +5814,7 @@ mod tests {
                     cup_slips(i);
                 }),
                 shaft_joint::CUP,
-                vec![
-                    (CUP_MIN, Raise),
-                    (BOSS_LENGTH, Raise),
-                    (MAGNET_LENGTH, Lower),
-                    (FACE_GAP, Raise),
-                ],
+                CUP_SLIP_FIXES.to_vec(),
                 [
                     "At its loosest the cup holds",
                     "On the cup, a measured interference",
@@ -5826,7 +5824,7 @@ mod tests {
             (
                 breaking(no_wall),
                 shaft_joint::INNER_HUB,
-                vec![(HUB_MIN, Raise), (HUB_LENGTH, Raise), (FACE_GAP, Raise)],
+                HUB_SLIP_FIXES.to_vec(),
                 [
                     "At its loosest the inner hub holds",
                     "On the inner hub, a measured interference",
@@ -5954,39 +5952,41 @@ mod tests {
         // The cases in words. The overall-length claim: the space claim's note in its block and
         // in the hot-low torque's, which also carries the gearbox check's (it lowers the
         // magnets too).
-        let at = |check| CHECK_GUIDES.iter().position(|g| g.check == check).unwrap();
         let length = design(|i| i.metal.max_overall_axial_mm = 30.0);
         let results = compute_all(&length);
         let all = all_fixes(&length, &results, false);
         let space = "One input pulls two ways (Axial magnet length, both rings): Hot-low torque needs it raised and Space claim needs it lowered, so change another input to settle one of them.";
         let gearbox = note(MAGNET_LENGTH, HOT_MIN_GUIDE.label, GEARBOX_GUIDE.label);
-        assert_eq!(trade_offs(&all, at(HOT_MIN)), [gearbox.as_str(), space]);
-        assert_eq!(trade_offs(&all, at(GEARBOX)), [gearbox.as_str()]);
-        assert_eq!(trade_offs(&all, at(SPACE_CLAIM)), [space]);
+        assert_eq!(
+            trade_offs(&all, guide_index(HOT_MIN)),
+            [gearbox.as_str(), space]
+        );
+        assert_eq!(trade_offs(&all, guide_index(GEARBOX)), [gearbox.as_str()]);
+        assert_eq!(trade_offs(&all, guide_index(SPACE_CLAIM)), [space]);
         // The example design: the hot-low torque against the gearbox check alone, the same note
         // in both blocks.
         let defaults = DesignInputs::default();
         let all = all_fixes(&defaults, &compute_all(&defaults), false);
-        assert_eq!(trade_offs(&all, at(HOT_MIN)), [gearbox.as_str()]);
-        assert_eq!(trade_offs(&all, at(GEARBOX)), [gearbox.as_str()]);
+        assert_eq!(trade_offs(&all, guide_index(HOT_MIN)), [gearbox.as_str()]);
+        assert_eq!(trade_offs(&all, guide_index(GEARBOX)), [gearbox.as_str()]);
         // No back iron: the cup slips (BL-064) beside the failing hot-low torque, the same note
         // in both blocks.
         let aluminium = breaking(no_back_iron);
         let all = all_fixes(&aluminium, &compute_all(&aluminium), false);
         let joint = note(MAGNET_LENGTH, HOT_MIN_GUIDE.label, SHAFT_JOINT_GUIDE.label);
-        assert_eq!(trade_offs(&all, at(HOT_MIN)), [joint.as_str()]);
-        assert_eq!(trade_offs(&all, at(SHAFT_JOINT)), [joint.as_str()]);
+        assert_eq!(trade_offs(&all, guide_index(HOT_MIN)), [joint.as_str()]);
+        assert_eq!(trade_offs(&all, guide_index(SHAFT_JOINT)), [joint.as_str()]);
         let crowded = with(with_poles(12), |i| i.metal.max_diameter_mm = 42.0);
         let results = compute_all(&crowded);
         let all = all_fixes(&crowded, &results, false);
         let expected = [
             "One input pulls two ways (Outside diameter): Magnets fit needs it raised and Space claim needs it lowered, so change another input to settle one of them.",
         ];
-        assert_eq!(trade_offs(&all, at(FIT_CHECK)), expected);
-        assert_eq!(trade_offs(&all, at(SPACE_CLAIM)), expected);
+        assert_eq!(trade_offs(&all, guide_index(FIT_CHECK)), expected);
+        assert_eq!(trade_offs(&all, guide_index(SPACE_CLAIM)), expected);
         // An index past the guides, or lists shorter than the guides, read as no note.
         assert!(trade_offs(&all, CHECK_GUIDES.len()).is_empty());
-        assert!(trade_offs(&all[..1], at(SPACE_CLAIM)).is_empty());
+        assert!(trade_offs(&all[..1], guide_index(SPACE_CLAIM)).is_empty());
     }
 
     #[test]
@@ -7534,14 +7534,13 @@ mod tests {
         // A raise of it (the fit's) and every other fix stay.
         let lower_ring = (RING, Direction::Lower);
         let raise_ring = (RING, Direction::Raise);
-        let index = |check: &str| CHECK_GUIDES.iter().position(|g| g.check == check).unwrap();
         for (inputs, check, fix) in [
             (breaking(large_ring), SPACE_CLAIM, lower_ring),
             (with_poles(12), FIT_CHECK, raise_ring),
         ] {
             let results = compute_all(&inputs);
             let all = all_fixes(&inputs, &results, false);
-            assert!(all[index(check)].contains(&fix), "{check}: {all:?}");
+            assert!(all[guide_index(check)].contains(&fix), "{check}: {all:?}");
             let diameter = dimensions(&inputs).unwrap().diameter_mm;
             // No floor, or one below the diameter: the slider can still go down.
             for minimum in [None, Some(diameter - 1.0)] {
@@ -8673,7 +8672,7 @@ mod tests {
     #[test]
     fn a_paused_clamp_offers_no_fix_and_holds_back_no_other_guide_s_fix() {
         let (clamp, hot) = (guide(CLAMP).unwrap(), guide(HOT_MIN).unwrap());
-        let index = CHECK_GUIDES.iter().position(|g| g.check == CLAMP).unwrap();
+        let index = guide_index(CLAMP);
         // Its own fixes: shown while the section shows, none while it is paused.
         let inputs = only_the_clamp_fails();
         let results = compute_all(&inputs);
@@ -8699,7 +8698,7 @@ mod tests {
         let inputs = only_the_clamp_fails();
         let results = compute_all(&inputs);
         let mut cache = FixCache::default();
-        let index = CHECK_GUIDES.iter().position(|g| g.check == CLAMP).unwrap();
+        let index = guide_index(CLAMP);
         assert!(!cache.get(&inputs, &results, false)[index].is_empty());
         assert!(cache.get(&inputs, &results, true)[index].is_empty());
         assert_eq!(cache.computed, 2);
@@ -9434,10 +9433,7 @@ mod tests {
         // gap fix is shown beside a hot-low torque that is not passing, a note says so.
         let note =
             "Raising Magnet face gap also lowers the pull-out, so Hot-low torque falls further.";
-        let clearance = CHECK_GUIDES
-            .iter()
-            .position(|g| g.check == CLEARANCE)
-            .unwrap();
+        let clearance = guide_index(CLEARANCE);
         let gap = (FACE_GAP, Direction::Raise);
         let notes_of = |inputs: &DesignInputs| {
             let results = compute_all(inputs);
@@ -9474,10 +9470,7 @@ mod tests {
         assert!(notes.is_empty(), "{notes:?}");
         // The gearbox guide's gap fix, shown at the defaults beside the failing hot-low torque,
         // brings the same note; no other guide gets it, and an index past the guides gets none.
-        let gearbox = CHECK_GUIDES
-            .iter()
-            .position(|g| g.check == GEARBOX)
-            .unwrap();
+        let gearbox = guide_index(GEARBOX);
         let results = compute_all(&defaults);
         let all = all_fixes(&defaults, &results, false);
         assert!(all[gearbox].contains(&gap), "{:?}", all[gearbox]);
@@ -9496,10 +9489,7 @@ mod tests {
         let retention = "A thinner sleeve or liner holds the magnets less securely; no check here covers that, so confirm it separately.";
         let gap_note =
             "Raising Magnet face gap also lowers the pull-out, so Hot-low torque falls further.";
-        let clearance = CHECK_GUIDES
-            .iter()
-            .position(|g| g.check == CLEARANCE)
-            .unwrap();
+        let clearance = guide_index(CLEARANCE);
         let notes_of = |inputs: &DesignInputs| {
             let results = compute_all(inputs);
             let all = all_fixes(inputs, &results, false);
