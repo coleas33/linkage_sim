@@ -13,12 +13,13 @@ use magcoupling::engine::compat::py_min;
 use magcoupling::engine::explain::probes::probe_designs;
 use magcoupling::engine::meta::{InputMeta, InputSet, SliderRange, Value, input_rows, result_rows};
 use magcoupling::engine::shaft_joint::{
-    self, BORE_OVER_ITS_LIMIT, CANNOT_BE_FITTED, CAUSES, CUP, Cause, FIT_SLIPS, Floor, HubFitLimit,
-    INNER_HUB, JointCommon, JointSpec, JointTerms, KEY_HAS_NO_BEARING_AREA, KEY_OVER_ITS_LIMIT,
-    NoWall, ROOM_C, SHAFT_CTE_PER_C, SHAFT_JOINT_UNKNOWN, SHAFT_JOINTS_PASS, ShaftJointInputs,
-    ShaftJointLinks, UNKNOWN_BAND_REVERSED, UNKNOWN_IMPOSSIBLE_VALUE, UNKNOWN_NO_WALL,
-    UNKNOWN_NOT_A_NUMBER, UNKNOWN_SAFETY_FACTOR, YIELD_FACTOR, hub_fit_allowed, impossible_values,
-    shaft_shrink_um,
+    self, BORE_OVER_ITS_LIMIT, CANNOT_BE_FITTED, CAUSES, CUP, CannotBeMade, Cause, FIT_SLIPS,
+    Floor, HubFitLimit, INNER_HUB, JointCommon, JointSpec, JointTerms, KEY_HAS_NO_BEARING_AREA,
+    KEY_OVER_ITS_LIMIT, NoWall, OUTPUT_SHAFT_COLDEST_C, ROOM_C, SHAFT_CTE_PER_C,
+    SHAFT_JOINT_UNKNOWN, SHAFT_JOINTS_PASS, ShaftJointInputs, ShaftJointLinks,
+    UNKNOWN_BAND_REVERSED, UNKNOWN_GEARBOX_SHAFT_TOO_COLD, UNKNOWN_IMPOSSIBLE_VALUE,
+    UNKNOWN_NO_WALL, UNKNOWN_NOT_A_NUMBER, UNKNOWN_SAFETY_FACTOR, YIELD_FACTOR, hub_fit_allowed,
+    impossible_values, shaft_shrink_um,
 };
 use magcoupling::engine::temperature::CURE_MARGIN_MIN_C;
 
@@ -285,8 +286,8 @@ fn the_check_is_a_rust_only_group_of_fifteen_inputs_and_twenty_four_results() {
 #[test]
 fn the_verdict_texts_are_the_spec_s() {
     // Spec section 4.2: one pass, one unknown prefix with three reasons, the safety factor's
-    // (ruling C-4) and the impossible value's (its extension, the whole-branch review's MF-1),
-    // five failing prefixes.
+    // (ruling C-4), the impossible value's (its extension, the whole-branch review's MF-1) and
+    // the gearbox shaft's below its slider's bottom (build ruling B-5), five failing prefixes.
     assert_eq!(
         SHAFT_JOINTS_PASS,
         "Both shaft joints hold and can be fitted"
@@ -303,6 +304,10 @@ fn the_verdict_texts_are_the_spec_s() {
         (
             UNKNOWN_IMPOSSIBLE_VALUE,
             "a value is outside what it can physically be",
+        ),
+        (
+            UNKNOWN_GEARBOX_SHAFT_TOO_COLD,
+            "the gearbox shaft is below its slider's bottom",
         ),
     ] {
         assert_eq!(text, format!("{SHAFT_JOINT_UNKNOWN}: {reason}"));
@@ -324,6 +329,7 @@ fn the_verdict_texts_are_the_spec_s() {
         UNKNOWN_BAND_REVERSED,
         UNKNOWN_SAFETY_FACTOR,
         UNKNOWN_IMPOSSIBLE_VALUE,
+        UNKNOWN_GEARBOX_SHAFT_TOO_COLD,
         FIT_SLIPS,
         BORE_OVER_ITS_LIMIT,
         CANNOT_BE_FITTED,
@@ -1229,9 +1235,10 @@ fn a_value_below_what_its_input_can_physically_be_reads_unknown() {
     // The whole-branch review's MF-1 (ruling C-4 extended): a friction, smoothing or joining
     // clearance below zero, a key width not above zero with a keyway or a shaft below absolute
     // zero is a typed value no slider reaches; judged as if real, it gives false passes and fixes
-    // that make a joint worse. Each reads unknown just past its floor and is judged at it;
-    // `impossible_values` names it by its field, with its value and floor; and its slider's
-    // bottom is a value it can be (the Problem asks for at least that).
+    // that make a joint worse. Each reads unknown just past its floor and is judged at it, but
+    // the gearbox shaft, which at its floor reads its own unknown (below its slider's bottom,
+    // build ruling B-5); `impossible_values` names it by its field, with its value and floor;
+    // and its slider's bottom is a value it can be (the Problem asks for at least that).
     let absolute_zero = -273.15;
     // (the field, its floor, the lowest value it can be, a value just past that)
     let cases = [
@@ -1270,11 +1277,20 @@ fn a_value_below_what_its_input_can_physically_be_reads_unknown() {
             [],
             "{field} at {lowest}"
         );
-        assert_ne!(
-            check(&judged),
-            UNKNOWN_IMPOSSIBLE_VALUE,
-            "{field} at {lowest}"
-        );
+        if field == "output_shaft_fit_C" {
+            // Absolute zero is below the gearbox shaft's slider's bottom (build ruling B-5).
+            assert_eq!(
+                check(&judged),
+                UNKNOWN_GEARBOX_SHAFT_TOO_COLD,
+                "{field} at {lowest}"
+            );
+        } else {
+            let verdict = check(&judged);
+            assert!(
+                !verdict.starts_with(SHAFT_JOINT_UNKNOWN),
+                "{field} at {lowest} is judged: {verdict}"
+            );
+        }
         let typed = at(past);
         let listed = impossible_values(&typed.shaft_joint, &links(&typed));
         assert_eq!(listed.len(), 1, "{field} at {past}");
@@ -1374,6 +1390,62 @@ fn a_value_below_what_its_input_can_physically_be_reads_unknown() {
         shaft_joint::cannot_be_made(&defaults.shaft_joint, &links, &joints),
         None
     );
+}
+
+#[test]
+fn a_gearbox_shaft_below_its_slider_s_bottom_reads_unknown() {
+    // Build ruling B-5 (the fix wave's re-review, note 2, A for the gearbox shaft only): the
+    // gearbox's rated range is not checked, so the check takes its output shaft no colder than
+    // its slider's bottom, `OUTPUT_SHAFT_COLDEST_C`. Typed below it, the check reads its own
+    // unknown: a shaft can physically be that cold, so the impossible value's would be false.
+    // Below absolute zero the impossible value still reads first, and the wheel shaft, which
+    // liquid nitrogen or a colder bath can reach, stays judged down to absolute zero.
+    assert_eq!(
+        slider("shaft_joint.output_shaft_fit_C").min,
+        OUTPUT_SHAFT_COLDEST_C
+    );
+    let gearbox_shaft_at = |t: f64| design(|i| i.shaft_joint.output_shaft_fit_C = t);
+    let at_bottom = check(&gearbox_shaft_at(OUTPUT_SHAFT_COLDEST_C));
+    assert!(
+        !at_bottom.starts_with(SHAFT_JOINT_UNKNOWN),
+        "judged at its slider's bottom: {at_bottom}"
+    );
+    let below = gearbox_shaft_at(OUTPUT_SHAFT_COLDEST_C - 1e-9);
+    assert_eq!(check(&below), UNKNOWN_GEARBOX_SHAFT_TOO_COLD);
+    // The engine's one test of whether the check can be made, which the guide reads too: its
+    // reason, whose verdict is the check's; and no value is below what it can physically be.
+    let below_links = links(&below);
+    let joints = shaft_joint::joints(&below.shaft_joint, &below_links);
+    let reason = shaft_joint::cannot_be_made(&below.shaft_joint, &below_links, &joints)
+        .expect("the check cannot be made");
+    assert_eq!(reason, CannotBeMade::GearboxShaftTooCold);
+    assert_eq!(reason.verdict(), check(&below));
+    assert_eq!(impossible_values(&below.shaft_joint, &below_links), []);
+    // Below absolute zero, the impossible value first.
+    assert_eq!(check(&gearbox_shaft_at(-300.0)), UNKNOWN_IMPOSSIBLE_VALUE);
+    // The wheel shaft at absolute zero is judged.
+    let absolute_zero = -273.15;
+    let wheel = check(&design(|i| i.shaft_joint.wheel_shaft_fit_C = absolute_zero));
+    assert!(
+        !wheel.starts_with(SHAFT_JOINT_UNKNOWN),
+        "the wheel shaft at absolute zero is judged: {wheel}"
+    );
+    // The re-review's probe: with the bare cup allowed 200 °C, the gearbox shaft at its slider's
+    // bottom leaves the cup unfittable; at -100 °C the cup would be fitted, a pass that rests on
+    // a temperature the gearbox's rated range may not allow, so the check reads unknown.
+    let probe = |t: f64| {
+        design(|i| {
+            i.shaft_joint.cup_fit_max_C = 200.0;
+            i.shaft_joint.output_shaft_fit_C = t;
+        })
+    };
+    assert_eq!(
+        check(&probe(OUTPUT_SHAFT_COLDEST_C)),
+        cannot_fit(CUP, "243.1", "200.0")
+    );
+    let colder = probe(-100.0);
+    assert!(shaft_joint::failing(&terms(&colder)).is_empty());
+    assert_eq!(check(&colder), UNKNOWN_GEARBOX_SHAFT_TOO_COLD);
 }
 
 #[test]

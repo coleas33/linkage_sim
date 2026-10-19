@@ -405,8 +405,8 @@ pub fn verdict_level(path: &str, text: &str) -> Option<Level> {
         }
         ("shaft_joint.check", shaft_joint::SHAFT_JOINTS_PASS) => Some(Good),
         // Every unknown form: not a number, a safety factor not above zero (ruling C-4), a value
-        // outside what it can physically be (its extension), no wall around a bore, a reversed
-        // band.
+        // outside what it can physically be (its extension), a gearbox shaft below its slider's
+        // bottom (build ruling B-5), no wall around a bore, a reversed band.
         ("shaft_joint.check", t) if t.starts_with(shaft_joint::SHAFT_JOINT_UNKNOWN) => {
             Some(Caution)
         }
@@ -1145,12 +1145,13 @@ mod tests {
         assert_eq!(gearbox(0.6, f64::NAN), Some(Caution));
         // BL-064 (spec 7.5): every text form the shaft joints check writes, each reached as the
         // badge by a design from the defaults, and its level: the pass; the five failing causes
-        // (the key's two at a 0.3 mm keyway and at a contact height typed 0); the five unknown
+        // (the key's two at a 0.3 mm keyway and at a contact height typed 0); the six unknown
         // forms (a value that is not a number, a safety factor typed 0 (ruling C-4), a friction
-        // typed below zero (its extension, the whole-branch review's MF-1), no wall around a
-        // bore, a reversed band). So no form is classified from a constant alone.
+        // typed below zero (its extension, the whole-branch review's MF-1), a gearbox shaft
+        // typed below its slider's bottom (build ruling B-5), no wall around a bore, a reversed
+        // band). So no form is classified from a constant alone.
         type Edit = fn(&mut DesignInputs);
-        let joint_forms: [(Edit, &str, Level); 11] = [
+        let joint_forms: [(Edit, &str, Level); 12] = [
             (|_| {}, shaft_joint::SHAFT_JOINTS_PASS, Good),
             (
                 |i| i.shaft_joint.hub_interference_min_um = 8.0,
@@ -1190,6 +1191,11 @@ mod tests {
             (
                 |i| i.shaft_joint.friction = -0.14,
                 shaft_joint::UNKNOWN_IMPOSSIBLE_VALUE,
+                Caution,
+            ),
+            (
+                |i| i.shaft_joint.output_shaft_fit_C = -21.0,
+                shaft_joint::UNKNOWN_GEARBOX_SHAFT_TOO_COLD,
                 Caution,
             ),
             (

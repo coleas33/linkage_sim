@@ -22,8 +22,10 @@
 //! first failing joint (inner hub, then cup). A joint with no wall around its bore or with its
 //! band reversed is not judged; it reads unknown only when no judged joint fails. A value that
 //! is not a number reads unknown before all of them, then a safety factor not above zero, then
-//! an input typed below what it can physically be ([`cannot_be_made`], [`verdict`]). Equality
-//! passes; a failing badge never quotes two equal numbers (the BL-059 rounding).
+//! an input typed below what it can physically be, then a gearbox shaft typed below its slider's
+//! bottom, the coldest the check takes it ([`OUTPUT_SHAFT_COLDEST_C`]; [`cannot_be_made`],
+//! [`verdict`]). Equality passes; a failing badge never quotes two equal numbers (the BL-059
+//! rounding).
 //!
 //! The temperature model: the interference moves with temperature by the expansion mismatch of
 //! shaft and part. The loosest fit takes the end that loosens it more: the minimum magnet
@@ -89,7 +91,7 @@ inputs! {
                 .range(-196.0, 40.0, 1.0),
             output_shaft_fit_C: f64 = 20.0 => param_rust_only("°C", "Gearbox shaft temperature at fitting",
                 "The gearbox output shaft cannot be immersed. Cold spray can take it to about -20 °C, the slider's bottom; never below the gearbox's rated range.")
-                .range(-20.0, 40.0, 1.0),
+                .range(OUTPUT_SHAFT_COLDEST_C, 40.0, 1.0),
             joining_clearance_um: f64 = 10.0 => param_rust_only("µm", "Joining clearance",
                 "Clearance each part needs over its shaft to slide on before it grips; one value for both joints. Less needs a guided, single fast push to a stop.")
                 .range(0.0, 30.0, 0.5)
@@ -167,6 +169,11 @@ pub const SHAFT_CTE_PER_C: f64 = 11.5e-6;
 /// is zero.
 pub const ROOM_C: f64 = 20.0;
 
+/// The coldest the gearbox output shaft is taken for fitting [°C]: its slider's bottom, about
+/// what cold spray reaches. The gearbox's rated range is not checked (an open owner fact), so the
+/// check takes the shaft no colder (build ruling B-5).
+pub const OUTPUT_SHAFT_COLDEST_C: f64 = -20.0;
+
 /// The part's stress limit is its yield strength divided by this (DIN 7190 practice is 1.1 to
 /// 1.2; the physics review confirms it). The key flank is held to the same limit.
 pub const YIELD_FACTOR: f64 = 1.2;
@@ -228,6 +235,12 @@ pub const UNKNOWN_SAFETY_FACTOR: &str = unknown!(": the safety factor is not abo
 /// term), and a shaft below absolute zero takes NIST's fit outside its range.
 pub const UNKNOWN_IMPOSSIBLE_VALUE: &str =
     unknown!(": a value is outside what it can physically be");
+
+/// `shaft_joint.check` when the gearbox shaft's temperature at fitting is typed below its
+/// slider's bottom, [`OUTPUT_SHAFT_COLDEST_C`] (build ruling B-5): a shaft can physically be that
+/// cold, but the gearbox's rated range is not checked, so the check takes the shaft no colder.
+pub const UNKNOWN_GEARBOX_SHAFT_TOO_COLD: &str =
+    unknown!(": the gearbox shaft is below its slider's bottom");
 
 /// The start of `shaft_joint.check` when a fit slips; " ({joint}): holds {holding} N·m against
 /// {required} N·m" follows.
@@ -879,7 +892,8 @@ pub fn impossible_values(
 }
 
 /// Why the check cannot be made at all, in the order [`verdict`] reads them (spec section 4.4,
-/// ruling C-4 and its extension): no joint is then judged, and the guide offers no fix.
+/// ruling C-4 and its extension, build ruling B-5): no joint is then judged, and the guide
+/// offers no fix.
 #[derive(Clone, Debug, PartialEq)]
 pub enum CannotBeMade {
     /// An input or engine value it reads, or a term a judged joint compares, is not a number.
@@ -888,6 +902,9 @@ pub enum CannotBeMade {
     SafetyFactor,
     /// Inputs typed below what they can physically be ([`impossible_values`]).
     ImpossibleValues(Vec<ImpossibleValue>),
+    /// The gearbox shaft's temperature at fitting is below its slider's bottom,
+    /// [`OUTPUT_SHAFT_COLDEST_C`] (build ruling B-5).
+    GearboxShaftTooCold,
 }
 
 impl CannotBeMade {
@@ -897,6 +914,7 @@ impl CannotBeMade {
             CannotBeMade::NotANumber => UNKNOWN_NOT_A_NUMBER,
             CannotBeMade::SafetyFactor => UNKNOWN_SAFETY_FACTOR,
             CannotBeMade::ImpossibleValues(_) => UNKNOWN_IMPOSSIBLE_VALUE,
+            CannotBeMade::GearboxShaftTooCold => UNKNOWN_GEARBOX_SHAFT_TOO_COLD,
         }
     }
 }
@@ -904,8 +922,9 @@ impl CannotBeMade {
 /// Why the check cannot be made (spec section 4.4): any input or engine value it reads, or any
 /// term a judged joint compares, is not a number; else the safety factor is not above zero
 /// (ruling C-4); else an input is typed below what it can physically be (its extension; a key
-/// width only with a keyway, [`impossible_values`]). `None` when it can be made. [`verdict`] and
-/// the guide both read it.
+/// width only with a keyway, [`impossible_values`]); else the gearbox shaft's temperature at
+/// fitting is below its slider's bottom, [`OUTPUT_SHAFT_COLDEST_C`] (build ruling B-5). `None`
+/// when it can be made. [`verdict`] and the guide both read it.
 pub fn cannot_be_made(
     inputs: &ShaftJointInputs,
     links: &ShaftJointLinks,
@@ -931,13 +950,18 @@ pub fn cannot_be_made(
     if !impossible.is_empty() {
         return Some(CannotBeMade::ImpossibleValues(impossible));
     }
+    #[allow(clippy::neg_cmp_op_on_partial_ord)] // the negation is the point: a NaN fails it
+    if !(inputs.output_shaft_fit_C >= OUTPUT_SHAFT_COLDEST_C) {
+        return Some(CannotBeMade::GearboxShaftTooCold);
+    }
     None
 }
 
 /// `shaft_joint.check` (spec section 4.3): unknown while the check cannot be made
 /// ([`cannot_be_made`]: a value that is not a number, then a safety factor not above zero,
-/// then a value below what it can physically be); else the first failing term of a judged
-/// joint; else a joint with no wall, then a reversed band, as unknown; else the pass.
+/// then a value below what it can physically be, then a gearbox shaft below its slider's
+/// bottom); else the first failing term of a judged joint; else a joint with no wall, then a
+/// reversed band, as unknown; else the pass.
 pub fn verdict(
     inputs: &ShaftJointInputs,
     links: &ShaftJointLinks,

@@ -348,8 +348,8 @@ const JOINT_SIDES: [JointSide; 2] = [
 /// The shaft joints of a design as the engine judges them, inner hub first, rebuilt from its
 /// inputs and results ([`shaft_joint_links`]); while the check cannot be made, why, by the
 /// engine's own test ([`shaft_joint::cannot_be_made`]: a value it reads or works out is not a
-/// number, the safety factor is not above zero, or an input is typed below what it can
-/// physically be), where no term is judged.
+/// number, the safety factor is not above zero, an input is typed below what it can physically
+/// be, or the gearbox shaft is typed below its slider's bottom), where no term is judged.
 fn shaft_joints(
     inputs: &DesignInputs,
     results: &DesignResults,
@@ -1977,8 +1977,9 @@ const SHAFT_JOINT_NOT_A_NUMBER: &str =
 const SHAFT_JOINT_FALLBACK: &str = "A shaft joint does not pass: see the shaft joint results.";
 
 /// The shaft joints' Problem (spec 5.2): while the check cannot be made (a value that is not a
-/// number, a safety factor not above zero, ruling C-4, or an input typed below what it can
-/// physically be, its extension), its sentences alone ([`cannot_be_made_problem`]); else a
+/// number, a safety factor not above zero, ruling C-4, an input typed below what it can
+/// physically be, its extension, or a gearbox shaft typed below its slider's bottom, build
+/// ruling B-5), its sentences alone ([`cannot_be_made_problem`]); else a
 /// sentence per term a judged joint fails, in the badge's order ([`shaft_joint::failing`]),
 /// with its live numbers; then, for each judged joint failing a slip, stress or fitting term,
 /// the window of measured interference that would work, or why there is none
@@ -2015,8 +2016,10 @@ fn shaft_joint_problem(inputs: &DesignInputs, results: &DesignResults) -> Option
 }
 
 /// The shaft joints' Problem while the check cannot be made, with no fix: the not-a-number
-/// sentence; the safety factor's (ruling C-4); or a sentence for each input typed below what it
-/// can physically be, in the inputs' order ([`impossible_value_sentence`]).
+/// sentence; the safety factor's (ruling C-4); a sentence for each input typed below what it
+/// can physically be, in the inputs' order ([`impossible_value_sentence`]); or the gearbox
+/// shaft's below its slider's bottom, the coldest the check takes it since the gearbox's rated
+/// range is not checked (build ruling B-5).
 fn cannot_be_made_problem(inputs: &DesignInputs, reason: &CannotBeMade) -> String {
     match reason {
         CannotBeMade::NotANumber => SHAFT_JOINT_NOT_A_NUMBER.to_owned(),
@@ -2029,7 +2032,27 @@ fn cannot_be_made_problem(inputs: &DesignInputs, reason: &CannotBeMade) -> Strin
             .map(|value| impossible_value_sentence(inputs, value))
             .collect::<Vec<_>>()
             .join(" "),
+        CannotBeMade::GearboxShaftTooCold => {
+            let bottom = slider_bottom_text(GEARBOX_SHAFT);
+            format!(
+                "{}, {}, is below {bottom}, the coldest the gearbox shaft is taken, since its rated range is not checked: enter at least {bottom}, its slider's bottom.",
+                fix_label(GEARBOX_SHAFT),
+                input_text(inputs, GEARBOX_SHAFT),
+            )
+        }
     }
+}
+
+/// The bottom of the slider of the input at `path`, with its unit, as a readout shows it.
+fn slider_bottom_text(path: &str) -> String {
+    let entry = InputCatalogue::get().entry(path);
+    let bottom = entry
+        .and_then(|entry| entry.meta.range)
+        .map_or(f64::NAN, |range| range.min);
+    with_unit(
+        format_value(&Value::Num(bottom)),
+        entry.map_or("", |entry| entry.meta.unit),
+    )
 }
 
 /// The sentence of an input typed below what it can physically be (the whole-branch review's
@@ -2045,18 +2068,11 @@ fn impossible_value_sentence(inputs: &DesignInputs, value: &ImpossibleValue) -> 
         Floor::AboveZero => "zero or below",
         Floor::AbsoluteZero => "below absolute zero",
     };
-    let entry = InputCatalogue::get().entry(&path);
-    let bottom = entry
-        .and_then(|entry| entry.meta.range)
-        .map_or(f64::NAN, |range| range.min);
     format!(
         "{}, {}, cannot physically be {floor}: enter at least {}, its slider's bottom.",
         fix_label(&path),
         input_text(inputs, &path),
-        with_unit(
-            format_value(&Value::Num(bottom)),
-            entry.map_or("", |entry| entry.meta.unit)
-        ),
+        slider_bottom_text(&path),
     )
 }
 
@@ -3479,6 +3495,11 @@ mod tests {
                 "a value it cannot physically be",
                 breaking(|i| i.shaft_joint.friction = -0.14),
                 "cannot physically be below zero",
+            ),
+            (
+                "gearbox shaft below its slider's bottom",
+                breaking(|i| i.shaft_joint.output_shaft_fit_C = -21.0),
+                "the coldest the gearbox shaft is taken",
             ),
             (
                 "cup without a wall",
@@ -7262,14 +7283,16 @@ mod tests {
     #[test]
     fn the_no_fix_line_covers_a_value_outside_what_it_can_be() {
         // The shaft joints' check cannot be made with a friction typed below zero (the
-        // whole-branch review's MF-1) or a safety factor not above zero (ruling C-4); its
-        // Problem says so and it has no fix, so the Fix line must name that case as well
-        // (the fix wave's text re-review, MF-2).
+        // whole-branch review's MF-1), a safety factor not above zero (ruling C-4) or a gearbox
+        // shaft typed below its slider's bottom (build ruling B-5); its Problem says so and it
+        // has no fix, so the Fix line must name that case as well (the fix wave's text
+        // re-review, MF-2).
         let joint = guide(SHAFT_JOINT).unwrap();
         type Edit = fn(&mut DesignInputs);
-        let edits: [Edit; 2] = [
+        let edits: [Edit; 3] = [
             |i| i.shaft_joint.friction = -0.14,
             |i| i.shaft_joint.safety_factor = 0.0,
+            |i| i.shaft_joint.output_shaft_fit_C = -21.0,
         ];
         for edit in edits {
             let inputs = breaking(edit);
@@ -7787,6 +7810,35 @@ mod tests {
         assert_eq!(fixes(joint, &inputs, &results, false), []);
     }
 
+    #[test]
+    fn a_gearbox_shaft_below_its_slider_s_bottom_has_its_own_sentence() {
+        // Build ruling B-5: the gearbox's rated range is not checked, so the check takes its
+        // output shaft no colder than its slider's bottom. Typed below it, the check cannot be
+        // made: one sentence that names the slider's bottom as the coldest the shaft is taken,
+        // and no fix. At its slider's bottom the joint is judged.
+        let joint = guide(SHAFT_JOINT).unwrap();
+        let inputs = breaking(|i| i.shaft_joint.output_shaft_fit_C = -21.0);
+        let results = compute_all(&inputs);
+        assert_eq!(
+            results.shaft_joint.check,
+            shaft_joint::UNKNOWN_GEARBOX_SHAFT_TOO_COLD
+        );
+        assert_eq!(level(joint, &inputs, &results), Level::Caution);
+        assert_eq!(
+            shaft_joint_problem(&inputs, &results).as_deref(),
+            Some(
+                "Gearbox shaft temperature at fitting, -21.00 °C, is below -20.00 °C, the coldest the gearbox shaft is taken, since its rated range is not checked: enter at least -20.00 °C, its slider's bottom."
+            )
+        );
+        assert_eq!(fixes(joint, &inputs, &results, false), []);
+        let at_bottom = breaking(|i| {
+            i.shaft_joint.output_shaft_fit_C = shaft_joint::OUTPUT_SHAFT_COLDEST_C;
+        });
+        let results = compute_all(&at_bottom);
+        assert_eq!(results.shaft_joint.check, shaft_joint::SHAFT_JOINTS_PASS);
+        assert_eq!(shaft_joint_problem(&at_bottom, &results), None);
+    }
+
     /// Asserts that `text` holds each of `parts`, in their order.
     fn assert_in_order(text: &str, parts: &[&str]) {
         let mut rest = text;
@@ -8111,6 +8163,7 @@ mod tests {
                 shaft_joint::UNKNOWN_BAND_REVERSED,
                 shaft_joint::UNKNOWN_SAFETY_FACTOR,
                 shaft_joint::UNKNOWN_IMPOSSIBLE_VALUE,
+                shaft_joint::UNKNOWN_GEARBOX_SHAFT_TOO_COLD,
                 shaft_joint::FIT_SLIPS,
                 shaft_joint::BORE_OVER_ITS_LIMIT,
                 shaft_joint::CANNOT_BE_FITTED,
