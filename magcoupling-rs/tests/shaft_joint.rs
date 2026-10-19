@@ -1227,9 +1227,9 @@ fn a_value_that_is_not_a_number_reads_unknown() {
 #[test]
 fn a_value_below_what_its_input_can_physically_be_reads_unknown() {
     // The whole-branch review's MF-1 (ruling C-4 extended): a friction, smoothing or joining
-    // clearance below zero, a key width not above zero or a shaft below absolute zero is a typed
-    // value no slider reaches; judged as if real, it gives false passes and fixes that make a
-    // joint worse. Each reads unknown just past its floor and is judged at it;
+    // clearance below zero, a key width not above zero with a keyway or a shaft below absolute
+    // zero is a typed value no slider reaches; judged as if real, it gives false passes and fixes
+    // that make a joint worse. Each reads unknown just past its floor and is judged at it;
     // `impossible_values` names it by its field, with its value and floor; and its slider's
     // bottom is a value it can be (the Problem asks for at least that).
     let absolute_zero = -273.15;
@@ -1266,7 +1266,7 @@ fn a_value_below_what_its_input_can_physically_be_reads_unknown() {
         assert!(floor.allows(bottom), "{field}'s slider bottom, {bottom}");
         let judged = at(lowest);
         assert_eq!(
-            impossible_values(&judged.shaft_joint),
+            impossible_values(&judged.shaft_joint, &links(&judged)),
             [],
             "{field} at {lowest}"
         );
@@ -1276,7 +1276,7 @@ fn a_value_below_what_its_input_can_physically_be_reads_unknown() {
             "{field} at {lowest}"
         );
         let typed = at(past);
-        let listed = impossible_values(&typed.shaft_joint);
+        let listed = impossible_values(&typed.shaft_joint, &links(&typed));
         assert_eq!(listed.len(), 1, "{field} at {past}");
         assert_eq!(
             (listed[0].field, listed[0].value, listed[0].floor),
@@ -1294,11 +1294,35 @@ fn a_value_below_what_its_input_can_physically_be_reads_unknown() {
         i.shaft_joint.joining_clearance_um = -2.0;
         i.shaft_joint.friction = -0.14;
     });
-    let fields: Vec<&str> = impossible_values(&both.shaft_joint)
+    let fields: Vec<&str> = impossible_values(&both.shaft_joint, &links(&both))
         .iter()
         .map(|value| value.field)
         .collect();
     assert_eq!(fields, ["friction", "joining_clearance_um"]);
+    // Without a keyway the key enters no term, so its width is not floored (build ruling B-5, A):
+    // keyless with the hub's minimum at 10 µm the inner hub slips, whatever width is typed.
+    let keyless_at = |width: f64| {
+        design(|i| {
+            i.coupling.keyway_depth_mm = 0.0;
+            i.shaft_joint.hub_interference_min_um = 10.0;
+            i.shaft_joint.key_width_mm = width;
+        })
+    };
+    let on_its_slider = keyless_at(DesignInputs::default().shaft_joint.key_width_mm);
+    for width in [0.0, -1.0] {
+        let keyless = keyless_at(width);
+        assert_eq!(
+            check(&keyless),
+            slips(INNER_HUB, "3.85", "7.65"),
+            "keyless, key width {width}"
+        );
+        assert_eq!(check(&keyless), check(&on_its_slider), "{width}");
+        assert_eq!(
+            impossible_values(&keyless.shaft_joint, &links(&keyless)),
+            [],
+            "{width}"
+        );
+    }
     // A NaN is at or above no floor, and the verdict reads it as not a number first; then a
     // safety factor not above zero; then the impossible value, before any judged term (a
     // friction of -0.14 holds less than nothing, so judged it would read the fit slips).
@@ -1306,7 +1330,7 @@ fn a_value_below_what_its_input_can_physically_be_reads_unknown() {
         i.shaft_joint.friction = -0.14;
         i.shaft_joint.key_width_mm = f64::NAN;
     });
-    assert_eq!(impossible_values(&nan.shaft_joint).len(), 2);
+    assert_eq!(impossible_values(&nan.shaft_joint, &links(&nan)).len(), 2);
     assert_eq!(check(&nan), UNKNOWN_NOT_A_NUMBER);
     let no_factor = design(|i| {
         i.shaft_joint.friction = -0.14;
@@ -1340,7 +1364,7 @@ fn a_value_below_what_its_input_can_physically_be_reads_unknown() {
             &shaft_joint::joints(&both.shaft_joint, &links_both)
         ),
         Some(shaft_joint::CannotBeMade::ImpossibleValues(
-            impossible_values(&both.shaft_joint)
+            impossible_values(&both.shaft_joint, &links_both)
         ))
     );
     let defaults = DesignInputs::default();

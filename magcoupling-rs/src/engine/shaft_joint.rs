@@ -224,8 +224,8 @@ pub const UNKNOWN_SAFETY_FACTOR: &str = unknown!(": the safety factor is not abo
 /// `shaft_joint.check` when an input is typed below what it can physically be
 /// ([`impossible_values`]; ruling C-4 extended by the whole-branch review): judged as if real,
 /// a friction below zero holds less than nothing, a smoothing below zero adds interference, a
-/// key width at or below zero widens the contact arc, and a shaft below absolute zero takes
-/// NIST's fit outside its range.
+/// key width at or below zero with a keyway widens the contact arc (without one the key enters no
+/// term), and a shaft below absolute zero takes NIST's fit outside its range.
 pub const UNKNOWN_IMPOSSIBLE_VALUE: &str =
     unknown!(": a value is outside what it can physically be");
 
@@ -838,10 +838,16 @@ pub struct ImpossibleValue {
 
 /// The check's inputs typed below what they can physically be, in the inputs' order (ruling
 /// C-4 extended by the whole-branch review): a friction, a smoothing or a joining clearance
-/// below zero, a key width at or below zero, a shaft below absolute zero. No slider reaches
-/// one. A friction of 0 can be (it holds nothing, and is judged so). A NaN is listed too;
-/// [`cannot_be_made`] reads it as not a number first.
-pub fn impossible_values(inputs: &ShaftJointInputs) -> Vec<ImpossibleValue> {
+/// below zero, a key width at or below zero where there is a keyway (without one the key enters
+/// no term; build ruling B-5), a shaft below absolute zero. No slider reaches one. A friction of
+/// 0 can be (it holds nothing, and is judged so). A NaN is listed too; [`cannot_be_made`] reads
+/// it as not a number first.
+pub fn impossible_values(
+    inputs: &ShaftJointInputs,
+    links: &ShaftJointLinks,
+) -> Vec<ImpossibleValue> {
+    // `joint`'s own rule: the key enters a term only with a keyway.
+    let keyed = links.keyway_depth_mm > 0.0;
     [
         ("friction", inputs.friction, Floor::Zero),
         ("smoothing_um", inputs.smoothing_um, Floor::Zero),
@@ -863,7 +869,7 @@ pub fn impossible_values(inputs: &ShaftJointInputs) -> Vec<ImpossibleValue> {
         ),
     ]
     .into_iter()
-    .filter(|&(_, value, floor)| !floor.allows(value))
+    .filter(|&(field, value, floor)| !floor.allows(value) && (keyed || field != "key_width_mm"))
     .map(|(field, value, floor)| ImpossibleValue {
         field,
         value,
@@ -897,8 +903,9 @@ impl CannotBeMade {
 
 /// Why the check cannot be made (spec section 4.4): any input or engine value it reads, or any
 /// term a judged joint compares, is not a number; else the safety factor is not above zero
-/// (ruling C-4); else an input is typed below what it can physically be (its extension).
-/// `None` when it can be made. [`verdict`] and the guide both read it.
+/// (ruling C-4); else an input is typed below what it can physically be (its extension; a key
+/// width only with a keyway, [`impossible_values`]). `None` when it can be made. [`verdict`] and
+/// the guide both read it.
 pub fn cannot_be_made(
     inputs: &ShaftJointInputs,
     links: &ShaftJointLinks,
@@ -920,7 +927,7 @@ pub fn cannot_be_made(
     if !(inputs.safety_factor > 0.0) {
         return Some(CannotBeMade::SafetyFactor);
     }
-    let impossible = impossible_values(inputs);
+    let impossible = impossible_values(inputs, links);
     if !impossible.is_empty() {
         return Some(CannotBeMade::ImpossibleValues(impossible));
     }
