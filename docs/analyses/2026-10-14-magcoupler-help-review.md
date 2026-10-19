@@ -2921,3 +2921,74 @@ drift. The note's copy is pinned in T7 (spec 7.11).
 
 **R-6. No model question arises.** None of the texts asks to change the engine. R-14 (the hot-end form) and R-1 (the
 stress side's smoothing) stay with T7's physics review, as planned.
+
+### Re-review after a change by the implementer after its review (2026-10-18)
+
+BL-064 Task 2's text re-review 1 (commit b732cdb) applied its MF-1 to the `tests/shaft_joint.rs` row of
+`magcoupling-rs/README.md`: the BL-067 corner now reads cold-high 3.1823 N·m, so 6.3647 N·m required, where the row
+had called 6.3647 N·m cold-high. The same commit appended the round-1 record above. The changed text had its G-3 text
+re-review (round 2) in a fresh context at HEAD b732cdb. The reviewer's report for the record follows unchanged (full
+answer: `.superpowers/sdd/2026-10-18-bl064-shaft-joint/textreview-T2-a-change-by-the-implementer-after-its-review-2.md`).
+
+- Reviewer: fresh context, session model, 2026-10-18; G-3 text re-review of BL-064 Task 2's changed texts (round 2):
+  the README row of MF-1 and the round-1 record above. There was no note text to review: the note `shaft_joint`
+  arrives in Task 7 (the note dump names no note).
+- Verdict: PASS, no must-fix. The new README clause is true: the test asserts cold-high 3.1823 N·m and required
+  6.3647 N·m at the BL-067 corner, and the engine's required torque is the safety factor (default 2) times cold-high.
+  The round-1 record is faithful: its R-1 to R-6 are the round-1 answer's, unchanged, and every quoted text is
+  verbatim. No trap is broken, no cap applies (neither item is on-screen) and `input_schema.json` needs no re-bless.
+- Should-fix offered, none applied in this round; they stay open for the controller:
+  - SF-1 (`magcoupling-rs/README.md`, the `tests/shaft_joint.rs` row, optional): the row gives the right numbers but
+    not what "reads cold-high" is set against, the larger operating pull-out with its allowance. Offered: "the BL-067 corner reads cold-high (3.1823 N·m, not the 3.657 N·m operating pull-out with its allowance, so 6.3647 N·m required) and passes;"
+  - SF-2 (this doc): the round-1 heading above repeats the Task 1 record's word for word, so a reader scanning the
+    headings cannot tell them apart. Offered: "### Re-review after a change by the implementer after its review (2026-10-18), Task 2".
+    Not applied: this record keeps the same heading form, and the first paragraph of each record names its task and
+    round.
+  - SF-3 (process): when Task 2's lines are written into the build ledger, one of them carries round 1's SF-9 (the
+    BL-067 citation in `docs/ai/02-system.yaml`) with its offered text, which the round-1 record above holds verbatim.
+- No text changed in this round.
+
+**Report for the record (as returned).**
+
+**R-1. The MF-1 clause, verified true.**
+- `tests/shaft_joint.rs:407` asserts `metal.torque_cold_high_Nm` = 3.1823 and `:409` asserts `required_Nm` = 6.3647,
+  each within an absolute 5e-5 (`assert_near`, `:75-77`). The corner is op -40 °C, minimum 20 °C, variation 0.1
+  (`:400-404`), as spec 3.6 and 7.1 give it.
+- `engine/shaft_joint.rs:742`: `required_Nm = inputs.safety_factor * links.cold_high_Nm`, the default safety factor
+  2.0 (`:60`), `cold_high_Nm` = `metal.torque_cold_high_Nm` (`api.rs:147`). So "so 6.3647 N·m required" follows from
+  cold-high as the clause says, and agrees with the `required_Nm` help ("Cold-high ... times the safety factor").
+- Rounding: the two pins and the exact factor 2 bound cold-high to [3.182325, 3.18235] and required to
+  [6.36465, 6.3647], so 3.1823 and 6.3647 are each the engine value correctly rounded to four decimals. Doubling the
+  rounded 3.1823 gives 6.3646, a last-digit rounding difference a careful reader may notice; spec 7.1 quotes the same
+  pair ("required 6.3647 N·m (2 × cold-high 3.1823)"). Not false; no change asked.
+- The rest of the row is unchanged by b732cdb (a one-clause diff). No other doc calls 6.3647 N·m cold-high
+  (`git grep` of `docs`, the README and `src`; the plan's line 4659 keeps the T2 draft, and plan edits go to the
+  ledger). No later task brief (T3-T10) edits this README row, so no later Old text breaks.
+
+**R-2. The appended record, verified faithful.**
+- R-1 to R-6 under "Report for the record (as returned)" are identical to the round-1 answer's lines 138-195 once
+  CRLF is stripped (the working tree is CRLF, the index LF, as for the rest of the file).
+- All 12 quoted texts of the round-1 answer (MF-1's Old and New, SF-1 to SF-8's offered texts, SF-9's Old and New)
+  appear verbatim in the record. The word and sentence counts the record gives (SF-1 28/2, SF-2 30/1, SF-3 30/1,
+  SF-4 30/2, SF-5 30/2, SF-6 28/2, SF-7 26/1, SF-8 29/1 and the cup's 28) are the answer's.
+- The record's own sentences are true: the input group heading "Shaft joints" (`inputs.rs:62`), the sections
+  "Shrink fit" and "Fitting temperatures" (`:349`, `:364`), the results heading "Shaft joints"
+  (`result_groups.rs:86`); 15 inputs and 24 results (39 helps); SF-3's "below -8 °C" (`NIST_FIT_TOP_K` 265 K is
+  -8.15 °C, the constant 11.5e-6 /°C from there up, `:321-325`); SF-8's loosest end (`py_min` at `:636`);
+  "Text changed in this round: the README row of MF-1 only" (the diff touches that row and the record alone).
+- No line of the appended text starts with "## "; the record sits under "## BL-064 shaft joints" after the Task 1
+  record (`:2727`), as the section's intro (`:2724-2725`) says re-reviews do until Task 8's G-3 review.
+- The full-answer path (`.superpowers/sdd/...-1.md`) is git-ignored (`.gitignore:56`), as every earlier full-answer
+  path in this doc is (`:1434`, `:1486`, `:2395`, `:2482`, `:2579`, `:2736`): the house convention.
+- Cosmetic only: the MF-1 bullet's second line (`:2837`) runs past the doc's 120-column wrap because it inlines
+  Old and New; it renders as one paragraph. No change asked.
+
+**R-3. Traps and caps.** Neither changed item is on-screen text, so the help caps and the plain-words guard do not
+apply. Even so, the new clause holds the traps that could touch it: no "at most", "strongest", "up to" or
+"most expected" (trap 2), no ratio or efficiency (trap 3), no "clamp" (trap 21). No input label or help moved, so
+`input_schema.json` is correctly not re-blessed (plan Global Constraints, re-bless rule).
+
+**R-4. Guards run green.** `tests/shaft_joint.rs` 30 passed; the README-reading guards
+`the_docs_count_the_notes_and_the_steps` and `the_docs_count_the_dashboard_rows_and_the_checks` passed.
+
+**R-5. No model question arises.** Both changes are docs; neither asks to change the engine.
