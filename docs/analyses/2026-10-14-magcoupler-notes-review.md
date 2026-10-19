@@ -5489,7 +5489,7 @@ Rounds: 2. Verdict: PASS.
   Task 8's G-3 review or to the owner as a model decision (ruling C-8).
 - Tests: `the_shaft_joint_note_s_claims_hold_at_every_probe_design` (`tests/explain.rs`) holds the
   note's claims at the five probe designs: each joint's holding against the safety factor times
-  cold-high; the cup's bore stress per µm 0.86 to 1.0 times E·δ/d; the allowed temperature the
+  cold-high; each joint's bore stress per µm 0.86 to 1.0 times E·δ/d; the allowed temperature the
   lowest of the three limits sentence 4 names; the watch-outs' words; no result checks a seal, a
   bearing or fretting; no text orders the torques. `the_shaft_joint_texts_type_the_cure_margin_the_engine_keeps`
   builds the "10 °C" of sentence 4, the first source and the two helps from `CURE_MARGIN_MIN_C`.

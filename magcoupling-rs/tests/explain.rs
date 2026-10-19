@@ -4657,8 +4657,10 @@ fn cure_margin_words() -> String {
 /// designs. Sentence 1 quotes each joint's holding torque at its loosest against the torque each
 /// must hold, the safety factor times cold-high, which it names. Sentence 3 quotes the cup's
 /// bore stress against the limit in a "here" clause (review 5 SF-4, review 6 SF-1): per µm of
-/// effective interference the bore stress is E·δ/d times √3/2, about 0.87 (a thick wall), to
-/// 1.0 (a thin one), so it follows interference over diameter and hardly the wall. Sentence 4
+/// effective interference each joint's bore stress is E·δ/d times √3/2, about 0.87 (a thick
+/// wall), to 1.0 (a thin one), for a steel part on the steel shaft (an aluminium body reads
+/// 1.005 to 1.127: the stiffer shaft takes less), so it follows interference over diameter and
+/// hardly the wall. Sentence 4
 /// quotes the temperature the inner hub's fit would need beside the wheel shaft's live shrink,
 /// never the shaft's input temperature (review 4 MF-2, review 5 MF-2), against the allowed
 /// temperature, the lowest of the three limits it names (owner R-15). The cure margin's words,
