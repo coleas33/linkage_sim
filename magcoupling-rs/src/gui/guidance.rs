@@ -223,7 +223,7 @@ const SHAFT_JOINT_GUIDE: CheckGuide = CheckGuide {
     check: SHAFT_JOINT,
     label: "Shaft joints",
     problem: shaft_joint_problem,
-    why: "A shrink fit's grip holds each rotor on its shaft; it must carry cold-high with margin when loosest, stay elastic when tightest, and be fitted within the allowed temperatures.",
+    why: "A shrink fit's grip holds each rotor on its shaft; each fit must carry cold-high with margin when loosest, stay elastic when tightest, and be fitted within its allowed temperature.",
     fixes: Fixes::PerTerm(shaft_joint_fixes),
     learn: Learn::Note("shaft_joint"),
 };
@@ -2281,7 +2281,7 @@ fn window_sentence(
     let mut edges = Vec::new();
     if elastic < needed {
         edges.push(format!(
-            "the bore stays within its limit only up to {}",
+            "its bore stress stays within the limit only up to {}",
             number_text(rounded_down(elastic), side.elastic)
         ));
     }
@@ -2292,7 +2292,7 @@ fn window_sentence(
         ));
     } else if fittable < needed {
         edges.push(format!(
-            "it can be fitted only up to {}",
+            "the {name} can be fitted only up to {}",
             number_text(rounded_down(fittable), side.fittable)
         ));
     }
@@ -3503,12 +3503,12 @@ mod tests {
             (
                 "no window under the stress limit",
                 breaking(|i| i.materials.parts.back_iron = 7),
-                "the bore stays within its limit only up to",
+                "its bore stress stays within the limit only up to",
             ),
             (
                 "no window that can be fitted",
                 breaking(|i| i.shaft_joint.wheel_shaft_fit_C = -78.0),
-                "it can be fitted only up to",
+                "the inner hub can be fitted only up to",
             ),
             (
                 "no joining clearance",
@@ -3951,6 +3951,14 @@ mod tests {
         );
         let joint = guide(SHAFT_JOINT).expect("the shaft joints check has a guide");
         assert_eq!(joint.label, "Shaft joints");
+        // The Why's subject is each fit, not its grip, and each fit has one allowed temperature
+        // (T5 text re-review SF-4).
+        assert!(
+            joint.why.contains("each fit must carry")
+                && joint.why.ends_with("within its allowed temperature."),
+            "{}",
+            joint.why
+        );
         assert_eq!(row_learn(SHAFT_JOINT), Some(joint.learn));
         // Its reviewed note, the shaft-joint note, is its Why link (plan Task 7).
         assert_eq!(joint.learn, Learn::Note("shaft_joint"));
@@ -7923,8 +7931,8 @@ mod tests {
         assert_in_order(
             &text(design(|i| i.materials.parts.back_iron = 7)),
             &[
-                "No measured interference works on the inner hub here: holding needs at least 16.31 µm, but the bore stays within its limit only up to 11.72 µm.",
-                "No measured interference works on the cup here: holding needs at least 15.80 µm, but the bore stays within its limit only up to 11.74 µm.",
+                "No measured interference works on the inner hub here: holding needs at least 16.31 µm, but its bore stress stays within the limit only up to 11.72 µm.",
+                "No measured interference works on the cup here: holding needs at least 15.80 µm, but its bore stress stays within the limit only up to 11.74 µm.",
             ],
         );
         // An uncooled wheel shaft (review MF-6, SF-12, review 2 SF-6b).

@@ -732,8 +732,8 @@ fn the_badge_takes_causes_in_order_then_the_inner_hub_before_the_cup() {
 #[test]
 fn the_304_and_aluminium_windows_are_empty() {
     // Spec section 3.6: neither hub has a working interference at Ø10. 304: holding needs
-    // 16.30 µm, the bore stays within its limit only up to 11.72. Aluminium (the 6061 pick, or
-    // no back iron with any pick, one outside the choices too): 27.74 against 25.22.
+    // 16.30 µm, its bore stress stays within the limit only up to 11.72. Aluminium (the 6061
+    // pick, or no back iron with any pick, one outside the choices too): 27.74 against 25.22.
     let r304 = compute_all(&design(|i| i.materials.parts.back_iron = 7)).shaft_joint;
     assert_near(r304.hub_needed_um, 16.3031, 5e-5, "304 needed");
     assert_near(r304.hub_elastic_max_um, 11.7235, 5e-5, "304 elastic");
