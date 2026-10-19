@@ -12,6 +12,7 @@ use magcoupling::engine::api::{DesignInputs, shaft_joint_links};
 use magcoupling::engine::assumptions::ASSUMPTIONS;
 use magcoupling::engine::compat::py_min;
 use magcoupling::engine::explain::probes::probe_designs;
+use magcoupling::engine::material_library::BACK_IRON_CHOICES;
 use magcoupling::engine::meta::{InputMeta, InputSet, SliderRange, Value, input_rows, result_rows};
 use magcoupling::engine::shaft_joint::{
     self, BORE_OVER_ITS_LIMIT, CANNOT_BE_FITTED, CAUSES, CUP, CannotBeMade, Cause, FIT_SLIPS,
@@ -379,7 +380,7 @@ fn the_safety_factor_help_says_a_slip_can_reverse_the_torque_not_that_each_does(
 fn the_holding_helps_put_the_rotor_allowance_at_the_hot_end_alone() {
     // G-3 review MF-2 (spec 3.3): the loosest fit is the cold end or the hot end, whichever
     // loosens it more, and only the hot end has the rotor warmer than its shaft. 4140 (the
-    // defaults) loosens hot, so the allowance lowers its holding. 416 (pick 4) loosens cold up
+    // defaults) loosens hot, so the allowance lowers its holding. 416 loosens cold up
     // to the default allowance, so there the holding is bit for bit the same at 0 and 20 °C;
     // at the slider's top the hot end takes over. So the allowance's own help puts its falling
     // grip at the hot end (G-3 SF-12, from the review leftovers).
@@ -394,13 +395,18 @@ fn the_holding_helps_put_the_rotor_allowance_at_the_hot_end_alone() {
     let shipped = DesignInputs::default().materials.parts.back_iron;
     let [hub_cool, _] = holding(shipped, 0.0);
     let [hub_warm, _] = holding(shipped, 20.0);
-    assert_near(hub_cool, 14.41, 5e-3, "4140 with no allowance");
+    assert_near(hub_cool, 14.4067, 5e-5, "4140 with no allowance");
     assert!(
         hub_warm < hub_cool,
         "4140 at the default allowance: {hub_warm}"
     );
     let top = slider("shaft_joint.rotor_over_shaft_C").max;
-    let [no_allowance, at_default, at_top] = [0.0, 20.0, top].map(|over| holding(4, over));
+    let aisi_416 = BACK_IRON_CHOICES
+        .iter()
+        .find(|&&(_, id)| id == "416_annealed")
+        .map(|&(code, _)| code)
+        .expect("416 is a back-iron choice");
+    let [no_allowance, at_default, at_top] = [0.0, 20.0, top].map(|over| holding(aisi_416, over));
     assert_eq!(no_allowance.map(f64::to_bits), at_default.map(f64::to_bits));
     assert_near(at_default[0], 14.0443, 5e-5, "416");
     assert!(
