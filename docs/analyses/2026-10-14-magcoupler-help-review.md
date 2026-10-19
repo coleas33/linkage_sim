@@ -2937,6 +2937,9 @@ fix wave (Task 10), follow it, in the order they ran.
   - Task 3's SF-6 (a test that ties the rationales' typed defaults to the inputs) has nothing left to tie: MF-4
     removed the typed defaults, and `the_shaft_joint_rationales_say_the_default_and_type_no_number` keeps them out;
   - Task 1's SF-1, Task 2's SF-2 and Task 2's SF-6 come back as SF-2, SF-1 and SF-3, open;
+  - Task 2's text re-review SF-3 (the shrink helps' "from published low-temperature data", which the NIST fit gives
+    only below 265 K) is ruled in round 2's 2.16-2.17 row (:3422): above 265 K the engine's 11.5e-6 /°C is near the
+    fit's own slope, so the words still describe the number;
   - the others on on-screen strings concern strings this review passes in its tables, and stay open where they
     were left.
 - Tests that followed the changes: none changed. No test pinned an old text by literal (`git grep -n -F` of each old
