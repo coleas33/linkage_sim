@@ -4672,12 +4672,13 @@ fn cure_margin_words() -> String {
 /// note's physics review, round 1: a raised cup minimum moves neither the cup's bore stress nor
 /// its fitting temperature, and one step past the maximum reverses the band (MF-2); a warmer
 /// wheel shaft lowers the inner hub's fitting margin, and from -180 °C the default inner hub
-/// cannot be fitted (MF-1).
+/// cannot be fitted (MF-1). The "at" of the change entries' "at or above it" and "at or below
+/// it" (the notes record's SF-4): a band whose ends are equal is judged.
 #[test]
 fn the_shaft_joint_note_s_claims_hold_at_every_probe_design() {
     use magcoupling::engine::api::shaft_joint_links;
     use magcoupling::engine::shaft_joint::{
-        CANNOT_BE_FITTED, CUP, INNER_HUB, UNKNOWN_BAND_REVERSED, hub_fit_allowed,
+        CANNOT_BE_FITTED, CUP, INNER_HUB, SHAFT_JOINTS_PASS, UNKNOWN_BAND_REVERSED, hub_fit_allowed,
     };
     let note = notes::note("shaft_joint").expect("the shaft-joint note");
     let s = note.sentences;
@@ -4870,6 +4871,34 @@ fn the_shaft_joint_note_s_claims_hold_at_every_probe_design() {
     assert_eq!(
         compute_all(&past).shaft_joint.check,
         format!("{UNKNOWN_BAND_REVERSED} ({CUP})")
+    );
+    // The "at" of "at or above it" and "at or below it" (the notes record's SF-4, from the review
+    // leftovers): a band whose ends are equal is judged, the cup at 22 to 22 µm and the inner hub
+    // at 13 to 13 µm, and both pass; one Lower of the inner hub's maximum from 13 µm, as its
+    // change entry steps, reverses its band.
+    assert_eq!(
+        compute_all(&at_the_maximum).shaft_joint.check,
+        SHAFT_JOINTS_PASS,
+        "the cup at {0} to {0} µm",
+        at_the_maximum.shaft_joint.cup_interference_max_um
+    );
+    let mut hub_at_its_minimum = DesignInputs::default();
+    hub_at_its_minimum.shaft_joint.hub_interference_max_um =
+        hub_at_its_minimum.shaft_joint.hub_interference_min_um;
+    assert_eq!(
+        compute_all(&hub_at_its_minimum).shaft_joint.check,
+        SHAFT_JOINTS_PASS,
+        "the inner hub at {0} to {0} µm",
+        hub_at_its_minimum.shaft_joint.hub_interference_min_um
+    );
+    let below = stepped(
+        &hub_at_its_minimum,
+        "shaft_joint.hub_interference_max_um",
+        Step::Lower,
+    );
+    assert_eq!(
+        compute_all(&below).shaft_joint.check,
+        format!("{UNKNOWN_BAND_REVERSED} ({INNER_HUB})")
     );
     // "off the gearbox seal and bearings; nothing checks them, the gearbox shaft or fretting": no
     // result names a seal, a bearing or fretting (a check of one changes this watch-out).
