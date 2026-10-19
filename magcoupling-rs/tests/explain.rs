@@ -454,6 +454,15 @@ fn edge_points() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
                 default_num("temperature.thermal.steady_est_C"),
             )],
         ),
+        (
+            // BL-064 (owner R-15 ring): the library's N42 block outside the default N42SH one.
+            // The outer ring governs (its magnet limit is the lower), so the inner ring's own
+            // single-ring onset (143.36 °C) differs from the governing one (69.83 °C): the
+            // inner onset's record must read the inner block, not the governing one
+            // (`tests/grades.rs` pins the ring and both onsets at this design).
+            "inner B842SH, outer B842: the outer ring governs",
+            vec![("coupling.magnets.part_outer", text("B842"))],
+        ),
         // The clamp counts outside i64 (`saturation_artifact`), one point per kind, each
         // reaching every screw size the exemption's liveness assertion names.
         (
@@ -1523,8 +1532,8 @@ fn explained_chains_have_every_record_and_scope_paths_exist() {
     let union: BTreeSet<&str> = SCOPE.iter().flat_map(|c| c.paths.iter().copied()).collect();
     assert_eq!(
         union.len(),
-        169,
-        "decision 31: the chains and the dashboard (report section 7), and plan A-3 decision G1's 10 new geometry callouts"
+        170,
+        "decision 31: the chains and the dashboard (report section 7), plan A-3 decision G1's 10 new geometry callouts, and BL-064's inner-ring single-ring onset"
     );
 }
 

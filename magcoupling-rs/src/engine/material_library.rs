@@ -88,7 +88,8 @@ pub struct Material {
     /// Expansion coefficient [1e-6/K].
     pub cte_1e6_per_K: Sourced,
     pub modulus_GPa: Sourced,
-    /// Yield strength [MPa] (published minimum where one exists; not read by the engine).
+    /// Yield strength [MPa] (published minimum where one exists; read by the shaft joint check
+    /// through [`PartProperties::hub`]).
     pub yield_MPa: Sourced,
     pub cp_J_kgK: Sourced,
     /// The wall check's design flux density [T] (decision 20): workbook values only,
@@ -816,6 +817,46 @@ pub struct PartProperties {
     pub sleeve_liner: PartMaterial,
     /// The cap (expansion and modulus not read).
     pub cap: PartMaterial,
+}
+
+/// The hub, cup and boss material in effect (BL-064, spec section 4.1): what the shaft joint
+/// check and the material warnings read for the parts on the shafts.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[allow(non_snake_case)] // unit suffixes, as the engine's names
+pub struct HubMaterial {
+    /// The steel circuit's values ([`PartProperties::steel`]) with the circuit in effect
+    /// steel, else the body's ([`PartProperties::body`]).
+    pub props: EngineProps,
+    /// The library yield strength [MPa] of the metal in effect: the back-iron pick's on the
+    /// steel circuit or when the pick is non-magnetic, else the workbook's aluminium (6061-T6);
+    /// NaN for a pick outside the choices on the steel circuit (its values are NaN too).
+    pub yield_MPa: f64,
+}
+
+/// The library id of the workbook's aluminium hub, cup and boss (Metal design C42, Temperature
+/// design C140, E18): the body with no back iron and no non-magnetic pick.
+const WORKBOOK_ALUMINIUM: &str = "6061_T6";
+
+impl PartProperties {
+    /// The hub, cup and boss material in effect (BL-064): the steel values when the circuit
+    /// in effect is steel (`backiron == 1`), else the body's; the yield follows the material in
+    /// effect, not the pick: with no back iron (`coupling.backiron` 0) and a ferromagnetic pick
+    /// or a code outside the choices, the body is the workbook's aluminium, so its yield is
+    /// 6061-T6's.
+    pub fn hub(&self) -> HubMaterial {
+        let steel = self.backiron == 1;
+        let pick = self.back_iron.material;
+        let non_magnetic_pick = pick.is_some_and(|m| !m.ferromagnetic);
+        let record = if steel || non_magnetic_pick {
+            pick
+        } else {
+            material(WORKBOOK_ALUMINIUM)
+        };
+        HubMaterial {
+            props: if steel { self.steel } else { self.body },
+            yield_MPa: record.and_then(|m| m.yield_MPa.value).unwrap_or(f64::NAN),
+        }
+    }
 }
 
 /// The workbook values of a part, as [`EngineProps`].

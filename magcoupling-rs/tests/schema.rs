@@ -535,6 +535,7 @@ fn engine_owned_help_is_plain_and_short() {
         "coupling.max_harmonic",
         "housing.space_claim_check",
         "gearbox.cold_high_check",
+        "temperature.demag.inner_onset_single_ring_C",
         "metal.steel_cup_mass_g",
         "clamps.table[*].length_mm",
         "gap_sweep[*].variable",

@@ -9,7 +9,8 @@
 //! face gap, the corner gap and the running clearance (spec M4 "Layout"), the clearance's
 //! two parts, and the overshoot per axis past the space claim with the dimension it measures
 //! (spec A1); 10 of the 11 are new (the running clearance is a dashboard path), so the
-//! scope holds 169 paths.
+//! scope held 169 paths. BL-064 adds the inner ring's own single-ring onset to the
+//! demagnetization chain (owner R-15 ring): 170 paths.
 
 /// Whether a chain's records are written.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -150,6 +151,7 @@ pub const SCOPE: &[Chain] = &[
             "temperature.demag.onset_pullout_C",
             "temperature.demag.onset_skipping_C",
             "temperature.demag.onset_single_ring_C",
+            "temperature.demag.inner_onset_single_ring_C",
             "temperature.demag.magnet_limit_C",
             "temperature.summary.onset_aligned_C",
             "temperature.summary.onset_pullout_C",

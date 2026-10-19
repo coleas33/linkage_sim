@@ -336,6 +336,9 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
     let temp = temperature::compute(&ti, &links, dev);
     // Addendum A5: the material consequence warnings, on the materials in effect.
     let back_iron = parts.back_iron.material;
+    // The hub, cup and boss material in effect (BL-064: one rule for the warnings and the shaft
+    // joints).
+    let hub_material = parts.hub();
     let warn = warnings::compute(&warnings::WarningInputs {
         circuit_backiron: parts.backiron,
         sleeve_ferromagnetic: parts.sleeve_liner.material.is_some_and(|m| m.ferromagnetic),
@@ -346,11 +349,7 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
             .is_some_and(|m| parts.back_iron.is_default || m.design_flux_density_T.is_some()),
         back_iron_needs_plating: back_iron.is_some_and(|m| m.needs_plating),
         plating_mm: mat_in.nickel.thickness_mm,
-        hub_cte_per_C: if parts.backiron == 1 {
-            parts.steel.cte_per_C
-        } else {
-            parts.body.cte_per_C
-        },
+        hub_cte_per_C: hub_material.props.cte_per_C,
         magnet_cte_per_C: ti.mismatch.ndfeb_cte_per_C,
     });
 

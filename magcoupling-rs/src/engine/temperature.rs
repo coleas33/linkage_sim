@@ -507,6 +507,8 @@ results! {
                 "The inner ring's grade value, or the beta input."),
             inner_magnet_limit_C: f64 => out_rust_only("°C", "Inner ring: magnet design limit",
                 "The inner ring's own limit, whichever ring governs: its onset while skipping minus the design margin, or with a positive beta its rating (no limit without one)."),
+            inner_onset_single_ring_C: f64 => out_rust_only("°C", "Inner ring: single-ring onset",
+                "The inner ring's own onset on its carrier with no outer ring around it, whichever ring governs. The bonded inner hub's allowed fitting temperature stays below it."),
             inner_cold_limit_C: NumOrText => out_rust_only("°C", "Inner ring: cold magnet limit",
                 "Positive beta only: the inner ring's cold onset while skipping plus the design margin; 'n/a' otherwise."),
             outer_hcj20_kA_m: f64 => out_rust_only("kA/m", "Outer ring: Hcj at 20 °C used",
@@ -1013,6 +1015,9 @@ pub fn compute(
         inner_hcj20_kA_m: inner.hcj20,
         inner_beta_per_C: inner.beta,
         inner_magnet_limit_C: inner.mag_lim,
+        // BL-064 (owner R-15 ring): the inner ring's own single-ring onset, whichever ring
+        // governs; the bonded inner hub's allowed fitting temperature reads it.
+        inner_onset_single_ring_C: inner.onsets[3],
         inner_cold_limit_C: inner.cold_limit,
         outer_hcj20_kA_m: outer_block.hcj20,
         outer_beta_per_C: outer_block.beta,
@@ -2164,6 +2169,47 @@ mod tests {
         // The sheet shows the ring with the lower magnet limit: the NdFeB ring.
         assert!(mixed.inner_magnet_limit_C < mixed.outer_magnet_limit_C);
         assert_eq!(mixed.magnet_limit_C, mixed.inner_magnet_limit_C);
+        // BL-064 (owner R-15 ring): the inner ring's own single-ring onset is the NdFeB-only
+        // run's. The NdFeB ring governs here, so this alone would also hold for the governing
+        // block's onset; the swapped rings below tell the two apart.
+        assert_eq!(mixed.inner_onset_single_ring_C, ndfeb.onset_single_ring_C);
+    }
+
+    #[test]
+    fn the_inner_single_ring_onset_is_the_inner_block_s_whichever_ring_governs() {
+        // BL-064 (owner R-15 ring): the bonded inner hub's fitting cap reads the inner ring's
+        // own single-ring onset, the fourth onset of the inner block. With the NdFeB ring
+        // inside it governs, and the two onsets are one value bit for bit. Swapped (Y30 inside,
+        // the NdFeB ring outside), the NdFeB ring governs: the governing onset is the NdFeB
+        // ring's, while the inner ring's own is the ferrite's +inf (a positive beta never
+        // reaches the knee on heating).
+        let e20 = Deviations::only(DeviationId::E20);
+        let ti = TemperatureInputs::default();
+        let ndfeb = compute(&ti, &links(), e20).demag;
+        let mixed = compute(&ti, &with_outer_of(links(), &ferrite_links()), e20).demag;
+        assert_eq!(mixed.demag_ring, RING_INNER);
+        assert_eq!(
+            mixed.inner_onset_single_ring_C.to_bits(),
+            mixed.onset_single_ring_C.to_bits()
+        );
+        let swapped = compute(&ti, &with_outer_of(ferrite_links(), &links()), e20).demag;
+        assert_eq!(swapped.demag_ring, RING_OUTER);
+        assert_eq!(swapped.onset_single_ring_C, ndfeb.onset_single_ring_C);
+        assert!(swapped.onset_single_ring_C.is_finite());
+        assert_eq!(swapped.inner_onset_single_ring_C, f64::INFINITY);
+        // Without E20 the workbook checks the inner ring only: the inner ring governs either
+        // way round, and the two onsets are one value.
+        for k in [
+            with_outer_of(links(), &ferrite_links()),
+            with_outer_of(ferrite_links(), &links()),
+        ] {
+            let r = run(&ti, &k).demag;
+            assert_eq!(r.demag_ring, RING_INNER);
+            assert_eq!(
+                r.inner_onset_single_ring_C.to_bits(),
+                r.onset_single_ring_C.to_bits()
+            );
+        }
     }
 
     #[test]
