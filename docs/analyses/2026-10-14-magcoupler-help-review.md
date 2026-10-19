@@ -2721,8 +2721,837 @@ No other doc in `docs/ai` or the README quotes the bracket.
 
 ## BL-064 shaft joints
 
-BL-064's G-3 review of every new on-screen text (plan Task 8) is recorded in this section when it runs. Until then the
-section holds the text re-reviews made before it.
+BL-064's G-3 review of every new on-screen text (plan Task 8) is recorded first in this section, with each round's
+report as returned. The text re-reviews made while Tasks 1 to 7 were built follow it, in the order they ran.
+
+- Scope: BL-064's new on-screen strings (spec
+  `docs/superpowers/specs/2026-10-17-bl064-shaft-joint-design.md`, sections 6.2 and 6.3), reviewed
+  under the same G-3 rule:
+  - the engine (`engine/shaft_joint.rs`): the 15 input labels and helps, the 24 result labels and
+    helps (the check's label is the dashboard row's label), the eleven verdict texts
+    (`SHAFT_JOINTS_PASS`, the `SHAFT_JOINT_UNKNOWN` forms with the safety factor's, `FIT_SLIPS`, `BORE_OVER_ITS_LIMIT`,
+    `CANNOT_BE_FITTED`, `KEY_OVER_ITS_LIMIT`, `KEY_HAS_NO_BEARING_AREA`) with their tails
+    (`JointTerms::text`) and the joint names;
+  - the inner ring's single-ring onset (`engine/temperature.rs`): its label and help;
+  - the four assumption rows (`engine/assumptions.rs`: `fit_friction`, `fit_smoothing`,
+    `rotor_over_shaft`, `joining_clearance`), their labels and rationales;
+  - the guide (`gui/guidance.rs`): its label and Why (`SHAFT_JOINT_GUIDE`) and every Problem
+    sentence (`shaft_joint_problem`);
+  - the headings: "Shrink fit" and "Fitting temperatures" (`gui/inputs.rs`, `WORKFLOW`), "Shaft
+    joints" in `SECTION_LABELS`, `CHAIN_LABELS` and `PACKAGE_LABELS` (the last never drawn);
+  - the stored-3D hover note's new sentence (`gui/dashboard.rs`, `STORED_3D_NOTE`);
+  - read in context: the four overlay helps the spec's section 5.3 offered as should-fix
+    candidates (the bore, the keyway depth, the boss length, the single-ring reverse field),
+    the fix texts, the status line ("Example design: fails 4 of 9 checks"), the stored-3D label on
+    the joint row and Explain's closest-note line; the note `shaft_joint` for consistency only
+    (its own physics review is recorded under `## shaft_joint` of
+    `docs/analyses/2026-10-14-magcoupler-notes-review.md`).
+- Read: the sheets `magcoupling-rs/target/g3/BL064-inputs.txt` (`help_for_review`, group
+  `shaft`), `BL064-guidance.txt` (`guidance_strings_for_review`), `BL064-overlay.txt`
+  (`overlay_strings_for_review`), `BL064-note.txt` (`notes_for_review`) and `BL064-strings.diff`
+  (`git diff -U0 main` of the source files); the spec, sections 1 to 6 and 11; the engine and
+  GUI code behind every string. Each round probed the engine from a scratch crate outside the
+  repository:
+  - round 1 (2026-10-19):
+    - the defaults: "Both shaft joints hold and can be fitted", no Problem, "Example design: fails 4 of 9 checks" with
+      the clamp section paused; required 7.6466 N·m (2 × cold-high 3.8233); holding 9.4844 / 16.899 N·m; bore stress
+      241.70 / 312.53 against 345.83 MPa; key 127.44 / 101.95 MPa; needed 12.082 / 11.310 µm; elastic 23.808 /
+      23.863 µm; shrink 18.988 / 0 µm; fittable 18.828 / 24.440 µm; fitting 93.267 / 280.16 against 100 / 300 °C; the
+      inner ring's and the governing single-ring onset both 143.356 °C;
+    - the five probe designs: 8 magnets passes (5.598 N·m required); 304 reads "The fit slips (inner hub): holds 0.00
+      N·m against 4.83 N·m" with both empty-window sentences; Y30 passes (inner onset +inf); the 20 mm ring passes
+      (11.77 against 7.22 N·m);
+    - the spec's section 3.6 designs: hub minimum 10 (3.48 against 7.65 N·m) and cup minimum 10 (4.36 N·m); hub
+      maximum 26 / 28 (385.1 / 421.0 MPa) and cup maximum 26 / 28 (384.0 / 419.8 MPa); friction 0.10 (6.77 N·m);
+      smoothing 0 (the cup 401.9 MPa); the wheel shaft at 20, -78.5 and 40 °C (needs 247.6, 163.5 and 266.3 °C); the
+      gearbox shaft at -20 and 40 °C (243.1 and 298.9 °C); the bare cup allowed 250 °C; DP460 (93.3 against
+      60.0 °C); adhesive code 0 (unknown); 2214 Hi-Temp with 150 °C typed and the hub maximum 26 µm (133.4 °C allowed:
+      the onset 143.4 °C less 10.0 °C); the single-ring caps (N50M 88.80 °C, inner N42M with outer N35 81.35 °C,
+      B842 in both rings 59.83 °C; inner B842SH with outer B842 passes at 100 °C); keyway 0.3 mm ("Key backup above
+      its limit (inner hub): 509.8 MPa against 345.8 MPa") and 0; boss length 0 (the cup slips at 2.73 N·m) and hub
+      length 3.0 mm (2.19 N·m); bore 16 mm with a 12 mm boss, and with a 2.1 mm keyway (no wall); the reversed hub
+      band; typed: bore 0, key width 40 mm, contact height -0.5 mm; safety factor 0 and -1 (unknown, Caution, no
+      fix); back-iron pick 99 and the aluminium body; an axial override of 40 mm (the cup slips at 16.90 against
+      25.99 N·m); c_end 1.5 and the short magnets (greyed); the BL-067 corner (cold-high 3.1823 N·m, below the
+      operating pull-out with its allowance, 3.657 N·m); the single-ring field at 1500 kA/m ("needs 93.3 °C against
+      -12.4 °C") and 862 kA/m ("93.3 °C against 93.2 °C");
+    - every shaft-joint input at both slider ends; which temperature end binds (416 holds 14.0443 N·m at a rotor
+      allowance of 0, 10 and 20 °C); the slip reversals per event (16.7 cycles at the defaults, 0.833 at 100 rpm,
+      0.033 at 100 rpm with 4 magnets and a 0.01 s event); one step of each C1 overlay help's input;
+  - round 2 (2026-10-19), on round 1's changes, their five tests (`tests/shaft_joint.rs` 34, `tests/assumptions.rs`
+    13 and `tests/schema.rs` 11 passed) and the sheets regenerated after them (only the two changed input helps
+    moved):
+    - MF-1: 16.667 cycles per event at the defaults, 0.8333 at 100 rpm, 0.0333 at 100 rpm with 4 poles and a 0.01 s
+      event, 50 at 6000 rpm;
+    - MF-2, the inner hub's holding at a rotor allowance of 0 / 10 / 20 / 60 °C: 4140 14.407 / 11.946 / 9.484 / 0 N·m
+      (the hot end binds); 416 14.0443 at 0, 10, 20 and 21 °C and 6.625 at 60 (the cold end binds at the default);
+      17-4PH H900 14.888 at 0 and 10, 12.845 at 20; 304 4.975 / 1.741 / 0 / 0; 6061 0 throughout;
+    - MF-3: the aluminium cup (E 68.9 GPa, yield 241 MPa) needs 155.6 °C against the 300 °C default;
+    - MF-4: the wheel shaft shrinks 18.988 µm at -196 °C, 10.354 at -78.5, 0 at 20 and -2.300 at 40; the gearbox
+      shaft 4.553 µm at -20 °C; the rationales at their slider ends (friction 0.05 / 0.14 / 0.30: 3.387 / 9.484 /
+      20.32 N·m; smoothing 0 / 15: 19.49 / 0 N·m and 331.4 / 62.4 MPa; allowance 0 / 60: 14.41 / 0 N·m; clearance
+      0 / 30: 11.97 / 255.9 °C);
+    - the defaults, the five probe designs and the section 3.6 designs again, each as round 1 has it, and the
+      direction steps of the should-fix items.
+- Rulings of the note's physics review handed to this review: none. Both rounds of the note's physics review (Task 7)
+  returned CONFIRM on R-1 to R-4 and R-14 and no CHANGE (`.superpowers/sdd/2026-10-17-bl064-shaft-joint/t7-review-r1.md`
+  and `t7-review-r2.md`, item 5). Its round 2 observed that the wheel shaft's help still says "the inner hub needs less
+  heat"; this review judged that help against trap 14: PASS, with SF-4 offered.
+- Round 1: 4 must-fix items (ten strings), text applied verbatim (constants first, tests through the
+  constants):
+  - MF-1, `shaft_joint.safety_factor`, input help (its `param_rust_only` row).
+    - Old: "The fit alone must hold cold-high times this, and the key alone is checked at the same torque. The torque
+      reverses many times in each slip."
+    - New: "The fit alone must hold cold-high times this, and the key alone is checked at the same torque. A slip can
+      reverse the torque many times."
+    - Why: the swing runs at `metal.slip_freq_Hz` for `metal.slip_event_s`: 16.7 cycles, about 33 reversals, per
+      event at the defaults (trap 4), but 0.833 cycles (1.67 reversals) at the slip speed's slider bottom, 100 rpm,
+      and 0.033 cycles at 100 rpm with 4 magnets and a 0.01 s event, where the torque never reverses. "each slip ...
+      many times" is false there; "can" is true.
+  - MF-2, `shaft_joint.hub_holding_Nm` and `shaft_joint.cup_holding_Nm`, result helps (their `out_rust_only` rows).
+    - Old (inner hub): "Torque the inner hub's fit holds without slipping at its loosest: minimum measured
+      interference less smoothing, at the temperature end that loosens it more, rotor warmer than shaft."
+    - New (inner hub): "Torque the inner hub's fit holds without slipping at its loosest: minimum measured
+      interference less smoothing, cold, or hot with the rotor warmer than its shaft, whichever loosens it more."
+    - Old (cup): "Torque the cup's fit holds without slipping at its loosest: minimum measured interference less
+      smoothing, at the temperature end that loosens it more, rotor warmer than shaft."
+    - New (cup): "Torque the cup's fit holds without slipping at its loosest: minimum measured interference less
+      smoothing, cold, or hot with the rotor warmer than its shaft, whichever loosens it more."
+    - Why: the loosest end is `py_min(mismatch(cold), mismatch(hot) − α·ΔT_rotor·d)`, and the allowance enters only
+      the hot end. With 416 (back-iron pick 4) the cold end binds: the inner hub holds 14.0443 N·m at a rotor
+      allowance of 0, 10 and 20 °C alike; with 17-4PH H900 (pick 6) it binds up to 10 °C (14.8876 N·m). There the
+      old help said the allowance was in the number, and moving the allowance changes nothing.
+  - MF-3, `shaft_joint.cup_fit_max_C`, input help (its `param_rust_only` row).
+    - Old: "The cup is fitted before its magnets are bonded. Stay below the steel's and its finish's treatment
+      temperatures, and keep the heat off the gearbox seal."
+    - New: "The cup is fitted before its magnets are bonded. Stay below the treatment temperatures of its material and
+      finish, and keep the heat off the gearbox seal."
+    - Why: the cup is the part material in effect. At back-iron pick 8 (6061), and with `coupling.backiron` 0 at any
+      pick, that is the library's 6061-T6 (E 68.9 GPa, α 23.6e-6 /°C, yield 241 MPa), reachable from the selectors.
+      There the old help set the bare cup's limit from a steel's treatment temperatures (the cup needs 155.6 °C
+      against the 300 °C default).
+  - MF-4 (a), `shaft_joint.wheel_shaft_shrink_um`, result help (its `out_rust_only` row).
+    - Old: "How much the wheel shaft's diameter shrinks from 20 °C to its fitting temperature, from published
+      low-temperature data for a nickel steel; negative above 20 °C, where it grows."
+    - New: "How much the wheel shaft's diameter shrinks from room temperature to its fitting temperature, from
+      published low-temperature data for a nickel steel; negative above room temperature, where it grows."
+  - MF-4 (b), `shaft_joint.output_shaft_shrink_um`, result help (its `out_rust_only` row).
+    - Old: "How much the gearbox shaft's diameter shrinks from 20 °C to its fitting temperature, from published
+      low-temperature data for a nickel steel; negative above 20 °C, where it grows."
+    - New: "How much the gearbox shaft's diameter shrinks from room temperature to its fitting temperature, from
+      published low-temperature data for a nickel steel; negative above room temperature, where it grows."
+  - MF-4 (c), the `fit_friction` rationale (its `ASSUMPTIONS` row).
+    - Old: "The friction between each rotor's bore and its shaft that turns the fit's grip into holding torque. 0.14 is
+      for dry, degreased steel on steel; oil, a coating or a finish in the bore lowers it, and the holding torque
+      falls in proportion."
+    - New: "The friction between each rotor's bore and its shaft that turns the fit's grip into holding torque. The
+      default is for dry, degreased steel on steel; oil, a coating or a finish in the bore lowers it, and the holding
+      torque falls in proportion."
+  - MF-4 (d), the `fit_smoothing` rationale (its `ASSUMPTIONS` row).
+    - Old: "Interference lost as the surface peaks of bore and shaft flatten when the fit is made, taken off both ends
+      of the measured band. 5 µm is conservative for holding with ground and honed surfaces; a finer finish loses
+      less, which raises the grip and the bore stress together."
+    - New: "Interference lost as the surface peaks of bore and shaft flatten when the fit is made, taken off both ends
+      of the measured band. The default is conservative for holding with ground and honed surfaces; a finer finish
+      loses less, which raises the grip and the bore stress together."
+  - MF-4 (e), the `rotor_over_shaft` rationale (its `ASSUMPTIONS` row).
+    - Old: "Slip heating warms the rotors from the gap, so each rotor can run warmer than the shaft it sits on. Its bore
+      then grows more than the shaft, and the grip at the hot end falls. 20 °C is a placeholder until a measurement
+      or a thermal model gives the difference."
+    - New: "Slip heating warms the rotors from the gap, so each rotor can run warmer than the shaft it sits on. Its bore
+      then grows more than the shaft, and the grip at the hot end falls. The default is a placeholder until a
+      measurement or a thermal model gives the difference."
+  - MF-4 (f), the `joining_clearance` rationale (its `ASSUMPTIONS` row).
+    - Old: "The gap each part needs over its shaft, after warming and cooling, to slide to its stop before the gap
+      closes; one value for both joints. Too little and the part can seize half-way. 10 µm is an assumed value for a
+      10 mm bore; less needs a guided, single fast push to a stop."
+    - New: "The gap each part needs over its shaft, after warming and cooling, to slide to its stop before the gap
+      closes; one value for both joints. Too little and the part can seize half-way. The default is an assumed value
+      for the example design's bore; less needs a guided, single fast push to a stop."
+  - Why (MF-4, a to f): the brief allows a typed number only for the bath temperatures, the DIN 6885-1 row and the
+    cure margin; the physics of each text holds. "20 °C" is `ROOM_C`, the engine's own name for the reference (the
+    measured interference's temperature, and where a shaft's shrink is zero). A typed default goes stale when the
+    default moves, and the value shows on the input's own row. The reviewer offered the controller the option of
+    ruling `ROOM_C` an allowed number and keeping "20 °C"; the controller did not take it.
+
+  Should-fix offered, not applied (open for the controller), as round 1 returned them (round 2 re-offered each):
+  - SF-1: name the inner ring in the bonded inner hub's two limit helps: `shaft_joint.hub_fit_max_C` "Its magnets are
+    bonded before fitting. The check caps it at the adhesive's design limit and the inner ring's single-ring onset
+    less 10 °C; bond strain is not checked." and `shaft_joint.hub_fit_allowed_C` "The lowest of your limit for the
+    bonded inner hub, the selected adhesive's design limit and the inner ring's single-ring onset less 10 °C; not a
+    number if any is." Why: with mixed rings (inner B842SH, outer B842) the results table shows two onsets, the
+    governing 69.83 °C and "Inner ring: single-ring onset" 143.36 °C, and the cap reads the second; trap 20's bond
+    strain matters at this input.
+  - SF-2: the inner onset's help, "The temperature at which the inner ring alone on its carrier starts to
+    demagnetize, whichever ring governs. The bonded hub's allowed fitting temperature stays at least 10 °C below
+    it." Why: the old help never says what an onset is, and "stays below it" hides the margin (the Task 1
+    re-review's SF-1).
+  - SF-3: `shaft_joint.stress_limit_MPa`'s help, "The part's yield strength with a margin. The bore stress at the
+    tightest fit must stay within it, so the part stays elastic; so must the key backup's pressure." Why: the key's
+    badge quotes this row ("509.8 MPa against 345.8 MPa" at a 0.3 mm keyway), but the help names only the bore.
+  - SF-4: `shaft_joint.wheel_shaft_fit_C`'s help, "A cooled shaft shrinks, so the temperature the inner hub's fit
+    would need falls. Dry ice is about -78 °C; liquid nitrogen is -196 °C." Why: the note's reviewed wording, and no
+    "heat" (trap 14); the old text is not false.
+  - SF-5: the Problem's empty-window clause, "at its allowed temperature its bore does not even open the
+    {clearance} joining clearance on the {side.shaft} as set" for "the allowed temperatures do not even open its
+    {clearance} joining clearance". Why: each joint has one allowed temperature.
+  - SF-6: `shaft_joint.friction`'s help, "The default is for steel on steel, dry and degreased. ..." for "Steel on
+    steel, dry and degreased. ..." Why: a 304 or aluminium part (pick 7 or 8, or no back iron) is not steel on
+    steel.
+  - SF-7 to SF-10, the four C1 overlay helps (`gui/plain_text.rs`, `HELP`), each with its direction pins:
+    - the bore: "Diameter of both shafts in the inner hub's and cup's bores. Larger thins the walls: the hub check
+      can fail, and the wall past the keyway can break through.";
+    - the keyway depth: "Depth of the key slot in the inner hub's and the cup's bores; it caps the key's contact
+      height. Deeper thins the wall past the key; too deep breaks through." (a new claim design, "shallow keyway");
+    - the boss length: "Axial length of the shaft boss behind the rear wall: longer adds overall length and boss
+      mass, not large-diameter length, and lets the cup's fit hold more.";
+    - the single-ring reverse field: "Reverse field on a single ring; higher lowers the cure margin and can lower
+      the hub's fitting limit." with the stored-3D caveat (a new claim design, "N42 parts", where the onset binds).
+
+  Recorded, no change asked: the guidance sheet prints the status line with the clamp section shown ("fails 4 of
+  10"); with it paused the line reads "fails 4 of 9". No item needs a change to the engine's model.
+- Round 2: PASS, no must-fix. It re-reviewed the changed strings
+  and every string whose meaning depends on them; round 1's findings on the unchanged strings
+  stand. It re-offered SF-1 to SF-10, two of them reworded: SF-6 to the new rationale's own clause ("The default is
+  for dry, degreased steel on steel. Holding torque scales with it; oil or a coating in the bore lowers it.") and
+  SF-10 to name the inner hub ("Single-ring reverse field; higher lowers the cure margin and can lower the inner hub's
+  fitting limit."). It offered two more:
+  - SF-11: `shaft_joint.safety_factor`'s help, "The fit alone must hold cold-high times this, and the key alone is
+    checked at the same torque. While the coupling slips, the torque can reverse many times." Why: in this group
+    "slip" is the fit's word ("The fit slips"; "holds without slipping"), and the house names the coupling's slip
+    in this form.
+  - SF-12: `shaft_joint.rotor_over_shaft_C`'s help, "How much hotter each rotor may run than its shaft from slip
+    heating. A warmer rotor's bore grows, so the grip at the hot end falls." Why: MF-2's fact seen from the input;
+    with 416 the holding rows do not move with it (14.0443 / 22.530 N·m at 0, 20 and 21 °C).
+
+  Recorded, no change asked: O-1, with adhesive code 0 (a NaN limit) the holding rows read the cold end alone
+  (16.97 / 26.28 N·m), since `py_min` drops the NaN hot end. The check reads unknown and the Problem says it cannot
+  be made, so nothing is judged on those numbers, and no slider or typed value the spec names reaches code 0 (the
+  selector offers 1 to 4 and `validate` rejects 0). It concerns the engine's NaN handling, outside this review.
+- What happened to the should-fix items: SF-1 to SF-12 are left open, each. The plan's rule keeps should-fix items
+  offered unless the controller says so, and the controller adopted none; they go to Task 10's triage. Of the
+  should-fix items the earlier text re-reviews below left for this review:
+  - Task 2's SF-1 (the bare cup's "steel's") and SF-8 (the holding helps' warmer rotor at both ends) are fixed by
+    MF-3 and MF-2;
+  - Task 3's SF-6 (a test that ties the rationales' typed defaults to the inputs) has nothing left to tie: MF-4
+    removed the typed defaults, and `the_shaft_joint_rationales_say_the_default_and_type_no_number` keeps them out;
+  - Task 1's SF-1, Task 2's SF-2 and Task 2's SF-6 come back as SF-2, SF-1 and SF-3, open;
+  - the others on on-screen strings concern strings this review passes in its tables, and stay open where they
+    were left.
+- Tests that followed the changes: none changed. No test pinned an old text by literal (`git grep -n -F` of each old
+  text over `magcoupling-rs/src`, `magcoupling-rs/tests`, the README and `docs/ai` at 967c0ec found only the sources
+  and the input schema); every other test reads the strings through their metadata. Five tests were added, each red on
+  the old text and green on the new:
+  - `tests/shaft_joint.rs`:
+    - `the_safety_factor_help_says_a_slip_can_reverse_the_torque_not_that_each_does` (MF-1: 16.6667 cycles per event
+      at the defaults, 0.83333 at `metal.slip_rpm` 100, its slider's bottom; no "each slip" in the help);
+    - `the_holding_helps_put_the_rotor_allowance_at_the_hot_end_alone` (MF-2: 4140 holds 14.41 N·m on the inner hub
+      with no allowance and less at 20 °C; 416 holds the same at 0 and 20 °C, bit for bit, on both joints, 14.0443 N·m
+      on the inner hub, and less at the slider's top);
+    - `the_bare_cup_s_limit_help_names_no_steel_as_the_cup_can_be_aluminium` (MF-3);
+    - `the_shaft_shrink_helps_count_from_room_temperature_and_type_no_number` (MF-4 a, b);
+  - `tests/assumptions.rs`: `the_shaft_joint_rationales_say_the_default_and_type_no_number` (MF-4 c to f; the four
+    rows are one table, `BL064_ROWS`, shared with `the_shaft_joint_rows_are_rust_only_and_cite_the_bl064_spec`).
+
+  `tests/data/input_schema.json`: re-blessed for the changed input helps, two lines (`shaft_joint.safety_factor`
+  and `shaft_joint.cup_fit_max_C`); the result helps and the rationales are not in it. The README's
+  `tests/shaft_joint.rs` and `tests/assumptions.rs` rows name the new pins.
+- Traps: none of the spec's 22 is written in any string. Round 1 found trap 4 once, in the safety factor's help
+  ("The torque reverses many times in each slip", fixed by MF-1), and three texts false or outside the brief's
+  typed-number rule that no trap names (MF-2, MF-3 and MF-4); round 2 found none.
+- Verdict: PASS (round 2).
+
+### Report for the record, round 1 (as returned)
+
+Verdict: MUST_FIX. Four must-fix items, MF-1 to MF-4. Ten should-fix items, SF-1 to SF-10; the four C1 overlay helps are SF-7 to SF-10. No item needs a change to the engine's model. Every replacement below is a text change within its caps.
+
+**Report for the record (as returned).**
+
+1. Reviewer: physics reviewer (session model), fresh context, 2026-10-19; round 1.
+
+2. Read:
+- **The brief and its binding papers:**
+  - `task-8-inreview-brief-r1.md`;
+  - `rulings.md` (B-1, B-2);
+  - `owner-decisions.md` (1A-8A, Process, Hub temp, Cup temp, Shaft temps, R-15, R-15 ring);
+  - the plan head to "## Tasks" (Global Constraints, Review Focus, C-1 to C-9, PD-1 to PD-3, plan review 1A-4A);
+  - the spec's sections 1 to 6 and 11.
+- **Code:**
+  - `engine/shaft_joint.rs`, all of it: inputs, results, constants, `hub_fit_allowed`, `shaft_shrink_um`, `joint`, `joint_specs`, `failing`, `verdict`, `compute`, `JointTerms::text`, `quoted_above`, `quoted_below`;
+  - `engine/api.rs` (`shaft_joint_links`, the `shaft_joint::compute` call);
+  - `engine/temperature.rs`: the demagnetization results block, with `inner_onset_single_ring_C` and its value `inner.onsets[3]`;
+  - `engine/assumptions.rs`: all rows, the four new ones included;
+  - `gui/guidance.rs`: `SHAFT_JOINT_GUIDE`, `JOINT_SIDES`, `shaft_joints`, `shaft_joint_fixes`, `reverses_the_band`, `shaft_joint_problem`, `term_sentence`, `fitting_source`, `onset_texts`, `key_sentence`, `window_sentence`, `window_quotes`, `not_judged_sentences`, `apart_from`, `design_status`, and the test designs `breaking`, `n42_parts`, `cool_adhesive`, `shaft_joint_problem_designs`;
+  - `gui/dashboard.rs`: `DASHBOARD`, `END_EFFECT_ROWS`, `STORED_3D_ROWS`, `STORED_3D_NOTE`, `verdict_level`, `result_tooltip`;
+  - `gui/inputs.rs`: `SECTION_LABELS` and the "shaft" workflow group;
+  - `gui/result_groups.rs`: `CHAIN_LABELS`, `PACKAGE_LABELS`;
+  - `gui/plain_text.rs`: the four C1 rows, the direction table and its claim designs, and the bore-help test that requires "hub check";
+  - `gui/format.rs`: a non-finite number reads "+inf";
+  - `gui/test_support.rs`: `passing_design`, `only_the_joint_fails`.
+- **Sheets in `magcoupling-rs/target/g3/`:**
+  - `BL064-inputs.txt`, `BL064-guidance.txt` and `BL064-overlay.txt`;
+  - `BL064-note.txt`, for consistency;
+  - `BL064-strings.diff`: the assumptions, temperature and dashboard hunks.
+
+  `BL064-guidance.txt` prints the status line with the clamp section shown ("fails 4 of 10"). While the clamp is paused it reads "fails 4 of 9" (probe below).
+- **Earlier reviews:**
+  - the T7 physics reviews `t7-review-r1.md` and `t7-review-r2.md`, the items on R-1 and R-14;
+  - this record's BL-064 section: the T1 text re-review, whose SF-1 is taken up as SF-2 here.
+- **The probe crate.** It is outside the repo: `<scratchpad>/bl064g3`, built with its own `CARGO_TARGET_DIR`, `magcoupling-rs` by path, feature gui. Each design went through `compute_all`, the shaft joints guide's Problem, `guidance::fixes` and `guidance::level`. The results:
+  - **Defaults:**
+    - "Both shaft joints hold and can be fitted", no Problem; status "Example design: fails 4 of 9 checks" with the clamp paused;
+    - required 7.6466 N·m (2 × cold-high 3.8233); E 205 GPa, α 1.23e-5, yield 415 MPa, limit 345.83 MPa;
+    - holding 9.4844 / 16.899 N·m; bore stress 241.70 / 312.53 MPa; key 127.44 / 101.95 MPa;
+    - needed 12.082 / 11.310 µm; elastic 23.808 / 23.863 µm; shrink 18.988 / 0 µm; fittable 18.828 / 24.440 µm;
+    - fitting 93.267 / 280.16 °C against 100 / 300 °C;
+    - the inner ring's onset and the governing onset are both 143.356 °C.
+  - **The five probes:**
+    - defaults: as above;
+    - 8 magnets: needs 5.598 N·m; passes;
+    - 304: "The fit slips (inner hub): holds 0.00 N·m against 4.83 N·m". Both empty-window sentences show: 16.31 against 11.72 µm and 15.80 against 11.74 µm;
+    - Y30: inner onset +inf; needs 0.676 N·m; passes;
+    - 20 mm ring: hub holds 11.77 N·m against 7.22 N·m; passes.
+  - **The spec's section 3.6 designs:**
+    - hub minimum 10: 3.48 against 7.65 N·m; window 12.09 to 18.82 µm. Cup minimum 10: 4.36 against 7.65 N·m;
+    - hub maximum 26 / 28: 385.1 / 421.0 MPa, with fitting 158.3 / 174.6 °C. Cup maximum 26 / 28: 384.0 / 419.8 MPa, with fitting 312.7 / 328.9 °C;
+    - friction 0.10: 6.77 N·m. Smoothing 0: the cup reads 401.9 MPa, window 6.310 to 18.86 µm;
+    - wheel shaft 20 °C: needs 247.6 °C; the joining-clearance sentence shows. At -78.5 °C: 163.5 °C, fittable 10.19 µm. At 40 °C: 266.3 °C, shrink -2.300 µm;
+    - gearbox shaft -20 °C: 243.1 °C, shrink 4.553 µm. At 40 °C: 298.9 °C;
+    - bare cup allowed 250 °C: 280.2 against 250.0 °C;
+    - DP460: needs 93.3 against 60.0 °C, "the selected adhesive's design limit". Adhesive code 0: unknown, allowed NaN;
+    - 2214 Hi-Temp, hub input typed 150 °C, hub maximum 26 µm: "above the 133.4 °C allowed: the magnets' single-ring onset, 143.4 °C, less 10.0 °C";
+    - single-ring onset caps: N50M on manual dimensions 88.80 °C (onset 98.80); inner N42M with outer N35 81.35 °C (inner 91.35, governing 59.93, outer governs); B842 in both rings 59.83 °C (onset 69.83);
+    - inner B842SH with outer B842: passes, allowed 100 °C (inner onset 143.36, governing 69.83);
+    - keyway 0.3: "Key backup above its limit (inner hub): 509.8 MPa against 345.8 MPa"; the cup reads 407.8 MPa. Keyway 0: passes, holding 10.49 / 18.68 N·m, key 0 / 0;
+    - boss length 0: the cup slips at 2.73 N·m, key +inf, "its boss and web, 0 mm and 2.500 mm long". Hub length 3.0 mm: 2.19 N·m, key +inf;
+    - bore 16, boss 12: the inner hub slips at 4.57 N·m and the cup's no-wall sentence shows. With the hub minimum at 15: "Shaft joint check unknown: no wall around the bore (cup)";
+    - bore 16, keyway 2.1: no wall (inner hub). Typed bore 21: the "reaches the flats" sentence shows. Boss Ø12 at bore 10: "cuts through the boss's wall";
+    - hub band 20 over 18: unknown (reversed). Add the cup minimum at 10: the cup's slip leads and the reversed-band sentence follows;
+    - typed bore 0: not a number. Key width 40: 0 N·m on both joints, both no-length key sentences, no window sentence. Contact height -0.5 mm: "its contact height, -0.5000 mm, is not above zero";
+    - safety factor 0 and -1: "Shaft joint check unknown: the safety factor is not above zero", Caution. Problems "The safety factor, 0, is not above zero: enter at least 1." and "... -1.000 ...", no fix;
+    - back-iron pick 99: not a number. `coupling.backiron` 0 and pick 8 (6061): E 68.9 GPa, α 23.6e-6, yield 241 MPa; both slip; the cup needs 155.6 °C against 300 °C;
+    - axial override 40: the cup slips at 16.90 against 25.99 N·m, and its key reads 346.6 MPa;
+    - c_end 1.5: cold-high -0.1726 N·m, required -0.3451 N·m; "passes", greyed. The short magnets (c_end 0.5, both rings on manual dimensions, 2 mm magnets): "The key has no bearing area (inner hub)", greyed;
+    - BL-067 corner: cold-high 3.1823 N·m, required 6.3647 N·m, hot-low 2.9922 N·m. The operating pull-out with its allowance is 2.9922 / 0.9 × 1.1 = 3.657 N·m. The design passes;
+    - single-ring field 1500 kA/m: inner onset -2.45 °C, "needs 93.3 °C against -12.4 °C", fittable 4.996 µm. At 862 kA/m: "93.3 °C against 93.2 °C".
+  - **Every shaft-joint input at both slider ends,** plus the bore, keyway, boss length, hub length and single-ring field, at the defaults and at the passing design. Among the results:
+    - friction 0.05 / 0.30: hub 3.387 / 20.32 N·m, proportional to 9.484 × μ / 0.14;
+    - smoothing 15: 0 / 0 N·m, stress 62.4 / 133.7 MPa;
+    - rotor over shaft 0 / 60: 14.41 / 0 N·m on the hub;
+    - joining clearance 0 / 30: hub 11.97 / 255.9 °C;
+    - hub limit 20 °C: fittable 8.988 µm;
+    - bore 4: hub 585.7 MPa, cup 763.2 MPa, fit 434.7 / 670.4 °C;
+    - key width 6: passes at 8.48 / 15.11 N·m. Key contact height 0.5: passes at 305.9 / 244.7 MPa.
+  - **Which temperature end binds:**
+    - 416 (pick 4, α 10.08e-6): the hub holds 14.0443 N·m at rotor-over-shaft 0, 10 and 20 °C; the cold end binds;
+    - 17-4PH H900 (pick 6): 12.8449 N·m at 20 °C; 14.8876 at 0 and at 10 °C.
+  - **Slip reversals per event:**
+    - defaults: 166.67 Hz × 0.1 s = 16.7 cycles (33.3 reversals);
+    - slip speed 100 rpm (its slider's bottom): 8.333 Hz, 0.833 cycles (1.67 reversals);
+    - 100 rpm, 4 magnets, 0.01 s: 0.033 cycles.
+  - **Overlay direction steps:**
+    - single-ring field +1 kA/m. Example: cure margin 121.356 -> 121.227 °C, inner onset 143.356 -> 143.227 °C, hub allowed 100 -> 100 °C. B842 in both rings: allowed 59.8326 -> 59.6334 °C;
+    - boss length +0.5 mm: cup holding 16.899 -> 17.444 N·m; axial stack up; large-diameter stack the same;
+    - keyway +0.05 mm. Example: wall past the key 3.40 -> 3.35 mm; key pressures the same. Keyway 1.0 mm: hub key 152.93 -> 145.65 MPa;
+    - bore +0.1 mm: hub wall 5.10 -> 5.05 mm; wall past the key 3.40 -> 3.35 mm.
+
+3. Strings:
+
+| # | String (field) | Verdict | Reason |
+|---|---|---|---|
+| 1.1 | `hub_interference_min_um` label, help | PASS | Names measured (trap 5). Holding is computed from it, as the help says (9.484 N·m from 13 µm). |
+| 1.2 | `hub_interference_max_um` label, help | PASS | Stress and fitting are computed at it (241.7 MPa and 93.27 °C at 18 µm; 636.2 MPa and 272.1 °C at 40 µm). |
+| 1.3 | `cup_interference_min_um` label, help | PASS | As 1.1, for the cup (16.90 N·m). |
+| 1.4 | `cup_interference_max_um` label, help | PASS | As 1.2 (312.5 MPa, 280.2 °C). |
+| 1.5 | `safety_factor` label, help | MUST-FIX (MF-1) | "The torque reverses many times in each slip" is false at reachable inputs: 1.67 reversals per event at 100 rpm, 0.07 at 100 rpm with 4 magnets and 0.01 s. |
+| 1.6 | `friction` label, help | PASS | Holding is proportional to friction (0.05 / 0.14 / 0.30 give 3.387 / 9.484 / 20.32 N·m). SF-6 says it is the default's basis. |
+| 1.7 | `smoothing_um` label, help | PASS | Both grip and stress fall with it (trap 19). At 0: 19.49 / 29.44 N·m and 331.4 / 401.9 MPa. At 15: 0 / 0 N·m and 62.4 / 133.7 MPa. |
+| 1.8 | `rotor_over_shaft_C` label, help | PASS | The hot end loses grip as it rises: 14.41 N·m at 0, 9.484 at 20, 0 at 60. |
+| 1.9 | `key_width_mm` label, help | PASS | DIN 6885-1, 3 × 3 for Ø10 (trap 17). Without a keyway no slot is taken: 10.49 N·m. |
+| 1.10 | `key_contact_mm` label, help | PASS | The DIN 3 × 3 row gives h − t1 = 3 − 1.8 = 1.2 mm. The cap at the keyway depth is real: at a 0.3 mm keyway the key bears 509.8 MPa. |
+| 1.11 | `hub_fit_max_C` label, help | PASS | Bonded before fitting (trap 15); the cap is the engine's rule (150 °C typed with 2214 Hi-Temp gives 133.36 °C). SF-1 names the inner ring and trap 20's bond strain. |
+| 1.12 | `cup_fit_max_C` label, help | MUST-FIX (MF-3) | "the steel's ... treatment temperatures" names a steel the part does not have where it is aluminium (pick 8 or `coupling.backiron` 0: E 68.9 GPa, yield 241 MPa). |
+| 1.13 | `wheel_shaft_fit_C` label, help | PASS | The bath temperatures are stated as facts (trap 12). "needs less heat" does not break trap 14, since it says cool the shaft, not heat the hub. SF-4 aligns it with the note. |
+| 1.14 | `output_shaft_fit_C` label, help | PASS | "never below the gearbox's rated range" (trap 11); -20 °C is the slider's bottom (243.1 °C, shrink 4.553 µm). |
+| 1.15 | `joining_clearance_um` label, help | PASS | At 0 the hub needs 11.97 °C; at 30 neither part can be fitted (255.9 and 442.8 °C). True. |
+| 2.1 | `required_Nm` label, help | PASS | Claims no order of torques (trap 2). 2 × 3.8233; at the BL-067 corner 2 × 3.1823. |
+| 2.2 | `part_modulus_GPa` label, help | PASS | 205 / 193 (304) / 68.9 (6061, no back iron). Contact pressure rises with E. |
+| 2.3 | `part_cte_per_C` label, help | PASS | Trap 7, both ways: 416 binds cold, 304 hot. |
+| 2.4 | `part_yield_MPa` label, help | PASS | 415 (the library's annealed 4140), 220 (1018), 241 (6061). |
+| 2.5 | `stress_limit_MPa` label, help | PASS | yield / 1.2 = 345.83 MPa. True, but it does not say the key is held to it too (SF-3). |
+| 2.6-2.7 | `hub_holding_Nm`, `cup_holding_Nm` labels, helps | MUST-FIX (MF-2) | "at the temperature end that loosens it more, rotor warmer than shaft" says the allowance is applied where the cold end binds. It is not: 416 reads 14.0443 N·m at 0, 10 and 20 °C. |
+| 2.8-2.9 | bore stress labels, helps | PASS | 241.7 / 312.5 MPa. The tightest end carries no allowance, as written. "The keyway corner is not included" covers trap 20. |
+| 2.10-2.11 | key pressure labels, helps | PASS | 127.4 / 102.0 MPa. 0 with keyway 0; "+inf" is the readout's own text (key width 40, contact -0.5). Trap 1 holds. |
+| 2.12-2.13 | needed labels, helps | PASS | 12.08 / 11.31 µm, measured, the window's lower end. NaN with no wall; +inf at key width 40. |
+| 2.14-2.15 | elastic labels, helps | PASS | 23.81 / 23.86 µm. |
+| 2.16-2.17 | shrink labels, helps | MUST-FIX (MF-4) | The physics is true (18.99 µm at -196 °C, -2.30 at 40 °C, 4.553 at -20 °C). "20 °C" is typed twice, and the brief's list does not allow it. |
+| 2.18-2.19 | fittable labels, helps | PASS | 18.83 / 24.44 µm. 4.996 µm at a 1500 kA/m field (allowed -12.45 °C). |
+| 2.20-2.21 | fit-temperature labels, helps | PASS | "would need" and "never warm it further" (trap 9). Bore 16 needs 7.90 °C, below room: the help still holds. |
+| 2.22 | `hub_fit_allowed_C` label, help | PASS | It is the minimum of the three at every probe: 100, 120 (input 130), 59.83, 88.80, 81.35, 133.36, NaN, -12.45 °C. SF-1 names the inner ring. |
+| 2.23 | `cup_fit_allowed_C` label, help | PASS | Trap 15. |
+| 2.24 | `check` label "Shaft joints: keyed shrink fits", help | PASS | 30 words. The four asks in order, the key as a backup. |
+| 3.1 | `SHAFT_JOINTS_PASS` | PASS | Shown at the defaults, the passing design, the five probes and the BL-067 corner. Greyed at c_end 1.5. |
+| 3.2 | `SHAFT_JOINT_UNKNOWN` (prefix) | PASS | Caution for every unknown form. |
+| 3.3 | `UNKNOWN_NOT_A_NUMBER` | PASS | Adhesive code 0, bore 0 (the holding works out NaN), pick 99. |
+| 3.4 | `UNKNOWN_NO_WALL` | PASS | Cup at bore 16 with boss Ø12 and hub minimum 15; inner hub at bore 16 with keyway 2.1. |
+| 3.5 | `UNKNOWN_BAND_REVERSED` | PASS | Hub at 20 over 18, and minimum 40 or maximum 0 at the slider ends. |
+| 3.6 | `UNKNOWN_SAFETY_FACTOR` | PASS | Safety factor 0 and -1. |
+| 3.7 | `FIT_SLIPS` | PASS | "holds X against Y": below the torque it must hold, it slips. |
+| 3.8 | `BORE_OVER_ITS_LIMIT` | PASS | 385.1, 421.0, 384.0, 419.8, 401.9 MPa. |
+| 3.9 | `CANNOT_BE_FITTED` | PASS | Values never read equal: 93.3 against 93.2 °C at 862 kA/m. 247.6 against 100.0 °C; 93.3 against -12.4 °C. |
+| 3.10 | `KEY_OVER_ITS_LIMIT` | PASS | 509.8 against 345.8 MPa. |
+| 3.11 | `KEY_HAS_NO_BEARING_AREA` | PASS | Boss length 0, hub length 3, contact -0.5 and 0, key width 40. |
+| 4 | badge tails; "inner hub", "cup" | PASS | "{q} ... against {r} ..."; the numbers never read equal. Badges are exempt from trap 9. |
+| 5 | `inner_onset_single_ring_C` label "Inner ring: single-ring onset", help | PASS | Mixed rings (inner B842SH, outer B842): it reads 143.36 °C against the governing 69.83 °C, "whichever ring governs", and the allowed 100 °C is below it. Below it at every probe (+inf with Y30, -2.45 °C at 1500 kA/m). SF-2. |
+| 6 | guide label "Shaft joints"; Why | PASS | The label is distinct and not "Shaft clamp". The Why is one sentence of 29 words with no ". " inside. |
+| 7.1 | Problem, not a number | PASS | "a value it reads or works out": bore 0 works one out. |
+| 7.2 | Problem, safety factor | PASS | "The safety factor, 0, is not above zero: enter at least 1." (also "-1.000"); no fix. |
+| 7.3 | Problem, no wall: cup Q ≥ 1; inner hub Q ≥ 1 | PASS | Bore 16 with boss 12; bore 21 typed. |
+| 7.4 | Problem, keyway through the wall (inner hub; cup's boss) | PASS | Bore 16 with keyway 2.1; bore 10 with boss 12. |
+| 7.5 | Problem, reversed band | PASS | |
+| 7.6 | Problem, slips | PASS | "cold-high, X, times the safety factor of Y" claims no bound (trap 2). |
+| 7.7 | Problem, stress | PASS | "(415.0 MPa yield with a margin)". |
+| 7.8 | Problem, fitting: three hub sources and the cup's | PASS | Trap 9 holds in each form. The onset's quoted figures subtract to the allowed temperature (69.83 − 10.00 = 59.83; 143.4 − 10.0 = 133.4). |
+| 7.9 | Problem, key: above the limit, no length (hub, cup), no contact | PASS | Contact 0 with boss 0 shows the contact sentences alone, as the spec rules. |
+| 7.10 | Problem, window | PASS | Measured, quoted inward. "would hold and {edge}" names the edge that binds. |
+| 7.11 | Problem, empty window: stress and fitting edges | PASS | 304, 6061, hub length 3, -78.5 °C. |
+| 7.12 | Problem, empty window: "the allowed temperatures do not even open its ... joining clearance" | PASS | True wherever it shows (opening ≤ clearance). The plural is loose: SF-5. |
+| 7.13 | Problem fallback | PASS | Not reached; plain. |
+| 8 | the four assumption labels and rationales | MUST-FIX (MF-4) | The labels pass. Each rationale's physics holds at the slider ends (friction proportional; smoothing 0 / 15 raises or lowers grip and stress together; allowance 0 / 60; clearance 0 / 30). Each types its default (0.14; 5 µm; 20 °C; 10 µm for a 10 mm bore), which the brief's list does not allow. |
+| 9 | section labels "Shrink fit", "Fitting temperatures" | PASS | ASCII, no "clamp". |
+| 10 | catalogue heading "Shaft joints" | PASS | Distinct from "Shaft clamps". |
+| 11 | package heading "Shaft joints" | PASS | Consistent, and never drawn. |
+| 12 | chain heading "Shaft joints" | PASS | Drawn between Geometry and Mass. |
+| 13 | the new sentence of `STORED_3D_NOTE` | PASS | Only the single-ring field moves the joint row: "needs 93.3 °C against -12.4 °C" at 1500 kA/m. The sentence that names the slip-heating fields says no "limit"; "stay fixed" and "example design" are kept. |
+
+4. Must-fix:
+
+- **MF-1. `shaft_joint.safety_factor`, engine help (`engine/shaft_joint.rs:61`).**
+  - Old: "The fit alone must hold cold-high times this, and the key alone is checked at the same torque. The torque reverses many times in each slip."
+  - New: "The fit alone must hold cold-high times this, and the key alone is checked at the same torque. A slip can reverse the torque many times." (26 words, 2 sentences)
+  - Why: the swing runs at `metal.slip_freq_Hz` for `metal.slip_event_s`. At the defaults that is 16.7 cycles, about 33 reversals (trap 4). At the slip speed's slider bottom, 100 rpm, it is 0.833 cycles (1.67 reversals) per 0.1 s event. At 100 rpm with 4 magnets and a 0.01 s event it is 0.033 cycles: the torque never reverses. "Each slip ... many times" is false there; "can" is true.
+  - Test: `assert!(!help.contains("each slip"))`. Pin the reason: at `metal.slip_rpm` 100, `slip_freq_Hz * slip_event_s` is 0.8333 (< 1), and at the defaults it is 16.667.
+- **MF-2. `shaft_joint.hub_holding_Nm` and `shaft_joint.cup_holding_Nm`, engine helps (`engine/shaft_joint.rs:116`, `:118`).**
+  - Old (hub): "Torque the inner hub's fit holds without slipping at its loosest: minimum measured interference less smoothing, at the temperature end that loosens it more, rotor warmer than shaft."
+  - New (hub): "Torque the inner hub's fit holds without slipping at its loosest: minimum measured interference less smoothing, cold, or hot with the rotor warmer than its shaft, whichever loosens it more." (30 words, 1 sentence)
+  - Old (cup): "Torque the cup's fit holds without slipping at its loosest: minimum measured interference less smoothing, at the temperature end that loosens it more, rotor warmer than shaft."
+  - New (cup): "Torque the cup's fit holds without slipping at its loosest: minimum measured interference less smoothing, cold, or hot with the rotor warmer than its shaft, whichever loosens it more." (29 words, 1 sentence)
+  - Why: the loosest end is `py_min(mismatch(cold), mismatch(hot) − α·ΔT_rotor·d)`, and the allowance enters only the hot end. With the library's 416 (pick 4, α 10.08e-6, below the shaft's 11.5e-6) the cold end binds: the hub holds 14.0443 N·m at rotor-over-shaft 0, 10 and 20 °C alike. With 17-4PH H900 (pick 6) the cold end binds up to 10 °C (14.8876 N·m). There the old help tells the reader the allowance is in the number, and moving the allowance changes nothing. The new text keeps the trap-18 form "holds without slipping".
+  - Test: at `materials.parts.back_iron` 4, `hub_holding_Nm` is bit for bit equal at `rotor_over_shaft_C` 0 and 20, and both helps contain "whichever loosens it more".
+- **MF-3. `shaft_joint.cup_fit_max_C`, engine help (`engine/shaft_joint.rs:85`).**
+  - Old: "The cup is fitted before its magnets are bonded. Stay below the steel's and its finish's treatment temperatures, and keep the heat off the gearbox seal."
+  - New: "The cup is fitted before its magnets are bonded. Stay below the treatment temperatures of its material and finish, and keep the heat off the gearbox seal." (27 words, 2 sentences; "gearbox" without "protect"; no "clamp")
+  - Why: the cup is the part material in effect. At back-iron pick 8 (6061), and at `coupling.backiron` 0 with any pick, that is the library's 6061-T6: E 68.9 GPa, α 23.6e-6, yield 241 MPa. Those designs are reachable from the selectors, and there the help tells the user to set the bare cup's limit from a steel's treatment temperatures. The cup needs 155.6 °C against the 300 °C default there. An aluminium cup's own treatment temperature, not a steel's, is what the user's limit must stay below.
+  - Test: at `coupling.backiron` 0, `part_modulus_GPa` is 68.9 and the help does not contain "steel".
+- **MF-4. Typed numbers the brief's list does not allow:** "20 °C" in the two shrink helps, and the defaults typed in the four assumption rationales. The physics of each text is true. Only the typed number breaks the rule: "the bath temperatures, the DIN 6885-1 row and the cure margin are; no other is".
+  - **(a) `shaft_joint.wheel_shaft_shrink_um`, help (`engine/shaft_joint.rs:136`).**
+    - Old: "How much the wheel shaft's diameter shrinks from 20 °C to its fitting temperature, from published low-temperature data for a nickel steel; negative above 20 °C, where it grows."
+    - New: "How much the wheel shaft's diameter shrinks from room temperature to its fitting temperature, from published low-temperature data for a nickel steel; negative above room temperature, where it grows." (29 words, 1 sentence)
+  - **(b) `shaft_joint.output_shaft_shrink_um`, help (`:138`).**
+    - Old: as (a), with "gearbox".
+    - New: "How much the gearbox shaft's diameter shrinks from room temperature to its fitting temperature, from published low-temperature data for a nickel steel; negative above room temperature, where it grows." (29 words, 1 sentence)
+    - Why (a, b): `ROOM_C` is the engine's own name for the 20 °C reference ("the measured interference's temperature, and where a shaft's shrink is zero").
+    - Option for the controller: rule `ROOM_C` allowed, like the cure margin, and keep "20 °C" with a test that builds it from `shaft_joint::ROOM_C`.
+  - **(c) `fit_friction` rationale.** "0.14 is for dry, degreased steel on steel; ..." becomes "The default is for dry, degreased steel on steel; ...". Full New: "The friction between each rotor's bore and its shaft that turns the fit's grip into holding torque. The default is for dry, degreased steel on steel; oil, a coating or a finish in the bore lowers it, and the holding torque falls in proportion."
+  - **(d) `fit_smoothing` rationale.** "5 µm is conservative ..." becomes "The default is conservative ...". Full New: "Interference lost as the surface peaks of bore and shaft flatten when the fit is made, taken off both ends of the measured band. The default is conservative for holding with ground and honed surfaces; a finer finish loses less, which raises the grip and the bore stress together."
+  - **(e) `rotor_over_shaft` rationale.** "20 °C is a placeholder ..." becomes "The default is a placeholder ...". Full New: "Slip heating warms the rotors from the gap, so each rotor can run warmer than the shaft it sits on. Its bore then grows more than the shaft, and the grip at the hot end falls. The default is a placeholder until a measurement or a thermal model gives the difference."
+  - **(f) `joining_clearance` rationale.** "10 µm is an assumed value for a 10 mm bore; ..." becomes "The default is an assumed value for the example design's bore; ...". Full New: "The gap each part needs over its shaft, after warming and cooling, to slide to its stop before the gap closes; one value for both joints. Too little and the part can seize half-way. The default is an assumed value for the example design's bore; less needs a guided, single fast push to a stop."
+  - Why (c-f): a typed default goes stale when the default moves, and the brief allows none of them. Each rationale is still true word for word after the change. The value itself shows on the input's own row. The T10 record allowed "the assumption's own default set"; this brief's list is narrower, and it binds this round.
+  - Test: no ASCII digit in the four BL-064 rationales (`tests/assumptions.rs`) or in the two shrink helps (`engine/shaft_joint.rs` tests).
+
+5. Should-fix offered:
+
+- **SF-1. Name the inner ring in the bonded hub's limit helps.**
+  - **`shaft_joint.hub_fit_max_C`, help (`engine/shaft_joint.rs:82`).**
+    - Old: "Its magnets are bonded before fitting. The check caps it at the adhesive's design limit and at the magnets' single-ring onset less 10 °C."
+    - New: "Its magnets are bonded before fitting. The check caps it at the adhesive's design limit and the inner ring's single-ring onset less 10 °C; bond strain is not checked." (29 words, 2 sentences)
+  - **`shaft_joint.hub_fit_allowed_C`, help (`:148`).**
+    - Old: "... and the magnets' single-ring onset less 10 °C; not a number if any is."
+    - New: "The lowest of your limit for the bonded inner hub, the selected adhesive's design limit and the inner ring's single-ring onset less 10 °C; not a number if any is." (30 words, 1 sentence)
+  - Why: the R-15 ring ruling makes "the magnets'" true. With mixed rings, though, the results table shows two onsets:
+    - the governing "Onset, single ring during an adhesive cure": 69.83 °C with inner B842SH and outer B842;
+    - "Inner ring: single-ring onset": 143.36 °C.
+
+    The allowed temperature reads 100 °C. "The inner ring's" names the row the cap reads. "Bond strain is not checked" is trap 20's item that matters at this input.
+  - Both keep "onset less 10 °C" for the cure-margin test. No label changes.
+  - If taken, the Problem's MagnetOnset form ("the magnets' single-ring onset, {onset}, less {margin}") may follow. Its tests pin those words (`guidance.rs:3375`, `:7672-7713`), and its live number already shows which onset it is, so leaving it is fine.
+- **SF-2. `temperature.demag.inner_onset_single_ring_C`, help (`engine/temperature.rs:511`).**
+  - Old: "The inner ring's own onset on its carrier with no outer ring around it, whichever ring governs. The bonded inner hub's allowed fitting temperature stays below it."
+  - New: "The temperature at which the inner ring alone on its carrier starts to demagnetize, whichever ring governs. The bonded hub's allowed fitting temperature stays at least 10 °C below it." (30 words, 2 sentences)
+  - Why: the help never says what "onset" means, and its last sentence hides the margin (the T1 re-review's SF-1). "starts to demagnetize" is the house's wording, from the temperature Problem's cure sentence. "at least" holds because the allowed temperature is a minimum.
+  - Test: build "at least 10 °C below" from `CURE_MARGIN_MIN_C`, beside the two "onset less 10 °C" pins.
+- **SF-3. `shaft_joint.stress_limit_MPa`, help (`engine/shaft_joint.rs:114`).**
+  - Old: "The part's yield strength with a margin. At the tightest fit the bore stress must not exceed it, so the part stays elastic and keeps its grip."
+  - New: "The part's yield strength with a margin. The bore stress at the tightest fit must stay within it, so the part stays elastic; so must the key backup's pressure." (29 words, 2 sentences)
+  - Why: "Key backup above its limit (inner hub): 509.8 MPa against 345.8 MPa" (keyway 0.3) quotes this row, but the row's label and help speak only of the bore. The label is kept.
+- **SF-4. `shaft_joint.wheel_shaft_fit_C`, help (`engine/shaft_joint.rs:88`).**
+  - Old: "A cooled shaft shrinks, so the inner hub needs less heat. Dry ice is about -78 °C; liquid nitrogen is -196 °C."
+  - New: "A cooled shaft shrinks, so the temperature the inner hub's fit would need falls. Dry ice is about -78 °C; liquid nitrogen is -196 °C." (25 words, 2 sentences)
+  - Why: it matches the note's reviewed change entry ("so the temperature the inner hub's fit would need rises") and avoids "heat" (trap 14). Not false today: at bore 16 the fit needs only 7.90 °C, and the old "needs less heat" stays true there.
+  - Direction: Down, pinned by the note's own aim (`hub_fit_temp_C`, Up for a warmer shaft).
+- **SF-5. The Problem's empty-window clause (`gui/guidance.rs:2183`).**
+  - Old: "the allowed temperatures do not even open its {clearance} joining clearance"
+  - New: "at its allowed temperature its bore does not even open the {clearance} joining clearance on the {side.shaft} as set"
+  - It renders "... holding needs at least 12.09 µm, but at its allowed temperature its bore does not even open the 10.00 µm joining clearance on the wheel shaft as set." (wheel shaft at 20 °C).
+  - Why: each joint has one allowed temperature, and the other temperature in play is its shaft's set one, not an allowed one. The clause is true wherever it shows (hub opening 9.84 µm against 10 µm at 20 °C; cup allowed 20 °C opens 0). The test at `guidance.rs:7656` follows.
+- **SF-6. `shaft_joint.friction`, help (`engine/shaft_joint.rs:64`).**
+  - Old: "Steel on steel, dry and degreased. Holding torque scales with it; oil or a coating in the bore lowers it."
+  - New: "The default is for steel on steel, dry and degreased. Holding torque scales with it; oil or a coating in the bore lowers it." (24 words, 2 sentences)
+  - Why: with a 304 or aluminium part (pick 7 or 8, or no back iron) the contact is not steel on steel, and the fragment reads as a statement about the design.
+- **SF-7 (C1). `coupling.bore_mm`, overlay help (`gui/plain_text.rs:263`).**
+  - Old: "Diameter of the shaft in the hub bore. Larger thins the hub wall: the hub check can fail, and the wall past the keyway can break through."
+  - New: "Diameter of both shafts in the inner hub's and cup's bores. Larger thins the walls: the hub check can fail, and the wall past the keyway can break through." (29 words, 2 sentences)
+  - Pins, on "example": `model.hub_wall_mm` Down (5.10 -> 5.05 mm) and `model.hub_wall_past_key_mm` Down (3.40 -> 3.35 mm). The bore test's "hub check" stays in the text.
+- **SF-8 (C1). `coupling.keyway_depth_mm`, overlay help (`:267`).**
+  - Old: "Depth of the key slot cut into the hub bore. Deeper leaves a thinner hub wall past the key, and too deep breaks through the hub."
+  - New: "Depth of the key slot in the inner hub's and the cup's bores; it caps the key's contact height. Deeper thins the wall past the key; too deep breaks through." (30 words, 2 sentences)
+  - Pins:
+    - "example": `model.hub_wall_past_key_mm` Down (3.40 -> 3.35 mm); `shaft_joint.hub_key_pressure_MPa` Stays (127.44 MPa: the 1.2 mm contact is under the 1.7 mm keyway);
+    - a new claim design, "shallow keyway" (keyway 1.0 mm): `shaft_joint.hub_key_pressure_MPa` Down (152.93 -> 145.65 MPa).
+- **SF-9 (C1). `metal.boss_length_mm`, overlay help (`:475`).**
+  - Old: "Axial length of the shaft boss behind the rear wall: it adds to the overall length and the boss mass, not to the large-diameter length."
+  - New: "Axial length of the shaft boss behind the rear wall: longer adds overall length and boss mass, not large-diameter length, and lets the cup's fit hold more." (27 words, 1 sentence)
+  - Pins: the three existing rows, and `("metal.boss_length_mm", "example", "shaft_joint.cup_holding_Nm", Up)` (16.899 -> 17.444 N·m at +0.5 mm).
+- **SF-10 (C1). `temperature.demag.h_rev_single_ring_kA_m`, overlay help (`:662`).**
+  - Old: "Worst reverse field on a single ring during adhesive cure; higher lowers the cure margin." + the stored-3D caveat.
+  - New: "Reverse field on a single ring; higher lowers the cure margin and can lower the hub's fitting limit." + the stored-3D caveat (18 + 12 = 30 words, 2 sentences). "Worst" and "single ring on its carrier" stay in the label.
+  - Pins:
+    - the two existing rows;
+    - `(…, "example", "shaft_joint.hub_fit_allowed_C", Stays)` (100 -> 100 °C: the onset does not bind at the defaults);
+    - `(…, "N42 parts", "shaft_joint.hub_fit_allowed_C", Down)`, with a new claim design "N42 parts": library B842 in both rings (59.8326 -> 59.6334 °C at +1 kA/m).
+
+    "can" covers the claim at both designs.
+
+6. Traps, each checked against every string above:
+   1. **Fit and key torques never added.** Holds: "the key alone"; "were the key to carry the torque alone".
+   2. **Cold-high.** No string says "strongest", "most expected" or "at most" of it. The Problems' "only up to" is about interference. At the BL-067 corner 3.1823 < 3.657 N·m, and no text orders them.
+   3. **No ratio, efficiency or `cold_high_input_Nm`.** Holds.
+   4. **The swing frequency.** No Hz quoted. The safety factor's "many times in each slip" is false off the defaults: MF-1.
+   5. **Measured against effective.** Named in each help: holding effective, assembly measured maximum (no smoothing).
+   6. **No fit class, no "tighter is safer".** Holds.
+   7. **Temperature cuts both ways.** Stated in the expansion help, true for 416 and 304.
+   8. **No speed term.** None quoted.
+   9. **Sources named.** Every fitting temperature in the Problem and helps names its source; the badge is exempt. No "safe". The needed temperature is quoted against the allowed one. SF-1 sharpens "the magnets'".
+   10. **No 150 °C.** Not quoted.
+   11. **Gearbox.** "never below the gearbox's rated range", "keep the heat off the gearbox seal", no "protect", no catalog named.
+   12. **Bath temperatures.** Stated as facts. No text calls -196 °C routine. The chill of the bonded hub is in the note's watch-out 2.
+   13. **No induction heating.** None named.
+   14. **No "heat the hub" or "heat until".** None. "needs less heat" is not an instruction: SF-4.
+   15. **Fitting order.** Holds: bare cup first, then magnets; inner hub bonded first.
+   16. **No "lower the safety factor to fit".** None.
+   17. **The DIN 6885-1 row.** Named in the key width and contact helps.
+   18. **"holds without slipping".** Holds; no "permanent" or "no backlash".
+   19. **Friction and smoothing are assumptions.** Friction: "scales with it"; smoothing: "lowers both".
+   20. **What nothing checks.** The keyway corner is in the stress helps. The bond strain is not stated anywhere on screen: SF-1. The rest is in the note.
+   21. **No "clamp".** None in any new text, label, section or heading.
+   22. **Glyphs.** ASCII "-" and Ø as specified; no U+2192, U+2300 or U+2212 in a string (U+2212 appears only in code comments). No cell ids, "BL-064" or "Rust-only" on screen.
+
+   **Typed numbers:**
+   - **Allowed:**
+     - bath temperatures: -78 °C and -196 °C (wheel shaft); -20 °C (cold spray at the gearbox shaft's slider bottom, the owner's Shaft temps row);
+     - the DIN 6885-1 row: 3 mm, 1.2 mm, 10 mm;
+     - the cure margin: 10 °C in the two hub helps, and in SF-2 if taken.
+   - **Allowed by ruling C-4:** the "1" of "enter at least 1". The brief prescribes the text and the owner confirmed it (1A).
+   - **Names, not numbers:** "4140", "DIN 6885-1", "3D".
+   - **Not allowed:** "20 °C" in both shrink helps; 0.14, 5 µm, 20 °C, 10 µm and 10 mm in the four rationales. All go in MF-4.
+   - **Sources:** the "BL-064" in the assumption sources is outside this review (section 6.3), and they are not drawn as on-screen text.
+
+7. The context lines:
+   - **C2: the fix texts.** Fine: every fix is "Raise/Lower <label>", and each moves its term. "Lower Gearbox shaft temperature at fitting" stops at the slider's -20 °C, and the input's help forbids going below the rated range. "Lower Wheel shaft temperature at fitting" follows the owner's process (a cooled wheel shaft) and names no bath.
+   - **C3: the status line.** "Example design: fails 4 of 9 checks" with the clamp paused (10 with it shown, as the sheet prints).
+   - **C3: the row's hover.** It ends "Fixed 3D fields from the example design: <STORED_3D_NOTE>", and the new sentence reads right under the row's label.
+   - **C3: Explain.** "Closest teaching note: Shaft joints: a keyed shrink fit" is right.
+   - **C4: the note.** Consistent with every string. SF-4 would align the wheel-shaft help with the note's wording ("the temperature the inner hub's fit would need").
+
+8. Verdict: MUST_FIX (MF-1 to MF-4). No item needs a model change.
+
+### Report for the record, round 2 (as returned)
+
+Verdict: PASS. No must-fix item remains. Round 1's MF-1 to MF-4 are applied verbatim. Each new text is true at every design probed, stays within its cap and is pinned by a test that passes. Twelve should-fix items are offered: round 1's SF-1 to SF-10 (SF-6 and SF-10 reworded; the four C1 overlay helps are SF-7 to SF-10) and two new ones, SF-11 and SF-12. No item needs a change to the engine's model.
+
+**Report for the record (as returned).**
+
+1. Reviewer: physics reviewer (session model), fresh context, 2026-10-19; round 2.
+
+2. Read:
+- **The brief and its binding papers:**
+  - `task-8-inreview-brief-r2.md`;
+  - `rulings.md` (B-1, B-2);
+  - `owner-decisions.md` (1A-8A, Process, Hub temp, Cup temp, Shaft temps, R-15, R-15 ring);
+  - the plan head to its Tasks heading (Global Constraints, Review Focus, C-1 to C-9, PD-1 to PD-3, plan review 1A-4A).
+- **Round 1:** `t8-g3-r1.md` in full (its table, MF-1 to MF-4, SF-1 to SF-10, its probes).
+- **The round's changes:** the working-tree diff against 967c0ec:
+  - `engine/shaft_joint.rs`: six strings;
+  - `engine/assumptions.rs`: four rationales;
+  - `tests/shaft_joint.rs`: four new tests, two helpers;
+  - `tests/assumptions.rs`: one new test, `BL064_ROWS`;
+  - `tests/data/input_schema.json`: two lines;
+  - `README.md`: two lines.
+- **Code:**
+  - `engine/shaft_joint.rs`, all of it: module doc, inputs, results, `ROOM_C`, `hub_fit_allowed`, `shaft_shrink_um`, `joint`, `joint_specs`, `failing`, `verdict`, `compute`, `JointTerms::text`, `quoted_above`, `quoted_below`;
+  - `engine/api.rs` (`shaft_joint_links`);
+  - `engine/explain/records/shaft_joint.rs` (the holding, needed and bore stress records);
+  - `engine/explain/notes.rs` (the note `shaft_joint`, C4);
+  - `engine/assumptions.rs`: every rationale;
+  - `engine/temperature.rs`: the adhesive table, `NO_ADHESIVE`, `stored_3d_sentence`;
+  - `engine/model.rs` and `engine/metal_design.rs`: the slip inputs and their helps;
+  - `gui/guidance.rs`:
+    - `SHAFT_JOINT_GUIDE`, `shaft_joint_problem`, `term_sentence`, `fitting_source`, `onset_texts`, `key_sentence`, `window_sentence`, `not_judged_sentences`;
+    - `level`, `fixes`, `design_status_text`;
+    - the tests at `:3415` and `:7656`;
+  - `gui/dashboard.rs`: `END_EFFECT_ROWS`, `STORED_3D_ROWS`, `STORED_3D_LABEL`, `STORED_3D_NOTE`, an assumption's Why-link hover;
+  - `gui/panel.rs` (`assumptions_ui`): each rationale is drawn under its input's own row, which shows the value, a reset and the changed-from-default dot;
+  - `gui/explorer.rs`: the rationale in Explain;
+  - `gui/plain_text.rs`: the four C1 rows, `stored_3d_caveat`, the bore-help test;
+  - `gui/test_support.rs`: `passing_design`, `only_the_joint_fails`, `short_magnets`.
+- **Sheets in `magcoupling-rs/target/g3/`, each against its `.r1`:**
+  - `BL064-inputs.txt` differs in two input helps alone: the safety factor's and the bare cup's limit's;
+  - `BL064-guidance.txt`, `BL064-overlay.txt` and `BL064-note.txt` differ only in a test timing line.
+
+  So no Problem sentence, overlay row or note sentence moved this round.
+- **Tests run.** They ran from the scratchpad, with the target dir there, `--locked` and `MAGCOUPLING_BLESS` unset:
+  - `tests/shaft_joint.rs`: 34 passed; `tests/assumptions.rs`: 13 passed; `tests/schema.rs`: 11 passed. The five new tests are among them.
+  - Each new test is red on the old text by inspection. Each asserts a phrase only the new text has, or no ASCII digit where the old text typed "20 °C", "0.14", "5 µm" or "10 µm".
+  - `git status` was unchanged afterwards.
+- **The probe crate:** `<scratchpad>/bl064g3-r2`, its own `CARGO_TARGET_DIR`, `magcoupling-rs` by path, feature gui. Each design went through `compute_all`, the "Shaft joints" guide's Problem, `guidance::fixes` (clamp section paused), `guidance::level` and the status line.
+  - **Defaults:**
+    - "Both shaft joints hold and can be fitted", no Problem, "Example design: fails 4 of 9 checks";
+    - required 7.6466 N·m (2 × cold-high 3.8233); E 205 GPa, yield 415 MPa, limit 345.83 MPa;
+    - holding 9.4844 / 16.899 N·m; bore stress 241.70 / 312.53 MPa; key 127.44 / 101.95 MPa;
+    - needed 12.082 / 11.310 µm; elastic 23.808 / 23.863 µm; shrink 18.988 / 0 µm; fittable 18.828 / 24.440 µm;
+    - fitting 93.267 / 280.16 °C against 100 / 300 °C;
+    - the inner and the governing single-ring onset are both 143.356 °C.
+  - **The five probes:**
+    - 8 magnets: passes, needs 5.598 N·m;
+    - 304: "The fit slips (inner hub): holds 0.00 N·m against 4.83 N·m". Both empty-window sentences show: 16.31 against 11.72 µm and 15.80 against 11.74 µm;
+    - Y30: inner onset +inf; passes;
+    - 20 mm ring: passes, the hub holds 11.77 N·m.
+  - **MF-1, slip cycles per event** (`metal.slip_freq_Hz` × `metal.slip_event_s`):
+    - 16.667 at the defaults (166.67 Hz × 0.1 s, about 33 reversals);
+    - 0.8333 at 100 rpm, the slider's bottom;
+    - 0.0333 at 100 rpm with 4 poles and a 0.01 s event;
+    - 50 at 6000 rpm.
+  - **MF-2, which end binds.** Holding in N·m at rotor-over-shaft 0 / 10 / 20 / 60 °C:
+    - 4140 (pick 1): hub 14.407 / 11.946 / 9.484 / 0, cup 23.067 / 19.983 / 16.899 / 4.563. The hot end binds throughout.
+    - 416 (pick 4): hub 14.0443 at 0, 10, 20 and 21 °C, then 6.625 at 60. Cup 22.530, then 13.230 at 60. The cold end binds up to 20 °C.
+    - 17-4PH H900 (pick 6): hub 14.888 at 0 and 10, 12.845 at 20, 4.360 at 60.
+    - 304 (pick 7): hub 4.975 / 1.741 / 0 / 0.
+    - 6061 (pick 8): 0 throughout.
+    - With the minimum magnet temperature at 20 °C (no cold mismatch): 9.484 / 16.899.
+  - **MF-3, the aluminium cup** (`coupling.backiron` 0, or pick 8): E 68.9 GPa, α 23.6e-6 /°C, yield 241 MPa.
+    - The cup needs 155.6 °C against the 300 °C default.
+    - With the user's limit at 150 °C: "Fitting the cup would need it at 155.6 °C ... above the 150.0 °C allowed: your limit for the bare cup".
+  - **MF-4 (a, b), the shrinks:**
+    - wheel shaft: 18.988 µm at -196 °C, 10.354 at -78.5, 0 at 20, -2.300 at 40;
+    - gearbox shaft: 4.553 µm at -20 °C, 0 at 20, -2.300 at 40.
+  - **MF-4 (c-f), the rationales at their slider ends:**
+    - friction 0.05 / 0.14 / 0.30: hub 3.387 / 9.484 / 20.32 N·m, in proportion;
+    - smoothing 0 / 15: hub holding 19.49 / 0 N·m, hub stress 331.4 / 62.4 MPa, cup stress 401.9 / 133.7 MPa;
+    - rotor over shaft 0 / 60: hub 14.41 / 0 N·m;
+    - joining clearance 0 / 30: hub needs 11.97 / 255.9 °C, cup 198.9 / 442.8 °C.
+  - **The spec's section 3.6 designs** (each as round 1 has it):
+    - hub minimum 10: 3.48 against 7.65 N·m, window 12.09 to 18.82 µm. Cup minimum 10: 4.36 N·m;
+    - hub maximum 26 / 28: 385.1 / 421.0 MPa, fitting 158.3 / 174.6 °C. Cup maximum 26 / 28: 384.0 / 419.8 MPa, 312.7 / 328.9 °C;
+    - friction 0.10: 6.77 N·m. Smoothing 0: cup 401.9 MPa, window 6.310 to 18.86 µm;
+    - wheel shaft 20 °C: 247.6 °C, and the joining-clearance clause shows. -78.5 °C: 163.5 °C, fittable 10.19 µm. 40 °C: 266.3 °C;
+    - gearbox shaft -20 °C: 243.1 °C. 40 °C: 298.9 °C. Bare cup allowed 250 °C: 280.2 against 250.0 °C;
+    - DP460: 93.3 against 60.0 °C, "the selected adhesive's design limit, 60.00 °C". Adhesive code 0: unknown, allowed NaN;
+    - 2214 Hi-Temp, the hub input typed 150 °C, hub maximum 26: "above the 133.4 °C allowed: the magnets' single-ring onset, 143.4 °C, less 10.0 °C";
+    - the passing design's single-ring caps:
+      - N50M on manual dimensions: 88.80 °C (onset 98.80);
+      - inner N42M with outer N35: 81.35 °C (inner onset 91.35, governing 59.93);
+      - B842 in both rings: 59.83 °C (onset 69.83);
+      - inner B842SH with outer B842: passes at 100 °C (inner onset 143.36, governing 69.83);
+    - keyway 0.3: "Key backup above its limit (inner hub): 509.8 MPa against 345.8 MPa"; the cup reads 407.8 MPa. Keyway 0: passes, 10.49 / 18.68 N·m, key 0 / 0;
+    - boss length 0: the cup slips at 2.73 N·m, key +inf, "its boss and web, 0 mm and 2.500 mm long". Hub length 3: 2.19 N·m, key +inf;
+    - bore 16 with boss 12: the inner hub slips at 4.57 N·m, and the cup's no-wall sentence shows. With the hub minimum at 15: "Shaft joint check unknown: no wall around the bore (cup)";
+    - bore 16 with keyway 2.1: no wall (inner hub);
+    - hub band 20 over 18: unknown (reversed). Add the cup minimum at 10: the cup's slip leads and the reversed-band sentence follows;
+    - bore 0: not a number. Key width 40: 0 N·m on both joints, both no-length key sentences, no window sentence. Contact height -0.5: "its contact height, -0.5000 mm, is not above zero";
+    - safety factor 0 / -1: "Shaft joint check unknown: the safety factor is not above zero", Caution. Problem: "The safety factor, 0, is not above zero: enter at least 1." (and "-1.000"), no fix;
+    - back-iron pick 99: not a number. Axial override 40: the cup slips at 16.90 against 25.99 N·m, key 346.6 MPa;
+    - c_end 1.5: cold-high -0.1726, required -0.3451 N·m. The row is greyed (`END_EFFECT_ROWS`);
+    - the tests' short magnets (c_end 0.5, both rings on manual dimensions, blank parts, 2 mm magnets, no axial override): cold-high -0.8079, required -1.616 N·m. The row is greyed;
+    - BL-067 corner: cold-high 3.1823, required 6.3647 N·m; passes. The operating pull-out is 3.3246 N·m, so 3.657 with the allowance;
+    - single-ring field 1500 kA/m: inner onset -2.45 °C, "needs 93.3 °C against -12.4 °C", fittable 4.997 µm. At 862 kA/m: "93.3 °C against 93.2 °C".
+  - **Direction steps** (for SF-4, SF-7 to SF-10 and SF-12):
+    - bore +0.1 mm:
+      - hub wall 5.10 -> 5.05 mm; wall past the key 3.40 -> 3.35 mm;
+      - holding 9.484 -> 9.461 (hub) and 16.899 -> 16.914 N·m (cup);
+      - bore stress 241.70 -> 239.49 and 312.53 -> 309.61 MPa;
+    - keyway +0.05 mm: wall past the key 3.40 -> 3.35 mm; key pressures unchanged (127.44 / 101.95 MPa). From 1.0 mm: hub key 152.93 -> 145.65, cup key 122.35 -> 116.52 MPa;
+    - boss length +0.5 mm:
+      - cup holding 16.899 -> 17.444 N·m; cup key 101.95 -> 98.03 MPa;
+      - axial stack 31.8 -> 32.3 mm; large-diameter stack 18.8 mm, unchanged;
+      - boss mass 30.78 -> 31.96 g;
+    - single-ring field +1 kA/m:
+      - example: cure margin 121.356 -> 121.227 °C, inner onset 143.356 -> 143.227 °C, hub allowed 100 -> 100 °C;
+      - B842 in both rings: cure margin 47.833 -> 47.633 °C, hub allowed 59.833 -> 59.633 °C;
+    - wheel shaft +1 °C: shrink 18.988 -> 18.936 µm; the hub needs 93.267 -> 93.687 °C;
+    - rotor over shaft +1 °C: 416 holds 14.0443 -> 14.0443 N·m (cup 22.530, unchanged); 4140 holds 9.484 -> 9.238 (cup 16.899 -> 16.591).
+  - **Observation O-1** (no text change asked):
+    - With adhesive code 0, the empty adhesive with a NaN limit, the holding rows read 16.97 / 26.28 N·m. That is the cold end alone: `py_min` drops the NaN hot end.
+    - The check reads unknown and the Problem says it cannot be made, so nothing is judged on those numbers.
+    - The selector offers codes 1 to 4 and `validate` rejects 0, so no slider or typed value the spec names reaches it.
+    - This is recorded for the engine's NaN handling, outside this review.
+
+3. Strings. Rows marked "changed" are this round's; every other row is round 1's finding, which stands.
+
+| # | String (field) | Verdict | Reason |
+|---|---|---|---|
+| 1.1-1.4 | the four interference inputs, labels and helps | PASS | Unchanged; round 1 stands. |
+| 1.5 | `safety_factor` label, help (changed, MF-1) | PASS | "A slip can reverse the torque many times" is true: 16.67 cycles (about 33 reversals) per event at the defaults and 50 at 6000 rpm. "can" covers 0.83 cycles at 100 rpm, and "each slip" is gone. 26 words, 2 sentences, no Hz, no bound on cold-high. SF-11: in this group "slip" is the fit's word. |
+| 1.6 | `friction` label, help | PASS | Unchanged. SF-6 would now match the new rationale word for word. |
+| 1.7 | `smoothing_um` label, help | PASS | Unchanged. |
+| 1.8 | `rotor_over_shaft_C` label, help | PASS | Unchanged and true: a warmer rotor loses grip at the hot end (4140: 9.484 -> 9.238 N·m per +1 °C). It now reads looser than the holding helps and the rationale: at 416 the holding row does not move (14.0443 N·m at 0, 20 and 21 °C). SF-12. |
+| 1.9-1.11 | key width, key contact, the bonded hub's limit | PASS | Unchanged; round 1 stands (SF-1). |
+| 1.12 | `cup_fit_max_C` label, help (changed, MF-3) | PASS | Names no steel. "the treatment temperatures of its material and finish" fits 4140 with UltraOx and the 6061-T6 cup the selectors reach (E 68.9 GPa, yield 241 MPa, needs 155.6 °C). "gearbox seal" has no "protect", and there is no "clamp". 27 words, 2 sentences. |
+| 1.13 | `wheel_shaft_fit_C` label, help | PASS | Unchanged (SF-4). It agrees with the new shrink help. |
+| 1.14 | `output_shaft_fit_C` label, help | PASS | Unchanged. It agrees with the new shrink help: 4.553 µm at -20 °C. |
+| 1.15 | `joining_clearance_um` label, help | PASS | Unchanged. It agrees with the new rationale; neither types a number. |
+| 2.1-2.5 | required, modulus, expansion, yield, stress limit | PASS | Unchanged; round 1 stands (SF-3). |
+| 2.6-2.7 | `hub_holding_Nm`, `cup_holding_Nm` helps (changed, MF-2) | PASS | Exactly the engine: `py_min(mismatch(cold), mismatch(hot) − α·ΔT·d)`, cold the minimum magnet temperature, hot the adhesive's design limit. True where the hot end binds (4140, 304, 6061) and where the cold end binds (416 at 0-20 °C, 17-4PH H900 at 0-10 °C). 30 / 29 words, 1 sentence. "holds without slipping" (trap 18); "measured ... less smoothing" (trap 5). |
+| 2.8-2.9 | bore stress helps | PASS | Unchanged. The parallel "at the temperature end that tightens it more" stays exact: the tightest end takes no allowance. |
+| 2.10-2.11 | key pressure helps | PASS | Unchanged. |
+| 2.12-2.13 | needed helps | PASS | Unchanged. "with smoothing and temperature included" reads the same loosest end the holding helps now name: 12.08 -> 9.62 µm with no allowance. |
+| 2.14-2.15 | elastic helps | PASS | Unchanged. |
+| 2.16-2.17 | shrink helps (changed, MF-4 a, b) | PASS | Zero at `ROOM_C`, the measured interference's temperature. 18.99 µm at -196 °C, 10.35 at -78.5, 4.553 at -20, -2.300 at 40 °C ("negative above room temperature, where it grows"). Above 265 K the engine takes 11.5e-6 /°C, near the NIST fit's own slope there (11.3e-6 /K), so "from published low-temperature data" still describes the number. No digit; 29 words each. |
+| 2.18-2.23 | fittable, fit temperatures, allowed | PASS | Unchanged. None types the reference temperature, so nothing contradicts "room temperature". |
+| 2.24 | `check` label, help | PASS | Unchanged. |
+| 3.1-3.11 | the eleven verdict constants | PASS | Unchanged; each reproduced, `UNKNOWN_SAFETY_FACTOR` (Caution) at 0 and -1 among them. |
+| 4 | badge tails; "inner hub", "cup" | PASS | Unchanged; the numbers never read equal: "93.3 °C against 93.2 °C" at 862 kA/m. |
+| 5 | `inner_onset_single_ring_C` label, help | PASS | Unchanged (SF-2). |
+| 6 | guide label "Shaft joints"; Why | PASS | Unchanged; 29 words. |
+| 7.1-7.13 | every Problem sentence form | PASS | Unchanged: the guidance sheet is round 1's but for a timing line. SF-5 stands. |
+| 8 | the four assumption labels, rationales (changed, MF-4 c-f) | PASS | Each says "The default is" and types no number. The panel draws it under the input's own row (value, reset, changed dot), so the default shows beside it. The physics holds at the slider ends: friction is proportional; smoothing moves grip and stress together; the allowance acts at the hot end; the clearance sets the fitting temperature (numbers above). "the example design's bore" is the 10 mm both joints share. |
+| 9 | section labels "Shrink fit", "Fitting temperatures" | PASS | Unchanged. |
+| 10-12 | headings "Shaft joints" (catalogue, package, chain) | PASS | Unchanged. |
+| 13 | the new sentence of `STORED_3D_NOTE` | PASS | Unchanged; 1500 kA/m reads "needs 93.3 °C against -12.4 °C". |
+
+4. Must-fix: none.
+
+5. Should-fix offered. An input help changed here needs its line re-blessed in `tests/data/input_schema.json`, which the Global Constraints allow for T8. No label changes, so nothing is renamed.
+
+- **SF-1. Name the inner ring in the bonded hub's limit helps** (round 1, unchanged).
+  - **`shaft_joint.hub_fit_max_C`, help (`engine/shaft_joint.rs:82`).**
+    - Old: "Its magnets are bonded before fitting. The check caps it at the adhesive's design limit and at the magnets' single-ring onset less 10 °C."
+    - New: "Its magnets are bonded before fitting. The check caps it at the adhesive's design limit and the inner ring's single-ring onset less 10 °C; bond strain is not checked." (29 words, 2 sentences)
+  - **`shaft_joint.hub_fit_allowed_C`, help (`:148`).**
+    - Old: "The lowest of your limit for the bonded inner hub, the selected adhesive's design limit and the magnets' single-ring onset less 10 °C; not a number if any is."
+    - New: "The lowest of your limit for the bonded inner hub, the selected adhesive's design limit and the inner ring's single-ring onset less 10 °C; not a number if any is." (30 words, 1 sentence)
+  - Why: with mixed rings (inner B842SH, outer B842) the results table shows two onsets: the governing one at 69.83 °C and "Inner ring: single-ring onset" at 143.36 °C. The allowed temperature reads 100 °C. "the inner ring's" names the row the cap reads. "bond strain is not checked" is trap 20's item at this input.
+  - Test: both keep "onset less 10 °C" for the cure-margin pin; add `contains("the inner ring's single-ring onset")`.
+- **SF-2. `temperature.demag.inner_onset_single_ring_C`, help (`engine/temperature.rs:511`)** (round 1, unchanged).
+  - Old: "The inner ring's own onset on its carrier with no outer ring around it, whichever ring governs. The bonded inner hub's allowed fitting temperature stays below it."
+  - New: "The temperature at which the inner ring alone on its carrier starts to demagnetize, whichever ring governs. The bonded hub's allowed fitting temperature stays at least 10 °C below it." (30 words, 2 sentences)
+  - Why: the help never says what an onset is, and it hides the margin. The temperature is exactly 10 °C below the onset where the onset binds (-2.45 and -12.45 °C at 1500 kA/m) and further below elsewhere.
+  - Test: build "at least 10 °C below" from `CURE_MARGIN_MIN_C`.
+- **SF-3. `shaft_joint.stress_limit_MPa`, help (`engine/shaft_joint.rs:114`)** (round 1, unchanged).
+  - Old: "The part's yield strength with a margin. At the tightest fit the bore stress must not exceed it, so the part stays elastic and keeps its grip."
+  - New: "The part's yield strength with a margin. The bore stress at the tightest fit must stay within it, so the part stays elastic; so must the key backup's pressure." (29 words, 2 sentences)
+  - Why: "Key backup above its limit (inner hub): 509.8 MPa against 345.8 MPa" (keyway 0.3) quotes this row, but the row speaks only of the bore.
+  - Test: `contains("key backup")`.
+- **SF-4. `shaft_joint.wheel_shaft_fit_C`, help (`engine/shaft_joint.rs:88`)** (round 1, unchanged).
+  - Old: "A cooled shaft shrinks, so the inner hub needs less heat. Dry ice is about -78 °C; liquid nitrogen is -196 °C."
+  - New: "A cooled shaft shrinks, so the temperature the inner hub's fit would need falls. Dry ice is about -78 °C; liquid nitrogen is -196 °C." (25 words, 2 sentences)
+  - Why: it matches the note's reviewed change entry and avoids "heat" (trap 14). The old text is not false.
+  - Direction: Down, the note's aim reversed (+1 °C: 93.267 -> 93.687 °C).
+- **SF-5. The Problem's empty-window clause (`gui/guidance.rs:2183`)** (round 1, unchanged).
+  - Old: "the allowed temperatures do not even open its {clearance} joining clearance"
+  - New: "at its allowed temperature its bore does not even open the {clearance} joining clearance on the {side.shaft} as set"
+  - Renders: "... holding needs at least 12.09 µm, but at its allowed temperature its bore does not even open the 10.00 µm joining clearance on the wheel shaft as set." (wheel shaft 20 °C). The cup at a 20 °C limit reads "... on the gearbox shaft as set".
+  - Why: each joint has one allowed temperature, so the plural misleads.
+  - Tests: `:3415` becomes "does not even open the", and `:7656` takes the rendered sentence.
+- **SF-6. `shaft_joint.friction`, help (`engine/shaft_joint.rs:64`)** (round 1's item, reworded to match MF-4 c).
+  - Old: "Steel on steel, dry and degreased. Holding torque scales with it; oil or a coating in the bore lowers it."
+  - New: "The default is for dry, degreased steel on steel. Holding torque scales with it; oil or a coating in the bore lowers it." (23 words, 2 sentences)
+  - Why: with a 304 or aluminium part (pick 7 or 8, or no back iron) the contact is not steel on steel, so the bare fragment reads as a statement about the design. Its first sentence is now the rationale's own clause.
+  - Test: the help's first sentence is a substring of the `fit_friction` rationale.
+- **SF-7 (C1). `coupling.bore_mm`, overlay help (`gui/plain_text.rs:263`)** (round 1, re-verified).
+  - Old: "Diameter of the shaft in the hub bore. Larger thins the hub wall: the hub check can fail, and the wall past the keyway can break through."
+  - New: "Diameter of both shafts in the inner hub's and cup's bores. Larger thins the walls: the hub check can fail, and the wall past the keyway can break through." (29 words, 2 sentences)
+  - Pins on "example": `model.hub_wall_mm` Down (5.10 -> 5.05 mm); `model.hub_wall_past_key_mm` Down (3.40 -> 3.35 mm). It keeps "hub check", the label the bore test needs ("Hub check").
+- **SF-8 (C1). `coupling.keyway_depth_mm`, overlay help (`:267`)** (round 1, re-verified).
+  - Old: "Depth of the key slot cut into the hub bore. Deeper leaves a thinner hub wall past the key, and too deep breaks through the hub."
+  - New: "Depth of the key slot in the inner hub's and the cup's bores; it caps the key's contact height. Deeper thins the wall past the key; too deep breaks through." (30 words, 2 sentences)
+  - Pins:
+    - "example": `model.hub_wall_past_key_mm` Down (3.40 -> 3.35 mm); `shaft_joint.hub_key_pressure_MPa` Stays (127.44 MPa);
+    - a new claim design "shallow keyway" (keyway 1.0 mm): `shaft_joint.hub_key_pressure_MPa` Down (152.93 -> 145.65 MPa).
+- **SF-9 (C1). `metal.boss_length_mm`, overlay help (`:475`)** (round 1, re-verified).
+  - Old: "Axial length of the shaft boss behind the rear wall: it adds to the overall length and the boss mass, not to the large-diameter length."
+  - New: "Axial length of the shaft boss behind the rear wall: longer adds overall length and boss mass, not large-diameter length, and lets the cup's fit hold more." (27 words, 1 sentence)
+  - Pins: the three existing rows (31.8 -> 32.3 mm; 18.8 mm unchanged; 30.78 -> 31.96 g), and `("metal.boss_length_mm", "example", "shaft_joint.cup_holding_Nm", Up)` (16.899 -> 17.444 N·m).
+- **SF-10 (C1). `temperature.demag.h_rev_single_ring_kA_m`, overlay help (`:662`)** (round 1's item, reworded to name the inner hub).
+  - Old: "Worst reverse field on a single ring during adhesive cure; higher lowers the cure margin." + the stored-3D caveat.
+  - New: "Single-ring reverse field; higher lowers the cure margin and can lower the inner hub's fitting limit." + the stored-3D caveat (16 + 12 = 28 words, 2 sentences).
+  - The label keeps "worst" and "on its carrier". "fitting limit" is `STORED_3D_NOTE`'s own word.
+  - Pins:
+    - the two existing rows;
+    - `(…, "example", "shaft_joint.hub_fit_allowed_C", Stays)`: 100 -> 100 °C, since the onset does not bind at the defaults;
+    - `(…, "N42 parts", "shaft_joint.hub_fit_allowed_C", Down)`, with a new claim design "N42 parts" (library B842 in both rings): 59.833 -> 59.633 °C.
+
+    "can" covers the claim at both designs.
+- **SF-11 (new). `shaft_joint.safety_factor`, help (`engine/shaft_joint.rs:61`).**
+  - Old: "The fit alone must hold cold-high times this, and the key alone is checked at the same torque. A slip can reverse the torque many times."
+  - New: "The fit alone must hold cold-high times this, and the key alone is checked at the same torque. While the coupling slips, the torque can reverse many times." (28 words, 2 sentences)
+  - Why: in this group "slip" is the fit's word. The badge reads "The fit slips"; the holding helps say "holds without slipping". So "A slip" next to "The fit alone must hold" can be read as the fit slipping.
+  - The house names the coupling's slip in exactly this form:
+    - the gearbox Why: "... and in each swing while it slips";
+    - "When the coupling slips" on the slip-heating texts.
+  - The physics is MF-1's: 16.67 cycles per event at the defaults, 0.83 at 100 rpm, so "can" stays.
+  - Test: in `the_safety_factor_help_says_a_slip_can_reverse_the_torque_not_that_each_does`, the asserted phrase becomes "While the coupling slips, the torque can reverse many times."; its `!contains("each slip")` and both cycle pins stay.
+- **SF-12 (new). `shaft_joint.rotor_over_shaft_C`, help (`engine/shaft_joint.rs:72`).**
+  - Old: "How much hotter each rotor may run than its shaft from slip heating. A warmer rotor's bore grows, so the grip falls."
+  - New: "How much hotter each rotor may run than its shaft from slip heating. A warmer rotor's bore grows, so the grip at the hot end falls." (26 words, 2 sentences)
+  - Why: this is MF-2's own fact, seen from the input. The allowance enters only the hot end.
+    - With 416 (pick 4) the cold end binds. The holding rows read 14.0443 / 22.530 N·m at 0, 20 and 21 °C, so moving this input moves nothing, and "the grip falls" reads as a broken readout.
+    - The rationale already says "the grip at the hot end falls", and the holding helps now say "hot with the rotor warmer than its shaft".
+    - At 4140 the holding falls (9.484 -> 9.238 N·m per +1 °C), so the new claim is true wherever the old one was.
+  - Test: `contains("the grip at the hot end falls")`. The round's `the_holding_helps_put_the_rotor_allowance_at_the_hot_end_alone` already pins 416 bit for bit at 0 and 20 °C.
+
+6. Traps, checked against every changed string and its dependents; round 1's check of the unchanged strings stands.
+   1. **Fit and key torques never added.** Holds; no changed string adds a torque.
+   2. **Cold-high.** No "strongest", "at most" or "most expected"; MF-1 keeps "cold-high times this". At the BL-067 corner 3.1823 < 3.3246 × 1.1 = 3.657 N·m, and no text orders them.
+   3. **No ratio, efficiency or `cold_high_input_Nm`.** Holds.
+   4. **The swing frequency.** MF-1 quotes no Hz and claims reversals only as "can" (16.7 cycles, about 33 reversals, per 0.1 s event at the defaults).
+   5. **Measured against effective.** Holds: the holding helps say "minimum measured interference less smoothing"; the shrink helps speak of the shaft alone.
+   6. **No fit class, no "tighter is safer".** Holds.
+   7. **Temperature cuts both ways.** MF-2 puts it in words: 416 binds cold; 4140, 304 and 6061 bind hot.
+   8. **No speed term.** Holds.
+   9. **Sources named.** No changed string quotes a fitting temperature. MF-3 says what the bare cup's limit must stay below. No "safe".
+   10. **No 150 °C.** Not quoted.
+   11. **Gearbox.** "keep the heat off the gearbox seal"; no "protect", no catalog, no cooling below the rated range.
+   12. **Bath temperatures.** No changed string names a bath; "room temperature" is a reference, not advice.
+   13. **No induction heating.** No method named.
+   14. **No "heat the hub" or "heat until".** None in a changed string. The wheel shaft's unchanged "needs less heat" is SF-4.
+   15. **Fitting order.** MF-3 keeps "fitted before its magnets are bonded".
+   16. **No "lower the safety factor to fit".** Holds.
+   17. **The DIN 6885-1 row.** Unchanged.
+   18. **"holds without slipping".** Kept in MF-2.
+   19. **Friction and smoothing are assumptions.** The rationales keep friction proportional and smoothing moving grip and stress together, and each value is now "The default".
+   20. **What nothing checks.** Nothing changed claims the seal, bond strain or fretting fine; the stress helps keep "The keyway corner is not included" (SF-1 adds bond strain).
+   21. **No "clamp".** None.
+   22. **Glyphs.** ASCII "-" only; no U+2192, U+2300 or U+2212. No cell id, "BL-064" or "Rust-only" on screen (the README and test comments are not drawn).
+
+   **Typed numbers:**
+   - **In the changed strings:** none. The round's tests pin no ASCII digit in the two shrink helps and the four rationales.
+   - **In the unchanged strings,** round 1's list stands:
+     - allowed: the bath temperatures -78 °C and -196 °C, and -20 °C at the gearbox shaft's slider bottom (the owner's Shaft temps row); the DIN 6885-1 row (3 mm, 1.2 mm, 10 mm); the cure margin, 10 °C, in two helps;
+     - "1" in "enter at least 1" (ruling C-4);
+     - names, not numbers: "4140", "DIN 6885-1", "3D".
+   - **In the offered items:** SF-1 and SF-2 type the cure margin (allowed, built from `CURE_MARGIN_MIN_C`); SF-4 the bath temperatures (allowed). No other number.
+
+7. The context lines:
+   - **C2, the fix texts:** fine. No label changed, so every fix still reads "Raise/Lower <label>": "Lower Inner hub interference, maximum", "Lower Gearbox shaft temperature at fitting", "Raise Shaft key contact height", "Raise Integral steel boss axial length".
+   - **C3, the status line:** "Example design: fails 4 of 9 checks" with the clamp paused.
+   - **C3, the row's hover:** `STORED_3D_LABEL` "Fixed 3D fields from the example design" with `STORED_3D_NOTE`. The joint row is in `STORED_3D_ROWS` and `END_EFFECT_ROWS`.
+   - **C3, Explain:** "Closest teaching note: Shaft joints: a keyed shrink fit". An assumption's "Closest assumption: <label>: <rationale>" reads right with "The default is".
+   - **C4, the note:** consistent.
+     - Sentence 3 ("a rotor running warmer than its shaft loses more") agrees with MF-2.
+     - Watch-out 1 ("fretting under the reversing swing") agrees with MF-1.
+     - No note sentence types a reference temperature.
+
+8. Verdict: PASS. No must-fix item; SF-1 to SF-12 offered; no item needs a model change.
 
 ### Re-review after a change by the implementer after its review (2026-10-18)
 
