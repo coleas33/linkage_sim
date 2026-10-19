@@ -2285,7 +2285,9 @@ fn window_sentence(
             number_text(rounded_down(elastic), side.elastic)
         ));
     }
-    if fittable < needed && fittable <= 0.0 {
+    // Strictly below 0 (review B5 I-1): at exactly 0 the bore at its allowed temperature opens
+    // the joining clearance on the shaft as set, no more, so the fitting edge is named.
+    if fittable < needed && fittable < 0.0 {
         edges.push(format!(
             "at its allowed temperature its bore does not even open the {} joining clearance on the {} as set",
             input_text(inputs, "shaft_joint.joining_clearance_um"),
@@ -7943,6 +7945,53 @@ mod tests {
                 "Fitting the inner hub would need it at 247.6 °C with the wheel shaft at 20.00 °C, above the 100.0 °C allowed: your limit for the bonded inner hub, 100.0 °C.",
                 "holding needs at least 12.09 µm, but at its allowed temperature its bore does not even open the 10.00 µm joining clearance on the wheel shaft as set.",
             ],
+        );
+        // The cup's clearance form, its limit at its slider's bottom (G-3 SF-5; review B5 M-2).
+        let bottom = |path: &str| slider_range(path).min;
+        let cup_at_bottom = |i: &mut DesignInputs| {
+            i.shaft_joint.cup_fit_max_C = bottom("shaft_joint.cup_fit_max_C");
+        };
+        assert_in_order(
+            &text(design(cup_at_bottom)),
+            &[
+                "holding needs at least 11.31 µm, but at its allowed temperature its bore does not even open the 10.00 µm joining clearance on the gearbox shaft as set.",
+            ],
+        );
+        // A fittable interference of exactly 0, each joint on its sliders (review B5 I-1): with
+        // the joining clearance at its slider's bottom, 0 µm, the bore at its allowed temperature
+        // on the shaft as set is line to line, which that clearance needs, so the fitting edge is
+        // named, never the clearance.
+        let no_clearance = |i: &mut DesignInputs| {
+            i.shaft_joint.joining_clearance_um = bottom("shaft_joint.joining_clearance_um");
+        };
+        let cup_line_to_line = design(|i| {
+            cup_at_bottom(i);
+            no_clearance(i);
+        });
+        assert_eq!(
+            compute_all(&cup_line_to_line)
+                .shaft_joint
+                .cup_fittable_max_um,
+            0.0
+        );
+        assert_in_order(
+            &text(cup_line_to_line),
+            &["holding needs at least 11.31 µm, but the cup can be fitted only up to 0 µm."],
+        );
+        let hub_line_to_line = design(|i| {
+            uncooled_wheel_shaft(i);
+            i.shaft_joint.hub_fit_max_C = bottom("shaft_joint.hub_fit_max_C");
+            no_clearance(i);
+        });
+        assert_eq!(
+            compute_all(&hub_line_to_line)
+                .shaft_joint
+                .hub_fittable_max_um,
+            0.0
+        );
+        assert_in_order(
+            &text(hub_line_to_line),
+            &["holding needs at least 12.09 µm, but the inner hub can be fitted only up to 0 µm."],
         );
         // DP460: the adhesive's design limit binds.
         assert_in_order(
