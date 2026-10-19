@@ -30,7 +30,7 @@ use magcoupling::engine::api::{DesignInputs, DesignResults, compute_all};
 use magcoupling::engine::assumptions::{self, ASSUMPTIONS};
 use magcoupling::engine::compat::parity_close;
 use magcoupling::engine::deviations::DeviationId;
-use magcoupling::engine::explain::markup::{Expr, Symbol};
+use magcoupling::engine::explain::markup::{Expr, Formula, Symbol};
 use magcoupling::engine::explain::notes::{Change, Sense, Step};
 use magcoupling::engine::explain::record::Eval;
 use magcoupling::engine::explain::registry::{Design, Registry, TermKind};
@@ -1339,6 +1339,138 @@ fn the_registry_is_consistent() {
         let want: BTreeSet<String> = up.intersection(&input_paths).cloned().collect();
         assert_eq!(r.upstream_inputs(t), Some(&want), "upstream inputs of {t}");
     }
+    assert_the_shaft_joint_records_draw_their_copies_alike(&r);
+}
+
+/// A formula as it is drawn, for comparing copies of a term: each `where` local named by its
+/// symbol, not by its place in the list (the inner hub's Lamé records bind `[D]` first, the
+/// cup's have none), and every `cases` numbered 0 (the number keys branch coverage and is
+/// never drawn).
+fn as_drawn(formula: &Formula) -> Formula {
+    let names: Vec<String> = formula.bindings.iter().map(|b| b.symbol.clone()).collect();
+    let mut drawn = formula.clone();
+    drawn.visit_mut(&mut |e| match e {
+        Expr::Local(i) => *e = Expr::Text(format!("[{}]", names[*i])),
+        Expr::Cases { id, .. } => *id = 0,
+        _ => {}
+    });
+    drawn
+}
+
+/// Names each copy that is not drawn as the first one.
+fn unlike_the_first<T: PartialEq>(what: &str, copies: &[(&str, T)]) -> Vec<String> {
+    let (first, form) = &copies[0];
+    copies[1..]
+        .iter()
+        .filter(|(_, other)| other != form)
+        .map(|(target, _)| format!("{what}: {target} is not drawn as {first}"))
+        .collect()
+}
+
+/// BL-064: the shaft joint records repeat terms that read the same inputs, since each record
+/// carries its own `where` terms (`records/shaft_joint.rs`, its module doc). Every copy must be
+/// drawn alike, so an edit to some copies and not the others fails here by name, even where
+/// the drift guard sees the same values (a no-wall condition's `<=` typed `<` in one record
+/// reads NaN either way). A `where` local has one form in every record that binds it, or one
+/// per joint for the four that read the joint's own outer diameter, length or shaft. Each
+/// joint's four Lamé records share their no-wall condition, the part-material records their
+/// material conditions, the two key records their formula and the two shafts' shrinks their
+/// NIST condition and arm.
+fn assert_the_shaft_joint_records_draw_their_copies_alike(r: &Registry) {
+    const HUB_LAME: [&str; 4] = [
+        "shaft_joint.hub_holding_Nm",
+        "shaft_joint.hub_needed_um",
+        "shaft_joint.hub_bore_stress_MPa",
+        "shaft_joint.hub_elastic_max_um",
+    ];
+    const CUP_LAME: [&str; 4] = [
+        "shaft_joint.cup_holding_Nm",
+        "shaft_joint.cup_needed_um",
+        "shaft_joint.cup_bore_stress_MPa",
+        "shaft_joint.cup_elastic_max_um",
+    ];
+    const MODULUS: &str = "shaft_joint.part_modulus_GPa";
+    const CTE: &str = "shaft_joint.part_cte_per_C";
+    const YIELD: &str = "shaft_joint.part_yield_MPa";
+    const HUB_KEY: &str = "shaft_joint.hub_key_pressure_MPa";
+    const CUP_KEY: &str = "shaft_joint.cup_key_pressure_MPa";
+    const WHEEL: &str = "shaft_joint.wheel_shaft_shrink_um";
+    const OUTPUT: &str = "shaft_joint.output_shaft_shrink_um";
+    // The locals that read the joint's own outer diameter ([Q]), length ([T_1], [l]) or shaft
+    // ([ϑ_K]).
+    const PER_JOINT: [&str; 4] = ["Q", "T_1", "l", "ϑ_K"];
+    let drawn = |target: &str| as_drawn(&r.equation_for(target).expect(target).formula);
+    let cases = |target: &str| match drawn(target).body {
+        Expr::Cases {
+            arms, otherwise, ..
+        } => (arms, *otherwise),
+        body => panic!("{target} is not a cases: {body:?}"),
+    };
+    // The condition of a record's `arm`-th `cases` arm, counted from 0.
+    let condition = |target: &'static str, arm: usize| (target, cases(target).0[arm].0.clone());
+
+    let mut locals: BTreeMap<(String, &str), Vec<(&str, Expr)>> = BTreeMap::new();
+    for eq in r.equations() {
+        let joint = match eq.target.as_str() {
+            t if t.starts_with("shaft_joint.hub_") || t == WHEEL => "the inner hub",
+            t if t.starts_with("shaft_joint.cup_") || t == OUTPUT => "the cup",
+            t if t.starts_with("shaft_joint.") => "both joints",
+            _ => continue,
+        };
+        for b in as_drawn(&eq.formula).bindings {
+            let scope = if PER_JOINT.contains(&b.symbol.as_str()) {
+                joint
+            } else {
+                "both joints"
+            };
+            locals
+                .entry((b.symbol, scope))
+                .or_default()
+                .push((eq.target.as_str(), b.expr));
+        }
+    }
+    // A binding after the first of its group is a copy; a result that shares a term lowers this.
+    let copies: usize = locals.values().map(|c| c.len() - 1).sum();
+    assert_eq!(copies, 54, "the copies of the where terms");
+    let mut unlike: Vec<String> = locals
+        .iter()
+        .flat_map(|((symbol, scope), c)| unlike_the_first(&format!("[{symbol}] ({scope})"), c))
+        .collect();
+    for (joint, lame) in [("the inner hub", HUB_LAME), ("the cup", CUP_LAME)] {
+        let no_wall: Vec<_> = lame.into_iter().map(|t| condition(t, 0)).collect();
+        unlike.extend(unlike_the_first(
+            &format!("{joint}'s no-wall condition"),
+            &no_wall,
+        ));
+    }
+    unlike.extend(unlike_the_first(
+        "the steel circuit with the default pick",
+        &[condition(MODULUS, 0), condition(CTE, 0)],
+    ));
+    unlike.extend(unlike_the_first(
+        "the steel circuit or a non-magnetic pick",
+        &[
+            condition(MODULUS, 1),
+            condition(CTE, 1),
+            condition(YIELD, 0),
+        ],
+    ));
+    unlike.extend(unlike_the_first(
+        "the key's formula",
+        &[
+            (HUB_KEY, drawn(HUB_KEY).body),
+            (CUP_KEY, drawn(CUP_KEY).body),
+        ],
+    ));
+    unlike.extend(unlike_the_first(
+        "the NIST condition",
+        &[condition(WHEEL, 0), condition(OUTPUT, 0)],
+    ));
+    unlike.extend(unlike_the_first(
+        "the NIST arm",
+        &[(WHEEL, cases(WHEEL).1), (OUTPUT, cases(OUTPUT).1)],
+    ));
+    assert!(unlike.is_empty(), "copies drawn unlike: {unlike:#?}");
 }
 
 /// The A4 accuracy gate for release (spec section 4, test 7), on since slice 2: every note a

@@ -29,14 +29,16 @@
 //! The records also repeat terms that read the same inputs, since each record carries its own
 //! `where` terms (one result, one step from its terms; the panel shows one record at a time),
 //! as `demagnetization.rs`'s four cold onsets share one clause. In each joint, holding and
-//! needed type one clause, and bore stress and elastic maximum another; all eight Lamé records
-//! type the same [k_θ], [p_1], [Δ_c] and [Δ_h]; the two shafts' shrinks type the NIST
-//! polynomial; and the part's modulus, expansion and yield type the material condition. The
-//! drift guard (`tests/explain.rs`, `every_record_reproduces_the_engine_everywhere`) holds
-//! every copy to the engine, at its keyless no-wall edge points too. Per-joint intermediate
-//! results (such as the pressure and holding per µm, [δ_{lo}] and [δ_{hi}]) would let the
-//! records share most of these terms, at the cost of more results and of the result counts
-//! the tests pin.
+//! needed type one clause, and bore stress and elastic maximum another, and all four type the
+//! joint's no-wall condition; all eight Lamé records type the same [k_θ], [p_1], [Δ_c] and
+//! [Δ_h]; the two key records differ only in [l]; the two shafts' shrinks type the NIST
+//! polynomial; and the part's modulus, expansion and yield type the material condition. So an
+//! edit goes into every copy: `the_registry_is_consistent` (`tests/explain.rs`) names each
+//! copy drawn unlike the others, even where the values agree, and the drift guard
+//! (`every_record_reproduces_the_engine_everywhere`) holds every copy to the engine, at its
+//! keyless no-wall edge points too. Per-joint intermediate results (such as the pressure and
+//! holding per µm, [δ_{lo}] and [δ_{hi}]) would let the records share most of these terms, at
+//! the cost of more results and of the result counts the tests pin.
 //!
 //! Locals: [D] the part's outer diameter, [Q] bore over outer diameter, [k_θ] the bore's hoop
 //! factor (1 + Q²)/(1 − Q²), [p_1] the contact pressure per µm, [b] the key's arc, [T_1] the
