@@ -3136,3 +3136,150 @@ tests `wall ≤ depth`: at least as deep. Not on screen.
 **R-7. No model question arises.** No changed text asks to change the engine. R-1 (the stress side's smoothing) and R-14
 (which body sits at the bond limit at the hot end) stay with T7's physics review, as planned. SF-2's wording is true
 under either outcome of R-1.
+
+### Re-review after a change by the implementer after its review (2026-10-19)
+
+BL-064 Task 5 (commit 2d5c36a) put the shaft joint check on the dashboard (`gui/dashboard.rs`) with its guide
+(`gui/guidance.rs`): the guide's label "Shaft joints", its Why, its Learn reason "No note covers the shaft joints yet.",
+the Problem sentences `shaft_joint_problem` builds (the slip, stress, fitting and key sentences, the window and
+empty-window sentences, and the not-judged sentences), the constants `SHAFT_JOINT_NOT_A_NUMBER` and
+`SHAFT_JOINT_FALLBACK`, ruling C-4's safety-factor sentence, and `STORED_3D_NOTE`'s new sentence, with the doc texts
+around them (the README, `docs/ai/02-system.yaml` and `docs/ai/03-structure.yaml`). These texts stay drafts until Task
+8's G-3 review. They had a G-3 text re-review in a fresh context at HEAD 2d5c36a. The reviewer's report for the record
+follows unchanged (full answer:
+`.superpowers/sdd/2026-10-18-bl064-shaft-joint/textreview-T5-a-change-by-the-implementer-after-its-review-1.md`).
+
+- Reviewer: fresh context, session model, 2026-10-19; G-3 text re-review of BL-064 Task 5's texts (round 1). There
+  was no note text to review: the note `shaft_joint` arrives in Task 7 (the note dump names no note).
+- Verdict: PASS, no must-fix. No reviewed text changed: none of these texts is reviewed text yet. No trap of spec 6.2
+  is broken and both caps hold (the Why is one sentence of 29 words; the stored-3D note's new sentence has 18 words).
+  Every number and every source a Problem quotes is the engine's at each of the 66 designs probed.
+- Should-fix offered, none applied in this round; all five stay open for Task 8's G-3 review, which the answer asks to
+  weigh SF-1 and SF-2 as must-fix candidates:
+  - SF-1 (the cup's two no-wall sentences in `not_judged_sentences`, reachable on the sliders at a bore of 16 mm with
+    a boss of Ø12): "is as wide as its boss" reads as equality beside two different numbers, where the engine's rule
+    is "at least as wide"; and "it leaves no wall to grip the gearbox shaft" says the cup has nothing to grip with,
+    while the web still surrounds the bore. Only the boss has no wall, and the check, which takes the boss for the
+    whole length, cannot judge the joint. The cup's keyway sentence has the same issue. Offered: "The cup's bore, {coupling.bore_mm}, is at least as wide as its boss, {metal.boss_od_mm}, so the boss leaves no wall to grip the gearbox shaft; the check does not judge the web alone."
+    and "The cup's keyway, {coupling.keyway_depth_mm} deep, cuts through the boss's wall around its {coupling.bore_mm} bore, so the boss has no closed ring to grip the gearbox shaft; the check does not judge the web alone."
+    The `KeywayThroughWall` arm then splits by joint, and the inner hub's two sentences stay. With it comes an engine
+    observation for Tasks 7 and 9, not a text fix: at a boss length of 0 with a boss narrower than the bore, the
+    engine reads "no wall" while the web carries the fit (conservative: unknown, never a pass).
+  - SF-2 (`SHAFT_JOINT_NOT_A_NUMBER`, at a typed bore of 0): the NaN is a term the check works out, not an input, so
+    "a value it reads is not a number" sends the user looking for an input that is not a number. Offered: "The shaft joint check cannot be made: a value it reads or works out is not a number."
+    That is 18 words; the answer's "15 words" is the count of today's text.
+  - SF-3 (`window_sentence`'s empty-window edge clauses): "the bore stays within its limit" names the bore where the
+    bore stress is meant, and "it can be fitted" can read as either subject before it. Offered:
+    "its bore stress stays within the limit only up to {}" and "the {name} can be fitted only up to {}".
+  - SF-4 (the Why): "it" takes "grip" as its antecedent, and a grip is not fitted. Offered (30 words, one sentence): "A shrink fit's grip holds each rotor on its shaft; each fit must carry cold-high with margin when loosest, stay elastic when tightest, and be fitted within its allowed temperature."
+  - SF-5 (low; `STORED_3D_NOTE`'s new sentence): "fitting limit" is a third name for the allowed fitting
+    temperature. Offered (19 words): "The bonded inner hub's allowed fitting temperature, on the shaft joints row, uses one of the reverse fields too."
+    The note is now 3 sentences and 62 words; whether the Help cap binds this hover note is Task 8's call.
+- No text changed in this round.
+
+**Report for the record (as returned).**
+
+**R-1. What was verified true, form by form, against `engine/shaft_joint.rs`.**
+- **Slip.**
+  - The holding is the effective minimum times the holding per µm, and the required torque is the safety factor times
+    cold-high. "At its loosest" is the engine's loosest end.
+  - A holding that reads equal to its need is quoted one last digit under it (`apart_from`, tested).
+  - A floored effective interference reads "holds 0 N·m", the badge's 0.00.
+- **Stress.** The bore's von Mises stress at the tightest is compared with yield / 1.2, quoted as "(415.0 MPa yield with
+  a margin)" and, for 304, "(205.0 MPa yield with a margin)".
+- **Fitting.**
+  - The needed temperature is quoted against the allowed one, and the shaft is named with its set temperature
+    (SF-12).
+  - The source comes from the engine's own `hub_fit_allowed`, with the same arguments `joint_specs` passes: one rule,
+    with its live number.
+  - The onset and the margin subtract to the allowed temperature at every design probed:
+
+    | Design | Onset | Less | Allowed |
+    |---|---|---|---|
+    | Library N42 parts | 69.83 | 10.00 | 59.83 |
+    | N50M | 98.80 | 10.00 | 88.80 |
+    | Mixed N42M/N35 | 91.35 | 10.00 | 81.35 |
+    | 2214 Hi-Temp, hub limit 150 °C | 143.4 | 10.0 | 133.4 |
+    | N52 | 81.77 | 10.00 | 71.77 |
+    | Single-ring field 1500 | -2.45 | 10.00 | -12.45 |
+
+    With mixed rings the quoted onset is the inner N42M's own; the outer N35's 59.93 °C is never quoted.
+  - With ferrite magnets the onset is +inf and never binds.
+- **Key.**
+  - The three sentences match `joint`'s key arms and `key_has_bearing_area`. With no contact height, that sentence
+    shows alone, as spec 5.2 asks (contact 0 with boss length 0).
+  - The contact-height sentence quotes the typed input. That is the engine's capped contact wherever the key term
+    applies, because a keyway depth of 0 or less has no key term.
+- **Window.**
+  - The needed, elastic and fittable edges are each independent of the band. A failing term always leaves its band
+    outside the window, so the sentence never contradicts the band it quotes:
+    - slip: holding < required ⟺ min < needed (required > 0);
+    - stress: stress > limit ⟺ max > elastic;
+    - fitting: needed temperature > allowed ⟺ max > fittable (α > 0).
+  - Naming only the edge that binds is true, because a band below the smaller edge is below both.
+  - On the sliders the needed edge is positive. The minimum magnet temperature is at most 20 °C, so the loosest end is
+    at most 0, and no window can start at or below zero.
+- **Empty window.** Its ends cannot read equal or crossed, because one is rounded up and the other rounded down, from
+  numbers in strict order.
+- **Not judged.**
+  - The order follows spec 4.3: the determinate joint's causes and window come first, then the other joint's sentence.
+    With both joints indeterminate, the inner hub comes first and no fix shows.
+  - The inner hub's "reaches the flats" holds for any bore at or past the incircle, including the typed part diameter
+    of 0 (PD-1).
+- **Safety factor (ruling C-4).**
+  - 0 reads "0" and -1 reads "-1.000", with no fix.
+  - 0.5, typed, passes silently, as C-4 rules.
+- **`STORED_3D_NOTE`.**
+  - The inner onset follows `h_rev_single_ring_kA_m`.
+  - The allowed temperature always reads that onset, so "uses one of the reverse fields" holds even where the onset
+    does not bind.
+- **The five probes.**
+  - Four pass and show no Problem.
+  - The 304 probe's Problem reads, in order: the two slips, the two stresses, then the two empty windows. It matches
+    spec 3.6: 16.31 against 11.72 µm, and 15.80 against 11.74 µm.
+
+**R-2. Traps.**
+- **The word scan.** Over the 66 Problems, the label, the Why, the Learn reason and the note:
+  - none of these words: "clamp", "heat" (outside the note's pre-existing "slip-heating"), "strongest", "at most",
+    "most expected", "permanent", "backlash", "protect", "induction", a fit class, "ratio", "efficiency";
+  - "safe" only inside "safety factor";
+  - "up to" only for the interference edges ("only up to 11.72 µm"), never for cold-high. Trap 2 is about cold-high,
+    and trap 18 endorses "up to" for holding.
+- **Glyphs.** Only µ, ° and ·. The house minus sign is the ASCII hyphen. No U+2192 or U+2300.
+
+**R-3. Length (no cap applies to a Problem).**
+- The 304 probe's Problem runs to six sentences.
+- Its two slip sentences each repeat "cold-high, 2.414 N·m, times the safety factor of 2.000".
+- T8 may want a shorter second one, such as "At its loosest the cup holds 2.927 N·m, also less than that." It is not
+  required.
+
+**R-4. A trade-off line that names the label.**
+
+> One input pulls two ways (Axial magnet length, both rings): Hot-low torque needs it raised and Shaft joints needs it lowered, so change another input to settle one of them.
+
+- "Shaft joints needs" puts a plural label before a singular verb. The pre-existing "Temperature limits" label does the
+  same.
+- The label stands as a block's name, so this is left to T8 (C2 and C3).
+
+**R-5. The inner hub's keyway sentence takes the flats' incircle.**
+- That incircle is the engine's conservative wall. Where the keyway sits under a corner of the polygon, the real wall
+  is thicker.
+- The check reads unknown there, and the sentence states the engine's rule as fact.
+- Leave it.
+
+**R-6. Typed bores below the cases the spec names.**
+- **Bore -5.** Both joints are judged and slip ("holds 0 N·m"). Never a pass.
+- **Bore 0.5.** It reads:
+  - slip;
+  - a stress of 4624 MPa;
+  - a needed fitting temperature of 4418 °C;
+  - a key pressure of 2549 MPa.
+
+  All are true to the model, and none is a pass.
+- **Nothing to change.** Both are engine behaviour (T2), with no text change.
+
+**R-7. No model question arises.**
+- No changed text asks to change the engine.
+- SF-1's observation is an engine observation, not a model change: the boss stands for the web, and the result is
+  conservative.
+- R-1 and R-14 stay with T7's physics review, as planned.
