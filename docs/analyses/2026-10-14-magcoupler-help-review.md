@@ -2718,3 +2718,100 @@ No other doc in `docs/ai` or the README quotes the bracket.
   - It is not the on-screen order, and it is not on screen. An optional tidy only.
 - **Historical quotes of the old forms in the help-review record.** These are :2162 and :2211 (the earlier rounds' as-returned reports) and :2517 (round 1's probe table, which marks the row as M-1). They record what was on screen at the time. No change.
 - **Commit 80d4d60's type.** It is typed `docs(magcoupler)` but carries the on-screen fix and a new test. It is history, so it needs no change.
+
+## BL-064 shaft joints
+
+BL-064's G-3 review of every new on-screen text (plan Task 8) is recorded in this section when it runs. Until then the
+section holds the text re-reviews made before it.
+
+### Re-review after a change by the implementer after its review (2026-10-18)
+
+BL-064 Task 1 (commit 1c1d92a) added the Rust-only result `temperature.demag.inner_onset_single_ring_C`, the inner
+ring's own single-ring onset (`engine/temperature.rs`), with its label "Inner ring: single-ring onset" and its help
+"The inner ring's own onset on its carrier with no outer ring around it, whichever ring governs. The bonded inner hub's
+allowed fitting temperature stays below it.", and the doc and README texts around it (the `Material::yield_MPa` and
+`HubMaterial` docs in `engine/material_library.rs`, the README rows). The label and help stay drafts until Task 8's
+G-3 review. They had a G-3 text re-review in a fresh context at HEAD 1c1d92a. The reviewer's report for the record
+follows unchanged (full answer:
+`.superpowers/sdd/2026-10-18-bl064-shaft-joint/textreview-T1-a-change-by-the-implementer-after-its-review-1.md`).
+
+- Reviewer: fresh context, session model, 2026-10-18; G-3 text re-review of BL-064 Task 1's texts (round 1). There
+  was no note text to review: the note `shaft_joint` arrives in Task 7.
+- Verdict: PASS, no must-fix. Nothing in the changed text is false at the merge, at the defaults, at the five probe
+  designs or at the mixed-ring pins; no trap is broken and no cap is exceeded (the help: 27 words in 2 sentences, the
+  plain-words guard green).
+- Should-fix offered, none applied in this round; they stay open for the controller:
+  - SF-1 (for Task 8's G-3 review, item 5 of its list): the help's "stays below it" hides the 10 °C margin. Offered:
+    "The inner ring's own onset on its carrier with no outer ring around it, whichever ring governs. The bonded inner
+    hub's allowed fitting temperature is capped 10 °C below it." (30 words, 2 sentences).
+  - SF-2 (code doc): the `Material::yield_MPa` doc should say that the engine reads only the hub, cup and boss
+    material's yield, for the shaft joint check, through `PartProperties::hub`.
+  - SF-3 (README): the `tests/grades.rs` row should say which onset is which: "its own 143.3565 °C against the
+    governing 69.8326 °C" and "its own 112.8297 °C against the governing 191.8772 °C".
+  - SF-4 (code doc): the `HubMaterial` field docs should read "when the circuit in effect is steel" and "a code
+    outside the choices".
+- No text changed in this round.
+
+**Report for the record (as returned).**
+
+**R-1. The field behind the "inner ring's own" onset (physics; no change asked).**
+- The inner ring's onset uses the one shared single-ring field input, `temperature.demag.h_rev_single_ring_kA_m`.
+  Its default, 569 kA/m, is the outer blocks' value. The input's own help says the inner ring alone sees 545 kA/m.
+- At the defaults the result reads 143.36 °C. With 545 kA/m it would read 146.45 °C
+  (`.superpowers/sdd/2026-10-17-bl064-shaft-joint/research-assembly.md:98-99`). So the cap is about 3 °C tighter
+  than the inner-only field would give. That is the safe side.
+- This is the convention of the whole block:
+  - the workbook's own C59 checks the inner ring at 569;
+  - `inner_magnet_limit_C` reads 863 kA/m, not the inner ring's 844.
+- The owner's R-15 row accepted 143.36 / 133.36 °C. The help is therefore not false. Using a per-ring field would
+  change the model, which is the owner's call (next to BL-072), not a wording fix.
+- The G-3 reviewer may still judge whether "on its carrier with no outer ring around it" should say that it reads the
+  single-ring field input.
+
+**R-2. Forward references (true at merge).** Three T1 texts name things T2 adds:
+- the help's "allowed fitting temperature" (`shaft_joint.hub_fit_allowed_C`);
+- the yield doc's "shaft joint check";
+- the README temperature row's "for the BL-064 shaft-joint check".
+
+The commit message says only the merge ships, as the brief asks. At T1, `HubMaterial::yield_MPa` has no engine
+reader yet; only the tests read it.
+
+**R-3. What was verified.**
+- **The `hub()` rule, branch by branch, against `resolve`:**
+  - steel circuit: the pick's props (the Materials inputs for the default 4140) and the pick's yield;
+  - non-magnetic pick: the free-space circuit, the body equal to the pick, and the pick's yield;
+  - `coupling.backiron` 0 with a magnetic pick or a code outside the choices: the workbook aluminium body and
+    6061-T6's 241 MPa;
+  - a code outside the choices on the steel circuit: NaN props and NaN yield.
+- **The `api.rs` hub expansion** is bit for bit the old `if parts.backiron == 1` choice.
+- **The README pins:** edit (e)'s numbers and governing rings match `tests/grades.rs:424-468`, and edit (f) matches
+  `tests/material_links.rs:437-500`.
+- **README edit (g)** fits its paragraph: E20's per-ring results are `out_rust_only` in the ported temperature group.
+- **The counts:** the scope 170 and the trace 393 of 1,088 match the tests. `TemperatureResults` stays 130 cells,
+  since the new result is Rust-only with no cell.
+- **The record** (`records/demagnetization.rs`) matches `ring_demag`'s fourth onset:
+  - the same calibration offset;
+  - +inf for a positive beta;
+  - no design margin.
+
+**R-4. Two 6061 yields are deliberate.** The library's 6061-T6 is 241 MPa (published minimum). The workbook's
+`AL6061.yield_MPa` is 276 MPa (`materials.rs:88`), and no engine code reads it. Synthesis correction 6 chose one
+aluminium with one yield, and the README's "library yield" keeps that right.
+
+**R-5. The yield is the pick's, by the owner's decision.** On the steel circuit with the default pick, E and α come
+from the Materials inputs, which the user can type. The yield stays the library's 4140 value, 415 MPa (annealed,
+conservative). This follows the owner's "Material" row, so "the metal in effect" in the README means the pick as far
+as the yield goes. No change.
+
+**R-6. One stale count, already scheduled.** `docs/ai/04-memory.yaml:20` still says "392 explained results of 1087".
+`task-9-brief.md:564` schedules it for T9 Step 6 (final 416 of 1,112). Not T1's to fix under the brief.
+
+**R-7. The trace doc's wording.** `gui/trace.rs:7` says "(the A-3 scope: 393 of the 1088 results)". The 393 now
+include one BL-064 record, and "A-3 scope" is the historic name. T2 and T3 rewrite this line again (to 393/1112, then
+416/1112), so it can stay.
+
+**R-8. The traps on the new label and help.**
+- None of these appear: "clamp", "safe", "heat the hub", "BL-064", the grade's 150 °C, U+2192 or U+2300.
+- "Inner ring: single-ring onset" matches the Problem's "the magnets' single-ring onset" (spec 5.2), so a reader can
+  find the quoted onset in the results table.
+- "on its carrier" matches the input label "single ring on its carrier".
