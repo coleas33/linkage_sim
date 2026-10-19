@@ -1311,10 +1311,12 @@ mod tests {
     #[test]
     fn the_inputs_and_results_sheets_carry_every_shaft_joint_row() {
         use crate::engine::explain::scope::SCOPE;
-        use crate::engine::meta::{input_rows, result_rows};
-        use crate::gui::inputs::{WORKFLOW, section_label};
+        use crate::gui::inputs::section_label;
         use crate::gui::result_groups::CHAIN_LABELS;
-        use crate::gui::test_support::{cup_without_wall_or_key_bearing, shaft_joints_off_default};
+        use crate::gui::test_support::{
+            cup_without_wall_or_key_bearing, shaft_joint_input_rows, shaft_joint_result_rows,
+            shaft_joints_off_default, workflow_group,
+        };
         // BL-064 (spec 5.3, 5.4 and 7.15): each of the shaft joints' 15 inputs and 24 results
         // has one row, with its value and unit and no workbook cell. The Inputs sheet lays the
         // inputs out as the inputs side does: in the workflow order the key's two rows follow
@@ -1347,16 +1349,12 @@ mod tests {
             "shaft_joint.rotor_over_shaft_C",
             "shaft_joint.joining_clearance_um",
         ];
-        let schema: Vec<String> = input_rows(&DesignInputs::default())
+        let schema: Vec<String> = shaft_joint_input_rows(&DesignInputs::default())
             .into_iter()
             .map(|row| row.path)
-            .filter(|path| path.starts_with("shaft_joint."))
             .collect();
         assert_eq!(schema.len(), 15);
-        let shaft = WORKFLOW
-            .iter()
-            .find(|group| group.id == "shaft")
-            .expect("the shaft group");
+        let shaft = workflow_group("shaft");
         let section = |id: &str| {
             shaft
                 .sections
@@ -1441,10 +1439,10 @@ mod tests {
             .expect("the shaft joints' chain");
         let mut numbers: Vec<&str> = chain.paths.to_vec();
         numbers.sort_unstable();
-        let mut want: Vec<String> = result_rows(&compute_all(&DesignInputs::default()))
+        let mut want: Vec<String> = shaft_joint_result_rows(&compute_all(&DesignInputs::default()))
             .into_iter()
             .map(|row| row.path)
-            .filter(|path| path.starts_with("shaft_joint.") && path != "shaft_joint.check")
+            .filter(|path| path != "shaft_joint.check")
             .collect();
         want.sort_unstable();
         assert_eq!(numbers, want, "the chain is the 23 numbers");

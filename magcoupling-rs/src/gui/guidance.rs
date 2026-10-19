@@ -3008,8 +3008,9 @@ mod tests {
     use crate::gui::plain_text::label_for;
     use crate::gui::readouts::Readouts;
     use crate::gui::test_support::{
-        assert_glyphs, clamp_at_its_limit, drawn_texts, hot_day, only_the_clamp_fails,
-        only_the_gearbox_fails, only_the_joint_fails, passing_design, short_magnets, sized_frame,
+        assert_glyphs, clamp_at_its_limit, drawn_texts, hot_day, is_shaft_joint,
+        only_the_clamp_fails, only_the_gearbox_fails, only_the_joint_fails, passing_design,
+        shaft_joint_input_rows, shaft_joint_result_rows, short_magnets, sized_frame, slider_range,
         small_boss, with_poles,
     };
     use std::collections::BTreeSet;
@@ -3025,14 +3026,6 @@ mod tests {
     /// The defaults with `edit` applied.
     fn design(edit: impl Fn(&mut DesignInputs)) -> DesignInputs {
         with(DesignInputs::default(), edit)
-    }
-
-    /// The slider range of the input at `path`.
-    fn slider_range(path: &str) -> SliderRange {
-        InputCatalogue::get()
-            .entry(path)
-            .and_then(|entry| entry.meta.range)
-            .unwrap_or_else(|| panic!("{path} has a slider"))
     }
 
     /// Every value on the slider of the input at `path`, bottom to top, one step apart, each the
@@ -4010,22 +4003,13 @@ mod tests {
             .iter()
             .copied()
             .enumerate()
-            .filter(|&(_, (row, check))| {
-                row.starts_with("shaft_joint.")
-                    || check.is_some_and(|c| c.starts_with("shaft_joint."))
-            })
+            .filter(|&(_, (row, check))| is_shaft_joint(row) || check.is_some_and(is_shaft_joint))
             .collect();
         assert_eq!(rows, [(15, (SHAFT_JOINT, Some(SHAFT_JOINT)))]);
         assert_eq!(DASHBOARD[14].0, CLAMP);
         assert_eq!(DASHBOARD[16].0, GEARBOX);
         assert_eq!(CHECKS.last(), Some(&SHAFT_JOINT));
-        assert_eq!(
-            CHECKS
-                .iter()
-                .filter(|c| c.starts_with("shaft_joint."))
-                .count(),
-            1
-        );
+        assert_eq!(CHECKS.iter().filter(|c| is_shaft_joint(c)).count(), 1);
         let joint = guide(SHAFT_JOINT).expect("the shaft joints check has a guide");
         assert_eq!(joint.label, "Shaft joints");
         // The Why's subject is each fit, not its grip, and each fit has one allowed temperature
@@ -8413,15 +8397,11 @@ mod tests {
             results.metal.torque_cold_high_Nm
         );
         let mut texts: Vec<String> = Vec::new();
-        for row in crate::engine::meta::input_rows(&corner) {
-            if row.path.starts_with("shaft_joint.") {
-                texts.extend([row.meta.label.to_owned(), row.meta.help.to_owned()]);
-            }
+        for row in shaft_joint_input_rows(&corner) {
+            texts.extend([row.meta.label.to_owned(), row.meta.help.to_owned()]);
         }
-        for row in crate::engine::meta::result_rows(&results) {
-            if row.path.starts_with("shaft_joint.") {
-                texts.extend([row.meta.label.to_owned(), row.meta.help.to_owned()]);
-            }
+        for row in shaft_joint_result_rows(&results) {
+            texts.extend([row.meta.label.to_owned(), row.meta.help.to_owned()]);
         }
         texts.extend(
             [

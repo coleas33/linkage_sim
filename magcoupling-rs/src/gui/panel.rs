@@ -4386,20 +4386,21 @@ mod tests {
                 // and results, their two input sections and their groups' headings. A label or a
                 // help may sit inside a hover text. Four input labels are also their assumptions'
                 // names, so for those inputs it is the help that shows the input is collected.
-                use crate::engine::meta::{input_rows, result_rows};
                 use crate::gui::inputs::section_label;
                 use crate::gui::plain_text::help_for;
                 use crate::gui::result_groups::result_groups;
+                use crate::gui::test_support::{
+                    shaft_joint_input_rows, shaft_joint_result_rows, workflow_group,
+                };
                 let reaches = |text: &str| texts.iter().any(|t| t.contains(text));
-                let paths: Vec<String> = input_rows(&DesignInputs::default())
+                let paths: Vec<String> = shaft_joint_input_rows(&DesignInputs::default())
                     .into_iter()
                     .map(|row| row.path)
                     .chain(
-                        result_rows(&compute_all(&DesignInputs::default()))
+                        shaft_joint_result_rows(&compute_all(&DesignInputs::default()))
                             .into_iter()
                             .map(|row| row.path),
                     )
-                    .filter(|path| path.starts_with("shaft_joint."))
                     .collect();
                 assert_eq!(paths.len(), 15 + 24);
                 for path in &paths {
@@ -4412,10 +4413,7 @@ mod tests {
                 // its label and its row count, as the table draws a group's heading. Part of a
                 // text would not do: the check's label, "Shaft joints: keyed shrink fits",
                 // contains "Shaft joints".
-                let shaft = WORKFLOW
-                    .iter()
-                    .find(|group| group.id == "shaft")
-                    .expect("the shaft group");
+                let shaft = workflow_group("shaft");
                 let chain = result_groups()
                     .iter()
                     .find(|group| group.id == "shaft_joint" && !group.other)

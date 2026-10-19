@@ -1146,6 +1146,7 @@ mod tests {
         use crate::engine::gearbox::{
             ABOVE_THE_GEARBOX_RATING, GEARBOX_CHECK_UNKNOWN, WITHIN_THE_GEARBOX_RATING,
         };
+        use crate::gui::test_support::is_shaft_joint;
         // BL-059: the gearbox check is a Rust-only result, like the space claim. The CSV and
         // JSON exports carry its engine label and verdict, after the housing group and before the
         // shaft joints (BL-064), with no unit and no spreadsheet cell; each of its three verdicts
@@ -1181,11 +1182,7 @@ mod tests {
                     .join(",")
             );
             assert!(lines[row - 1].starts_with("housing."), "{}", lines[row - 1]);
-            assert!(
-                lines[row + 1].starts_with("shaft_joint."),
-                "{}",
-                lines[row + 1]
-            );
+            assert!(is_shaft_joint(lines[row + 1]), "{}", lines[row + 1]);
             let json: Json = serde_json::from_str(&results_json(&design, &results)).unwrap();
             let entry = json["results"]
                 .as_array()
@@ -1202,9 +1199,11 @@ mod tests {
 
     #[test]
     fn the_exports_carry_every_shaft_joint_input_and_result_with_no_cell() {
-        use crate::engine::meta::input_rows;
         use crate::gui::session::design_from_json;
-        use crate::gui::test_support::{cup_without_wall_or_key_bearing, shaft_joints_off_default};
+        use crate::gui::test_support::{
+            cup_without_wall_or_key_bearing, is_shaft_joint, shaft_joint_input_rows,
+            shaft_joint_result_rows, shaft_joints_off_default,
+        };
         // BL-064 (spec 7.15): the shaft joints' 15 inputs and 24 results are Rust-only. The CSV
         // carries each result once, together and in schema order, after the gearbox check and
         // before the sweeps, with its engine label, its value at full precision, its unit and no
@@ -1223,10 +1222,7 @@ mod tests {
                 ..Design::default()
             };
             let results = compute_all(&design.inputs);
-            let rows: Vec<_> = result_rows(&results)
-                .into_iter()
-                .filter(|row| row.path.starts_with("shaft_joint."))
-                .collect();
+            let rows = shaft_joint_result_rows(&results);
             assert_eq!(rows.len(), 24);
             assert!(rows.iter().all(|row| row.cell.is_none()));
             // The CSV: the 24 lines together, between the gearbox check and the sweeps.
@@ -1234,9 +1230,10 @@ mod tests {
             let lines: Vec<&str> = csv.split("\r\n").collect();
             let first = lines
                 .iter()
-                .position(|l| l.starts_with("shaft_joint."))
+                .position(|l| is_shaft_joint(l))
                 .expect("the shaft joints' CSV lines");
-            for (line, row) in lines[first..first + 24].iter().zip(&rows) {
+            let end = first + rows.len();
+            for (line, row) in lines[first..end].iter().zip(&rows) {
                 let value = exact_value(&row.value);
                 let want = [row.path.as_str(), row.meta.label, &value, row.meta.unit, ""]
                     .map(csv_field)
@@ -1248,18 +1245,14 @@ mod tests {
                 "{}",
                 lines[first - 1]
             );
-            assert!(
-                lines[first + 24].starts_with("gap_sweep["),
-                "{}",
-                lines[first + 24]
-            );
+            assert!(lines[end].starts_with("gap_sweep["), "{}", lines[end]);
             // The JSON: the same rows in the same order, and the design's every input.
             let json: Json = serde_json::from_str(&results_json(&design, &results)).unwrap();
             let entries: Vec<&Json> = json["results"]
                 .as_array()
                 .unwrap()
                 .iter()
-                .filter(|r| r["path"].as_str().unwrap().starts_with("shaft_joint."))
+                .filter(|r| is_shaft_joint(r["path"].as_str().unwrap()))
                 .collect();
             assert_eq!(entries.len(), 24);
             for (entry, row) in entries.iter().zip(&rows) {
@@ -1269,10 +1262,7 @@ mod tests {
                 assert_eq!(entry["unit"], row.meta.unit);
                 assert_eq!(entry["cell"], Json::Null);
             }
-            let shaft_inputs: Vec<_> = input_rows(&design.inputs)
-                .into_iter()
-                .filter(|row| row.path.starts_with("shaft_joint."))
-                .collect();
+            let shaft_inputs = shaft_joint_input_rows(&design.inputs);
             assert_eq!(shaft_inputs.len(), 15);
             for row in &shaft_inputs {
                 assert_eq!(

@@ -93,15 +93,53 @@ pub(crate) fn clamp_at_its_limit() -> crate::DesignInputs {
     inputs
 }
 
+/// Whether `path` is one of the shaft joints' inputs or results (BL-064): their group's paths.
+pub(crate) fn is_shaft_joint(path: &str) -> bool {
+    path.starts_with("shaft_joint.")
+}
+
+/// The shaft joints' input rows of `inputs` (BL-064), in schema order.
+pub(crate) fn shaft_joint_input_rows(
+    inputs: &crate::DesignInputs,
+) -> Vec<crate::engine::meta::InputRow> {
+    crate::engine::meta::input_rows(inputs)
+        .into_iter()
+        .filter(|row| is_shaft_joint(&row.path))
+        .collect()
+}
+
+/// The shaft joints' result rows of `results` (BL-064), in schema order.
+pub(crate) fn shaft_joint_result_rows(
+    results: &crate::DesignResults,
+) -> Vec<crate::engine::meta::ResultRow> {
+    crate::engine::meta::result_rows(results)
+        .into_iter()
+        .filter(|row| is_shaft_joint(&row.path))
+        .collect()
+}
+
+/// The inputs side's workflow group `id` ([`crate::gui::inputs::WORKFLOW`]).
+pub(crate) fn workflow_group(id: &str) -> &'static crate::gui::inputs::WorkflowGroup {
+    crate::gui::inputs::WORKFLOW
+        .iter()
+        .find(|group| group.id == id)
+        .unwrap_or_else(|| panic!("no workflow group {id}"))
+}
+
+/// The slider range of the input at `path`.
+pub(crate) fn slider_range(path: &str) -> crate::engine::meta::SliderRange {
+    crate::gui::inputs::InputCatalogue::get()
+        .entry(path)
+        .and_then(|entry| entry.meta.range)
+        .unwrap_or_else(|| panic!("{path} has a slider"))
+}
+
 /// The defaults with every shaft joint input (BL-064) one slider step off its default: up, or
 /// down where up would leave the slider. Each input then reads back as itself, not its default.
 pub(crate) fn shaft_joints_off_default() -> crate::DesignInputs {
-    use crate::engine::meta::{InputSet, Value, input_rows};
+    use crate::engine::meta::{InputSet, Value};
     let mut inputs = crate::DesignInputs::default();
-    for row in input_rows(&crate::DesignInputs::default())
-        .into_iter()
-        .filter(|row| row.path.starts_with("shaft_joint."))
-    {
+    for row in shaft_joint_input_rows(&crate::DesignInputs::default()) {
         let (Value::Num(x), Some(range)) = (row.value, row.meta.range) else {
             panic!("{} is a number with a slider", row.path)
         };

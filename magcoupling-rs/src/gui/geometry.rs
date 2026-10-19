@@ -897,6 +897,7 @@ pub fn geometry(inputs: &DesignInputs, results: &DesignResults, clamps_paused: b
 mod tests {
     use super::*;
     use crate::compute_all;
+    use crate::gui::test_support::slider_range;
 
     fn design(edit: impl Fn(&mut DesignInputs)) -> DesignInputs {
         let mut inputs = DesignInputs::default();
@@ -1026,10 +1027,7 @@ mod tests {
         let defaults = DesignInputs::default();
         let bore = defaults.coupling.bore_mm / 2.0;
         let tip = bore + defaults.coupling.keyway_depth_mm;
-        let slider = crate::gui::inputs::InputCatalogue::get()
-            .entry("shaft_joint.key_width_mm")
-            .and_then(|entry| entry.meta.range)
-            .expect("the key width has a slider");
+        let slider = slider_range("shaft_joint.key_width_mm");
         for paused in [false, true] {
             // Each end of the key width's slider (1 and 6 mm on the 10 mm bore).
             for width in [slider.min, slider.max] {
@@ -1046,10 +1044,7 @@ mod tests {
                 );
             }
             // The paused clamp's key width, at each end of its slider: the same drawing.
-            let clamp_slider = crate::gui::inputs::InputCatalogue::get()
-                .entry("clamps.key_width_mm")
-                .and_then(|entry| entry.meta.range)
-                .expect("the clamp's key width has a slider");
+            let clamp_slider = slider_range("clamps.key_width_mm");
             let at_defaults = geometry(&defaults, &compute_all(&defaults), paused);
             for width in [clamp_slider.min, clamp_slider.max] {
                 let inputs = design(|i| i.clamps.key_width_mm = width);
@@ -1413,10 +1408,7 @@ mod tests {
         // suggestion rounds that up to 0.1 mm. Stepping the wall's slider up from the defaults,
         // the first wall the check passes lies below that rounding: the line must not ask for
         // more than the check does.
-        let range = crate::gui::inputs::InputCatalogue::get()
-            .entry(CUP_WALL_INPUT)
-            .and_then(|entry| entry.meta.range)
-            .expect("the cup wall has a slider");
+        let range = slider_range(CUP_WALL_INPUT);
         let mut inputs = DesignInputs::default();
         let mut results = compute_all(&inputs);
         while results.materials.cup_wall_check != "OK" {

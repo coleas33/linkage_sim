@@ -579,6 +579,7 @@ mod tests {
         // BL-064 adds fifteen inputs with no version bump: a reader takes a missing path at its
         // default (decision M41-5). The link above was written before them; so is this file,
         // the link's own text with one input edited.
+        use crate::gui::test_support::is_shaft_joint;
         let bytes = LINK_BASE64.decode(DEFAULT_PAYLOAD_49FBD3F).unwrap();
         let mut text = String::new();
         DeflateDecoder::new(&bytes[..])
@@ -586,7 +587,7 @@ mod tests {
             .unwrap();
         let json: Json = serde_json::from_str(&text).unwrap();
         let inputs = json["inputs"].as_object().unwrap();
-        assert!(!inputs.keys().any(|path| path.starts_with("shaft_joint.")));
+        assert!(!inputs.keys().any(|path| is_shaft_joint(path)));
         assert_eq!(inputs["coupling.npole"], 10);
         let older = text.replace("\"coupling.npole\":10", "\"coupling.npole\":12");
         assert_ne!(older, text, "the file names the pole count");
