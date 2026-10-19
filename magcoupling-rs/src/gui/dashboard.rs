@@ -227,7 +227,7 @@ pub const STORED_3D_ROWS: [&str; 4] = [
 pub const STORED_3D_LABEL: &str = "Fixed 3D fields from the example design";
 
 /// Its hover text.
-pub const STORED_3D_NOTE: &str = "The temperature checks use the demagnetization reverse fields and the slip-heating fields, computed in 3D for the example design. The bonded inner hub's fitting limit on the shaft joints row uses one of the reverse fields too. Those fields stay fixed when you change the geometry, magnet count or grade; for another design, enter its own 3D fields to check the limits.";
+pub const STORED_3D_NOTE: &str = "The temperature checks use the demagnetization reverse fields and the slip-heating fields, computed in 3D for the example design. The bonded inner hub's allowed fitting temperature, on the shaft joints row, uses one of the reverse fields too. Those fields stay fixed when you change the geometry, magnet count or grade; for another design, enter its own 3D fields to check the limits.";
 
 /// The stored 3D inputs: the four reverse fields of the demagnetization check and the
 /// slip-loss fields (the steel circuit's eleven, and the three free-space ones). They are 3D
@@ -1708,6 +1708,13 @@ mod tests {
                 assert!(!sentence.contains("limit"), "{sentence}");
             }
         }
+        // The shaft joints row's sentence calls the bonded hub's cap by the name the result row
+        // and the Problem give it, never a third name (T5 text re-review SF-5).
+        assert!(
+            STORED_3D_NOTE.contains("The bonded inner hub's allowed fitting temperature, on the shaft joints row, uses one of the reverse fields too.")
+                && !STORED_3D_NOTE.contains("fitting limit"),
+            "{STORED_3D_NOTE}"
+        );
     }
 
     #[test]
