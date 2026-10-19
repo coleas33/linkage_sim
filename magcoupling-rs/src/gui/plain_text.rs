@@ -265,7 +265,7 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "coupling.keyway_depth_mm",
-        "Depth of the key slot cut into the hub bore. Deeper leaves a thinner hub wall past the key, and too deep breaks through the hub.",
+        "Depth of the key slot in the inner hub's and the cup's bores; it caps the key's contact height. Deeper thins the wall past the key; too deep breaks through.",
     ),
     (
         "clamps.key_width_mm",
@@ -1590,6 +1590,7 @@ mod batch_b_tests {
             "class A4-70" => set("clamps.screw_class", Value::Int(3)),
             "coercivity inputs" => set("temperature.demag.coercivity_source", Value::Int(0)),
             "measured drag" => set("metal.measured_drag_Nm", Value::Num(0.05)),
+            "shallow keyway" => set("coupling.keyway_depth_mm", Value::Num(1.0)),
             "manual, no grade" => {
                 set("coupling.magnets.part_inner", Value::Text(String::new()));
                 set("coupling.magnets.part_outer", Value::Text(String::new()));
@@ -1972,6 +1973,9 @@ mod batch_b_tests {
     /// Each claim holds one slider step up on a design where the input is free. The bore help's
     /// two limits hold at the bore's slider top: the hub check fails on the 8-magnet probe
     /// design, keyed or keyless, and the wall past the keyway breaks through on the smallest ring.
+    /// The bore's and the keyway's helps name both joints (G-3 round 2 SF-7, SF-8), and the
+    /// keyway's says it caps the key's contact height: both key pressures follow the keyway only
+    /// where it is shallower than the contact height.
     #[test]
     fn the_joint_neutral_texts_claim_what_the_engine_does() {
         use crate::engine::explain::notes::Step;
@@ -2089,6 +2093,40 @@ mod batch_b_tests {
             assert!(
                 number(&widest, wall) > 0.0,
                 "keyway {keyway} mm: {wall} at the widest bore"
+            );
+        }
+        // The keyway is cut in both bores and caps the key's contact height (G-3 round 2 SF-8).
+        // One step deeper thins the hub wall past the key. On the example design the contact
+        // height is under the keyway, so both joints' key pressures stay bit for bit; on a
+        // keyway shallower than the contact height, one step deeper lowers both.
+        let keyway = "coupling.keyway_depth_mm";
+        let keyway_help = help_for(keyway);
+        assert!(
+            keyway_help.contains("in the inner hub's and the cup's bores")
+                && keyway_help.contains("caps the key's contact height"),
+            "{keyway_help}"
+        );
+        let shallow = claim_design("shallow keyway");
+        assert!(
+            shallow.coupling.keyway_depth_mm < example.shaft_joint.key_contact_mm
+                && example.shaft_joint.key_contact_mm < example.coupling.keyway_depth_mm,
+            "the contact height lies between the shallow keyway and the example's"
+        );
+        let deeper = raised(&example, keyway);
+        assert!(number(&deeper, wall) < number(&example, wall));
+        let shallow_deeper = raised(&shallow, keyway);
+        for pressure in [
+            "shaft_joint.hub_key_pressure_MPa",
+            "shaft_joint.cup_key_pressure_MPa",
+        ] {
+            assert_eq!(
+                number(&deeper, pressure),
+                number(&example, pressure),
+                "{pressure}: the contact height is under the keyway"
+            );
+            assert!(
+                number(&shallow_deeper, pressure) < number(&shallow, pressure),
+                "{pressure}: the keyway caps the contact height"
             );
         }
     }
