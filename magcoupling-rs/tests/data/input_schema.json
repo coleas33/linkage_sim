@@ -3320,7 +3320,7 @@
       "cell": null,
       "choices": [],
       "default": 20.0,
-      "help": "How much hotter each rotor may run than its shaft from slip heating. A warmer rotor's bore grows, so the grip falls.",
+      "help": "How much hotter each rotor may run than its shaft from slip heating. A warmer rotor's bore grows, so the grip at the hot end falls.",
       "label": "Rotor hotter than its shaft, running",
       "path": "shaft_joint.rotor_over_shaft_C",
       "range": {

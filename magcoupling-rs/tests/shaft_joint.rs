@@ -373,7 +373,8 @@ fn the_holding_helps_put_the_rotor_allowance_at_the_hot_end_alone() {
     // loosens it more, and only the hot end has the rotor warmer than its shaft. 4140 (the
     // defaults) loosens hot, so the allowance lowers its holding. 416 (pick 4) loosens cold up
     // to the default allowance, so there the holding is bit for bit the same at 0 and 20 °C;
-    // at the slider's top the hot end takes over.
+    // at the slider's top the hot end takes over. So the allowance's own help puts its falling
+    // grip at the hot end (G-3 SF-12, from the review leftovers).
     let holding = |back_iron: i64, over: f64| {
         let r = compute_all(&design(|i| {
             i.materials.parts.back_iron = back_iron;
@@ -407,6 +408,8 @@ fn the_holding_helps_put_the_rotor_allowance_at_the_hot_end_alone() {
             "{path}: {help}"
         );
     }
+    let help = input_meta("shaft_joint.rotor_over_shaft_C").help;
+    assert!(help.contains("the grip at the hot end falls"), "{help}");
 }
 
 #[test]

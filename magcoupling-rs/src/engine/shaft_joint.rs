@@ -71,7 +71,7 @@ inputs! {
                 .range(0.0, 15.0, 0.1)
                 .assumption(),
             rotor_over_shaft_C: f64 = 20.0 => param_rust_only("°C", "Rotor hotter than its shaft, running",
-                "How much hotter each rotor may run than its shaft from slip heating. A warmer rotor's bore grows, so the grip falls.")
+                "How much hotter each rotor may run than its shaft from slip heating. A warmer rotor's bore grows, so the grip at the hot end falls.")
                 .range(0.0, 60.0, 1.0)
                 .assumption(),
             key_width_mm: f64 = 3.0 => param_rust_only("mm", "Shaft key width",
