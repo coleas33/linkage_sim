@@ -1706,12 +1706,15 @@ mod tests {
             }
         }
         // The shaft joints row's sentence calls the bonded hub's cap by the name the result row
-        // and the Problem give it, never a third name (T5 text re-review SF-5).
+        // and the Problem give it, never a third name (T5 text re-review SF-5), and so does the
+        // help of the reverse field that sets it (G-3 re-review of the review leftovers, MF-2).
         assert!(
             STORED_3D_NOTE.contains("The bonded inner hub's allowed fitting temperature, on the shaft joints row, uses one of the reverse fields too.")
                 && !STORED_3D_NOTE.contains("fitting limit"),
             "{STORED_3D_NOTE}"
         );
+        let single_ring = help_for("temperature.demag.h_rev_single_ring_kA_m");
+        assert!(!single_ring.contains("fitting limit"), "{single_ring}");
     }
 
     #[test]

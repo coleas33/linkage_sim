@@ -661,7 +661,7 @@ const HELP: &[(&str, &str)] = &[
     (
         "temperature.demag.h_rev_single_ring_kA_m",
         concat!(
-            "Single-ring reverse field; higher lowers the cure margin and can lower the inner hub's fitting limit. ",
+            "Single-ring reverse field; higher lowers the cure margin and can lower the inner hub's allowed fitting temperature. ",
             stored_3d_caveat!()
         ),
     ),
@@ -1985,7 +1985,7 @@ mod batch_b_tests {
         ),
         (
             "temperature.demag.h_rev_single_ring_kA_m",
-            "can lower the inner hub's fitting limit",
+            "can lower the inner hub's allowed fitting temperature",
             "shaft_joint.hub_fit_allowed_C",
             Down,
         ),

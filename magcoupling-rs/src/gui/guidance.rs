@@ -1774,10 +1774,17 @@ pub(crate) fn result_text(results: &DesignResults, path: &str) -> String {
 
 /// The input at `path` as a readout shows it: four significant digits, then its unit.
 fn input_text(inputs: &DesignInputs, path: &str) -> String {
-    let unit = InputCatalogue::get()
+    with_unit(
+        format_value(&inputs.get(path).unwrap_or(Value::None)),
+        input_unit(path),
+    )
+}
+
+/// The unit of the input at `path` (none for a path that is not an input).
+fn input_unit(path: &str) -> &'static str {
+    InputCatalogue::get()
         .entry(path)
-        .map_or("", |entry| entry.meta.unit);
-    with_unit(format_value(&inputs.get(path).unwrap_or(Value::None)), unit)
+        .map_or("", |entry| entry.meta.unit)
 }
 
 /// A number worked out here from results and inputs (no result holds it), in the unit of the
@@ -2056,7 +2063,8 @@ fn shaft_joint_problem(inputs: &DesignInputs, results: &DesignResults) -> Option
 /// sentence; the safety factor's (ruling C-4); a sentence for each input typed below what it
 /// can physically be, in the inputs' order ([`impossible_value_sentence`]); or the gearbox
 /// shaft's below its slider's bottom, the coldest the check takes it since the gearbox's rated
-/// range is not checked (build ruling B-5).
+/// range is not checked (build ruling B-5), its value quoted so that it reads below that bottom
+/// ([`input_text_below`]).
 fn cannot_be_made_problem(inputs: &DesignInputs, reason: &CannotBeMade) -> String {
     match reason {
         CannotBeMade::NotANumber => SHAFT_JOINT_NOT_A_NUMBER.to_owned(),
@@ -2074,24 +2082,50 @@ fn cannot_be_made_problem(inputs: &DesignInputs, reason: &CannotBeMade) -> Strin
             format!(
                 "{}, {}, is below {bottom}, the coldest the gearbox shaft is taken, since its rated range is not checked: enter at least {bottom}, its slider's bottom.",
                 fix_label(GEARBOX_SHAFT),
-                input_text(inputs, GEARBOX_SHAFT),
+                input_text_below(inputs, GEARBOX_SHAFT, slider_bottom(GEARBOX_SHAFT)),
             )
         }
     }
 }
 
-/// The bottom of the slider of the input at `path`, with its unit, as a readout shows it.
-/// Panics where `path` is not an input with a slider: the guide asks only for those.
-fn slider_bottom_text(path: &str) -> String {
-    let entry = InputCatalogue::get().entry(path);
-    let bottom = entry
+/// The bottom of the slider of the input at `path`. Panics where `path` is not an input with a
+/// slider: the guide asks only for those.
+fn slider_bottom(path: &str) -> f64 {
+    InputCatalogue::get()
+        .entry(path)
         .and_then(|entry| entry.meta.range)
         .map(|range| range.min)
-        .unwrap_or_else(|| panic!("{path} has a slider"));
+        .unwrap_or_else(|| panic!("{path} has a slider"))
+}
+
+/// The bottom of the slider of the input at `path` ([`slider_bottom`]), with its unit, as a
+/// readout shows it.
+fn slider_bottom_text(path: &str) -> String {
     with_unit(
-        format_value(&Value::Num(bottom)),
-        entry.map_or("", |entry| entry.meta.unit),
+        format_value(&Value::Num(slider_bottom(path))),
+        input_unit(path),
     )
+}
+
+/// The input at `path`, typed below `bottom`, as a Problem quotes it (G-3 re-review of the
+/// review leftovers, MF-1): as its readout shows it where that reads below `bottom` as a readout
+/// shows it; else with the fewest more decimals that read it below ([`fewest_decimals_apart`]),
+/// rounded to the nearest as the readouts round, so it never reads as the bottom it is below,
+/// as [`apart_from`] keeps a failing result off its bound. A value not below `bottom`, or not a
+/// number, reads as its readout shows it.
+fn input_text_below(inputs: &DesignInputs, path: &str, bottom: f64) -> String {
+    let readout = input_text(inputs, path);
+    let Some(x) = inputs.get(path).and_then(number) else {
+        return readout;
+    };
+    let below_bottom = x < bottom;
+    if !below_bottom || quoted_value(x) < quoted_value(bottom) {
+        return readout;
+    }
+    let first = shown_decimals(x).map_or(SIGNIFICANT_DIGITS as usize, |decimals| decimals + 1);
+    let reads_below = |text: &String| text.parse().is_ok_and(|q: f64| q < quoted_value(bottom));
+    let (_, text) = fewest_decimals_apart(first, |decimals| fixed(x, decimals), reads_below);
+    with_unit(text, input_unit(path))
 }
 
 /// The sentence of an input typed below what it can physically be (the whole-branch review's
@@ -7987,6 +8021,54 @@ mod tests {
         let results = compute_all(&at_bottom);
         assert_eq!(results.shaft_joint.check, shaft_joint::SHAFT_JOINTS_PASS);
         assert_eq!(shaft_joint_problem(&at_bottom, &results), None);
+    }
+
+    #[test]
+    fn a_gearbox_shaft_just_below_its_slider_s_bottom_is_quoted_below_it() {
+        // G-3 re-review of the review leftovers, MF-1: typed in (-20.005, -20) °C, the gearbox
+        // shaft reads "-20.00 °C" at the readout's four significant digits, the bottom it is
+        // below. The Problem quotes it as the readout shows it where that reads below the
+        // bottom, else with the fewest more decimals that do, rounded as the readouts round,
+        // never onto the bottom.
+        let coldest = shaft_joint::OUTPUT_SHAFT_COLDEST_C;
+        let problem_at = |celsius: f64| {
+            let inputs = breaking(|i| i.shaft_joint.output_shaft_fit_C = celsius);
+            shaft_joint_problem(&inputs, &compute_all(&inputs)).expect("it cannot be made")
+        };
+        assert_eq!(
+            problem_at(coldest - 0.001),
+            "Gearbox shaft temperature at fitting, -20.001 °C, is below -20.00 °C, the coldest the gearbox shaft is taken, since its rated range is not checked: enter at least -20.00 °C, its slider's bottom."
+        );
+        // The value as the sentence quotes it: between the label's comma and its unit.
+        let opening = format!("{}, ", fix_label(GEARBOX_SHAFT));
+        let quoted = |problem: &str| {
+            problem
+                .strip_prefix(opening.as_str())
+                .and_then(|rest| rest.split_once(" °C, is below "))
+                .map(|(value, _)| value.to_owned())
+                .unwrap_or_else(|| panic!("{problem}"))
+        };
+        // The review's probes, and two that the readout already reads below.
+        for under in [0.001, 0.004, 0.005, 1e-9, 0.5, 1.0] {
+            let celsius = coldest - under;
+            let problem = problem_at(celsius);
+            let text = quoted(&problem);
+            let value: f64 = text.parse().unwrap_or_else(|_| panic!("{problem}"));
+            assert!(value < coldest, "{problem}");
+            let readout = format_value(&Value::Num(celsius));
+            if quoted_value(celsius) < coldest {
+                assert_eq!(text, readout, "{problem}");
+            } else {
+                // As few decimals as read it below: one fewer reads the bottom.
+                let decimals = text.split_once('.').map_or(0, |(_, digits)| digits.len());
+                assert_eq!(text, fixed(celsius, decimals), "{problem}");
+                assert_eq!(
+                    fixed(celsius, decimals - 1).parse::<f64>(),
+                    Ok(coldest),
+                    "{problem}"
+                );
+            }
+        }
     }
 
     #[test]
