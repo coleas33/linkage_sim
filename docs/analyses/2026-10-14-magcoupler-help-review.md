@@ -2722,7 +2722,7 @@ No other doc in `docs/ai` or the README quotes the bracket.
 ## BL-064 shaft joints
 
 BL-064's G-3 review of every new on-screen text (plan Task 8) is recorded first in this section, with each round's
-report as returned. The text re-reviews made while Tasks 1 to 7 were built follow it, in the order they ran.
+report as returned. The text re-reviews made while Tasks 1 to 8 were built follow it, in the order they ran.
 
 - Scope: BL-064's new on-screen strings (spec
   `docs/superpowers/specs/2026-10-17-bl064-shaft-joint-design.md`, sections 6.2 and 6.3), reviewed
@@ -4249,3 +4249,103 @@ wall, which is the engine's conservative wall. Its words did not change in this 
   correctly.
 
 **R-8. No model question arises.** No changed text asks to change the engine.
+
+### Re-review after a change by the implementer after its review (2026-10-19)
+
+BL-064 Task 8's G-3 review fixes (commit f7e0d33, on 967c0ec) changed ten strings to round 1's "New" texts above
+(MF-1 to MF-4). They are the `shaft_joint.safety_factor` and `shaft_joint.cup_fit_max_C` input helps; the
+`shaft_joint.hub_holding_Nm`, `shaft_joint.cup_holding_Nm`, `shaft_joint.wheel_shaft_shrink_um` and
+`shaft_joint.output_shaft_shrink_um` result helps; and the `fit_friction`, `fit_smoothing`, `rotor_over_shaft` and
+`joining_clearance` rationales. With them came five tests that pin their claims, the re-blessed `input_schema.json`
+(two lines) and the README's two test rows. These texts became reviewed text when round 2 passed. The change had a G-3
+text re-review in a fresh context at HEAD 6994ccc. The reviewer's report for the record follows unchanged (full
+answer: `.superpowers/sdd/2026-10-18-bl064-shaft-joint/textreview-T8-a-change-by-the-implementer-after-its-review-1.md`).
+
+- Reviewer: fresh context, session model, 2026-10-19; G-3 text re-review of BL-064 Task 8's changed texts after its
+  G-3 review (round 1). The note `shaft_joint` did not change in f7e0d33. The reviewer dumped it at the five probe
+  designs for consistency ("1 notes at 5 designs", every aim "moves as it says").
+- Verdict: PASS, no must-fix. The ten strings are round 1's replacement texts byte for byte. Each is true in the engine
+  at the defaults, the five probe designs and the reachable ends probed. Each fits its cap, breaks none of the 22
+  traps, types no number, and agrees with the note and the sibling helps. The five new tests pin the claims and pass
+  (`tests/shaft_joint.rs` 34, `tests/assumptions.rs` 13, `tests/schema.rs` 11; the plain-words guards 116).
+  `input_schema.json` changed in the two input helps only, as the re-bless rule allows. Nothing needs a change to the
+  engine's model.
+- Should-fix offered, none applied in this round; all three stay open for the controller:
+  - SF-1 (Task 9 Step 10, docs; low): the BL-070 row the plan drafts (plan `:16487`, its `notes`) quotes the old
+    safety-factor help ("the torque reverses many times in each slip"). BL-070 is not in `docs/ai/backlog.yaml` yet,
+    and Task 9 Step 10 copies the plan's row. Offered for the row's `notes` value when Task 9 writes BL-070: "Split from BL-064 (spec sections 8 and 10; spec review 2, MF-2), beside BL-066 (the same slip swing against the gearbox's nominal rating: one slip-duty input can serve both). BL-064's safety factor help says a slip can reverse the torque many times; its texts never call the fit permanent or free of backlash (its trap 18)."
+    Option B: do nothing, and rely on the Global Constraints rule that Task 9 quotes texts read from the code, never
+    drafts.
+  - SF-2 (round 2's SF-11, re-offered; low): in this group "slip" is the fit's word ("The fit slips"; "holds without
+    slipping"), so "A slip can reverse the torque many times" can be read as the fit slipping, where it means the
+    coupling slipping. The text is true as meant (16.67 cycles, about 33 reversals, per event at the defaults).
+    Offered for `shaft_joint.safety_factor`'s help (`engine/shaft_joint.rs:61`; 28 words, 2 sentences; the house
+    form "When the coupling slips" is at `notes.rs:727`, `:787` and `:1102`): "The fit alone must hold cold-high times this, and the key alone is checked at the same torque. While the coupling slips, the torque can reverse many times."
+    If taken: re-bless `input_schema.json` (one line) and update the pin in
+    `the_safety_factor_help_says_a_slip_can_reverse_the_torque_not_that_each_does` (`tests/shaft_joint.rs`).
+  - SF-3 (test; low): the note's source line (`engine/explain/notes.rs:979`, "the 0.4·Rz smoothing rule that makes
+    5 µm conservative for holding") is now the only typed copy of the default that MF-4 (d) took out of the
+    `fit_smoothing` rationale, and no test ties it to `shaft_joint.smoothing_um`'s default. The note passed its own
+    physics review and its words are not at issue. Offered: a test in `tests/explain.rs` that the note's source line
+    contains `format!("makes {} µm conservative", DesignInputs::default().shaft_joint.smoothing_um)`. Option B: do
+    nothing, since a change to that owner-visible default would go through a review that reads the note.
+- No text changed in this round, and no input label or help moved, so `input_schema.json` is not re-blessed again.
+  The note did not change, so the notes review and the note's review date are unchanged.
+
+**Report for the record (as returned).**
+
+**R-1. Applied verbatim.** Each of the ten new strings matches round 1's "New" text (`help-review.md:2805-2870`).
+Nothing else in `f7e0d33`'s production diff changes on-screen text.
+
+**R-2. Each claim against the engine.**
+
+| Item | Claim | Engine evidence | Result |
+|---|---|---|---|
+| MF-1 `safety_factor` help | "A slip can reverse the torque many times." | cycles per event = `npole/2 · slip_rpm/60 · slip_event_s`: 16.667 at the defaults (about 33 reversals); 0.8333 at the 100 rpm slider bottom (pinned) | True; "can" covers the slow end. No Hz typed (trap 4). |
+| MF-2 hub, cup holding helps | "cold, or hot with the rotor warmer than its shaft, whichever loosens it more" | `loosest_um = py_min(mismatch(cold), mismatch(hot) − α·ΔT_rotor·d·1000)`. Hand check, 416 (α 10.08e-6) at 20 °C: cold −0.852 µm against hot −0.596 µm, so cold binds; at 21 °C hot −0.697, still cold; at 60 °C hot −4.63, so hot binds. 4140: hot binds (14.41 → 9.484 N·m at 0 → 20 °C). | True on both sides of trap 7. "holds without slipping" (trap 18); "measured ... less smoothing" (trap 5). The hot form is spec R-14's (shaft at the bond limit, rotor the allowance above). |
+| MF-3 `cup_fit_max_C` help | "Stay below the treatment temperatures of its material and finish" | The cup is the part material in effect (`joint_specs`): 4140 by default; 6061-T6 at pick 8 or with no back iron | True for every reachable material; it names no steel. Fitting order kept (trap 15); "keep the heat off the gearbox seal", no "protect" (trap 11). |
+| MF-4 a, b shrink helps | "from room temperature ...; negative above room temperature, where it grows" | `ROOM_C` = 20 °C is where `shaft_shrink_um` is zero; 18.99 µm at −196 °C; −2.30 µm at 40 °C | True. "room temperature" is `ROOM_C`'s own doc name. |
+| MF-4 c-f rationales | "The default is ..." | The rationale is drawn under the input's own row (value, reset, "Changed from the default" dot) and exported beside a default column. In the hover and in Explain each sentence is still true without the number. | True. "the example design" is the house term for the defaults (`plain.rs:243`, `assumptions.rs:106`, notes), and its bore is 10 mm (`model.rs:177`). |
+
+**R-3. Caps** (Help at most 30 words, 1-2 sentences; rationales have no cap, per the T3 review):
+- `safety_factor`: 26 words, 2 sentences;
+- `hub_holding_Nm`: 30 words, 1 sentence (at the cap);
+- `cup_holding_Nm`: 29 words, 1 sentence;
+- `cup_fit_max_C`: 27 words, 2 sentences;
+- each shrink help: 29 words, 1 sentence;
+- the rationales: 44, 49, 51 and 55 words. Each is within one word of the text it replaced.
+
+No digit and no non-ASCII character in any of the ten.
+
+**R-4. Traps 1-22 over the ten strings.**
+- None is written: no added torques; cold-high only "times this"; no ratio; no Hz; measured and effective named; no fit
+  class; temperature both ways (MF-2); no speed; no fitting temperature quoted and no "safe"; no 150 °C; gearbox
+  without "protect" or cooling advice; no bath advice; no induction; no "heat the hub"; owner's order kept; no "lower
+  the safety factor"; "holds without slipping"; friction and smoothing as assumptions; nothing claimed fine; no
+  "clamp"; plain words and glyphs.
+- The brief's typed-number rule holds: only the bath temperatures, the DIN 6885-1 row and the cure margin may be typed,
+  and these strings type none of them.
+
+**R-5. Consistency with the note and the sibling texts.**
+- The note (dumped at 5 designs) agrees with every change:
+  - sentence 3 ("a rotor running warmer than its shaft loses more") matches MF-2;
+  - watch-out 1 ("fretting under the reversing swing") matches MF-1;
+  - its source line ("makes 5 µm conservative for holding") matches MF-4 d (SF-3 concerns only the missing pin).
+- The bore-stress helps keep "at the temperature end that tightens it more". That is correct, since the tightest
+  takes no allowance (`py_max(mismatch(cold), mismatch(hot))`).
+- The README's `tests/shaft_joint.rs` and `tests/assumptions.rs` rows describe the new pins correctly.
+- Old texts remain only in the spec's and plan's drafts (historical) and in the plan's BL-070 row (SF-1).
+
+**R-6. Unchanged clauses inside the changed strings, carried over and not re-raised.**
+- T3's open SF-1: "a finish in the bore lowers it" in the `fit_friction` rationale.
+- T3's open SF-2: trap 5 at the fitting end of "taken off both ends of the measured band".
+- G-3's open SF-6 and SF-12.
+
+These clauses did not change in `f7e0d33`. Earlier rounds passed them as true, and they stay open where they were
+left, for Task 10's triage.
+
+**R-7. Observation, no change asked.**
+- The bare cup's 300 °C default is above 6061-T6's ageing temperature (about 160-175 °C, from memory). MF-3's help
+  now tells the user to stay below it.
+- With the aluminium cup the fit needs 155.6 °C and slips anyway (0.00 N·m), so no verdict depends on the default
+  limit there. The UltraOx process temperature is BL-069's open fact.
