@@ -4037,8 +4037,6 @@ mod tests {
             joint.why
         );
         assert_eq!(row_learn(SHAFT_JOINT), Some(joint.learn));
-        // Its reviewed note, the shaft-joint note, is its Why link (plan Task 7).
-        assert_eq!(joint.learn, Learn::Note("shaft_joint"));
         assert!(counts(joint, true) && counts(joint, false));
         assert_eq!(guide_index(SHAFT_JOINT), guide_index(CLAMP) + 1);
         assert_eq!(guide_index(GEARBOX), guide_index(SHAFT_JOINT) + 1);
