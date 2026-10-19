@@ -4567,3 +4567,49 @@ fail another check, or a value the check needs is not a number or is outside wha
   "1.000 mm", "-20.00 °C" against the slider's "0.05", "1.0", "-20"; with "its slider's bottom" the mismatch is a
   little more visible, but nothing is false) and SF-5 (the plain-words and glyph guards see only the friction
   sentence; the probe found all six clean).
+
+### The review leftovers' rulings (2026-10-19)
+
+At Task 10 Step 8 the owner answered 2A (2026-10-19): fold the review leftovers in before the merge. Where a leftover
+offered options, the controller's ruling B-5 chose one (`.superpowers/sdd/2026-10-18-bl064-shaft-joint/rulings.md`,
+gitignored); every other leftover was done as its fix said, one commit per item (the fold-in plan, `lo-plan.md` in
+the same folder). This section records what became of the should-fix items this record left open for that triage:
+Task 8's round 2 list, SF-1 to SF-12 (item 5 of `### Report for the record, round 2 (as returned)`), and the two
+rounds headed `### Re-review after the whole-branch review, fix wave 1 (2026-10-19)`: round 1's SF-1 to SF-5 and
+round 2's SF-1 to SF-3.
+
+- Kept, by B-5, each for its reason:
+  - Fix wave round 2, SF-1 (a friction typed at exactly 0 is judged, and `NO_FIX` shows): option A, keep. The verdict,
+    a red slip holding 0 N·m, is right, and `tests/robustness.rs` pins the judged 0.
+  - Fix wave round 2, SF-3 (`NO_FIX` in the reachable no-wall design): option A, keep. The Problem names the cause,
+    and option B needs fix labels for the boss in the paused clamp section, which owner decision 6A keeps unedited.
+  - Fix wave round 1, SF-3 ("below" for "outside" in the verdict `UNKNOWN_IMPOSSIBLE_VALUE`): keep "outside". It is
+    true, and `NO_FIX`'s clause reuses it, where it also covers the safety factor.
+  - Fix wave round 1, SF-4 (the slider bottoms quoted to four significant digits): option B, keep. Four significant
+    digits is the guide's readout everywhere.
+- Folded in, each with its commit:
+  - Fix wave round 1, SF-1 (a key width typed at or below zero in a design with no keyway): option A, the floor
+    applies only where `keyway_depth_mm > 0.0`; no text changed (LO-1, 055b208).
+  - Fix wave round 1, SF-2 (a gearbox shaft typed between absolute zero and its slider's bottom): option A for the
+    gearbox shaft only. Below its slider's bottom, -20 °C, it reads unknown, with its own Problem sentence and no fix;
+    the wheel shaft stays judged down to absolute zero (LO-2, e058d14).
+  - Fix wave round 1, SF-5 (the plain-words and glyph guards saw one of the six sentences): the Problem designs reach
+    all six, and two at once (LO-45, 09c9e16).
+  - Fix wave round 2, SF-2 (round 1's SF-1 and SF-2, carried): folded in as above.
+  - Task 8's round 2:
+    - SF-1, the bonded hub's two limit helps name the inner ring's onset (LO-11, affdf09);
+    - SF-2, the inner onset's help says what an onset is and the 10 °C margin (LO-14, d591258; its batch review's
+      fix, 6c012a2, ties the onset to heating);
+    - SF-3, the stress limit's help names the key backup (LO-13, 81d5900);
+    - SF-4, the wheel shaft's help says the needed fitting temperature falls (LO-12, 99cc9bd);
+    - SF-5, the empty window's clearance clause names each joint's one allowed temperature (LO-23, 2be4c5f; its
+      batch review's fix, 0f611a4, names the fitting edge at a fittable interference of exactly 0);
+    - SF-6, the friction help opens with what its default is for (LO-9, a4946a2);
+    - SF-7, the bore's help names both shafts (LO-25, 93fb5a6);
+    - SF-8, the keyway depth's help names both bores and the contact cap (LO-26, ecfee7e);
+    - SF-9, the boss length's help says the cup's fit holds more (LO-27, 5a7a384);
+    - SF-10, the single-ring reverse field's help names the inner hub's fitting limit (LO-28, 1e616c4);
+    - SF-11, the safety factor's help names the coupling as what slips (LO-8, 82a0389);
+    - SF-12, the rotor allowance's help puts the falling grip at the hot end (LO-10, 39ba46c).
+- Recorded, no change: Task 8's O-1 (with adhesive code 0, a NaN limit, the holding rows read the cold end alone;
+  the check reads unknown, and no selector reaches code 0).
