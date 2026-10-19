@@ -4624,16 +4624,17 @@ fn cure_margin_words() -> String {
 
 /// BL-064 (spec 6.1, 7.8 and 7.11): what the shaft-joint note says holds at the five probe
 /// designs. Sentence 1 quotes each joint's holding torque at its loosest against the torque each
-/// must hold, the safety factor times cold-high, which it names. Sentence 3 quotes the cup's bore stress against
-/// the limit in a "here" clause (review 5 SF-4, review 6 SF-1): per µm of effective
-/// interference the bore stress is E·δ/d times √3/2, about 0.87 (a thick wall), to 1.0 (a thin
-/// one), so it follows interference over diameter and hardly the wall. Sentence 4 quotes the
-/// temperature the inner hub's fit would need beside the wheel shaft's live shrink, never the
-/// shaft's input temperature (review 4 MF-2, review 5 MF-2), against the allowed temperature,
-/// the lowest of the three limits it names with the cure margin typed as the engine keeps it
-/// (owner R-15; review MF-6). The watch-outs carry the owner's "Cup temp" decision (review
-/// MF-1) and name the cooled wheel shaft and the bonded inner hub (review 2 SF-6a); nothing in
-/// the engine checks a seal, a bearing or fretting; the default wheel shaft is colder than the
+/// must hold, the safety factor times cold-high, which it names. Sentence 3 quotes the cup's
+/// bore stress against the limit in a "here" clause (review 5 SF-4, review 6 SF-1): per µm of
+/// effective interference the bore stress is E·δ/d times √3/2, about 0.87 (a thick wall), to
+/// 1.0 (a thin one), so it follows interference over diameter and hardly the wall. Sentence 4
+/// quotes the temperature the inner hub's fit would need beside the wheel shaft's live shrink,
+/// never the shaft's input temperature (review 4 MF-2, review 5 MF-2), against the allowed
+/// temperature, the lowest of the three limits it names with the cure margin typed as the
+/// engine keeps it (owner R-15; review MF-6). The watch-outs carry the owner's "Cup temp"
+/// decision (review MF-1), with any heat cure of the cup's magnets (the notes record's SF-1),
+/// and name the cooled wheel shaft and the bonded inner hub (review 2 SF-6a); nothing in the
+/// engine checks a seal, a bearing or fretting; the default wheel shaft is colder than the
 /// minimum magnet temperature; a ferrite ring's coercivity falls as it cools. No text of the
 /// note orders the torques (review 2 MF-1, spec 7.8). The note's physics review, round 1: a
 /// raised cup minimum moves neither the cup's bore stress nor its fitting temperature, and one
@@ -4700,7 +4701,9 @@ fn the_shaft_joint_note_s_claims_hold_at_every_probe_design() {
     let [cup_side, wheel_side] = note.watch_out else {
         panic!("two watch-outs: {:?}", note.watch_out);
     };
-    for words in ["bare cup", "quickly", "gearbox seal"] {
+    // "heat cure": the cup's magnets are bonded on the fitted cup, so a heat-cured adhesive cures
+    // on the gearbox shaft (the notes record's SF-1, from the review leftovers).
+    for words in ["bare cup", "quickly", "heat cure", "gearbox seal"] {
         assert!(cup_side.contains(words), "{words:?} in {cup_side:?}");
     }
     for words in [
@@ -4831,8 +4834,8 @@ fn the_shaft_joint_note_s_claims_hold_at_every_probe_design() {
         compute_all(&past).shaft_joint.check,
         format!("{UNKNOWN_BAND_REVERSED} ({CUP})")
     );
-    // "nothing here checks the gearbox's shaft, bearings or seal, or fretting": no result
-    // names them (a check of one changes this watch-out).
+    // "off the gearbox seal and bearings; nothing checks them, the gearbox shaft or fretting": no
+    // result names a seal, a bearing or fretting (a check of one changes this watch-out).
     let unchecked: Vec<String> = result_rows(&compute_all(&DesignInputs::default()))
         .into_iter()
         .map(|row| row.path)

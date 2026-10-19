@@ -969,7 +969,7 @@ pub const NOTES: &[Note] = &[
             },
         ],
         watch_out: &[
-            "Fit the bare cup quickly and keep its heat off the gearbox seal; nothing here checks the gearbox's shaft, bearings or seal, or fretting under the reversing swing.",
+            "Fit the bare cup quickly and keep its heat, and any heat cure of its magnets, off the gearbox seal and bearings; nothing checks them, the gearbox shaft or fretting.",
             "A wheel shaft cooled in liquid nitrogen can chill the bonded inner hub below the minimum magnet temperature, widening the bond's cold swing; ferrite magnets lose coercivity cold.",
         ],
         diagram: None,
