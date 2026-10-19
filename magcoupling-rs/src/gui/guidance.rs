@@ -345,8 +345,8 @@ const JOINT_SIDES: [JointSide; 2] = [
 
 /// The shaft joints of a design as the engine judges them, inner hub first, rebuilt from its
 /// inputs and results ([`shaft_joint_links`]); `None` while the check cannot be made (a value
-/// it reads is not a number, or the safety factor is not above zero: ruling C-4), where no term
-/// is judged.
+/// it reads or works out is not a number, or the safety factor is not above zero: ruling C-4),
+/// where no term is judged.
 fn shaft_joints(inputs: &DesignInputs, results: &DesignResults) -> Option<[JointTerms; 2]> {
     let check = results.shaft_joint.check.as_str();
     (check != shaft_joint::UNKNOWN_NOT_A_NUMBER && check != shaft_joint::UNKNOWN_SAFETY_FACTOR)
@@ -1957,9 +1957,10 @@ fn clamp_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<Strin
     })
 }
 
-/// The shaft joints' Problem when the check cannot be made: a value it reads is not a number.
+/// The shaft joints' Problem when the check cannot be made: a value it reads or works out is not
+/// a number (a bore typed at 0 reads only numbers, and its holding works out as NaN).
 const SHAFT_JOINT_NOT_A_NUMBER: &str =
-    "The shaft joint check cannot be made: a value it reads is not a number.";
+    "The shaft joint check cannot be made: a value it reads or works out is not a number.";
 
 /// The shaft joints' Problem when no sentence reads as failing although the check does
 /// ([`joined_or`]).
@@ -2229,7 +2230,9 @@ fn window_quotes(needed: f64, upper: f64, unit_of: &str) -> (String, String) {
 }
 
 /// Why the joint of `side` is not judged, if it is not (spec 4.3): no wall around its bore (the
-/// bore as wide as the part, or the keyway through the wall), its band reversed, or both.
+/// bore at least as wide as the part, or the keyway through the wall), its band reversed, or
+/// both. The cup's part is its boss, whose diameter the check takes for the web too, so the
+/// cup's no-wall sentences name the boss and say the web alone is not judged.
 fn not_judged_sentences(
     inputs: &DesignInputs,
     side: &JointSide,
@@ -2237,19 +2240,23 @@ fn not_judged_sentences(
 ) -> Vec<String> {
     let name = side.name;
     let bore = input_text(inputs, "coupling.bore_mm");
+    let keyway = input_text(inputs, "coupling.keyway_depth_mm");
     let mut sentences = Vec::new();
     match joint.no_wall {
         Some(NoWall::BoreAsWideAsPart) if name == shaft_joint::INNER_HUB => sentences.push(format!(
             "The inner hub's bore, {bore}, reaches the flats its magnets are bonded on, so it leaves no wall to grip the wheel shaft."
         )),
         Some(NoWall::BoreAsWideAsPart) => sentences.push(format!(
-            "The cup's bore, {bore}, is as wide as its boss, {}, so it leaves no wall to grip the gearbox shaft.",
+            "The cup's bore, {bore}, is at least as wide as its boss, {}, so the boss leaves no wall to grip the gearbox shaft; the check does not judge the web alone.",
             input_text(inputs, "metal.boss_od_mm")
         )),
+        Some(NoWall::KeywayThroughWall) if name == shaft_joint::INNER_HUB => {
+            sentences.push(format!(
+                "The inner hub's keyway, {keyway} deep, cuts through the wall around its {bore} bore, so the fit has no closed ring to grip the wheel shaft."
+            ))
+        }
         Some(NoWall::KeywayThroughWall) => sentences.push(format!(
-            "The {name}'s keyway, {} deep, cuts through the wall around its {bore} bore, so the fit has no closed ring to grip the {}.",
-            input_text(inputs, "coupling.keyway_depth_mm"),
-            side.shaft
+            "The cup's keyway, {keyway} deep, cuts through the boss's wall around its {bore} bore, so the boss has no closed ring to grip the gearbox shaft; the check does not judge the web alone."
         )),
         None => {}
     }
@@ -3375,7 +3382,7 @@ mod tests {
                     i.coupling.bore_mm = 16.0;
                     i.metal.boss_od_mm = 12.0;
                 }),
-                "is as wide as its boss",
+                "is at least as wide as its boss",
             ),
             (
                 "inner hub keyway through its wall",
@@ -3384,6 +3391,11 @@ mod tests {
                     i.coupling.keyway_depth_mm = 2.1;
                 }),
                 "cuts through the wall",
+            ),
+            (
+                "cup keyway through its boss's wall",
+                breaking(|i| i.metal.boss_od_mm = 12.0),
+                "cuts through the boss's wall",
             ),
             (
                 "inner hub without a wall",
@@ -6825,6 +6837,7 @@ mod tests {
         use Level::{Bad, Caution, Good};
         let joint = guide(SHAFT_JOINT).unwrap();
         let not_a_number = breaking(|i| i.temperature.adhesive.selected = 0);
+        let bore_0 = breaking(|i| i.coupling.bore_mm = 0.0);
         let no_factor = breaking(|i| i.shaft_joint.safety_factor = 0.0);
         let overstressed_short = with(short_magnets(), |i| {
             i.shaft_joint.hub_interference_max_um = 26.0;
@@ -6834,6 +6847,7 @@ mod tests {
             ("passing", passing_design(), Good),
             ("joint only", only_the_joint_fails(), Bad),
             ("not a number", not_a_number.clone(), Caution),
+            ("bore 0", bore_0.clone(), Caution),
             ("safety factor 0", no_factor.clone(), Caution),
             (
                 "reversed band",
@@ -6871,6 +6885,42 @@ mod tests {
             Some(SHAFT_JOINT_NOT_A_NUMBER)
         );
         assert_eq!(fixes(joint, &not_a_number, &results, false), []);
+        // A bore typed at 0 (review focus 1): every input and engine value the check reads is a
+        // number; a term it works out is not (the holding: an infinite contact pressure per µm
+        // times a contact arc of 0), so the sentence names both.
+        let results = compute_all(&bore_0);
+        let mut input_nan = false;
+        bore_0.shaft_joint.visit("", &mut |_, _, value| {
+            input_nan |= matches!(value, Value::Num(x) if x.is_nan());
+        });
+        assert!(!input_nan);
+        let links = shaft_joint_links(&bore_0, &results);
+        assert!(links.values().iter().all(|x| !x.is_nan()), "{links:?}");
+        assert_eq!(results.shaft_joint.check, shaft_joint::UNKNOWN_NOT_A_NUMBER);
+        let text = shaft_joint_problem(&bore_0, &results).unwrap();
+        assert_eq!(text, SHAFT_JOINT_NOT_A_NUMBER);
+        assert!(text.contains("a value it reads or works out"), "{text}");
+        assert_eq!(fixes(joint, &bore_0, &results, false), []);
+        // The cup's boss typed at or below zero (plan deviation PD-1): no wall, and the sentence
+        // names the boss, never the web, which the check does not judge alone.
+        for boss in [0.0, -22.0] {
+            let inputs = breaking(|i| i.metal.boss_od_mm = boss);
+            let results = compute_all(&inputs);
+            assert_eq!(
+                results.shaft_joint.check,
+                format!("{} ({})", shaft_joint::UNKNOWN_NO_WALL, shaft_joint::CUP)
+            );
+            assert_eq!(level(joint, &inputs, &results), Caution, "{boss}");
+            assert_eq!(
+                shaft_joint_problem(&inputs, &results),
+                Some(format!(
+                    "The cup's bore, {}, is at least as wide as its boss, {}, so the boss leaves no wall to grip the gearbox shaft; the check does not judge the web alone.",
+                    input_text(&inputs, "coupling.bore_mm"),
+                    input_text(&inputs, "metal.boss_od_mm")
+                ))
+            );
+            assert_eq!(fixes(joint, &inputs, &results, false), [], "{boss}");
+        }
         // A safety factor typed at or below zero (ruling C-4): its sentence alone, and no fix.
         let results = compute_all(&no_factor);
         assert_eq!(
@@ -7009,6 +7059,29 @@ mod tests {
             "{wide}"
         );
         assert!(!wide.contains("measured interference"), "{wide}");
+        // No wall around a bore, on the sliders (spec 4.3). The cup's sentences name its boss,
+        // whose diameter the check takes for the boss and the web alike, and say the web alone
+        // is not judged; the inner hub's diameter is its own along its length.
+        assert_in_order(
+            &text(breaking(|i| {
+                i.coupling.bore_mm = 16.0;
+                i.metal.boss_od_mm = 12.0;
+            })),
+            &[
+                "The cup's bore, 16.00 mm, is at least as wide as its boss, 12.00 mm, so the boss leaves no wall to grip the gearbox shaft; the check does not judge the web alone.",
+            ],
+        );
+        assert_eq!(
+            text(breaking(|i| i.metal.boss_od_mm = 12.0)),
+            "The cup's keyway, 1.700 mm deep, cuts through the boss's wall around its 10.00 mm bore, so the boss has no closed ring to grip the gearbox shaft; the check does not judge the web alone."
+        );
+        assert_eq!(
+            text(breaking(|i| {
+                i.coupling.bore_mm = 16.0;
+                i.coupling.keyway_depth_mm = 2.1;
+            })),
+            "The inner hub's keyway, 2.100 mm deep, cuts through the wall around its 16.00 mm bore, so the fit has no closed ring to grip the wheel shaft."
+        );
         // Spec 7.1: at a 26 µm hub maximum the badge is the bore stress; the fitting cause follows it
         // in the Problem, then the window.
         assert_in_order(
