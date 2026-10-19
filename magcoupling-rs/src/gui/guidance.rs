@@ -2147,10 +2147,11 @@ fn fitting_source(inputs: &DesignInputs, results: &DesignResults, side: &JointSi
     if side.name != shaft_joint::INNER_HUB {
         return "your limit for the bare cup".to_owned();
     }
+    let links = shaft_joint_links(inputs, results);
     let (_, limit) = shaft_joint::hub_fit_allowed(
         inputs.shaft_joint.hub_fit_max_C,
-        results.temperature.adhesive.design_limit_C,
-        results.temperature.demag.inner_onset_single_ring_C,
+        links.adhesive_limit_C,
+        links.inner_onset_single_ring_C,
     );
     match limit {
         Some(HubFitLimit::Yours) => format!(
