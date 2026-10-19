@@ -661,7 +661,7 @@ const HELP: &[(&str, &str)] = &[
     (
         "temperature.demag.h_rev_single_ring_kA_m",
         concat!(
-            "Worst reverse field on a single ring during adhesive cure; higher lowers the cure margin. ",
+            "Single-ring reverse field; higher lowers the cure margin and can lower the inner hub's fitting limit. ",
             stored_3d_caveat!()
         ),
     ),
@@ -1591,6 +1591,16 @@ mod batch_b_tests {
             "coercivity inputs" => set("temperature.demag.coercivity_source", Value::Int(0)),
             "measured drag" => set("metal.measured_drag_Nm", Value::Num(0.05)),
             "shallow keyway" => set("coupling.keyway_depth_mm", Value::Num(1.0)),
+            "N42 parts" => {
+                set(
+                    "coupling.magnets.part_inner",
+                    Value::Text("B842".to_owned()),
+                );
+                set(
+                    "coupling.magnets.part_outer",
+                    Value::Text("B842".to_owned()),
+                );
+            }
             "manual, no grade" => {
                 set("coupling.magnets.part_inner", Value::Text(String::new()));
                 set("coupling.magnets.part_outer", Value::Text(String::new()));
@@ -1776,6 +1786,8 @@ mod batch_b_tests {
         ("temperature.demag.h_rev_likepole_kA_m", "Y30 grades", "temperature.demag.cold_limit_C", Up),
         ("temperature.demag.h_rev_single_ring_kA_m", "example", "temperature.summary.cure_margin_C", Down),
         ("temperature.demag.h_rev_single_ring_kA_m", "example", "temperature.summary.magnet_limit_C", Stays),
+        ("temperature.demag.h_rev_single_ring_kA_m", "example", "shaft_joint.hub_fit_allowed_C", Stays),
+        ("temperature.demag.h_rev_single_ring_kA_m", "N42 parts", "shaft_joint.hub_fit_allowed_C", Down),
         // Overrides: placeholders and assumed values
         ("temperature.duty.driving_rise_C", "example", "temperature.thermal.start_C", Up),
         ("temperature.duty.driving_rise_C", "example", "temperature.summary.hot_day_start_C", Up),
@@ -1968,15 +1980,24 @@ mod batch_b_tests {
         }
     }
 
-    /// The batch-B helps that name the shaft joint their input feeds (BL-064, G-3 round 2 SF-9),
-    /// as (input, the help's words, the result those words are about, the way they say it moves
-    /// as the input rises).
-    const JOINT_WORDS: &[(&str, &str, &str, Moves)] = &[(
-        "metal.boss_length_mm",
-        "lets the cup's fit hold more",
-        "shaft_joint.cup_holding_Nm",
-        Up,
-    )];
+    /// The batch-B helps that name the shaft joint their input feeds (BL-064, G-3 round 2 SF-9
+    /// and SF-10), as (input, the help's words, the result those words are about, the way they
+    /// say it moves as the input rises). "can lower" holds where the onset binds (library N42
+    /// parts in both rings) and not at the defaults, where it stays.
+    const JOINT_WORDS: &[(&str, &str, &str, Moves)] = &[
+        (
+            "metal.boss_length_mm",
+            "lets the cup's fit hold more",
+            "shaft_joint.cup_holding_Nm",
+            Up,
+        ),
+        (
+            "temperature.demag.h_rev_single_ring_kA_m",
+            "can lower the inner hub's fitting limit",
+            "shaft_joint.hub_fit_allowed_C",
+            Down,
+        ),
+    ];
 
     /// Each of [`JOINT_WORDS`] is in its help and has its claim, that way, in [`CLAIMS`].
     #[test]
