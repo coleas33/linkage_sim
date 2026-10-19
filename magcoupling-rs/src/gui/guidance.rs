@@ -5658,11 +5658,18 @@ mod tests {
         // nothing red, so it is shown; the wheel shaft is at its slider's bottom. The magnets'
         // part or grade is the temperature guide's fix, never the joint's. N50M on manual
         // dimensions too: its onset, 98.80 °C, is above the need; only the onset less the margin,
-        // 88.80 °C, is below it (the cup wall fails there too: the joint alone is asserted).
+        // 88.80 °C, is below it (the cup wall fails there too: the joint alone is asserted). The
+        // step down raises each fitting margin as spec 5.2 and 7.9 give it: -33.43 to -29.37 °C
+        // and -4.46 to -0.40 °C.
         let joint = guide(SHAFT_JOINT).unwrap();
-        for (name, inputs, want_onset) in [
-            ("n42_parts", breaking(n42_parts), 69.8326),
-            ("N50M", breaking(|i| graded(i, "N50M")), 98.8029),
+        for (name, inputs, want_onset, want_margins) in [
+            ("n42_parts", breaking(n42_parts), 69.8326, [-33.43, -29.37]),
+            (
+                "N50M",
+                breaking(|i| graded(i, "N50M")),
+                98.8029,
+                [-4.46, -0.40],
+            ),
         ] {
             let results = compute_all(&inputs);
             let s = &results.shaft_joint;
@@ -5694,8 +5701,14 @@ mod tests {
             let [stepped] = &moves(&inputs, &results, HUB_MAX, Direction::Lower)[..] else {
                 panic!("{name}: one step down")
             };
-            assert!(fitting(stepped) > fitting(&inputs), "{name}");
-            assert!(moves(&inputs, &results, WHEEL_SHAFT, Direction::Lower).is_empty());
+            let margins = [fitting(&inputs), fitting(stepped)];
+            for (margin, want) in margins.into_iter().zip(want_margins) {
+                assert!((margin - want).abs() < 5e-3, "{name}: {margins:?}");
+            }
+            assert!(
+                moves(&inputs, &results, WHEEL_SHAFT, Direction::Lower).is_empty(),
+                "{name}"
+            );
         }
         for path in PART_PATHS.into_iter().chain(GRADE_PATHS) {
             assert!(
