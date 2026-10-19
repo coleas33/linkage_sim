@@ -791,6 +791,12 @@ impl PartMaterial {
     pub fn label(&self) -> &'static str {
         self.material.map_or(NO_MATERIAL, |m| m.label)
     }
+
+    /// A library pick that is not ferromagnetic: as the back iron, it selects the free-space
+    /// circuit and is the body.
+    pub fn is_non_magnetic(&self) -> bool {
+        self.material.is_some_and(|m| !m.ferromagnetic)
+    }
 }
 
 /// What the parts' materials feed into the engine. `api::compute` builds it from
@@ -846,7 +852,7 @@ impl PartProperties {
     pub fn hub(&self) -> HubMaterial {
         let steel = self.backiron == 1;
         let pick = self.back_iron.material;
-        let non_magnetic_pick = pick.is_some_and(|m| !m.ferromagnetic);
+        let non_magnetic_pick = self.back_iron.is_non_magnetic();
         let record = if steel || non_magnetic_pick {
             pick
         } else {
@@ -919,7 +925,7 @@ pub fn resolve(
         steel.modulus_GPa,
     );
     let back_iron = part(&BACK_IRON_CHOICES, choice.back_iron, workbook_steel);
-    let non_magnetic = back_iron.material.is_some_and(|m| !m.ferromagnetic);
+    let non_magnetic = back_iron.is_non_magnetic();
     let design_flux_T = match back_iron.material {
         Some(m) if !back_iron.is_default => m.design_flux_density_T.unwrap_or(steel.bsat_T),
         Some(_) => steel.bsat_T,
