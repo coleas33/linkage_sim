@@ -238,6 +238,16 @@ const WHEEL_SHAFT: &str = "shaft_joint.wheel_shaft_fit_C";
 const GEARBOX_SHAFT: &str = "shaft_joint.output_shaft_fit_C";
 const HUB_LENGTH: &str = "metal.hub_length_mm";
 const BOSS_LENGTH: &str = "metal.boss_length_mm";
+const SAFETY_FACTOR: &str = "shaft_joint.safety_factor";
+const KEY_WIDTH: &str = "shaft_joint.key_width_mm";
+const WEB: &str = "metal.web_mm";
+// The shaft joints' results the guide quotes (BL-064): the torque each joint must hold, the
+// stress limit and the part's yield it comes from, and the inner hub's length in effect (the
+// magnets' length under the axial override).
+const REQUIRED: &str = "shaft_joint.required_Nm";
+const STRESS_LIMIT: &str = "shaft_joint.stress_limit_MPa";
+const PART_YIELD: &str = "shaft_joint.part_yield_MPa";
+const HUB_LENGTH_IN_EFFECT: &str = "housing.hub_length_mm";
 
 /// One shaft joint as its guide reads and names it (BL-064), in the engine's order
 /// ([`shaft_joint::joints`]: the inner hub, then the cup; a test holds the two to it).
@@ -2052,7 +2062,7 @@ fn cannot_be_made_problem(inputs: &DesignInputs, reason: &CannotBeMade) -> Strin
         CannotBeMade::NotANumber => SHAFT_JOINT_NOT_A_NUMBER.to_owned(),
         CannotBeMade::SafetyFactor => format!(
             "The safety factor, {}, is not above zero: enter at least 1.",
-            input_text(inputs, "shaft_joint.safety_factor")
+            input_text(inputs, SAFETY_FACTOR)
         ),
         CannotBeMade::ImpossibleValues(values) => values
             .iter()
@@ -2117,15 +2127,15 @@ fn term_sentence(
         Cause::Slips => format!(
             "At its loosest the {name} holds {}, less than the {} it must hold: cold-high, {}, times the safety factor of {}.",
             apart_from(results, side.holding, joint.required_Nm, false),
-            result_text(results, "shaft_joint.required_Nm"),
+            result_text(results, REQUIRED),
             result_text(results, "metal.torque_cold_high_Nm"),
-            input_text(inputs, "shaft_joint.safety_factor"),
+            input_text(inputs, SAFETY_FACTOR),
         ),
         Cause::BoreStress => format!(
             "At its tightest the {name}'s bore stress is {}, above the {} limit ({} yield with a margin).",
             apart_from(results, side.stress, joint.stress_limit_MPa, true),
-            result_text(results, "shaft_joint.stress_limit_MPa"),
-            result_text(results, "shaft_joint.part_yield_MPa"),
+            result_text(results, STRESS_LIMIT),
+            result_text(results, PART_YIELD),
         ),
         Cause::CannotBeFitted => format!(
             "Fitting the {name} would need it at {} with the {} at {}, above the {} allowed: {}.",
@@ -2205,7 +2215,7 @@ fn key_sentence(
     joint: &JointTerms,
 ) -> String {
     let name = side.name;
-    let key_width = input_text(inputs, "shaft_joint.key_width_mm");
+    let key_width = input_text(inputs, KEY_WIDTH);
     if joint.key_contact_mm <= 0.0 {
         format!(
             "The key has no bearing area in the {name}: its contact height, {}, is not above zero.",
@@ -2214,19 +2224,19 @@ fn key_sentence(
     } else if joint.key_bearing_mm <= 0.0 && name == shaft_joint::INNER_HUB {
         format!(
             "The key has no bearing area in the inner hub: the hub, {} long, is no longer than the key is wide, {key_width}.",
-            result_text(results, "housing.hub_length_mm")
+            result_text(results, HUB_LENGTH_IN_EFFECT)
         )
     } else if joint.key_bearing_mm <= 0.0 {
         format!(
             "The key has no bearing area in the cup: its boss and web, {} and {} long, together are no longer than the key is wide, {key_width}.",
             input_text(inputs, BOSS_LENGTH),
-            input_text(inputs, "metal.web_mm")
+            input_text(inputs, WEB)
         )
     } else {
         format!(
             "Alone, the key would bear {} on the {name}, above the {} limit.",
             apart_from(results, side.key, joint.stress_limit_MPa, true),
-            result_text(results, "shaft_joint.stress_limit_MPa")
+            result_text(results, STRESS_LIMIT)
         )
     }
 }
@@ -8014,6 +8024,27 @@ mod tests {
                 "At its tightest the inner hub's bore stress is 385.1 MPa",
                 "Fitting the inner hub would need it at 158.3 °C",
                 "(its band is 13.00 µm to 26.00 µm)",
+            ],
+        );
+        // Review T5 5: the stress sentence's limit and yield, and the numbers of both no-length
+        // key sentences, pinned, as `result_text` and `input_text` show a mistyped path as a
+        // dash without failing.
+        assert_in_order(
+            &text(breaking(cup_overstressed)),
+            &[
+                "At its tightest the cup's bore stress is 384.0 MPa, above the 345.8 MPa limit (415.0 MPa yield with a margin).",
+            ],
+        );
+        assert_in_order(
+            &text(breaking(no_boss)),
+            &[
+                "The key has no bearing area in the cup: its boss and web, 0 mm and 2.500 mm long, together are no longer than the key is wide, 3.000 mm.",
+            ],
+        );
+        assert_in_order(
+            &text(breaking(short_hub)),
+            &[
+                "The key has no bearing area in the inner hub: the hub, 3.000 mm long, is no longer than the key is wide, 3.000 mm.",
             ],
         );
     }
