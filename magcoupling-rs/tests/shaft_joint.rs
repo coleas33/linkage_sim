@@ -345,7 +345,9 @@ fn the_verdict_texts_are_the_spec_s() {
 fn the_safety_factor_help_says_a_slip_can_reverse_the_torque_not_that_each_does() {
     // G-3 review MF-1: the swing runs at the pole-pair slip frequency for the slip duration.
     // At the defaults that is 16.7 cycles per event; at the slip speed's slider bottom it is
-    // under one, so a slip can reverse the torque many times, and need not.
+    // under one, so a slip can reverse the torque many times, and need not. The help names the
+    // coupling as what slips, since the badge's "The fit slips" gives the fit that word (G-3
+    // SF-11, from the review leftovers).
     let cycles =
         |inputs: &DesignInputs| compute_all(inputs).metal.slip_freq_Hz * inputs.metal.slip_event_s;
     assert_near(
@@ -359,7 +361,7 @@ fn the_safety_factor_help_says_a_slip_can_reverse_the_torque_not_that_each_does(
     let help = input_meta("shaft_joint.safety_factor").help;
     assert!(!help.contains("each slip"), "{help}");
     assert!(
-        help.contains("A slip can reverse the torque many times."),
+        help.contains("While the coupling slips, the torque can reverse many times."),
         "{help}"
     );
 }

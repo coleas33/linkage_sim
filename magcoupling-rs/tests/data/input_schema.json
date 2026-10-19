@@ -3266,7 +3266,7 @@
       "cell": null,
       "choices": [],
       "default": 2.0,
-      "help": "The fit alone must hold cold-high times this, and the key alone is checked at the same torque. A slip can reverse the torque many times.",
+      "help": "The fit alone must hold cold-high times this, and the key alone is checked at the same torque. While the coupling slips, the torque can reverse many times.",
       "label": "Shaft joint safety factor",
       "path": "shaft_joint.safety_factor",
       "range": {

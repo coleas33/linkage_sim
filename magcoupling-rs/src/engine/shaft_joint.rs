@@ -60,7 +60,7 @@ inputs! {
                 "The largest measured diametral interference of the cup. Its bore stress and fitting temperature are checked at it.")
                 .range(0.0, 40.0, 0.5),
             safety_factor: f64 = 2.0 => param_rust_only("-", "Shaft joint safety factor",
-                "The fit alone must hold cold-high times this, and the key alone is checked at the same torque. A slip can reverse the torque many times.")
+                "The fit alone must hold cold-high times this, and the key alone is checked at the same torque. While the coupling slips, the torque can reverse many times.")
                 .range(1.0, 4.0, 0.1),
             friction: f64 = 0.14 => param_rust_only("-", "Shrink-fit friction coefficient",
                 "Steel on steel, dry and degreased. Holding torque scales with it; oil or a coating in the bore lowers it.")
