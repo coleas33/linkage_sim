@@ -261,7 +261,7 @@ const HELP: &[(&str, &str)] = &[
     // Shaft and hub joint.
     (
         "coupling.bore_mm",
-        "Diameter of the shaft in the hub bore. Larger thins the hub wall: the hub check can fail, and the wall past the keyway can break through.",
+        "Diameter of both shafts in the inner hub's and cup's bores. Larger thins the walls: the hub check can fail, and the wall past the keyway can break through.",
     ),
     (
         "coupling.keyway_depth_mm",
@@ -2012,11 +2012,27 @@ mod batch_b_tests {
         rise(&example, &longer, length);
         let overall = |inputs: &DesignInputs| dimensions(inputs).expect("a size").overall_length_mm;
         assert!(overall(&longer) > overall(&example));
-        // A larger bore thins the hub wall past the keyway; at its slider top it breaks through
-        // the smallest ring's hub, the keyway at its default.
+        // The bore is both shafts' diameter (G-3 round 2 SF-7): its help says so, and both joints'
+        // fits read it. A larger bore thins the hub wall under the magnets and past the keyway;
+        // at its slider top the wall past the keyway breaks through the smallest ring's hub, the
+        // keyway at its default.
+        assert!(
+            help_for("coupling.bore_mm").starts_with("Diameter of both shafts"),
+            "{}",
+            help_for("coupling.bore_mm")
+        );
         let wall = "model.hub_wall_past_key_mm";
+        let hub_wall = "model.hub_wall_mm";
         let wider = raised(&example, "coupling.bore_mm");
         assert!(number(&wider, wall) < number(&example, wall));
+        assert!(number(&wider, hub_wall) < number(&example, hub_wall));
+        for holding in ["shaft_joint.hub_holding_Nm", "shaft_joint.cup_holding_Nm"] {
+            assert_ne!(
+                number(&wider, holding),
+                number(&example, holding),
+                "{holding}: the fit sits on the bore"
+            );
+        }
         let range = |path: &str| {
             InputCatalogue::get()
                 .entry(path)
@@ -2044,7 +2060,6 @@ mod batch_b_tests {
             bore_help.contains(&label_for(hub_check).to_lowercase()),
             "the bore help names the {hub_check} row: {bore_help}"
         );
-        let hub_wall = "model.hub_wall_mm";
         let (_, eight) = probe_designs()
             .into_iter()
             .find(|(name, _)| *name == "8 magnets per ring")
