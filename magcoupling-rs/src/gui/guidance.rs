@@ -3009,7 +3009,7 @@ mod tests {
     use crate::gui::readouts::Readouts;
     use crate::gui::test_support::{
         assert_glyphs, clamp_at_its_limit, drawn_texts, hot_day, hub_overstressed, is_shaft_joint,
-        n42_parts, only_the_clamp_fails, only_the_gearbox_fails, only_the_joint_fails,
+        mixed_rings, n42_parts, only_the_clamp_fails, only_the_gearbox_fails, only_the_joint_fails,
         passing_design, reversed_hub_band, shaft_joint_input_rows, shaft_joint_result_rows,
         short_magnets, sized_frame, slider_range, small_boss, with_poles,
     };
@@ -8154,10 +8154,7 @@ mod tests {
         );
         // Mixed rings (owner R-15 ring ruling): the inner N42M's own onset, never the outer
         // N35's 59.93 °C.
-        let mixed = text(breaking(|i| {
-            graded(i, "N42M");
-            i.coupling.magnets.grade_outer = "N35".to_owned();
-        }));
+        let mixed = text(breaking(mixed_rings));
         assert_in_order(
             &mixed,
             &[&format!(

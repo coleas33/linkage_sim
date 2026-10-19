@@ -2348,15 +2348,16 @@ mod tests {
     /// temperature the inner hub's fit would need, beside the wheel shaft's live shrink, against
     /// the allowed temperature. At the defaults; at library N42 parts in both rings, where the
     /// inner ring's single-ring onset less the cure margin binds (owner R-15; the guide tests'
-    /// `breaking(n42_parts)`); with mixed rings (inner N42M, outer N35), where the outer ring
-    /// governs and the cap is still the inner ring's own onset less the margin (the owner's ring
-    /// ruling); on an uncooled wheel shaft, whose shrink reads 0; and on a 40 °C
-    /// one, its slider's top, where the shaft grows (the render the physics review decides on).
+    /// `breaking(n42_parts)`); with mixed rings (inner N42M, outer N35; the guide tests'
+    /// `breaking(mixed_rings)`), where the outer ring governs and the cap is still the inner
+    /// ring's own onset less the margin (the owner's ring ruling); on an uncooled wheel shaft,
+    /// whose shrink reads 0; and on a 40 °C one, its slider's top, where the shaft grows (the
+    /// render the physics review decides on).
     #[test]
     fn the_shaft_joint_note_draws_the_fit_temperature_beside_the_wheel_shaft_s_shrink() {
         use crate::engine::explain::note_text::render;
         use crate::engine::temperature::RING_OUTER;
-        use crate::gui::test_support::{n42_parts, passing_design};
+        use crate::gui::test_support::{mixed_rings, n42_parts, passing_design};
         let sentence = notes::note("shaft_joint")
             .expect("the shaft-joint note")
             .sentences[4];
@@ -2374,10 +2375,7 @@ mod tests {
         // Mixed rings: the outer ring governs the magnets' limit, so its single-ring onset is not
         // the inner ring's own, which the bonded inner hub's cap reads.
         let mut mixed = passing_design();
-        mixed.coupling.magnets.part_inner.clear();
-        mixed.coupling.magnets.part_outer.clear();
-        mixed.coupling.magnets.grade_inner = "N42M".to_owned();
-        mixed.coupling.magnets.grade_outer = "N35".to_owned();
+        mixed_rings(&mut mixed);
         let demag = compute_all(&mixed).temperature.demag;
         assert_eq!(demag.demag_ring, RING_OUTER);
         assert_ne!(demag.onset_single_ring_C, demag.inner_onset_single_ring_C);

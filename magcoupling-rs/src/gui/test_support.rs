@@ -57,6 +57,18 @@ pub(crate) fn n42_parts(inputs: &mut crate::DesignInputs) {
     inputs.coupling.magnets.part_outer = "B842".to_owned();
 }
 
+/// Mixed rings on manual dimensions (both parts cleared): N42M in the inner ring, N35 in the
+/// outer. On [`passing_design`] the outer ring governs the magnets' limit, so the governing
+/// single-ring onset is not the inner ring's own, and the inner hub's allowed fitting
+/// temperature is still the inner ring's own onset less the cure margin (BL-064, the owner's
+/// ring ruling).
+pub(crate) fn mixed_rings(inputs: &mut crate::DesignInputs) {
+    inputs.coupling.magnets.part_inner.clear();
+    inputs.coupling.magnets.part_outer.clear();
+    inputs.coupling.magnets.grade_inner = "N42M".to_owned();
+    inputs.coupling.magnets.grade_outer = "N35".to_owned();
+}
+
 /// No screw fits a 12 mm clamp boss.
 pub(crate) fn small_boss(inputs: &mut crate::DesignInputs) {
     inputs.clamps.boss_od_mm = 12.0;
