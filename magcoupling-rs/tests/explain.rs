@@ -4635,11 +4635,13 @@ fn cure_margin_words() -> String {
 /// decision (review MF-1), with any heat cure of the cup's magnets (the notes record's SF-1),
 /// and name the cooled wheel shaft and the bonded inner hub (review 2 SF-6a); nothing in the
 /// engine checks a seal, a bearing or fretting; the default wheel shaft is colder than the
-/// minimum magnet temperature; a ferrite ring's coercivity falls as it cools. No text of the
-/// note orders the torques (review 2 MF-1, spec 7.8). The note's physics review, round 1: a
-/// raised cup minimum moves neither the cup's bore stress nor its fitting temperature, and one
-/// step past the maximum reverses the band (MF-2); a warmer wheel shaft lowers the inner hub's
-/// fitting margin, and from -180 °C the default inner hub cannot be fitted (MF-1).
+/// minimum magnet temperature; a ferrite ring's coercivity falls as it cools. A source names
+/// the ground shaft and honed bore the default smoothing rests on (the notes record's SF-3). No
+/// text of the note orders the torques (review 2 MF-1, spec 7.8). The note's physics review,
+/// round 1: a raised cup minimum moves neither the cup's bore stress nor its fitting
+/// temperature, and one step past the maximum reverses the band (MF-2); a warmer wheel shaft
+/// lowers the inner hub's fitting margin, and from -180 °C the default inner hub cannot be fitted
+/// (MF-1).
 #[test]
 fn the_shaft_joint_note_s_claims_hold_at_every_probe_design() {
     use magcoupling::engine::api::shaft_joint_links;
@@ -4719,6 +4721,19 @@ fn the_shaft_joint_note_s_claims_hold_at_every_probe_design() {
             .iter()
             .any(|source| source.contains(&format!("held {margin} below"))),
         "a source names the margin: {:?}",
+        note.sources
+    );
+    // The smoothing source names the surfaces its default rests on (the notes record's SF-3, from
+    // the review leftovers), with the default typed as the engine keeps it.
+    let smoothing = format!(
+        "{} µm is conservative for holding with a ground shaft and honed bore",
+        DesignInputs::default().shaft_joint.smoothing_um
+    );
+    assert!(
+        note.sources
+            .iter()
+            .any(|source| source.contains(&smoothing)),
+        "a source says {smoothing:?}: {:?}",
         note.sources
     );
     let entry = |input: &str| {

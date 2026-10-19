@@ -976,7 +976,7 @@ pub const NOTES: &[Note] = &[
         sources: &[
             "The owner's decisions of 2026-10-17: a keyed shrink fit on both rotors, the interference bands, the fitting order and temperatures, and the bonded inner hub held 10 °C below its magnets' single-ring onset, the margin the adhesive cure keeps",
             "Lamé thick-cylinder fit pressure and bore stress (Shigley; Roark)",
-            "DIN 7190-1:2017 interference fits: the 0.4·Rz smoothing rule that makes 5 µm conservative for holding; the joining clearance",
+            "DIN 7190-1:2017 interference fits: the 0.4·Rz smoothing rule, by which 5 µm is conservative for holding with a ground shaft and honed bore; the joining clearance",
             "DIN 6885-1 parallel keys: 3 × 3 for shafts over 8 up to 10 mm",
             "NIST cryogenic material properties: nickel steel Fe-2.25Ni, linear expansion",
             "Friction of dry steel on steel: Gear Technology, Nov/Dec 2017 (0.145); ANSI/AGMA 9003 (0.15)",
