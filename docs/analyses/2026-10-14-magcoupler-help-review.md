@@ -2722,7 +2722,8 @@ No other doc in `docs/ai` or the README quotes the bracket.
 ## BL-064 shaft joints
 
 BL-064's G-3 review of every new on-screen text (plan Task 8) is recorded first in this section, with each round's
-report as returned. The text re-reviews made while Tasks 1 to 8 were built follow it, in the order they ran.
+report as returned. The text re-reviews made while Tasks 1 to 8 were built, and after the whole-branch review's
+fix wave (Task 10), follow it, in the order they ran.
 
 - Scope: BL-064's new on-screen strings (spec
   `docs/superpowers/specs/2026-10-17-bl064-shaft-joint-design.md`, sections 6.2 and 6.3), reviewed
@@ -4349,3 +4350,114 @@ left, for Task 10's triage.
   now tells the user to stay below it.
 - With the aluminium cup the fit needs 155.6 °C and slips anyway (0.00 N·m), so no verdict depends on the default
   limit there. The UltraOx process temperature is BL-069's open fact.
+
+### Re-review after the whole-branch review, fix wave 1 (2026-10-19)
+
+The BL-064 whole-branch review's fix wave 1 (2026-10-19; `final-review.md` MF-1, commit f0b36d9) added two on-screen
+texts. The first is the verdict `UNKNOWN_IMPOSSIBLE_VALUE`, "Shaft joint check unknown: a value is outside what it can
+physically be" (`engine/shaft_joint.rs`). The second is the Problem sentence of an input typed below what it can
+physically be (`impossible_value_sentence`, `gui/guidance.rs`), one for each of six inputs: the shrink-fit friction,
+the surface smoothing, the key width, the two shafts' fitting temperatures and the joining clearance. The change had
+its G-3 text re-review in a fresh context at HEAD f0b36d9. The verdict was MUST_FIX; its two must-fix items are
+applied, each red first, in the commit that records this section. The reviewer's report for the record follows
+unchanged (full answer: `.superpowers/sdd/2026-10-18-bl064-shaft-joint/textreview-T10-the-whole-branch-review-fix-wave-1-1.md`).
+
+- Reviewer: fresh context, session model, 2026-10-19; G-3 text re-review of the fix wave's two new texts (round 1).
+  The note `shaft_joint` did not change in f0b36d9. The reviewer dumped it at the five probe designs for consistency
+  ("1 notes at 5 designs", every aim "moves as it says") and probed the engine from a scratch crate outside the
+  repository.
+- Verdict: MUST_FIX. The verdict text and the floor each sentence names are true. Two text fixes, both small; nothing
+  needs a change to the engine's model.
+- Must-fix, both applied as given:
+  - MF-1 (the Problem sentence's form). The number to enter was a slider bottom given without its source. For the two
+    shaft temperatures that broke the Global Constraint that each temperature limit names its source (trap 9):
+    "-20.00 °C" and "-196.0 °C" were bare. For four of the six inputs the number is not the floor the same sentence
+    names, yet the engine judges the values in between: friction 0.01 slips at 0.68 N·m, a wheel shaft at -273.15 °C
+    passes and a gearbox shaft at -100 °C passes. The format string is now
+    `"{}, {}, cannot physically be {floor}: enter at least {}, its slider's bottom."`, so the six sentences read:
+    - "Shrink-fit friction coefficient, -0.1400, cannot physically be below zero: enter at least 0.05000, its slider's bottom."
+    - "Surface smoothing of the fit, -3.000 µm, cannot physically be below zero: enter at least 0 µm, its slider's bottom."
+    - "Shaft key width, 0 mm, cannot physically be zero or below: enter at least 1.000 mm, its slider's bottom."
+    - "Wheel shaft temperature at fitting, -300.0 °C, cannot physically be below absolute zero: enter at least -196.0 °C, its slider's bottom."
+    - "Gearbox shaft temperature at fitting, -300.0 °C, cannot physically be below absolute zero: enter at least -20.00 °C, its slider's bottom."
+    - "Joining clearance, -2.000 µm, cannot physically be below zero: enter at least 0 µm, its slider's bottom."
+
+    The six pins of `each_value_below_what_its_input_can_physically_be_has_its_own_sentence` and the friction pin of
+    `the_shaft_joint_problem_is_some_exactly_when_the_check_fails_or_cannot_be_made` moved, and were seen failing on
+    the old text first; the two-at-once pin is built from the friction and gearbox shaft pins, so it moved with them.
+  - MF-2 (`NO_FIX`, `gui/guidance.rs`). Opening the new amber block (`dashboard.rs` `fix_line`) showed "No listed
+    change helps from here: each is at its slider's end, has no better choice or would fail another check, or a value
+    the check needs is not a number." None of those reasons holds at friction -0.14, and the same was already true
+    under ruling C-4's safety factor of 0; commit 45579e5 (Review N-3) fixed this defect for the not-a-number case. It
+    now reads "No listed change helps from here: each is at its slider's end, has no better choice or would fail
+    another check, or a value the check needs is not a number or is outside what it can be." (38 words; it still
+    contains "not a number"). The new test `the_no_fix_line_covers_a_value_outside_what_it_can_be`, seen failing on the
+    old text first, pins that `NO_FIX` contains "outside what it can be", and that the shaft joints' guide has a
+    Problem and no fix at friction -0.14 and at a safety factor of 0.
+- Should-fix offered, none applied in this round; all five stay open for the controller's triage (Task 10 Step 8):
+  - SF-1 (high; an engine guard, the owner's call). A key width typed at or below zero reads unknown in a design with
+    no keyway, where it enters no term, and hides a real red: at keyway depth 0 with the hub minimum at 10 µm the badge
+    reads "The fit slips (inner hub): holds 3.85 N·m against 7.65 N·m", and with the key width 0 as well it turns
+    amber and the Problem asks for "at least 1.000 mm" of a key the design does not have; a key contact typed -1 mm in
+    the same design passes. Option A (recommended): apply the key width's floor only with a keyway
+    (`keyway_depth_mm > 0.0`; a NaN depth is already caught first as not a number), with tests and the docs that
+    describe the floor; no on-screen text changes. Option B: keep it and record that a typed key width is read even
+    without a keyway; the result is amber, not a false pass.
+  - SF-2 (high; not introduced by this wave; the owner's call). A gearbox shaft typed between absolute zero and its
+    slider's bottom is judged, and can pass a cup that cannot be fitted at the slider's bottom: with the cup allowed
+    200 °C, -20 °C reads "Cannot be fitted at the allowed temperature (cup): needs 243.1 °C against 200.0 °C", and a
+    typed -100 °C reads "Both shaft joints hold and can be fitted" (180.61 °C). Option A: floor
+    `output_shaft_fit_C` at its slider's bottom, with a sentence of its own that names the rated range. Option B
+    (recommended for this wave): file it with BL-071 or as a new item, since the gearbox's rated range is unconfirmed
+    (trap 11; G-3 round 1 SF-5) and the floor's value is the owner's to set. With MF-1's "its slider's bottom" the
+    sentence no longer suggests that any value above absolute zero will do.
+  - SF-3 (low). The verdict could say "below" rather than "outside" ("Shaft joint check unknown: a value is below what
+    it can physically be"). Option B, recommended: keep "outside"; it is true, and MF-2's no-fix clause reuses it,
+    where it also covers the safety factor.
+  - SF-4 (low). The slider bottoms are quoted to four significant digits ("0.05000", "1.000 mm", "-20.00 °C",
+    "-196.0 °C"). Option A: quote each at its slider's step decimals (`gui::inputs::step_decimals`). Option B,
+    recommended: keep; four significant digits is the guide's readout everywhere.
+  - SF-5 (low; tests). The plain-words and glyph guards see one of the six sentences: `shaft_joint_problem_designs()`
+    holds the friction case only. Offered: add the five other designs and the two-at-once design to that list.
+- No input label or help changed, so `input_schema.json` is not re-blessed. The note did not change, so the notes
+  review and the note's review date are unchanged.
+
+**Report for the record (as returned).**
+
+**R-1. The verdict.** "Shaft joint check unknown: a value is outside what it can physically be".
+- Correct wherever it shows: for each of the six floors just past it, for two at once, and behind not a number and
+  the safety factor (the probes).
+- Amber by the `SHAFT_JOINT_UNKNOWN` prefix (`verdict_level`, `joint_forms` 11).
+- 71 characters, shorter than the reversed-band form. ASCII only, no "clamp", no internal path.
+- The badge is exempt from trap 9. "A value" holds when several inputs are past their floors.
+
+**R-2. The floors are physically right.**
+- A friction coefficient is not negative. Friction 0 is judged: each joint holds 0 N·m, and the Problem says so.
+- Smoothing is interference lost as peaks flatten, so it cannot add interference.
+- A key has a width above zero.
+- -273.15 °C (`-ZERO_C_IN_K`) is absolute zero. -273.15 °C is judged and -273.16 °C is not. The NIST fit runs from
+  4 K, so the judged range is the fit's range plus 4 K of near-flat extrapolation.
+- A clearance is a gap. Below zero it would be a press, which trap 11 forbids for the cup.
+- "Zero or below" is the right floor phrase for the key width: 0 mm is past it, and the sentence quotes "0 mm".
+- A value typed as -0 is allowed and reads "0" (`format_number`). A tiny negative reads in scientific form, never
+  as the floor.
+
+**R-3. The traps.**
+- Trap 9: MF-1.
+- Trap 11: SF-2. The gearbox sentence suggests no cooling below -20 °C.
+- Trap 12: "enter at least -196.0 °C" names the slider's bottom, not a bath as advice.
+- Traps 21 and 22: no "clamp"; ASCII "-", "µm", "°C". `plain_text_violations` is empty for all six sentences by
+  their text (none holds a cell id, correction id or banned word). The test covers one of them (SF-5).
+- The other traps do not bear on these strings: no torque is quoted, there is no fit class, nothing about speed,
+  and no "safe".
+
+**R-4. The unchanged texts.**
+- The not-a-number and safety-factor Problem sentences are byte-identical. They are now reached through
+  `cannot_be_made`, in the same order, so a safety factor of 0 with friction -0.14 shows the safety factor's
+  sentence alone; the friction sentence shows once it is fixed.
+- No input label or help changed (`git diff 695de15 HEAD -- magcoupling-rs/tests/data` is empty).
+- The note `shaft_joint` is unchanged. Its dump at five designs says nothing the new texts contradict.
+
+**R-5. The engine behind the guide.** `shaft_joints` now reads the engine's `cannot_be_made`, not the verdict text
+(T5 minor 4). `verdict` and the Problem therefore cannot disagree on why the check cannot be made: one predicate,
+the same order.

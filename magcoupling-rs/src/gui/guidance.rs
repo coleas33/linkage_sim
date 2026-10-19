@@ -703,8 +703,9 @@ fn fits_on_the_slider(inputs: &DesignInputs) -> bool {
 
 /// The Fix line of a failing check whose [`fixes`] are empty (spec 3.4 gives every block a
 /// Fix): its inputs are at their sliders' ends, have no better choice or would turn another
-/// check red, or a value the check needs is not a number, which the Problem names.
-pub const NO_FIX: &str = "No listed change helps from here: each is at its slider's end, has no better choice or would fail another check, or a value the check needs is not a number.";
+/// check red, or a value the check needs is not a number or is outside what it can be, which
+/// the Problem names.
+pub const NO_FIX: &str = "No listed change helps from here: each is at its slider's end, has no better choice or would fail another check, or a value the check needs is not a number or is outside what it can be.";
 
 /// The notes to draw under the fixes of the guide at `index`, where another failing check's
 /// fix moves one of its inputs the other way (spec review focus 4). `all` holds every guide's
@@ -2033,7 +2034,10 @@ fn cannot_be_made_problem(inputs: &DesignInputs, reason: &CannotBeMade) -> Strin
 
 /// The sentence of an input typed below what it can physically be (the whole-branch review's
 /// MF-1): its name as the fixes give it ([`fix_label`]), its value, its floor, and its slider's
-/// bottom to enter instead, as the safety factor's sentence asks for at least its own.
+/// bottom to enter instead, as the safety factor's sentence asks for at least its own. The
+/// sentence calls that number its slider's bottom: it is not the floor the sentence names, and
+/// for the two shafts it is a fitting temperature limit, which names its source (the text
+/// re-review, MF-1).
 fn impossible_value_sentence(inputs: &DesignInputs, value: &ImpossibleValue) -> String {
     let path = format!("shaft_joint.{}", value.field);
     let floor = match value.floor {
@@ -2046,7 +2050,7 @@ fn impossible_value_sentence(inputs: &DesignInputs, value: &ImpossibleValue) -> 
         .and_then(|entry| entry.meta.range)
         .map_or(f64::NAN, |range| range.min);
     format!(
-        "{}, {}, cannot physically be {floor}: enter at least {}.",
+        "{}, {}, cannot physically be {floor}: enter at least {}, its slider's bottom.",
         fix_label(&path),
         input_text(inputs, &path),
         with_unit(
@@ -7256,6 +7260,27 @@ mod tests {
     }
 
     #[test]
+    fn the_no_fix_line_covers_a_value_outside_what_it_can_be() {
+        // The shaft joints' check cannot be made with a friction typed below zero (the
+        // whole-branch review's MF-1) or a safety factor not above zero (ruling C-4); its
+        // Problem says so and it has no fix, so the Fix line must name that case as well
+        // (the fix wave's text re-review, MF-2).
+        let joint = guide(SHAFT_JOINT).unwrap();
+        type Edit = fn(&mut DesignInputs);
+        let edits: [Edit; 2] = [
+            |i| i.shaft_joint.friction = -0.14,
+            |i| i.shaft_joint.safety_factor = 0.0,
+        ];
+        for edit in edits {
+            let inputs = breaking(edit);
+            let results = compute_all(&inputs);
+            assert!((joint.problem)(&inputs, &results).is_some());
+            assert_eq!(fixes(joint, &inputs, &results, false), []);
+        }
+        assert!(NO_FIX.contains("outside what it can be"), "{NO_FIX}");
+    }
+
+    #[test]
     fn the_outside_diameter_is_not_lowered_past_the_minimum_od() {
         // `fixes` steps the Outside diameter over its slider without the panel's Minimum OD;
         // the panel's raised floor stops that slider, so "Lower Outside diameter" goes there.
@@ -7667,7 +7692,7 @@ mod tests {
         let text = shaft_joint_problem(&negative_friction, &results).unwrap();
         assert_eq!(
             text,
-            "Shrink-fit friction coefficient, -0.1400, cannot physically be below zero: enter at least 0.05000."
+            "Shrink-fit friction coefficient, -0.1400, cannot physically be below zero: enter at least 0.05000, its slider's bottom."
         );
         for words in ["would hold", "holds", "measured interference"] {
             assert!(!text.contains(words), "{words:?} in {text}");
@@ -7707,27 +7732,27 @@ mod tests {
         let cases: [(Edit, &str); 6] = [
             (
                 |i| i.shaft_joint.friction = -0.14,
-                "Shrink-fit friction coefficient, -0.1400, cannot physically be below zero: enter at least 0.05000.",
+                "Shrink-fit friction coefficient, -0.1400, cannot physically be below zero: enter at least 0.05000, its slider's bottom.",
             ),
             (
                 |i| i.shaft_joint.smoothing_um = -3.0,
-                "Surface smoothing of the fit, -3.000 µm, cannot physically be below zero: enter at least 0 µm.",
+                "Surface smoothing of the fit, -3.000 µm, cannot physically be below zero: enter at least 0 µm, its slider's bottom.",
             ),
             (
                 |i| i.shaft_joint.key_width_mm = 0.0,
-                "Shaft key width, 0 mm, cannot physically be zero or below: enter at least 1.000 mm.",
+                "Shaft key width, 0 mm, cannot physically be zero or below: enter at least 1.000 mm, its slider's bottom.",
             ),
             (
                 |i| i.shaft_joint.wheel_shaft_fit_C = -300.0,
-                "Wheel shaft temperature at fitting, -300.0 °C, cannot physically be below absolute zero: enter at least -196.0 °C.",
+                "Wheel shaft temperature at fitting, -300.0 °C, cannot physically be below absolute zero: enter at least -196.0 °C, its slider's bottom.",
             ),
             (
                 |i| i.shaft_joint.output_shaft_fit_C = -300.0,
-                "Gearbox shaft temperature at fitting, -300.0 °C, cannot physically be below absolute zero: enter at least -20.00 °C.",
+                "Gearbox shaft temperature at fitting, -300.0 °C, cannot physically be below absolute zero: enter at least -20.00 °C, its slider's bottom.",
             ),
             (
                 |i| i.shaft_joint.joining_clearance_um = -2.0,
-                "Joining clearance, -2.000 µm, cannot physically be below zero: enter at least 0 µm.",
+                "Joining clearance, -2.000 µm, cannot physically be below zero: enter at least 0 µm, its slider's bottom.",
             ),
         ];
         for (edit, sentence) in cases {
