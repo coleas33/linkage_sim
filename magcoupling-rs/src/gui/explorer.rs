@@ -113,7 +113,7 @@ pub const START_HERE_BUTTON: &str = "Start here";
 /// [`start_here_hover`]'s two forms.
 macro_rules! start_here_topics {
     () => {
-        "A suggested order: how the coupling makes torque, the magnet pattern, back iron, pull-out, magnet ends, calibration, temperature, slipping and its heat, demagnetization"
+        "A suggested order: how the coupling makes torque, the magnet pattern, back iron, pull-out, magnet ends, calibration, temperature, slipping and its heat, demagnetization, shaft joints"
     };
 }
 
@@ -195,8 +195,8 @@ pub fn used_by_shown(path: &str, clamps_paused: bool) -> Vec<&'static String> {
 /// 3.3, TC-32).
 pub const FERRITE_ONLY: &str = "(ferrite rings only)";
 
-/// The start of the start-here bar: "Start here 13 of 13 (ferrite rings only): <title>" on the
-/// ferrite step while the shaft-clamp section is paused (13 of 14 with it), the step and its
+/// The start of the start-here bar: "Start here 13 of 14 (ferrite rings only): <title>" on the
+/// ferrite step while the shaft-clamp section is paused (13 of 15 with it), the step and its
 /// title alone on every other one.
 pub fn start_here_text(step: usize) -> String {
     let (id, _) = START_HERE[step];
@@ -1462,6 +1462,13 @@ mod tests {
             start_here_hover(false),
             format!("{}, clamps", start_here_hover(true))
         );
+        // BL-064: the shaft-joint step is the last shown while the section is paused, so its
+        // topic ends the hover there, after demagnetization's.
+        assert!(
+            start_here_hover(true).ends_with("demagnetization, shaft joints"),
+            "{}",
+            start_here_hover(true)
+        );
         assert!(!start_here_hover(true).to_lowercase().contains("clamp"));
         assert_eq!(START_HERE_HOVER, start_here_hover(clamps::PAUSED));
         for paused in [false, true] {
@@ -1513,15 +1520,16 @@ mod tests {
 
     #[test]
     fn the_start_here_bar_names_every_step_it_shows() {
-        // Spec 3.3 and ruling 11: the bar walks START_HERE, the full order of fourteen steps
-        // or, while the shaft-clamp section is paused, its first thirteen (the clamp step, the
-        // last, hidden); the torque note first; each bar names its step of the steps shown and
-        // its note, and only the ferrite step says it is for ferrite rings only (TC-32).
-        assert_eq!(notes::start_here_for(false).len(), 14);
-        assert_eq!(notes::start_here_for(true).len(), 13);
+        // Spec 3.3, ruling 11 and BL-064: the bar walks START_HERE, the full order of fifteen
+        // steps or, while the shaft-clamp section is paused, its first fourteen (the clamp step,
+        // the last, hidden); the torque note first; each bar names its step of the steps shown
+        // and its note, and only the ferrite step says it is for ferrite rings only (TC-32).
+        assert_eq!(notes::start_here_for(false).len(), 15);
+        assert_eq!(notes::start_here_for(true).len(), 14);
         assert_eq!(START_HERE[0].0, "torque_from_shear");
-        // Two bars pinned as drawn: the first step, and the ferrite step, the 13th in both
-        // orders. The count is the steps shown, so the pins hold in both switch states.
+        // Three bars pinned as drawn: the first step, the ferrite step, the 13th in both orders,
+        // and the shaft-joint step, the 14th in both (BL-064). The count is the steps shown, so
+        // the pins hold in both switch states.
         let steps = START_HERE.len();
         assert_eq!(
             start_here_text(0),
@@ -1534,6 +1542,11 @@ mod tests {
                 "Start here 13 of {steps} (ferrite rings only): {}",
                 ferrite.title
             )
+        );
+        let joints = reviewed_note("shaft_joint").expect("the shaft-joint note is reviewed");
+        assert_eq!(
+            start_here_text(13),
+            format!("Start here 14 of {steps}: {}", joints.title)
         );
         // Every step's note is reviewed, so its bar draws its title; no other bar has the
         // ferrite label.
@@ -2331,6 +2344,51 @@ mod tests {
         assert_eq!(live_value(&compute_all(&designs[3].1), onset), None);
     }
 
+    /// BL-064 (spec 6.1 and 7.11): the shaft-joint note's sentence 4 as the panel draws it: the
+    /// temperature the inner hub's fit would need, beside the wheel shaft's live shrink, against
+    /// the allowed temperature. At the defaults; at library N42 parts in both rings, where the
+    /// inner ring's single-ring onset less the cure margin binds (owner R-15; the guide tests'
+    /// `breaking(n42_parts)`); on an uncooled wheel shaft, whose shrink reads 0; and on a 40 °C
+    /// one, its slider's top, where the shaft grows (the render the physics review decides on).
+    #[test]
+    fn the_shaft_joint_note_draws_the_fit_temperature_beside_the_wheel_shaft_s_shrink() {
+        use crate::engine::explain::note_text::render;
+        use crate::gui::test_support::passing_design;
+        let sentence = notes::note("shaft_joint")
+            .expect("the shaft-joint note")
+            .sentences[4];
+        let drawn = |inputs: &DesignInputs| {
+            let results = compute_all(inputs);
+            render(sentence, |path: &str| live_value(&results, path))
+        };
+        let wheel_shaft_at = |celsius: f64| {
+            let mut inputs = DesignInputs::default();
+            inputs.shaft_joint.wheel_shaft_fit_C = celsius;
+            inputs
+        };
+        let mut n42_parts = passing_design();
+        n42_parts.coupling.magnets.part_inner = "B842".to_owned();
+        n42_parts.coupling.magnets.part_outer = "B842".to_owned();
+        for (inputs, words) in [
+            (
+                DesignInputs::default(),
+                "would need 93.27 °C on the wheel shaft shrunk 18.99 µm; allowed: 100.0 °C,",
+            ),
+            (n42_parts, "allowed: 59.83 °C,"),
+            (
+                wheel_shaft_at(20.0),
+                "would need 247.6 °C on the wheel shaft shrunk 0 µm;",
+            ),
+            (
+                wheel_shaft_at(40.0),
+                "would need 266.3 °C on the wheel shaft shrunk -2.300 µm;",
+            ),
+        ] {
+            let text = drawn(&inputs);
+            assert!(text.contains(words), "{words:?} in {text:?}");
+        }
+    }
+
     #[test]
     fn every_note_draws_at_every_probe_design_with_glyphs_and_no_braces() {
         use crate::engine::explain::note_text::rendered_texts;
@@ -2760,8 +2818,17 @@ mod tests {
     /// What the sheet says in place of a new note's old text.
     const NEW_IN_SLICE: &str = "(new in slice 2)";
 
+    /// The notes added after slice 2 (BL-064's shaft joints): no text of theirs before the slice
+    /// either, and not the slice's own. The sheet is not regenerated for them (BL-064 spec 6.1):
+    /// the owner's review of the diff is the new note's sign-off.
+    const AFTER_THE_SLICE: [&str; 1] = ["shaft_joint"];
+
+    /// What the sheet says in place of the old text of a note added after the slice.
+    const ADDED_AFTER_THE_SLICE: &str =
+        "(added after slice 2; its own physics review is its record)";
+
     /// What the sheet says while the shaft-clamp section is paused (ruling 11).
-    const CLAMPS_PAUSED_LINE: &str = "The shaft-clamp section is paused (owner, 2026-10-15): its note, clamp_preload, keeps its earlier text, is not shown on screen and is not part of this sign-off; it returns, rewritten and reviewed, with that section (BL-064).";
+    const CLAMPS_PAUSED_LINE: &str = "The shaft-clamp section is paused (owner, 2026-10-15): its note, clamp_preload, keeps its earlier text, is not shown on screen and is not part of this sign-off; the shafts' keyed shrink fits are checked instead (owner, 2026-10-17).";
 
     /// Where `notes_signoff_sheet` writes the sheet.
     const SIGNOFF_SHEET: &str = concat!(
@@ -2848,6 +2915,9 @@ mod tests {
                         .collect();
                     sheet.push_str(&format!("```text\n{}\n```\n", text.join("\n")));
                 }
+                None if AFTER_THE_SLICE.contains(&note.id) => {
+                    sheet.push_str(&format!("{ADDED_AFTER_THE_SLICE}\n"));
+                }
                 None => sheet.push_str(&format!("{NEW_IN_SLICE}\n")),
             }
             sheet.push_str(&format!(
@@ -2869,10 +2939,14 @@ mod tests {
     #[test]
     fn the_signoff_sheet_pairs_every_note_with_its_text_before_the_slice() {
         // T4's snapshot holds the 17 notes there were, each once and with text; the three
-        // notes slice 2 added have none.
+        // notes slice 2 added and the one added after it (BL-064) have none.
         let before = parse(SNAPSHOT);
         let ids: Vec<&str> = before.iter().map(|(id, _)| *id).collect();
-        assert_eq!(ids.len(), notes::NOTES.len() - NEW_NOTES.len(), "{ids:?}");
+        assert_eq!(
+            ids.len(),
+            notes::NOTES.len() - NEW_NOTES.len() - AFTER_THE_SLICE.len(),
+            "{ids:?}"
+        );
         for (id, lines) in &before {
             assert!(notes::note(id).is_some(), "{id}: no such note now");
             assert!(!lines.is_empty(), "{id}: no text");
@@ -2883,7 +2957,7 @@ mod tests {
             .filter(|id| !ids.contains(id))
             .collect();
         without.sort_unstable();
-        let mut new_notes = NEW_NOTES.to_vec();
+        let mut new_notes = [NEW_NOTES.as_slice(), AFTER_THE_SLICE.as_slice()].concat();
         new_notes.sort_unstable();
         assert_eq!(without, new_notes);
         // One section per note shown, each with its text before (or "new") and its text now:
@@ -2903,6 +2977,13 @@ mod tests {
             assert_eq!(
                 sheet.matches(NEW_IN_SLICE).count(),
                 NEW_NOTES.len(),
+                "paused: {paused}"
+            );
+            // The note added after the slice is shown in both switch states, so its line shows
+            // once in both.
+            assert_eq!(
+                sheet.matches(ADDED_AFTER_THE_SLICE).count(),
+                AFTER_THE_SLICE.len(),
                 "paused: {paused}"
             );
             assert_eq!(sheet.contains(CLAMPS_PAUSED_LINE), paused);

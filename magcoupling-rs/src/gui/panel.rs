@@ -8873,6 +8873,49 @@ mod tests {
     }
 
     #[test]
+    fn the_shaft_joint_row_s_why_link_opens_the_shaft_joint_note() {
+        // BL-064: the shaft-joint row's Why link leads to the shaft-joint note, which no other
+        // row links, so its title is drawn once on the dashboard, under the row's label and
+        // above the next row's. The click edits nothing.
+        use crate::gui::dashboard::DASHBOARD;
+        use crate::gui::typeset::glyph_safe;
+        const SHAFT_JOINT_CHECK: &str = "shaft_joint.check";
+        let mut harness = Harness::on_screen(TALL);
+        let output = harness.frame(Vec::new());
+        let note = crate::gui::explorer::reviewed_note("shaft_joint")
+            .expect("the shaft-joint note is reviewed");
+        let on_dashboard = |x: f32| x > TALL.x - DASHBOARD_WIDTH;
+        let label_top = |path: &str| {
+            text_rects(&output, label_for(path))
+                .into_iter()
+                .find(|r| on_dashboard(r.center().x))
+                .unwrap_or_else(|| panic!("{path} on the dashboard"))
+                .top()
+        };
+        let index = DASHBOARD
+            .iter()
+            .position(|&(path, _)| path == SHAFT_JOINT_CHECK)
+            .expect("the shaft-joint row");
+        let (row, next) = (
+            label_top(SHAFT_JOINT_CHECK),
+            label_top(DASHBOARD[index + 1].0),
+        );
+        let links: Vec<egui::Pos2> = last_characters(&output, &glyph_safe(note.title))
+            .into_iter()
+            .filter(|at| on_dashboard(at.x))
+            .collect();
+        assert_eq!(links.len(), 1, "one link to the note: {links:?}");
+        assert!(
+            links[0].y > row && links[0].y < next,
+            "under the shaft-joint row: {links:?}, row {row}, next {next}"
+        );
+        harness.click(links[0]);
+        assert!(harness.panel.explorer.open);
+        assert_eq!(harness.panel.explorer.note(), Some("shaft_joint"));
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
     fn the_failing_filter_lists_the_gearbox_check_with_its_red_badge() {
         use crate::gui::dashboard::failing_checks;
         use crate::gui::results_table::{FAILING_ONLY, entry_index, table_entries};

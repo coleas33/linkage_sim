@@ -1638,14 +1638,15 @@ fn every_note_s_review_date_is_recorded_in_its_section() {
     }
 }
 
-/// Spec 3.3 (R4), section 6 test 5 and ruling 11: the full Start here order is fourteen
-/// steps, the torque note first and the clamp note last; while the shaft-clamp section is
-/// paused `START_HERE` shows the first thirteen. Each note is a step once; with the six
-/// warning notes that is every note shown, in both switch states. (That each step's note
-/// explains its equation is `notes.rs`'s `ids_are_unique_and_every_link_resolves`.)
+/// Spec 3.3 (R4), section 6 test 5, ruling 11 and BL-064 (spec 6.1): the full Start here
+/// order is fifteen steps, the torque note first, the shaft-joint note just before the clamp
+/// note, the clamp note last; while the shaft-clamp section is paused `START_HERE` shows the
+/// first fourteen. Each note is a step once; with the six warning notes that is every note
+/// shown, in both switch states. (That each step's note explains its equation is `notes.rs`'s
+/// `ids_are_unique_and_every_link_resolves`.)
 #[test]
-fn start_here_is_fourteen_steps_and_thirteen_while_paused() {
-    const FULL: [&str; 14] = [
+fn start_here_is_fifteen_steps_and_fourteen_while_paused() {
+    const FULL: [&str; 15] = [
         "torque_from_shear",
         "harmonics",
         "back_iron_factor",
@@ -1659,6 +1660,7 @@ fn start_here_is_fourteen_steps_and_thirteen_while_paused() {
         "thermal_time_constant",
         "demagnetization",
         "ferrite_cold_demag",
+        "shaft_joint",
         "clamp_preload",
     ];
     let ids = |steps: &[(&'static str, &'static str)]| -> Vec<&'static str> {
@@ -1666,7 +1668,7 @@ fn start_here_is_fourteen_steps_and_thirteen_while_paused() {
     };
     assert_eq!(ids(notes::START_HERE_ALL), FULL);
     assert_eq!(ids(notes::start_here_for(false)), FULL);
-    assert_eq!(ids(notes::start_here_for(true)), FULL[..13].to_vec());
+    assert_eq!(ids(notes::start_here_for(true)), FULL[..14].to_vec());
     let warnings: Vec<&str> = magcoupling::engine::warnings::WARNING_RULES
         .iter()
         .map(|r| r.note_id)
@@ -4606,6 +4608,302 @@ fn the_ferrite_note_s_entries_hold() {
             d.magnet_limit_C, d0.magnet_limit_C,
             "{rings:?}: the NdFeB ring keeps the hot limit"
         );
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// BL-064: the shaft-joint note
+// ---------------------------------------------------------------------------------------
+
+/// The cure margin as the shaft-joint texts type it, "10 °C": the engine's
+/// `temperature::CURE_MARGIN_MIN_C`, which the bonded inner hub's fitting cap reads (owner
+/// R-15). Built from the constant, so a change to the margin fails every text that types it.
+fn cure_margin_words() -> String {
+    format!("{CURE_MARGIN_MIN_C} °C")
+}
+
+/// BL-064 (spec 6.1, 7.8 and 7.11): what the shaft-joint note says holds at the five probe
+/// designs. Sentence 1 quotes each joint's holding torque at its loosest against the torque each
+/// must hold, the safety factor times cold-high. Sentence 3 quotes the cup's bore stress against
+/// the limit in a "here" clause (review 5 SF-4, review 6 SF-1): per µm of effective
+/// interference the bore stress is E·δ/d times √3/2, about 0.87 (a thick wall), to 1.0 (a thin
+/// one), so it follows interference over diameter and hardly the wall. Sentence 4 quotes the
+/// temperature the inner hub's fit would need beside the wheel shaft's live shrink, never the
+/// shaft's input temperature (review 4 MF-2, review 5 MF-2), against the allowed temperature,
+/// the lowest of the three limits it names with the cure margin typed as the engine keeps it
+/// (owner R-15; review MF-6). The watch-outs carry the owner's "Cup temp" decision (review
+/// MF-1) and name the cooled wheel shaft and the bonded inner hub (review 2 SF-6a); nothing in
+/// the engine checks a seal, a bearing or fretting; the default wheel shaft is colder than the
+/// minimum magnet temperature; a ferrite ring's coercivity falls as it cools. No text of the
+/// note orders the torques (review 2 MF-1, spec 7.8). The note's physics review, round 1: a
+/// raised cup minimum moves neither the cup's bore stress nor its fitting temperature, and one
+/// step past the maximum reverses the band (MF-2); a warmer wheel shaft lowers the inner hub's
+/// fitting margin, and from -180 °C the default inner hub cannot be fitted (MF-1).
+#[test]
+fn the_shaft_joint_note_s_claims_hold_at_every_probe_design() {
+    use magcoupling::engine::api::shaft_joint_links;
+    use magcoupling::engine::shaft_joint::{
+        CANNOT_BE_FITTED, CUP, INNER_HUB, UNKNOWN_BAND_REVERSED, hub_fit_allowed,
+    };
+    let note = notes::note("shaft_joint").expect("the shaft-joint note");
+    let s = note.sentences;
+    assert_eq!(
+        values_in(s[1]),
+        [
+            "shaft_joint.hub_holding_Nm",
+            "shaft_joint.cup_holding_Nm",
+            "shaft_joint.required_Nm"
+        ]
+    );
+    assert_eq!(
+        values_in(s[3]),
+        [
+            "shaft_joint.cup_bore_stress_MPa",
+            "shaft_joint.stress_limit_MPa"
+        ]
+    );
+    assert!(
+        s[3].contains("here") && s[3].contains("cup's"),
+        "sentence 3 names the joint whose stress it quotes, here: {:?}",
+        s[3]
+    );
+    assert_eq!(
+        values_in(s[4]),
+        [
+            "shaft_joint.hub_fit_temp_C",
+            "shaft_joint.wheel_shaft_shrink_um",
+            "shaft_joint.hub_fit_allowed_C"
+        ]
+    );
+    let margin = cure_margin_words();
+    for words in [
+        "Here",
+        "wheel shaft",
+        "your limit",
+        "adhesive's",
+        "single-ring onset",
+        &format!("onset less {margin}"),
+    ] {
+        assert!(
+            s[4].contains(words),
+            "sentence 4 says {words:?}: {:?}",
+            s[4]
+        );
+    }
+    let [cup_side, wheel_side] = note.watch_out else {
+        panic!("two watch-outs: {:?}", note.watch_out);
+    };
+    for words in ["bare cup", "quickly", "gearbox seal"] {
+        assert!(cup_side.contains(words), "{words:?} in {cup_side:?}");
+    }
+    for words in [
+        "liquid nitrogen",
+        "wheel shaft",
+        "inner hub",
+        "minimum magnet temperature",
+    ] {
+        assert!(wheel_side.contains(words), "{words:?} in {wheel_side:?}");
+    }
+    assert!(
+        note.sources
+            .iter()
+            .any(|source| source.contains(&format!("held {margin} below"))),
+        "a source names the margin: {:?}",
+        note.sources
+    );
+    let entry = |input: &str| {
+        note.change
+            .iter()
+            .find(|c| c.input == input)
+            .unwrap_or_else(|| panic!("the {input} entry"))
+            .text
+    };
+    // The cup-minimum entry (physics review round 1, MF-2): the limit a raised minimum meets
+    // is the band's maximum; the stress limit and the fit are the maximum's own.
+    let cup_minimum = entry("shaft_joint.cup_interference_min_um");
+    assert!(cup_minimum.contains("at or above it"), "{cup_minimum:?}");
+    // The wheel-shaft entry (physics review round 1, MF-1; traps 9 and 14): the temperature the
+    // inner hub's fit would need, against the allowed one, never more heat for the bonded hub.
+    let wheel_shaft = entry("shaft_joint.wheel_shaft_fit_C");
+    assert!(
+        wheel_shaft.contains("would need")
+            && wheel_shaft.contains("allowed")
+            && !wheel_shaft.to_lowercase().contains("heat"),
+        "{wheel_shaft:?}"
+    );
+    for (name, inputs, results) in &probe_points() {
+        let r = &results.shaft_joint;
+        assert_eq!(
+            r.required_Nm,
+            inputs.shaft_joint.safety_factor * results.metal.torque_cold_high_Nm,
+            "{name}: each must hold the safety factor times cold-high"
+        );
+        // E [GPa] · δ [µm] / d [mm] in MPa per µm: GPa · 1000 × µm · 0.001.
+        let thin_wall = r.part_modulus_GPa / inputs.coupling.bore_mm;
+        for joint in shaft_joint::joints(&inputs.shaft_joint, &shaft_joint_links(inputs, results)) {
+            let share = joint.stress_per_um / thin_wall;
+            assert!(
+                (0.86..=1.0).contains(&share),
+                "{name}, {}: the bore stress is {share} of E·δ/d",
+                joint.name
+            );
+        }
+        let (allowed, _) = hub_fit_allowed(
+            inputs.shaft_joint.hub_fit_max_C,
+            results.temperature.adhesive.design_limit_C,
+            results.temperature.demag.inner_onset_single_ring_C,
+        );
+        assert_eq!(
+            r.hub_fit_allowed_C.to_bits(),
+            allowed.to_bits(),
+            "{name}: the allowed temperature is the lowest of the three"
+        );
+        assert!(
+            inputs.shaft_joint.wheel_shaft_fit_C < inputs.metal.min_temp_C,
+            "{name}: the wheel shaft is fitted colder than the minimum magnet temperature"
+        );
+        // One step of a raised cup minimum moves neither the cup's bore stress nor its fitting
+        // temperature, bit for bit: both read the band's maximum.
+        let raised = compute_all(&stepped(
+            inputs,
+            "shaft_joint.cup_interference_min_um",
+            Step::Raise,
+        ))
+        .shaft_joint;
+        for (what, before, after) in [
+            (
+                "bore stress",
+                r.cup_bore_stress_MPa,
+                raised.cup_bore_stress_MPa,
+            ),
+            (
+                "fitting temperature",
+                r.cup_fit_temp_C,
+                raised.cup_fit_temp_C,
+            ),
+        ] {
+            assert_eq!(
+                after.to_bits(),
+                before.to_bits(),
+                "{name}: the cup's {what}, {before} -> {after}"
+            );
+        }
+        // One step of a warmer wheel shaft: the need rises toward the allowed temperature, so
+        // the inner hub's fitting margin, allowed less needed, falls.
+        let warmer = compute_all(&stepped(
+            inputs,
+            "shaft_joint.wheel_shaft_fit_C",
+            Step::Raise,
+        ))
+        .shaft_joint;
+        assert!(
+            warmer.hub_fit_allowed_C - warmer.hub_fit_temp_C
+                < r.hub_fit_allowed_C - r.hub_fit_temp_C,
+            "{name}: the inner hub's fitting margin falls on a warmer wheel shaft"
+        );
+    }
+    // ... and past it: at the defaults, a wheel shaft at -180 °C leaves the inner hub unfittable.
+    let mut warm_shaft = DesignInputs::default();
+    warm_shaft.shaft_joint.wheel_shaft_fit_C = -180.0;
+    let check = compute_all(&warm_shaft).shaft_joint.check;
+    assert!(
+        check.starts_with(&format!("{CANNOT_BE_FITTED} ({INNER_HUB})")),
+        "{check}"
+    );
+    // At the defaults, the cup's minimum at its maximum (22 µm) and one step up: the band is
+    // reversed, and the check cannot be made.
+    let mut at_the_maximum = DesignInputs::default();
+    at_the_maximum.shaft_joint.cup_interference_min_um =
+        at_the_maximum.shaft_joint.cup_interference_max_um;
+    let past = stepped(
+        &at_the_maximum,
+        "shaft_joint.cup_interference_min_um",
+        Step::Raise,
+    );
+    assert_eq!(
+        compute_all(&past).shaft_joint.check,
+        format!("{UNKNOWN_BAND_REVERSED} ({CUP})")
+    );
+    // "nothing here checks the gearbox's shaft, bearings or seal, or fretting": no result
+    // names them (a check of one changes this watch-out).
+    let unchecked: Vec<String> = result_rows(&compute_all(&DesignInputs::default()))
+        .into_iter()
+        .map(|row| row.path)
+        .filter(|path| {
+            let path = path.to_lowercase();
+            ["seal", "bearing", "fretting"]
+                .iter()
+                .any(|word| path.contains(word))
+        })
+        .collect();
+    assert!(unchecked.is_empty(), "{unchecked:?}");
+    // "ferrite magnets lose coercivity cold": the ferrite probe's rings have a positive Hcj
+    // coefficient (the ferrite note's own claim, `the_ferrite_note_s_claims_hold`).
+    let ferrite = compute_all(&probe_inputs("Y30 ferrite, custom dimensions"));
+    assert!(ferrite.temperature.demag.inner_beta_per_C > 0.0);
+    // No order of the torques: cold-high can reach the joints; it is no bound on them.
+    let texts = note_texts_with_sources(note);
+    for banned in ["strongest", "most expected", "most torque expected"] {
+        for text in &texts {
+            assert!(
+                !text.to_lowercase().contains(banned),
+                "{banned:?} in {text:?}"
+            );
+        }
+    }
+}
+
+/// Every text of a note a reader sees: its title, sentences, change entries, watch-outs and
+/// sources.
+fn note_texts_with_sources(note: &notes::Note) -> Vec<&'static str> {
+    std::iter::once(note.title)
+        .chain(note_text::rendered_texts(note))
+        .chain(note.sources.iter().copied())
+        .collect()
+}
+
+/// Review 4, SF-3 (spec 7.11): the four shaft-joint texts that type the cure margin type the
+/// engine's: the helps of the bonded inner hub's fitting limit (`shaft_joint.hub_fit_max_C`)
+/// and of the allowed temperature (`shaft_joint.hub_fit_allowed_C`), the note's sentence 4 and
+/// the note's first source. A change to `CURE_MARGIN_MIN_C` fails all four.
+#[test]
+fn the_shaft_joint_texts_type_the_cure_margin_the_engine_keeps() {
+    let margin = cure_margin_words();
+    let defaults = DesignInputs::default();
+    let input_help = input_rows(&defaults)
+        .into_iter()
+        .find(|row| row.path == "shaft_joint.hub_fit_max_C")
+        .map(|row| row.meta.help)
+        .expect("the bonded inner hub's fitting limit");
+    let result_help = result_rows(&compute_all(&defaults))
+        .into_iter()
+        .find(|row| row.path == "shaft_joint.hub_fit_allowed_C")
+        .map(|row| row.meta.help)
+        .expect("the allowed fitting temperature");
+    let note = notes::note("shaft_joint").expect("the shaft-joint note");
+    for (what, text, words) in [
+        (
+            "the input's help",
+            input_help,
+            format!("onset less {margin}"),
+        ),
+        (
+            "the result's help",
+            result_help,
+            format!("onset less {margin}"),
+        ),
+        (
+            "sentence 4",
+            note.sentences[4],
+            format!("onset less {margin}"),
+        ),
+        (
+            "the first source",
+            note.sources[0],
+            format!("held {margin} below"),
+        ),
+    ] {
+        assert!(text.contains(&words), "{what} says {words:?}: {text:?}");
     }
 }
 

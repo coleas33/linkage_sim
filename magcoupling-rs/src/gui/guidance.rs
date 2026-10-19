@@ -223,7 +223,7 @@ const SHAFT_JOINT_GUIDE: CheckGuide = CheckGuide {
     problem: shaft_joint_problem,
     why: "A shrink fit's grip holds each rotor on its shaft; it must carry cold-high with margin when loosest, stay elastic when tightest, and be fitted within the allowed temperatures.",
     fixes: Fixes::PerTerm(shaft_joint_fixes),
-    learn: Learn::None("No note covers the shaft joints yet."),
+    learn: Learn::Note("shaft_joint"),
 };
 
 // The shaft joints' inputs the guide names (BL-064).
@@ -3841,11 +3841,8 @@ mod tests {
         let joint = guide(SHAFT_JOINT).expect("the shaft joints check has a guide");
         assert_eq!(joint.label, "Shaft joints");
         assert_eq!(row_learn(SHAFT_JOINT), Some(joint.learn));
-        // Until its reviewed note links it (plan Task 7): no note yet, with the reason.
-        assert_eq!(
-            joint.learn,
-            Learn::None("No note covers the shaft joints yet.")
-        );
+        // Its reviewed note, the shaft-joint note, is its Why link (plan Task 7).
+        assert_eq!(joint.learn, Learn::Note("shaft_joint"));
         assert!(counts(joint, true) && counts(joint, false));
         let at = |check: &str| CHECK_GUIDES.iter().position(|g| g.check == check).unwrap();
         assert_eq!(at(SHAFT_JOINT), at(CLAMP) + 1);
@@ -3885,6 +3882,22 @@ mod tests {
             }
         }
         assert_eq!(joint_side("no such joint").map(|(i, _)| i), None);
+    }
+
+    /// BL-064 (spec 6.1 and 7.4): the shaft-joint row's Why link, its guide's and its
+    /// `ROW_LEARN` entry's, opens the shaft-joint note, which has passed its physics review and
+    /// explains the joint's holding torque, the number Start here opens it on.
+    #[test]
+    fn the_shaft_joint_row_s_why_link_opens_the_reviewed_shaft_joint_note() {
+        let shaft_joint = guide(SHAFT_JOINT).expect("the shaft joint check has a guide");
+        assert_eq!(shaft_joint.learn, Learn::Note("shaft_joint"));
+        assert_eq!(row_learn(SHAFT_JOINT), Some(shaft_joint.learn));
+        let note = reviewed_note("shaft_joint").expect("the shaft-joint note is reviewed");
+        assert!(
+            note.equations.contains(&"shaft_joint.hub_holding_Nm"),
+            "{:?}",
+            note.equations
+        );
     }
 
     // ------------------------------------------------------------------ the fix texts
