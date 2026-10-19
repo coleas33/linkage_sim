@@ -5168,7 +5168,9 @@ mod tests {
         // of library N42 blocks (owner R-15), keep the inner hub from being fitted; and the six
         // designs that break the joint alone. Every other test design passes, its check reading
         // the pass, never unknown (a joint that is not judged fails no term), the short magnets'
-        // greyed row too (a cold-high below zero asks nothing of a fit).
+        // greyed row too (a cold-high below zero asks nothing of a fit). The two key designs
+        // move a `metal.*` input, which other checks read too, and still fail the joint alone.
+        let key_alone = ["cup_key_no_bearing_area", "inner_hub_key_no_bearing_area"];
         let want: Vec<(&str, Vec<String>)> = [
             ("n42_parts", &["inner hub fitting"][..]),
             ("cool_adhesive", &["inner hub fitting"]),
@@ -5201,6 +5203,14 @@ mod tests {
                         shaft_joint::SHAFT_JOINTS_PASS,
                         "{name}"
                     );
+                }
+                if key_alone.contains(&name) {
+                    let red: Vec<&str> = CHECK_GUIDES
+                        .iter()
+                        .filter(|g| level(g, &inputs, &results) == Level::Bad)
+                        .map(|g| g.check)
+                        .collect();
+                    assert_eq!(red, [SHAFT_JOINT], "{name}");
                 }
                 (!failing.is_empty()).then_some((name, failing))
             })
