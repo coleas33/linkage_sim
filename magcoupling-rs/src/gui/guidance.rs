@@ -2287,8 +2287,9 @@ fn window_sentence(
     }
     if fittable < needed && fittable <= 0.0 {
         edges.push(format!(
-            "the allowed temperatures do not even open its {} joining clearance",
-            input_text(inputs, "shaft_joint.joining_clearance_um")
+            "at its allowed temperature its bore does not even open the {} joining clearance on the {} as set",
+            input_text(inputs, "shaft_joint.joining_clearance_um"),
+            side.shaft
         ));
     } else if fittable < needed {
         edges.push(format!(
@@ -3513,7 +3514,7 @@ mod tests {
             (
                 "no joining clearance",
                 breaking(uncooled_wheel_shaft),
-                "do not even open its",
+                "does not even open the",
             ),
             (
                 "not a number",
@@ -7940,7 +7941,7 @@ mod tests {
             &text(design(uncooled_wheel_shaft)),
             &[
                 "Fitting the inner hub would need it at 247.6 °C with the wheel shaft at 20.00 °C, above the 100.0 °C allowed: your limit for the bonded inner hub, 100.0 °C.",
-                "holding needs at least 12.09 µm, but the allowed temperatures do not even open its 10.00 µm joining clearance.",
+                "holding needs at least 12.09 µm, but at its allowed temperature its bore does not even open the 10.00 µm joining clearance on the wheel shaft as set.",
             ],
         );
         // DP460: the adhesive's design limit binds.
