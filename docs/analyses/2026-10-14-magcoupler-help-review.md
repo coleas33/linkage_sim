@@ -4461,3 +4461,106 @@ unchanged (full answer: `.superpowers/sdd/2026-10-18-bl064-shaft-joint/textrevie
 **R-5. The engine behind the guide.** `shaft_joints` now reads the engine's `cannot_be_made`, not the verdict text
 (T5 minor 4). `verdict` and the Problem therefore cannot disagree on why the check cannot be made: one predicate,
 the same order.
+
+### Re-review after the whole-branch review, fix wave 1 (2026-10-19)
+
+The text re-review 1 of the BL-064 whole-branch review's fix wave 1 (commit 557c42a, on f0b36d9) applied its MF-1 and
+MF-2 word for word, in `gui/guidance.rs`. The Problem sentence of an input typed below what it can physically be
+(`impossible_value_sentence`) now ends "enter at least {}, its slider's bottom.", in each of its six forms. `NO_FIX`
+now reads "No listed change helps from here: each is at its slider's end, has no better choice or would fail another
+check, or a value the check needs is not a number or is outside what it can be." The same commit appended the round-1
+record above. The changed texts had their G-3 text re-review (round 2) in a fresh context at HEAD 557c42a. The
+reviewer's report for the record follows unchanged (full answer:
+`.superpowers/sdd/2026-10-18-bl064-shaft-joint/textreview-T10-the-whole-branch-review-fix-wave-1-2.md`).
+
+- Reviewer: fresh context, session model, 2026-10-19; G-3 text re-review of round 1's two applied must-fix items
+  (round 2). The note `shaft_joint` did not change in 557c42a. The reviewer dumped it at the five probe designs for
+  consistency ("1 notes at 5 designs", every aim "moves as it says") and probed the engine and the guide from a
+  scratch crate outside the repository.
+- Verdict: PASS, no must-fix. Both changed texts are round 1's replacement texts, byte for byte, and both are true
+  wherever they show: each floor is the engine's, each number to enter is its slider's bottom and clears its own
+  sentence, and `NO_FIX`'s added clause holds at each of the six typed values and at a safety factor of 0 without
+  making the line false anywhere else. No cap or trap is broken, and no number is typed.
+- Should-fix offered, none applied in this round; they stay open for the controller's triage (Task 10 Step 8):
+  - SF-1 (low-medium). At a friction typed at exactly 0 (or -0.0), below the slider's 0.05, the check is judged: the
+    badge reads "The fit slips (inner hub): holds 0.00 N·m against 7.65 N·m", the Problem gives each joint's
+    "holds 0 N·m" sentence and no window, and no fix is listed. None of `NO_FIX`'s reasons strictly holds there by the
+    engine's own reading. Option A (recommended): keep it and record it; the Problem's numbers say why no
+    interference helps. Option B: floor the friction above zero (`Floor::AboveZero` in `impossible_values`), so
+    friction 0 reads the new unknown; it reverses the whole-branch review's choice and is the owner's call. Option C:
+    give the Problem a sentence of why at friction 0, which is new text and needs a G-3 round.
+  - SF-2 (carried from round 1, not re-offered). Round 1's SF-1 (a key width typed at or below zero in a design with
+    no keyway) and SF-2 (a gearbox shaft typed between absolute zero and -20 °C) stay open; the new sentence is true
+    in both cases.
+  - SF-3 (low; it predates the change). In a reachable no-wall design (bore 16 mm, boss 12 mm, hub minimum 16 µm),
+    `NO_FIX` shows and no reason it names strictly holds; the old `NO_FIX` was false there too (since Task 5), and the
+    new clause makes it no worse. Option A (recommended): keep it; the Problem names the cause. Option B: end the
+    cup's and the inner hub's no-wall sentences with a remedy, which is new text, needs a G-3 round and `fix_label`
+    names for the boss, in the paused section (trap 21).
+- No text changed in this round. No input label or help changed, so `input_schema.json` is not re-blessed. The note
+  did not change, so the notes review and the note's review date are unchanged.
+
+**Report for the record (as returned).**
+
+**R-1. The six sentences, form `"{label}, {value}, cannot physically be {floor}: enter at least {bottom}, its
+slider's bottom."`**
+- **They match the pins.** The shipped strings are the six in the task, byte for byte. They are pinned in
+  `each_value_below_what_its_input_can_physically_be_has_its_own_sentence`, which builds the two-at-once pin from
+  them, and the friction pin is in `the_shaft_joint_problem_is_some_exactly_when_the_check_fails_or_cannot_be_made`.
+- **The floors are the engine's.**
+  - "below zero" is `x >= 0.0`: friction, smoothing and joining clearance.
+  - "zero or below" is `x > 0.0`: the key width, so "0 mm" is past it.
+  - "below absolute zero" is `x >= -273.15`.
+  - -0.0 is allowed and judged. A tiny negative reads in scientific form ("-1.000e-9"), never as the floor.
+- **The bottoms are the catalogue's `range.min`:** 0.05, 0, 1.0, -196, -20 and 0. Each meets its floor, so entering
+  it clears its sentence.
+- **Physics.** A friction coefficient is not negative. Smoothing is interference lost as peaks flatten, so it cannot
+  add any (DIN 7190). A key has width. Below -273.15 °C there is no temperature. A clearance is a gap.
+- **"Its slider's bottom"** tells the reader that the number is the slider's end, not the least the check accepts.
+  That matters for the four inputs whose judged range starts below the slider: friction 0.01 slips at 0.68 N·m;
+  key width 0.5 mm, wheel shaft -250 °C and gearbox shaft -100 °C pass.
+- **Vocabulary.** The phrase matches the gearbox shaft's help ("the slider's bottom"), `NO_FIX` ("its slider's
+  end") and the inputs panel's "outside the slider range".
+- **Grammar.** Each sentence parses with the label as subject. "Its" has one antecedent per sentence, and the six
+  join with a space into separate sentences.
+
+**R-2. The traps.**
+- **Trap 9.** "enter at least -196.0 °C, its slider's bottom" and "enter at least -20.00 °C, its slider's bottom"
+  each name their source. The typed value and absolute zero need none.
+- **Trap 11.** The gearbox sentence asks for no cooling below -20 °C, the help's "slider's bottom", and repeats
+  nothing about the gearbox's rated range. Whether -20 °C is inside that range is still an open owner fact (G-3
+  round 1, SF-5).
+- **Trap 12.** -196 °C is named as the slider's bottom and the input's default, never as a bath or as advice.
+  "At least" means no colder than that.
+- **Traps 14 and 21.** There is no "heat", no "safe" and no "clamp".
+- **Trap 22.** The minus is ASCII "-"; the units are "µm", "°C" and "mm". `plain_text_violations` is empty for all
+  six sentences at once (probe) and for `NO_FIX`.
+- **Traps 1-8, 10, 13 and 15-20.** These strings say nothing they cover: no torque, fit class, speed, fitting order
+  or "permanent".
+
+**R-3. `NO_FIX`:** "No listed change helps from here: each is at its slider's end, has no better choice or would
+fail another check, or a value the check needs is not a number or is outside what it can be." (38 words; no cap.)
+- **It now holds** at each of the six typed values and under ruling C-4's safety factor of 0. "Outside what it can
+  be", without "physically", covers the safety factor, whose Problem says "is not above zero".
+- **The clause makes nothing false.** The list is a disjunction, so the clause adds a reason without making the
+  line false in any other guide's no-fix state (gearbox, hot minimum, fit, size).
+- **"not a number" is kept**, so `the_no_fix_line_covers_a_claim_that_is_not_a_number` still holds.
+- **It is pinned** by the new `the_no_fix_line_covers_a_value_outside_what_it_can_be`.
+- **Consistency.** The doc comments in `guidance.rs:704-707` and `dashboard.rs:922` agree with it. The README's
+  guidance row names the new test. No live doc quotes the old text: only historical review files do.
+
+**R-4. Precedence and the unchanged texts.**
+- `cannot_be_made` reads not a number, then the safety factor, then the impossible values. So at a safety factor
+  of 0 with friction -0.14, only the safety factor's sentence shows.
+- The not-a-number and safety-factor sentences, the verdict constants and every input label and help are unchanged
+  (`git diff f0b36d9 557c42a` touches `guidance.rs`, the README and the help review only).
+- The note `shaft_joint` is unchanged. Its dump at five designs agrees with both texts.
+
+**R-5. The remaining open items for Step 8.**
+- This round: SF-1 to SF-3 above.
+- Round 1's SF-1 (key width without a keyway) and SF-2 (a gearbox shaft between absolute zero and -20 °C), both
+  engine guards and the owner's call.
+- Round 1's SF-3 ("below" for "outside"), SF-4 (the bottoms quoted to four significant digits: "0.05000",
+  "1.000 mm", "-20.00 °C" against the slider's "0.05", "1.0", "-20"; with "its slider's bottom" the mismatch is a
+  little more visible, but nothing is false) and SF-5 (the plain-words and glyph guards see only the friction
+  sentence; the probe found all six clean).
