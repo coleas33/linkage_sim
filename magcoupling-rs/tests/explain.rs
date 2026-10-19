@@ -648,6 +648,20 @@ fn edge_points() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
             |r| r.shaft_joint.wheel_shaft_shrink_um == 0.0,
         ),
         joint_edge(
+            // At 20 °C the linear arm is 0 whatever its coefficient; at the sliders' top both
+            // shafts grow, so the linear shrink arm is off its zero (the gearbox shaft's 20 °C
+            // default is the same degenerate point).
+            "shaft joints: both shafts at 40 °C: the linear shrink arm off its zero",
+            vec![
+                ("shaft_joint.wheel_shaft_fit_C", num(40.0)),
+                ("shaft_joint.output_shaft_fit_C", num(40.0)),
+            ],
+            |r| {
+                r.shaft_joint.wheel_shaft_shrink_um < 0.0
+                    && r.shaft_joint.output_shaft_shrink_um < 0.0
+            },
+        ),
+        joint_edge(
             // No knee and no single-ring field (the coercivity from the inputs at 0 kA/m): the
             // inner ring's single-ring onset is 0/0, so the bonded inner hub's allowed fitting
             // temperature is not a number. `set` takes no NaN; finite inputs reach the record's
