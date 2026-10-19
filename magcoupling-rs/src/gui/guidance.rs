@@ -1113,6 +1113,11 @@ fn number(value: Value) -> Option<f64> {
     }
 }
 
+/// The result at `path` as a number ([`number`]); NaN for a text, no value or an unknown path.
+fn result_number(results: &DesignResults, path: &str) -> f64 {
+    number(results.get(path).unwrap_or(Value::None)).unwrap_or(f64::NAN)
+}
+
 /// The number the input at `path` holds, or for an optional input left blank the result it
 /// starts from ([`optional_seed`]: magnets of their parts' own length); `None` for a text.
 fn current_number(inputs: &DesignInputs, results: &DesignResults, path: &str) -> Option<f64> {
@@ -2237,11 +2242,10 @@ fn window_sentence(
     results: &DesignResults,
     side: &JointSide,
 ) -> Option<String> {
-    let value = |path: &str| number(results.get(path).unwrap_or(Value::None)).unwrap_or(f64::NAN);
     let (needed, elastic, fittable) = (
-        value(side.needed),
-        value(side.elastic),
-        value(side.fittable),
+        result_number(results, side.needed),
+        result_number(results, side.elastic),
+        result_number(results, side.fittable),
     );
     if !needed.is_finite() {
         return None;
@@ -2357,7 +2361,7 @@ fn not_judged_sentences(
 /// readout shows it, or, where it would read the same as the bound, one last digit past it: up
 /// above a limit (`above`, [`quoted_load`]), down under a need ([`quoted_limit`]).
 fn apart_from(results: &DesignResults, path: &str, bound: f64, above: bool) -> String {
-    let x = number(results.get(path).unwrap_or(Value::None)).unwrap_or(f64::NAN);
+    let x = result_number(results, path);
     let reads_apart = if above {
         quoted_value(x) > quoted_value(bound)
     } else {
