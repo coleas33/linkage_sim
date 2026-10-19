@@ -45,7 +45,7 @@ use magcoupling::engine::meta::{
     result_rows,
 };
 use magcoupling::engine::model::{ModelResults, blocks_fit};
-use magcoupling::engine::shaft_joint;
+use magcoupling::engine::shaft_joint::{self, HubFitLimit};
 use magcoupling::engine::size_controls::with_ring_radius;
 use magcoupling::engine::temperature::{
     CURE_MARGIN_MIN_C, NO_COLD_ONSET, RING_INNER, RING_OUTER, demag_onset_C,
@@ -2016,7 +2016,10 @@ fn evaluate_over(r: &Registry, target: &str, values: &[(&str, f64)]) -> (Value, 
 /// onset (never the governing ring's), and its record is `shaft_joint::hub_fit_allowed`'s
 /// value: the lowest of the three, the onset less the cure margin, ties to the earlier, an
 /// onset of +inf never binding, and NaN when any of the three is NaN, in each position. The
-/// drift guard reaches only a NaN onset (`set` takes no NaN); this reaches the other two.
+/// record also takes the arm of the limit the helper names, so a tie, whose value is the same
+/// from either arm, still names the right limit (T3 review M-2, from the review leftovers); a
+/// NaN takes the else arm. The drift guard reaches only a NaN onset (`set` takes no NaN); this
+/// reaches the other two.
 #[test]
 fn the_allowed_hub_temperature_record_is_the_helper_s_lowest_of_three() {
     let r = Registry::build();
@@ -2034,17 +2037,26 @@ fn the_allowed_hub_temperature_record_is_the_helper_s_lowest_of_three() {
         .map(String::as_str)
         .collect();
     assert_eq!(terms, BTreeSet::from(paths));
+    // The record's value and the arms its `cases` took: yours (0), the adhesive's (1), the
+    // onset's (2), in `hub_fit_allowed`'s tie order, then else.
     let record = |[input, adhesive, onset]: [f64; 3]| {
-        let (value, _) = evaluate_over(
+        let (value, trace) = evaluate_over(
             &r,
             target,
             &[(paths[0], input), (paths[1], adhesive), (paths[2], onset)],
         );
+        let arms: Vec<usize> = trace.arms.iter().map(|&(_, arm)| arm).collect();
         match value {
-            Value::Num(x) => x,
+            Value::Num(x) => (x, arms),
             other => panic!("{other:?}"),
         }
     };
+    let arm_of = |limit: HubFitLimit| match limit {
+        HubFitLimit::Yours => 0,
+        HubFitLimit::Adhesive => 1,
+        HubFitLimit::MagnetOnset => 2,
+    };
+    let else_arm = 3;
     let margin = CURE_MARGIN_MIN_C;
     for values in [
         [100.0, 120.0, 143.3565],       // yours (the defaults)
@@ -2052,16 +2064,22 @@ fn the_allowed_hub_temperature_record_is_the_helper_s_lowest_of_three() {
         [100.0, 120.0, 69.8326],        // the onset's (N42 blocks)
         [120.0, 120.0, 177.0],          // a tie: yours
         [100.0, 177.0, 100.0 + margin], // a tie with the onset: yours
+        [130.0, 120.0, 120.0 + margin], // a tie of the adhesive's with the onset: the adhesive's
         [150.0, 177.0, 143.3565],       // 2214 Hi-Temp, a typed 150 °C: the onset's
         [100.0, 120.0, f64::INFINITY],  // ferrite: the onset never binds
     ] {
-        let (want, _) = shaft_joint::hub_fit_allowed(values[0], values[1], values[2]);
-        assert_eq!(record(values).to_bits(), want.to_bits(), "{values:?}");
+        let (want, limit) = shaft_joint::hub_fit_allowed(values[0], values[1], values[2]);
+        let (value, arms) = record(values);
+        assert_eq!(value.to_bits(), want.to_bits(), "{values:?}");
+        let limit = limit.unwrap_or_else(|| panic!("{values:?}: a limit binds"));
+        assert_eq!(arms, [arm_of(limit)], "{values:?}: {limit:?}");
     }
     for nan_at in 0..3 {
         let mut values = [100.0, 120.0, 143.3565];
         values[nan_at] = f64::NAN;
-        assert!(record(values).is_nan(), "a NaN {}", paths[nan_at]);
+        let (value, arms) = record(values);
+        assert!(value.is_nan(), "a NaN {}", paths[nan_at]);
+        assert_eq!(arms, [else_arm], "a NaN {}", paths[nan_at]);
         assert_eq!(
             shaft_joint::hub_fit_allowed(values[0], values[1], values[2]).1,
             None
