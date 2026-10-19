@@ -1642,6 +1642,17 @@ fn a_reversed_band_reads_unknown_unless_the_other_joint_fails() {
         i.shaft_joint.cup_interference_min_um = 10.0;
     });
     assert_eq!(check(&and_cup_slips), slips(CUP, "4.36", "7.65"));
+    // The whole-branch review's suggestion 1: with neither joint judged, the inner hub's band
+    // reversed and the cup without a wall (bore 16 mm in a 12 mm boss), the missing wall is
+    // named first.
+    let both = design(|i| {
+        i.coupling.bore_mm = 16.0;
+        i.metal.boss_od_mm = 12.0;
+        i.shaft_joint.hub_interference_min_um = 20.0;
+    });
+    let [hub, cup] = terms(&both);
+    assert!(hub.band_reversed && hub.no_wall.is_none() && cup.no_wall.is_some());
+    assert_eq!(check(&both), format!("{UNKNOWN_NO_WALL} ({CUP})"));
 }
 
 #[test]

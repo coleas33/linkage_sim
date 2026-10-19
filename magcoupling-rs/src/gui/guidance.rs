@@ -5699,6 +5699,29 @@ mod tests {
             assert_eq!(level_of(SHAFT_JOINT, &inputs, &results), Level::Caution);
             assert_eq!(fixes(joint, &inputs, &results, false), []);
         }
+        // Neither judged (the whole-branch review's suggestion 1): the inner hub's band reversed
+        // and the cup without a wall. The row reads amber with no fix, and the Problem is the two
+        // not-judged sentences alone, the inner hub's first.
+        let neither = breaking(|i| {
+            reversed(i);
+            no_wall(i);
+        });
+        let results = compute_all(&neither);
+        assert_eq!(level_of(SHAFT_JOINT, &neither, &results), Level::Caution);
+        assert_eq!(fixes(joint, &neither, &results, false), []);
+        let text = shaft_joint_problem(&neither, &results).unwrap();
+        assert_in_order(
+            &text,
+            &["The inner hub's minimum interference", "The cup's bore"],
+        );
+        assert!(!text.contains("At its loosest"), "{text}");
+        let joints = shaft_joints(&neither, &results).expect("the check can be made");
+        let sentences: Vec<String> = JOINT_SIDES
+            .iter()
+            .zip(&joints)
+            .flat_map(|(side, joint)| not_judged_sentences(&neither, side, joint))
+            .collect();
+        assert_eq!(text, sentences.join(" "));
     }
 
     #[test]
