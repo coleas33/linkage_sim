@@ -473,7 +473,7 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "metal.boss_length_mm",
-        "Axial length of the shaft boss behind the rear wall: it adds to the overall length and the boss mass, not to the large-diameter length.",
+        "Axial length of the shaft boss behind the rear wall: longer adds overall length and boss mass, not large-diameter length, and lets the cup's fit hold more.",
     ),
     (
         "metal.boss_od_mm",
@@ -1711,6 +1711,7 @@ mod batch_b_tests {
         ("metal.boss_length_mm", "example", "metal.axial_stack_mm", Up),
         ("metal.boss_length_mm", "example", "metal.large_dia_stack_mm", Stays),
         ("metal.boss_length_mm", "example", "mass.boss_g", Up),
+        ("metal.boss_length_mm", "example", "shaft_joint.cup_holding_Nm", Up),
         ("metal.boss_od_mm", "example", "mass.boss_g", Up),
         ("metal.boss_od_mm", "example", "metal.adapter_g", Up),
         ("metal.cap_axial_mm", "example", "metal.axial_stack_mm", Up),
@@ -1964,6 +1965,31 @@ mod batch_b_tests {
                     "{path}: no claim"
                 );
             }
+        }
+    }
+
+    /// The batch-B helps that name the shaft joint their input feeds (BL-064, G-3 round 2 SF-9),
+    /// as (input, the help's words, the result those words are about, the way they say it moves
+    /// as the input rises).
+    const JOINT_WORDS: &[(&str, &str, &str, Moves)] = &[(
+        "metal.boss_length_mm",
+        "lets the cup's fit hold more",
+        "shaft_joint.cup_holding_Nm",
+        Up,
+    )];
+
+    /// Each of [`JOINT_WORDS`] is in its help and has its claim, that way, in [`CLAIMS`].
+    #[test]
+    fn batch_b_helps_name_the_shaft_joint_they_feed() {
+        for &(input, words, result, moves) in JOINT_WORDS {
+            let help = help_for(input);
+            assert!(help.contains(words), "{input}: {help}");
+            assert!(
+                CLAIMS.iter().any(|&(claimed, _, moved, way)| {
+                    claimed == input && moved == result && way == moves
+                }),
+                "{input}: no claim that {result} moves {moves:?}"
+            );
         }
     }
 
