@@ -1618,10 +1618,10 @@ mod tests {
     };
     use crate::gui::sizing::DEBOUNCE_S;
     use crate::gui::test_support::{
-        SCREEN, clamp_at_its_limit, drawn_texts, hot_day, key_event, key_tap, last_characters,
-        only_the_clamp_fails, only_the_joint_fails, primary_button, select_all, short_magnets,
-        sized_frame, sized_frame_at, text_center, text_rect, text_rects, tooltips_at_once,
-        with_poles,
+        SCREEN, clamp_at_its_limit, drawn_texts, hot_day, hub_overstressed, key_event, key_tap,
+        last_characters, only_the_clamp_fails, only_the_joint_fails, primary_button, select_all,
+        short_magnets, sized_frame, sized_frame_at, text_center, text_rect, text_rects,
+        tooltips_at_once, with_poles,
     };
     use crate::headline;
 
@@ -4303,7 +4303,7 @@ mod tests {
                 // shaft.
                 let joint = crate::gui::guidance::guide("shaft_joint.check").expect("its guide");
                 let mut overstressed = DesignInputs::default();
-                overstressed.shaft_joint.hub_interference_max_um = 26.0;
+                hub_overstressed(&mut overstressed);
                 let mut uncooled = DesignInputs::default();
                 uncooled.shaft_joint.wheel_shaft_fit_C = 20.0;
                 for inputs in [only_the_joint_fails(), overstressed, uncooled] {

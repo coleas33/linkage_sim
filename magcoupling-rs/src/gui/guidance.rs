@@ -3008,10 +3008,10 @@ mod tests {
     use crate::gui::plain_text::label_for;
     use crate::gui::readouts::Readouts;
     use crate::gui::test_support::{
-        assert_glyphs, clamp_at_its_limit, drawn_texts, hot_day, is_shaft_joint,
+        assert_glyphs, clamp_at_its_limit, drawn_texts, hot_day, hub_overstressed, is_shaft_joint,
         only_the_clamp_fails, only_the_gearbox_fails, only_the_joint_fails, passing_design,
-        shaft_joint_input_rows, shaft_joint_result_rows, short_magnets, sized_frame, slider_range,
-        small_boss, with_poles,
+        reversed_hub_band, shaft_joint_input_rows, shaft_joint_result_rows, short_magnets,
+        sized_frame, slider_range, small_boss, with_poles,
     };
     use std::collections::BTreeSet;
 
@@ -3339,12 +3339,6 @@ mod tests {
         i.shaft_joint.cup_interference_min_um = 10.0;
     }
 
-    /// The inner hub's maximum interference at 26 µm: at its tightest its bore stress is above
-    /// its limit, and fitting it needs more than its allowed temperature.
-    fn hub_overstressed(i: &mut DesignInputs) {
-        i.shaft_joint.hub_interference_max_um = 26.0;
-    }
-
     /// The cup's maximum interference at 26 µm: at its tightest its bore stress is above its
     /// limit.
     fn cup_overstressed(i: &mut DesignInputs) {
@@ -3626,7 +3620,7 @@ mod tests {
             ),
             (
                 "reversed band",
-                breaking(|i| i.shaft_joint.hub_interference_min_um = 20.0),
+                breaking(reversed_hub_band),
                 "is above its maximum",
             ),
         ]
@@ -5777,9 +5771,6 @@ mod tests {
         // judged. A reversed inner hub band with the cup slipping; the cup without a wall (bore
         // 16 mm, boss 12 mm) with the inner hub slipping. Without the failing joint (the hub's
         // minimum at 15 µm holds on the 16 mm bore) each reads amber with no fix.
-        fn reversed(i: &mut DesignInputs) {
-            i.shaft_joint.hub_interference_min_um = 20.0;
-        }
         fn no_wall(i: &mut DesignInputs) {
             i.coupling.bore_mm = 16.0;
             i.metal.boss_od_mm = 12.0;
@@ -5792,7 +5783,7 @@ mod tests {
         let cases = [
             (
                 breaking(|i| {
-                    reversed(i);
+                    reversed_hub_band(i);
                     cup_slips(i);
                 }),
                 shaft_joint::CUP,
@@ -5825,7 +5816,7 @@ mod tests {
             assert_eq!(fixes(joint, &inputs, &results, false), want, "{badge}");
             assert_in_order(&shaft_joint_problem(&inputs, &results).unwrap(), &order);
         }
-        for edit in [reversed as fn(&mut DesignInputs), no_wall_alone] {
+        for edit in [reversed_hub_band as fn(&mut DesignInputs), no_wall_alone] {
             let inputs = breaking(edit);
             let results = compute_all(&inputs);
             assert_eq!(level_of(SHAFT_JOINT, &inputs, &results), Level::Caution);
@@ -5835,7 +5826,7 @@ mod tests {
         // and the cup without a wall. The row reads amber with no fix, and the Problem is the two
         // not-judged sentences alone, the inner hub's first.
         let neither = breaking(|i| {
-            reversed(i);
+            reversed_hub_band(i);
             no_wall(i);
         });
         let results = compute_all(&neither);
@@ -6139,11 +6130,7 @@ mod tests {
             (breaking(no_back_iron), SHAFT_JOINT, Bad),
             (breaking(cool_adhesive), SHAFT_JOINT, Bad),
             (breaking(n42_parts), SHAFT_JOINT, Bad),
-            (
-                breaking(|i| i.shaft_joint.hub_interference_min_um = 20.0),
-                SHAFT_JOINT,
-                Caution,
-            ),
+            (breaking(reversed_hub_band), SHAFT_JOINT, Caution),
             (
                 breaking(|i| i.temperature.adhesive.selected = 0),
                 SHAFT_JOINT,
@@ -6587,10 +6574,8 @@ mod tests {
                 .unwrap_or_else(|| panic!("{name}: {text} after byte {from} of {conflict}"));
             from += at + text.len();
         }
-        // A number as quoted, without its unit.
-        let number = |text: &str| -> f64 { text.split(' ').next().unwrap().parse().unwrap() };
         for b in numbers.bounds(inputs.coupling.gearbox_input_rating_Nm) {
-            let (shown, against) = (number(&b.text), number(&b.against));
+            let (shown, against) = (leading_number(&b.text), leading_number(&b.against));
             // How far the quoted value is from the value, in last shown digits: the coarser of
             // the two, as at a decade (0.99999 quoted 1.001 is one digit of 1.001 past 1.000).
             let step = last_digit_step(b.value).max(last_digit_step(shown));
@@ -7823,11 +7808,7 @@ mod tests {
             ("safety factor 0", no_factor.clone(), Caution),
             ("friction below zero", negative_friction.clone(), Caution),
             ("friction 0", frictionless.clone(), Bad),
-            (
-                "reversed band",
-                breaking(|i| i.shaft_joint.hub_interference_min_um = 20.0),
-                Caution,
-            ),
+            ("reversed band", breaking(reversed_hub_band), Caution),
             ("short magnets", short_magnets(), Good),
             (
                 "short magnets overstressed",
@@ -8032,6 +8013,15 @@ mod tests {
                 .unwrap_or_else(|| panic!("{part:?}, in order, in {text}"));
             rest = &rest[at + part.len()..];
         }
+    }
+
+    /// The number a quoted value starts with, its unit after a space dropped ("12.09 µm" reads
+    /// 12.09).
+    fn leading_number(text: &str) -> f64 {
+        text.split(' ')
+            .next()
+            .and_then(|number| number.parse().ok())
+            .unwrap_or_else(|| panic!("{text:?} starts with a number"))
     }
 
     #[test]
@@ -8258,8 +8248,7 @@ mod tests {
         let ends = |needed: f64, elastic: f64, fittable: f64| {
             let (low, high) =
                 window_quotes(needed, elastic.min(fittable), "shaft_joint.hub_needed_um");
-            let value = |text: String| -> f64 { text.split(' ').next().unwrap().parse().unwrap() };
-            (value(low), value(high))
+            (leading_number(&low), leading_number(&high))
         };
         let hub = ends(s.hub_needed_um, s.hub_elastic_max_um, s.hub_fittable_max_um);
         let cup = ends(s.cup_needed_um, s.cup_elastic_max_um, s.cup_fittable_max_um);
@@ -8348,8 +8337,7 @@ mod tests {
             );
             let quoted = apart_from(&results, path, bound, above);
             assert_ne!(quoted, read(bound_path), "{path}");
-            let number = |text: &str| -> f64 { text.split(' ').next().unwrap().parse().unwrap() };
-            let (q, b) = (number(&quoted), number(&read(bound_path)));
+            let (q, b) = (leading_number(&quoted), leading_number(&read(bound_path)));
             assert!(
                 if above { q > b } else { q < b },
                 "{path}: {quoted} against {}",
@@ -8631,7 +8619,7 @@ mod tests {
             status(&joint_only, false),
             "Your design: fails 1 of 10 checks"
         );
-        let reversed = breaking(|i| i.shaft_joint.hub_interference_min_um = 20.0);
+        let reversed = breaking(reversed_hub_band);
         assert_eq!(
             status(&reversed, true),
             "Your design: passes all 9 checks, 1 caution"

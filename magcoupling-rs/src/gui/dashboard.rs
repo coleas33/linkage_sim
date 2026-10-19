@@ -1040,9 +1040,10 @@ mod tests {
     use crate::gui::guidance::{CHECK_GUIDES, Direction, Fixes, ROW_LEARN, all_fixes, trade_offs};
     use crate::gui::readouts::ReadoutEvents;
     use crate::gui::test_support::{
-        assert_glyphs, drawn_texts, hover_frames, only_the_clamp_fails, only_the_gearbox_fails,
-        only_the_joint_fails, passing_design, primary_button, short_magnets, sized_frame,
-        text_center, text_color, text_rect, tooltips_at_once, with_poles,
+        assert_glyphs, drawn_texts, hover_frames, hub_overstressed, only_the_clamp_fails,
+        only_the_gearbox_fails, only_the_joint_fails, passing_design, primary_button,
+        reversed_hub_band, short_magnets, sized_frame, text_center, text_color, text_rect,
+        tooltips_at_once, with_poles,
     };
     use std::collections::BTreeSet;
 
@@ -1158,11 +1159,7 @@ mod tests {
                 shaft_joint::FIT_SLIPS,
                 Bad,
             ),
-            (
-                |i| i.shaft_joint.hub_interference_max_um = 26.0,
-                shaft_joint::BORE_OVER_ITS_LIMIT,
-                Bad,
-            ),
+            (hub_overstressed, shaft_joint::BORE_OVER_ITS_LIMIT, Bad),
             (
                 |i| i.shaft_joint.wheel_shaft_fit_C = 20.0,
                 shaft_joint::CANNOT_BE_FITTED,
@@ -1208,7 +1205,7 @@ mod tests {
                 Caution,
             ),
             (
-                |i| i.shaft_joint.hub_interference_min_um = 20.0,
+                reversed_hub_band,
                 shaft_joint::UNKNOWN_BAND_REVERSED,
                 Caution,
             ),
@@ -1980,7 +1977,7 @@ mod tests {
         let guide = guidance::guide(joint).expect("the shaft joints check's guide");
         let entry = &table_entries()[entry_index(joint).expect("the shaft joints check's row")];
         let mut overstressed = short_magnets();
-        overstressed.shaft_joint.hub_interference_max_um = 26.0;
+        hub_overstressed(&mut overstressed);
         let mut statuses = Vec::new();
         for (inputs, text) in [
             (short_magnets(), SHAFT_JOINTS_PASS),
@@ -2386,7 +2383,7 @@ mod tests {
             design(|i| i.metal.max_diameter_mm = f64::NAN),
             design(|i| i.coupling.backiron = 0),
             only_the_joint_fails(),
-            design(|i| i.shaft_joint.hub_interference_min_um = 20.0),
+            design(reversed_hub_band),
         ] {
             let results = compute_all(&inputs);
             for line in dashboard_lines(&results) {
@@ -2568,7 +2565,7 @@ mod tests {
         let mut passing_hot_day = passing_design();
         passing_hot_day.temperature.duty = hot_day().temperature.duty;
         let mut passing_reversed = passing_design();
-        passing_reversed.shaft_joint.hub_interference_min_um = 20.0;
+        reversed_hub_band(&mut passing_reversed);
         let cases = [
             // The workbook example: four red checks.
             (DesignInputs::default(), 4, 0, Level::Bad),

@@ -81,6 +81,18 @@ pub(crate) fn only_the_joint_fails() -> crate::DesignInputs {
     inputs
 }
 
+/// The inner hub's minimum interference at 20 µm, over its default 18 µm maximum (BL-064): its
+/// band is reversed, so the inner hub is not judged.
+pub(crate) fn reversed_hub_band(inputs: &mut crate::DesignInputs) {
+    inputs.shaft_joint.hub_interference_min_um = 20.0;
+}
+
+/// The inner hub's maximum interference at 26 µm (BL-064): at its tightest its bore stress is
+/// above its limit, and fitting it needs more than its allowed temperature.
+pub(crate) fn hub_overstressed(inputs: &mut crate::DesignInputs) {
+    inputs.shaft_joint.hub_interference_max_um = 26.0;
+}
+
 /// The defaults at the clamp's limit: the clamp's safety factor raised until its capacity only
 /// just covers the requirement.
 pub(crate) fn clamp_at_its_limit() -> crate::DesignInputs {
