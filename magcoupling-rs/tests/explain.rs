@@ -4862,10 +4862,12 @@ fn note_texts_with_sources(note: &notes::Note) -> Vec<&'static str> {
         .collect()
 }
 
-/// Review 4, SF-3 (spec 7.11): the four shaft-joint texts that type the cure margin type the
+/// Review 4, SF-3 (spec 7.11): the five shaft-joint texts that type the cure margin type the
 /// engine's: the helps of the bonded inner hub's fitting limit (`shaft_joint.hub_fit_max_C`)
-/// and of the allowed temperature (`shaft_joint.hub_fit_allowed_C`), the note's sentence 4 and
-/// the note's first source. A change to `CURE_MARGIN_MIN_C` fails all four.
+/// and of the allowed temperature (`shaft_joint.hub_fit_allowed_C`), the help of the inner
+/// ring's single-ring onset (`temperature.demag.inner_onset_single_ring_C`; G-3 SF-2, from the
+/// review leftovers: never a bare "stays below it"), the note's sentence 4 and the note's first
+/// source. A change to `CURE_MARGIN_MIN_C` fails all five.
 #[test]
 fn the_shaft_joint_texts_type_the_cure_margin_the_engine_keeps() {
     let margin = cure_margin_words();
@@ -4875,11 +4877,16 @@ fn the_shaft_joint_texts_type_the_cure_margin_the_engine_keeps() {
         .find(|row| row.path == "shaft_joint.hub_fit_max_C")
         .map(|row| row.meta.help)
         .expect("the bonded inner hub's fitting limit");
-    let result_help = result_rows(&compute_all(&defaults))
-        .into_iter()
-        .find(|row| row.path == "shaft_joint.hub_fit_allowed_C")
-        .map(|row| row.meta.help)
-        .expect("the allowed fitting temperature");
+    let results = result_rows(&compute_all(&defaults));
+    let help_of = |path: &str| {
+        results
+            .iter()
+            .find(|row| row.path == path)
+            .map(|row| row.meta.help)
+            .unwrap_or_else(|| panic!("{path} is a result"))
+    };
+    let result_help = help_of("shaft_joint.hub_fit_allowed_C");
+    let onset_help = help_of("temperature.demag.inner_onset_single_ring_C");
     let note = notes::note("shaft_joint").expect("the shaft-joint note");
     for (what, text, words) in [
         (
@@ -4891,6 +4898,11 @@ fn the_shaft_joint_texts_type_the_cure_margin_the_engine_keeps() {
             "the result's help",
             result_help,
             format!("onset less {margin}"),
+        ),
+        (
+            "the inner onset's help",
+            onset_help,
+            format!("at least {margin} below"),
         ),
         (
             "sentence 4",
@@ -4905,6 +4917,7 @@ fn the_shaft_joint_texts_type_the_cure_margin_the_engine_keeps() {
     ] {
         assert!(text.contains(&words), "{what} says {words:?}: {text:?}");
     }
+    assert!(!onset_help.contains("stays below it"), "{onset_help}");
 }
 
 // ---------------------------------------------------------------------------------------
