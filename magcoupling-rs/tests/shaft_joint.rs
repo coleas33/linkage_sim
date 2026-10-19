@@ -7,13 +7,16 @@
 //! ruling). A Rust-only result group, tested here as the gearbox check is in `tests/gearbox.rs`.
 //! The numbers are the spec's (sections 3.5 to 3.7), which its scratch crate computed.
 
+mod common;
+
+use common::input_meta;
 use magcoupling::compute_all;
 use magcoupling::engine::api::{DesignInputs, shaft_joint_links};
 use magcoupling::engine::assumptions::ASSUMPTIONS;
 use magcoupling::engine::compat::py_min;
 use magcoupling::engine::explain::probes::probe_designs;
 use magcoupling::engine::material_library::BACK_IRON_CHOICES;
-use magcoupling::engine::meta::{InputMeta, InputSet, SliderRange, Value, input_rows, result_rows};
+use magcoupling::engine::meta::{InputSet, SliderRange, Value, input_rows, result_rows};
 use magcoupling::engine::shaft_joint::{
     self, BORE_OVER_ITS_LIMIT, CANNOT_BE_FITTED, CAUSES, CUP, CannotBeMade, Cause, FIT_SLIPS,
     Floor, HubFitLimit, INNER_HUB, JointCommon, JointSpec, JointTerms, KEY_HAS_NO_BEARING_AREA,
@@ -127,15 +130,6 @@ fn quoted(text: &str) -> (f64, f64) {
             .unwrap_or_else(|| panic!("{text}"))
     };
     (number(value), number(limit))
-}
-
-/// The metadata of the input at `path`.
-fn input_meta(path: &str) -> &'static InputMeta {
-    input_rows(&DesignInputs::default())
-        .into_iter()
-        .find(|row| row.path == path)
-        .unwrap_or_else(|| panic!("{path} is an input"))
-        .meta
 }
 
 /// An input's slider.

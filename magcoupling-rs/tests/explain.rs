@@ -25,7 +25,7 @@ mod common;
 use std::collections::{BTreeMap, BTreeSet};
 use std::f64::consts::FRAC_PI_2;
 
-use common::{differential_files, load_cases, report};
+use common::{differential_files, input_meta, load_cases, report};
 use magcoupling::engine::api::{DesignInputs, DesignResults, compute_all};
 use magcoupling::engine::assumptions::{self, ASSUMPTIONS};
 use magcoupling::engine::compat::parity_close;
@@ -2634,10 +2634,8 @@ fn close(a: f64, b: f64) -> bool {
 
 /// The slider of the input at `path`, from its metadata.
 fn slider(path: &str) -> SliderRange {
-    input_rows(&DesignInputs::default())
-        .into_iter()
-        .find(|row| row.path == path)
-        .and_then(|row| row.meta.range)
+    input_meta(path)
+        .range
         .unwrap_or_else(|| panic!("{path} has no slider"))
 }
 
@@ -4897,11 +4895,7 @@ fn note_texts_with_sources(note: &notes::Note) -> Vec<&'static str> {
 fn the_shaft_joint_texts_type_the_cure_margin_the_engine_keeps() {
     let margin = cure_margin_words();
     let defaults = DesignInputs::default();
-    let input_help = input_rows(&defaults)
-        .into_iter()
-        .find(|row| row.path == "shaft_joint.hub_fit_max_C")
-        .map(|row| row.meta.help)
-        .expect("the bonded inner hub's fitting limit");
+    let input_help = input_meta("shaft_joint.hub_fit_max_C").help;
     let results = compute_all(&defaults);
     let result_help = help_of(&results, "shaft_joint.hub_fit_allowed_C");
     let onset_help = help_of(&results, "temperature.demag.inner_onset_single_ring_C");

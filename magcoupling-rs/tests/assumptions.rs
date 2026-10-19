@@ -12,28 +12,19 @@ mod common;
 
 use std::collections::BTreeSet;
 
-use common::plain_problems;
+use common::{input_meta, plain_problems};
 use magcoupling::engine::api::{DesignInputs, compute_all};
 use magcoupling::engine::assumptions::{
     ASSUMPTIONS, any_modified, modified, reset_to_workbook_defaults, states,
 };
 use magcoupling::engine::deviations::Deviations;
 use magcoupling::engine::explain::probes;
-use magcoupling::engine::meta::{FieldType, InputMeta, InputSet, Value, input_rows, result_rows};
-
-/// The metadata of the input at `path`.
-fn meta(path: &str) -> &'static InputMeta {
-    input_rows(&DesignInputs::default())
-        .into_iter()
-        .find(|r| r.path == path)
-        .unwrap_or_else(|| panic!("{path}: not an input"))
-        .meta
-}
+use magcoupling::engine::meta::{FieldType, InputSet, Value, input_rows, result_rows};
 
 /// A value of the input at `path` other than its default, inside its slider or among its
 /// choices: the range end farther from the default, or the first other choice.
 fn other_value(path: &str) -> Value {
-    let m = meta(path);
+    let m = input_meta(path);
     let default = DesignInputs::default().get(path).expect("an input");
     if !m.choices.is_empty() {
         let code = m
@@ -86,7 +77,10 @@ fn every_flagged_input_is_in_exactly_one_row() {
         assert!(!a.paths.is_empty(), "{}", a.id);
         for &path in a.paths {
             assert!(listed.insert(path.to_owned()), "{path} is in two rows");
-            assert!(meta(path).assumption, "{path} is not flagged .assumption()");
+            assert!(
+                input_meta(path).assumption,
+                "{path} is not flagged .assumption()"
+            );
         }
     }
     assert_eq!(listed, flagged);
@@ -144,9 +138,9 @@ fn every_row_has_a_label_rationale_source_and_one_unit() {
         ] {
             assert!(!text.trim().is_empty(), "{}: empty {what}", a.id);
         }
-        let unit = meta(a.paths[0]).unit;
+        let unit = input_meta(a.paths[0]).unit;
         for &path in a.paths {
-            let m = meta(path);
+            let m = input_meta(path);
             assert_eq!(m.unit, unit, "{}: {path} has another unit", a.id);
             // The source cites the workbook cell of every workbook input it sets; a Rust-only
             // input has none and cites its spec instead: Addendum A3 (the harmonic set) or the
@@ -178,7 +172,7 @@ fn the_shaft_joint_rows_are_rust_only_and_cite_the_bl064_spec() {
     for (id, path) in BL064_ROWS {
         let a = row(id);
         assert_eq!(a.paths, [path], "{id}");
-        let m = meta(path);
+        let m = input_meta(path);
         assert!(m.rust_only && m.cell.is_none(), "{path}");
         assert!(a.source.contains(BL064_SOURCE), "{id}: {}", a.source);
         assert!(a.shown(true) && a.shown(false), "{id}");
@@ -220,7 +214,7 @@ fn nothing_is_modified_at_the_defaults() {
         assert_eq!(s.assumption, a);
         assert!(!s.modified, "{}", a.id);
         assert_eq!(s.values, s.defaults, "{}", a.id);
-        assert_eq!(s.unit, meta(a.paths[0]).unit);
+        assert_eq!(s.unit, input_meta(a.paths[0]).unit);
         assert_eq!(s.values.len(), a.paths.len());
     }
 }
@@ -302,7 +296,7 @@ fn each_assumption_moves_a_result_at_the_default_design() {
     // Every assumption is numeric (tests/schema.rs); the harmonic set is the one selector.
     for a in &ASSUMPTIONS {
         for &path in a.paths {
-            let m = meta(path);
+            let m = input_meta(path);
             assert!(matches!(m.ty, FieldType::F64 | FieldType::I64), "{path}");
         }
     }

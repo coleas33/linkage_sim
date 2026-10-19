@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use magcoupling::engine::api::{DesignInputs, compute_all_with};
 use magcoupling::engine::deviations::{DeviationStatus, Deviations, REGISTRY};
 use magcoupling::engine::explain::plain::plain_text_violations;
-use magcoupling::engine::meta::{Value, input_rows, result_rows};
+use magcoupling::engine::meta::{InputMeta, Value, input_rows, result_rows};
 
 /// A ported input group of `DesignInputs` and its workbook input cells
 /// (inputs whose default is `None` are not counted, as in `test_parity.py`).
@@ -130,6 +130,15 @@ pub fn is_ported_result(path: &str) -> bool {
 /// synthesized from the table layout.
 pub fn is_table_path(path: &str) -> bool {
     path.contains('[')
+}
+
+/// The metadata of the input at `path` (at the defaults). Panics when `path` is no input.
+pub fn input_meta(path: &str) -> &'static InputMeta {
+    input_rows(&DesignInputs::default())
+        .into_iter()
+        .find(|row| row.path == path)
+        .unwrap_or_else(|| panic!("{path} is an input"))
+        .meta
 }
 
 /// A file under `magcoupling-rs/tests/data/`.

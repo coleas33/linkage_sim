@@ -4,6 +4,9 @@
 //! (`coupling.gearbox_input_rating_Nm`), owner decision 1A. A Rust-only result, tested here as
 //! the space claim is in `tests/sizing.rs`.
 
+mod common;
+
+use common::input_meta;
 use magcoupling::compute_all;
 use magcoupling::engine::api::DesignInputs;
 use magcoupling::engine::explain::probes::probe_designs;
@@ -57,10 +60,8 @@ fn custom_dimensions(grade: &str) -> DesignInputs {
 
 /// The rating's slider.
 fn rating_range() -> SliderRange {
-    input_rows(&DesignInputs::default())
-        .into_iter()
-        .find(|row| row.path == "coupling.gearbox_input_rating_Nm")
-        .and_then(|row| row.meta.range)
+    input_meta("coupling.gearbox_input_rating_Nm")
+        .range
         .expect("the gearbox input rating has a slider")
 }
 
