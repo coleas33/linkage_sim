@@ -1008,6 +1008,23 @@ mod tests {
             words(&edge.side(MagnetsPerRing, false)),
             Words::NoPrediction
         );
+        // ... and a stepped torque that is not finite with the end effect in range: no back
+        // iron at 8 magnets with a design file's calibration coefficient of 1e-320, whose +2
+        // design (10 magnets) takes the measured factor, which overflows.
+        let mut tiny = no_back_iron();
+        tiny.coupling.npole = 8;
+        tiny.calibration.f_cal_original = 1e-320;
+        let ten = compute_all(&FreeVariable::MagnetsPerRing.apply(&tiny, 10.0));
+        assert!(crate::gui::dashboard::end_effect_out_of_range(&ten).is_none());
+        assert!(
+            !ten.metal.torque_hot_low_Nm.is_finite(),
+            "{}",
+            ten.metal.torque_hot_low_Nm
+        );
+        assert_eq!(
+            words(&side_at(&tiny, None, MagnetsPerRing, true)),
+            Words::NoPrediction
+        );
 
         // Step 7: the jump, words whenever the overlapping magnet length changes by anything but
         // the step (O-1). The mixed pair jumps both ways; its reverse moves by the step.
@@ -1148,6 +1165,11 @@ mod tests {
         negative_coefficient.calibration.f_cal_original = -0.95;
         let mut negative_pull_out = negative_coefficient.clone();
         negative_pull_out.metal.variation = 1.5;
+        // A torque that is not finite with the end effect in range (spec 2.1: (c) with a design
+        // file's calibration coefficient of 0, whose measured factor is NaN): the readouts show
+        // NO_TORQUE, so the card reads no prediction, never "not above zero".
+        let mut zero_coefficient = no_back_iron();
+        zero_coefficient.calibration.f_cal_original = 0.0;
         for (name, inputs, shown) in [
             // The end effect out of range: the readouts show no prediction.
             (
@@ -1191,6 +1213,11 @@ mod tests {
                 design("shown does not fit"),
                 TorqueCard::ShownDoesNotFit,
             ),
+            (
+                "(c), f_cal_original 0",
+                zero_coefficient,
+                TorqueCard::ShownNoPrediction,
+            ),
         ] {
             let results = compute_all(&inputs);
             let torques = [results.model.pullout_Nm, results.metal.torque_hot_low_Nm];
@@ -1206,6 +1233,14 @@ mod tests {
             }
             if name == "f_cal_original -0.95, variation 1.5" {
                 assert!(torques[0] < 0.0 && torques[1] > 0.0, "{torques:?}");
+            }
+            if name == "(c), f_cal_original 0" {
+                // The finiteness half of the readouts' rule decides, not the end effect.
+                assert!(
+                    crate::gui::dashboard::end_effect_out_of_range(&results).is_none(),
+                    "{name}"
+                );
+                assert!(!torques[1].is_finite(), "{name}: {torques:?}");
             }
             let card = card(&inputs, &results, None, PAUSED);
             assert_eq!(card, shown, "{name}");
