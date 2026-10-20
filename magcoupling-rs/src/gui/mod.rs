@@ -31,6 +31,7 @@ pub mod sizing;
 pub mod spreadsheet;
 #[cfg(test)]
 pub(crate) mod test_support;
+pub mod torque_card;
 pub mod trace;
 pub mod typeset;
 pub mod xlsx;

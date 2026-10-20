@@ -29,8 +29,7 @@
 use crate::engine::assumptions::{self, ASSUMPTIONS};
 use crate::engine::clamps;
 use crate::engine::meta::{InputSet, ResultSet, SliderRange, Value};
-use crate::engine::size_controls::ring_radius_range;
-use crate::engine::sizing::{FreeVariable, SizingOutcome};
+use crate::engine::sizing::SizingOutcome;
 use crate::gui::clamp_drawing::clamp_ui;
 use crate::gui::dashboard::{
     Level, dashboard_ui, end_effect_banner, end_effect_banner_ui, why_note_link,
@@ -61,7 +60,7 @@ use crate::gui::session::{
 use crate::gui::size_controls;
 use crate::gui::sizing::{
     REQUIREMENT_INPUT, SOLVED_PREFIX, SOLVING, SizingMode, SizingRunner, SizingState, held_by_auto,
-    with_own_value,
+    sizing_range, with_own_value,
 };
 use crate::gui::spreadsheet::Snapshot;
 use crate::gui::trace::{CLEAR_TRACE, Trace, TraceKind};
@@ -416,17 +415,10 @@ impl MagcouplingPanel {
         &self.sizing
     }
 
-    /// The range Auto's solve searches (spec guidance 3.5): ring size over the ring radii of the
-    /// Size tab's diameter range, its Minimum OD included
-    /// ([`crate::engine::size_controls::ring_radius_range`]), or over its slider when the size
-    /// controls define no range (an odd magnet count); every other free variable over its slider.
-    /// Read from the inputs, never the design shown, so a solve cannot move its own range.
+    /// The range Auto's solve searches ([`crate::gui::sizing::sizing_range`], spec guidance 3.5),
+    /// read from the inputs, never the design shown, so a solve cannot move its own range.
     fn sizing_range(&self) -> SliderRange {
-        match self.sizing.variable {
-            FreeVariable::RingRadius => ring_radius_range(&self.inputs, self.minimum_diameter_mm)
-                .unwrap_or_else(|| FreeVariable::RingRadius.range()),
-            variable => variable.range(),
-        }
+        sizing_range(&self.inputs, self.sizing.variable, self.minimum_diameter_mm)
     }
 
     /// The Size tab's Auto outcome line and its colour: what the solve changed, from the
@@ -1597,7 +1589,7 @@ mod tests {
     use super::*;
     use crate::engine::api::HEADLINE;
     use crate::engine::size_controls::{DiameterFit, diameter_breakdown, dimensions};
-    use crate::engine::sizing::SizingOutcome;
+    use crate::engine::sizing::{FreeVariable, SizingOutcome};
     use crate::gui::dashboard::{END_EFFECT_BANNER, STORED_3D_LABEL, result_info};
     use crate::gui::format::{format_value, with_unit};
     use crate::gui::guidance::{

@@ -69,6 +69,7 @@ use crate::gui::inputs::{InputCatalogue, optional_seed, section_label};
 use crate::gui::pickers::{CUSTOM, GRADE_PATHS, PART_PATHS};
 use crate::gui::plain_text::{display_label, label_for};
 use crate::gui::size_controls;
+use crate::gui::torque_card::{Words, count_step, side_words};
 use crate::{DesignInputs, DesignResults, compute_all};
 
 /// Which way a fix moves its input.
@@ -158,7 +159,7 @@ const END_EFFECT: &str = "model.end_effect_check";
 const MAGNET_LENGTH: &str = "coupling.magnets.axial_length_mm";
 const RING: &str = "coupling.inner_back_apothem_mm";
 const POLES: &str = "coupling.npole";
-const FACE_GAP: &str = "metal.face_gap_mm";
+pub(crate) const FACE_GAP: &str = "metal.face_gap_mm";
 
 /// Inputs the Size tab shows under its own name, by path: a fix on one names the Size-tab
 /// control a user moves it with ("Raise Outside diameter", not the ring's radius).
@@ -3050,28 +3051,31 @@ impl Consequences {
 }
 
 /// The neighbours of `inputs` (`results` are its own), each one `compute_all` of the design
-/// with only the magnet count changed.
+/// with only the magnet count changed: two fewer and two more where the magnet slider takes
+/// the count ([`count_step`], the torque card's count row's step), read by the card's validity
+/// rule ([`side_words`]) but the keyway's (decision D-1: the hub wall past the keyway does not
+/// depend on the magnet count, so a neighbour fails it exactly when the design shown does, the
+/// Size tab already says so, and the torques still compare).
 fn neighbours(inputs: &DesignInputs, results: &DesignResults) -> Vec<Neighbour> {
     let baseline = prediction(results);
-    neighbour_counts(inputs.coupling.npole)
+    [false, true]
         .into_iter()
+        .filter_map(|more| count_step(inputs.coupling.npole, more).ok())
         .map(|npole| {
             let design = FreeVariable::MagnetsPerRing.apply(inputs, npole as f64);
-            let outcome = neighbour_outcome(&design, &compute_all(&design), baseline);
+            let results = compute_all(&design);
+            let outcome = match side_words(&design, &results, false) {
+                None => NeighbourOutcome::Torque {
+                    pullout_Nm: results.model.pullout_Nm,
+                    change: baseline.map_or(f64::NAN, |base| results.model.pullout_Nm / base - 1.0),
+                    cup_od_mm: results.model.cup_od_mm,
+                },
+                Some(Words::DoesNotFit) => NeighbourOutcome::DoesNotFit,
+                // The keyway left out, the only other words are the prediction's.
+                Some(_) => NeighbourOutcome::NoPrediction,
+            };
             Neighbour { npole, outcome }
         })
-        .collect()
-}
-
-/// Two fewer and two more than `npole`, ascending, keeping the even counts inside the magnet
-/// slider (one block per pole; the slider steps by 2). A count from a design file may be odd
-/// or past the slider, and none overflows.
-fn neighbour_counts(npole: i64) -> Vec<i64> {
-    let range = FreeVariable::MagnetsPerRing.range();
-    [npole.checked_sub(2), npole.checked_add(2)]
-        .into_iter()
-        .flatten()
-        .filter(|&n| n % 2 == 0 && (range.min..=range.max).contains(&(n as f64)))
         .collect()
 }
 
@@ -3081,33 +3085,6 @@ fn prediction(results: &DesignResults) -> Option<f64> {
     let pullout = results.model.pullout_Nm;
     (end_effect_in_range(results.model.f_end) && pullout.is_finite() && pullout > 0.0)
         .then_some(pullout)
-}
-
-/// What a neighbour design does (`results` are its own; `baseline` is [`prediction`] of the
-/// design shown). The conditions of [`crate::engine::sizing::is_valid`] but the keyway's: the
-/// hub wall past the keyway (apothem - bondline - bore / 2 - keyway depth) does not depend on
-/// the magnet count, so a neighbour fails it exactly when the design shown does, the Size tab
-/// already says so, and the torques still compare.
-fn neighbour_outcome(
-    design: &DesignInputs,
-    results: &DesignResults,
-    baseline: Option<f64>,
-) -> NeighbourOutcome {
-    if !blocks_fit(&design.coupling, &results.model) {
-        return NeighbourOutcome::DoesNotFit;
-    }
-    let pullout = results.model.pullout_Nm;
-    if !end_effect_in_range(results.model.f_end)
-        || !pullout.is_finite()
-        || !results.metal.torque_hot_low_Nm.is_finite()
-    {
-        return NeighbourOutcome::NoPrediction;
-    }
-    NeighbourOutcome::Torque {
-        pullout_Nm: pullout,
-        change: baseline.map_or(f64::NAN, |base| pullout / base - 1.0),
-        cup_od_mm: results.model.cup_od_mm,
-    }
 }
 
 /// The fit line under Magnets per ring (spec 3.3). A diameter named as fitting is rounded up,
@@ -9203,24 +9180,9 @@ mod tests {
                 "{lines:?}"
             );
         }
-    }
-
-    #[test]
-    fn neighbours_are_even_counts_inside_the_slider_and_never_overflow() {
-        let range = FreeVariable::MagnetsPerRing.range();
-        let (fewest, most) = (range.min as i64, range.max as i64);
-        assert_eq!(neighbour_counts(fewest + 4), [fewest + 2, fewest + 6]);
-        // A count from a design file may be odd or past the slider.
-        assert!(
-            neighbour_counts(fewest + 3).is_empty(),
-            "odd: no even neighbour"
-        );
-        assert_eq!(neighbour_counts(most + 2), [most]);
-        assert_eq!(neighbour_counts(fewest - 2), [fewest]);
-        assert!(neighbour_counts(most + 4).is_empty());
-        assert!(neighbour_counts(i64::MAX).is_empty());
-        assert!(neighbour_counts(i64::MIN).is_empty());
-        // An odd count shows the ring-size line and no neighbour.
+        // An odd count (a design file's) shows the ring-size line and no neighbour: the slider
+        // takes neither count next to it (`torque_card::count_step`, whose own test pins the
+        // counts it takes).
         let odd = with_magnets(&DesignInputs::default(), fewest + 5);
         let lines = consequences_of(&odd, None).magnet_lines(odd.coupling.npole, None);
         assert_eq!(lines[0], RING_SIZE_STAYS);

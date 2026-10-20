@@ -319,6 +319,249 @@ pub(crate) fn with_variation(variation: f64) -> crate::DesignInputs {
     inputs
 }
 
+/// The gui-smoke share link's design inputs (slice 3 spec 2.1, "(b)"), before Auto on the
+/// magnet length solves them: the defaults with a 1.5 mm face gap.
+pub(crate) fn smoke_inputs() -> crate::DesignInputs {
+    let mut inputs = crate::DesignInputs::default();
+    inputs.metal.face_gap_mm = 1.5;
+    inputs
+}
+
+// The torque card's one table of designs (slice 3 spec section 8, code review 4 SF-4): here,
+// beside the designs it reads, so any test module reads the one table.
+
+/// One design of the torque card's table ([`card_designs`]) as the panel shows it: its key,
+/// the design shown (an Auto design solved as the panel solves it) and the Size tab's Minimum
+/// OD preference.
+pub(crate) struct CardDesign {
+    pub(crate) key: &'static str,
+    pub(crate) inputs: crate::DesignInputs,
+    pub(crate) minimum_diameter_mm: Option<f64>,
+}
+
+impl CardDesign {
+    /// The design's card, at its Minimum OD preference ([`card_at`]).
+    pub(crate) fn card(&self) -> crate::gui::torque_card::TorqueCard {
+        card_at(&self.inputs, self.minimum_diameter_mm)
+    }
+
+    /// The side of the design's `control` row, `more` its `+` side ([`side_at`]).
+    pub(crate) fn side(
+        &self,
+        control: crate::gui::torque_card::Control,
+        more: bool,
+    ) -> crate::gui::torque_card::Side {
+        side_at(&self.inputs, self.minimum_diameter_mm, control, more)
+    }
+}
+
+/// The card of `inputs` as the panel asks for it: with its own results, the Minimum OD
+/// preference `minimum` and the shaft-clamp section's shipped pause.
+pub(crate) fn card_at(
+    inputs: &crate::DesignInputs,
+    minimum: Option<f64>,
+) -> crate::gui::torque_card::TorqueCard {
+    let results = crate::compute_all(inputs);
+    crate::gui::torque_card::card(inputs, &results, minimum, crate::engine::clamps::PAUSED)
+}
+
+/// The side of `inputs`' card ([`card_at`], at the Minimum OD preference `minimum`) on
+/// `control`'s row, `more` its `+` side.
+pub(crate) fn side_at(
+    inputs: &crate::DesignInputs,
+    minimum: Option<f64>,
+    control: crate::gui::torque_card::Control,
+    more: bool,
+) -> crate::gui::torque_card::Side {
+    let card = card_at(inputs, minimum);
+    let row = card
+        .rows()
+        .iter()
+        .find(|row| row.control == control)
+        .unwrap_or_else(|| panic!("a {control:?} row: {card:?}"));
+    if more {
+        row.more.clone()
+    } else {
+        row.fewer.clone()
+    }
+}
+
+/// The design the panel shows from `inputs` with Auto on `variable` at the Minimum OD
+/// preference `minimum`: the solver's value, or its best where the requirement is out of
+/// reach (`SizingRunner`), set through `gui::sizing::sized`, over the range the panel
+/// searches (`gui::sizing::sizing_range`, the panel's own rule).
+fn auto_shown(
+    inputs: &crate::DesignInputs,
+    variable: crate::engine::sizing::FreeVariable,
+    minimum: Option<f64>,
+) -> crate::DesignInputs {
+    use crate::gui::sizing::{SizingMode, SizingRunner, SizingState, sized, sizing_range};
+    let range = sizing_range(inputs, variable, minimum);
+    let state = SizingState {
+        mode: SizingMode::TorqueToMagnets,
+        variable,
+    };
+    let mut runner = SizingRunner::default();
+    runner.solve_now(inputs, &state, range);
+    let value = runner
+        .value(variable)
+        .unwrap_or_else(|| panic!("Auto on {variable:?} shows a value"));
+    sized(variable, inputs, value)
+}
+
+/// The torque card's designs: those of the slice 3 spec's section 2.1 and its Edges, each with
+/// its Minimum OD preference (an Auto design solved as the panel solves it).
+/// The one table the card's tests read (code review 4 SF-4), by key or all of it, so a design
+/// added once reaches every test. Each key is the spec's, without its Markdown, with
+/// ": <what differs>" where a row holds several designs.
+pub(crate) fn card_designs() -> Vec<CardDesign> {
+    use crate::DesignInputs;
+    use crate::engine::size_controls::{
+        dimensions, dimensions_with_minimum_diameter, with_ring_radius,
+    };
+    use crate::engine::sizing::FreeVariable::{AxialLength, MagnetsPerRing, RingRadius};
+    use crate::gui::guidance::FACE_GAP;
+    use crate::gui::size_controls::{SliderMapping, slider_minimum};
+    let a = DesignInputs::default;
+    let e = || with_poles(8);
+    let e2 = || {
+        let mut inputs = with_poles(8);
+        inputs.metal.required_min_Nm = 1.5;
+        inputs
+    };
+    let size = |inputs: &DesignInputs| dimensions(inputs).expect("a design with size controls");
+    let lowest = |inputs: &DesignInputs| size(inputs).minimum_diameter_range.min;
+    // A design one slider mapping away (the Size tab's own, `SliderMapping`): the Outside
+    // diameter at the default Minimum OD, the Overall length, the gap.
+    let at_diameter = |inputs: &DesignInputs, mm: f64| {
+        SliderMapping::Diameter {
+            minimum: slider_minimum(&size(inputs), None),
+        }
+        .design(inputs, mm)
+        .expect("a diameter on the slider")
+    };
+    let at_length = |inputs: &DesignInputs, mm: f64| {
+        SliderMapping::Length
+            .design(inputs, mm)
+            .expect("a length on the slider")
+    };
+    let at_gap = |mm: f64| {
+        SliderMapping::Input { path: FACE_GAP }
+            .design(&a(), mm)
+            .expect("a gap on the slider")
+    };
+    let diameter_top = |inputs: &DesignInputs| {
+        let minimum = slider_minimum(&size(inputs), None);
+        dimensions_with_minimum_diameter(inputs, minimum)
+            .expect("a diameter range")
+            .diameter_range
+            .max
+    };
+    let lengths = size(&a()).length_range;
+    let plain = |key, inputs| CardDesign {
+        key,
+        inputs,
+        minimum_diameter_mm: None,
+    };
+    let at_minimum = |key, inputs, minimum: f64| CardDesign {
+        key,
+        inputs,
+        minimum_diameter_mm: Some(minimum),
+    };
+    let solved = |key, inputs: DesignInputs, variable, minimum: Option<f64>| CardDesign {
+        key,
+        inputs: auto_shown(&inputs, variable, minimum),
+        minimum_diameter_mm: minimum,
+    };
+    let hot = {
+        let mut inputs = a();
+        hot_day(&mut inputs);
+        inputs
+    };
+    vec![
+        plain("(a)", a()),
+        solved("(b)", smoke_inputs(), AxialLength, None),
+        plain("(c)", no_back_iron()),
+        plain("(e)", e()),
+        plain("(e2)", e2()),
+        plain("mixed", mixed_lengths()),
+        plain("reverse", reverse_lengths()),
+        solved("(a)+Auto length", a(), AxialLength, None),
+        solved("(a)+Auto count", a(), MagnetsPerRing, None),
+        solved("(a)+Auto ring", a(), RingRadius, None),
+        solved("(e2)+Auto length", e2(), AxialLength, None),
+        solved("(e2)+Auto count", e2(), MagnetsPerRing, None),
+        solved("(e2)+Auto ring", e2(), RingRadius, None),
+        solved(
+            "(e2)+Auto ring, low Min OD",
+            e2(),
+            RingRadius,
+            Some(lowest(&e2())),
+        ),
+        plain("short magnets", short_magnets()),
+        plain("end effect at a step", end_effect_at_a_step()),
+        plain("odd count", odd_count()),
+        at_minimum("(e), low Min OD", e(), lowest(&e())),
+        at_minimum("(a), Min OD 42.8", a(), 42.8),
+        at_minimum("(a), Min OD 45", a(), 45.0),
+        at_minimum("(a), Min OD 45: 43.3 mm", a(), 43.3),
+        plain(
+            "shown does not fit",
+            with_ring_radius(&a(), 9.5).expect("a ring the diameter slider reaches"),
+        ),
+        plain("keyway through", keyway_through()),
+        plain("gap at 0.3", at_gap(0.3)),
+        plain("npole 4", with_poles(4)),
+        plain("hot day", hot),
+        plain("only the joint fails", only_the_joint_fails()),
+        plain("passing", passing_design()),
+        plain("short cavity", short_cavity()),
+        plain("temperature edge", temperature_edge()),
+        plain("npole 40", forty_narrow_magnets()),
+        plain("slider tops: gap 5.0", at_gap(5.0)),
+        plain(
+            "slider tops: Outside diameter 80",
+            at_diameter(&a(), diameter_top(&a())),
+        ),
+        plain(
+            "slider tops: Overall length 69.9",
+            at_length(&a(), lengths.max),
+        ),
+        plain(
+            "slider tops: Overall length 21.1",
+            at_length(&a(), lengths.min),
+        ),
+        plain("steps to an end: (a) at length 68.9", at_length(&a(), 68.9)),
+        plain("steps to an end: (a) at length 22.1", at_length(&a(), 22.1)),
+        plain("steps to an end: (e) at length 68.9", at_length(&e(), 68.9)),
+        plain("steps to an end: (e) at length 22.1", at_length(&e(), 22.1)),
+        plain("steps to an end: (a) at gap 4.9", at_gap(4.9)),
+        plain("steps to an end: (a) at gap 0.4", at_gap(0.4)),
+        plain(
+            "steps to an end: (a) at Outside diameter 79",
+            at_diameter(&a(), diameter_top(&a()) - 1.0),
+        ),
+        plain(
+            "steps to an end: (e) at Outside diameter 79",
+            at_diameter(&e(), diameter_top(&e()) - 1.0),
+        ),
+        at_minimum(
+            "steps to an end: (e), Min OD 41.8",
+            e(),
+            size(&e()).diameter_mm - 1.0,
+        ),
+        plain("variation 1.0", with_variation(1.0)),
+        plain("variation 1.0: 1.5", with_variation(1.5)),
+        plain("zero torque", zero_torque()),
+        plain(
+            "(c), f_cal_original -0.95",
+            no_back_iron_negative_calibration(),
+        ),
+        plain("count overflow: i64::MAX", with_poles(i64::MAX)),
+        plain("count overflow: i64::MIN", with_poles(i64::MIN)),
+    ]
+}
+
 /// The defaults with a 16 mm bore in a 12 mm boss and no boss length (BL-064): the cup has no
 /// wall around its bore, so its holding, bore stress, needed and elastic results are not a
 /// number, and its key no bearing length (the web alone, 2.5 mm, under the 3 mm key), so its
