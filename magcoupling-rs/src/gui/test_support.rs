@@ -810,15 +810,28 @@ pub(crate) fn primary_button(pos: egui::Pos2, pressed: bool) -> egui::Event {
 /// flattened, in paint order: what the helpers below and the tests' own
 /// filters walk.
 pub(crate) fn flat_shapes(output: &egui::FullOutput) -> Vec<&egui::Shape> {
-    fn walk<'a>(shape: &'a egui::Shape, shapes: &mut Vec<&'a egui::Shape>) {
+    clipped_flat_shapes(output)
+        .into_iter()
+        .map(|(_, shape)| shape)
+        .collect()
+}
+
+/// [`flat_shapes`], each with the rect egui clips it to: that of the top-level shape it was
+/// painted in, which the shapes nested in it share.
+fn clipped_flat_shapes(output: &egui::FullOutput) -> Vec<(egui::Rect, &egui::Shape)> {
+    fn walk<'a>(
+        clip: egui::Rect,
+        shape: &'a egui::Shape,
+        shapes: &mut Vec<(egui::Rect, &'a egui::Shape)>,
+    ) {
         match shape {
-            egui::Shape::Vec(nested) => nested.iter().for_each(|s| walk(s, shapes)),
-            other => shapes.push(other),
+            egui::Shape::Vec(nested) => nested.iter().for_each(|s| walk(clip, s, shapes)),
+            other => shapes.push((clip, other)),
         }
     }
     let mut shapes = Vec::new();
     for clipped in &output.shapes {
-        walk(&clipped.shape, &mut shapes);
+        walk(clipped.clip_rect, &clipped.shape, &mut shapes);
     }
     shapes
 }
@@ -902,6 +915,18 @@ pub(crate) fn last_characters(output: &egui::FullOutput, needle: &str) -> Vec<eg
 /// label: lets a test click a widget whose id it cannot know.
 pub(crate) fn text_rect(output: &egui::FullOutput, needle: &str) -> Option<egui::Rect> {
     text_rects(output, needle).into_iter().next()
+}
+
+/// The rect egui clips the first drawn text equal to `needle` to, such as a scroll area's
+/// visible part or the region a view is confined to. Panics when no such text is drawn.
+pub(crate) fn text_clip_rect(output: &egui::FullOutput, needle: &str) -> egui::Rect {
+    clipped_flat_shapes(output)
+        .into_iter()
+        .find_map(|(clip, shape)| match shape {
+            egui::Shape::Text(text) if text.galley.text() == needle => Some(clip),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no {needle:?} drawn"))
 }
 
 /// The centre of the first drawn text equal to `needle`: where a test points to hover it.

@@ -1845,8 +1845,8 @@ mod tests {
         SCREEN, clamp_at_its_limit, drawing_rect, drawn_texts, hot_day, hub_overstressed,
         key_event, key_tap, last_characters, no_back_iron, only_the_clamp_fails,
         only_the_joint_fails, primary_button, select_all, short_magnets, sized_frame,
-        sized_frame_at, smoke_inputs, text_center, text_rect, text_rects, tooltips_at_once,
-        with_poles,
+        sized_frame_at, smoke_inputs, text_center, text_clip_rect, text_rect, text_rects,
+        tooltips_at_once, with_poles,
     };
     use crate::gui::torque_card::{CAPTION, Control, held_line};
     use crate::headline;
@@ -5667,22 +5667,25 @@ mod tests {
         (rects[0], at[0])
     }
 
-    /// The clip rect of the first drawn text equal to `needle`: for the card's heading, the
-    /// centre view's region (`confined` clips to it).
-    fn text_clip(output: &egui::FullOutput, needle: &str) -> egui::Rect {
-        fn has(shape: &egui::Shape, needle: &str) -> bool {
-            match shape {
-                egui::Shape::Vec(nested) => nested.iter().any(|s| has(s, needle)),
-                egui::Shape::Text(text) => text.galley.text() == needle,
-                _ => false,
-            }
-        }
-        output
-            .shapes
-            .iter()
-            .find(|clipped| has(&clipped.shape, needle))
-            .map(|clipped| clipped.clip_rect)
-            .unwrap_or_else(|| panic!("no {needle:?} drawn"))
+    /// The vertical item spacing in the harness's style (egui's default) [points]: the gap
+    /// between the card's header and its body, and between the card and the drawing.
+    fn item_spacing(harness: &Harness) -> f32 {
+        harness.ctx.style().spacing.item_spacing.y
+    }
+
+    /// The room at the torque card in `output` [points]: from its heading's top to the bottom
+    /// of the heading's clip, the centre view's region (`confined` clips to it). It is the
+    /// height that rule 3 reads at the card (`ui.available_height()`).
+    fn room_at_card(output: &egui::FullOutput) -> f32 {
+        let heading = text_rect(output, CARD_HEADING).expect("the heading");
+        text_clip_rect(output, CARD_HEADING).bottom() - heading.top()
+    }
+
+    /// The torque card's drawn height in `output` [points]: from its heading's top to the
+    /// drawing's top, less the item spacing between the card and the drawing.
+    fn drawn_card_height(harness: &Harness, output: &egui::FullOutput) -> f32 {
+        let heading = text_rect(output, CARD_HEADING).expect("the heading");
+        drawing_rect(output).top() - heading.top() - item_spacing(harness)
     }
 
     /// The card's pre-measure of `lines` ([`card_open_height`]) and the drawing's floor
@@ -5698,6 +5701,18 @@ mod tests {
             |ui| measured = (card_open_height(ui, lines), drawing_floor(ui)),
         );
         measured
+    }
+
+    /// What rule 3 leaves for the torque card in `output` (slice 3 spec 6.2) [points], as the
+    /// panel measures it on a deciding frame: the room at the card ([`room_at_card`]), less the
+    /// open card's pre-measure of the design shown's lines in the centre region's width (the
+    /// drawing's; [`scratch_measure`]), the item spacing before the drawing and the drawing's
+    /// floor. Rule 3 alone opens the card where it is not negative. This is the tests' one copy
+    /// of the rule in [`MagcouplingPanel::card_default`].
+    fn rule_three_margin(harness: &Harness, output: &egui::FullOutput) -> f32 {
+        let lines = shown_consequences(harness).card.lines(harness.panel.auto());
+        let (open_height, floor) = scratch_measure(drawing_rect(output).width(), &lines);
+        room_at_card(output) - open_height - item_spacing(harness) - floor
     }
 
     /// The height of the label the card replaced, laid out as it was under the readouts (a
@@ -5756,6 +5771,15 @@ mod tests {
         // region's width, so the drawing is at least as tall as before the card. At 1280 x 800
         // short magnets start open, and the card closed by its heading is again no taller than
         // the label there.
+        let no_taller_than_the_label =
+            |harness: &Harness, output: &egui::FullOutput, what: &str| {
+                let closed = drawn_card_height(harness, output);
+                let label = replaced_label_height(harness, drawing_rect(output).width());
+                assert!(
+                    closed <= label,
+                    "{what}: closed {closed} against the label's {label}"
+                );
+            };
         for inputs in [DesignInputs::default(), short_magnets()] {
             let one_line = inputs == short_magnets();
             let (mut harness, _) = card_tab(egui::vec2(930.0, 800.0), design_of(inputs), false);
@@ -5763,23 +5787,11 @@ mod tests {
             let region = drawing_rect(&output).width();
             assert!(!card_open(&harness), "one-line form {one_line}");
             assert!(region < CARD_OPEN_MIN_WIDTH, "{region}");
-            let heading = text_rect(&output, CARD_HEADING).expect("the heading");
-            let spacing = harness.ctx.style().spacing.item_spacing.y;
-            let closed = drawing_rect(&output).top() - heading.top() - spacing;
-            let label = replaced_label_height(&harness, region);
-            assert!(
-                closed <= label,
-                "closed {closed} against the label's {label}"
-            );
+            no_taller_than_the_label(&harness, &output, &format!("one-line form {one_line}"));
             if one_line {
                 // Rule 3 alone would open the one-line form here: the width rule closes it.
-                let room = text_clip(&output, CARD_HEADING).bottom() - heading.top();
-                let lines = shown_consequences(&harness).card.lines(None);
-                let (open_height, floor) = scratch_measure(region, &lines);
-                assert!(
-                    room - open_height - spacing >= floor,
-                    "room {room}, card {open_height}, floor {floor}"
-                );
+                let margin = rule_three_margin(&harness, &output);
+                assert!(margin >= 0.0, "rule 3 leaves {margin}");
             }
         }
         let (harness, _) = card_tab(egui::vec2(1280.0, 800.0), design_of(short_magnets()), false);
@@ -5793,14 +5805,7 @@ mod tests {
         harness.click(text_center(&output, CARD_HEADING));
         let output = harness.frame_after(1.0, Vec::new());
         assert!(!card_open(&harness));
-        let heading = text_rect(&output, CARD_HEADING).expect("the heading");
-        let spacing = harness.ctx.style().spacing.item_spacing.y;
-        let closed = drawing_rect(&output).top() - heading.top() - spacing;
-        let label = replaced_label_height(&harness, drawing_rect(&output).width());
-        assert!(
-            closed <= label,
-            "closed {closed} against the label's {label}"
-        );
+        no_taller_than_the_label(&harness, &output, "closed by its heading at 1280 x 800");
         // At 930 x 800 the header row wraps (spec 6.1): the card's Why link continues under the
         // heading inside the centre region, and a click on its last character opens how the
         // coupling makes torque (test 21 clicks it in a wide window).
@@ -5864,17 +5869,10 @@ mod tests {
         );
         assert!(!card_open(&harness));
         let output = harness.frame(Vec::new());
-        let heading = text_rect(&output, CARD_HEADING).expect("the heading");
-        let room = text_clip(&output, CARD_HEADING).bottom() - heading.top();
         let region = drawing_rect(&output).width();
-        let (open_height, floor) =
-            scratch_measure(region, &shown_consequences(&harness).card.lines(None));
-        let spacing = harness.ctx.style().spacing.item_spacing.y;
         assert!(region >= CARD_OPEN_MIN_WIDTH, "{region}");
-        assert!(
-            room - open_height - spacing >= floor,
-            "room {room}, card {open_height}, floor {floor}"
-        );
+        let margin = rule_three_margin(&harness, &output);
+        assert!(margin >= 0.0, "rule 3 leaves {margin}");
         let (mut harness, _) = card_tab(wide, design_of(DesignInputs::default()), false);
         assert!(card_open(&harness));
         let output = harness.frame(Vec::new());
@@ -6091,14 +6089,10 @@ mod tests {
         assert!(narrow < wide, "the region narrows: {wide} -> {narrow}");
         assert!(card_open(&harness));
         assert_eq!(harness.panel.card_start, start);
-        let heading = text_rect(&output, CARD_HEADING).expect("the heading");
-        let room = text_clip(&output, CARD_HEADING).bottom() - heading.top();
-        let lines = shown_consequences(&harness).card.lines(None);
-        let (open_height, floor) = scratch_measure(narrow, &lines);
-        let spacing = harness.ctx.style().spacing.item_spacing.y;
+        let margin = rule_three_margin(&harness, &output);
         assert!(
-            room - open_height - spacing < floor,
-            "rule 3 at no back iron would close it: room {room}, card {open_height}, floor {floor}"
+            margin < 0.0,
+            "rule 3 at no back iron would close it: it leaves {margin}"
         );
     }
 
@@ -6125,7 +6119,7 @@ mod tests {
                 .expect("a row");
             assert!(
                 text_rect(&output, &last)
-                    .is_none_or(|row| row.bottom() > text_clip(&output, &last).bottom() + 1.0),
+                    .is_none_or(|row| row.bottom() > text_clip_rect(&output, &last).bottom() + 1.0),
                 "nothing to scroll: {last}"
             );
             let body = text_center(&output, CAPTION);
@@ -6141,7 +6135,7 @@ mod tests {
                 output = harness.frame(Vec::new());
             }
             let row = text_rect(&output, &last).expect("the last row in view");
-            let clip = text_clip(&output, &last);
+            let clip = text_clip_rect(&output, &last);
             assert!(clip.contains_rect(row), "{row:?} cut by {clip:?}");
             let drawing = drawing_rect(&output);
             assert!(drawing.height() >= MIN_DRAWING_HEIGHT - 0.01, "{drawing:?}");
@@ -6176,17 +6170,17 @@ mod tests {
                 }
                 let output = harness.frame(Vec::new());
                 let case = format!("{size:?} {:?}", harness.panel.sizing.mode);
-                let spacing = harness.ctx.style().spacing.item_spacing.y;
+                let spacing = item_spacing(&harness);
                 let heading = text_rect(&output, CARD_HEADING).expect("the heading");
                 let drawing = drawing_rect(&output);
-                let drawn = drawing.top() - heading.top() - spacing;
+                let drawn = drawn_card_height(&harness, &output);
                 let header = heading.bottom().max(card_link(&output).0.bottom()) - heading.top();
                 let body = drawn - header - spacing;
                 let lines = shown_consequences(&harness)
                     .card
                     .lines(harness.panel.auto());
                 let (measured, floor) = scratch_measure(drawing.width(), &lines);
-                let room = text_clip(&output, CARD_HEADING).bottom() - heading.top();
+                let room = room_at_card(&output);
                 let cap = (room - header - 2.0 * spacing - floor).max(body_row(&harness));
                 if size.y < 1000.0 && size.x < 1000.0 {
                     assert!(measured > drawn + 1.0, "{case}: the body is capped");
