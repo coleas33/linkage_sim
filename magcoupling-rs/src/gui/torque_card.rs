@@ -53,7 +53,7 @@ const SIZE_DECIMALS: usize = 1;
 pub const CARD_HEADING: &str = "One step of each size control";
 /// The first line of the rows (owner 12A): every number on the card is a change.
 pub const CAPTION: &str =
-    "The change in the model's hot-low torque after one step of one control, everything else held.";
+    "The change in the model's hot-low torque after one step of one control alone.";
 /// The Auto line with Auto on the magnet length (owner 5A): what Auto does after a change, and
 /// what the rows keep.
 pub const AUTO_HOLDS_LENGTH: &str =
@@ -1882,6 +1882,15 @@ mod tests {
         for key in ["mixed", "short cavity"] {
             assert_eq!(lines(key)[2], jumps, "{key}");
         }
+
+        // The caption claims one control's step alone, never that everything else is held: at
+        // the reverse pair the Overall length slider's own mapping trims the longer inner ring
+        // (12.70 -> 7.35 mm on the +1 mm side), and no cost on its row shows it (G-3 round 1,
+        // MF-1, decision D4).
+        let reverse = &find(&designs, "reverse").inputs;
+        let trimmed = compute_all(&slider_step(Control::OverallLength, reverse, None, true));
+        assert!(trimmed.model.inner_length_mm < compute_all(reverse).model.inner_length_mm - 5.0);
+        assert!(!CAPTION.contains("held"), "{CAPTION}");
 
         // The odd count: no size rows; the gap's numbers, and the count's two sides in words.
         assert_eq!(
