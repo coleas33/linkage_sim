@@ -5048,3 +5048,1048 @@ Observation, recorded for the owner (no change asked in this round):
   - The owner's call, beside O-1, as a physics-risk backlog item: a domain guard where |beta| ≤ |alpha_br| (reading
     "outside the model"), or a beta slider whose top stays above the NdFeB grades' |alpha_br|. The beta input's help
     already says its slider "covers sintered NdFeB (-0.8 to -0.1 %/°C)".
+
+## Slice 3 torque card
+
+Slice 3's G-3 review of every new and changed on-screen text of the torque card (plan
+`docs/superpowers/plans/2026-10-20-magcoupler-torque-card.md`, Task 7) is recorded in this section, with each
+round's report as returned.
+
+- Scope: the torque card's strings (spec `docs/superpowers/specs/2026-10-19-magcoupler-torque-card-design.md`,
+  sections 4 and 10.1 step 2), reviewed under the same G-3 rule:
+  - `gui/torque_card.rs`: `CARD_HEADING`, `CAPTION`, the Auto lines (`AUTO_HOLDS_LENGTH`, `AUTO_HOLDS_RING`,
+    `AUTO_HOLDS_COUNT`), the one-line forms (`SHOWN_DOES_NOT_FIT`, `SHOWN_NO_PREDICTION`, `SHOWN_NO_HOT_LOW`), the
+    side words (`NOT_ON_THE_SLIDER`, `JUMP`, `KEYWAY_BREAKS_THROUGH`), `CALIBRATION_CHANGE`, the flip words
+    (`FLIP_FAILS`, `FLIP_PASSES`, `FLIP_CAUTION`) and the templates of `TorqueCard::lines`;
+  - `gui/guidance.rs`: the quoted quantities' names (`WALL_NEEDED`, `COLD_HIGH`) and `RING_SIZE_STAYS`'s new clause;
+  - judged in place, for the owner where they need a change: the owner's side words (`END_OF_RANGE`,
+    `SIDE_DOES_NOT_FIT`, `SIDE_NO_PREDICTION`) and the number format (decision 10B, T-9, T-14);
+  - read in context: the reused strings in their new place (`SET_BY_AUTO` in the held row, the control, check, axis
+    and shaft-joint labels), the card's Why link and its note `torque_from_shear`, the readout's gap line, and what
+    leaves the screen (the replaced label, the neighbour lines and their two Auto first lines).
+- Read: the sheets `magcoupling-rs/target/g3/S3-guidance.txt` (`guidance_strings_for_review`: the card at every
+  design of the spec's section 2.1 in its own Auto state, each Auto state at the odd count and the three one-line
+  forms, the gap lines), `S3-note.txt` (`notes_for_review`, `torque_from_shear`) and `S3-strings.diff`
+  (`git diff -U0 main` of the source files); the spec, sections 1 to 6 and 10; the code behind every string. Each
+  round probed the engine from a scratch crate outside the repository:
+  - round 1 (2026-10-20), on the sheets at e70eab7 (`TOTAL STRINGS: 564`, the card's heading and 259 card lines
+    among them):
+    - (1) (a): hot-low 2.2852 N·m, and its four rows equal spec 2.3's drafted block word for word (Outside diameter
+      +1 mm +0.07981 N·m, +3.49 %; Overall length +-0.20083 N·m, +-8.79 %; gap +0.07592 / -0.07328 N·m; count -2
+      -0.61210 N·m, -26.79 %). (b): Auto on the magnet length at 14.181318158 mm (hot-low 2.5000000001 N·m); the
+      Auto line, then the held row "Overall length: Set by Auto; turn Auto off to edit"; Outside diameter +1 mm
+      "+0.09 N·m (+3.6 %)" ending "Space claim: Rotating diameter +1.00 mm"; count -2 "Hot-low torque: fails". (c):
+      factor 1.0495; count -2 -0.59228 N·m (-41.05 %) with "includes a calibration change" and both joints' needs
+      (-2.43 / -1.92 µm). (e): Outside diameter -1 / +1 mm -0.006261 / -0.004649 N·m, drawn "-0.006 N·m (-0.4 %)" /
+      "-0.005 N·m (-0.3 %)"; count -2 "Outside diameter +2.2 mm" (+2.2307). (e2): as (e), and its count -2 side adds
+      "Hot-low torque: fails". The Auto designs: (a)+length 13.769522495 mm; (a)+count 10 (shown = (a)); (a)+ring
+      11.675697360 mm (OD 46.0084); (e2)+length 11.556900190 mm; (e2)+count 8; (e2)+ring 9.000000000 mm (OD
+      40.3105); (e2)+ring at the lowest Minimum OD, 31.7596 mm: 7.665128061 mm (OD 37.4208, gap "margin +0.001 N·m
+      (+0.1 %)"). Each held row reads its label and `SET_BY_AUTO`, each Auto line its constant;
+    - (2) the short cavity at 11.0 mm: active length 12.70 -> 10.00 / 12.00 mm, both sides `JUMP` (the +1 mm side
+      would have printed -0.140583 N·m, -6.15 %); at 12.0 mm 11.00 / 13.00 mm (would be -14.94 / +2.64 %) and at
+      12.5 mm 11.50 / 13.50 mm (-10.55 / +7.03 %), every side `JUMP`;
+    - (3) the designs of D1 to D10: under the decisions below;
+    - (4) the mixed pair: active 6.35 -> 11.70 / 13.70 mm (would be +106.39 / +146.16 %), `JUMP` both ways, the
+      inner hub 13.00 -> 18.35 / 20.35 mm. The reverse pair: active 6.35 -> 5.35 / 7.35 mm, sides +-0.20083 N·m
+      (+-19.89 %); the inner ring 12.70 -> 5.35 / 7.35 mm and the hub 13.00 -> 5.65 / 7.65 mm, with no flip and no
+      quoted cost;
+    - (5) the end effect at a step: Overall length -1 mm "no prediction", +1 mm "+0.20 N·m (+167.9 %)"; count -2 "no
+      prediction", +2 "magnets do not fit"; Outside diameter +1 mm "-0.03 N·m (-22.2 %)";
+    - (6) the odd count, 9: no size rows; the gap row's numbers; "Magnets per ring: -2 -> not a value the slider
+      takes; +2 -> not a value the slider takes", the same under each Auto state but count;
+    - (7) the slider ends (the gap at 0.3, -0.1 mm; 4 magnets, -2; 40 narrow magnets, +2; the gap at 5.0, +0.1 mm;
+      the Outside diameter at 80, +1 mm; the Overall length at 69.90, +1 mm, and at 21.10 mm, -1 mm): each
+      `END_OF_RANGE`. One step inside: 68.90 mm +1 mm "+0.20 N·m (+2.1 %)"; at 22.10 mm the Outside diameter +1 mm
+      "+0.004 N·m (+1.1 %)" (+0.0038), the smallest number side;
+    - (8) the one-line forms, with the readouts above: short magnets (both readouts "no prediction (magnets too short
+      for the end-effect model at this pole pitch)") reads `SHOWN_NO_PREDICTION`; shown does not fit (ring 9.5 mm,
+      OD 41.4331; hot-low "2.158 N·m", "short 0.34 N·m (-13.7 %)", and the exploration line "Exploration only:
+      magnets do not fit at this diameter.") reads `SHOWN_DOES_NOT_FIT`; variation 1.0 (hot-low "0 N·m", "short 2.50
+      N·m (-100.0 %)", pull-out "2.688 N·m") and zero torque (both "0 N·m") read `SHOWN_NO_HOT_LOW`; each alone
+      under every Auto state;
+    - (9) the hot day equals (a) line for line (Temperature limits amber on both designs: no flip, no quote). Only
+      the joint fails: Overall length -1 mm "Shaft joints: Inner hub smallest measured interference that holds -0.04
+      µm" (-0.0404), gap -0.1 mm "Running clearance: fails". Passing: flips only (Outside diameter +1 mm Space claim;
+      gap -0.1 mm Running clearance; count -2 Hot-low torque, Cup wall and Space claim with "Outside diameter +0.9
+      mm");
+    - (10) T-14's one flip ((e2)+length's design, Auto off, Required 1.4951049 N·m, halfway): the Outside diameter
+      sides' hot-low 1.495232 / 1.494977 N·m, both drawn "-0.005 N·m (-0.3 %)" (-0.004768 / -0.005023), and only the
+      +1 mm side "Hot-low torque: fails"; the readout above "margin +0.005 N·m (+0.3 %)";
+    - (11) the readout's gap: (a) "short 0.21 N·m (-8.6 %)", (b) "margin +0.00 N·m (+0.0 %)" (+1.3e-10 N·m), (c)
+      "short 1.06 N·m (-42.3 %)", (e) "short 0.83 N·m (-33.1 %)", (e2) "margin +0.17 N·m (+11.5 %)";
+    - (12) `coupling.npole` 2 (a file's): the shown hot-low 0.1094 N·m; no size rows; the gap row quotes "Space
+      claim: Rotating diameter -3266247870639104.00 mm" / "+3266247870639104.00 mm"; the count row "-2 -> at the end
+      of its range; +2 -> +0.29 N·m (+266.8 %), Cup wall: wall needed -4.80 mm, Space claim: Rotating diameter
+      -585964867992649856.00 mm"; at 2 blocks the rotating diameter and the cup are 5.860e17 mm (FO-3);
+    - (13) no back iron at 8 magnets with `calibration.f_cal_original` 1e-9 (readout "8.952e-10 N·m"): every side but
+      one "+0.00" or "-0.00 N·m" beside its percent, and "+2 -> +1.44 N·m (+161158008763.3 %), includes a
+      calibration change"; at 1e-300 that percent has 303 whole digits. Variation 1 - 1e-10 (readout "2.688e-10
+      N·m") and an inner Br of 1e-6 T with both parts blank ("1.758e-6 N·m"): every side "+-0.00 N·m" beside "+3.5
+      %", "-8.8 %", "-26.8 %". `f_cal_original` 1e300 (readouts "2.830e300" and "2.405e300 N·m"): rows of 2,260,
+      4,286, 4,411 and 2,213 characters, every N·m and quote a fixed-point number of 299 to 302 whole digits.
+      Required 1e-300: the gap "margin +2.29 N·m (+2285...0 %)" with a 303-digit percent, as main's format also
+      printed it (FO-4);
+    - the robustness test's values: npole 0, 1, -2, 42 and 1e6 (`SHOWN_DOES_NOT_FIT`) and 3 (the gap row; the count
+      row "-2 -> at the end of its range; +2 -> not a value the slider takes"); the gap at 0 and -1 (the gap row's
+      sides `END_OF_RANGE`, the other rows numbers); an override of 0.1 and a ring of 200 (`SHOWN_NO_PREDICTION`), an
+      override of -1 and an inner Br of -1 T (`SHOWN_NO_HOT_LOW`), a ring of 0.5 (`SHOWN_DOES_NOT_FIT`); c_end 0, a
+      gearbox rating of 0, Required -1 ("margin +3.29 N·m", no percent) and variation -1 (hot-low 5.377 above
+      pull-out 2.688 N·m): rows, each line model-true;
+    - every line, the proposed texts included, through `ranking_words_in`, `TORQUE_ORDER_WORDS`,
+      `mentions_gearbox_protection`, "clamp" (any case), `plain_text_violations` and a glyph scan (U+2192, U+2212,
+      U+03BC): no hit on any of 193 lines. 110 of the probe's 138 distinct lines belong to sheet designs, and all 110
+      equal the sheet's records;
+  - round 2 (2026-10-20), on round 1's change (2ac62e9: `CAPTION` and test 2a's pin) and the sheets regenerated
+    after it (only the 48 caption lines of `S3-guidance.txt` moved; `S3-note.txt` unchanged):
+    - the sheet: all 259 card lines of the 52 sheet designs equal `S3-guidance.txt` record for record, and its
+      heading record is `CARD_HEADING`;
+    - the caption wherever it is drawn: the 52 sheet designs and 52 design-file edits (the robustness test's 47,
+      plus `calibration.f_cal_original` 0, -0.95, -0.95 with variation 1.5, a count of 9 and the end effect at a
+      step), at both back irons and both Minimum OD states, each in all four Auto states. 684 rows-form cards draw
+      `CAPTION` first and once, and the Auto line second whenever Auto is on; 356 one-line cards draw their line
+      alone. 4,121 lines through the same guards and glyph scan: no hit, and no line says "held";
+    - the caption's claim, side by side: each of the 1,087 sides with a stepped design (850 of them numbers) rebuilt
+      through the slider's public mapping, and every input compared with the design shown's. The Outside diameter
+      steps move `coupling.inner_back_apothem_mm`, `metal.cap_od_mm` and `metal.cap_thread_dia_mm` (179 sides each),
+      the Overall length steps `coupling.magnets.axial_length_mm` (266), the gap steps `metal.face_gap_mm` (316) and
+      the count steps `coupling.npole` (318). No side moves any other input, and every number side's hot-low and
+      change equal `compute_all` bit for bit;
+    - round 1's probes (1), (2) and (4) to (13) again, each with round 1's numbers. New: a sweep of the cup cavity
+      (`metal.cup_depth_mm`, its slider 3-40 mm in 0.1 mm steps) from 10.0 to 14.0 mm: below 12.7 mm every length
+      side reads `JUMP`, and from 12.7 mm on every side moves the overlap by the step; at 11.7 mm the +1 mm side
+      moves the Overall length 28.00 -> 29.00 mm while the overlap stays at 12.70 mm bit for bit (it would have read
+      +0.00 N·m (+0.0 %)), and at 10.7 mm it moves the overlap by -1.00 mm. npole 3: the gap row quotes "Rotating
+      diameter -0.40 / +0.40 mm", the count row "-2 -> at the end of its range; +2 -> not a value the slider takes".
+      `f_cal_original` 1e-320: the count +2 side reads "no prediction"; 1e300: the readout's gap "margin
+      +2405...712.00 N·m (+9621...104.0 %)", a 301-digit margin and a 302-digit percent;
+    - layout, in egui's default Body font (12.5 pt): the new caption is 432.1 pt long, one row at the body's 609.9 pt
+      (1280 x 800) as the old caption was, and two rows (28 pt) in a 930-wide window (259.9 pt) against the old
+      three (42 pt).
+- The decisions the spec handed to this review (D1 to D10): each as round 1 ruled it, and round 2 kept every ruling:
+  - D1 KEEP "cold-high". The gearbox phrase quotes `metal.cold_high_input_Nm`, the torque the gearbox check
+    compares, in the dashboard Problem's own name ("Cold-high at the gearbox input"), and compares no torques.
+    Without the name, "Gearbox input torque +0.03 N·m" invites reading the number as the row's hot-low carried to the
+    input. It is the only N·m on any probed card that is not hot-low at the output ((a)'s Outside diameter +1 mm:
+    "Gearbox input torque: cold-high +0.03 N·m", +0.0281).
+  - D2 KEEP. `SHOWN_NO_HOT_LOW` is true in every case routed to it, each beside readouts that show both torques:
+    variation 1.0 and 1.5, zero torque, `f_cal_original` 0 and -0.95, -0.95 with variation 1.5 (the pull-out clause
+    carries it), an inner Br of -1 T and an override of -1 mm. A torque that is not finite never comes here: (c) with
+    `f_cal_original` 0 reads `SHOWN_NO_PREDICTION`. SF-2 offers plainer words.
+  - D3 KEEP both. Where the cup sets both quantities they round alike (4 magnets: the gap row's "Outside diameter
+    -0.3 mm" with "Rotating diameter -0.28 mm", the count +2 side's "-9.3 mm" with "-9.31 mm"), and a Space claim
+    quote says that a failing check's axis moves, which the step alone does not say. (A) would drop the Outside
+    diameter change wherever a boss makes the two differ, and (B) a failing check's quantity, which 8A asks for.
+  - D4 CHANGE in round 1 (MF-1 below); round 2 KEEPs the applied words. "after one step of one control alone" claims
+    only what holds at every side: the 1,087 sides above move one slider's own inputs and nothing else. (e)'s
+    "Outside diameter +2.2 mm" and the diameter row's cap following the cup are consequences of the step, drawn after
+    its "->", and the reverse pair's trim is what the Overall length slider does ("sets both rings' magnet length").
+    The number stays the model's honest value (no overhang term), BL-074 records the trim, and a cost line for it
+    would be a new rule, the owner's. The STOP sheet shows the caption as reviewed: 12A's own parenthetical said
+    "everything else held", and this record is the reason the words differ.
+  - D5 for the owner: FO-1 below. At 43.3 mm only the -1 mm side reads the words, true there (the handle sits at the
+    bottom, at 43.30 mm); a design shown past an end (a file's gap of 5.5 mm or 0, an override of 60 mm) misleads
+    the same way as Minimum OD 45 on the side toward the range.
+  - D6 KEEP. At the temperature edge (82.08 °C) the Outside diameter +1 mm, Overall length +1 mm and count -2 sides
+    flip "Temperature limits: caution", and at 82.12 °C the length -1 mm side flips "passes". Each flip is the
+    dashboard's own level for the stepped design, whose dashboard row carries the stored-3D label; no temperature
+    quantity is quoted (T-13). A marker on the card would be a new rule, not needed for the words to be true.
+  - D7 KEEP. "Magnets per ring: -2 -> -2.29 N·m (-158.9 %), includes a calibration change, Shaft joints: passes; +2
+    -> magnets do not fit" is the true difference of two `compute_all` runs (-2.293250 N·m, to a hot-low of
+    -0.850486 N·m); the note names the change, not a cause (16A); "Shaft joints: passes" is that check's own verdict
+    on the stepped design. Refusing a coefficient below zero would be an input rule, the owner's.
+  - D8 KEEP. "...; the cup can still change size." is true in both states `magnet_count_line` draws it in, Auto off
+    and Auto on the magnet length (at (e) the count -2 grows the cup and the Outside diameter 2.2 mm).
+  - D9 KEEP both. `KEYWAY_BREAKS_THROUGH` on the four length and gap sides at a 16 mm bore with a 2.5 mm keyway: true,
+    because neither step moves the hub wall, and the exploration line above says the same of the design shown.
+    `NOT_ON_THE_SLIDER` on both count sides at 9; at a file's 3 on the +2 side, the -2 side reading `END_OF_RANGE`.
+  - D10 KEEP. The one-line forms draw their line alone under every Auto state (356 cards in round 2). With the rows
+    gone an Auto line would point at nothing, and "after one step of one control alone" above "No step is compared
+    ..." would contradict itself.
+- Round 1: 1 must-fix item applied here, text applied verbatim (constants first, tests through the constants):
+  - `CAPTION` (`gui/torque_card.rs`), the first line of the rows form (MF-1, decision D4).
+    - Old: "The change in the model's hot-low torque after one step of one control, everything else held."
+    - New: "The change in the model's hot-low torque after one step of one control alone."
+    - Why: the caption asserted that everything but the stepped control is held. At the reverse pair (B842SH inner,
+      B442 outer), a design of section 2, the Overall length slider's own mapping (`resize_length` from a blank
+      override) sets both rings to the new length: the +1 mm side trims the inner ring 12.70 -> 7.35 mm and the hub
+      13.00 -> 7.65 mm, the -1 mm side to 5.35 and 5.65 mm, and neither side shows a flip or a quoted cost, while
+      the rows draw "+-0.20 N·m (+-19.9 %)" under a caption that said the ring was held. Elsewhere the rows
+      themselves contradicted it: (e)'s count -2 side's "Outside diameter +2.2 mm" (the owner's case), the gap row's
+      Outside diameter change at 4 magnets and at a gap of 5.0 mm, and on every diameter step the cap and its thread
+      inputs, which follow the cup (`with_cup_change`). The new words claim only what is true at every design: one
+      control is stepped, through its own slider's mapping, and no other control moves; what follows lists that
+      step's consequences, and nothing says an unlisted quantity stays. They keep 12A's meaning (the model's numbers
+      for one step of one control at a time) and pair with the Auto line. 77 characters against 93: one row at 1280
+      x 800 either way, and 2 rows against 3 (28 against 42 pt) when the card is opened in a 930-wide window.
+
+  Should-fix offered, not applied (open for the controller):
+  - SF-1, `JUMP` (string 5). Old: "not a step: the overlapping magnet length does not change by the step". Round 1's
+    New, "not a step: the overlapping magnet length changes by a different amount", is withdrawn: round 2 found it
+    false at a reachable design ((a) with `metal.cup_depth_mm` 11.7, a value on its slider, whose Overall length +1
+    mm side leaves the overlap at 12.70 mm bit for bit), and it is not to be applied. Round 2's New, only if the "by"
+    is to be made unmistakable: "not a step: the overlapping magnet length does not change by the step's amount"
+    (true at every jump side; 9 characters a side, the short cavity's row staying 2 rows at 1280 x 800, 174 -> 192
+    characters, and 5 rows in a 930-wide window). Keeping `JUMP` as drafted is also fine. Pin: at (a) with cup depth
+    11.7 mm the Overall length +1 mm side is `Words::Jump`, and its stepped `model.active_length_mm` equals the shown
+    12.70 mm.
+  - SF-2, `SHOWN_NO_HOT_LOW` (string 4). Old: "No step is compared while the design shown has a pull-out or hot-low
+    torque that is not above zero." New: "No step is compared while the design shown has a pull-out or hot-low torque
+    of zero or less." Why: plainer, and the same truth in every routed case (D2); 92 characters against 99, 2 rows
+    against 3 in a 930-wide window. Pin: the one-line tests read the constant.
+  - SF-3 (the shaft-joint key-pressure labels) and SF-4 (T-14's one-flip decimals) are marked for the owner: see the
+    list for the owner at the STOP below.
+
+  Recorded, no change asked:
+  - `CARD_HEADING` is true at every design: one step of each control the Size tab draws (at an odd count the tab
+    draws only the gap and count sliders, and the card their two rows).
+  - The Auto lines keep trap 14 off the rows: (b)'s "Hot-low torque: fails" sides are read before Auto sizes again,
+    as the line says, and no drawn row moves Auto's variable.
+  - `JUMP` is drawn exactly where the overlap does not move by the step: the mixed pair, and the short cavity at
+    every probed depth from 10.0 to 12.6 mm, the 11.7 mm cavity's +1 mm side among them (its overlap does not move at
+    all). It is never drawn at the reverse pair, whose overlap moves by the step.
+  - `CALIBRATION_CHANGE` is drawn only where `model.f_cal` differs: (c)'s count -2 (1.0495 -> 0.95), (c) with
+    `f_cal_original` -0.95 count -2 (1.0495 -> -0.95), and no back iron at 8 magnets with 1e-9 (count +2).
+  - A torque that is not finite routes to `SHOWN_NO_PREDICTION`, whose readout says "the torque is not finite".
+  - "wall needed" names `materials.backiron_thickness_needed_mm`, the wall the flux needs: more is worse, and the
+    steps move it, not the wall input.
+  - The context lines: C1 fine (the held row's "Set by Auto; turn Auto off to edit" is true, and the control, check,
+    axis and shaft-joint labels are true in place; the key-pressure labels' comma is SF-3). C2 fine: the note's "each
+    millimetre beats a millimetre of radius" agrees with the card ((a): +1 mm of length +8.8 %, +1 mm of Outside
+    diameter +3.5 %, about 0.48 mm of radius), and the 2/cos(pi/N) slope stays for the lessons slice (spec 4.2). C3
+    fine at (a), (b), (c), (e), (e2) and the one-flip design ("margin +0.005 N·m (+0.3 %)"); at a file's Required of
+    1e-300 or coefficient of 1e300 it prints about 300 digits, as main's format did (FO-4). C4 fine: with the card
+    closed, nothing near Magnets per ring says Auto sizes again after a count change (T-8), an omission, not a false
+    text: the Auto row and the locked slider say Auto owns that size.
+  - Typed numbers: none. No constant or template literal holds a digit, the new caption included; the word "one" in
+    the heading and the caption names the card's single step (1A, 3A) and a single control, not a value. Test 18's
+    count of 1,049 does not move with the new caption, and no test pins a height in points.
+- Round 2: PASS, no must-fix. It re-reviewed the changed strings and every string whose meaning depends on them;
+  round 1's findings on the unchanged strings stand.
+- For the owner at the STOP (T10's STOP sheet lists each):
+  - FO-1, `END_OF_RANGE` (string 11, owner 9A's words; decision D5).
+    - Text: "at the end of its range"
+    - Proposed: "outside the slider's range"
+    - Why: the words are drawn for any side whose stepped value lies more than `STEP_SLACK_MM` outside the slider's
+      range (`on_slider`), wherever the design shown sits. Where the design shown itself lies outside that range,
+      they name an end the control is not stopped at: (a) with Minimum OD 45.0 mm (the slider 45.00-80.00 mm, the
+      design 42.80 mm), where both sides (41.80 and 43.80 mm) read the words and "+1 mm -> at the end of its range"
+      tells the reader the diameter cannot go up while the handle sits at its bottom and moves up from 45.00 mm; a
+      file's gap of 5.5 mm ("-0.1 mm -> at the end of its range", while the slider moves down to 5.0 mm) or of 0
+      ("+0.1 mm", while it moves up to 0.3 mm); a file's axial override of 60 mm (Overall length 79.10 mm against
+      21.10-69.90 mm: "-1 mm"). The proposed words are true at every `EndOfRange` side, the ordinary ends included,
+      and keep 9A's reason, the slider's own range at the user's Minimum OD. Cost: 3 characters a side; the Minimum
+      OD 45 row stays one row at 1280 x 800 (84 -> 90 characters) and goes from 2 to 3 rows in a 930-wide window.
+    - Pin: in `a_design_shown_past_a_slider_s_end_reads_the_end_of_its_range`, at (a) with Minimum OD 45.0, the +1
+      mm side's requested diameter (`size.diameter_mm + 1.0`, 43.80 mm) lies below its slider range's minimum (45.00
+      mm), and the side is drawn "+1 mm -> {END_OF_RANGE}".
+  - FO-2, R-13's boss plateau (a new rule; trap 4): the Outside diameter row of `card`, with one new constant beside
+    `JUMP`.
+    - Text (at `boss_plateau()`): "Outside diameter: -1 mm -> at the end of its range; +1 mm -> +0.12 N·m (+7.5 %),
+      Running clearance +0.05 mm, Cup wall: wall needed +0.25 mm"
+    - Proposed rule: a diameter side whose cup (`model.cup_od_mm`) does not move by the step (|stepped cup - shown
+      cup - sign x 1 mm| > `STEP_SLACK_MM`) reads words, as the length row's jump does. Proposed text (round 2, the
+      mirror of `JUMP` as it stands): "not a step: the cup diameter does not change by the step". Round 1's first
+      choice, "not a step: the cup diameter changes by a different amount", is true on the plateau, but the two jump
+      texts should read alike. The row would read "Outside diameter: -1 mm -> at the end of its range; +1 mm -> not a
+      step: the cup diameter does not change by the step" ("outside the slider's range" on the -1 mm side if FO-1 is
+      taken).
+    - Why: the boss sets the Outside diameter, 40.00 mm. The slider's +1 mm (40.00 -> 41.00 mm) lifts the cup 37.78
+      -> 41.00 mm (+3.22) and the ring 8.00 -> 9.49 mm (+1.49), where at (e) the same step moves the cup 42.44 ->
+      43.44 mm and the ring 10.15 -> 10.61 mm. So "+7.5 %" (+0.116523 N·m, +7.5468 %) is a jump read as a slope.
+      The rule cannot reach another side: `resize_diameter_using` moves the cup by exactly the step wherever the cap
+      or the cup sets the Outside diameter; only a boss-set diameter differs.
+    - Pin: `where_the_boss_sets_the_outside_diameter_one_step_reads_the_slider_s_own_lift` asserts that the +1 mm
+      side reads the new words and that the stepped cup moved by more than the step (+3.22 mm).
+  - FO-3, a magnet count below the slider's range (a new rule beyond 9A; probe 12): test 0 of `card`, the design
+    shown.
+    - Text (the defaults with `coupling.npole` 2, a file's): "Magnet face gap: -0.1 mm -> +0.003 N·m (+3.1 %),
+      Running clearance -0.10 mm, Cup wall: wall needed +0.09 mm, Space claim: Rotating diameter -3266247870639104.00
+      mm; +0.1 mm -> -0.003 N·m (-3.0 %), ..., Space claim: Rotating diameter +3266247870639104.00 mm" and "Magnets
+      per ring: -2 -> at the end of its range; +2 -> +0.29 N·m (+266.8 %), Cup wall: wall needed -4.80 mm, Space
+      claim: Rotating diameter -585964867992649856.00 mm".
+    - Proposed: a design shown whose magnet count is below the slider's range (a file's 2 or 3) draws one line
+      alone, like the other one-line forms, with no caption and no Auto line: "No step is compared while the magnet
+      count of the design shown is below the slider's range." (91 characters, one row at 1280 x 800). Or an input
+      rule: a file or link whose count is below 4 is refused on load.
+    - Why: two flat blocks make a two-sided polygon. The cup's corner radius is the apothem over cos(pi/2), so the
+      rotating diameter and the cup read 5.860e17 mm, and each quoted change in them is float noise of that number,
+      physically meaningless, as is the torque model on that ring. At 3 magnets the quotes stay physical (Rotating
+      diameter -0.40 / +0.40 mm on the gap row), so the owner may narrow the rule to 2.
+    - Pin: the card at `with_poles(2)` is the new one-line form at every Auto state; `with_poles(3)` follows the
+      owner's choice.
+  - FO-4, the number format at a design file's magnitudes (string 12: decisions 10B and T-9; probe 13; C-7's class):
+    `signed_fixed`, `signed_change` and `signed_percent` as the card and `torque_gap_text` call them.
+    - Text (each measured, under readouts that show these torques in four significant digits): no back iron at 8
+      magnets with `f_cal_original` 1e-9, "Outside diameter: -1 mm -> +0.00 N·m (+1.9 %), ...; +1 mm -> -0.00 N·m
+      (-2.7 %), ..." and "Magnets per ring: -2 -> -0.00 N·m (-57.9 %), ...; +2 -> +1.44 N·m (+161158008763.3 %),
+      includes a calibration change, ..."; variation 1 - 1e-10, and an inner Br of 1e-6 T, "+1 mm -> +0.00 N·m (+3.5
+      %)" and "-1 mm -> -0.00 N·m (-8.8 %)"; `f_cal_original` 1e300, rows of 2,213 to 4,411 characters, each N·m a
+      number of about 300 digits ("+1 mm -> +840055...0.00 N·m (+3.5 %)"), and the readout's gap "margin
+      +2405...712.00 N·m (+9621...104.0 %)"; Required 1e-300, the gap "margin +2.29 N·m (+228520...0.0 %)", a
+      303-digit percent.
+    - Proposed rule (an extension of 10B): a number whose fixed form would need more than six whole digits, or a
+      change that reads zero at T-9's cap while its percent does not, is drawn as the readouts draw values, four
+      significant digits (`format_value`), with its sign. The lines would read "Outside diameter: -1 mm -> +1.690e-11
+      N·m (+1.9 %), ...", "+2 -> +1.44 N·m (+1.612e11 %), includes a calibration change, ...", "+1 mm -> +8.401e298
+      N·m (+3.5 %), ...", and the gaps "margin +2.29 N·m (+2.285e302 %)" and "margin +2.405e300 N·m (+9.622e301
+      %)".
+    - Why: trap 2 (a "-0.00" beside a percent that is not zero), and false precision: the digits of a 300-digit
+      number past the 17th are float noise, and they fill the card's body. Every number is true by the model and
+      comes from a design file's value no slider reaches, so the rule is the owner's (C-7). Main's format printed the
+      gap the same way, so that part is not new.
+    - Pin: in `the_card_never_panics_at_the_values_a_design_file_can_carry`, no drawn number is longer than a set
+      width, and no side's N·m reads zero while its percent does not.
+  - SF-3, the shaft-joint key-pressure labels (a should-fix on C1, a reused shipped label): the result labels of
+    `shaft_joint.hub_key_pressure_MPa` and `shaft_joint.cup_key_pressure_MPa` (BL-064), quoted through "{check}:
+    {name} {change} {unit}" in a side's ", "-separated costs.
+    - Text: "..., Shaft joints: Key pressure on the cup, key alone +16.9 MPa, Gearbox input torque: cold-high +0.13
+      N·m, ..." ((a) at Overall length 69.90 mm; also at 68.90 and 22.10 mm, at (e) and at a file's override of 60
+      mm).
+    - Proposed: the labels "Key pressure on the inner hub with the key alone" and "Key pressure on the cup with the
+      key alone"; the cost would read "Shaft joints: Key pressure on the cup with the key alone +16.9 MPa".
+    - Why: the label's own comma splits one cost in two, so "key alone +16.9 MPa" reads as an item of its own; since
+      round 1's change the label's "alone" also shares its word with the caption's "one control alone" on those
+      rows. It is not false. A label change reaches the results table, the Problem texts and the exports, so it is
+      the owner's call.
+  - SF-4, T-14's one-flip decimals (a should-fix on string 12, T-14): `Row::torque_decimals`.
+    - Text (T-14's one-flip design): "Outside diameter: -1 mm -> -0.005 N·m (-0.3 %), Running clearance -0.01 mm, Cup
+      wall: wall needed -0.08 mm; +1 mm -> -0.005 N·m (-0.3 %), Hot-low torque: fails, Space claim: fails, ..."
+    - Proposed: where a row's two sides differ in their Hot-low torque flip and their N·m read alike, add decimals
+      (up to T-9's cap) until they read apart: "-1 mm -> -0.0048 N·m (-0.3 %), ...; +1 mm -> -0.0050 N·m (-0.3 %),
+      Hot-low torque: fails, ...".
+    - Why: offered, not needed. The row is true as drawn: the readout above reads "margin +0.005 N·m (+0.3 %)", both
+      steps eat the margin by a hair, and the flip is the dashboard's verdict. The extra digit would only show which
+      side crosses.
+  - For the owner's O-1 ruling, no new text (round 2): at the 11.7 mm cup cavity, 9A as written would draw "+1 mm ->
+    +0.00 N·m (+0.0 %)" for a step that lengthens the coupling by 1 mm and leaves the overlap where it was; the
+    widened rule draws `JUMP` there.
+  - For the owner's eye, no ruling asked: `CAPTION` as reviewed differs from 12A's parenthetical ("the model's
+    numbers for one step, everything else held"); MF-1 (decision D4) is the reason, and round 2 passed the new words.
+  - Shipped lines that a changed constant rewords: none. The one changed constant, `CAPTION`, is new in this slice
+    and builds only the card's caption; `KEYWAY_BREAKS_THROUGH` and `SIDE_DOES_NOT_FIT`, which build the exploration
+    lines above the card, are unchanged.
+- What happened to the should-fix items: SF-1 and SF-2 are left open, each, and go to Task 10's leftovers. The brief
+  keeps should-fix items offered unless the controller says so, and the controller adopted neither. SF-1 stays open in
+  round 2's words only (round 1's are false at the 11.7 mm cavity). SF-3 and SF-4, marked for the owner, are in the
+  list above.
+- Tests that followed the changes: one test gained a pin, and none was changed otherwise. Test 2a
+  (`torque_card::tests::the_card_s_lines_read_as_drafted`) pins MF-1, red on the old caption and green on the new: at
+  the reverse pair, the Overall length +1 mm step through the slider's own mapping (`slider_step`) leaves the inner
+  ring more than 5 mm shorter (`model.inner_length_mm` 12.70 -> 7.35 mm), and `CAPTION` has no "held". Every other
+  test reads the caption through its constant: test 2a builds whole lines from it, test 16 runs the guards over every
+  line at every design and Auto state, and the panel tests find the drawn caption by it. No test literal, README or
+  `docs/ai` line typed the old words (`git grep -n -F` of the old caption over `magcoupling-rs/src`,
+  `magcoupling-rs/tests`, the README, `docs/ai` and `.claude/workflows` finds nothing). The README's row for test 2a
+  names the new pin. The suites keep T6's counts (the app library 971 passed, 6 ignored; without features 234 passed,
+  1 ignored), since the pin is an assertion in an existing test.
+- Traps: none of the 18 is written in any card string. Round 1's must-fix was a false claim that no trap names
+  ("everything else held", D4), fixed by MF-1. Two traps reach drawn lines only where a rule is the owner's: trap 4 at
+  R-13's boss plateau (FO-2) and trap 2 at a design file's magnitudes (FO-4).
+- Verdict: PASS (round 2).
+
+### Report for the record, round 1 (as returned)
+
+1. Reviewer: physics reviewer (session model), fresh context, 2026-10-20; round 1.
+
+2. Read:
+- The brief `t7-g3-brief-r1.md`; the build rulings `.superpowers/sdd/2026-10-20-magcoupler-torque-card/rulings.md` (B-1 to
+  B-13); `owner-decisions.md` (1A to 17A, O-1, O-2, the round-3 rulings); the plan head up to its Tasks heading (C-1 to
+  C-10, PD-1 to PD-6, plan review 1.1A to 4.4A); the spec, sections 1 (1.1 to 1.3), 2 (2.1 to 2.3), 3.3, 3.6, 4, 5, 6.1
+  and 10.
+- The code behind every string: `gui/torque_card.rs` whole (the constants, `Words::text`, `Flip::text`,
+  `MarginChange::text`, `Change::costs`, `Row::line`, `side_text` and `torque_decimals`, `TorqueCard::lines`,
+  `held_line`, `auto_line`, `card` and the order of its tests, `side_words`, `count_step`, `predicts_both`, `on_slider`,
+  `shows`, `Slider::of` and `step`, `Shown::side`, `moves_by_the_step`, `change` and `quoted_changes`, and the tests that
+  read the constants: 2a, 15, 16, 17, 18 and the 47-value robustness test); `gui/guidance.rs` (`SPACE_CLAIM_AXIS_SIZES`,
+  `counted_guides`, `level`, `WALL_NEEDED`, `COLD_HIGH`, `Quoted`, `CheckTerm`, `check_terms`, `RING_SIZE_STAYS`,
+  `magnet_count_line`, `Consequences`, the gearbox Problem's "Cold-high at the gearbox input"); `gui/format.rs` (`fixed`,
+  `change_decimals`, `signed_fixed`, `signed_change`, `shared_change_decimals`, `signed_percent`) and main's
+  `signed_percent` and `torque_gap_text`; `gui/size_controls.rs` (`SET_BY_AUTO`, `torque_gap_text`, `predicts`,
+  `slider_minimum`, `SliderMapping`, `controls_ui`); `gui/panel.rs` (`torque_readouts_ui`, `torque_readout`,
+  `torque_card_ui`, `card_default`, the exploration lines in `view_ui`); `engine/size_controls.rs`
+  (`resize_diameter_with_minimum`, `resize_diameter_using`, `with_cup_change`, `resize_length`, `with_ring_radius`);
+  `engine/shaft_joint.rs` (the key term: it fails when the key pressure exceeds the stress limit; its fix-test margin is
+  bearing length less the length needed); `engine/explain/plain.rs` (the guards).
+- Sheets in `magcoupling-rs/target/g3/`: `S3-guidance.txt` (the heading, every `[card/...]` record, the five
+  `[size tab/torque gap/...]` lines), `S3-note.txt` (torque_from_shear at the five designs), `S3-strings.diff` (the
+  constants and templates).
+- Probes: a scratch crate `slice3g3` outside the repository (`<scratchpad>/g3r1`, CARGO_TARGET_DIR `<scratchpad>/g3t`),
+  `magcoupling-rs` by path with feature `gui`: `compute_all`, `torque_card::card(.., PAUSED)`, `lines(auto)`; the Auto
+  designs solved with `SizingRunner::solve_now` over the panel's range (`ring_radius_range` at the Minimum OD for the
+  ring) and shown through `gui::sizing::sized`; the readouts drawn as `torque_readout` draws them (`format_value`,
+  `torque_gap_text`). Every line, the proposed texts below included, ran through `ranking_words_in`,
+  `TORQUE_ORDER_WORDS`, `mentions_gearbox_protection`, "clamp" (any case), `plain_text_violations` and a glyph scan
+  (U+2192, U+2212, U+03BC): no hit on any of 193 lines. Every line of a design the sheet also has equals the sheet's
+  record: 110 of the probe's 138 distinct lines belong to sheet designs and all 110 match; the other 28 are of designs
+  the sheet lacks. Wrapped rows measured with egui 0.32's default Body font (12.5 pt) at the body's width, 609.9 pt at
+  1280 x 800 and 259.9 pt in a 930-wide window.
+- Numbers (C: this probe):
+  - (1) (a): hot-low 2.2852 N·m; the four rows equal spec 2.3's drafted block word for word (OD +1 mm +0.07981 N·m,
+    +3.49 %; length +-0.20083 N·m, +-8.79 %; gap +0.07592 / -0.07328 N·m; count -2 -0.61210 N·m, -26.79 %). (b): Auto on
+    the magnet length at 14.181318158 mm (hot-low 2.5000000001 N·m); the Auto line, then the held row "Overall length: Set
+    by Auto; turn Auto off to edit"; OD +1 mm "+0.09 N·m (+3.6 %)" ending "Space claim: Rotating diameter +1.00 mm"; count
+    -2 "Hot-low torque: fails". (c): factor 1.0495; count -2 -0.59228 N·m (-41.05 %) with "includes a calibration
+    change" and both joints' needs (-2.43 / -1.92 µm). (e): OD -1 / +1 mm -0.006261 / -0.004649 N·m drawn "-0.006 N·m
+    (-0.4 %)" / "-0.005 N·m (-0.3 %)"; count -2 "Outside diameter +2.2 mm" (+2.2307). (e2): as (e), count -2 adds
+    "Hot-low torque: fails". Auto: (a)+length 13.769522495 mm; (a)+count 10 (shown = (a)); (a)+ring 11.675697360 mm (OD
+    46.0084); (e2)+length 11.556900190 mm; (e2)+count 8; (e2)+ring 9.000000000 mm (OD 40.3105); (e2)+ring at the lowest
+    Minimum OD 31.7596: 7.665128061 mm (OD 37.4208, gap "margin +0.001 N·m (+0.1 %)"). Each held row reads its label
+    and SET_BY_AUTO, each Auto line its constant.
+  - (2) Short cavity 11.0 mm: active 12.70 -> 10.00 / 12.00 mm, both sides JUMP; the +1 mm side would have printed
+    -0.140583 N·m (-6.15 %); 12.0 mm: 11.00 / 13.00 mm (would be -14.94 / +2.64 %); 12.5 mm: 11.50 / 13.50 mm (-10.55 /
+    +7.03 %); every side JUMP.
+  - (4) Mixed pair: active 6.35 -> 11.70 / 13.70 mm (would be +106.39 / +146.16 %), JUMP both ways, the inner hub 13.00
+    -> 18.35 / 20.35 mm. Reverse pair: active 6.35 -> 5.35 / 7.35 mm, sides +-0.20083 N·m (+-19.89 %); the inner ring
+    12.70 -> 5.35 / 7.35 mm and the hub 13.00 -> 5.65 / 7.65 mm, with no flip and no quoted cost.
+  - (5) End effect at a step: length -1 mm "no prediction", +1 mm "+0.20 N·m (+167.9 %)"; count -2 "no prediction", +2
+    "magnets do not fit"; OD +1 mm "-0.03 N·m (-22.2 %)".
+  - (6) Odd count 9: no size rows (no size controls); the gap row's numbers; "Magnets per ring: -2 -> not a value the
+    slider takes; +2 -> not a value the slider takes", the same under each Auto state but count.
+  - (7) Slider ends: gap 0.3 (-0.1 mm), npole 4 (-2), npole 40 narrow (+2), gap 5.0 (+0.1 mm), OD 80 (+1 mm), length
+    69.90 (+1 mm) and 21.10 mm (-1 mm): each END_OF_RANGE. One step inside: length 68.90 mm +1 mm "+0.20 N·m (+2.1 %)";
+    at 22.10 mm OD +1 mm "+0.004 N·m (+1.1 %)" (+0.0038), the smallest number side.
+  - (8) One-line forms, with the readouts above: short magnets (both readouts "no prediction (magnets too short for the
+    end-effect model at this pole pitch)") reads SHOWN_NO_PREDICTION; shown does not fit (ring 9.5 mm, OD 41.4331;
+    hot-low "2.158 N·m", "short 0.34 N·m (-13.7 %)", and the exploration line "Exploration only: magnets do not fit at
+    this diameter.") reads SHOWN_DOES_NOT_FIT; variation 1.0 (hot-low "0 N·m", "short 2.50 N·m (-100.0 %)", pull-out
+    "2.688 N·m") and zero torque (both "0 N·m") read SHOWN_NO_HOT_LOW; each alone under every Auto state.
+  - (9) Hot day equals (a) line for line (Temperature limits amber on both designs: no flip, no quote). Only the joint
+    fails: length -1 mm "Shaft joints: Inner hub smallest measured interference that holds -0.04 µm" (-0.0404), gap
+    -0.1 mm "Running clearance: fails". Passing: flips only (OD +1 Space claim; gap -0.1 Running clearance; count -2
+    Hot-low torque, Cup wall and Space claim with "Outside diameter +0.9 mm").
+  - (10) T-14 one flip ((e2)+length's design, Auto off, Required 1.4951049 N·m, halfway): OD sides' hot-low 1.495232 /
+    1.494977 N·m, both drawn "-0.005 N·m (-0.3 %)" (-0.004768 / -0.005023), only the +1 mm side "Hot-low torque: fails";
+    the readout above "margin +0.005 N·m (+0.3 %)".
+  - (11) The readout's gap: (a) "short 0.21 N·m (-8.6 %)", (b) "margin +0.00 N·m (+0.0 %)" (+1.3e-10 N·m), (c) "short
+    1.06 N·m (-42.3 %)", (e) "short 0.83 N·m (-33.1 %)", (e2) "margin +0.17 N·m (+11.5 %)".
+  - (12) npole 2 (a file's): shown hot-low 0.1094 N·m; no size rows; the gap row quotes "Space claim: Rotating diameter
+    -3266247870639104.00 mm" / "+3266247870639104.00 mm"; the count row "-2 -> at the end of its range; +2 -> +0.29 N·m
+    (+266.8 %), Cup wall: wall needed -4.80 mm, Space claim: Rotating diameter -585964867992649856.00 mm"; at 2 blocks
+    the rotating diameter and the cup are 5.860e17 mm (C). FO-3.
+  - (13) No back iron, 8 magnets, `f_cal_original` 1e-9 (readout "8.952e-10 N·m"): every side but one "+0.00" or "-0.00
+    N·m" beside its percent ("-1 mm -> +0.00 N·m (+1.9 %)", "-2 -> -0.00 N·m (-57.9 %)"), and "+2 -> +1.44 N·m
+    (+161158008763.3 %), includes a calibration change"; at 1e-300 that percent has 303 whole digits. Variation 1 - 1e-10
+    (readout "2.688e-10 N·m") and inner Br 1e-6 T with both parts blank ("1.758e-6 N·m"): every side "+-0.00 N·m" beside
+    "+3.5 %", "-8.8 %", "-26.8 %". `f_cal_original` 1e300 (readouts "2.830e300" and "2.405e300 N·m"): the four rows are
+    2,260, 4,286, 4,411 and 2,213 characters, every N·m and quote a fixed-point number of 299 to 302 whole digits.
+    Required 1e-300: the gap "margin +2.29 N·m (+2285...0 %)" with a 303-digit percent, as main's format also printed
+    it. FO-4.
+  - The D designs and the other edges: section 6. Also probed (the robustness test's values): npole 0, 1, -2, 42 and
+    1e6 (SHOWN_DOES_NOT_FIT), 3 (gap row; count "-2 -> at the end of its range; +2 -> not a value the slider takes"); gap
+    0 and -1 (gap row both sides END_OF_RANGE, other rows numbers); override 0.1 and ring 200 (SHOWN_NO_PREDICTION),
+    override -1 and inner Br -1 T (SHOWN_NO_HOT_LOW), ring 0.5 (SHOWN_DOES_NOT_FIT); c_end 0, gearbox rating 0, Required
+    -1 ("margin +3.29 N·m", no percent) and variation -1 (hot-low 5.377 above pull-out 2.688 N·m): rows, each line
+    model-true.
+
+3. The strings:
+
+| # | String | Result | Reason |
+|---|---|---|---|
+| 1 | `CARD_HEADING` | PASS | True at every design: one step of each control the Size tab draws (at an odd count the tab draws only the gap and count sliders, and the card their two rows). No ranking word. 29 characters, one row in either window. |
+| 2 | `CAPTION` | MUST-FIX, applied here (MF-1) | "everything else held" is false at the reverse pair, a design of section 2: the length step trims the inner ring 12.70 -> 5.35 / 7.35 mm and the hub 13.00 -> 5.65 / 7.65 mm, and no cost shows it. It also sits above (e)'s "Outside diameter +2.2 mm" in the owner's own case, and the diameter slider moves the cap and its thread. |
+| 3 | `AUTO_HOLDS_LENGTH`, `AUTO_HOLDS_RING`, `AUTO_HOLDS_COUNT` | PASS | Each is true: Auto re-solves its variable after any input change, and each row's design keeps the shown value of that variable. Probed at the seven Auto designs and at the odd count. They keep trap 14 off the rows: (b)'s "Hot-low torque: fails" sides are read before Auto sizes again, as the line says. |
+| 4 | `SHOWN_DOES_NOT_FIT`, `SHOWN_NO_PREDICTION`, `SHOWN_NO_HOT_LOW` | PASS (SF-2 offered) | Each is true in every case routed to it, and agrees with the readouts above (8; D2). A NaN torque routes to `SHOWN_NO_PREDICTION`, whose readout says "the torque is not finite". |
+| 5 | `NOT_ON_THE_SLIDER`, `JUMP`, `KEYWAY_BREAKS_THROUGH` | PASS (SF-1 offered on `JUMP`) | All three are true wherever drawn (D9). `JUMP` is drawn exactly where the overlap does not move by the step: the mixed pair, and the short cavity at 11.0, 12.0 and 12.5 mm. It is never drawn at the reverse pair, whose overlap does move by the step. |
+| 6 | `CALIBRATION_CHANGE` | PASS | Drawn only where `model.f_cal` differs: (c) count -2 (1.0495 -> 0.95), (c) with `f_cal_original` -0.95 count -2 (1.0495 -> -0.95), and no back iron at 8 magnets with 1e-9 (count +2). It names the change, never a cause (16A, trap 7). |
+| 7 | `FLIP_FAILS`, `FLIP_PASSES`, `FLIP_CAUTION` | PASS | "{check}: {word}" is the dashboard's level of that check on the stepped design. Every flip probed matches `level` on the two designs, the temperature edge's included (D6). |
+| 8 | `WALL_NEEDED`, `COLD_HIGH` | PASS | "wall needed" names `materials.backiron_thickness_needed_mm`, the wall the flux needs; more is worse, and the steps move it, not the wall input. "cold-high" names `metal.cold_high_input_Nm`, the torque the gearbox check compares (D1). |
+| 9 | The templates of `TorqueCard::lines` | PASS (SF-3 for the owner on a reused label) | Every probed line reads as the spec drafts it: "{label}: {fewer}; {more}"; "{step} -> {N·m} N·m ({percent})" then ", " and each cost, in spec 3.6's order; steps "-1 mm", "+0.1 mm", "-2"; size changes "Outside diameter +2.2 mm"; quotes "Running clearance +0.01 mm" and "Cup wall: wall needed +0.07 mm". Two lines they build at file or test designs need a rule the spec does not have: the boss plateau (FO-2) and a count of 2 (FO-3). Both are for the owner. |
+| 10 | `RING_SIZE_STAYS` | PASS | True with Auto off and with Auto on the magnet length (D8). |
+| 11 | `END_OF_RANGE` / `SIDE_DOES_NOT_FIT` / `SIDE_NO_PREDICTION` | MUST-FIX for the owner (FO-1) / PASS / PASS | "at the end of its range" names an end the control is not stopped at wherever the design shown lies outside the slider's range: the Minimum OD 45 mm +1 mm side, a file's gap of 5.5 mm, an override of 60 mm, a gap of 0. "magnets do not fit" and "no prediction" are true wherever drawn, and so are the exploration line built from the first and the keyway line. |
+| 12 | Number format (10B, T-9, T-14) and the readout's gap | PASS at every design of section 2; MUST-FIX for the owner at a design file's magnitudes (FO-4) | Every number side's sign is its percent's. No "+0 %" anywhere. No "+-0.00" at any section-2 design (smallest +0.0038 N·m, drawn "+0.004"). T-14 holds (e)'s row at 3 decimals; T-14's one-flip row is true (SF-4). At a file's 1e-9, 1 - 1e-10, 1e-6 T or 1e300 the card draws "+-0.00 N·m" beside a non-zero percent, or numbers of about 300 digits. |
+
+4. MUST-FIX:
+
+- MF-1, applied here. Place: `CAPTION` (`gui/torque_card.rs:55-56`), the first line of the rows form.
+  - Old: "The change in the model's hot-low torque after one step of one control, everything else held."
+  - New: "The change in the model's hot-low torque after one step of one control alone."
+  - Why: decision D4 below. The caption asserts that everything but the stepped control is held. At the reverse pair
+    (B842SH inner, B442 outer), a design of section 2, the Overall length slider's own mapping (`resize_length` from a
+    blank override) sets both rings to the new length. The +1 mm side trims the inner ring 12.70 -> 7.35 mm and the hub
+    13.00 -> 7.65 mm; the -1 mm side trims them to 5.35 and 5.65 mm. Neither side shows a flip or a quoted cost.
+    The rows draw "+-0.20 N·m (+-19.9 %)" under a caption that says the ring was held. Elsewhere the rows themselves
+    contradict "everything else held":
+    - at (e), the owner's case, the count -2 side's "Outside diameter +2.2 mm";
+    - at npole 4 and gap 5.0 mm, the gap row's Outside diameter change;
+    - on every diameter step, the cap and its thread inputs, which follow the cup (`with_cup_change`).
+
+    The new words claim only what is true at every design: one control is stepped, through its own slider's mapping,
+    and no other control moves. What follows lists that step's consequences, and nothing says an unlisted quantity
+    stays. The words keep 12A's meaning (the model's numbers for one step of one control at a time) and pair with the
+    Auto line, which says what Auto would do next. The text is shorter: 77 characters against 93, one row at 1280 x 800
+    either way, and 2 rows against 3 (28 against 42 pt) when the card is opened in a 930-wide window. No test pins a
+    height in points. Tests 2a and 16 and the panel tests read the constant, and test 18's count of 1,049 does not move
+    (the caption has no digit).
+  - Pin, in test 2a (`the_card_s_lines_read_as_drafted`):
+    - `let reverse = &find(&designs, "reverse").inputs;`
+    - `let trimmed = compute_all(&slider_step(Control::OverallLength, reverse, None, true));`
+    - `assert!(trimmed.model.inner_length_mm < compute_all(reverse).model.inner_length_mm - 5.0);`
+    - `assert!(!CAPTION.contains("held"), "{CAPTION}");`
+
+- FO-1, for the owner (string 11; decision D5). Place: `END_OF_RANGE` (owner 9A's words).
+  - Old: "at the end of its range"
+  - New: "outside the slider's range"
+  - Why: the words are drawn for any side whose stepped value lies more than `STEP_SLACK_MM` outside the slider's range
+    (`on_slider`), wherever the design shown sits. Where the design shown itself lies outside that range, "at the end of
+    its range" names an end the control is not stopped at:
+    - (a) with Minimum OD 45.0 mm: the slider runs 45.00-80.00 mm and the design shown is 42.80 mm. Both sides (41.80 and
+      43.80 mm) read the words, while the handle sits at its bottom and moves up from 45.00 mm. "+1 mm -> at the end of
+      its range" tells the reader the diameter cannot go up.
+    - A file's gap of 5.5 mm: "-0.1 mm -> at the end of its range", while the slider moves down to 5.0 mm.
+    - A file's axial override of 60 mm (Overall length 79.10 mm against 21.10-69.90 mm): "-1 mm -> at the end of its
+      range" likewise.
+    - A file's gap of 0: "+0.1 mm -> at the end of its range", while the slider moves up to 0.3 mm.
+
+    "outside the slider's range" is true at every `EndOfRange` side: these, and the ordinary ends (gap 0.3 -0.1 mm, npole
+    4 -2, npole 40 +2, OD 80 +1 mm, length 69.90 +1 mm and 21.10 -1 mm, Minimum OD 42.8 -1 mm). It keeps 9A's reason,
+    the slider's own range at the user's Minimum OD. Cost: 3 characters a side. The Minimum OD 45 row stays one row at
+    1280 x 800 (84 -> 90 characters), and goes from 2 to 3 rows in a 930-wide window. At 43.3 mm only the -1 mm side
+    reads it, true under either word.
+  - Pin: in `a_design_shown_past_a_slider_s_end_reads_the_end_of_its_range`, at (a) with Minimum OD 45.0, assert that
+    the +1 mm side's requested diameter (`size.diameter_mm + 1.0`, 43.80) is below its slider range's minimum (45.00),
+    and that the side is drawn "+1 mm -> {END_OF_RANGE}".
+
+- FO-2, for the owner (a new rule: the boss plateau, R-13; trap 4). Place: the Outside diameter row of `card`, with one
+  new constant beside `JUMP`.
+  - Old (at `boss_plateau()`): "Outside diameter: -1 mm -> at the end of its range; +1 mm -> +0.12 N·m (+7.5 %),
+    Running clearance +0.05 mm, Cup wall: wall needed +0.25 mm"
+  - New rule: a diameter side whose cup (`model.cup_od_mm`) does not move by the step (|stepped cup - shown cup - sign x
+    1 mm| > `STEP_SLACK_MM`) reads words, as the length row's jump does.
+  - New text: `DIAMETER_JUMP` = "not a step: the cup diameter changes by a different amount". If `JUMP` keeps its
+    draft, its mirror: "not a step: the cup diameter does not change by the step".
+  - The row would read: "Outside diameter: -1 mm -> outside the slider's range; +1 mm -> not a step: the cup diameter
+    changes by a different amount".
+  - Why: the boss sets the Outside diameter, 40.00 mm. The slider's +1 mm (40.00 -> 41.00 mm) lifts the cup 37.78 ->
+    41.00 mm (+3.22) and the ring 8.00 -> 9.49 mm (+1.49). At (e) the same step moves the cup 42.44 -> 43.44 mm and the
+    ring 10.15 -> 10.61 mm (C). So "+7.5 %" is a jump read as a slope. The rule cannot reach another side:
+    `resize_diameter_using` moves the cup by the request less the cap's positive offset less the cup, which is exactly
+    the step wherever the cap or the cup sets the Outside diameter. Only a boss-set diameter differs.
+  - Pin: `where_the_boss_sets_the_outside_diameter_one_step_reads_the_slider_s_own_lift` asserts that the +1 mm side
+    reads the new words, and that the stepped cup moved by more than the step (+3.22 mm).
+
+- FO-3, for the owner (a new rule; probe 12). Place: test 0 of `card` (the design shown), beyond 9A.
+  - Old (the defaults with `coupling.npole` 2, a file's):
+    - "Magnet face gap: -0.1 mm -> +0.003 N·m (+3.1 %), Running clearance -0.10 mm, Cup wall: wall needed +0.09 mm,
+      Space claim: Rotating diameter -3266247870639104.00 mm; +0.1 mm -> -0.003 N·m (-3.0 %), ..., Space claim:
+      Rotating diameter +3266247870639104.00 mm"
+    - "Magnets per ring: -2 -> at the end of its range; +2 -> +0.29 N·m (+266.8 %), Cup wall: wall needed -4.80 mm,
+      Space claim: Rotating diameter -585964867992649856.00 mm"
+  - New: a design shown whose magnet count is below the slider's range (a file's 2 or 3) draws one line alone, like the
+    other one-line forms, with no caption and no Auto line: "No step is compared while the magnet count of the design
+    shown is below the slider's range." 91 characters, one row at 1280 x 800. The owner may prefer an input rule
+    instead: a file or link whose count is below 4 is refused on load.
+  - Why: two flat blocks make a two-sided polygon. The cup's corner radius is the apothem over cos(pi/2), so the
+    rotating diameter and the cup read 5.860e17 mm (C). Each quote of a change in them is float noise of that number,
+    physically meaningless, and so is the torque model on that ring. At 3 magnets the quotes stay physical (Rotating
+    diameter -+0.40 mm on the gap row), so the owner may narrow the rule to 2.
+  - Pin: the card at `with_poles(2)` is the new one-line form at every Auto state; `with_poles(3)` follows the owner's
+    choice.
+
+- FO-4, for the owner (string 12, decisions 10B and T-9; probe 13; C-7's class). Place: `signed_fixed`, `signed_change`
+  and `signed_percent` as the card and `torque_gap_text` call them.
+  - Old (each measured, under readouts that show these torques in four significant digits):
+    - no back iron, 8 magnets, `f_cal_original` 1e-9: "Outside diameter: -1 mm -> +0.00 N·m (+1.9 %), ...; +1 mm ->
+      -0.00 N·m (-2.7 %), ...", and "Magnets per ring: -2 -> -0.00 N·m (-57.9 %), ...; +2 -> +1.44 N·m (+161158008763.3
+      %), includes a calibration change, ...";
+    - variation 1 - 1e-10, and inner Br 1e-6 T: "+1 mm -> +0.00 N·m (+3.5 %)", "-1 mm -> -0.00 N·m (-8.8 %)";
+    - `f_cal_original` 1e300: rows of 2,260 to 4,411 characters, each N·m a number of about 300 digits, such as
+      "+1 mm -> +840055...0.00 N·m (+3.5 %)";
+    - Required 1e-300: the gap "margin +2.29 N·m (+228520...0.0 %)", with a 303-digit percent.
+  - New rule (an extension of 10B): a number whose fixed form would need more than six whole digits, or a change that
+    reads zero at T-9's cap while its percent does not, is drawn as the readouts draw values. That is four significant
+    digits (`format_value`), with its sign. The lines would read:
+    - "Outside diameter: -1 mm -> +1.690e-11 N·m (+1.9 %), ..."
+    - "+2 -> +1.44 N·m (+1.612e11 %), includes a calibration change, ..."
+    - "+1 mm -> +8.401e298 N·m (+3.5 %), ..."
+    - the gap: "margin +2.29 N·m (+2.285e302 %)"
+  - Why: trap 2 ("-0.00" beside a percent that is not zero), and false precision. The digits of a 300-digit number past
+    the 17th are float noise, and they fill the card's body. Every number is true by the model, and each comes from a
+    design file's value no slider reaches, so the rule is the owner's (C-7). Main's format printed the gap the same way,
+    so that part is not new.
+  - Pin: in `the_card_never_panics_at_the_values_a_design_file_can_carry`, no drawn number is longer than a set width,
+    and no side's N·m reads zero while its percent does not.
+
+5. SHOULD-FIX offered:
+
+- SF-1, applied here if taken. Place: `JUMP`.
+  - Old: "not a step: the overlapping magnet length does not change by the step"
+  - New: "not a step: the overlapping magnet length changes by a different amount"
+  - Why: "does not change by the step" also parses as "the step does not change it". That is the opposite of the mixed
+    pair, whose -1 mm side moves the overlap 6.35 -> 11.70 mm. The new words say the overlap changes, and by an amount
+    that is not the step's. They are true at every jump side: mixed 11.70 / 13.70 mm; short cavity 11.0 at 10.00 /
+    12.00, 12.0 at 11.00 / 13.00, 12.5 at 11.50 / 13.50 mm. Cost: 2 characters a side; the length row stays 2 rows at
+    1280 x 800 (174 -> 178 characters) and 5 rows in a 930-wide window.
+  - Pin: test 2a builds the jump rows from the constant; add, at the mixed pair, that the -1 mm side's stepped active
+    length is not the shown one less 1 mm (6.35 -> 11.70).
+
+- SF-2, applied here if taken. Place: `SHOWN_NO_HOT_LOW`.
+  - Old: "No step is compared while the design shown has a pull-out or hot-low torque that is not above zero."
+  - New: "No step is compared while the design shown has a pull-out or hot-low torque of zero or less."
+  - Why: plainer, and the same truth in every routed case listed in D2. 92 characters against 99: 2 rows against 3 in
+    a 930-wide window.
+  - Pin: the one-line tests read the constant, and test 15 holds that it has no digit.
+
+- SF-3, for the owner (C1, a reused label). Place: the result labels of `shaft_joint.hub_key_pressure_MPa` and
+  `cup_key_pressure_MPa` (BL-064), quoted through "{check}: {name} {change} {unit}" in the card's ", "-separated costs.
+  - Old: "..., Shaft joints: Key pressure on the cup, key alone +16.9 MPa, Gearbox input torque: cold-high +0.13 N·m, ..."
+    ((a) at Overall length 69.90 mm; also at 68.90 and 22.10 mm and at a file's override of 60 mm)
+  - New: the labels "Key pressure on the inner hub with the key alone" and "Key pressure on the cup with the key alone";
+    the cost would read "Shaft joints: Key pressure on the cup with the key alone +16.9 MPa".
+  - Why: the label's own comma splits one cost in two, and "key alone +16.9 MPa" reads as a separate item. It is not
+    false. A label change reaches the results table, the Problem texts and the exports, so it is the owner's call.
+
+- SF-4, for the owner (string 12, T-14). Place: `Row::torque_decimals`.
+  - Old: "Outside diameter: -1 mm -> -0.005 N·m (-0.3 %), Running clearance -0.01 mm, Cup wall: wall needed -0.08 mm; +1 mm
+    -> -0.005 N·m (-0.3 %), Hot-low torque: fails, Space claim: fails, ..."
+  - New: where a row's two sides differ in their Hot-low torque flip and their N·m read alike, add decimals (up to T-9's
+    cap) until they read apart: "-1 mm -> -0.0048 N·m (-0.3 %), ...; +1 mm -> -0.0050 N·m (-0.3 %), Hot-low torque:
+    fails, ...".
+  - Why: the row is true as drawn. The readout above reads "margin +0.005 N·m (+0.3 %)", so both steps eat the margin
+    by a hair, and the flip is the dashboard's verdict. The extra digit would only show which side crosses. Offered, not
+    needed.
+
+6. Decisions D1 to D10:
+
+- D1 KEEP "cold-high". The gearbox check compares `metal.cold_high_input_Nm`, cold-high at the gearbox input, with the
+  input rating, and the phrase quotes that quantity. Without the name, "Gearbox input torque +0.03 N·m" invites reading
+  the number as the row's hot-low carried to the input. With it, the card names the torque it quotes (T-11) and compares
+  none: no `TORQUE_ORDER_WORDS`, no "protect". The dashboard's own Problem names it the same way ("Cold-high at the
+  gearbox input is ..."). It is the only N·m on any probed card that is not hot-low at the output ((a) OD +1 mm: +0.0281
+  N·m, drawn "+0.03 N·m").
+- D2 KEEP. `SHOWN_NO_HOT_LOW` is true in every case routed to it:
+  - variation 1.0: the readouts show hot-low "0 N·m", the gap "short 2.50 N·m (-100.0 %)" and the pull-out "2.688 N·m";
+  - variation 1.5: hot-low "-1.344 N·m";
+  - zero torque, and `f_cal_original` 0 at (a): both "0 N·m";
+  - -0.95 at (a): "-2.688" and "-2.285 N·m";
+  - -0.95 with variation 1.5: pull-out "-2.688 N·m" and hot-low "1.344 N·m", so the pull-out clause carries it;
+  - inner Br -1 T: -2.068 and -1.758 N·m; an override of -1 mm: -0.5485 and -0.4662 N·m.
+
+  A torque that is not finite never comes here: (c) with `f_cal_original` 0 reads `SHOWN_NO_PREDICTION`, and its
+  readouts say "no prediction (the torque is not finite for this design)". SF-2 offers plainer words.
+- D3 KEEP both.
+  - The Outside diameter is the largest of the cup, the cap and the boss; the Rotating diameter is the larger of the cup
+    and the cap. They agree only where the cup sets both, as at npole 4: gap -0.1 mm "Outside diameter -0.3 mm" with
+    "Rotating diameter -0.28 mm", and count +2 "-9.3 mm" with "-9.31 mm". Where the two are one change, they round
+    consistently.
+  - A Space claim quote says that a failing check's axis moves by the step, which the step alone does not say: the
+    diameter row's "+1.00 mm" at (b) and npole 4, and the length row's "Space claim: Overall length -1.00 mm" at 68.90
+    and 69.90 mm, the same class.
+  - (A) would drop the Outside diameter change wherever a boss makes the two differ. (B) would drop a failing check's
+    quantity, which 8A asks for.
+- D4 CHANGE: MF-1. "everything else held" is false at the reverse pair, where the inner ring is trimmed 12.70 -> 5.35 /
+  7.35 mm and the hub 13.00 -> 5.65 / 7.65 mm with no cost shown. Beside (e)'s "Outside diameter +2.2 mm" it reads as a
+  contradiction. The step's number stays the model's honest value (no overhang term), and BL-074 records the trim. A cost
+  line for the trimmed ring would be a new rule, the owner's, with BL-074.
+- D5 for the owner: FO-1. At 43.3 mm the -1 mm side alone reads the words, true there: the handle sits at the bottom, at
+  43.30 mm. At the design shown past an end (a file's gap of 5.5 mm, an override of 60 mm, a gap of 0) the side toward
+  the slider's range misleads in the same way as at Minimum OD 45.
+- D6 KEEP. At 82.08 °C the OD +1 mm, length +1 mm and count -2 sides flip "Temperature limits: caution"; at 82.12 °C
+  (amber shown) the length -1 mm side flips "passes" (C). Each is the dashboard's own level for the stepped design, the
+  one the dashboard row would show after the step, with its stored-3D label ("Those fields stay fixed when you change the
+  geometry, magnet count or grade..."). No temperature quantity is quoted (T-13). The flip is as true as the dashboard
+  row it predicts. A marker on the card would be a new rule, not needed for the words to be true.
+- D7 KEEP. The row reads "Magnets per ring: -2 -> -2.29 N·m (-158.9 %), includes a calibration change, Shaft joints:
+  passes; +2 -> magnets do not fit".
+  - The 8-pole design takes the coefficient itself: factor 1.0495 -> -0.95, hot-low -0.8505 and pull-out -1.0006 N·m,
+    f_end 0.870.
+  - -2.29325 N·m is the true difference of the two `compute_all` runs. The note names the change, not a cause (16A).
+  - "Shaft joints: passes" is the joint check's own verdict on that design, whose required torque is below zero.
+  - A number below -100 % beside the note sends the reader to the calibration inputs.
+  - A coefficient below zero is a design file's value that `validate()` accepts. Refusing it would be an input rule, the
+    owner's, alongside FO-3's alternative.
+- D8 KEEP. "...; the cup can still change size." is true with Auto off (the count slider sets `coupling.npole` alone)
+  and with Auto on the magnet length. That Auto moves no ring; it moves the magnet length, so the cup may change length,
+  which "change size" covers. At (e) the count -2 grows the cup and the Outside diameter by 2.2 mm; at (a) the cup grows
+  under the cap. The clause no longer points at lines that have left.
+- D9 KEEP both.
+  - `KEYWAY_BREAKS_THROUGH`: at bore 16 mm with a 2.5 mm keyway (wall past the key -0.40 mm), the four length and gap
+    sides read it, true because neither step moves the hub wall. The design shown already breaks through and its
+    exploration line says so, so the words state the stepped design's fact without implying the step causes it. Its OD
+    +1 mm side's "Shaft joints: fails" is true: the wall returns and the joint slips.
+  - `NOT_ON_THE_SLIDER`: at 9, both sides (7 and 11 are odd, and the slider takes even counts). At a file's 3, the +2
+    side (5) reads it and the -2 side (1) reads `END_OF_RANGE`.
+- D10 KEEP. The caption talks about steps and the Auto line about rows, and a one-line form has neither. Probed under
+  each Auto state at short magnets, shown does not fit, variation 1.0 and 1.5 and zero torque. With the card's rows
+  gone, an Auto line would point at nothing.
+
+7. Traps checked:
+- 1 No `CARD_RANKING_WORDS` in any of the 193 lines or the proposed texts. Rows keep the controls' order at every
+  design, and no text compares rows.
+- 2 One decimal of percent, never "+0 %". No "+-0.00" at any section-2 design. Each N·m's sign is its percent's. T-14
+  draws (e)'s row "-0.006" against "-0.005". "+-0.00" beside a non-zero percent occurs only at a file's magnitudes
+  (FO-4, owner). T-14's one-flip row reads alike, truly (SF-4).
+- 3 No rate per mm or per magnet in any text; each side states its own step.
+- 4 `JUMP` on every jump side (mixed pair, and short cavity 11.0, 12.0 and 12.5 mm). The diameter row's boss plateau is
+  unguarded ("+7.5 %" for a 3.22 mm cup lift): FO-2, owner.
+- 5 No physics sentence on the card. At (e) both diameter steps lower hot-low (-0.006 and -0.005 N·m).
+- 6 The count row prints numbers and costs only; (e)'s -2 side draws "Outside diameter +2.2 mm".
+- 7 `CALIBRATION_CHANGE` names the change, never a cause.
+- 8 No text names f_cal, c_end, the variation, μ0 or the bench inputs.
+- 9 No "guaranteed", no torque ordering, no re-lock. Every N·m is hot-low at the output except the gearbox phrase's,
+  named "cold-high" (D1).
+- 10 `mentions_gearbox_protection` is false on every line; nothing calls more torque safer.
+- 11 No "no effect", "free" or "negligible"; every cost is listed with its true sign.
+- 12 No grade row and no temperature quantity (T-13). The Temperature limits flip is the dashboard's verdict (D6).
+- 13 No elasticity, in °C or otherwise.
+- 14 Each Auto line says Auto sizes again after a change, and the rows keep the shown value.
+- 15 No "clamp" in any case (paused).
+- 16 None of the slice-2 traps appear.
+- 17 `plain_text_violations` is empty on every line. "->" is ASCII, with no U+2192 and no U+2212; "N·m" uses U+00B7 and
+  "µm" U+00B5 (no U+03BC). No cell, backlog, decision or code id.
+- 18 No number is typed in any text: no constant or template literal holds a digit, and every number comes from the
+  results or from `Control::step`. The word "one" in the heading and caption names the card's single step (1A, 3A),
+  not a value.
+
+8. The context lines:
+- C1, fine. "Set by Auto; turn Auto off to edit" is true in the held row: the slider is locked, and turning Auto off
+  unlocks it and gives that row its numbers. The control labels are the sliders' own, the check labels the guides', and
+  the Space claim axis names the Problem's. The shaft-joint labels are true; the key-pressure labels' commas inside the
+  cost list are SF-3, for the owner.
+- C2, fine. The note's "each millimetre beats a millimetre of radius" agrees with the card. At (a), +1 mm of length gives
+  +8.8 % and +1 mm of Outside diameter +3.5 %, and that diameter step is about 0.48 mm of radius. The note's R_g²
+  watch-out matches (e)'s diameter row. The 2/cos(pi/N) slope stays for the lessons slice (spec 4.2).
+- C3, fine at (a), (b), (c), (e), (e2) and at the one-flip design ("margin +0.005 N·m (+0.3 %)"). At a file's Required of
+  1e-300 its percent prints 303 digits, as main's did: FO-4.
+- C4, fine. The removed label's content stays on the dashboard and in the drawing's dimensions. With the card closed,
+  nothing near Magnets per ring says Auto sizes again after a count change (T-8). That is an omission, not a false text:
+  the Auto row and the locked slider say Auto owns that size.
+
+9. Verdict: MUST_FIX.
+- Applied here: MF-1 (`CAPTION`). SF-1 (`JUMP`) and SF-2 (`SHOWN_NO_HOT_LOW`) are offered.
+- For the owner at the STOP, apart from the verdict: FO-1 (`END_OF_RANGE`), FO-2 (the boss plateau rule), FO-3 (a count
+  below the slider's range) and FO-4 (the number format at a design file's magnitudes). Should-fix: SF-3 (the
+  key-pressure labels) and SF-4 (T-14's one-flip decimals).
+
+### Report for the record, round 2 (as returned)
+
+1. Reviewer: physics reviewer (session model), fresh context, 2026-10-20; round 2.
+
+2. Read:
+- The brief `t7-g3-brief-r2.md`; the build rulings `.superpowers/sdd/2026-10-20-magcoupler-torque-card/rulings.md` (B-1 to
+  B-13); `owner-decisions.md` (1A to 17A, O-1, O-2, the round-3 rulings); the plan head up to its Tasks heading (C-1 to
+  C-10, PD-1 to PD-6, plan review 1.1A to 4.4A); the spec, sections 1, 2, 3.3, 3.6, 4, 5, 6.1 and 10; round 1's answer
+  `t7-g3-r1.md`.
+- The round's change. `git diff HEAD~1 HEAD` (2ac62e9) touches `CAPTION`, test 2a's new pin and the README's row for
+  test 2a, nothing else. `S3-strings.diff` against its `.r1` differs in those lines only. `S3-guidance.txt` against its
+  `.r1` differs in the 48 caption lines (and the test's run time); no line of it says "held". `S3-note.txt` is unchanged.
+- The code behind the changed string and the strings read beside it: `gui/torque_card.rs` (the constants,
+  `TorqueCard::lines`, `held_line`, `auto_line`, `card`, `Slider::of` and `step`, `Shown::side`, `moves_by_the_step`,
+  `change`; test 1 `each_number_is_the_difference_of_two_compute_all_runs` with its oracle `slider_step`, test 2a, test
+  16 and the 47-value robustness test); `gui/size_controls.rs` (`SET_BY_AUTO`, `DIAMETER_HOVER`, `LENGTH_HOVER`,
+  `LINKED_HOUSING`, `torque_gap_text`, `predicts`, `slider_minimum`, `SliderMapping`); `engine/size_controls.rs`
+  (`resize_diameter_with_minimum`, `resize_diameter_using`, `with_cup_change`, `resize_length`, `with_ring_radius`);
+  `gui/sizing.rs` (`sized`, `sizing_range`, `SizingRunner`); `gui/guidance.rs` (`check_terms`, `WALL_NEEDED`,
+  `COLD_HIGH`, `RING_SIZE_STAYS`, `magnet_count_line`, `SPACE_CLAIM_AXIS_SIZES`); `gui/format.rs`; `gui/panel.rs`
+  (`torque_card_ui`, the exploration lines in `view_ui`); `engine/explain/plain.rs` (the guards).
+- Probe: a scratch crate `slice3g3` outside the repository (`<scratchpad>/g3r2`, CARGO_TARGET_DIR `<scratchpad>/r2t`),
+  `magcoupling-rs` by path with feature `gui`, and egui 0.32.3 only to measure wrapped rows. Every design rebuilt from
+  spec 2.1's Edits; the Auto designs solved with `SizingRunner::solve_now` over the panel's range (`ring_radius_range` at
+  the Minimum OD for the ring) and shown through `gui::sizing::sized`; the readouts drawn as `torque_readout` draws them
+  (`format_value`, `torque_gap_text`). No tracked file changed (`git status`: the owner's untracked file only); this
+  record, in the gitignored SDD folder, is the one file written.
+- What the probe found (C: this probe):
+  - The sheet: all 259 card lines of the 52 sheet designs (each in its own Auto state; the odd count and the three
+    one-line forms in every Auto state) equal `S3-guidance.txt` record for record, and its heading record is
+    `CARD_HEADING`.
+  - The caption wherever it is drawn: the 52 sheet designs and 52 design-file edits (the robustness test's 47, plus
+    `calibration.f_cal_original` 0, -0.95, -0.95 with variation 1.5, a count of 9, and the end effect at a step) at both
+    back irons and both Minimum OD states, each in all four Auto states. 684 rows-form cards draw `CAPTION` first and
+    once, and the Auto line second whenever Auto is on; 356 one-line cards draw their line alone. 4,121 lines through
+    `ranking_words_in`, `TORQUE_ORDER_WORDS`, `mentions_gearbox_protection`, "clamp" (any case), `plain_text_violations`
+    and a glyph scan (U+2192, U+2212, U+03BC): no hit. No line says "held". The word "alone" is in the caption and,
+    elsewhere, only inside two shaft-joint result labels, "Key pressure on the cup, key alone" and "Key pressure on the
+    inner hub, key alone". They are quoted at the Overall length slider's 68.90 to 69.90 mm and 22.10 mm at (a) and
+    (e), and at a file's override of 60 mm (and at its 1e300 values).
+  - The caption's claim, side by side. Each side with a stepped design (1,087 sides, 850 of them numbers) was rebuilt
+    through the slider's public mapping, and every input was compared with the design shown's:
+    - the Outside diameter steps move `coupling.inner_back_apothem_mm`, `metal.cap_od_mm` and `metal.cap_thread_dia_mm`
+      (179 sides each);
+    - the Overall length steps move `coupling.magnets.axial_length_mm` (266);
+    - the gap steps move `metal.face_gap_mm` (316);
+    - the count steps move `coupling.npole` (318).
+
+    No side moves any other input, and every number side's hot-low and change equal `compute_all` bit for bit. So each
+    row is one step of one control's own slider and nothing else, and with Auto on no drawn row moves Auto's variable.
+  - Numbers, each equal to round 1's and to spec 2.3:
+    - (1) (a): hot-low 2.2852 N·m; OD +1 mm +0.079805 N·m (+3.4923 %); length +-0.200833 N·m (+-8.7884 %); gap
+      +0.075918 / -0.073281 N·m; count -2 -0.612099 N·m (-26.7853 %). (b): Auto on the magnet length at 14.181318158 mm
+      (hot-low 2.5000000001 N·m); the caption, the Auto line, then the held row "Overall length: Set by Auto; turn Auto
+      off to edit"; OD +1 mm +0.089193 N·m (+3.5677 %) ending "Space claim: Rotating diameter +1.00 mm"; count -2
+      "Hot-low torque: fails". (c): count -2 -0.592278 N·m (-41.0516 %) with "includes a calibration change". (e): OD -1
+      / +1 mm -0.006261 / -0.004649 N·m, drawn "-0.006" / "-0.005"; count -2 "Outside diameter +2.2 mm". (e2): as (e),
+      and its count -2 side adds "Hot-low torque: fails". Auto: (a)+length 13.769522495 mm; (a)+count 10 (shown = (a));
+      (a)+ring 11.675697360 mm (OD 46.0084); (e2)+length 11.556900190 mm; (e2)+count 8; (e2)+ring 9.000000000 mm (OD
+      40.3105); (e2)+ring at the lowest Minimum OD 7.665128061 mm (OD 37.4208).
+    - (2) Short cavity 11.0 mm: active 12.70 -> 10.00 / 12.00 mm, both sides `JUMP` (the +1 mm side would have read
+      -0.140583 N·m, -6.152 %); 12.0 mm: 11.00 / 13.00 mm (would be -14.940 / +2.637 %); 12.5 mm: 11.50 / 13.50 mm
+      (-10.546 / +7.031 %). A sweep of the cup cavity input (`metal.cup_depth_mm`, slider 3-40 mm in 0.1 mm steps) from
+      10.0 to 14.0 mm: below 12.7 mm every length side reads `JUMP`, and from 12.7 mm on every side moves the overlap by
+      the step. At 11.7 mm the +1 mm side moves the Overall length 28.00 -> 29.00 mm while the overlap stays at 12.70 mm
+      bit for bit; the number it would have read is +0.00 N·m (+0.0 %). At 10.7 mm the +1 mm side moves the overlap by
+      -1.00 mm.
+    - (4) Mixed pair: active 6.35 -> 11.70 / 13.70 mm (would read +106.390 / +146.163 %), `JUMP` both ways. Reverse pair:
+      active 6.35 -> 5.35 / 7.35 mm, +-0.200833 N·m (+-19.8861 %). The inner ring goes 12.70 -> 5.35 / 7.35 mm and
+      `housing.hub_length_mm` 13.00 -> 5.65 / 7.65 mm, with no flip and no quoted cost.
+    - (5) End effect at a step: length -1 mm "no prediction", +1 mm +0.200833 N·m (+167.9298 %); count -2 "no
+      prediction", +2 "magnets do not fit"; OD +1 mm -0.026507 N·m (-22.1646 %).
+    - (6) Odd count 9: no size rows; the gap row's numbers; both count sides `NOT_ON_THE_SLIDER` in every Auto state
+      but count's, where the row is held.
+    - (7) The slider ends: as the sheet, equal. One step inside: 68.90 mm +1 mm +0.200833 N·m (+2.0628 %); at 22.10 mm
+      OD +1 mm +0.003801 N·m (+1.1275 %), drawn "+0.004 N·m (+1.1 %)".
+    - (8) The one-line forms with their readouts:
+      - short magnets (both readouts "no prediction (magnets too short ...)"): `SHOWN_NO_PREDICTION`;
+      - shown does not fit (hot-low "2.158 N·m", "short 0.34 N·m (-13.7 %)"): `SHOWN_DOES_NOT_FIT`;
+      - variation 1.0 (hot-low "0 N·m", "short 2.50 N·m (-100.0 %)", pull-out "2.688 N·m") and zero torque (both
+        "0 N·m"): `SHOWN_NO_HOT_LOW`.
+
+      Each is drawn alone in every Auto state.
+    - (9) Hot day equals (a) line for line. Only the joint fails: length -1 mm "Shaft joints: Inner hub smallest measured
+      interference that holds -0.04 µm". Passing: flips only.
+    - (10) T-14's one flip (Required 1.4951048789 N·m): the OD sides' hot-low is 1.495232 / 1.494977 N·m. Both are
+      drawn "-0.005 N·m (-0.3 %)" (-0.004768 / -0.005023), and only the +1 mm side reads "Hot-low torque: fails". The
+      readout above reads "margin +0.005 N·m (+0.3 %)".
+    - (11) The gap: (a) "short 0.21 N·m (-8.6 %)", (b) "margin +0.00 N·m (+0.0 %)", (c) "short 1.06 N·m (-42.3 %)",
+      (e) "short 0.83 N·m (-33.1 %)", (e2) "margin +0.17 N·m (+11.5 %)".
+    - (12) npole 2: no size rows. The gap row reads "Space claim: Rotating diameter -3266247870639104.00 mm" and the count
+      +2 side "-585964867992649856.00 mm", as round 1 (FO-3). npole 3: the gap row quotes "Rotating diameter -0.40 /
+      +0.40 mm", and the count row reads "-2 -> at the end of its range; +2 -> not a value the slider takes".
+    - (13) The degenerate design-file values:
+      - no back iron, 8 magnets, `f_cal_original` 1e-9: "-2 -> -0.00 N·m (-57.9 %)" and "+2 -> +1.44 N·m
+        (+161158008763.3 %), includes a calibration change". At 1e-300 that percent has 303 whole digits; at 1e-320
+        the +2 side reads "no prediction".
+      - variation 1 - 1e-10, and inner Br 1e-6 T: every side "+0.00" or "-0.00 N·m" beside its percent.
+      - `f_cal_original` 1e300: rows of 2,213 to 4,411 characters, and the readout's gap "margin +2405...712.00 N·m
+        (+9621...104.0 %)", a 301-digit margin and a 302-digit percent.
+      - Required 1e-300: the gap's percent has 303 whole digits.
+  - Layout, in egui's default Body font (12.5 pt): the new caption is 432.1 pt long. It is one row at the body's 609.9 pt
+    (1280 x 800), as the old caption was. In a 930-wide window (259.9 pt) it is two rows (28 pt), against the old three
+    (42 pt).
+
+3. The strings (round 2 re-reviews string 2 and the strings read beside it, 1, 3, 5, 6 and 9; on the others round 1's
+   findings stand, and the probe reproduces their numbers):
+
+| # | String | Result | Reason |
+|---|---|---|---|
+| 1 | `CARD_HEADING` | PASS | Read above the new caption: "One step of each size control", then "...after one step of one control alone." Each row is one control's step. No ranking word. |
+| 2 | `CAPTION` | PASS | The new words, "The change in the model's hot-low torque after one step of one control alone.", are true at every side probed. Each side is one slider's own mapping at one step, and no other input moves (1,087 sides). What follows the side's "->" is that step's consequence: (e)'s "Outside diameter +2.2 mm", and the reverse pair's trim, which is the Overall length slider's own mapping, as the Size tab's footnote and the control's hover say ("Overall length sets both rings' magnet length"). With Auto on, "alone" and the Auto line together say the rows hold Auto's variable, and no drawn row moves it. Beside `CALIBRATION_CHANGE` it stays true: the factor switch is the model's response to the one count step, and the note names it. No digit, no ranking word, plain. 77 characters: one row at 1280 x 800, two in a 930-wide window (old: three). Pinned in substance by test 1 (every number side is the design one slider mapping makes, bit for bit) and by test 2a (no "held"). |
+| 3 | `AUTO_HOLDS_LENGTH`, `AUTO_HOLDS_RING`, `AUTO_HOLDS_COUNT` | PASS | Read under the new caption, the pair is coherent: the step alone, then what Auto would do after it. "Each row keeps the ... shown" holds at every drawn row (input diff), and at the odd count under each Auto state. |
+| 4 | `SHOWN_DOES_NOT_FIT`, `SHOWN_NO_PREDICTION`, `SHOWN_NO_HOT_LOW` | PASS (round 1 stands; SF-2 stays offered) | Each drawn alone, without the caption, in every Auto state (356 one-line cards). Each is true in every case routed to it (8; D2). |
+| 5 | `NOT_ON_THE_SLIDER`, `JUMP`, `KEYWAY_BREAKS_THROUGH` | PASS (round 1 stands; SF-1 revised, see 5) | Read beside the new caption, still true. `JUMP` is drawn exactly where the overlap does not move by the step, and is true there: the mixed pair, the short cavity at every probed depth from 10.0 to 12.6 mm, and the 11.7 mm cavity's +1 mm side, whose overlap does not move at all. |
+| 6 | `CALIBRATION_CHANGE` | PASS | Beside "one control alone" it says the number includes the factor switch that the one count step brings: (c) count -2 (1.0495 -> 0.95), (c) with `f_cal_original` -0.95 count -2, and no back iron at 8 magnets with 1e-9 count +2. It names no cause (16A). |
+| 7 | `FLIP_FAILS`, `FLIP_PASSES`, `FLIP_CAUTION` | PASS (round 1 stands) | Each flip is the dashboard's level of that check on the stepped design (the temperature edge included: D6). |
+| 8 | `WALL_NEEDED`, `COLD_HIGH` | PASS (round 1 stands) | The wall the flux needs, and the torque the gearbox check compares (D1). |
+| 9 | The templates of `TorqueCard::lines` | PASS (round 1 stands; SF-3 for the owner, now with one more reason) | The "->" makes everything after a step its consequence, which is what the new caption needs. Every probed line reads as drafted. FO-2 (boss plateau) and FO-3 (a count of 2) need rules the spec does not have. |
+| 10 | `RING_SIZE_STAYS` | PASS (round 1 stands) | Under the control, not on the card; true with Auto off and with Auto on the magnet length (D8). |
+| 11 | `END_OF_RANGE` / `SIDE_DOES_NOT_FIT` / `SIDE_NO_PREDICTION` | MUST-FIX for the owner (FO-1, round 1 stands) / PASS / PASS | "at the end of its range" names an end the control is not stopped at wherever the design shown lies outside the slider's range (Minimum OD 45 mm; a file's gap of 5.5 mm or 0; an override of 60 mm). |
+| 12 | Number format (10B, T-9, T-14) and the readout's gap | PASS at every design of section 2; MUST-FIX for the owner at a design file's magnitudes (FO-4, round 1 stands, one more instance) | No "+0 %", no "+-0.00" at any section-2 design; T-14 holds. At a file's 1e-9, 1 - 1e-10, 1e-6 T, 1e300 or Required 1e-300, "+-0.00 N·m" sits beside a true percent, or numbers run to about 300 digits (the 1e300 readout gap among them). |
+
+4. MUST-FIX:
+
+None applied here: round 1's MF-1 is applied (2ac62e9) and passes this review (string 2; D4). The items for the owner
+stand from round 1, re-probed with the same numbers; they are listed here with their proposed texts for the STOP sheet.
+Round 1's record holds each one's full reasoning and pin.
+
+- FO-1, for the owner (string 11; D5). Place: `END_OF_RANGE` (owner 9A's words).
+  - Old: "at the end of its range"
+  - New: "outside the slider's range"
+  - Why: the words are drawn for any side more than `STEP_SLACK_MM` past its slider's range, wherever the design shown
+    sits. Where the design shown itself lies outside the range, they name an end the control is not stopped at:
+    - (a) with Minimum OD 45.0 mm (slider 45.00-80.00 mm, the design 42.80 mm): "+1 mm -> at the end of its range",
+      while the handle sits at its bottom and moves up;
+    - a file's gap of 5.5 mm or 0 (both gap sides);
+    - an override of 60 mm (both length sides).
+
+    The new words are true at every `EndOfRange` side, the ordinary ends included. Cost: 3 characters a side.
+  - Pin: round 1's (at (a) with Minimum OD 45.0 the +1 mm side's request, 43.80 mm, lies below the range's 45.00 mm, and
+    the side is drawn "+1 mm -> {END_OF_RANGE}").
+- FO-2, for the owner (a new rule: R-13's boss plateau; trap 4). Place: the Outside diameter row of `card`, with one
+  constant beside `JUMP`.
+  - Old (`boss_plateau()`): "Outside diameter: -1 mm -> at the end of its range; +1 mm -> +0.12 N·m (+7.5 %), Running
+    clearance +0.05 mm, Cup wall: wall needed +0.25 mm"
+  - New rule: a diameter side whose cup (`model.cup_od_mm`) does not move by the step reads words, as the length jump does.
+  - New text: the mirror of `JUMP` as it stands, "not a step: the cup diameter does not change by the step". Round 1's
+    first choice, "...changes by a different amount", is true on the plateau (the cup there always moves by more than
+    the step), but the two jump texts should read alike, and SF-1's wording is not to be applied (see 5).
+  - Why: there +1 mm of Outside diameter lifts the cup 3.22 mm (37.78 -> 41.00 mm). So "+7.5 %" (+0.116523 N·m,
+    +7.5468 %, C) is a jump read as a slope.
+  - Pin: round 1's.
+- FO-3, for the owner (a new rule; probe 12). Place: test 0 of `card` (the design shown), beyond 9A.
+  - Old (`coupling.npole` 2, a file's):
+    - "Magnet face gap: -0.1 mm -> +0.003 N·m (+3.1 %), Running clearance -0.10 mm, Cup wall: wall needed +0.09 mm,
+      Space claim: Rotating diameter -3266247870639104.00 mm; ...";
+    - "Magnets per ring: -2 -> at the end of its range; +2 -> +0.29 N·m (+266.8 %), Cup wall: wall needed -4.80 mm,
+      Space claim: Rotating diameter -585964867992649856.00 mm".
+  - New: one line alone, with no caption and no Auto line: "No step is compared while the magnet count of the design
+    shown is below the slider's range." Or an input rule: a file or link whose count is below 4 is refused on load.
+  - Why: two flat blocks make a two-sided polygon, and the cup and the rotating diameter come out at about 5.9e17 mm.
+    Each quoted change is float noise of that number. At 3 the quotes stay physical (+-0.40 mm), so the owner may
+    narrow the rule to 2.
+  - Pin: round 1's.
+- FO-4, for the owner (string 12; 10B, T-9; C-7's class). Place: `signed_fixed`, `signed_change` and `signed_percent`
+  as the card and `torque_gap_text` call them.
+  - Old: probe 13's lines, among them:
+    - "-2 -> -0.00 N·m (-57.9 %)" and "+2 -> +1.44 N·m (+161158008763.3 %), includes a calibration change";
+    - "+1 mm -> +0.00 N·m (+3.5 %)";
+    - the 1e300 rows of 2,213 to 4,411 characters;
+    - the Required 1e-300 gap's 303-digit percent;
+    - the 1e300 readout gap's 301-digit margin.
+  - New rule: a number whose fixed form would need more than six whole digits, or a change that reads zero at T-9's cap
+    while its percent does not, is drawn as the readouts draw values: four significant digits (`format_value`), with its
+    sign. The lines would read:
+    - "Outside diameter: -1 mm -> +1.690e-11 N·m (+1.9 %), ...";
+    - "+2 -> +1.44 N·m (+1.612e11 %), includes a calibration change, ...";
+    - "margin +2.29 N·m (+2.285e302 %)";
+    - "margin +2.405e300 N·m (+9.622e301 %)".
+  - Why: trap 2 (a "-0.00" beside a percent that is not zero), and false precision past the 17th digit. Every number is
+    true by the model and comes from a design file's value no slider reaches, so the rule is the owner's (C-7).
+  - Pin: round 1's.
+
+5. SHOULD-FIX offered:
+
+- SF-1, revised (round 1's text is not to be applied). Applied here if the revised text is taken. Place: `JUMP`.
+  - Old: "not a step: the overlapping magnet length does not change by the step"
+  - Round 1's New, "not a step: the overlapping magnet length changes by a different amount", is false at a reachable
+    design. Take (a) with `metal.cup_depth_mm` 11.7, a value on its slider: the Overall length +1 mm side moves the
+    Overall length 28.00 -> 29.00 mm while the overlap stays at 12.70 mm, bit for bit. The side reads `JUMP`, true as
+    drafted. Round 1's words would say the overlap changed.
+  - New (only if the "by" is to be made unmistakable; true at every jump side, that one included): "not a step: the
+    overlapping magnet length does not change by the step's amount". Cost: 9 characters a side; the short cavity's row
+    stays 2 rows at 1280 x 800 (174 -> 192 characters) and 5 rows in a 930-wide window. In the active voice, "change by
+    the step" already reads as an amount, so keeping `JUMP` is also fine.
+  - Pin: at (a) with cup depth 11.7 mm, the Overall length +1 mm side is `Words::Jump`, and its stepped
+    `model.active_length_mm` equals the shown 12.70 mm. This is the widened rule's zero-move case, which no design of
+    section 2 reaches; under 9A as written it would draw "+1 mm -> +0.00 N·m (+0.0 %)".
+- SF-2 (round 1, stays offered). Applied here if taken. Place: `SHOWN_NO_HOT_LOW`.
+  - Old: "No step is compared while the design shown has a pull-out or hot-low torque that is not above zero."
+  - New: "No step is compared while the design shown has a pull-out or hot-low torque of zero or less."
+  - Why: plainer, and the same truth in every routed case. These are variation 1.0 and 1.5, zero torque,
+    `f_cal_original` 0 and -0.95, -0.95 with variation 1.5, inner Br -1 T (-2.068 / -1.758 N·m) and an override of
+    -1 mm (-0.5485 / -0.4662 N·m). A torque that is not finite never comes here: (c) with `f_cal_original` 0 reads
+    `SHOWN_NO_PREDICTION`. Cost: 92 characters against 99, 2 rows against 3 in a 930-wide window.
+  - Pin: the one-line tests read the constant.
+- SF-3 (round 1), for the owner (C1, a reused label). Place: the result labels of `shaft_joint.hub_key_pressure_MPa`
+  and `shaft_joint.cup_key_pressure_MPa`, quoted through "{check}: {name} {change} {unit}" in a side's ", "-separated
+  costs.
+  - Old: "..., Shaft joints: Key pressure on the cup, key alone -9.0 MPa, Gearbox input torque: cold-high -0.07 N·m, ..."
+    ((a) at Overall length 68.90 mm, and at 69.90 and 22.10 mm and at (e)).
+  - New: the labels "Key pressure on the inner hub with the key alone" and "Key pressure on the cup with the key alone".
+  - Why: the label's own comma splits one cost in two, so "key alone -9.0 MPa" reads as an item of its own. New this
+    round: the label's "alone" now shares its word with the caption's "one control alone" on those same rows. It is not
+    false. A label change reaches the results table, the Problem texts and the exports, so it is the owner's call.
+- SF-4 (round 1), for the owner (string 12, T-14). Place: `Row::torque_decimals`. Unchanged. Where a row's two sides
+  differ in their Hot-low torque flip and their N·m read alike, add decimals (up to T-9's cap) until they read apart:
+  "-1 mm -> -0.0048 N·m (-0.3 %), ...; +1 mm -> -0.0050 N·m (-0.3 %), Hot-low torque: fails, ...". The row is true as
+  drawn (probe 10).
+
+6. Decisions D1 to D10:
+- D1 KEEP "cold-high". The phrase quotes `metal.cold_high_input_Nm`, the torque the gearbox check compares, in the
+  dashboard Problem's own name ("Cold-high at the gearbox input"). It compares no torques. (a) OD +1 mm: "Gearbox input
+  torque: cold-high +0.03 N·m" (+0.0281). It is the only N·m on any probed card that is not hot-low at the output.
+- D2 KEEP. `SHOWN_NO_HOT_LOW` is true in every case routed to it, each beside readouts that show both torques:
+  - variation 1.0: hot-low "0 N·m", pull-out "2.688 N·m";
+  - variation 1.5: hot-low "-1.344 N·m";
+  - zero torque, and `f_cal_original` 0: both "0 N·m";
+  - `f_cal_original` -0.95: "-2.688" and "-2.285 N·m";
+  - -0.95 with variation 1.5: pull-out "-2.688 N·m", hot-low "1.344 N·m", so the pull-out clause carries it;
+  - inner Br -1 T, and an override of -1 mm: both negative.
+
+  (c) with `f_cal_original` 0 reads `SHOWN_NO_PREDICTION`, and its readouts say "no prediction (the torque is not finite
+  ...)". SF-2 offers plainer words.
+- D3 KEEP both.
+  - Where the cup sets both quantities they round alike: npole 4's gap row reads "Outside diameter -0.3 mm" with
+    "Rotating diameter -0.28 mm", and its count +2 side "-9.3 mm" with "-9.31 mm".
+  - A Space claim quote says that a failing check's axis moves, which the step alone does not say. The diameter row's
+    "+1.00 mm" at (b) and npole 4 is one such quote, and the length row's "Space claim: Overall length -1.00 mm" at
+    68.90 mm another.
+  - (A) would drop the Outside diameter change wherever a boss makes the two differ, and (B) would drop a quantity 8A
+    asks for.
+- D4 KEEP the applied words (round 1 ruled CHANGE; 2ac62e9 applied MF-1).
+  - "after one step of one control alone" claims only what holds at every side. The input comparison above found one
+    slider's own mapping and nothing else at all 1,087 sides.
+  - (e)'s "Outside diameter +2.2 mm" and the diameter row's cap following the cup are consequences of that one step,
+    drawn after its "->".
+  - At the reverse pair the step trims the inner ring 12.70 -> 5.35 / 7.35 mm and the hub 13.00 -> 5.65 / 7.65 mm. That
+    is what the Overall length slider does ("sets both rings' magnet length", the Size tab's footnote and hover).
+  - The number stays the model's honest value (no overhang term). BL-074 records the trim, and a cost line for it would
+    be a new rule, the owner's.
+  - The STOP sheet shows the caption as reviewed. 12A's own parenthetical said "everything else held", and this record
+    is the reason the words differ.
+- D5 for the owner: FO-1. At 43.3 mm only the -1 mm side reads the words, true there: the handle sits at the bottom, at
+  43.30 mm. A design shown past an end (a file's gap of 5.5 mm or 0, an override of 60 mm) misleads the same way on the
+  side toward the range.
+- D6 KEEP. At 82.08 °C the OD +1 mm, length +1 mm and count -2 sides flip "Temperature limits: caution"; at 82.12 °C the
+  length -1 mm side flips "passes" (C). Each flip is the dashboard's own level for the stepped design, with its stored-3D
+  label on the dashboard row. No temperature quantity is quoted (T-13).
+- D7 KEEP. "Magnets per ring: -2 -> -2.29 N·m (-158.9 %), includes a calibration change, Shaft joints: passes; +2 ->
+  magnets do not fit" (-2.293250 N·m, -158.9484 %, to a hot-low of -0.850486 N·m).
+  - It is the true difference of two `compute_all` runs, and the note names the change, not a cause (16A).
+  - "Shaft joints: passes" is that check's own verdict on the stepped design.
+  - Refusing a coefficient below zero would be an input rule, the owner's.
+- D8 KEEP. `magnet_count_line` gives `RING_SIZE_STAYS` with Auto off and on the magnet length, and nothing with Auto on
+  the ring or the count. "The cup can still change size" is true in both states drawn: at (e) the count -2 grows the cup
+  and the Outside diameter 2.2 mm.
+- D9 KEEP both.
+  - `KEYWAY_BREAKS_THROUGH`: at a 16 mm bore with a 2.5 mm keyway the four length and gap sides read it, true because
+    neither step moves the hub wall. The exploration line above says the same of the design shown.
+  - `NOT_ON_THE_SLIDER`: at 9, both count sides. At a file's 3, the +2 side reads it and the -2 side `END_OF_RANGE`.
+- D10 KEEP. Under every Auto state, the one-line forms (short magnets, shown does not fit, variation 1.0 and 1.5, zero
+  torque) draw their line alone (356 cards). The new caption makes the rule plainer still: "after one step of one
+  control alone" above "No step is compared ..." would contradict itself.
+
+7. Traps checked:
+- 1 No `CARD_RANKING_WORDS` in any of the 4,121 lines, the new caption included. Rows keep the controls' order, and no
+  text compares rows.
+- 2 One decimal of percent, never "+0 %". No "+-0.00" at any section-2 design. Each N·m's sign is its percent's, and T-14
+  holds (e)'s row "-0.006" / "-0.005". At a file's magnitudes: FO-4, the owner's.
+- 3 "after one step" still frames each number as one step's change; no rate per mm or per magnet anywhere.
+- 4 `JUMP` on every jump side: the mixed pair, the short cavity (10.0 to 12.6 mm probed), and the 11.7 mm cavity's +1 mm side,
+  whose overlap does not move (under 9A as written that side would read "+0.00 N·m (+0.0 %)"). The boss plateau is
+  unguarded: FO-2, the owner's.
+- 5 No physics sentence on the card. At (e) both diameter steps lower hot-low.
+- 6 The count row prints numbers and costs only; (e)'s -2 side draws "Outside diameter +2.2 mm".
+- 7 `CALIBRATION_CHANGE` names the change, never a cause.
+- 8 No text names f_cal, c_end, the variation, μ0 or the bench inputs.
+- 9 No "guaranteed", no torque ordering (`TORQUE_ORDER_WORDS`: no hit), no re-lock. Every N·m is hot-low at the output
+  except the gearbox phrase's, named "cold-high" (D1).
+- 10 `mentions_gearbox_protection` is false on every line.
+- 11 No "no effect", "free" or "negligible"; every cost is listed with its true sign. The widened jump rule keeps a +1 mm
+  length step from reading "+0.00 N·m" at the 11.7 mm cavity.
+- 12 No grade row and no temperature quantity (T-13); the Temperature limits flip is the dashboard's verdict (D6).
+- 13 No elasticity, in °C or otherwise.
+- 14 The new caption's "alone" and each Auto line say together that the rows are the step before Auto sizes again, and no
+  drawn row moves Auto's variable. (b)'s "Hot-low torque: fails" sides are read that way.
+- 15 No "clamp" in any case (paused).
+- 16 None of the slice-2 traps appear.
+- 17 `plain_text_violations` is empty on every line. "->" is ASCII, with no U+2192 and no U+2212. "N·m" uses U+00B7 and
+  "µm" U+00B5 (no U+03BC). No cell, backlog, decision or code id.
+- 18 No number is typed in any text. No constant or template literal holds a digit, the new caption included, and every
+  number comes from the results or from `Control::step`. The new caption's two "one"s name the card's single step (1A,
+  3A) and a single control, not values.
+
+8. The context lines:
+- C1, fine. "Set by Auto; turn Auto off to edit" is true in the held row, under the new caption as under the old. The
+  control labels, check labels and Space claim axis names are the shipped ones, true in place. The shaft-joint labels
+  are true. The key-pressure labels' comma, and now their shared "alone", are SF-3, the owner's.
+- C2, fine (round 1 stands; `S3-note.txt` unchanged). The note's "each millimetre beats a millimetre of radius" agrees
+  with the card. The 2/cos(pi/N) slope is for the lessons slice.
+- C3, fine at (a), (b), (c), (e), (e2) and the one-flip design ("margin +0.005 N·m (+0.3 %)"). At a file's Required of
+  1e-300 or coefficient of 1e300 it prints about 300 digits, as main's format did: FO-4.
+- C4, fine. With the card closed, nothing near Magnets per ring says Auto sizes again after a count change (T-8). That
+  is an omission, not a false text: the Auto row and the locked slider say Auto owns that size.
+
+9. Verdict: PASS.
+- Applied here: no must-fix item remains. Round 1's MF-1 (`CAPTION`) is applied and passes.
+- Offered here: SF-2 (`SHOWN_NO_HOT_LOW`), and SF-1 in its revised words only. Round 1's SF-1 text is false at the 11.7 mm
+  cavity and is not to be applied.
+- For the owner at the STOP, apart from the verdict:
+  - FO-1 (`END_OF_RANGE`: "outside the slider's range");
+  - FO-2 (the boss plateau rule: "not a step: the cup diameter does not change by the step");
+  - FO-3 (a count below the slider's range: "No step is compared while the magnet count of the design shown is below
+    the slider's range.");
+  - FO-4 (the number format at a design file's magnitudes: four significant digits);
+  - SF-3 (the key-pressure labels: "... with the key alone");
+  - SF-4 (T-14's one-flip decimals).
+- Information for the owner's O-1 ruling (no new text): at the 11.7 mm cup cavity, 9A as written would draw "+1 mm ->
+  +0.00 N·m (+0.0 %)" for a step that lengthens the coupling by 1 mm and leaves the overlap where it was. The widened
+  rule draws `JUMP` there.
