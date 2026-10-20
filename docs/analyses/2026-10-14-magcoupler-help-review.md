@@ -5053,7 +5053,7 @@ Observation, recorded for the owner (no change asked in this round):
 
 Slice 3's G-3 review of every new and changed on-screen text of the torque card (plan
 `docs/superpowers/plans/2026-10-20-magcoupler-torque-card.md`, Task 7) is recorded in this section, with each
-round's report as returned.
+round's report as returned. The text re-reviews of later changes follow its reports, in the order they ran.
 
 - Scope: the torque card's strings (spec `docs/superpowers/specs/2026-10-19-magcoupler-torque-card-design.md`,
   sections 4 and 10.1 step 2), reviewed under the same G-3 rule:
@@ -6093,3 +6093,132 @@ Round 1's record holds each one's full reasoning and pin.
 - Information for the owner's O-1 ruling (no new text): at the 11.7 mm cup cavity, 9A as written would draw "+1 mm ->
   +0.00 N·m (+0.0 %)" for a step that lengthens the coupling by 1 mm and leaves the overlap where it was. The widened
   rule draws `JUMP` there.
+
+### Re-review after a change by the implementer after its review (2026-10-20)
+
+Slice 3 Task 8 (commit 1ee7441, on 3ed849b) added two steps to the gui-smoke workflow's calculator step
+(`.claude/workflows/gui-smoke.js`), on the share link opened again with a timer on every frame the app draws. The card
+step quotes the torque card's reviewed texts whole: `CARD_HEADING`, `CAPTION` in round 1's MF-1 words,
+`AUTO_HOLDS_LENGTH` and the held row `held_line(Control::OverallLength)`; it names the other three rows by their
+starts. The drag step times one drag of the Magnet face gap slider frame by frame. The first view names the card as
+well. Test 26 in `app::tests::the_smoke_test_share_link_opens_its_design` pins the quotes and asks that the script
+define the frame timer `FRAME_TIMER` (SF-1 below). The README describes the two steps in its gui-smoke paragraph and
+test 26 in its `src/app.rs` row. No on-screen string changed: the change quotes reviewed text outside the app. It had a
+G-3 text re-review in a fresh context at HEAD 1ee7441. The reviewer's report for the record follows unchanged (full
+answer: `.superpowers/sdd/2026-10-20-magcoupler-torque-card/textreview-T8-a-change-by-the-implementer-after-its-review-1.md`).
+
+- Reviewer: fresh context, session model, 2026-10-20; G-3 text re-review of slice 3 Task 8's changes after T7's G-3
+  review passed (round 1). Read-only: it wrote only its answer and build output under `magcoupling-rs/target`. The
+  guidance dump (`guidance_strings_for_review`) gave 564 records, equal record for record to T7's round-2 sheet
+  `magcoupling-rs/target/g3/S3-guidance.txt`.
+- Verdict: PASS, no must-fix. The prompt and the README quote each card text byte for byte as the code holds it at
+  3ed849b and at 1ee7441. Every claim the new text makes about the page is true in the code at the smoke design, (b):
+  the defaults with a 1.5 mm face gap and Auto on the magnet length, solved at 14.18 mm. No added line of the script
+  or the README writes a trap of spec 4.4.
+- Should-fix offered, none applied in this round; all four stay open for the controller:
+  - SF-1 (`src/app.rs`, test 26's frame-timer pin; test strength, outside the wording scope; medium under the owner's
+    "well-tested" rule; the implementer's C-1, confirmed): the pin stays green when `FRAME_TIMER` stops doing its job,
+    because "drawElements" also appears in the comment above the constant. With the constant's body set to spec 7.2's
+    first timer, which keeps every refresh, the test still passes.
+    - Offered: read the constant's own line (the line starting `const FRAME_TIMER =`) and assert that it holds both
+      `drawElements` and `if (window.__drew)`. The T8 report's plant (the body set to the stub's first timer) then
+      fails it, and it passes once the plant is undone.
+    - Option B: do nothing, and keep the gitignored stub `magcoupling-rs/target/gui-smoke-stub.cjs` as the behaviour
+      check; T10 could run it before the release smoke.
+  - SF-2 (README :712, the `src/app.rs` row of the Tests table; low; pairs with SF-1): the row leaves out the test's
+    frame-timer assertion.
+    - Old (a substring of the row, unique): "and names the other three rows by their starts (slice 3, test 26);"
+    - New with SF-1: "and names the other three rows by their starts (slice 3, test 26), and the line of its frame timer `FRAME_TIMER` holds the WebGL draw-call test (`drawElements`, `if (window.__drew)`; plan review 4.1);"
+    - New without SF-1, claiming only what the current pin checks: "and names the other three rows by their starts (slice 3, test 26), and the script defines the frame timer `FRAME_TIMER` (plan review 4.1);"
+  - SF-3 (README :641, the gui-smoke paragraph; low): the release run's requirement leaves out the move (with
+    `frame_check: true` the script also fails a drag that did not move the gap), and "3 px each way 60 times" can read
+    as 60 round trips, where the loop makes 60 moves in all, alternately 3 px right and 3 px left of the press.
+    - Old (a substring of the line, unique): "and drags the Magnet face gap slider 3 px each way 60 times, 50 ms apart: the drag's drawn-frame count, median, p95 and slowest frame are recorded on every run, and with `frame_check: true` (the release run) at least 30 frames and a p95 within one 60 fps frame (16.7 ms) are required;"
+    - New: "and drags the Magnet face gap slider's handle, moving the pointer 60 times, 50 ms apart, alternately 3 px right and 3 px left of where it pressed: the drag's drawn-frame count, median, p95 and slowest frame are recorded on every run, and with `frame_check: true` (the release run) a drag that moved the gap, at least 30 frames and a p95 within one 60 fps frame (16.7 ms) are required;"
+    - Option B: do nothing; the prompt holds the exact loop, and the script holds the verdict.
+  - SF-4 (`.claude/workflows/gui-smoke.js` :85-86, a comment; low): "a slow drag frame then fails the run" reads as one
+    slow frame failing it, where the rule is the p95, and the frame count and the move also count.
+    - Old (the comment's two lines, joined): "Only the release run sets frame_check: true (slice-3 spec 7.2 step 4); a slow drag frame then fails the run. Otherwise the drag's times are recorded and never fail an ordinary or live run."
+    - New (three comment lines in the full answer, joined here): "Only the release run sets frame_check: true (slice-3 spec 7.2 step 4); a drag that did not move the gap, drew under MIN_DRAG_FRAMES frames or had a p95 over FRAME_BUDGET_MS then fails the run. Otherwise the drag's times are recorded and never fail an ordinary or live run."
+    - The meta description's "(frame_check: true fails a p95 over one 60 fps frame)" is a summary, true as far as it
+      goes; no change asked.
+- No text changed in this round, and no on-screen string moved in 1ee7441: the guidance dump equals T7's round-2 sheet.
+
+**Report for the record (as returned).**
+
+**R-1. The quoted texts, byte for byte.** Each quote is pinned by test 26 and matches the dump's records for (b).
+
+| Prompt quote | Code | Dump record |
+|---|---|---|
+| "One step of each size control" (first view :120 and card step :129) | `CARD_HEADING`, `torque_card.rs:53` | `[card/heading]` |
+| "The change in the model's hot-low torque after one step of one control alone." | `CAPTION`, :55-56 (T7 round 1's MF-1, 2ac62e9) | `[card/(b)/Auto AxialLength/00]` |
+| "Auto sets the magnet length again after a change; each row keeps the length shown." | `AUTO_HOLDS_LENGTH`, :59-60 | `/01` |
+| "Overall length: Set by Auto; turn Auto off to edit" | `held_line(Control::OverallLength)` = `size_controls::LENGTH` + ": " + `SET_BY_AUTO` | `/03` |
+| row starts "Outside diameter:", "Magnet face gap:", "Magnets per ring:" | `Control::label()`: `DIAMETER`, `label_for(FACE_GAP)`, `label_for(coupling.npole)` | `/02`, `/04`, `/05` |
+
+- The implementer quoted the reviewed caption, not the draft that spec 4.1, spec 8.6 and plan Step 5 (G) show. This is Step 4's rule.
+- No other card text is quoted.
+- No typed number in the prompt is a card value. The prompt's own figures (1.50 mm, 3 px, 60 moves, 50 ms, 30 frames, 16.7 ms) are spec 7.2's.
+
+**R-2. Each claim of the prompt, checked against the code at the smoke design.**
+
+| Claim | Evidence | Result |
+|---|---|---|
+| First view and card step: the card opens between the readouts and the drawing at 1280 x 800, under the welcome strip | The card is drawn in `view_ui` after `torque_readouts_ui` and the exploration lines, before `geometry_ui`. Test 19 checks `smoke_design()` at 1280 x 800 (open, under the Pull-out row, above the drawing, every line drawn, drawing at least 160 pt). The strip shows in `card_tab`'s frames (test 20a counts `WELCOME`). Spec 6.2 measures rule 3 leaving (b) 172.9 pt in the app's style. At the smoke design no exploration line shows: the blocks fit, and the key wall is 3.40 mm, at least 2.5. | True |
+| "with a link starting "Why:" beside it" | The header's one wrapping row holds the heading and `why_note_link(ui, SIZE_TAB_NOTE)`. `why_note_text` gives "{WHY}: {title}". The row does not wrap at 1280 x 800 (spec 6.2, test 25). | True |
+| The order: caption, Auto line, then the rows Outside diameter, the held Overall length row, Magnet face gap, Magnets per ring | `TorqueCard::lines(auto)`; dump records 00-05 for (b) | True |
+| "the drawing still shows below the card" | The body's cap keeps `drawing_floor` (160 pt over three list rows) | True |
+| "the design file loaded there has no sizing, so no row reads "Set by Auto" and no Auto line shows" | `read_design_json` takes no "sizing" key as `SizingState::default()`, which is MagnetsToTorque, i.e. Auto off. `set_design` applies it. app.rs's test decodes the file to `Design::default()` with a 2 mm gap. | True |
+| "the dashboard's Why link opened the Equation panel, which closes the card" | `CardView.equation_open` decides the default again. Rule 1 closes the card while no user choice is made: test 21, "the Equation panel's opening closes it". | True |
+| "the tooltip step left the Geometry tab selected, where no card is drawn" | `view_ui`: `CentreView::Geometry` draws `geometry_ui` alone | True |
+| The page opened again starts fresh: Size tab, Equation panel closed, strip shown | The eframe dependency has no `persistence` feature; `WebOptions::default()`; no `App::save`. `welcome_dismissed`, `card_choice` and `explorer.open` are session state. | True |
+| "it reads 1.50 mm" | The gap input is linear, 0.3-5.0 mm, step 0.01, so `max_decimals(2)`. The value box's decimals are ceil(log10(aim radius / gradient)) = ceil(log10(1 / 0.055)) = 2 at a device pixel ratio of 1. | True (see R-4 d) |
+| "Auto on the magnet length leaves this slider free" | `is_locked(label)` holds only for `variable_slider(AxialLength)` = `LENGTH` | True |
+| `drag_moved`: the gap reads other than 1.50 mm after the drag | The last of the 60 moves (i = 59) leaves the pointer 3 px left of the press. On spec 7.2's rail (0.055 mm a point) that is about 0.16 mm, so about 1.34 mm. | True |
+| "expected 0: the moves come 50 ms apart, so the 0.25 s debounce never runs a solve mid-drag" | Each move changes the design and so the solve key, and the 0.25 s wait restarts every 50 ms. Independently, `run_sizing` passes `editing` (a pointer button down) to `SizingRunner::update`, which restarts the wait on every editing frame. The solve after the release comes at least about 0.2 s after `page.off`. | True; the stated reason is sufficient, though not the only one. The wording is spec 7.2's. |
+| The `FRAME_TIMER` comment: an animation frame at every refresh, a paint only when something changed, the glow painter's `drawElements` | `paint_and_schedule` requests a frame each time and paints only if `needs_repaint`. egui_glow draws meshes with `draw_elements`. | True |
+| The verdict and `passed` (:133, :136-142) | Spec 7.2 steps 3 and 4. The stub's ten lines match the plan's expectation. | True |
+
+**R-3. The README, checked against the prompt and the test.**
+- :633, the first view names the card "(open, between the readouts and the drawing)": true (R-2).
+- :641:
+  - true: the reopened link; the timer's parenthesis; "checks the torque card's caption, Auto line and four rows (the Overall length row held by Auto among them)"; the recorded figures;
+  - incomplete: the drag's wording and the release requirement (SF-3).
+- :643, the test's names: true, and it matches test 26.
+- :712, test 26's row: true; the frame-timer assertion is missing (SF-2).
+- The README's own torque card section (:230-239) agrees: open by default, closed while the Equation panel is open, in a region under 400 points, or under the drawing's floor.
+
+**R-4. Robustness notes. No change asked; for T10's live run.**
+- **a. The T8 report's C-2 misreads spec 6.2.**
+  - Its 7.4 pt is the margin before the drawing's 8-row callout list starts to scroll at (b) ("not measured"). It is not rule 3's margin.
+  - Rule 3 leaves (b) 172.9 pt in the app's style at 1280 x 800 with the strip: 588 - 4 - 215.1 - 196.
+  - In the browser the share link's status line, "Design loaded from the share link", adds a header row that the default-design measurement did not have, about 20 pt (the header's status at `panel.rs:1291`). The margin is then about 150 pt.
+  - Past 7.4 pt the list scrolls and the drawing keeps its 160 pt, so "the drawing still shows below the card" holds.
+- **b. Where the browser decides the default.** It decides on the first frame with a 1280 x 800 screen, likely before the 0.25 s solve.
+  - The design shown then is the smoke inputs with the default 12.70 mm magnets: `SizingRunner::shown` returns the inputs before any solve.
+  - Its card has the same six lines, of similar length.
+  - Test 19 decides after the solve (`card_tab`), so no test covers the first-frame decision.
+  - With about 150 pt of margin the decision is the same. T10's run is the first browser check.
+- **c. Two kept frames time the paint alone.**
+  - eframe 0.32.3 runs the app's logic inside the pointerdown and pointerup handlers (`events.rs:530`, `:584`). The next animation frame only paints (`has_outstanding_paint_data`, `:32-39`).
+  - So the press's kept time is the paint alone. So is the release's, if it lands before the read.
+  - The 60 moves' frames are timed whole: mousemove only queues the event (`:625-650`).
+  - This is 1 or 2 of the drag's kept frames, so the p95 is not moved materially. The comment's "the median and the p95 are theirs" stays true of the kept callbacks.
+- **d. The value box's decimals depend on the device pixel ratio.** egui takes them from its aim radius, the physical pixel size. The box reads "1.50 mm" from a device pixel ratio of 1 to about 1.8, and "1.5 mm" at 2. The prompt's locating hint and `drag_moved` ("a value other than 1.50 mm") still work.
+- **e. The implementer's C-3.** The README states 30 frames, 16.7 ms, 60 moves, 50 ms and 3 px literally, and no test ties them to the script. T9's sweep could quote them from it.
+
+**R-5. Traps (spec 4.4) over every added line of the script and the README.**
+- None is written:
+  - no ranking word;
+  - no step extrapolated, and no jump read as a slope;
+  - no order of torques, no "guaranteed", no "protects", no "clamp";
+  - no Auto wording that says the torque rises.
+- A whole-word scan of the added lines found two words, both in the agent's instructions and code, not on screen:
+  - "free": "leaves this slider free", meaning not locked; not trap 12's "free";
+  - "rank": the nearest-rank percentile.
+- The caption still guards trap 4 ("after one step"), as spec 4.4's row asks, in its reviewed words.
+
+**R-6. Open items carried, untouched by T8.**
+- T7's FO-1 to FO-4, SF-3 and SF-4 are for the owner at the STOP. SF-1 and SF-2 are Task 10's leftovers.
+- The prompt quotes `CAPTION` as reviewed (D4, MF-1). If the owner restores 12A's draft at the STOP, test 26 moves the prompt with it.
+- The implementer's C-4 stands for T9. The spec (4.1, and 4.4's trap row) and the plan still quote the draft caption; T9 quotes the reviewed one.
