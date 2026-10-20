@@ -267,6 +267,44 @@ mod tests {
         let fit =
             crate::gui::guidance::guide(crate::gui::guidance::FIT_CHECK).expect("the fit guide");
         assert!(script.contains(fit.label), "the dashboard's last row");
+        // Slice 3 (spec 8.6, test 26): the card step quotes the torque card whole as the page
+        // draws it at the smoke design (Auto on the magnet length): the heading, the caption, the
+        // Auto line and the held row; it names the other three rows by their starts. The G-3
+        // review (plan T7) set the words before the prompt quoted them; this keeps it current.
+        {
+            use crate::gui::torque_card::{
+                AUTO_HOLDS_LENGTH, CAPTION, CARD_HEADING, Control, held_line,
+            };
+            for (what, text) in [
+                ("the card's heading", CARD_HEADING.to_owned()),
+                ("the card's caption", CAPTION.to_owned()),
+                ("the card's Auto line", AUTO_HOLDS_LENGTH.to_owned()),
+                ("the held row", held_line(Control::OverallLength)),
+            ] {
+                assert!(
+                    script.contains(&text),
+                    "the smoke prompt quotes {what} whole: {text}"
+                );
+            }
+            for control in [
+                Control::OutsideDiameter,
+                Control::FaceGap,
+                Control::MagnetsPerRing,
+            ] {
+                let start = format!("{}:", control.label());
+                assert!(
+                    script.contains(&start),
+                    "the smoke prompt names the row starting {start}"
+                );
+            }
+        }
+        // The drag's timer keeps only the frames the app draws (performance review 4.1): eframe
+        // asks for an animation frame at every display refresh, so the timer marks a frame by its
+        // WebGL draw call.
+        assert!(
+            script.contains("const FRAME_TIMER = `") && script.contains("drawElements"),
+            "the smoke prompt's frame timer keeps only the frames the app draws"
+        );
         // The app opens the link and the solve succeeds after its debounce.
         let ctx = egui::Context::default();
         let mut app = MagcouplingApp::new(&ctx);
