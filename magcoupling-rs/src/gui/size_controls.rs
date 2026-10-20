@@ -17,7 +17,7 @@ use crate::engine::size_controls::{
 };
 use crate::engine::sizing::FreeVariable;
 use crate::gui::dashboard::{end_effect_out_of_range, why_note_link};
-use crate::gui::format::{TORQUE_DECIMALS, change_decimals, fixed, signed_change, signed_percent};
+use crate::gui::format::{TORQUE_DECIMALS, change_decimals, fixed, signed_fixed, signed_percent};
 use crate::gui::guidance::{Consequences, SIZE_TAB_NOTE};
 use crate::gui::input_ui::{hint_line, slider, weak_line};
 use crate::gui::inputs::InputCatalogue;
@@ -185,14 +185,14 @@ pub fn pullout_label(op_temp_C: f64) -> String {
 pub fn torque_gap_text(hot_low_Nm: f64, required_Nm: f64) -> (String, bool) {
     let meets = hot_low_Nm >= required_Nm;
     let gap_Nm = hot_low_Nm - required_Nm;
-    let torque = if meets {
-        format!("margin {} N·m", signed_change(gap_Nm, TORQUE_DECIMALS))
+    // The gap's own decimals, one rule for a margin and a shortfall.
+    let decimals = change_decimals(gap_Nm, TORQUE_DECIMALS);
+    let (word, torque) = if meets {
+        ("margin", signed_fixed(gap_Nm, decimals))
     } else {
-        format!(
-            "short {} N·m",
-            fixed(gap_Nm.abs(), change_decimals(gap_Nm, TORQUE_DECIMALS))
-        )
+        ("short", fixed(gap_Nm.abs(), decimals))
     };
+    let torque = format!("{word} {torque} N·m");
     let text = if required_Nm > 0.0 {
         format!("{torque} ({})", signed_percent(gap_Nm / required_Nm))
     } else {
