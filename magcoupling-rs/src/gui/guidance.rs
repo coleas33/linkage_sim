@@ -51,7 +51,7 @@ use crate::engine::model::{
     ResolvedMagnet, RingFit, blocks_fit, end_effect_in_range, resolve_magnets, ring_fits,
 };
 use crate::engine::shaft_joint::{
-    self, CannotBeMade, Cause, Floor, HubFitLimit, ImpossibleValue, JointTerms, NoWall,
+    self, CAUSES, CannotBeMade, Cause, Floor, HubFitLimit, ImpossibleValue, JointTerms, NoWall,
 };
 use crate::engine::size_controls::{
     DiameterBreakdown, DiameterFit, FIT_TOLERANCE_MM, LengthBreakdown, diameter_breakdown,
@@ -67,7 +67,7 @@ use crate::gui::format::{
 };
 use crate::gui::inputs::{InputCatalogue, optional_seed, section_label};
 use crate::gui::pickers::{CUSTOM, GRADE_PATHS, PART_PATHS};
-use crate::gui::plain_text::display_label;
+use crate::gui::plain_text::{display_label, label_for};
 use crate::gui::size_controls;
 use crate::{DesignInputs, DesignResults, compute_all};
 
@@ -290,6 +290,18 @@ impl JointSide {
             Cause::Key => self.key_fixes,
         }
     }
+
+    /// The result the torque card quotes for the joint's `cause` term, and its decimals (slice 3
+    /// spec 3.6): the smallest measured interference that holds [µm], the bore stress [MPa], the
+    /// fitting temperature needed [°C] and the key pressure [MPa].
+    const fn quoted(&self, cause: Cause) -> (&'static str, usize) {
+        match cause {
+            Cause::Slips => (self.needed, 2),
+            Cause::BoreStress => (self.stress, 1),
+            Cause::CannotBeFitted => (self.fit_temp, 1),
+            Cause::Key => (self.key, 1),
+        }
+    }
 }
 
 /// The two shaft joints. A larger face gap lowers cold-high, and with it the torque each fit
@@ -489,6 +501,16 @@ fn axis_reserves(results: &DesignResults) -> [f64; 3] {
     ]
 }
 
+/// Each space-claim axis's name and the result path of the size its reserve is the claim less,
+/// in [`axis_reserves`]' order: the one table of the axes' names and sizes (slice 3 spec 3.6).
+/// The space claim's Problem names an axis past its claim by it, and [`check_terms`] quotes the
+/// size on the torque card.
+pub(crate) const SPACE_CLAIM_AXIS_SIZES: [(&str, &str); 3] = [
+    ("Rotating diameter", "metal.rotating_od_mm"),
+    ("Overall length", "metal.axial_stack_mm"),
+    ("Large-diameter stack", "metal.large_dia_stack_mm"),
+];
+
 /// The space claim's fixes ([`Fixes::PerTerm`]): for each axis over its claim, each of its
 /// inputs whose step helps ([`helps`] against the axis's reserve), each input once. An axis
 /// whose size or claim is not a number shows none: its Problem asks for the number.
@@ -661,6 +683,172 @@ fn level_of(check: &str, inputs: &DesignInputs, results: &DesignResults) -> Leve
 /// Whether `check` fails or asks for a look in this design: a Problem is built only then.
 fn failing(check: &str, inputs: &DesignInputs, results: &DesignResults) -> bool {
     level_of(check, inputs, results) != Level::Good
+}
+
+// ------------------------------------------------------------------ the check terms
+
+/// The name the torque card gives the cup wall's quoted quantity, the wall the flux needs
+/// (`materials.backiron_thickness_needed_mm`): "Cup wall: wall needed +0.07 mm" (slice 3 spec
+/// 4.1; a draft until the slice's G-3 review sets it).
+pub const WALL_NEEDED: &str = "wall needed";
+
+/// The name the torque card gives the gearbox check's quoted quantity, cold-high at the gearbox
+/// input (`metal.cold_high_input_Nm`): the torque it is (slice 3 spec T-11), "Gearbox input
+/// torque: cold-high +0.03 N·m"; a draft until the slice's G-3 review sets it.
+pub const COLD_HIGH: &str = "cold-high";
+
+/// The quantity the torque card quotes for a term of a check that fails (slice 3 spec 3.6): the
+/// result at `path`, named `name` after the check's label where the label alone does not name
+/// it, to `decimals` places of the result's own unit (its metadata's, never typed).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Quoted {
+    pub path: &'static str,
+    pub name: Option<&'static str>,
+    pub decimals: usize,
+}
+
+/// One term of a counted check's verdict (slice 3 spec 3.6): its name, its margin (larger is
+/// better), whether it passes as the verdict compares it, and the quantity the torque card
+/// quotes for it, if any.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct CheckTerm {
+    pub name: String,
+    pub margin: f64,
+    pub passes: bool,
+    pub quoted: Option<Quoted>,
+}
+
+/// The terms of `check`'s verdict, in a fixed order so two designs' lists pair up: the one table
+/// the fix tests' margins and the torque card's read (slice 3 spec 3.6). The temperature terms
+/// are the guide's own ([`TemperatureTerm`]), named as they print, and quote nothing (T-13: they
+/// read stored 3D fields that do not follow a step). The shaft joints' are the engine's four
+/// causes of each joint, inner hub first ([`shaft_joint::joints`]), always eight: a joint not
+/// judged (no wall, a reversed band) or a check that cannot be made passes them. The clamp has
+/// none here (the fix tests add their own; its verdict moves with no single slider step), nor
+/// has a path that is no guide's check.
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the torque card's margins call it (slice 3 Task 4, which removes this)"
+    )
+)]
+pub(crate) fn check_terms(
+    check: &str,
+    inputs: &DesignInputs,
+    results: &DesignResults,
+) -> Vec<CheckTerm> {
+    let term = |name: &str, margin: f64, passes, quoted| CheckTerm {
+        name: name.to_owned(),
+        margin,
+        passes,
+        quoted,
+    };
+    let at_least_zero = |name, margin: f64, quoted| term(name, margin, margin >= 0.0, quoted);
+    let quote = |path, name, decimals| {
+        Some(Quoted {
+            path,
+            name,
+            decimals,
+        })
+    };
+    let (m, md) = (&results.model, &results.metal);
+    match check {
+        // The row's own number is this term's quantity: never quoted again.
+        HOT_MIN => vec![at_least_zero(
+            "hot-low torque",
+            md.torque_hot_low_Nm - inputs.metal.required_min_Nm,
+            None,
+        )],
+        CLEARANCE => vec![at_least_zero(
+            "running clearance",
+            md.min_running_clearance_mm - inputs.metal.residual_target_mm,
+            quote("metal.min_running_clearance_mm", None, 2),
+        )],
+        CUP_WALL => vec![at_least_zero(
+            "cup wall",
+            results.materials.cup_wall_corner_mm - results.materials.backiron_thickness_needed_mm,
+            quote(
+                "materials.backiron_thickness_needed_mm",
+                Some(WALL_NEEDED),
+                2,
+            ),
+        )],
+        TEMPERATURE => TemperatureTerm::ALL
+            .into_iter()
+            .map(|t| {
+                let margin = t.margin(inputs, results);
+                term(&format!("{t:?}"), margin, !t.fails(inputs, results), None)
+            })
+            .collect(),
+        SPACE_CLAIM => ["diameter", "overall length", "large-diameter bay"]
+            .into_iter()
+            .zip(axis_reserves(results))
+            .zip(SPACE_CLAIM_AXIS_SIZES)
+            .map(|((name, reserve), (axis, size))| {
+                at_least_zero(name, reserve, quote(size, Some(axis), 2))
+            })
+            .collect(),
+        GEARBOX => vec![at_least_zero(
+            "gearbox input torque",
+            inputs.coupling.gearbox_input_rating_Nm - md.cold_high_input_Nm,
+            quote("metal.cold_high_input_Nm", Some(COLD_HIGH), 2),
+        )],
+        // The engine's four terms of each joint, with the guide's margins (BL-064 spec 5.2). A
+        // joint that is not judged (no wall, a reversed band, or the check cannot be made) passes
+        // them; with no keyway the key terms pass with a margin of +inf.
+        SHAFT_JOINT => {
+            // Not judged while the check cannot be made (`shaft_joints` is an `Err`).
+            let judged = shaft_joints(inputs, results).is_ok();
+            let links = shaft_joint_links(inputs, results);
+            shaft_joint::joints(&inputs.shaft_joint, &links)
+                .iter()
+                .flat_map(|joint| {
+                    CAUSES.map(|cause| {
+                        let passes = !(judged && joint.determinate() && joint.fails(cause));
+                        let quoted = joint_side(joint.name).and_then(|(_, side)| {
+                            let (path, decimals) = side.quoted(cause);
+                            quote(path, Some(label_for(path)), decimals)
+                        });
+                        term(
+                            &joint_term(joint.name, cause),
+                            joint.margin(cause),
+                            passes,
+                            quoted,
+                        )
+                    })
+                })
+                .collect()
+        }
+        END_EFFECT => vec![term("end-effect factor", m.f_end, m.f_end > 0.0, None)],
+        // The engine's rule ring by ring; the margin is the flat's slack, or what is left of the
+        // arcs' share of the circle.
+        FIT_CHECK => ring_fits(&inputs.coupling, m)
+            .into_iter()
+            .zip(["inner ring", "outer ring"])
+            .map(|(ring, name)| {
+                let margin = match ring {
+                    RingFit::Flat { width_mm, flat_mm } => flat_mm - width_mm,
+                    RingFit::Arc { share } => 1.0 - share,
+                };
+                term(name, margin, ring.fits(), None)
+            })
+            .collect(),
+        // CLAMP, and any path that is no guide's check.
+        _ => Vec::new(),
+    }
+}
+
+/// The name of the shaft joint `joint`'s term `cause` in [`check_terms`]: "inner hub slips",
+/// "cup bore stress", "inner hub fitting", "cup key".
+fn joint_term(joint: &str, cause: Cause) -> String {
+    let term = match cause {
+        Cause::Slips => "slips",
+        Cause::BoreStress => "bore stress",
+        Cause::CannotBeFitted => "fitting",
+        Cause::Key => "key",
+    };
+    format!("{joint} {term}")
 }
 
 // ------------------------------------------------------------------ the fixes
@@ -2580,36 +2768,32 @@ fn gearbox_conflict(inputs: &DesignInputs, results: &DesignResults) -> Option<St
 fn space_claim_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<String> {
     failing(SPACE_CLAIM, inputs, results).then(|| {
         let h = &results.housing;
-        // (axis, its overshoot, the overshoot's path, the dimension's, the claim's, the claim's name)
-        let axes = [
+        // Each axis's overshoot, the overshoot's path, the claim's and the claim's name, in
+        // SPACE_CLAIM_AXIS_SIZES' order (the axis's name and its dimension's path).
+        let overshoots = [
             (
-                "Rotating diameter",
                 h.diameter_overshoot_mm,
                 "housing.diameter_overshoot_mm",
-                "metal.rotating_od_mm",
                 "metal.max_diameter_mm",
                 "claim",
             ),
             (
-                "Overall length",
                 h.length_overshoot_mm,
                 "housing.length_overshoot_mm",
-                "metal.axial_stack_mm",
                 "metal.max_overall_axial_mm",
                 "claim",
             ),
             (
-                "Large-diameter stack",
                 h.bay_overshoot_mm,
                 "housing.bay_overshoot_mm",
-                "metal.large_dia_stack_mm",
                 "metal.max_large_dia_axial_mm",
                 "bay",
             ),
         ];
-        let sentences = axes
+        let sentences = SPACE_CLAIM_AXIS_SIZES
             .iter()
-            .filter_map(|&(axis, over, over_path, dimension, claim, name)| {
+            .zip(overshoots)
+            .filter_map(|(&(axis, dimension), (over, over_path, claim, name))| {
                 if over > 0.0 {
                     Some(format!(
                         "{axis} {} is {} over the {} {name}.",
@@ -3026,9 +3210,9 @@ mod tests {
     use crate::gui::readouts::Readouts;
     use crate::gui::test_support::{
         assert_glyphs, clamp_at_its_limit, drawn_texts, hot_day, hub_overstressed, is_shaft_joint,
-        mixed_rings, n42_parts, only_the_clamp_fails, only_the_gearbox_fails, only_the_joint_fails,
-        passing_design, reversed_hub_band, shaft_joint_input_rows, shaft_joint_result_rows,
-        short_magnets, sized_frame, slider_range, small_boss, with_poles,
+        keyway_through, mixed_rings, n42_parts, only_the_clamp_fails, only_the_gearbox_fails,
+        only_the_joint_fails, passing_design, reversed_hub_band, shaft_joint_input_rows,
+        shaft_joint_result_rows, short_magnets, sized_frame, slider_range, small_boss, with_poles,
     };
     use std::collections::BTreeSet;
 
@@ -4218,15 +4402,6 @@ mod tests {
 
     // ------------------------------------------------------------------ the fixes help
 
-    /// One term of a check's verdict: its margin, larger is better, and whether it passes as
-    /// the verdict compares it.
-    #[derive(Clone, Debug)]
-    struct Term {
-        name: String,
-        margin: f64,
-        passes: bool,
-    }
-
     /// The clamp's margin for the fix tests: minus the screw sizes' total shortfall on the two
     /// slacks its fixes act on, the wall outside each screw hole (the boss) and the axial room
     /// for the screws each size needs (the clamp length). The verdict itself, whether some
@@ -4248,97 +4423,22 @@ mod tests {
         -shortfall
     }
 
-    /// The terms of `check`'s verdict in a fixed order (two designs' lists pair up). The
-    /// temperature terms are the guide's own ([`TemperatureTerm`]: a test holds them to the
-    /// verdict), named as they print.
-    fn terms(check: &str, inputs: &DesignInputs, results: &DesignResults) -> Vec<Term> {
-        let term = |name: &str, margin: f64, passes| Term {
-            name: name.to_owned(),
-            margin,
-            passes,
-        };
-        let at_least_zero = |name, margin: f64| term(name, margin, margin >= 0.0);
-        let (m, md) = (&results.model, &results.metal);
-        match check {
-            HOT_MIN => vec![at_least_zero(
-                "hot-low torque",
-                md.torque_hot_low_Nm - inputs.metal.required_min_Nm,
-            )],
-            CLEARANCE => vec![at_least_zero(
-                "running clearance",
-                md.min_running_clearance_mm - inputs.metal.residual_target_mm,
-            )],
-            CUP_WALL => vec![at_least_zero(
-                "cup wall",
-                results.materials.cup_wall_corner_mm
-                    - results.materials.backiron_thickness_needed_mm,
-            )],
-            TEMPERATURE => TemperatureTerm::ALL
-                .into_iter()
-                .map(|t| {
-                    let margin = t.margin(inputs, results);
-                    term(&format!("{t:?}"), margin, !t.fails(inputs, results))
-                })
-                .collect(),
-            CLAMP => vec![term(
-                "screw size",
-                clamp_margin(inputs, results),
-                results.clamps.index > 0,
-            )],
-            SPACE_CLAIM => vec![
-                at_least_zero("diameter", md.diameter_reserve_mm),
-                at_least_zero("overall length", md.axial_reserve_mm),
-                at_least_zero("large-diameter bay", md.large_dia_reserve_mm),
-            ],
-            GEARBOX => vec![at_least_zero(
-                "gearbox input torque",
-                inputs.coupling.gearbox_input_rating_Nm - md.cold_high_input_Nm,
-            )],
-            // The engine's four terms of each joint, with the guide's margins (spec 5.2). A joint
-            // that is not judged (no wall, a reversed band, or the check cannot be made) passes
-            // them; with no keyway the key terms pass with a margin of +inf.
-            SHAFT_JOINT => {
-                // Not judged while the check cannot be made (`shaft_joints` is an `Err`).
-                let judged = shaft_joints(inputs, results).is_ok();
-                let links = shaft_joint_links(inputs, results);
-                shaft_joint::joints(&inputs.shaft_joint, &links)
-                    .iter()
-                    .flat_map(|joint| {
-                        CAUSES.map(|cause| {
-                            let passes = !(judged && joint.determinate() && joint.fails(cause));
-                            term(&joint_term(joint.name, cause), joint.margin(cause), passes)
-                        })
-                    })
-                    .collect()
-            }
-            END_EFFECT => vec![term("end-effect factor", m.f_end, m.f_end > 0.0)],
-            // The engine's rule ring by ring; the margin is the flat's slack, or what is left
-            // of the arcs' share of the circle.
-            FIT_CHECK => ring_fits(&inputs.coupling, m)
-                .into_iter()
-                .zip(["inner ring", "outer ring"])
-                .map(|(ring, name)| {
-                    let margin = match ring {
-                        RingFit::Flat { width_mm, flat_mm } => flat_mm - width_mm,
-                        RingFit::Arc { share } => 1.0 - share,
-                    };
-                    term(name, margin, ring.fits())
-                })
-                .collect(),
-            _ => panic!("no terms for {check}"),
+    /// The terms of `check`'s verdict in a fixed order (two designs' lists pair up): the
+    /// production table ([`check_terms`]: the temperature terms are the guide's own,
+    /// [`TemperatureTerm`], which a test holds to the verdict), and the clamp's own term, whose
+    /// margin is the fix tests' ([`clamp_margin`]). Panics for a path that is no guide's check.
+    fn terms(check: &str, inputs: &DesignInputs, results: &DesignResults) -> Vec<CheckTerm> {
+        assert!(guide(check).is_some(), "no terms for {check}");
+        let mut terms = check_terms(check, inputs, results);
+        if check == CLAMP {
+            terms.push(CheckTerm {
+                name: "screw size".to_owned(),
+                margin: clamp_margin(inputs, results),
+                passes: results.clamps.index > 0,
+                quoted: None,
+            });
         }
-    }
-
-    /// The name of the shaft joint `joint`'s term `cause` in [`terms`]: "inner hub slips", "cup
-    /// bore stress", "inner hub fitting", "cup key".
-    fn joint_term(joint: &str, cause: Cause) -> String {
-        let term = match cause {
-            Cause::Slips => "slips",
-            Cause::BoreStress => "bore stress",
-            Cause::CannotBeFitted => "fitting",
-            Cause::Key => "key",
-        };
-        format!("{joint} {term}")
+        terms
     }
 
     /// The margin of the term `name` of `check`.
@@ -4361,6 +4461,238 @@ mod tests {
             .filter(|t| !t.passes)
             .map(|t| t.name)
             .collect()
+    }
+
+    #[test]
+    fn check_terms_keeps_the_fix_tests_margins() {
+        // Slice 3 spec 3.6 (test 9): the counted checks' terms are one production table,
+        // `check_terms`, which the torque card reads; the fix tests read it through `terms()`,
+        // which adds only the clamp's own term, and pass unchanged.
+        let same = |a: f64, b: f64| a.to_bits() == b.to_bits() || (a.is_nan() && b.is_nan());
+        for (name, inputs) in designs() {
+            let results = compute_all(&inputs);
+            for guide in &CHECK_GUIDES {
+                let shared = check_terms(guide.check, &inputs, &results);
+                let tested = terms(guide.check, &inputs, &results);
+                if guide.check == CLAMP {
+                    assert!(shared.is_empty(), "{name}: the clamp has no shared term");
+                    let [screw] = tested.as_slice() else {
+                        panic!("{name}: the clamp's one term: {tested:?}")
+                    };
+                    assert_eq!(screw.name, "screw size");
+                    assert!(same(screw.margin, clamp_margin(&inputs, &results)));
+                    assert_eq!(screw.passes, results.clamps.index > 0, "{name}");
+                    assert_eq!(screw.quoted, None);
+                    continue;
+                }
+                assert!(!shared.is_empty(), "{name}: {} has terms", guide.check);
+                assert_eq!(tested.len(), shared.len(), "{name}: {}", guide.check);
+                for (t, s) in tested.iter().zip(&shared) {
+                    assert!(
+                        t.name == s.name
+                            && same(t.margin, s.margin)
+                            && t.passes == s.passes
+                            && t.quoted == s.quoted,
+                        "{name}: {t:?} against {s:?}"
+                    );
+                }
+                // Every quoted quantity is a number result in a unit of spec 3.6's table, drawn
+                // through its metadata (never typed).
+                for quoted in shared.iter().filter_map(|t| t.quoted) {
+                    let unit = result_info(quoted.path)
+                        .unwrap_or_else(|| panic!("{} is a result", quoted.path))
+                        .meta
+                        .unit;
+                    assert!(
+                        ["mm", "µm", "MPa", "°C", "N·m"].contains(&unit),
+                        "{}: {unit}",
+                        quoted.path
+                    );
+                    assert!(
+                        matches!(results.get(quoted.path), Some(Value::Num(_))),
+                        "{name}: {}",
+                        quoted.path
+                    );
+                }
+            }
+            assert!(check_terms("no.such.check", &inputs, &results).is_empty());
+        }
+
+        // Spec 3.6's table at the defaults: each check's terms, margins (larger is better) and
+        // quoted quantities. Hot-low torque, Temperature limits (T-13), the end effect and the
+        // magnets' fit quote none.
+        let defaults = DesignInputs::default();
+        let before = compute_all(&defaults);
+        let (md, materials) = (&before.metal, &before.materials);
+        type Row = (String, u64, bool, Option<Quoted>);
+        let read = |check: &str| -> Vec<Row> {
+            check_terms(check, &defaults, &before)
+                .into_iter()
+                .map(|t| (t.name, t.margin.to_bits(), t.passes, t.quoted))
+                .collect()
+        };
+        let row = |name: &str, margin: f64, quoted| -> Row {
+            (name.to_owned(), margin.to_bits(), margin >= 0.0, quoted)
+        };
+        let quote = |path, name, decimals| {
+            Some(Quoted {
+                path,
+                name,
+                decimals,
+            })
+        };
+        assert_eq!(
+            read(HOT_MIN),
+            [row(
+                "hot-low torque",
+                md.torque_hot_low_Nm - defaults.metal.required_min_Nm,
+                None
+            )]
+        );
+        assert_eq!(
+            read(CLEARANCE),
+            [row(
+                "running clearance",
+                md.min_running_clearance_mm - defaults.metal.residual_target_mm,
+                quote("metal.min_running_clearance_mm", None, 2)
+            )]
+        );
+        assert_eq!(
+            read(CUP_WALL),
+            [row(
+                "cup wall",
+                materials.cup_wall_corner_mm - materials.backiron_thickness_needed_mm,
+                quote(
+                    "materials.backiron_thickness_needed_mm",
+                    Some(WALL_NEEDED),
+                    2
+                )
+            )]
+        );
+        assert_eq!(
+            read(GEARBOX),
+            [row(
+                "gearbox input torque",
+                defaults.coupling.gearbox_input_rating_Nm - md.cold_high_input_Nm,
+                quote("metal.cold_high_input_Nm", Some(COLD_HIGH), 2)
+            )]
+        );
+        let axis = |index: usize| {
+            let (name, size) = SPACE_CLAIM_AXIS_SIZES[index];
+            quote(size, Some(name), 2)
+        };
+        assert_eq!(
+            read(SPACE_CLAIM),
+            [
+                row("diameter", md.diameter_reserve_mm, axis(0)),
+                row("overall length", md.axial_reserve_mm, axis(1)),
+                row("large-diameter bay", md.large_dia_reserve_mm, axis(2)),
+            ]
+        );
+        for check in [HOT_MIN, TEMPERATURE, END_EFFECT, FIT_CHECK] {
+            assert!(
+                read(check).iter().all(|(.., quoted)| quoted.is_none()),
+                "{check}"
+            );
+        }
+        assert_eq!(read(TEMPERATURE).len(), TemperatureTerm::ALL.len());
+
+        // The shaft joints: eight terms in one order whether both joints are judged (the
+        // defaults; the inner hub slipping), one is not (no wall past a keyway through the hub,
+        // a reversed band) or the check cannot be made (a safety factor of 0), where every term
+        // passes. Each quotes its joint's result for its cause, named by its label.
+        let names: Vec<String> = [shaft_joint::INNER_HUB, shaft_joint::CUP]
+            .into_iter()
+            .flat_map(|joint| CAUSES.map(|cause| joint_term(joint, cause)))
+            .collect();
+        assert_eq!(
+            names,
+            [
+                "inner hub slips",
+                "inner hub bore stress",
+                "inner hub fitting",
+                "inner hub key",
+                "cup slips",
+                "cup bore stress",
+                "cup fitting",
+                "cup key",
+            ]
+        );
+        let unmade = design(|i| i.shaft_joint.safety_factor = 0.0);
+        for (name, inputs) in [
+            ("defaults", defaults.clone()),
+            ("joint_slips", only_the_joint_fails()),
+            ("keyway through", keyway_through()),
+            ("reversed band", breaking(reversed_hub_band)),
+            ("cannot be made", unmade.clone()),
+        ] {
+            let joint_terms = check_terms(SHAFT_JOINT, &inputs, &compute_all(&inputs));
+            let read_names: Vec<&str> = joint_terms.iter().map(|t| t.name.as_str()).collect();
+            assert_eq!(read_names, names, "{name}");
+        }
+        let unmade_results = compute_all(&unmade);
+        assert!(shaft_joints(&unmade, &unmade_results).is_err());
+        assert!(
+            check_terms(SHAFT_JOINT, &unmade, &unmade_results)
+                .iter()
+                .all(|t| t.passes)
+        );
+        let joints_quoted: Vec<Option<Quoted>> = read(SHAFT_JOINT)
+            .into_iter()
+            .map(|(.., quoted)| quoted)
+            .collect();
+        let per_cause: Vec<Option<Quoted>> = JOINT_SIDES
+            .iter()
+            .flat_map(|side| {
+                [
+                    (side.needed, 2),
+                    (side.stress, 1),
+                    (side.fit_temp, 1),
+                    (side.key, 1),
+                ]
+            })
+            .map(|(path, decimals)| quote(path, Some(label_for(path)), decimals))
+            .collect();
+        assert_eq!(joints_quoted, per_cause);
+
+        // SPACE_CLAIM_AXES, axis_reserves and SPACE_CLAIM_AXIS_SIZES name the three axes in one
+        // order: each reserve is its claim less the size SPACE_CLAIM_AXIS_SIZES names, bit for
+        // bit, at every test design; and one step of each fix of an axis, from the defaults,
+        // shrinks that size and raises that reserve.
+        let claims = [
+            "metal.max_diameter_mm",
+            "metal.max_overall_axial_mm",
+            "metal.max_large_dia_axial_mm",
+        ];
+        for (name, inputs) in designs() {
+            let results = compute_all(&inputs);
+            let reserves = axis_reserves(&results);
+            for (index, (&(_, size), claim)) in
+                SPACE_CLAIM_AXIS_SIZES.iter().zip(claims).enumerate()
+            {
+                let claim = inputs.get(claim).and_then(number).expect("a claim input");
+                let size = result_number(&results, size);
+                assert!(same(reserves[index], claim - size), "{name}: axis {index}");
+            }
+        }
+        for (index, axis_fixes) in SPACE_CLAIM_AXES.iter().enumerate() {
+            let size = SPACE_CLAIM_AXIS_SIZES[index].1;
+            for &(path, direction) in *axis_fixes {
+                let moved = moves(&defaults, &before, path, direction);
+                assert!(!moved.is_empty(), "{path} moves from the defaults");
+                for design in moved {
+                    let after = compute_all(&design);
+                    assert!(
+                        result_number(&after, size) < result_number(&before, size),
+                        "{path}: {size}"
+                    );
+                    assert!(
+                        axis_reserves(&after)[index] > axis_reserves(&before)[index],
+                        "{path}: axis {index}"
+                    );
+                }
+            }
+        }
     }
 
     /// A reading of one shaft joint's terms that holds still wherever a sweep of

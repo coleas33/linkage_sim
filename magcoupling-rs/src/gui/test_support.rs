@@ -187,6 +187,138 @@ pub(crate) fn shaft_joints_off_default() -> crate::DesignInputs {
     inputs
 }
 
+// The torque card's shared test designs (slice 3 spec section 2.1). Each doc states the
+// design's fact there, and `tests::the_shared_card_designs_read_as_section_2_1_says` pins it, so
+// a changed default that moves one fails there first, not inside a card test. "Counted checks"
+// are the 9 guides that count while the shaft-clamp section is paused, as shipped.
+
+/// The mixed-length pair (slice 3 spec 2.1, "mixed"): the library's B442 (6.35 mm long) inside
+/// and B842SH (12.7 mm) outside, the axial override blank. Hot-low 1.0099 N·m over an active
+/// length of 6.35 mm; it fails 4 of the 9 counted checks (Hot-low torque, Running clearance, Cup
+/// wall, Shaft joints) and asks for a look at Temperature limits. Apart from [`mixed_rings`],
+/// which mixes grades.
+pub(crate) fn mixed_lengths() -> crate::DesignInputs {
+    let mut inputs = crate::DesignInputs::default();
+    inputs.coupling.magnets.part_inner = "B442".to_owned();
+    inputs.coupling.magnets.part_outer = "B842SH".to_owned();
+    inputs
+}
+
+/// The mixed-length pair the other way round (slice 3 spec 2.1, "reverse"): B842SH inside, B442
+/// outside, the axial override blank. Hot-low 1.0099 N·m, as [`mixed_lengths`]; it fails 3 of
+/// the 9 counted checks (Hot-low torque, Running clearance, Cup wall) and asks for a look at
+/// Temperature limits.
+pub(crate) fn reverse_lengths() -> crate::DesignInputs {
+    let mut inputs = crate::DesignInputs::default();
+    inputs.coupling.magnets.part_inner = "B842SH".to_owned();
+    inputs.coupling.magnets.part_outer = "B442".to_owned();
+    inputs
+}
+
+/// No back iron (slice 3 spec 2.1, "(c)"): `coupling.backiron` 0, the example's measured
+/// calibration factor (1.0495, `model.f_cal`). Hot-low 1.4428 N·m; it fails 3 of the 9 counted
+/// checks (Hot-low torque, Running clearance, Shaft joints). Its Magnets per ring `-2` design
+/// takes the calibration coefficient itself, 0.95.
+pub(crate) fn no_back_iron() -> crate::DesignInputs {
+    let mut inputs = crate::DesignInputs::default();
+    inputs.coupling.backiron = 0;
+    inputs
+}
+
+/// [`no_back_iron`] with a design file's calibration coefficient of -0.95
+/// (`calibration.f_cal_original`; `validate()` passes it). The measured factor cancels it, so the
+/// design reads as [`no_back_iron`]: factor 1.0495, hot-low 1.4428 and pull-out 1.6974 N·m,
+/// failing the same 3 of 9. Its Magnets per ring `-2` design (8 poles) takes the coefficient
+/// itself: factor -0.95, hot-low -0.8505 and pull-out -1.0006 N·m with the end-effect factor
+/// 0.870, in range (slice 3 spec 2.1, "(c), `f_cal_original` -0.95").
+pub(crate) fn no_back_iron_negative_calibration() -> crate::DesignInputs {
+    let mut inputs = no_back_iron();
+    inputs.calibration.f_cal_original = -0.95;
+    inputs
+}
+
+/// An end-effect factor near its edge (slice 3 spec 2.1, "end effect at a step"): `c_end` 0.5
+/// and the axial override at 5.0 mm. Hot-low 0.1196 N·m, with the end effect in range; one
+/// millimetre shorter (the override at 4.0 mm) it is not.
+pub(crate) fn end_effect_at_a_step() -> crate::DesignInputs {
+    let mut inputs = crate::DesignInputs::default();
+    inputs.coupling.c_end = 0.5;
+    inputs.coupling.magnets.axial_length_mm = Some(5.0);
+    inputs
+}
+
+/// An odd magnet count from a design file (slice 3 spec 2.1, "odd count"): `coupling.npole` 9,
+/// which the slider (even counts) does not take. Hot-low 2.0295 N·m; the Size tab has no size
+/// controls for it (`engine::size_controls::dimensions` is `None`).
+pub(crate) fn odd_count() -> crate::DesignInputs {
+    with_poles(9)
+}
+
+/// A keyway through the hub (slice 3 spec 2.1, "keyway through"): a 16 mm bore with a 2.5 mm
+/// keyway. The hub wall past the keyway is below zero (`model.hub_wall_past_key_mm`), so the
+/// shaft joints have no wall to judge and ask for a look (Caution).
+pub(crate) fn keyway_through() -> crate::DesignInputs {
+    let mut inputs = crate::DesignInputs::default();
+    inputs.coupling.bore_mm = 16.0;
+    inputs.coupling.keyway_depth_mm = 2.5;
+    inputs
+}
+
+/// A cup cavity input shorter than the outer ring (slice 3 spec 2.1, "short cavity"):
+/// `metal.cup_depth_mm` 11.0 against B842SH's 12.7 mm, the axial override blank. The design
+/// reads as the defaults (hot-low 2.2852 N·m, failing the same 4 of 9 checks); its Overall
+/// length is 27.30 mm on a range of 18.30 to 67.10 mm.
+pub(crate) fn short_cavity() -> crate::DesignInputs {
+    let mut inputs = crate::DesignInputs::default();
+    inputs.metal.cup_depth_mm = 11.0;
+    inputs
+}
+
+/// A hot day just under the temperature verdict's edge (slice 3 spec 2.1, "temperature edge":
+/// the edge is at a hot-day ambient of 82.0913 °C): `temperature.duty.hot_ambient_C` 82.08.
+/// Hot-low 2.2852 N·m, failing the defaults' 4 of 9 checks, with Temperature limits passing.
+pub(crate) fn temperature_edge() -> crate::DesignInputs {
+    let mut inputs = crate::DesignInputs::default();
+    inputs.temperature.duty.hot_ambient_C = 82.08;
+    inputs
+}
+
+/// Forty narrow magnets that fit (slice 3 spec 2.1, "npole 40"): `coupling.npole` 40, both
+/// parts blank and both rings' manual blocks 1.2 mm wide. The blocks fit; hot-low 0.4857 N·m.
+pub(crate) fn forty_narrow_magnets() -> crate::DesignInputs {
+    let mut inputs = with_poles(40);
+    let magnets = &mut inputs.coupling.magnets;
+    magnets.part_inner.clear();
+    magnets.part_outer.clear();
+    magnets.manual_inner_width_mm = 1.2;
+    magnets.manual_outer_width_mm = 1.2;
+    inputs
+}
+
+/// An unmagnetized inner ring from a design file (slice 3 spec 2.1, "zero torque"): both parts
+/// blank and `coupling.magnets.manual_inner_br_T` 0 (the slider stops at 0.2 T; `set()` and
+/// `validate()` check only that it is finite). The model predicts zero: pull-out and hot-low
+/// 0 N·m with the end-effect factor 0.896, in range. It fails 2 of the 9 counted checks (Hot-low
+/// torque, Running clearance) and asks for a look at 2 (Shaft joints, Gearbox input torque).
+pub(crate) fn zero_torque() -> crate::DesignInputs {
+    let mut inputs = crate::DesignInputs::default();
+    let magnets = &mut inputs.coupling.magnets;
+    magnets.part_inner.clear();
+    magnets.part_outer.clear();
+    magnets.manual_inner_br_T = 0.0;
+    inputs
+}
+
+/// The defaults with the variation allowance at `variation` (`metal.variation`; a design file
+/// can hold any finite value). At 1.0 hot-low is 0 N·m while the model predicts (pull-out
+/// 2.6885 N·m, end-effect factor 0.896); at 1.5 hot-low is -1.3442 N·m (slice 3 spec 2.1,
+/// "variation 1.0").
+pub(crate) fn with_variation(variation: f64) -> crate::DesignInputs {
+    let mut inputs = crate::DesignInputs::default();
+    inputs.metal.variation = variation;
+    inputs
+}
+
 /// The defaults with a 16 mm bore in a 12 mm boss and no boss length (BL-064): the cup has no
 /// wall around its bore, so its holding, bore stress, needed and elastic results are not a
 /// number, and its key no bearing length (the web alone, 2.5 mm, under the 3 mm key), so its
@@ -532,4 +664,169 @@ pub(crate) fn xlsx_part(bytes: &[u8], name: &str) -> String {
     part.read_to_string(&mut text)
         .expect("an XML part is UTF-8");
     text
+}
+
+mod tests {
+    use super::*;
+    use crate::engine::clamps::PAUSED;
+    use crate::engine::model::blocks_fit;
+    use crate::engine::size_controls::dimensions;
+    use crate::gui::dashboard::Level;
+    use crate::gui::format::fixed;
+    use crate::gui::guidance::{counted_guides, level};
+    use crate::gui::size_controls::predicts;
+    use crate::{DesignInputs, compute_all};
+
+    // The counted checks the facts name, by result path.
+    const HOT_MIN: &str = "metal.hot_min_check";
+    const CLEARANCE: &str = "metal.clearance_check";
+    const CUP_WALL: &str = "materials.cup_wall_check";
+    const TEMPERATURE: &str = "temperature.summary.verdict";
+    const SHAFT_JOINT: &str = "shaft_joint.check";
+    const GEARBOX: &str = "gearbox.cold_high_check";
+
+    /// The counted checks (the shaft-clamp section paused, as shipped) at `want` on `inputs`, in
+    /// the guides' order.
+    fn checks_at(inputs: &DesignInputs, want: Level) -> Vec<&'static str> {
+        let results = compute_all(inputs);
+        counted_guides(PAUSED)
+            .filter(|guide| level(guide, inputs, &results) == want)
+            .map(|guide| guide.check)
+            .collect()
+    }
+
+    #[test]
+    fn the_shared_card_designs_read_as_section_2_1_says() {
+        // Slice 3 spec 2.1, each number to the decimals the section quotes it to, so a changed
+        // default that moves a design fails here first, not inside a card test.
+        let defaults_fail = [HOT_MIN, CLEARANCE, CUP_WALL, GEARBOX];
+        let none: [&str; 0] = [];
+        let hot_low = |inputs: &DesignInputs| compute_all(inputs).metal.torque_hot_low_Nm;
+
+        // The mixed-length pair and its reverse.
+        let mixed = compute_all(&mixed_lengths());
+        assert_eq!(fixed(mixed.metal.torque_hot_low_Nm, 4), "1.0099");
+        assert_eq!(fixed(mixed.model.active_length_mm, 2), "6.35");
+        assert_eq!(
+            checks_at(&mixed_lengths(), Level::Bad),
+            [HOT_MIN, CLEARANCE, CUP_WALL, SHAFT_JOINT]
+        );
+        assert_eq!(checks_at(&mixed_lengths(), Level::Caution), [TEMPERATURE]);
+        assert_eq!(fixed(hot_low(&reverse_lengths()), 4), "1.0099");
+        assert_eq!(
+            checks_at(&reverse_lengths(), Level::Bad),
+            [HOT_MIN, CLEARANCE, CUP_WALL]
+        );
+        assert_eq!(checks_at(&reverse_lengths(), Level::Caution), [TEMPERATURE]);
+
+        // No back iron, and with its calibration coefficient at -0.95: the measured factor on
+        // the design shown, the coefficient itself on its Magnets per ring -2 design.
+        let two_fewer = |mut inputs: DesignInputs| {
+            inputs.coupling.npole -= 2;
+            inputs
+        };
+        for (name, inputs) in [
+            ("no back iron", no_back_iron()),
+            (
+                "its coefficient at -0.95",
+                no_back_iron_negative_calibration(),
+            ),
+        ] {
+            let results = compute_all(&inputs);
+            assert_eq!(
+                results.model.f_cal.to_bits(),
+                results.calibration.f_cal_updated.to_bits(),
+                "{name}: the measured factor"
+            );
+            assert_eq!(fixed(results.model.f_cal, 4), "1.0495", "{name}");
+            assert_eq!(
+                fixed(results.metal.torque_hot_low_Nm, 4),
+                "1.4428",
+                "{name}"
+            );
+            assert_eq!(fixed(results.model.pullout_Nm, 4), "1.6974", "{name}");
+            assert_eq!(
+                checks_at(&inputs, Level::Bad),
+                [HOT_MIN, CLEARANCE, SHAFT_JOINT],
+                "{name}"
+            );
+            let fewer = compute_all(&two_fewer(inputs.clone()));
+            assert_eq!(
+                fewer.model.f_cal, inputs.calibration.f_cal_original,
+                "{name}: its -2 design takes the coefficient"
+            );
+        }
+        let fewer = compute_all(&two_fewer(no_back_iron_negative_calibration()));
+        assert_eq!(fewer.model.f_cal, -0.95);
+        assert_eq!(fixed(fewer.metal.torque_hot_low_Nm, 4), "-0.8505");
+        assert_eq!(fixed(fewer.model.pullout_Nm, 4), "-1.0006");
+        assert_eq!(fixed(fewer.model.f_end, 3), "0.870");
+        assert!(predicts(&fewer, fewer.model.pullout_Nm));
+        assert!(predicts(&fewer, fewer.metal.torque_hot_low_Nm));
+
+        // The end effect at a step: in range at 5.0 mm, not at 4.0 mm.
+        let at_a_step = compute_all(&end_effect_at_a_step());
+        assert_eq!(fixed(at_a_step.metal.torque_hot_low_Nm, 4), "0.1196");
+        assert!(predicts(&at_a_step, at_a_step.metal.torque_hot_low_Nm));
+        let mut shorter = end_effect_at_a_step();
+        shorter.coupling.magnets.axial_length_mm = Some(4.0);
+        let shorter = compute_all(&shorter);
+        assert!(!predicts(&shorter, shorter.metal.torque_hot_low_Nm));
+
+        // An odd count: no size controls.
+        assert_eq!(fixed(hot_low(&odd_count()), 4), "2.0295");
+        assert!(dimensions(&odd_count()).is_none());
+
+        // The keyway through the hub: no wall past it, so the joints are not judged.
+        let keyway = compute_all(&keyway_through());
+        assert!(keyway.model.hub_wall_past_key_mm < 0.0);
+        assert_eq!(checks_at(&keyway_through(), Level::Caution), [SHAFT_JOINT]);
+
+        // The short cavity: the defaults' torque and checks, a shorter Overall length.
+        let size = dimensions(&short_cavity()).expect("the short cavity has size controls");
+        assert_eq!(fixed(hot_low(&short_cavity()), 4), "2.2852");
+        assert_eq!(checks_at(&short_cavity(), Level::Bad), defaults_fail);
+        assert_eq!(
+            [
+                size.overall_length_mm,
+                size.length_range.min,
+                size.length_range.max,
+            ]
+            .map(|mm| fixed(mm, 2)),
+            ["27.30", "18.30", "67.10"]
+        );
+
+        // The temperature edge: the defaults' torque and checks, Temperature limits passing.
+        assert_eq!(fixed(hot_low(&temperature_edge()), 4), "2.2852");
+        assert_eq!(checks_at(&temperature_edge(), Level::Bad), defaults_fail);
+        assert_eq!(checks_at(&temperature_edge(), Level::Caution), none);
+
+        // Forty narrow magnets fit.
+        let forty = compute_all(&forty_narrow_magnets());
+        assert!(blocks_fit(&forty_narrow_magnets().coupling, &forty.model));
+        assert_eq!(fixed(forty.metal.torque_hot_low_Nm, 4), "0.4857");
+
+        // Zero torque: both torques 0 N·m and both shown (the end effect in range).
+        let zero = compute_all(&zero_torque());
+        assert_eq!(
+            (zero.model.pullout_Nm, zero.metal.torque_hot_low_Nm),
+            (0.0, 0.0)
+        );
+        assert!(predicts(&zero, zero.model.pullout_Nm));
+        assert!(predicts(&zero, zero.metal.torque_hot_low_Nm));
+        assert_eq!(fixed(zero.model.f_end, 3), "0.896");
+        assert_eq!(checks_at(&zero_torque(), Level::Bad), [HOT_MIN, CLEARANCE]);
+        assert_eq!(
+            checks_at(&zero_torque(), Level::Caution),
+            [SHAFT_JOINT, GEARBOX]
+        );
+
+        // The variation allowance at 1.0 and 1.5: hot-low 0 and below it, the pull-out shown.
+        let one = compute_all(&with_variation(1.0));
+        assert_eq!(one.metal.torque_hot_low_Nm, 0.0);
+        assert_eq!(fixed(one.model.pullout_Nm, 4), "2.6885");
+        assert_eq!(fixed(one.model.f_end, 3), "0.896");
+        assert!(predicts(&one, one.model.pullout_Nm));
+        assert_eq!(fixed(hot_low(&with_variation(1.5)), 4), "-1.3442");
+    }
 }

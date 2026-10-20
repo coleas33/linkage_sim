@@ -11,7 +11,8 @@
 
 use crate::engine::meta::{InputMeta, InputSet, SliderRange, Value};
 use crate::engine::size_controls::{
-    dimensions, dimensions_with_minimum_diameter, resize_diameter_with_minimum, resize_length,
+    SizeControls, dimensions, dimensions_with_minimum_diameter, resize_diameter_with_minimum,
+    resize_length,
 };
 use crate::engine::sizing::FreeVariable;
 use crate::gui::dashboard::{end_effect_out_of_range, why_note_link};
@@ -207,6 +208,56 @@ pub(crate) fn predicts(results: &DesignResults, torque_Nm: f64) -> bool {
     end_effect_out_of_range(results).is_none() && torque_Nm.is_finite()
 }
 
+/// The Outside diameter slider's lowest value (slice 3 spec 3.3): the user's Minimum OD
+/// `preference`, else the diameter range's start at the default floor, or the diameter shown
+/// where that is lower (a loaded smaller design starts with its own diameter exposed), held to
+/// the Minimum OD's own range. One expression for the controls and the torque card, each of
+/// which already holds the design's [`dimensions`] (`legacy`), so it runs no geometry.
+pub(crate) fn slider_minimum(legacy: &SizeControls, preference: Option<f64>) -> f64 {
+    let range = legacy.minimum_diameter_range;
+    preference
+        .unwrap_or(legacy.diameter_range.min.min(legacy.diameter_mm))
+        .clamp(range.min, range.max)
+}
+
+/// What a Size-tab slider does with a value (spec 3.3): the design its own mapping makes of it.
+/// The controls apply it on an edit and the torque card on each step of each control (slice 3,
+/// owner 3A: each control through its own slider's mapping), so a card side is the design the
+/// slider itself makes, and a change of a mapping reaches both.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum SliderMapping {
+    /// The Outside diameter slider: [`resize_diameter_with_minimum`] at the slider's lowest
+    /// value `minimum` ([`slider_minimum`]).
+    Diameter { minimum: f64 },
+    /// The Overall length slider: [`resize_length`].
+    Length,
+    /// The Magnet face gap or the Magnets per ring slider: its input at `path` set to the value
+    /// ([`InputSet::set`]), the magnet count as a whole number.
+    Input { path: &'static str },
+}
+
+impl SliderMapping {
+    /// The design the slider makes of `value` from `inputs`, or why its mapping refuses it.
+    pub(crate) fn design(self, inputs: &DesignInputs, value: f64) -> Result<DesignInputs, String> {
+        match self {
+            SliderMapping::Diameter { minimum } => {
+                resize_diameter_with_minimum(inputs, value, minimum)
+            }
+            SliderMapping::Length => resize_length(inputs, value),
+            SliderMapping::Input { path } => {
+                let value = if path == FreeVariable::MagnetsPerRing.path() {
+                    Value::Int(value as i64)
+                } else {
+                    Value::Num(value)
+                };
+                let mut design = inputs.clone();
+                design.set(path, value).map_err(|error| error.to_string())?;
+                Ok(design)
+            }
+        }
+    }
+}
+
 pub(crate) struct ControlsOutput {
     pub inputs: DesignInputs,
     pub minimum_diameter_mm: Option<f64>,
@@ -244,9 +295,7 @@ pub(crate) fn controls_ui(
                 .entry("coupling.inner_back_apothem_mm")
                 .expect("the diameter has input metadata");
             let range = legacy.minimum_diameter_range;
-            let mut minimum = minimum_diameter_mm
-                .unwrap_or(legacy.diameter_range.min.min(legacy.diameter_mm))
-                .clamp(range.min, range.max);
+            let mut minimum = slider_minimum(&legacy, minimum_diameter_mm);
             ui.label(MINIMUM).on_hover_text(
                 "Sets the lower end of the diameter slider without changing your current size.",
             );
@@ -270,7 +319,7 @@ pub(crate) fn controls_ui(
             // preference itself is local to this view, like the input ordering preference.
             let size = dimensions_with_minimum_diameter(inputs, minimum)
                 .expect("a bounded minimum defines a diameter range");
-            for (label, hover, path, hint, mut value, range, line) in [
+            for (label, hover, path, hint, mut value, range, mapping, line) in [
                 (
                     DIAMETER,
                     DIAMETER_HOVER,
@@ -278,6 +327,7 @@ pub(crate) fn controls_ui(
                     DIAMETER_HINT_KEY,
                     size.diameter_mm,
                     size.diameter_range,
+                    SliderMapping::Diameter { minimum },
                     consequences.diameter_line(),
                 ),
                 (
@@ -287,6 +337,7 @@ pub(crate) fn controls_ui(
                     LENGTH_HINT_KEY,
                     size.overall_length_mm,
                     size.length_range,
+                    SliderMapping::Length,
                     consequences.length_line(),
                 ),
             ] {
@@ -299,12 +350,7 @@ pub(crate) fn controls_ui(
                 output.widgets.push(response.id);
                 hint_line(ui, hint);
                 if response.changed() {
-                    let resized = if path == "coupling.inner_back_apothem_mm" {
-                        resize_diameter_with_minimum(&output.inputs, value, minimum)
-                    } else {
-                        resize_length(&output.inputs, value)
-                    };
-                    match resized {
+                    match mapping.design(&output.inputs, value) {
                         Ok(resized) => output.inputs = resized,
                         Err(error) => output.error = Some(error),
                     }
@@ -352,13 +398,9 @@ pub(crate) fn controls_ui(
             output.widgets.push(response.id);
             hint_line(ui, path);
             if response.changed() {
-                let value = if path == "coupling.npole" {
-                    Value::Int(value as i64)
-                } else {
-                    Value::Num(value)
-                };
-                if let Err(error) = output.inputs.set(path, value) {
-                    output.error = Some(format!("{error}"));
+                match (SliderMapping::Input { path }).design(&output.inputs, value) {
+                    Ok(design) => output.inputs = design,
+                    Err(error) => output.error = Some(error),
                 }
             }
             for line in &lines {
@@ -558,6 +600,104 @@ mod tests {
                 "{hover}"
             );
         }
+    }
+
+    #[test]
+    fn the_slider_minimum_is_the_preference_else_the_range_start_or_the_diameter_shown() {
+        // Slice 3 spec 3.3: the Outside diameter slider's lowest value, one expression for the
+        // controls and the torque card.
+        use crate::engine::size_controls::with_ring_radius;
+        let size =
+            |inputs: &DesignInputs| dimensions(inputs).expect("the design has size controls");
+        // Unset: the range's start at the default floor, below the diameter shown ...
+        let defaults = size(&DesignInputs::default());
+        assert!(defaults.diameter_range.min < defaults.diameter_mm);
+        assert_eq!(slider_minimum(&defaults, None), defaults.diameter_range.min);
+        // ... or the diameter shown, where a loaded design is smaller than that start (the ring
+        // at 7.5 mm through the Outside diameter slider's own mapping).
+        let smaller = with_ring_radius(&DesignInputs::default(), 7.5)
+            .expect("7.5 mm is a ring radius the Outside diameter reaches");
+        let smaller_size = size(&smaller);
+        assert!(smaller_size.diameter_mm < smaller_size.diameter_range.min);
+        assert_eq!(
+            slider_minimum(&smaller_size, None),
+            smaller_size.diameter_mm
+        );
+        // Set: the preference itself inside the Minimum OD's range (the diameter shown, as at a
+        // user's Minimum OD of 42.8 mm, included), else the nearer end of that range.
+        let range = defaults.minimum_diameter_range;
+        for inside in [
+            range.min,
+            (range.min + range.max) / 2.0,
+            defaults.diameter_mm,
+        ] {
+            assert_eq!(slider_minimum(&defaults, Some(inside)), inside);
+        }
+        assert_eq!(slider_minimum(&defaults, Some(range.min - 1.0)), range.min);
+        assert_eq!(slider_minimum(&defaults, Some(range.max + 1.0)), range.max);
+        // The controls' own: on its first frame a loaded smaller design pins its starting floor,
+        // the slider's minimum; the defaults pin none.
+        let ctx = egui::Context::default();
+        let pinned = |inputs: &DesignInputs| {
+            let consequences = Consequences::of(inputs, &compute_all(inputs), None);
+            let mut minimum = None;
+            sized_frame(&ctx, SCREEN, Vec::new(), |ui| {
+                minimum = controls_ui(ui, inputs, None, &consequences, None).minimum_diameter_mm;
+            });
+            minimum
+        };
+        assert_eq!(pinned(&smaller), Some(slider_minimum(&smaller_size, None)));
+        assert_eq!(pinned(&DesignInputs::default()), None);
+    }
+
+    #[test]
+    fn each_size_slider_makes_its_design_through_its_own_mapping() {
+        // Slice 3 spec 3.3 (owner 3A): one mapping per Size-tab slider, which the controls apply
+        // on an edit and the torque card on each step. The Outside diameter through
+        // resize_diameter_with_minimum at the slider's lowest value, the Overall length through
+        // resize_length, the gap and the magnet count as their inputs (the count whole); a value
+        // a mapping refuses says why.
+        let inputs = DesignInputs::default();
+        let size = dimensions(&inputs).expect("the defaults have size controls");
+        let minimum = slider_minimum(&size, None);
+        let diameter = size.diameter_mm + 1.0;
+        assert_eq!(
+            SliderMapping::Diameter { minimum }.design(&inputs, diameter),
+            resize_diameter_with_minimum(&inputs, diameter, minimum)
+        );
+        let length = size.overall_length_mm + 1.0;
+        assert_eq!(
+            SliderMapping::Length.design(&inputs, length),
+            resize_length(&inputs, length)
+        );
+        let gap = SliderMapping::Input {
+            path: "metal.face_gap_mm",
+        }
+        .design(&inputs, 1.5)
+        .expect("a gap on its slider");
+        let mut expected = inputs.clone();
+        expected.metal.face_gap_mm = 1.5;
+        assert_eq!(gap, expected);
+        let count = SliderMapping::Input {
+            path: FreeVariable::MagnetsPerRing.path(),
+        }
+        .design(&inputs, 8.0)
+        .expect("a count on its slider");
+        let mut expected = inputs.clone();
+        expected.coupling.npole = 8;
+        assert_eq!(count, expected);
+        assert!(
+            SliderMapping::Length
+                .design(&inputs, size.length_range.max + 1.0)
+                .is_err()
+        );
+        assert!(
+            SliderMapping::Input {
+                path: "metal.face_gap_mm",
+            }
+            .design(&inputs, f64::NAN)
+            .is_err()
+        );
     }
 }
 

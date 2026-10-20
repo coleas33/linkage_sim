@@ -132,6 +132,37 @@ pub fn mentions_gearbox_protection(text: &str) -> bool {
 /// says them.
 pub const TORQUE_ORDER_WORDS: [&str; 3] = ["strongest", "most expected", "most torque expected"];
 
+/// Words that would rank the Size tab's controls on the torque card (slice 3 spec 4.4, owner
+/// decision 14A: its rows keep the controls' order and make no sorted claim): no card text says
+/// them, matched by [`ranking_words_in`].
+pub const CARD_RANKING_WORDS: [&str; 7] = [
+    "strongest",
+    "biggest",
+    "best",
+    "most",
+    "lever",
+    "dominant",
+    "ranks",
+];
+
+/// The words of [`CARD_RANKING_WORDS`] that `text` says, in that list's order, each once. A word
+/// of `text` (a run of letters and digits) says a listed word when it is that word whole, in any
+/// case, or that word with an `s` added or taken off: "levers" and "Rank" say "lever" and
+/// "ranks"; "almost" and "bestow" say none.
+pub fn ranking_words_in(text: &str) -> Vec<&'static str> {
+    let lower = text.to_lowercase();
+    CARD_RANKING_WORDS
+        .into_iter()
+        .filter(|&listed| {
+            words(&lower).any(|word| {
+                word == listed
+                    || word.strip_suffix('s') == Some(listed)
+                    || listed.strip_suffix('s') == Some(word)
+            })
+        })
+        .collect()
+}
+
 /// Whether `c` continues a word: a letter, a digit or an underscore.
 fn is_word(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
@@ -440,6 +471,62 @@ mod tests {
             "",
         ] {
             assert!(!mentions_gearbox_protection(text), "{text}");
+        }
+    }
+
+    #[test]
+    fn the_card_ranking_words_match_whole_in_any_case_with_an_s_added_or_taken_off() {
+        // Slice 3 spec 4.4 (owner decision 14A): the torque card's ban list, owner-confirmed.
+        assert_eq!(
+            CARD_RANKING_WORDS,
+            [
+                "strongest",
+                "biggest",
+                "best",
+                "most",
+                "lever",
+                "dominant",
+                "ranks"
+            ]
+        );
+        // Each listed word says itself: as it is, in capitals, with an s added, and inside a
+        // sentence.
+        for listed in CARD_RANKING_WORDS {
+            for text in [
+                listed.to_owned(),
+                listed.to_uppercase(),
+                format!("{listed}s"),
+                format!("The {listed}, here."),
+            ] {
+                assert_eq!(ranking_words_in(&text), [listed], "{text:?}");
+            }
+        }
+        // The spec's examples, an s taken off ("rank"), and several words in the list's order,
+        // each once.
+        for (text, said) in [
+            ("levers", &["lever"][..]),
+            ("Rank", &["ranks"]),
+            ("rank", &["ranks"]),
+            ("the most-used lever", &["most", "lever"]),
+            (
+                "Ranks: the STRONGEST lever, then the strongest LEVERS.",
+                &["strongest", "lever", "ranks"],
+            ),
+        ] {
+            assert_eq!(ranking_words_in(text), said, "{text:?}");
+        }
+        // A listed word inside a longer word is not that word.
+        for text in [
+            "almost",
+            "bestow",
+            "mostly",
+            "utmost",
+            "leverage",
+            "dominance",
+            "biggestly",
+            "",
+        ] {
+            assert_eq!(ranking_words_in(text), Vec::<&str>::new(), "{text:?}");
         }
     }
 }
