@@ -483,8 +483,9 @@ mod tests {
             torque_gap_text(2.504, 2.5),
             ("margin +0.004 N·m (+0.2 %)".to_owned(), true)
         );
-        // Past the cap (two more decimals, T-9) a gap reads two decimals: float noise is not a
-        // digit to show. The word and the percent's sign still say which side it is on.
+        // Past the cap (two more decimals, T-9) a gap reads two decimals: a change that small is
+        // read as float noise (T-9), not a digit to show, though this one is a typed 0.00001 N·m
+        // shortfall. The word and the percent's sign still say which side it is on.
         assert_eq!(
             torque_gap_text(2.49999, 2.5),
             ("short 0.00 N·m (-0.0 %)".to_owned(), false)

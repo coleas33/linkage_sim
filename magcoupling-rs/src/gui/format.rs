@@ -107,9 +107,9 @@ pub(crate) fn fewest_decimals_apart<T>(
 }
 
 /// How many decimals past its own a change may take to show a digit that is not zero
-/// ([`decimals_with_a_digit`]; slice 3 spec T-9). A change still zero there is float noise, such as
-/// Auto's solve residual, and reads its own decimals with its true sign. The torque card draws
-/// a size or margin change only where it shows a digit within them.
+/// ([`decimals_with_a_digit`]; slice 3 spec T-9). A change still zero there is read as float
+/// noise (T-9), such as Auto's solve residual, and reads its own decimals with its true sign.
+/// The torque card draws a size or margin change only where it shows a digit within them.
 pub(crate) const CHANGE_EXTRA_DECIMALS: usize = 2;
 
 /// The decimals a torque change starts from on the Size tab (spec section 5: N·m to two
