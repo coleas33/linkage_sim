@@ -823,6 +823,28 @@ pub(crate) fn flat_shapes(output: &egui::FullOutput) -> Vec<&egui::Shape> {
     shapes
 }
 
+/// The geometry drawing's painted area in a frame (slice 3 spec 8 intro): the one rect filled
+/// with the extreme background colour of egui's default visuals (the headless harness's style)
+/// with 4-point corners, as `geometry_view::geometry_ui` paints it under the drawing. Panics
+/// unless exactly one such rect was painted: the clamp drawing and the notes' diagrams paint
+/// the same plate, so a test reads the drawing with neither on screen.
+pub(crate) fn drawing_rect(output: &egui::FullOutput) -> egui::Rect {
+    let background = egui::Visuals::default().extreme_bg_color;
+    let plates: Vec<egui::Rect> = flat_shapes(output)
+        .into_iter()
+        .filter_map(|shape| match shape {
+            egui::Shape::Rect(r)
+                if r.fill == background && r.corner_radius == egui::CornerRadius::same(4) =>
+            {
+                Some(r.rect)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(plates.len(), 1, "one drawing painted: {plates:?}");
+    plates[0]
+}
+
 /// Every text egui drew in a frame (widgets and painter text), nested shapes
 /// included, in paint order.
 pub(crate) fn drawn_texts(output: &egui::FullOutput) -> Vec<String> {
