@@ -1951,6 +1951,59 @@ mod tests {
             ]
         );
 
+        // The side words not drawn above, each where spec 2.3's Edges show it, and the caution
+        // flip: the keyway through the hub on the length and gap rows, no prediction at the end
+        // effect's edge, the end of the range at the user's Minimum OD, and Temperature limits
+        // turning to a caution at the temperature edge, on those three sides only.
+        let keyway = lines("keyway through");
+        assert_eq!(
+            keyway[2],
+            format!("{length}: -1 mm -> {KEYWAY_BREAKS_THROUGH}; +1 mm -> {KEYWAY_BREAKS_THROUGH}")
+        );
+        assert_eq!(
+            keyway[3],
+            format!(
+                "{gap}: -0.1 mm -> {KEYWAY_BREAKS_THROUGH}; +0.1 mm -> {KEYWAY_BREAKS_THROUGH}"
+            )
+        );
+        let edge = lines("end effect at a step");
+        assert!(
+            edge[2].starts_with(&format!(
+                "{length}: -1 mm -> {SIDE_NO_PREDICTION}; +1 mm -> "
+            )),
+            "{}",
+            edge[2]
+        );
+        assert_eq!(
+            edge[4],
+            format!("{count}: -2 -> {SIDE_NO_PREDICTION}; +2 -> {SIDE_DOES_NOT_FIT}")
+        );
+        let at_minimum = lines("(a), Min OD 42.8");
+        assert!(
+            at_minimum[1].starts_with(&format!("{od}: -1 mm -> {END_OF_RANGE}; +1 mm -> ")),
+            "{}",
+            at_minimum[1]
+        );
+        let caution = format!("{}: {FLIP_CAUTION}", label(TEMPERATURE));
+        let temperature = find(&designs, "temperature edge").card();
+        let drawn = temperature.lines(None);
+        // Each row's (- side, + side): the caution on the Outside diameter and Overall length
+        // +1 mm sides and on the count's -2 side, none on the gap row.
+        for (index, expected) in [
+            (1, [false, true]),
+            (2, [false, true]),
+            (3, [false, false]),
+            (4, [true, false]),
+        ] {
+            let texts = side_texts(&drawn[index], &temperature.rows()[index - 1]);
+            assert_eq!(
+                texts.map(|side| side.contains(&caution)),
+                expected,
+                "{}",
+                drawn[index]
+            );
+        }
+
         // (b) with Auto on the magnet length: the caption, the Auto line, then the held row in
         // its place.
         let b = find(&designs, "(b)")
