@@ -27,7 +27,9 @@ use crate::gui::format::{
     TORQUE_DECIMALS, decimals_with_a_digit, shared_change_decimals, signed_change, signed_fixed,
     signed_percent, with_unit,
 };
-use crate::gui::guidance::{FACE_GAP, check_terms, counted_guides, level, result_number};
+use crate::gui::guidance::{
+    CheckGuide, FACE_GAP, check_terms, counted_guides, level, result_number,
+};
 use crate::gui::inputs::InputCatalogue;
 use crate::gui::plain_text::label_for;
 use crate::gui::size_controls::{self, SET_BY_AUTO, SliderMapping, predicts, slider_minimum};
@@ -233,15 +235,21 @@ pub struct MarginChange {
     pub decimals: usize,
 }
 
+/// "{label} {change} {unit}" (spec 3.6): a side's size change or a failing check's quantity, the
+/// change at its own decimals from `from` ([`signed_change`]) in its `unit` ([`with_unit`]).
+fn labelled_change(label: &str, change: f64, from: usize, unit: &str) -> String {
+    format!("{label} {}", with_unit(signed_change(change, from), unit))
+}
+
 impl MarginChange {
     /// "{label} {change} {unit}", or "{label}: {name} {change} {unit}" where it has a name
-    /// (spec 3.6), the change at its own decimals ([`signed_change`]).
+    /// (spec 3.6): [`labelled_change`] at the change's own decimals.
     fn text(&self) -> String {
-        let change = with_unit(signed_change(self.change, self.decimals), self.unit);
-        match self.name {
-            None => format!("{} {change}", self.check),
-            Some(name) => format!("{}: {name} {change}", self.check),
-        }
+        let label = match self.name {
+            None => self.check.to_owned(),
+            Some(name) => format!("{}: {name}", self.check),
+        };
+        labelled_change(&label, self.change, self.decimals, self.unit)
     }
 }
 
@@ -285,8 +293,12 @@ impl Change {
             if let Some(change) =
                 change.filter(|&change| size != control && shows(change, SIZE_DECIMALS))
             {
-                let change = with_unit(signed_change(change, SIZE_DECIMALS), size.unit());
-                costs.push(format!("{} {change}", size.label()));
+                costs.push(labelled_change(
+                    size.label(),
+                    change,
+                    SIZE_DECIMALS,
+                    size.unit(),
+                ));
             }
         }
         costs.extend(self.flips.iter().map(Flip::text));
@@ -692,7 +704,7 @@ impl Shown<'_> {
                 });
             }
             if before == Level::Bad && after == Level::Bad {
-                margins.extend(self.quoted_changes(guide.check, guide.label, design, stepped));
+                margins.extend(self.quoted_changes(guide, design, stepped));
             }
         }
         Change {
@@ -707,28 +719,28 @@ impl Shown<'_> {
         }
     }
 
-    /// The quoted quantities of `check` (its guide labelled `label`), a check that fails on the
-    /// design shown and on the stepped `design`, whose results are `stepped`: of the terms of
-    /// [`check_terms`], paired term by term, each that fails on either design and quotes a
-    /// quantity, where its change shows ([`shows`]), in the result's own unit. "Either" catches
-    /// a step that puts a second term of a failing check over its limit, which no flip shows.
+    /// The quoted quantities of `guide`'s check, a check that fails on the design shown and on
+    /// the stepped `design`, whose results are `stepped`, each under the guide's label: of the
+    /// terms of [`check_terms`], paired term by term, each that fails on either design and quotes
+    /// a quantity, where its change shows ([`shows`]), in the result's own unit. "Either"
+    /// catches a step that puts a second term of a failing check over its limit, which no flip
+    /// shows.
     fn quoted_changes(
         &self,
-        check: &str,
-        label: &'static str,
+        guide: &CheckGuide,
         design: &DesignInputs,
         stepped: &DesignResults,
     ) -> Vec<MarginChange> {
-        check_terms(check, self.inputs, self.results)
+        check_terms(guide.check, self.inputs, self.results)
             .into_iter()
-            .zip(check_terms(check, design, stepped))
+            .zip(check_terms(guide.check, design, stepped))
             .filter(|(before, after)| !(before.passes && after.passes))
             .filter_map(|(before, _)| before.quoted)
             .filter_map(|quoted| {
                 let change =
                     result_number(stepped, quoted.path) - result_number(self.results, quoted.path);
                 shows(change, quoted.decimals).then(|| MarginChange {
-                    check: label,
+                    check: guide.label,
                     name: quoted.name,
                     change,
                     unit: result_info(quoted.path).map_or("", |info| info.meta.unit),
