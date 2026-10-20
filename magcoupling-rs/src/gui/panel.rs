@@ -5837,10 +5837,19 @@ mod tests {
             for line in &lines {
                 assert_eq!(count(&output, line), 1, "{line}");
             }
+            // No drawn text names the count past the slider's end as "<count> magnets", the form
+            // in which the Size tab names a count (the fit line's "... fits 10 magnets: ...").
+            // The count must stand alone: after a letter or a digit ("12 magnets", "N42
+            // magnets") it is part of another word.
             let outside = if past == "-2" { npole - 2 } else { npole + 2 };
+            let named = format!("{outside} magnets");
+            let names_outside = |text: &str| {
+                text.match_indices(&named)
+                    .any(|(at, _)| !text[..at].ends_with(char::is_alphanumeric))
+            };
             let texts = drawn_texts(&output);
             assert!(
-                !texts.iter().any(|t| t.contains(&format!("At {outside}:"))),
+                !texts.iter().any(|t| names_outside(t)),
                 "{npole}: {texts:?}"
             );
         }

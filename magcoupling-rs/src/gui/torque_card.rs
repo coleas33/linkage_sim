@@ -747,8 +747,8 @@ mod tests {
     use crate::engine::size_controls::{resize_diameter_with_minimum, resize_length};
     use crate::engine::sizing::is_valid;
     use crate::gui::guidance::{
-        CLAMP, CLEARANCE, COLD_HIGH, CUP_WALL, GEARBOX, HOT_MIN, SHAFT_JOINT, SPACE_CLAIM,
-        SPACE_CLAIM_AXIS_SIZES, TEMPERATURE, WALL_NEEDED, guide,
+        CLAMP, CLEARANCE, COLD_HIGH, CUP_WALL, Consequences, GEARBOX, HOT_MIN, RING_SIZE_STAYS,
+        SHAFT_JOINT, SPACE_CLAIM, SPACE_CLAIM_AXIS_SIZES, TEMPERATURE, WALL_NEEDED, guide,
     };
     use crate::gui::test_support::{
         CardDesign, SCREEN, assert_glyphs, card_at, card_designs, clamp_at_its_limit,
@@ -2732,7 +2732,6 @@ mod tests {
         // Was the_magnet_lines_name_each_neighbour_s_torque_and_cup_or_say_why_not: the count's
         // numbers are the card's count row, in hot-low and the Size tab's number format, and the
         // lines under Magnets per ring keep the ring-size line and the fit line only (7A).
-        use crate::gui::guidance::{Consequences, RING_SIZE_STAYS};
         let inputs = DesignInputs::default();
         let results = compute_all(&inputs);
         let npole = inputs.coupling.npole;
@@ -2762,10 +2761,6 @@ mod tests {
             "the ring-size line and the fit line: {lines:?}"
         );
         assert_eq!(lines[0], RING_SIZE_STAYS);
-        assert!(
-            !lines.iter().any(|line| line.starts_with("At ")),
-            "{lines:?}"
-        );
     }
 
     #[test]
@@ -2774,9 +2769,10 @@ mod tests {
         // magnets the -2 side, at 40 the +2 side reads 9A's "at the end of its range", and the
         // side inside the slider is the design with that count. 40 blocks fit only when narrow
         // (the default parts do not fit 40: that card is ShownDoesNotFit). An odd count (a
-        // design file's) draws the ring-size line under Magnets per ring and no count: its
-        // count row reads NOT_ON_THE_SLIDER both ways (the_words_follow_the_order_of_the_tests).
-        use crate::gui::guidance::{Consequences, RING_SIZE_STAYS};
+        // design file's) draws only the ring-size line under Magnets per ring: no count's line,
+        // and no fit line, since an odd count has no diameter range to search
+        // (`smallest_fitting_diameter` is `None`). Its count row reads NOT_ON_THE_SLIDER both
+        // ways (the_words_follow_the_order_of_the_tests).
         use crate::gui::test_support::{forty_narrow_magnets, odd_count, with_poles};
         let range = FreeVariable::MagnetsPerRing.range();
         let (fewest, most) = (range.min as i64, range.max as i64);
@@ -2815,11 +2811,7 @@ mod tests {
         let odd = odd_count();
         let lines = Consequences::of(&odd, &compute_all(&odd), None, PAUSED)
             .magnet_lines(odd.coupling.npole, None);
-        assert_eq!(lines[0], RING_SIZE_STAYS);
-        assert!(
-            !lines.iter().any(|line| line.starts_with("At ")),
-            "{lines:?}"
-        );
+        assert_eq!(lines, [RING_SIZE_STAYS]);
     }
 
     #[test]
@@ -2926,17 +2918,20 @@ mod tests {
     fn with_magnets_too_short_for_the_model_the_card_names_no_count() {
         // Was with_magnets_too_short_for_the_model_every_neighbour_reads_words: at short magnets
         // (f_end below 0) the card draws its one line and no row, so no count's number shows,
-        // and the lines under Magnets per ring name no count either.
+        // and the lines under Magnets per ring are the ring-size line and the fit line only:
+        // none for two magnets fewer or two more.
         let inputs = short_magnets();
         let results = compute_all(&inputs);
         let shown = card(&inputs, &results, None, PAUSED);
         assert_eq!(shown, TorqueCard::ShownNoPrediction);
         assert_eq!(shown.lines(None), [SHOWN_NO_PREDICTION]);
-        let lines = crate::gui::guidance::Consequences::of(&inputs, &results, None, PAUSED)
+        let lines = Consequences::of(&inputs, &results, None, PAUSED)
             .magnet_lines(inputs.coupling.npole, None);
-        assert!(
-            !lines.iter().any(|line| line.starts_with("At ")),
-            "{lines:?}"
+        assert_eq!(
+            lines.len(),
+            2,
+            "the ring-size line and the fit line: {lines:?}"
         );
+        assert_eq!(lines[0], RING_SIZE_STAYS);
     }
 }
