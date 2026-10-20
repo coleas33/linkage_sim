@@ -15,7 +15,7 @@ use crate::engine::size_controls::{
 };
 use crate::engine::sizing::FreeVariable;
 use crate::gui::dashboard::{end_effect_out_of_range, why_note_link};
-use crate::gui::format::{fixed, signed_percent};
+use crate::gui::format::{TORQUE_DECIMALS, change_decimals, fixed, signed_change, signed_percent};
 use crate::gui::guidance::{Consequences, SIZE_TAB_NOTE};
 use crate::gui::input_ui::{hint_line, slider, weak_line};
 use crate::gui::inputs::InputCatalogue;
@@ -171,31 +171,30 @@ pub fn pullout_label(op_temp_C: f64) -> String {
 }
 
 /// The hot-low torque's gap to the requirement, and whether it meets it: `hot_low_Nm >=
-/// required_Nm`, as the engine's hot minimum check (which fails `hot_low < required`). Two
-/// decimals of N·m and a whole percent of the requirement, each signed: "short 0.29 N·m
-/// (-12 %)", "margin +0.40 N·m (+16 %)". The percent is left out when the requirement is not a
-/// positive torque (the slider stops at its metadata minimum; a design file need not).
+/// required_Nm`, as the engine's hot minimum check (which fails `hot_low < required`). The Size
+/// tab's one number format (decision 10B): the N·m to the fewest decimals, from two
+/// ([`TORQUE_DECIMALS`]), that read a digit that is not zero ([`change_decimals`], at most two
+/// more), a margin signed, and one decimal of percent of the requirement with the gap's own sign
+/// ([`signed_percent`]): "short 0.29 N·m (-11.6 %)", "margin +0.40 N·m (+16.0 %)", "short
+/// 0.001 N·m (-0.0 %)", so a design a hair under its requirement never reads like a pass. The
+/// percent is left out when the requirement is not a positive torque (the slider stops at its
+/// metadata minimum; a design file need not).
 #[allow(non_snake_case)] // unit suffix
 pub fn torque_gap_text(hot_low_Nm: f64, required_Nm: f64) -> (String, bool) {
     let meets = hot_low_Nm >= required_Nm;
-    let gap_Nm = (hot_low_Nm - required_Nm).abs();
-    let (word, torque) = if meets {
-        ("margin", format!("+{}", fixed(gap_Nm, 2)))
+    let gap_Nm = hot_low_Nm - required_Nm;
+    let torque = if meets {
+        format!("margin {} N·m", signed_change(gap_Nm, TORQUE_DECIMALS))
     } else {
-        ("short", fixed(gap_Nm, 2))
+        format!(
+            "short {} N·m",
+            fixed(gap_Nm.abs(), change_decimals(gap_Nm, TORQUE_DECIMALS))
+        )
     };
     let text = if required_Nm > 0.0 {
-        // `signed_percent` writes a change that rounds to zero as "+0 %". A shortfall keeps its
-        // sign ("-0 %"), so a design a hair under its requirement never reads like a pass.
-        let percent = signed_percent(gap_Nm / required_Nm);
-        let percent = if meets {
-            percent
-        } else {
-            percent.replacen('+', "-", 1)
-        };
-        format!("{word} {torque} N·m ({percent})")
+        format!("{torque} ({})", signed_percent(gap_Nm / required_Nm))
     } else {
-        format!("{word} {torque} N·m")
+        torque
     };
     (text, meets)
 }
@@ -416,23 +415,36 @@ mod tests {
 
     #[test]
     fn the_gap_reads_short_or_a_margin_against_the_requirement() {
+        // Decision 10B: N·m to the fewest decimals, from two, that read a digit that is not
+        // zero, and one decimal of percent with the gap's own sign.
         assert_eq!(
             torque_gap_text(2.21, 2.5),
-            ("short 0.29 N·m (-12 %)".to_owned(), false)
+            ("short 0.29 N·m (-11.6 %)".to_owned(), false)
         );
         assert_eq!(
             torque_gap_text(2.9, 2.5),
-            ("margin +0.40 N·m (+16 %)".to_owned(), true)
+            ("margin +0.40 N·m (+16.0 %)".to_owned(), true)
         );
         // The engine's hot minimum check passes at equality (it fails `hot_low < required`).
         assert_eq!(
             torque_gap_text(2.5, 2.5),
-            ("margin +0.00 N·m (+0 %)".to_owned(), true)
+            ("margin +0.00 N·m (+0.0 %)".to_owned(), true)
         );
-        // A shortfall too small to show still reads short, with its sign.
+        // A shortfall too small for two decimals shows its digit, and its percent keeps its
+        // sign, so a design a hair under its requirement never reads like a pass.
         assert_eq!(
             torque_gap_text(2.499, 2.5),
-            ("short 0.00 N·m (-0 %)".to_owned(), false)
+            ("short 0.001 N·m (-0.0 %)".to_owned(), false)
+        );
+        assert_eq!(
+            torque_gap_text(2.504, 2.5),
+            ("margin +0.004 N·m (+0.2 %)".to_owned(), true)
+        );
+        // Past the cap (two more decimals, T-9) a gap reads two decimals: float noise is not a
+        // digit to show. The word and the percent's sign still say which side it is on.
+        assert_eq!(
+            torque_gap_text(2.49999, 2.5),
+            ("short 0.00 N·m (-0.0 %)".to_owned(), false)
         );
     }
 
@@ -486,6 +498,9 @@ mod tests {
             torque_gap_text(2.21, 2.5).0,
             torque_gap_text(2.9, 2.5).0,
             torque_gap_text(2.0, 0.0).0,
+            // Decision 10B's new forms: an exact zero and a shortfall at three decimals.
+            torque_gap_text(2.5, 2.5).0,
+            torque_gap_text(2.499, 2.5).0,
             DIAMETER_HOVER.to_owned(),
             LENGTH_HOVER.to_owned(),
             LINKED_HOUSING.to_owned(),

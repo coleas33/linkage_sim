@@ -86,17 +86,105 @@ pub(crate) fn fixed(x: f64, decimals: usize) -> String {
     }
 }
 
-/// A change, as a fraction, as a whole signed percentage with its unit: 0.1121 reads `+11 %`,
-/// -0.2679 `-27 %`. A change that rounds to zero reads `+0 %`, never `-0 %`; one that is not
-/// finite reads as its [`non_finite_text`] and the unit.
-pub(crate) fn signed_percent(fraction: f64) -> String {
-    if let Some(text) = non_finite_text(fraction) {
-        return format!("{text} %");
+/// The most decimals [`fewest_decimals_apart`] gives a number near one: f64 holds no more of
+/// its digits.
+const MOST_DECIMALS: usize = 15;
+
+/// The one search for more decimals (BL-059 NB-1): of the guidance's band and window quotes
+/// (`gui::guidance`'s `band_quotes` and `window_quotes`), its quote of an input typed below its
+/// slider's bottom, and the Size tab's change decimals ([`change_decimals`]). The fewest
+/// decimals, from `from` up to [`MOST_DECIMALS`], whose `quotes` read `apart`, with those
+/// quotes; else [`MOST_DECIMALS`] and its quotes.
+pub(crate) fn fewest_decimals_apart<T>(
+    from: usize,
+    quotes: impl Fn(usize) -> T,
+    apart: impl Fn(&T) -> bool,
+) -> (usize, T) {
+    (from..=MOST_DECIMALS)
+        .map(|decimals| (decimals, quotes(decimals)))
+        .find(|(_, quoted)| apart(quoted))
+        .unwrap_or_else(|| (MOST_DECIMALS, quotes(MOST_DECIMALS)))
+}
+
+/// How many decimals past its own a change may take to show a digit that is not zero
+/// ([`change_decimals`]; slice 3 spec T-9). A change still zero there is float noise, such as
+/// Auto's solve residual, and reads its own decimals with its true sign. The torque card draws
+/// a size or margin change only where it shows a digit within them.
+pub(crate) const CHANGE_EXTRA_DECIMALS: usize = 2;
+
+/// The decimals a torque change starts from on the Size tab (spec section 5: N·m to two
+/// decimals, then [`change_decimals`]): the readout's gap (`torque_gap_text`) and the torque
+/// card's N·m read this one constant.
+pub(crate) const TORQUE_DECIMALS: usize = 2;
+
+/// Whether `text` reads a finite number that is not zero: "-0.005" does; "-0.00", "NaN" and
+/// "+inf" do not. What [`change_decimals`] looks for, decimal by decimal.
+pub(crate) fn reads_not_zero(text: &str) -> bool {
+    text.parse::<f64>().is_ok_and(|x| x.is_finite() && x != 0.0)
+}
+
+/// The decimals of a change `x` (decision 10B): the fewest, from `from` up to `from` +
+/// [`CHANGE_EXTRA_DECIMALS`], at which [`fixed`] reads a digit that is not zero
+/// ([`fewest_decimals_apart`]; -0.0046 from 2 takes 3, "-0.005"). `from` where `x` is zero or
+/// not finite, or reads zero even at the cap (T-9: -0.00004 from 2 reads "-0.00").
+pub(crate) fn change_decimals(x: f64, from: usize) -> usize {
+    if x == 0.0 || !x.is_finite() {
+        return from;
     }
-    let percent = (fraction * 100.0).round();
-    // round() keeps the sign of a small fall (-0.4 rounds to -0.0, which prints "-0").
-    let percent = if percent == 0.0 { 0.0 } else { percent };
-    format!("{percent:+.0} %")
+    let (decimals, text) = fewest_decimals_apart(
+        from,
+        |decimals| fixed(x, decimals),
+        |text| reads_not_zero(text),
+    );
+    // The search has no cap of its own: it falls back to MOST_DECIMALS when no decimal reads
+    // a digit, or when `from` is past MOST_DECIMALS. Its answer counts only inside the cap,
+    // and only where it reads a digit.
+    if (from..=from + CHANGE_EXTRA_DECIMALS).contains(&decimals) && reads_not_zero(&text) {
+        decimals
+    } else {
+        from
+    }
+}
+
+/// `x` to exactly `decimals` places with its true sign, as the Size tab writes a change: a
+/// value that rounds to zero keeps its sign ("-0.00"), an exact zero of either sign reads "+"
+/// (the house rule; `{:+}` alone prints -0.0 as "-0"), and a number that is not finite reads as
+/// its [`non_finite_text`].
+pub(crate) fn signed_fixed(x: f64, decimals: usize) -> String {
+    match non_finite_text(x) {
+        Some(text) => text.to_owned(),
+        None if x == 0.0 => format!("{:+.decimals$}", 0.0),
+        None => format!("{x:+.decimals$}"),
+    }
+}
+
+/// A change `x` at its own decimals: [`signed_fixed`] at [`change_decimals`] from `from` (the
+/// Size tab's N·m from [`TORQUE_DECIMALS`], a size change in mm from 1).
+pub(crate) fn signed_change(x: f64, from: usize) -> String {
+    signed_fixed(x, change_decimals(x, from))
+}
+
+/// The decimals a row of changes shares (slice 3 spec T-14: a torque card row's two N·m at one
+/// precision): the larger of their [`change_decimals`] from `from`, so each keeps its true sign
+/// and a digit that is not zero, and the two read in their true ratio (-0.0063 and -0.0046 N·m
+/// read "-0.006" and "-0.005", not "-0.01" and "-0.005"). `None` for a row with no number.
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the torque card's lines call it (slice 3 Task 4, which removes this)"
+    )
+)]
+pub(crate) fn shared_change_decimals(changes: &[f64], from: usize) -> Option<usize> {
+    changes.iter().map(|&x| change_decimals(x, from)).max()
+}
+
+/// A change, as a fraction, as a signed percentage to one decimal with its unit (decision 10B:
+/// the Size tab's one percent rule): 0.0349 reads `+3.5 %`, -0.2679 `-26.8 %`. One that rounds
+/// to zero keeps its true sign (`-0.0 %`), an exact zero of either sign reads `+0.0 %`, and one
+/// that is not finite reads as its [`non_finite_text`] and the unit ([`signed_fixed`]).
+pub(crate) fn signed_percent(fraction: f64) -> String {
+    format!("{} %", signed_fixed(fraction * 100.0, 1))
 }
 
 /// The place value of the [`SIGNIFICANT_DIGITS`]-th significant digit of a finite positive `x`,
@@ -293,15 +381,123 @@ mod tests {
     }
 
     #[test]
-    fn a_change_reads_as_a_whole_signed_percentage_never_minus_zero() {
-        assert_eq!(signed_percent(0.1121), "+11 %");
-        assert_eq!(signed_percent(-0.2679), "-27 %");
-        assert_eq!(signed_percent(1.1279), "+113 %");
-        assert_eq!(signed_percent(0.0), "+0 %");
-        // A small fall rounds to zero: no minus sign on a zero.
-        assert_eq!(signed_percent(-0.004), "+0 %");
-        assert_eq!(signed_percent(-0.0), "+0 %");
+    fn a_change_reads_as_a_signed_percentage_to_a_tenth_with_its_true_sign() {
+        // Decision 10B (slice 3 spec section 5): one decimal of percent, the Size tab's one
+        // percent rule, on the torque card and the readout's gap alike.
+        assert_eq!(signed_percent(0.0349), "+3.5 %");
+        assert_eq!(signed_percent(-0.0037), "-0.4 %");
+        assert_eq!(signed_percent(-0.0028), "-0.3 %");
+        assert_eq!(signed_percent(0.1121), "+11.2 %");
+        assert_eq!(signed_percent(-0.2679), "-26.8 %");
+        assert_eq!(signed_percent(1.1279), "+112.8 %");
+        // A change that rounds to zero keeps its true sign, so a small fall never reads as a
+        // rise ...
+        assert_eq!(signed_percent(-0.0004), "-0.0 %");
+        assert_eq!(signed_percent(0.0004), "+0.0 %");
+        // ... while an exact zero of either sign reads "+" (the house rule; `{:+.1}` alone
+        // prints -0.0 as "-0.0").
+        assert_eq!(signed_percent(0.0), "+0.0 %");
+        assert_eq!(signed_percent(-0.0), "+0.0 %");
         assert_eq!(signed_percent(f64::NAN), "NaN %");
+        assert_eq!(signed_percent(f64::INFINITY), "+inf %");
         assert_eq!(signed_percent(f64::NEG_INFINITY), "-inf %");
+    }
+
+    #[test]
+    fn a_change_keeps_its_sign_and_shows_a_digit_that_is_not_zero() {
+        // Decision 10B: a change to the fewest decimals, from its own (N·m 2), that keep its
+        // true sign and read a digit that is not zero, never "+0.00" for a fall or "-0.00" for
+        // a rise; at most CHANGE_EXTRA_DECIMALS more (T-9), so float noise reads its first
+        // decimals with its true sign.
+        assert_eq!(CHANGE_EXTRA_DECIMALS, 2);
+        for (x, text) in [
+            (0.2010, "+0.20"),
+            (-0.0063, "-0.01"),
+            (-0.0046, "-0.005"),
+            (-0.00012, "-0.0001"),
+            (0.0, "+0.00"),
+            (-0.0, "+0.00"),
+            (-0.00004, "-0.00"),
+            (1e-10, "+0.00"),
+            (f64::NAN, "NaN"),
+            (f64::INFINITY, "+inf"),
+            (f64::NEG_INFINITY, "-inf"),
+        ] {
+            assert_eq!(signed_change(x, 2), text, "{x}");
+        }
+        // The cap: where the search reads a digit only past `from` + CHANGE_EXTRA_DECIMALS
+        // (-0.00004 at 5 decimals, 1e-10 at 10, 1e-20 at none up to MOST_DECIMALS, where it
+        // falls back to MOST_DECIMALS), the change reads `from`.
+        for (x, past_the_cap) in [(-0.00004, 5), (1e-10, 10), (1e-20, MOST_DECIMALS)] {
+            let (found, _) = fewest_decimals_apart(2, |d| fixed(x, d), |t| reads_not_zero(t));
+            assert_eq!(found, past_the_cap, "{x}");
+            assert_eq!(change_decimals(x, 2), 2, "{x}");
+        }
+        assert_eq!(change_decimals(-0.0063, 2), 2);
+        assert_eq!(change_decimals(-0.0046, 2), 3);
+        assert_eq!(change_decimals(-0.00012, 2), 4, "at the cap itself");
+        // A size change starts at one decimal (the sliders' 0.1 mm): 0.0046 mm needs three,
+        // 6e-5 mm is past the cap there.
+        assert_eq!(change_decimals(0.0046, 1), 3);
+        assert_eq!(change_decimals(6e-5, 1), 1);
+        // Zero and numbers that are not finite read `from`, whatever `from` is; a `from` past
+        // what the search covers reads itself, never fewer decimals.
+        for x in [0.0, -0.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert_eq!(change_decimals(x, 1), 1, "{x}");
+        }
+        assert_eq!(change_decimals(0.5, MOST_DECIMALS + 1), MOST_DECIMALS + 1);
+        assert_eq!(change_decimals(1e-17, MOST_DECIMALS - 1), MOST_DECIMALS - 1);
+        // signed_fixed: exactly `decimals` places with the true sign; an exact zero reads "+".
+        assert_eq!(signed_fixed(-0.0063, 3), "-0.006");
+        assert_eq!(signed_fixed(-0.0046, 3), "-0.005");
+        assert_eq!(signed_fixed(-0.00004, 2), "-0.00");
+        assert_eq!(signed_fixed(0.0, 3), "+0.000");
+        assert_eq!(signed_fixed(-0.0, 3), "+0.000");
+        assert_eq!(signed_fixed(f64::NAN, 2), "NaN");
+        assert_eq!(signed_fixed(f64::NEG_INFINITY, 2), "-inf");
+        // A row's two N·m at one precision (T-14): the larger of the sides' decimals. (e)'s
+        // Outside diameter row, -0.0063 and -0.0046 N·m, reads "-0.006" and "-0.005" (each on
+        // its own: "-0.01" and "-0.005"); (e2)+Auto length's, -0.00477 and -0.00502, reads
+        // "-0.005" both. A row with one number side keeps that side's own; a row of words has
+        // none.
+        assert_eq!(shared_change_decimals(&[-0.0063, -0.0046], 2), Some(3));
+        assert_eq!(shared_change_decimals(&[-0.00477, -0.00502], 2), Some(3));
+        assert_eq!(signed_fixed(-0.00477, 3), signed_fixed(-0.00502, 3));
+        assert_eq!(shared_change_decimals(&[-0.0046], 2), Some(3));
+        assert_eq!(shared_change_decimals(&[0.2008], 2), Some(2));
+        assert_eq!(shared_change_decimals(&[], 2), None);
+    }
+
+    #[test]
+    fn the_decimals_search_takes_the_fewest_from_its_start_else_the_most() {
+        // The one search for more decimals (BL-059 NB-1; the guidance's band and window quotes,
+        // a typed input below its slider's bottom, and the Size tab's change decimals).
+        let digit = |text: &String| reads_not_zero(text);
+        assert_eq!(
+            fewest_decimals_apart(2, |d| fixed(-0.0046, d), digit),
+            (3, "-0.005".to_owned())
+        );
+        // Never fewer than its start, even where fewer would read apart.
+        assert_eq!(
+            fewest_decimals_apart(2, |d| fixed(0.5, d), digit),
+            (2, "0.50".to_owned())
+        );
+        // None up to MOST_DECIMALS: MOST_DECIMALS and its quote.
+        assert_eq!(
+            fewest_decimals_apart(2, |d| fixed(1e-20, d), digit),
+            (MOST_DECIMALS, fixed(1e-20, MOST_DECIMALS))
+        );
+        // What reads apart here: a finite number that is not zero, of either sign.
+        for (text, apart) in [
+            ("-0.005", true),
+            ("0.50", true),
+            ("-0.00", false),
+            ("0.000", false),
+            ("NaN", false),
+            ("+inf", false),
+            ("", false),
+        ] {
+            assert_eq!(reads_not_zero(text), apart, "{text:?}");
+        }
     }
 }

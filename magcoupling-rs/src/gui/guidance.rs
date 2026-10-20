@@ -62,7 +62,8 @@ use crate::engine::sizing::FreeVariable;
 use crate::engine::temperature::{CURE_MARGIN_MIN_C, DemagInputs};
 use crate::gui::dashboard::{DASHBOARD, Level, check_level, result_info};
 use crate::gui::format::{
-    SIGNIFICANT_DIGITS, fixed, format_value, last_digit_step, signed_percent, with_unit,
+    SIGNIFICANT_DIGITS, fewest_decimals_apart, fixed, format_value, last_digit_step,
+    signed_percent, with_unit,
 };
 use crate::gui::inputs::{InputCatalogue, optional_seed, section_label};
 use crate::gui::pickers::{CUSTOM, GRADE_PATHS, PART_PATHS};
@@ -1877,24 +1878,6 @@ fn shown_decimals(x: f64) -> Option<usize> {
     }
 }
 
-/// The most decimals [`fewest_decimals_apart`] gives a number near one: f64 holds no more of
-/// its digits.
-const MOST_DECIMALS: usize = 15;
-
-/// The one search for more decimals of [`band_quotes`] and [`window_quotes`] (BL-059 NB-1): the
-/// fewest decimals, from `from` up to [`MOST_DECIMALS`], whose `quotes` read `apart`, with those
-/// quotes; else [`MOST_DECIMALS`] and its quotes.
-fn fewest_decimals_apart<T>(
-    from: usize,
-    quotes: impl Fn(usize) -> T,
-    apart: impl Fn(&T) -> bool,
-) -> (usize, T) {
-    (from..=MOST_DECIMALS)
-        .map(|decimals| (decimals, quotes(decimals)))
-        .find(|(_, quoted)| apart(quoted))
-        .unwrap_or_else(|| (MOST_DECIMALS, quotes(MOST_DECIMALS)))
-}
-
 /// The band and the widest band the rating allows, as gearbox Problem sentence 2's first remedy
 /// quotes them: the band as the readouts show it, the widest band rounded down past it
 /// ([`quoted_limit`]). With the minimum temperature at or below the operating one no band is
@@ -2709,7 +2692,7 @@ fn fit_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<String>
 }
 
 // What moves what (spec 3.3, 4.1). Lengths read to 0.1 mm (the Size tab sliders' precision),
-// torques to 0.01 N·m and changes to whole percent.
+// torques to 0.01 N·m and changes to one decimal of percent (`signed_percent`, decision 10B).
 
 /// The first line under Magnets per ring with Auto off: the ring radius
 /// (`coupling.inner_back_apothem_mm`) is its own input; the magnet count only sets how many
@@ -8846,13 +8829,15 @@ mod tests {
         let fewer = compute_all(&with_magnets(&inputs, npole - 2));
         let lines = Consequences::of(&inputs, &results, None).magnet_lines(npole, None);
         assert_eq!(lines[0], RING_SIZE_STAYS);
+        // The change as the Size tab writes every percent (decision 10B: `signed_percent`,
+        // one decimal, pinned in `gui::format`'s tests).
         assert_eq!(
             lines[1],
             format!(
-                "At {}: pull-out {:.2} N·m ({:+.0} %), cup OD {:.1} mm",
+                "At {}: pull-out {:.2} N·m ({}), cup OD {:.1} mm",
                 npole - 2,
                 fewer.model.pullout_Nm,
-                (100.0 * (fewer.model.pullout_Nm / results.model.pullout_Nm - 1.0)).round(),
+                signed_percent(fewer.model.pullout_Nm / results.model.pullout_Nm - 1.0),
                 fewer.model.cup_od_mm
             )
         );
