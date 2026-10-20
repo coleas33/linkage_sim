@@ -9,17 +9,28 @@
 //! first ([`TorqueCard::ShownDoesNotFit`], [`TorqueCard::ShownNoPrediction`],
 //! [`TorqueCard::ShownNoHotLow`]), then the slider's range within [`STEP_SLACK_MM`], the
 //! slider's mapping, the validity rule every row shares ([`side_words`]) and, on the Overall
-//! length row, the jump.
+//! length row, the jump. A number side also says what the step costs (owner 8A, spec 3.6): the
+//! change in Outside diameter and Overall length, the counted dashboard checks whose level flips,
+//! and the change of each failing check's own quantity ([`check_terms`]).
+//!
+//! [`TorqueCard::lines`] draws it: every text a named constant here (drafts until the slice's G-3
+//! review sets them), every number from the results through the Size tab's one number format
+//! (decision 10B, `gui::format`), a row's two N·m at one precision (T-14). The Auto marking is
+//! drawn there too, outside the card the cache keeps, so one card serves every Auto state.
 
 use crate::engine::meta::SliderRange;
 use crate::engine::model::blocks_fit;
 use crate::engine::size_controls::{SizeControls, dimensions, dimensions_with_minimum_diameter};
 use crate::engine::sizing::FreeVariable;
-use crate::gui::dashboard::Level;
-use crate::gui::guidance::FACE_GAP;
+use crate::gui::dashboard::{Level, result_info};
+use crate::gui::format::{
+    CHANGE_EXTRA_DECIMALS, TORQUE_DECIMALS, fixed, reads_not_zero, shared_change_decimals,
+    signed_change, signed_fixed, signed_percent, with_unit,
+};
+use crate::gui::guidance::{FACE_GAP, check_terms, counted_guides, level, result_number};
 use crate::gui::inputs::InputCatalogue;
 use crate::gui::plain_text::label_for;
-use crate::gui::size_controls::{self, SliderMapping, predicts, slider_minimum};
+use crate::gui::size_controls::{self, SET_BY_AUTO, SliderMapping, predicts, slider_minimum};
 use crate::{DesignInputs, DesignResults, compute_all};
 
 /// The one slack of the card's range test and its jump rule [mm] (spec 3.3 steps 2 and 7): far
@@ -30,6 +41,63 @@ pub(crate) const STEP_SLACK_MM: f64 = 1e-6;
 
 /// The Magnets per ring step (owner 3A): two magnets, so an even count stays even.
 const COUNT_STEP: i64 = 2;
+
+/// The decimals a size change starts from (spec section 5): the sliders' 0.1 mm. A torque change
+/// starts from the Size tab's own, [`TORQUE_DECIMALS`] (`gui::format`).
+const SIZE_DECIMALS: usize = 1;
+
+// The card's texts (spec 4.1 and 4.2): drafts until the slice's G-3 review sets the words. A
+// row's label is its Size control's ([`Control::label`]), a check's its guide's.
+
+/// The card's heading (named apart from `size_controls::HEADING` and `panel::HEADING`).
+pub const CARD_HEADING: &str = "One step of each size control";
+/// The first line of the rows (owner 12A): every number on the card is a change.
+pub const CAPTION: &str =
+    "The change in the model's hot-low torque after one step of one control, everything else held.";
+/// The Auto line with Auto on the magnet length (owner 5A): what Auto does after a change, and
+/// what the rows keep.
+pub const AUTO_HOLDS_LENGTH: &str =
+    "Auto sets the magnet length again after a change; each row keeps the length shown.";
+/// The Auto line with Auto on the ring size.
+pub const AUTO_HOLDS_RING: &str =
+    "Auto sizes the ring again after a change; each row keeps the ring radius shown.";
+/// The Auto line with Auto on the magnet count.
+pub const AUTO_HOLDS_COUNT: &str =
+    "Auto sets the magnet count again after a change; each row keeps the count shown.";
+/// A side off its slider's range ([`Words::EndOfRange`]; owner 9A's words).
+pub const END_OF_RANGE: &str = "at the end of its range";
+/// An odd count's sides ([`Words::NotOnTheSlider`]; T-4).
+pub const NOT_ON_THE_SLIDER: &str = "not a value the slider takes";
+/// A side whose blocks do not fit ([`Words::DoesNotFit`]): the neighbour lines' shipped words,
+/// moved here; the Size tab's exploration line is built from it.
+pub const SIDE_DOES_NOT_FIT: &str = "magnets do not fit";
+/// A side the model has no prediction for ([`Words::NoPrediction`]): the neighbour lines'
+/// shipped words, moved here (named apart from `size_controls::NO_PREDICTION`).
+pub const SIDE_NO_PREDICTION: &str = "no prediction";
+/// A side whose keyway leaves no hub wall past it ([`Words::KeywayBreaksThrough`]; T-4): the
+/// shipped words of the Size tab's exploration line, which is built from it.
+pub const KEYWAY_BREAKS_THROUGH: &str = "the keyway breaks through the hub";
+/// A length side that is not a step of the overlapping magnet length ([`Words::Jump`]; owner
+/// 9A, widened by question O-1). It names no cause.
+pub const JUMP: &str = "not a step: the overlapping magnet length does not change by the step";
+/// After a number whose stepped design takes another calibration factor (owner 16A): it names
+/// the change, never a cause.
+pub const CALIBRATION_CHANGE: &str = "includes a calibration change";
+/// The card of a design shown whose magnets do not fit ([`TorqueCard::ShownDoesNotFit`]).
+pub const SHOWN_DOES_NOT_FIT: &str =
+    "No step is compared while the magnets of the design shown do not fit.";
+/// The card of a design shown with no torque prediction ([`TorqueCard::ShownNoPrediction`]: its
+/// readout shows `NO_PREDICTION` or `NO_TORQUE`).
+pub const SHOWN_NO_PREDICTION: &str =
+    "No step is compared while the design shown has no torque prediction.";
+/// The card of a design shown whose readouts show a pull-out or hot-low not above zero
+/// ([`TorqueCard::ShownNoHotLow`]): true for either torque.
+pub const SHOWN_NO_HOT_LOW: &str = "No step is compared while the design shown has a pull-out or hot-low torque that is not above zero.";
+/// A flip's words, drawn "{label}: {word}" ([`Flip`]): a phrase inside a sentence, not the
+/// dashboard badge's own words (`Level::word`).
+pub const FLIP_FAILS: &str = "fails";
+pub const FLIP_PASSES: &str = "passes";
+pub const FLIP_CAUTION: &str = "caution";
 
 /// A Size-tab control the card steps (owner 2A), in the controls' order (6A).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -81,6 +149,19 @@ impl Control {
     fn signed_step(self, more: bool) -> f64 {
         if more { self.step() } else { -self.step() }
     }
+
+    /// The unit of the control's step: millimetres, or none for the magnet count.
+    fn unit(self) -> &'static str {
+        match self {
+            Control::OutsideDiameter | Control::OverallLength | Control::FaceGap => "mm",
+            Control::MagnetsPerRing => "",
+        }
+    }
+
+    /// A side's step as its row writes it (spec 4.1): "-1 mm", "+0.1 mm", "-2".
+    fn step_text(self, more: bool) -> String {
+        with_unit(format!("{:+}", self.signed_step(more)), self.unit())
+    }
 }
 
 /// Why a side shows words, not a number (owner 9A, 16A; spec T-4), in the order of the tests
@@ -102,6 +183,20 @@ pub enum Words {
     Jump,
 }
 
+impl Words {
+    /// The words the side shows.
+    pub fn text(self) -> &'static str {
+        match self {
+            Words::EndOfRange => END_OF_RANGE,
+            Words::NotOnTheSlider => NOT_ON_THE_SLIDER,
+            Words::DoesNotFit => SIDE_DOES_NOT_FIT,
+            Words::KeywayBreaksThrough => KEYWAY_BREAKS_THROUGH,
+            Words::NoPrediction => SIDE_NO_PREDICTION,
+            Words::Jump => JUMP,
+        }
+    }
+}
+
 /// A dashboard check whose level differs on the stepped design (owner 8A).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Flip {
@@ -109,6 +204,18 @@ pub struct Flip {
     pub check: &'static str,
     /// Its level on the stepped design.
     pub to: Level,
+}
+
+impl Flip {
+    /// "{label}: fails", "passes" or "caution" (owner 8A).
+    fn text(&self) -> String {
+        let word = match self.to {
+            Level::Bad => FLIP_FAILS,
+            Level::Good => FLIP_PASSES,
+            Level::Caution => FLIP_CAUTION,
+        };
+        format!("{}: {word}", self.check)
+    }
 }
 
 /// The change of a failing check's own quantity (owner 8A; spec 3.6). `unit` is the result's
@@ -124,6 +231,18 @@ pub struct MarginChange {
     pub unit: &'static str,
     /// The decimals the change starts from (section 5's rule).
     pub decimals: usize,
+}
+
+impl MarginChange {
+    /// "{label} {change} {unit}", or "{label}: {name} {change} {unit}" where it has a name
+    /// (spec 3.6), the change at its own decimals ([`signed_change`]).
+    fn text(&self) -> String {
+        let change = with_unit(signed_change(self.change, self.decimals), self.unit);
+        match self.name {
+            None => format!("{} {change}", self.check),
+            Some(name) => format!("{}: {name} {change}", self.check),
+        }
+    }
 }
 
 /// A side with a number.
@@ -150,6 +269,32 @@ pub struct Change {
     pub margins: Vec<MarginChange>,
 }
 
+impl Change {
+    /// What the step costs, in the order of spec 3.6: the calibration note, the size changes
+    /// (Outside diameter, then Overall length: never the row's own `control`, and only where
+    /// one shows, [`shows`]), the flips, then the failing checks' quantities.
+    fn costs(&self, control: Control) -> Vec<String> {
+        let mut costs = Vec::new();
+        if self.calibration_changed {
+            costs.push(CALIBRATION_CHANGE.to_owned());
+        }
+        for (size, change) in [
+            (Control::OutsideDiameter, self.diameter_change_mm),
+            (Control::OverallLength, self.length_change_mm),
+        ] {
+            if let Some(change) =
+                change.filter(|&change| size != control && shows(change, SIZE_DECIMALS))
+            {
+                let change = with_unit(signed_change(change, SIZE_DECIMALS), size.unit());
+                costs.push(format!("{} {change}", size.label()));
+            }
+        }
+        costs.extend(self.flips.iter().map(Flip::text));
+        costs.extend(self.margins.iter().map(MarginChange::text));
+        costs
+    }
+}
+
 /// One side of a row: words, or a number with what the step costs.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Side {
@@ -165,6 +310,49 @@ pub struct Row {
     pub more: Side,
 }
 
+impl Row {
+    /// The decimals of the row's two N·m (T-14: one precision for both, the larger of their
+    /// own, [`shared_change_decimals`]); a row of words draws none.
+    fn torque_decimals(&self) -> usize {
+        let changes: Vec<f64> = [&self.fewer, &self.more]
+            .into_iter()
+            .filter_map(|side| match side {
+                Side::Change(change) => Some(change.change_Nm),
+                Side::Words(_) => None,
+            })
+            .collect();
+        shared_change_decimals(&changes, TORQUE_DECIMALS).unwrap_or(TORQUE_DECIMALS)
+    }
+
+    /// "{label}: {fewer}; {more}" (spec 4.1), the two sides' N·m at the row's one precision.
+    fn line(&self) -> String {
+        let decimals = self.torque_decimals();
+        format!(
+            "{}: {}; {}",
+            self.control.label(),
+            self.side_text(&self.fewer, false, decimals),
+            self.side_text(&self.more, true, decimals)
+        )
+    }
+
+    /// One side (spec 4.1): "{step} -> {words}", or "{step} -> {N·m} N·m ({percent})" with the
+    /// N·m at the row's `decimals`, then ", " and each cost.
+    fn side_text(&self, side: &Side, more: bool, decimals: usize) -> String {
+        let step = self.control.step_text(more);
+        match side {
+            Side::Words(words) => format!("{step} -> {}", words.text()),
+            Side::Change(change) => {
+                let torque = with_unit(signed_fixed(change.change_Nm, decimals), "N·m");
+                let number = format!("{step} -> {torque} ({})", signed_percent(change.fraction));
+                std::iter::once(number)
+                    .chain(change.costs(self.control))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            }
+        }
+    }
+}
+
 /// The card of a design. `ShownNoHotLow`: the model predicts (the readouts show both torques),
 /// but hot-low, the percent's base, is not above zero (a design file's variation of 1 or more;
 /// physics review 2 MF-1), or the pull-out is not above zero (a magnet Br or calibration
@@ -178,6 +366,31 @@ pub enum TorqueCard {
 }
 
 impl TorqueCard {
+    /// The lines under the heading, as drawn and as the screen dump prints them. For the rows:
+    /// [`CAPTION`], the Auto line while Auto is on (`auto` is its variable), then one line per
+    /// row, the row Auto holds reading [`held_line`] (owner 5A; spec 3.4: the marking is drawn
+    /// here, outside the card the cache keeps). For the three one-line forms, their line alone,
+    /// with no caption and no Auto line (T-12).
+    pub fn lines(&self, auto: Option<FreeVariable>) -> Vec<String> {
+        match self {
+            TorqueCard::ShownDoesNotFit => vec![SHOWN_DOES_NOT_FIT.to_owned()],
+            TorqueCard::ShownNoPrediction => vec![SHOWN_NO_PREDICTION.to_owned()],
+            TorqueCard::ShownNoHotLow => vec![SHOWN_NO_HOT_LOW.to_owned()],
+            TorqueCard::Rows(rows) => {
+                let mut lines = vec![CAPTION.to_owned()];
+                lines.extend(auto.map(|variable| auto_line(variable).to_owned()));
+                lines.extend(rows.iter().map(|row| {
+                    if auto.is_some() && row.control.held_by() == auto {
+                        held_line(row.control)
+                    } else {
+                        row.line()
+                    }
+                }));
+                lines
+            }
+        }
+    }
+
     /// The rows: empty for the three one-line forms.
     pub fn rows(&self) -> &[Row] {
         match self {
@@ -189,6 +402,22 @@ impl TorqueCard {
     }
 }
 
+/// The held row's line, "{label}: {SET_BY_AUTO}" (owner 5A): [`TorqueCard::lines`] draws it,
+/// and `app.rs`'s smoke test asserts it in the gui-smoke prompt (`size_controls` is a private
+/// module, so `app.rs` reaches the words only here).
+pub fn held_line(control: Control) -> String {
+    format!("{}: {SET_BY_AUTO}", control.label())
+}
+
+/// The Auto line while Auto is on `variable` (owner 5A).
+fn auto_line(variable: FreeVariable) -> &'static str {
+    match variable {
+        FreeVariable::AxialLength => AUTO_HOLDS_LENGTH,
+        FreeVariable::RingRadius => AUTO_HOLDS_RING,
+        FreeVariable::MagnetsPerRing => AUTO_HOLDS_COUNT,
+    }
+}
+
 /// The card of `inputs`, the design shown, whose results are `results` (`compute_all(inputs)`),
 /// with the Size tab's Minimum OD preference (`None`: unset), as the panel holds it, and the
 /// shaft-clamp pause (`clamps_paused`, the panel's field): the flips and margins run over
@@ -197,10 +426,6 @@ pub fn card(
     inputs: &DesignInputs,
     results: &DesignResults,
     minimum_diameter_mm: Option<f64>,
-    #[expect(
-        unused_variables,
-        reason = "the flips and margins read it (slice 3 Task 4, which removes this)"
-    )]
     clamps_paused: bool,
 ) -> TorqueCard {
     // Test 0 (spec 3.3): the design shown, by the readouts' own rule.
@@ -217,6 +442,7 @@ pub fn card(
         inputs,
         results,
         size: dimensions(inputs),
+        clamps_paused,
     };
     TorqueCard::Rows(
         Control::ALL
@@ -300,6 +526,14 @@ fn on_slider(value: f64, range: SliderRange) -> Option<f64> {
         .then(|| value.clamp(range.min, range.max))
 }
 
+/// Whether a size or margin change is drawn (spec 3.6): it is finite and reads a digit that is
+/// not zero at `from` + [`CHANGE_EXTRA_DECIMALS`] decimals, the cap of section 5's format. So
+/// float noise (3.6e-15 mm) is never drawn as "+0.0 mm", nor is a NaN or an infinite change (a
+/// key with no bearing area, +inf against +inf).
+fn shows(change: f64, from: usize) -> bool {
+    change.is_finite() && reads_not_zero(&fixed(change, from + CHANGE_EXTRA_DECIMALS))
+}
+
 /// The Magnet face gap slider's range: its input's, as the Size tab draws it.
 fn face_gap_range() -> SliderRange {
     InputCatalogue::get()
@@ -309,11 +543,13 @@ fn face_gap_range() -> SliderRange {
 }
 
 /// The design shown, its results and its size controls ([`dimensions`]: `None` where the Size
-/// tab draws no size slider): what each side is compared with.
+/// tab draws no size slider): what each side is compared with, over the guides that count at
+/// the shaft-clamp pause `clamps_paused`.
 struct Shown<'a> {
     inputs: &'a DesignInputs,
     results: &'a DesignResults,
     size: Option<SizeControls>,
+    clamps_paused: bool,
 }
 
 /// How a control's own slider maps a value to a design, with the range it takes (spec 3.3): the
@@ -440,6 +676,23 @@ impl Shown<'_> {
             ),
             _ => (None, None),
         };
+        // Each counted check whose level differs, and of each check that fails on both designs
+        // the quantities of its failing terms (spec 3.6).
+        let mut flips = Vec::new();
+        let mut margins = Vec::new();
+        for guide in counted_guides(self.clamps_paused) {
+            let before = level(guide, self.inputs, self.results);
+            let after = level(guide, design, stepped);
+            if before != after {
+                flips.push(Flip {
+                    check: guide.label,
+                    to: after,
+                });
+            }
+            if before == Level::Bad && after == Level::Bad {
+                margins.extend(self.quoted_changes(guide.check, guide.label, design, stepped));
+            }
+        }
         Change {
             hot_low_Nm,
             change_Nm,
@@ -447,9 +700,40 @@ impl Shown<'_> {
             calibration_changed: stepped.model.f_cal != self.results.model.f_cal,
             diameter_change_mm,
             length_change_mm,
-            flips: Vec::new(),
-            margins: Vec::new(),
+            flips,
+            margins,
         }
+    }
+
+    /// The quoted quantities of `check` (its guide labelled `label`), a check that fails on the
+    /// design shown and on the stepped `design`, whose results are `stepped`: of the terms of
+    /// [`check_terms`], paired term by term, each that fails on either design and quotes a
+    /// quantity, where its change shows ([`shows`]), in the result's own unit. "Either" catches
+    /// a step that puts a second term of a failing check over its limit, which no flip shows.
+    fn quoted_changes(
+        &self,
+        check: &str,
+        label: &'static str,
+        design: &DesignInputs,
+        stepped: &DesignResults,
+    ) -> Vec<MarginChange> {
+        check_terms(check, self.inputs, self.results)
+            .into_iter()
+            .zip(check_terms(check, design, stepped))
+            .filter(|(before, after)| !(before.passes && after.passes))
+            .filter_map(|(before, _)| before.quoted)
+            .filter_map(|quoted| {
+                let change =
+                    result_number(stepped, quoted.path) - result_number(self.results, quoted.path);
+                shows(change, quoted.decimals).then(|| MarginChange {
+                    check: label,
+                    name: quoted.name,
+                    change,
+                    unit: result_info(quoted.path).map_or("", |info| info.meta.unit),
+                    decimals: quoted.decimals,
+                })
+            })
+            .collect()
     }
 }
 
@@ -457,17 +741,24 @@ impl Shown<'_> {
 mod tests {
     use super::*;
     use crate::engine::clamps::PAUSED;
+    use crate::engine::explain::plain::{
+        TORQUE_ORDER_WORDS, mentions_gearbox_protection, plain_text_violations, ranking_words_in,
+    };
     use crate::engine::size_controls::{resize_diameter_with_minimum, resize_length};
     use crate::engine::sizing::is_valid;
-    use crate::gui::format::fixed;
+    use crate::gui::guidance::{
+        CLAMP, CLEARANCE, COLD_HIGH, CUP_WALL, GEARBOX, HOT_MIN, SHAFT_JOINT, SPACE_CLAIM,
+        SPACE_CLAIM_AXIS_SIZES, TEMPERATURE, WALL_NEEDED, guide,
+    };
     use crate::gui::test_support::{
-        CardDesign, card_designs, end_effect_at_a_step, keyway_through, no_back_iron,
-        short_magnets, side_at, slider_range,
+        CardDesign, SCREEN, assert_glyphs, card_at, card_designs, clamp_at_its_limit,
+        end_effect_at_a_step, keyway_through, no_back_iron, only_the_clamp_fails, short_magnets,
+        side_at, sized_frame, slider_range,
     };
 
     /// The number sides of the cards of section 2's designs ([`card_designs`]): the tests that
     /// read every one count them, so none can pass by reading none.
-    const NUMBER_SIDES: usize = 263;
+    const NUMBER_SIDES: usize = 277;
 
     /// The design keyed `key` in `designs` ([`card_designs`]).
     fn find<'a>(designs: &'a [CardDesign], key: &str) -> &'a CardDesign {
@@ -783,6 +1074,20 @@ mod tests {
         let more = number(&side_at(&unmeasured, None, MagnetsPerRing, true));
         assert!(more.calibration_changed);
         assert_eq!(more.hot_low_Nm, 0.0, "{more:?}");
+        // It is drawn as every number side: its N·m with its true sign at the row's decimals, and
+        // -100.0 %, the hot-low gone (physics review 5 SF-2).
+        assert_eq!(more.fraction, -1.0);
+        let card = card_at(&unmeasured, None);
+        let row = &card.rows()[3];
+        assert!(
+            side_texts(&card.lines(None)[4], row)[1].starts_with(&format!(
+                "+2 -> {} ({}), {CALIBRATION_CHANGE}",
+                torque(more.change_Nm, row.torque_decimals()),
+                signed_percent(-1.0)
+            )),
+            "{:?}",
+            card.lines(None)
+        );
 
         // A step that lands on an end (the slack of step 2; code review 2 MF-1): one slider
         // step inside each end, the side is a number, the end's own design bit for bit (red
@@ -905,6 +1210,16 @@ mod tests {
             let card = card(&inputs, &results, None, PAUSED);
             assert_eq!(card, shown, "{name}");
             assert!(card.rows().is_empty(), "{name}");
+            // Its one line alone: no caption, no Auto line, whatever the Auto state (T-12).
+            let line = match card {
+                TorqueCard::ShownDoesNotFit => SHOWN_DOES_NOT_FIT,
+                TorqueCard::ShownNoPrediction => SHOWN_NO_PREDICTION,
+                TorqueCard::ShownNoHotLow => SHOWN_NO_HOT_LOW,
+                TorqueCard::Rows(_) => unreachable!("{name}"),
+            };
+            for auto in [None].into_iter().chain(FreeVariable::ALL.map(Some)) {
+                assert_eq!(card.lines(auto), [line], "{name} {auto:?}");
+            }
         }
     }
 
@@ -1005,7 +1320,7 @@ mod tests {
             rows += 1;
         }
         // Not vacuous: every diameter row of section 2's designs.
-        assert_eq!(rows, 42);
+        assert_eq!(rows, 44);
     }
 
     #[test]
@@ -1164,5 +1479,1202 @@ mod tests {
             side_words(&short_and_keyed, &results, false),
             Some(Words::NoPrediction)
         );
+    }
+
+    // ------------------------------------------------------------------ what a step costs, drawn
+
+    /// The units a quoted quantity's result carries (spec 3.6): mm, µm, MPa, °C and N·m.
+    const QUOTED_UNITS: [&str; 5] = ["mm", "µm", "MPa", "°C", "N·m"];
+
+    /// The label of the guide of `check`.
+    fn label(check: &str) -> &'static str {
+        guide(check).expect("a guide's check").label
+    }
+
+    /// The four rows of `design`'s card, in order.
+    fn four_rows(design: &CardDesign) -> [Row; 4] {
+        <[Row; 4]>::try_from(design.card().rows().to_vec()).expect("four rows")
+    }
+
+    /// A number side as section 2.3's tables print it: the change in N·m to 4 decimals and in
+    /// percent to 2, its flips, and each quoted change to 4 decimals.
+    #[derive(Debug, PartialEq)]
+    struct Pinned {
+        torque: String,
+        percent: String,
+        flips: Vec<Flip>,
+        quoted: Vec<(&'static str, Option<&'static str>, String)>,
+    }
+
+    impl Pinned {
+        fn of(side: &Side) -> Pinned {
+            let change = number(side);
+            Pinned {
+                torque: signed_fixed(change.change_Nm, 4),
+                percent: signed_fixed(100.0 * change.fraction, 2),
+                flips: change.flips,
+                quoted: change
+                    .margins
+                    .iter()
+                    .map(|margin| (margin.check, margin.name, signed_fixed(margin.change, 4)))
+                    .collect(),
+            }
+        }
+    }
+
+    /// Section 2.3's number side: the N·m and the percent as its tables print them, the flips
+    /// (each check by its path, and its level on the stepped design) and the quoted changes
+    /// (check, name, change).
+    fn pin(
+        torque: &str,
+        percent: &str,
+        flips: &[(&str, Level)],
+        quoted: &[(&str, Option<&'static str>, &str)],
+    ) -> Pinned {
+        Pinned {
+            torque: torque.to_owned(),
+            percent: percent.to_owned(),
+            flips: flips
+                .iter()
+                .map(|&(check, to)| Flip {
+                    check: label(check),
+                    to,
+                })
+                .collect(),
+            quoted: quoted
+                .iter()
+                .map(|&(check, name, change)| (label(check), name, change.to_owned()))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn the_card_reads_the_spec_s_numbers() {
+        // Spec 8.1 test 2: section 2.3's values (C), to its decimals: N·m to 4, % to 2, mm to 4.
+        let designs = card_designs();
+        let rows = |key| four_rows(find(&designs, key));
+        let (wall, cold) = (Some(WALL_NEEDED), Some(COLD_HIGH));
+        let rotating = Some(SPACE_CLAIM_AXIS_SIZES[0].0);
+        let stack = Some(SPACE_CLAIM_AXIS_SIZES[2].0);
+        let does_not_fit = Side::Words(Words::DoesNotFit);
+
+        // (a), the defaults: no size change, no calibration change (the cap sets the Outside
+        // diameter at every stepped design).
+        let [diameter, length, gap, count] = rows("(a)");
+        assert_eq!(diameter.fewer, does_not_fit);
+        assert_eq!(
+            Pinned::of(&diameter.more),
+            pin(
+                "+0.0798",
+                "+3.49",
+                &[(SPACE_CLAIM, Level::Bad)],
+                &[
+                    (CLEARANCE, None, "+0.0125"),
+                    (CUP_WALL, wall, "+0.0651"),
+                    (GEARBOX, cold, "+0.0281"),
+                ]
+            )
+        );
+        assert_eq!(
+            Pinned::of(&length.fewer),
+            pin("-0.2008", "-8.79", &[], &[(GEARBOX, cold, "-0.0707")])
+        );
+        assert_eq!(
+            Pinned::of(&length.more),
+            pin("+0.2008", "+8.79", &[], &[(GEARBOX, cold, "+0.0707")])
+        );
+        assert_eq!(
+            Pinned::of(&gap.fewer),
+            pin(
+                "+0.0759",
+                "+3.32",
+                &[],
+                &[
+                    (CLEARANCE, None, "-0.1000"),
+                    (CUP_WALL, wall, "+0.0182"),
+                    (GEARBOX, cold, "+0.0267"),
+                ]
+            )
+        );
+        assert_eq!(
+            Pinned::of(&gap.more),
+            pin(
+                "-0.0733",
+                "-3.21",
+                &[],
+                &[
+                    (CLEARANCE, None, "+0.1000"),
+                    (CUP_WALL, wall, "-0.0177"),
+                    (GEARBOX, cold, "-0.0258"),
+                ]
+            )
+        );
+        assert_eq!(
+            Pinned::of(&count.fewer),
+            pin(
+                "-0.6121",
+                "-26.79",
+                &[(GEARBOX, Level::Good)],
+                &[(CUP_WALL, wall, "+0.4797")]
+            )
+        );
+        assert_eq!(count.more, does_not_fit);
+
+        // (b), the gui-smoke share link's design with Auto on the magnet length, solved: the
+        // held row is computed (drawn as Auto's, test 8); the diameter +1 mm side puts the
+        // Rotating diameter over the claim, a second axis of a check that already fails.
+        let [diameter, length, gap, count] = rows("(b)");
+        assert_eq!(diameter.fewer, does_not_fit);
+        assert_eq!(
+            Pinned::of(&diameter.more),
+            pin(
+                "+0.0892",
+                "+3.57",
+                &[],
+                &[
+                    (CLEARANCE, None, "+0.0125"),
+                    (CUP_WALL, wall, "+0.0643"),
+                    (GEARBOX, cold, "+0.0314"),
+                    (SPACE_CLAIM, rotating, "+1.0000"),
+                ]
+            )
+        );
+        assert_eq!(
+            Pinned::of(&length.fewer),
+            pin(
+                "-0.1945",
+                "-7.78",
+                &[(HOT_MIN, Level::Bad), (SPACE_CLAIM, Level::Good)],
+                &[(GEARBOX, cold, "-0.0685")]
+            )
+        );
+        assert_eq!(
+            Pinned::of(&length.more),
+            pin(
+                "+0.1945",
+                "+7.78",
+                &[],
+                &[(GEARBOX, cold, "+0.0685"), (SPACE_CLAIM, stack, "+1.0000")]
+            )
+        );
+        assert_eq!(
+            Pinned::of(&gap.fewer),
+            pin(
+                "+0.0827",
+                "+3.31",
+                &[],
+                &[
+                    (CLEARANCE, None, "-0.1000"),
+                    (CUP_WALL, wall, "+0.0177"),
+                    (GEARBOX, cold, "+0.0291"),
+                ]
+            )
+        );
+        assert_eq!(
+            Pinned::of(&gap.more),
+            pin(
+                "-0.0798",
+                "-3.19",
+                &[(HOT_MIN, Level::Bad)],
+                &[
+                    (CLEARANCE, None, "+0.1000"),
+                    (CUP_WALL, wall, "-0.0173"),
+                    (GEARBOX, cold, "-0.0281"),
+                ]
+            )
+        );
+        assert_eq!(
+            Pinned::of(&count.fewer),
+            pin(
+                "-0.6579",
+                "-26.32",
+                &[(HOT_MIN, Level::Bad)],
+                &[(CUP_WALL, wall, "+0.4753"), (GEARBOX, cold, "-0.2317")]
+            )
+        );
+        assert_eq!(count.more, does_not_fit);
+
+        // (c), no back iron: the count -2 side takes the calibration coefficient, a change of
+        // factor its number includes (owner 16A).
+        let [.., count] = rows("(c)");
+        let fewer = number(&count.fewer);
+        assert_eq!(
+            [
+                signed_fixed(fewer.change_Nm, 4),
+                signed_fixed(100.0 * fewer.fraction, 2)
+            ],
+            ["-0.5923", "-41.05"]
+        );
+        assert!(fewer.calibration_changed);
+
+        // (e), the owner's case: the diameter row under 1 % both ways, and two magnets fewer
+        // grow the Outside diameter.
+        let [diameter, _, _, count] = rows("(e)");
+        for (side, torque, percent) in [
+            (&diameter.fewer, "-0.0063", "-0.37"),
+            (&diameter.more, "-0.0046", "-0.28"),
+        ] {
+            let change = number(side);
+            assert_eq!(signed_fixed(change.change_Nm, 4), torque);
+            assert_eq!(signed_fixed(100.0 * change.fraction, 2), percent);
+        }
+        let grown = number(&count.fewer)
+            .diameter_change_mm
+            .expect("a size change");
+        assert_eq!(signed_fixed(grown, 4), "+2.2307");
+
+        // The mixed-length pair jumps both ways; its diameter +1 mm side is a number. The
+        // reverse pair moves the active length by the step.
+        let [diameter, length, ..] = rows("mixed");
+        assert_eq!(
+            [length.fewer, length.more],
+            [Side::Words(Words::Jump), Side::Words(Words::Jump)]
+        );
+        assert_eq!(signed_fixed(number(&diameter.more).change_Nm, 4), "+0.0300");
+        let [_, length, ..] = rows("reverse");
+        for (side, percent) in [(&length.fewer, "-19.89"), (&length.more, "+19.89")] {
+            assert_eq!(signed_fixed(100.0 * number(side).fraction, 2), percent);
+        }
+    }
+
+    /// The N·m of a side as drawn: `x` at `decimals` places with its true sign, and the unit.
+    fn torque(x: f64, decimals: usize) -> String {
+        with_unit(signed_fixed(x, decimals), "N·m")
+    }
+
+    /// A quoted or size change as drawn: `x` at its own decimals from `from`, and `unit`.
+    fn quoted(x: f64, from: usize, unit: &str) -> String {
+        with_unit(signed_change(x, from), unit)
+    }
+
+    /// The unit of the result at `path`, as the card quotes it.
+    fn unit_of(path: &str) -> &'static str {
+        result_info(path).expect("a result").meta.unit
+    }
+
+    #[test]
+    fn the_card_s_lines_read_as_drafted() {
+        // Spec 8.1 test 2a (code review 2 MF-5): whole lines, built from the constants, the
+        // labels, the step texts and section 2.3's numbers through the Size tab's format at the
+        // row's decimals (T-14). The drafted blocks of 2.3 are these lines; a G-3 word change
+        // flows through.
+        let designs = card_designs();
+        let lines = |key| find(&designs, key).card().lines(None);
+        let [od, length, gap, count] = Control::ALL.map(Control::label);
+        let (clearance, cup_wall, gearbox, space) = (
+            label(CLEARANCE),
+            label(CUP_WALL),
+            label(GEARBOX),
+            label(SPACE_CLAIM),
+        );
+        let mm = |x: f64| quoted(x, 2, "mm");
+        let cold = |x: f64| quoted(x, 2, "N·m");
+
+        // (a): the order within a side is the number, the size changes, the flips, then the
+        // quoted changes in the checks' order.
+        assert_eq!(
+            lines("(a)"),
+            [
+                CAPTION.to_owned(),
+                format!(
+                    "{od}: -1 mm -> {SIDE_DOES_NOT_FIT}; +1 mm -> {} ({}), {space}: {FLIP_FAILS}, \
+                     {clearance} {}, {cup_wall}: {WALL_NEEDED} {}, {gearbox}: {COLD_HIGH} {}",
+                    torque(0.0798, 2),
+                    signed_percent(0.0349),
+                    mm(0.0125),
+                    mm(0.0651),
+                    cold(0.0281)
+                ),
+                format!(
+                    "{length}: -1 mm -> {} ({}), {gearbox}: {COLD_HIGH} {}; +1 mm -> {} ({}), \
+                     {gearbox}: {COLD_HIGH} {}",
+                    torque(-0.2008, 2),
+                    signed_percent(-0.0879),
+                    cold(-0.0707),
+                    torque(0.2008, 2),
+                    signed_percent(0.0879),
+                    cold(0.0707)
+                ),
+                format!(
+                    "{gap}: -0.1 mm -> {} ({}), {clearance} {}, {cup_wall}: {WALL_NEEDED} {}, \
+                     {gearbox}: {COLD_HIGH} {}; +0.1 mm -> {} ({}), {clearance} {}, \
+                     {cup_wall}: {WALL_NEEDED} {}, {gearbox}: {COLD_HIGH} {}",
+                    torque(0.0759, 2),
+                    signed_percent(0.0332),
+                    mm(-0.1),
+                    mm(0.0182),
+                    cold(0.0267),
+                    torque(-0.0733, 2),
+                    signed_percent(-0.0321),
+                    mm(0.1),
+                    mm(-0.0177),
+                    cold(-0.0258)
+                ),
+                format!(
+                    "{count}: -2 -> {} ({}), {gearbox}: {FLIP_PASSES}, {cup_wall}: {WALL_NEEDED} \
+                     {}; +2 -> {SIDE_DOES_NOT_FIT}",
+                    torque(-0.6121, 2),
+                    signed_percent(-0.2679),
+                    mm(0.4797)
+                ),
+            ]
+        );
+
+        // (e): the diameter row's two N·m at the row's 3 decimals (T-14: each on its own would
+        // read "-0.01" and "-0.005"), and two magnets fewer grow the Outside diameter.
+        let e = lines("(e)");
+        assert_eq!(
+            e[1],
+            format!(
+                "{od}: -1 mm -> {} ({}), {clearance} {}, {cup_wall}: {WALL_NEEDED} {}; \
+                 +1 mm -> {} ({}), {space}: {FLIP_FAILS}, {clearance} {}, {cup_wall}: \
+                 {WALL_NEEDED} {}",
+                torque(-0.0063, 3),
+                signed_percent(-0.0037),
+                mm(-0.013),
+                mm(-0.079),
+                torque(-0.0046, 3),
+                signed_percent(-0.0028),
+                mm(0.0122),
+                mm(0.079)
+            )
+        );
+        assert_eq!(
+            e[4],
+            format!(
+                "{count}: -2 -> {} ({}), {od} {}, {space}: {FLIP_FAILS}, {cup_wall}: \
+                 {WALL_NEEDED} {}; +2 -> {} ({}), {gearbox}: {FLIP_FAILS}, {cup_wall}: \
+                 {WALL_NEEDED} {}",
+                torque(-0.8868, 2),
+                signed_percent(-0.53),
+                quoted(2.2307, 1, "mm"),
+                mm(0.7995),
+                torque(0.6121, 2),
+                signed_percent(0.3658),
+                mm(-0.4797)
+            )
+        );
+
+        // (c): the calibration note right after the number, then the shaft joints' quoted
+        // needs, named by their results' labels. (Its fraction to 5 decimals: -41.05 % at two
+        // reads -41.0 %, while the side, -41.0516 %, reads -41.1 %.)
+        let joints = label(SHAFT_JOINT);
+        let need = |path: &str, x: f64| {
+            format!(
+                "{joints}: {} {}",
+                label_for(path),
+                quoted(x, 2, unit_of(path))
+            )
+        };
+        assert_eq!(
+            lines("(c)")[4],
+            format!(
+                "{count}: -2 -> {} ({}), {CALIBRATION_CHANGE}, {}, {}; +2 -> {SIDE_DOES_NOT_FIT}",
+                torque(-0.5923, 2),
+                signed_percent(-0.41052),
+                need("shaft_joint.hub_needed_um", -2.43),
+                need("shaft_joint.cup_needed_um", -1.9182)
+            )
+        );
+
+        // The mixed pair's and the short cavity's Overall length rows: the jump both ways.
+        let jumps = format!("{length}: -1 mm -> {JUMP}; +1 mm -> {JUMP}");
+        for key in ["mixed", "short cavity"] {
+            assert_eq!(lines(key)[2], jumps, "{key}");
+        }
+
+        // The odd count: no size rows; the gap's numbers, and the count's two sides in words.
+        assert_eq!(
+            lines("odd count"),
+            [
+                CAPTION.to_owned(),
+                format!(
+                    "{gap}: -0.1 mm -> {} ({}), {clearance} {}, {cup_wall}: {WALL_NEEDED} {}, \
+                     {gearbox}: {COLD_HIGH} {}; +0.1 mm -> {} ({}), {clearance} {}, \
+                     {cup_wall}: {WALL_NEEDED} {}, {gearbox}: {COLD_HIGH} {}",
+                    torque(0.0653, 2),
+                    signed_percent(0.0322),
+                    mm(-0.1),
+                    mm(0.0202),
+                    cold(0.0230),
+                    torque(-0.0628, 2),
+                    signed_percent(-0.031),
+                    mm(0.1),
+                    mm(-0.0197),
+                    cold(-0.0221)
+                ),
+                format!("{count}: -2 -> {NOT_ON_THE_SLIDER}; +2 -> {NOT_ON_THE_SLIDER}"),
+            ]
+        );
+
+        // (b) with Auto on the magnet length: the caption, the Auto line, then the held row in
+        // its place.
+        let b = find(&designs, "(b)")
+            .card()
+            .lines(Some(FreeVariable::AxialLength));
+        assert_eq!(b[..2], [CAPTION, AUTO_HOLDS_LENGTH]);
+        assert_eq!(b[3], held_line(Control::OverallLength));
+        assert_eq!(b[3], format!("{length}: {}", size_controls::SET_BY_AUTO));
+        assert_eq!(b.len(), 6);
+    }
+
+    #[test]
+    fn the_flips_and_the_margins_name_the_checks_that_move() {
+        // Spec 8.1 test 7 (owner 8A; spec 3.6). At every design of section 2, against each side's
+        // stepped design rebuilt here: the flips are exactly the counted checks whose level
+        // differs, in the guides' order; each quoted change is of a check that fails on both
+        // designs (never Hot-low torque, which is the row's own number, nor Temperature limits,
+        // whose terms read stored 3D fields: T-13), is drawn (`shows`), and is in its result's
+        // own unit, one of mm, µm, MPa, °C and N·m.
+        let designs = card_designs();
+        let mut quotes = 0;
+        for design in &designs {
+            let card = design.card();
+            let before = compute_all(&design.inputs);
+            for row in card.rows() {
+                for (more, side) in sides(row) {
+                    let Side::Change(change) = side else {
+                        continue;
+                    };
+                    let what = format!("{} {:?} {more}", design.key, row.control);
+                    let stepped = slider_step(
+                        row.control,
+                        &design.inputs,
+                        design.minimum_diameter_mm,
+                        more,
+                    );
+                    let after = compute_all(&stepped);
+                    let flips: Vec<Flip> = counted_guides(PAUSED)
+                        .filter_map(|guide| {
+                            let to = level(guide, &stepped, &after);
+                            (level(guide, &design.inputs, &before) != to).then_some(Flip {
+                                check: guide.label,
+                                to,
+                            })
+                        })
+                        .collect();
+                    assert_eq!(change.flips, flips, "{what}");
+                    for margin in &change.margins {
+                        let guide = counted_guides(PAUSED)
+                            .find(|guide| guide.label == margin.check)
+                            .unwrap_or_else(|| panic!("{what}: {margin:?}"));
+                        assert_eq!(level(guide, &design.inputs, &before), Level::Bad, "{what}");
+                        assert_eq!(level(guide, &stepped, &after), Level::Bad, "{what}");
+                        assert!(![HOT_MIN, TEMPERATURE].contains(&guide.check), "{what}");
+                        assert!(shows(margin.change, margin.decimals), "{what}: {margin:?}");
+                        assert!(QUOTED_UNITS.contains(&margin.unit), "{what}: {margin:?}");
+                        // The unit and the decimals are those of a term the check quotes.
+                        assert!(
+                            check_terms(guide.check, &design.inputs, &before)
+                                .iter()
+                                .filter_map(|term| term.quoted)
+                                .any(|q| q.name == margin.name
+                                    && q.decimals == margin.decimals
+                                    && unit_of(q.path) == margin.unit),
+                            "{what}: {margin:?}"
+                        );
+                        quotes += 1;
+                    }
+                }
+            }
+        }
+        // Not vacuous: every quoted change at section 2's designs.
+        assert_eq!(quotes, 517);
+
+        let design = |key| find(&designs, key);
+        // (a) gap -0.1 mm quotes Running clearance -0.10 mm (owner 8A's example), and the
+        // gearbox's quantity by its name (T-11).
+        let gap = number(&design("(a)").side(Control::FaceGap, false));
+        assert_eq!(
+            (gap.margins[0].check, gap.margins[0].name),
+            (label(CLEARANCE), None)
+        );
+        assert_eq!(signed_change(gap.margins[0].change, 2), "-0.10");
+        let gearbox = gap.margins.last().expect("the gearbox's quantity");
+        assert_eq!(
+            (gearbox.check, gearbox.name),
+            (label(GEARBOX), Some(COLD_HIGH))
+        );
+        // A check that fails on both designs, whose quantity the step does not move, is not
+        // quoted: at (a) a length step leaves the running clearance and the wall needed as they
+        // were.
+        let length = number(&design("(a)").side(Control::OverallLength, true));
+        assert_eq!(
+            length.margins.iter().map(|m| m.check).collect::<Vec<_>>(),
+            [label(GEARBOX)]
+        );
+        // A term that fails on the stepped design only is quoted: at (b) the diameter +1 mm side
+        // puts the Rotating diameter over the space claim, whose large-diameter stack already
+        // fails, so no flip shows it.
+        let b = design("(b)");
+        let plus = number(&b.side(Control::OutsideDiameter, true));
+        let rotating = SPACE_CLAIM_AXIS_SIZES[0].0;
+        assert!(plus.flips.is_empty(), "{plus:?}");
+        assert!(
+            plus.margins.iter().any(|m| m.name == Some(rotating)),
+            "{plus:?}"
+        );
+        let rotating_passes = |inputs: &DesignInputs| {
+            check_terms(SPACE_CLAIM, inputs, &compute_all(inputs))[0].passes
+        };
+        assert!(rotating_passes(&b.inputs));
+        assert!(!rotating_passes(&slider_step(
+            Control::OutsideDiameter,
+            &b.inputs,
+            None,
+            true
+        )));
+        // Only the joint fails: every number side quotes the inner hub's needed minimum.
+        let need = label_for("shaft_joint.hub_needed_um");
+        for row in design("only the joint fails").card().rows() {
+            for (_, side) in sides(row) {
+                if let Side::Change(change) = side {
+                    assert!(
+                        change.margins.iter().any(|m| m.name == Some(need)),
+                        "{row:?}"
+                    );
+                }
+            }
+        }
+        // The temperature edge: Temperature limits turns to a caution on three sides.
+        let edge = design("temperature edge").card();
+        let caution = Flip {
+            check: label(TEMPERATURE),
+            to: Level::Caution,
+        };
+        let cautions: Vec<(Control, bool)> = edge
+            .rows()
+            .iter()
+            .flat_map(|row| {
+                sides(row)
+                    .into_iter()
+                    .filter(
+                        |(_, side)| matches!(side, Side::Change(c) if c.flips.contains(&caution)),
+                    )
+                    .map(move |(more, _)| (row.control, more))
+            })
+            .collect();
+        assert_eq!(
+            cautions,
+            [
+                (Control::OutsideDiameter, true),
+                (Control::OverallLength, true),
+                (Control::MagnetsPerRing, false)
+            ]
+        );
+        // Temperature limits is never quoted (T-13). Its verdict is amber at worst (`verdict_level`
+        // reads OK or CHECK), so it never fails on both designs; and its terms quote nothing at
+        // any design, so no level could let one through.
+        let temperature = guide(TEMPERATURE).expect("the temperature guide");
+        for design in &designs {
+            let results = compute_all(&design.inputs);
+            assert!(
+                check_terms(TEMPERATURE, &design.inputs, &results)
+                    .iter()
+                    .all(|term| term.quoted.is_none()),
+                "{}",
+                design.key
+            );
+            assert_ne!(
+                level(temperature, &design.inputs, &results),
+                Level::Bad,
+                "{}",
+                design.key
+            );
+        }
+    }
+
+    #[test]
+    fn the_card_names_the_clamp_only_while_unpaused() {
+        // Spec 8.1 test 7a (code review M1): the flips run over the guides that count at the
+        // panel's pause. Unpaused, the clamp's guide counts: at the clamp's limit the Overall
+        // length +1 mm side flips it to fails, and no clamp quantity is quoted (`check_terms`
+        // gives the clamp none). Paused, as shipped, no side names it.
+        let at_limit = clamp_at_its_limit();
+        let results = compute_all(&at_limit);
+        let clamp = label(CLAMP);
+        let names_the_clamp = |card: &TorqueCard| {
+            card.rows().iter().any(|row| {
+                sides(row).into_iter().any(|(_, side)| match side {
+                    Side::Change(change) => {
+                        change.flips.iter().any(|flip| flip.check == clamp)
+                            || change.margins.iter().any(|margin| margin.check == clamp)
+                    }
+                    Side::Words(_) => false,
+                })
+            })
+        };
+        let unpaused = card(&at_limit, &results, None, false);
+        let longer = number(&unpaused.rows()[1].more);
+        assert!(
+            longer.flips.contains(&Flip {
+                check: clamp,
+                to: Level::Bad
+            }),
+            "{longer:?}"
+        );
+        assert!(names_the_clamp(&unpaused));
+        assert!(unpaused.rows().iter().all(|row| {
+            sides(row).into_iter().all(|(_, side)| match side {
+                Side::Change(change) => change.margins.iter().all(|m| m.check != clamp),
+                Side::Words(_) => true,
+            })
+        }));
+        assert!(!names_the_clamp(&card(&at_limit, &results, None, true)));
+        for inputs in [at_limit, only_the_clamp_fails()] {
+            let paused = card_at(&inputs, None);
+            assert!(!names_the_clamp(&paused));
+            for line in paused.lines(None) {
+                assert!(!line.to_lowercase().contains("clamp"), "{line}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_held_row_reads_set_by_auto_and_the_card_is_the_same_design_s() {
+        // Spec 8.1 test 8 (owner 5A; spec 3.4): Auto's marking is drawn by `lines`, outside the
+        // card. For each Auto variable at (a) and (e2): the held row, the one `held_by` names,
+        // reads `held_line` after the caption and the Auto line; the other rows read as with
+        // Auto off, which shows the held row's numbers; one card serves both.
+        let designs = card_designs();
+        for key in ["(a)", "(e2)"] {
+            let card = find(&designs, key).card();
+            assert_eq!(
+                card,
+                find(&designs, key).card(),
+                "the card is the design's alone"
+            );
+            let plain = card.lines(None);
+            assert_eq!(plain[0], CAPTION);
+            for variable in FreeVariable::ALL {
+                let held = Control::ALL
+                    .into_iter()
+                    .position(|control| control.held_by() == Some(variable))
+                    .expect("a control for every variable");
+                let mut expected = plain.clone();
+                expected.insert(1, auto_line(variable).to_owned());
+                expected[2 + held] = held_line(Control::ALL[held]);
+                assert_eq!(card.lines(Some(variable)), expected, "{key} {variable:?}");
+                // Auto off, the held row shows its numbers.
+                assert!(
+                    plain[1 + held].starts_with(&format!("{}: -", Control::ALL[held].label())),
+                    "{}",
+                    plain[1 + held]
+                );
+            }
+        }
+        // The three Auto lines, each the variable's own.
+        assert_eq!(
+            FreeVariable::ALL.map(auto_line),
+            [AUTO_HOLDS_LENGTH, AUTO_HOLDS_COUNT, AUTO_HOLDS_RING]
+        );
+        // The odd count has no size rows (T-5): with Auto on the ring size or the magnet length
+        // the Auto line is drawn and no row is held; with Auto on the count, its row is.
+        let odd = find(&designs, "odd count").card();
+        let plain = odd.lines(None);
+        assert_eq!(plain.len(), 3);
+        for variable in [FreeVariable::RingRadius, FreeVariable::AxialLength] {
+            assert_eq!(
+                odd.lines(Some(variable)),
+                [
+                    CAPTION.to_owned(),
+                    auto_line(variable).to_owned(),
+                    plain[1].clone(),
+                    plain[2].clone()
+                ]
+            );
+        }
+        assert_eq!(
+            odd.lines(Some(FreeVariable::MagnetsPerRing)),
+            [
+                CAPTION.to_owned(),
+                AUTO_HOLDS_COUNT.to_owned(),
+                plain[1].clone(),
+                held_line(Control::MagnetsPerRing)
+            ]
+        );
+        // Each Auto design of section 2 draws its held row once.
+        for design in &designs {
+            let Some(variable) = design.auto else {
+                continue;
+            };
+            let lines = design.card().lines(Some(variable));
+            let held = lines
+                .iter()
+                .filter(|line| line.ends_with(size_controls::SET_BY_AUTO))
+                .count();
+            assert_eq!(held, 1, "{}: {lines:?}", design.key);
+        }
+    }
+
+    #[test]
+    fn size_changes_and_margins_are_drawn_only_when_they_show() {
+        // Spec 8.1 test 9a (code review M2): section 5's cap keeps float noise off the screen.
+        for from in [1, 2] {
+            for x in [
+                0.0,
+                1e-15,
+                -1e-15,
+                3.6e-15,
+                f64::NAN,
+                f64::INFINITY,
+                f64::NEG_INFINITY,
+            ] {
+                assert!(!shows(x, from), "{x} from {from}");
+            }
+            assert!(shows(0.0046, from), "from {from}");
+        }
+        assert!(shows(6e-5, 2));
+        assert!(!shows(6e-5, 1));
+        // The odd count has no size controls: its gap sides carry no size change, and its card
+        // equals a second card of it (no NaN stands for "no value").
+        let designs = card_designs();
+        let odd = find(&designs, "odd count");
+        for (_, side) in sides(&odd.card().rows()[0]) {
+            let change = number(side);
+            assert_eq!(
+                (change.diameter_change_mm, change.length_change_mm),
+                (None, None)
+            );
+        }
+        assert_eq!(odd.card(), odd.card());
+        // At (a) no side draws a size change: the cap sets the Outside diameter at every stepped
+        // design, and the length moves by float noise only.
+        let size_labels = [Control::OutsideDiameter, Control::OverallLength].map(Control::label);
+        let draws_a_size = |change: &Change, control: Control| {
+            change.costs(control).iter().any(|cost| {
+                size_labels
+                    .iter()
+                    .any(|label| cost.starts_with(&format!("{label} ")))
+            })
+        };
+        let a = find(&designs, "(a)");
+        for row in a.card().rows() {
+            for (_, side) in sides(row) {
+                if let Side::Change(change) = side {
+                    assert!(!draws_a_size(change, row.control), "{row:?}");
+                }
+            }
+        }
+        // A side with a planted 1e-15 mm size change draws nothing for it; 0.04 mm draws, but
+        // never on the row of its own dimension.
+        let mut planted = number(&a.side(Control::FaceGap, true));
+        let drawn = planted.costs(Control::FaceGap);
+        planted.diameter_change_mm = Some(1e-15);
+        planted.length_change_mm = Some(-1e-15);
+        assert_eq!(planted.costs(Control::FaceGap), drawn);
+        planted.diameter_change_mm = Some(0.04);
+        assert!(draws_a_size(&planted, Control::FaceGap));
+        assert!(!draws_a_size(&planted, Control::OutsideDiameter));
+    }
+
+    #[test]
+    fn a_row_whose_two_sides_read_alike_flips_hot_low_only_where_it_crosses_required() {
+        // Spec T-14 and 10.1 step 6 (the one-flip line on the STOP sheet): the table's "T-14 one
+        // flip", (e2) with Auto on the magnet length shown with Auto off and Required halfway
+        // between its Outside diameter sides' hot-low. Both sides draw the same N·m and percent
+        // at the row's decimals, and only the side whose hot-low is below Required flips
+        // Hot-low torque.
+        let designs = card_designs();
+        let design = find(&designs, "T-14 one flip");
+        let required = design.inputs.metal.required_min_Nm;
+        let card = design.card();
+        let row = &card.rows()[0];
+        assert_eq!(row.control, Control::OutsideDiameter);
+        let hot_low = Flip {
+            check: label(HOT_MIN),
+            to: Level::Bad,
+        };
+        let sides = [number(&row.fewer), number(&row.more)];
+        let flips = sides.each_ref().map(|side| side.flips.contains(&hot_low));
+        let below = sides.each_ref().map(|side| side.hot_low_Nm < required);
+        assert_eq!(flips, below);
+        assert_eq!(flips.iter().filter(|&&flip| flip).count(), 1, "{flips:?}");
+        let lines = card.lines(None);
+        let [fewer, more] = side_texts(&lines[1], row);
+        assert_eq!(drawn_number(fewer), drawn_number(more), "{fewer} | {more}");
+    }
+
+    #[test]
+    fn where_the_boss_sets_the_outside_diameter_one_step_reads_the_slider_s_own_lift() {
+        // Spec R-13 (on the STOP sheet; no diameter jump rule): the table's "R-13 boss plateau".
+        // The boss sets the Outside diameter at the slider's bottom: -1 mm reads the end of its
+        // range, and +1 mm, which lifts the cup from its own size to the boss plus the step, is
+        // a number (+7.55 %), as the slider does.
+        let designs = card_designs();
+        let design = find(&designs, "R-13 boss plateau");
+        assert_eq!(
+            design.side(Control::OutsideDiameter, false),
+            Side::Words(Words::EndOfRange)
+        );
+        let more = number(&design.side(Control::OutsideDiameter, true));
+        assert_eq!(signed_fixed(100.0 * more.fraction, 2), "+7.55");
+    }
+
+    #[test]
+    fn a_step_to_a_design_without_size_controls_draws_no_size_change() {
+        // Spec 2.2: a size change is the sliders' own (`dimensions`) of both designs, none where
+        // either has no size controls. A design file can put the ring past its slider: at 6
+        // magnets on a ring of 38.0 mm the Size tab draws its size controls, while at 4 magnets
+        // (the count row's -2 side) it cannot define them, so that side draws its number and no
+        // size change.
+        use crate::gui::test_support::with_poles;
+        let mut inputs = with_poles(6);
+        inputs.coupling.inner_back_apothem_mm = 38.0;
+        let mut four = inputs.clone();
+        four.coupling.npole = 4;
+        assert!(dimensions(&inputs).is_some());
+        assert!(dimensions(&four).is_none());
+        let fewer = number(&side_at(&inputs, None, Control::MagnetsPerRing, false));
+        assert_eq!(
+            (fewer.diameter_change_mm, fewer.length_change_mm),
+            (None, None)
+        );
+        let card = card_at(&inputs, None);
+        let line = card.lines(None).pop().expect("the count row's line");
+        let [fewer_text, _] = side_texts(&line, &card.rows()[3]);
+        assert!(
+            !fewer_text.contains(Control::OutsideDiameter.label()),
+            "{fewer_text}"
+        );
+    }
+
+    #[test]
+    fn the_card_never_panics_at_the_values_a_design_file_can_carry() {
+        // A design file or a share link can carry any finite value (`validate()` checks only
+        // that a number is finite), and the panel draws the card on the first view of every
+        // design it opens, so a panic here ends the app (wasm). At each such value, at both
+        // back irons and at the Minimum OD's top, the card is computed and equals a second
+        // card of the same design (no field holds a NaN, spec 3.1), and every line of every
+        // Auto state is drawn in plain words with the font's glyphs. What the numbers read at
+        // the degenerate ones (a count of 2, a calibration coefficient of 1e-9 or 1e300, a
+        // variation just under 1) is the owner's to rule at the release stop.
+        type Edit = fn(&mut DesignInputs);
+        let edits: [(&str, Edit); 47] = [
+            ("npole 0", |d| d.coupling.npole = 0),
+            ("npole 1", |d| d.coupling.npole = 1),
+            ("npole 2", |d| d.coupling.npole = 2),
+            ("npole 3", |d| d.coupling.npole = 3),
+            ("npole -2", |d| d.coupling.npole = -2),
+            ("npole 42", |d| d.coupling.npole = 42),
+            ("npole 1e6", |d| d.coupling.npole = 1_000_000),
+            ("npole i64::MAX", |d| d.coupling.npole = i64::MAX),
+            ("npole i64::MIN", |d| d.coupling.npole = i64::MIN),
+            ("gap 0", |d| d.metal.face_gap_mm = 0.0),
+            ("gap -1", |d| d.metal.face_gap_mm = -1.0),
+            ("gap 5.5", |d| d.metal.face_gap_mm = 5.5),
+            ("gap 1e300", |d| d.metal.face_gap_mm = 1e300),
+            ("override 0.1", |d| {
+                d.coupling.magnets.axial_length_mm = Some(0.1)
+            }),
+            ("override 60", |d| {
+                d.coupling.magnets.axial_length_mm = Some(60.0)
+            }),
+            ("override 1e300", |d| {
+                d.coupling.magnets.axial_length_mm = Some(1e300)
+            }),
+            ("override -1", |d| {
+                d.coupling.magnets.axial_length_mm = Some(-1.0)
+            }),
+            ("ring 0", |d| d.coupling.inner_back_apothem_mm = 0.0),
+            ("ring 0.5", |d| d.coupling.inner_back_apothem_mm = 0.5),
+            ("ring 200", |d| d.coupling.inner_back_apothem_mm = 200.0),
+            ("ring 1e300", |d| d.coupling.inner_back_apothem_mm = 1e300),
+            ("ring -1", |d| d.coupling.inner_back_apothem_mm = -1.0),
+            ("cup depth 0", |d| d.metal.cup_depth_mm = 0.0),
+            ("cup depth 1e300", |d| d.metal.cup_depth_mm = 1e300),
+            ("boss 0", |d| d.metal.boss_od_mm = 0.0),
+            ("boss 200", |d| d.metal.boss_od_mm = 200.0),
+            ("cap 0", |d| d.metal.cap_od_mm = 0.0),
+            ("cap 1e300", |d| d.metal.cap_od_mm = 1e300),
+            ("bore 0", |d| d.coupling.bore_mm = 0.0),
+            ("bore 1e300", |d| d.coupling.bore_mm = 1e300),
+            ("variation 1 - 1e-10", |d| d.metal.variation = 1.0 - 1e-10),
+            ("variation -1", |d| d.metal.variation = -1.0),
+            ("variation 1e300", |d| d.metal.variation = 1e300),
+            ("inner Br 1e-6 T", |d| {
+                d.coupling.magnets.part_inner.clear();
+                d.coupling.magnets.part_outer.clear();
+                d.coupling.magnets.manual_inner_br_T = 1e-6;
+            }),
+            ("inner Br -1 T", |d| {
+                d.coupling.magnets.part_inner.clear();
+                d.coupling.magnets.part_outer.clear();
+                d.coupling.magnets.manual_inner_br_T = -1.0;
+            }),
+            ("no back iron, 8 magnets, f_cal_original 1e-9", |d| {
+                d.coupling.backiron = 0;
+                d.coupling.npole = 8;
+                d.calibration.f_cal_original = 1e-9;
+            }),
+            ("no back iron, 8 magnets, f_cal_original 1e-300", |d| {
+                d.coupling.backiron = 0;
+                d.coupling.npole = 8;
+                d.calibration.f_cal_original = 1e-300;
+            }),
+            ("no back iron, 8 magnets, f_cal_original 1e-320", |d| {
+                d.coupling.backiron = 0;
+                d.coupling.npole = 8;
+                d.calibration.f_cal_original = 1e-320;
+            }),
+            ("f_cal_original 1e300", |d| {
+                d.calibration.f_cal_original = 1e300
+            }),
+            ("required 1e-300", |d| d.metal.required_min_Nm = 1e-300),
+            ("required -1", |d| d.metal.required_min_Nm = -1.0),
+            ("c_end 0", |d| d.coupling.c_end = 0.0),
+            ("c_end 1e300", |d| d.coupling.c_end = 1e300),
+            ("gearbox rating 0", |d| {
+                d.coupling.gearbox_input_rating_Nm = 0.0
+            }),
+            ("residual target 1e300", |d| {
+                d.metal.residual_target_mm = 1e300
+            }),
+            ("hot ambient 1e300", |d| {
+                d.temperature.duty.hot_ambient_C = 1e300
+            }),
+            ("hot ambient -1e300", |d| {
+                d.temperature.duty.hot_ambient_C = -1e300
+            }),
+        ];
+        let ctx = egui::Context::default();
+        // The fonts load on the context's first frame.
+        sized_frame(&ctx, SCREEN, Vec::new(), |_| {});
+        let top = dimensions(&DesignInputs::default())
+            .expect("size controls")
+            .minimum_diameter_range
+            .max;
+        let mut rows = 0;
+        for backiron in [1, 0] {
+            for (name, edit) in edits {
+                for minimum in [None, Some(top)] {
+                    let mut inputs = DesignInputs::default();
+                    inputs.coupling.backiron = backiron;
+                    edit(&mut inputs);
+                    let what = format!("{name}, back iron {backiron}, Minimum OD {minimum:?}");
+                    let shown = card_at(&inputs, minimum);
+                    assert_eq!(shown, card_at(&inputs, minimum), "{what}");
+                    rows += shown.rows().len();
+                    for auto in [None].into_iter().chain(FreeVariable::ALL.map(Some)) {
+                        let lines = shown.lines(auto);
+                        assert!(!lines.is_empty(), "{what}");
+                        for line in &lines {
+                            assert!(!line.is_empty(), "{what}");
+                            assert_eq!(
+                                plain_text_violations(line),
+                                Vec::<&str>::new(),
+                                "{what}: {line}"
+                            );
+                            assert_glyphs(&ctx, line, &what);
+                        }
+                    }
+                }
+            }
+        }
+        // Not vacuous: most of these designs draw rows.
+        assert!(rows > 200, "{rows} rows");
+    }
+
+    /// The side texts of a row's line, "{label}: {fewer}; {more}": the two sides.
+    fn side_texts<'a>(line: &'a str, row: &Row) -> [&'a str; 2] {
+        let texts = line
+            .strip_prefix(&format!("{}: ", row.control.label()))
+            .unwrap_or_else(|| panic!("a row's line: {line}"));
+        <[&str; 2]>::try_from(texts.split("; ").collect::<Vec<_>>())
+            .unwrap_or_else(|_| panic!("two sides: {line}"))
+    }
+
+    /// The N·m and the percent a number side's text draws: "{step} -> {N·m} N·m ({percent} %)".
+    fn drawn_number(side: &str) -> (&str, &str) {
+        let (_, number) = side.split_once(" -> ").expect("a step");
+        let (torque, rest) = number.split_once(" N·m (").expect("a number side");
+        let (percent, _) = rest.split_once(" %)").expect("a percent");
+        (torque, percent)
+    }
+
+    #[test]
+    fn no_card_number_reads_zero_or_disagrees_with_its_percent() {
+        // Spec 8.3 test 15 (decision 10B): at every design of section 2, each number side's N·m
+        // reads a digit that is not zero unless the change is under the format's cap (T-9),
+        // and its sign is its percent's.
+        let designs = card_designs();
+        let mut numbers = 0;
+        for design in &designs {
+            let card = design.card();
+            let lines = card.lines(None);
+            for (row, line) in card.rows().iter().zip(&lines[1..]) {
+                for ((_, side), text) in sides(row).into_iter().zip(side_texts(line, row)) {
+                    let Side::Change(change) = side else {
+                        continue;
+                    };
+                    let (torque, percent) = drawn_number(text);
+                    assert!(
+                        reads_not_zero(torque) || !shows(change.change_Nm, TORQUE_DECIMALS),
+                        "{}: {text}",
+                        design.key
+                    );
+                    assert_eq!(
+                        torque.chars().next(),
+                        percent.chars().next(),
+                        "{}: {text}",
+                        design.key
+                    );
+                    numbers += 1;
+                }
+            }
+        }
+        assert_eq!(numbers, NUMBER_SIDES);
+        // Below zero: (c) with a design file's calibration coefficient of -0.95, two magnets
+        // fewer.
+        let card = find(&designs, "(c), f_cal_original -0.95").card();
+        let count = &card.rows()[3];
+        let lines = card.lines(None);
+        let (torque, percent) = drawn_number(side_texts(&lines[4], count)[0]);
+        assert!(number(&count.fewer).hot_low_Nm < 0.0);
+        assert!(
+            torque.starts_with('-') && percent.starts_with('-'),
+            "{torque} {percent}"
+        );
+        // The one-line forms draw no number.
+        for key in [
+            "short magnets",
+            "shown does not fit",
+            "variation 1.0",
+            "zero torque",
+        ] {
+            for line in find(&designs, key).card().lines(None) {
+                assert!(!line.chars().any(|c| c.is_ascii_digit()), "{key}: {line}");
+            }
+        }
+    }
+
+    /// Every line the card draws at every design of section 2, with each Auto state, and its
+    /// heading: what the word and glyph tests scan.
+    fn every_card_text() -> Vec<(String, String)> {
+        let mut texts = vec![("heading".to_owned(), CARD_HEADING.to_owned())];
+        for design in card_designs() {
+            let card = design.card();
+            for auto in [None].into_iter().chain(FreeVariable::ALL.map(Some)) {
+                for line in card.lines(auto) {
+                    texts.push((format!("{} {auto:?}", design.key), line));
+                }
+            }
+        }
+        texts
+    }
+
+    #[test]
+    fn the_card_texts_never_rank_the_controls() {
+        // Spec 8.4 test 16 (owner 14A; spec 4.4): no card text ranks the controls
+        // (`CARD_RANKING_WORDS`; its matcher's own examples are in `engine::explain::plain`),
+        // orders the torques, says the coupling protects the gearbox, names the paused clamp
+        // section, or says what the plain-words guard bans.
+        let texts = every_card_text();
+        // Not vacuous: the heading, and every line at every design with each Auto state.
+        assert_eq!(texts.len(), 1056);
+        for (what, text) in &texts {
+            assert_eq!(ranking_words_in(text), Vec::<&str>::new(), "{what}: {text}");
+            let lower = text.to_lowercase();
+            for word in TORQUE_ORDER_WORDS {
+                assert!(!lower.contains(word), "{what}: {text}");
+            }
+            assert!(!mentions_gearbox_protection(text), "{what}: {text}");
+            assert!(!lower.contains("clamp"), "{what}: {text}");
+            assert_eq!(
+                plain_text_violations(text),
+                Vec::<&str>::new(),
+                "{what}: {text}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_card_text_has_its_glyphs() {
+        // Spec 8.4 test 17.
+        let ctx = egui::Context::default();
+        // The fonts load on the context's first frame.
+        sized_frame(&ctx, SCREEN, Vec::new(), |_| {});
+        for (what, text) in every_card_text() {
+            assert_glyphs(&ctx, &text, &what);
+        }
+    }
+
+    /// `line` with each number it draws replaced by '#' (its skeleton), and those numbers. A
+    /// side's step ("-1", "+0.1", "-2" before " mm -> " or " -> ") is the template's, so it
+    /// stays in the skeleton.
+    fn numbers_in(line: &str) -> (String, Vec<String>) {
+        let chars: Vec<char> = line.chars().collect();
+        let (mut skeleton, mut numbers) = (String::new(), Vec::new());
+        let mut i = 0;
+        while i < chars.len() {
+            let signed =
+                matches!(chars[i], '+' | '-') && chars.get(i + 1).is_some_and(char::is_ascii_digit);
+            if !(signed || chars[i].is_ascii_digit()) {
+                skeleton.push(chars[i]);
+                i += 1;
+                continue;
+            }
+            let mut end = i + 1;
+            while end < chars.len() && (chars[end].is_ascii_digit() || chars[end] == '.') {
+                end += 1;
+            }
+            let number: String = chars[i..end].iter().collect();
+            let after: String = chars[end..].iter().collect();
+            if after.starts_with(" mm -> ") || after.starts_with(" -> ") {
+                skeleton.push_str(&number);
+            } else {
+                skeleton.push('#');
+                numbers.push(number);
+            }
+            i = end;
+        }
+        (skeleton, numbers)
+    }
+
+    #[test]
+    fn the_card_s_strings_are_constants_and_its_numbers_come_from_results() {
+        // Spec 8.4 test 18. Each design's card against a copy whose every number (each change in
+        // N·m and as a fraction, each size change and each quoted change) is tripled: every line
+        // keeps its skeleton, so its words are the template's and the constants', and differs at
+        // every number it draws, so each number is read from the card (whose fields test 1 holds
+        // to compute_all). Three times a drawn value moves its first drawn digit; two designs
+        // could not show it, since a gap step's Running clearance change is the step itself at
+        // every design, and a torque that changes in proportion keeps every percent.
+        let tripled = |card: &TorqueCard| -> TorqueCard {
+            let mut card = card.clone();
+            if let TorqueCard::Rows(rows) = &mut card {
+                for row in rows {
+                    for side in [&mut row.fewer, &mut row.more] {
+                        if let Side::Change(change) = side {
+                            change.change_Nm *= 3.0;
+                            change.fraction *= 3.0;
+                            change.diameter_change_mm =
+                                change.diameter_change_mm.map(|mm| 3.0 * mm);
+                            change.length_change_mm = change.length_change_mm.map(|mm| 3.0 * mm);
+                            for margin in &mut change.margins {
+                                margin.change *= 3.0;
+                            }
+                        }
+                    }
+                }
+            }
+            card
+        };
+        let mut numbers = 0;
+        for design in card_designs() {
+            let card = design.card();
+            let moved = tripled(&card);
+            for (line, moved_line) in card.lines(design.auto).iter().zip(moved.lines(design.auto)) {
+                let (skeleton, drawn) = numbers_in(line);
+                let (moved_skeleton, moved_drawn) = numbers_in(&moved_line);
+                assert_eq!(skeleton, moved_skeleton, "{}", design.key);
+                for (number, moved_number) in drawn.iter().zip(&moved_drawn) {
+                    assert_ne!(number, moved_number, "{}: {line}", design.key);
+                    numbers += 1;
+                }
+            }
+        }
+        // Not vacuous: every number drawn at section 2's designs.
+        assert_eq!(numbers, 1049);
     }
 }

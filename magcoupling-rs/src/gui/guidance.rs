@@ -69,7 +69,9 @@ use crate::gui::inputs::{InputCatalogue, optional_seed, section_label};
 use crate::gui::pickers::{CUSTOM, GRADE_PATHS, PART_PATHS};
 use crate::gui::plain_text::{display_label, label_for};
 use crate::gui::size_controls;
-use crate::gui::torque_card::{Words, count_step, side_words};
+use crate::gui::torque_card::{
+    SIDE_DOES_NOT_FIT, SIDE_NO_PREDICTION, Words, count_step, side_words,
+};
 use crate::{DesignInputs, DesignResults, compute_all};
 
 /// Which way a fix moves its input.
@@ -144,15 +146,16 @@ pub struct CheckGuide {
 /// has, which [`crate::gui::dashboard::result_info`] does not find).
 pub const FIT_CHECK: &str = "guidance.blocks_fit";
 
-// The dashboard checks the guides cover (`DASHBOARD`'s check column; a test compares).
-const HOT_MIN: &str = "metal.hot_min_check";
-const CLEARANCE: &str = "metal.clearance_check";
-const CUP_WALL: &str = "materials.cup_wall_check";
-const TEMPERATURE: &str = "temperature.summary.verdict";
-const CLAMP: &str = "clamps.recommended";
-const SHAFT_JOINT: &str = "shaft_joint.check";
-const GEARBOX: &str = "gearbox.cold_high_check";
-const SPACE_CLAIM: &str = "housing.space_claim_check";
+// The dashboard checks the guides cover (`DASHBOARD`'s check column; a test compares). The
+// torque card's tests name the checks it flips and quotes by them.
+pub(crate) const HOT_MIN: &str = "metal.hot_min_check";
+pub(crate) const CLEARANCE: &str = "metal.clearance_check";
+pub(crate) const CUP_WALL: &str = "materials.cup_wall_check";
+pub(crate) const TEMPERATURE: &str = "temperature.summary.verdict";
+pub(crate) const CLAMP: &str = "clamps.recommended";
+pub(crate) const SHAFT_JOINT: &str = "shaft_joint.check";
+pub(crate) const GEARBOX: &str = "gearbox.cold_high_check";
+pub(crate) const SPACE_CLAIM: &str = "housing.space_claim_check";
 const END_EFFECT: &str = "model.end_effect_check";
 
 // Inputs several guides move.
@@ -727,13 +730,6 @@ pub(crate) struct CheckTerm {
 /// judged (no wall, a reversed band) or a check that cannot be made passes them. The clamp has
 /// none here (the fix tests add their own; its verdict moves with no single slider step), nor
 /// has a path that is no guide's check.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the torque card's margins call it (slice 3 Task 4, which removes this)"
-    )
-)]
 pub(crate) fn check_terms(
     check: &str,
     inputs: &DesignInputs,
@@ -1314,7 +1310,8 @@ fn number(value: Value) -> Option<f64> {
 }
 
 /// The result at `path` as a number ([`number`]); NaN for a text, no value or an unknown path.
-fn result_number(results: &DesignResults, path: &str) -> f64 {
+/// The torque card reads its quoted quantities with it.
+pub(crate) fn result_number(results: &DesignResults, path: &str) -> f64 {
     number(results.get(path).unwrap_or(Value::None)).unwrap_or(f64::NAN)
 }
 
@@ -2906,12 +2903,6 @@ pub fn magnet_count_line(auto: Option<FreeVariable>) -> Option<&'static str> {
     }
 }
 
-/// A neighbour line's words when its blocks do not fit.
-const NEIGHBOUR_DOES_NOT_FIT: &str = "magnets do not fit";
-
-/// A neighbour line's words when the model has no number there.
-const NEIGHBOUR_NO_PREDICTION: &str = "no prediction";
-
 /// What two magnets fewer or two more would do (spec 3.3).
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[allow(non_snake_case)] // unit suffix, as the engine's names
@@ -2961,8 +2952,8 @@ impl Neighbour {
                     with_unit(fixed(cup_od_mm, 1), "mm")
                 )
             }
-            NeighbourOutcome::DoesNotFit => format!("{at} {NEIGHBOUR_DOES_NOT_FIT}"),
-            NeighbourOutcome::NoPrediction => format!("{at} {NEIGHBOUR_NO_PREDICTION}"),
+            NeighbourOutcome::DoesNotFit => format!("{at} {SIDE_DOES_NOT_FIT}"),
+            NeighbourOutcome::NoPrediction => format!("{at} {SIDE_NO_PREDICTION}"),
         }
     }
 }

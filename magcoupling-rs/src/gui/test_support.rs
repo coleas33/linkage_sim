@@ -319,6 +319,20 @@ pub(crate) fn with_variation(variation: f64) -> crate::DesignInputs {
     inputs
 }
 
+/// The shaft boss setting the Outside diameter (slice 3 spec R-13, the boss plateau): 8 magnets
+/// per ring on a ring of 8.0 mm, the cap at 30 mm with its thread at 29 mm, and the boss at
+/// 40 mm. The magnets fit and the boss sets the Outside diameter, 40.00 mm, the slider's bottom
+/// (its range 40.00 to 85.41 mm): one +1 mm step lifts the cup from its own size to the boss
+/// plus the step.
+pub(crate) fn boss_plateau() -> crate::DesignInputs {
+    let mut inputs = with_poles(8);
+    inputs.coupling.inner_back_apothem_mm = 8.0;
+    inputs.metal.cap_od_mm = 30.0;
+    inputs.metal.cap_thread_dia_mm = 29.0;
+    inputs.metal.boss_od_mm = 40.0;
+    inputs
+}
+
 /// The gui-smoke share link's design inputs (slice 3 spec 2.1, "(b)"), before Auto on the
 /// magnet length solves them: the defaults with a 1.5 mm face gap.
 pub(crate) fn smoke_inputs() -> crate::DesignInputs {
@@ -331,12 +345,13 @@ pub(crate) fn smoke_inputs() -> crate::DesignInputs {
 // beside the designs it reads, so any test module reads the one table.
 
 /// One design of the torque card's table ([`card_designs`]) as the panel shows it: its key,
-/// the design shown (an Auto design solved as the panel solves it) and the Size tab's Minimum
-/// OD preference.
+/// the design shown (an Auto design solved as the panel solves it), the Size tab's Minimum OD
+/// preference and the Auto state.
 pub(crate) struct CardDesign {
     pub(crate) key: &'static str,
     pub(crate) inputs: crate::DesignInputs,
     pub(crate) minimum_diameter_mm: Option<f64>,
+    pub(crate) auto: Option<crate::engine::sizing::FreeVariable>,
 }
 
 impl CardDesign {
@@ -410,7 +425,7 @@ fn auto_shown(
 }
 
 /// The torque card's designs: those of the slice 3 spec's section 2.1 and its Edges, each with
-/// its Minimum OD preference (an Auto design solved as the panel solves it).
+/// its Minimum OD preference and Auto state (an Auto design solved as the panel solves it).
 /// The one table the card's tests read (code review 4 SF-4), by key or all of it, so a design
 /// added once reaches every test. Each key is the spec's, without its Markdown, with
 /// ": <what differs>" where a row holds several designs.
@@ -462,21 +477,39 @@ pub(crate) fn card_designs() -> Vec<CardDesign> {
         key,
         inputs,
         minimum_diameter_mm: None,
+        auto: None,
     };
     let at_minimum = |key, inputs, minimum: f64| CardDesign {
         key,
         inputs,
         minimum_diameter_mm: Some(minimum),
+        auto: None,
     };
     let solved = |key, inputs: DesignInputs, variable, minimum: Option<f64>| CardDesign {
         key,
         inputs: auto_shown(&inputs, variable, minimum),
         minimum_diameter_mm: minimum,
+        auto: Some(variable),
     };
     let hot = {
         let mut inputs = a();
         hot_day(&mut inputs);
         inputs
+    };
+    // T-14's one-flip row (slice 3 spec 10.1 step 6): (e2) with Auto on the magnet length,
+    // shown with Auto off and Required halfway between its Outside diameter sides' hot-low, so
+    // the two sides read alike while only one crosses Required.
+    let one_flip = {
+        use crate::gui::torque_card::Side;
+        let mut shown = auto_shown(&e2(), AxialLength, None);
+        let card = card_at(&shown, None);
+        let row = &card.rows()[0];
+        let hot_low = |side: &Side| match side {
+            Side::Change(change) => change.hot_low_Nm,
+            Side::Words(words) => panic!("an Outside diameter side reads {words:?}"),
+        };
+        shown.metal.required_min_Nm = (hot_low(&row.fewer) + hot_low(&row.more)) / 2.0;
+        shown
     };
     vec![
         plain("(a)", a()),
@@ -557,6 +590,8 @@ pub(crate) fn card_designs() -> Vec<CardDesign> {
             "(c), f_cal_original -0.95",
             no_back_iron_negative_calibration(),
         ),
+        plain("T-14 one flip", one_flip),
+        plain("R-13 boss plateau", boss_plateau()),
         plain("count overflow: i64::MAX", with_poles(i64::MAX)),
         plain("count overflow: i64::MIN", with_poles(i64::MIN)),
     ]
@@ -916,17 +951,11 @@ mod tests {
     use crate::engine::size_controls::dimensions;
     use crate::gui::dashboard::Level;
     use crate::gui::format::fixed;
-    use crate::gui::guidance::{counted_guides, level};
+    use crate::gui::guidance::{
+        CLEARANCE, CUP_WALL, GEARBOX, HOT_MIN, SHAFT_JOINT, TEMPERATURE, counted_guides, level,
+    };
     use crate::gui::size_controls::predicts;
     use crate::{DesignInputs, compute_all};
-
-    // The counted checks the facts name, by result path.
-    const HOT_MIN: &str = "metal.hot_min_check";
-    const CLEARANCE: &str = "metal.clearance_check";
-    const CUP_WALL: &str = "materials.cup_wall_check";
-    const TEMPERATURE: &str = "temperature.summary.verdict";
-    const SHAFT_JOINT: &str = "shaft_joint.check";
-    const GEARBOX: &str = "gearbox.cold_high_check";
 
     /// The counted checks (the shaft-clamp section paused, as shipped) at `want` on `inputs`, in
     /// the guides' order.
@@ -1071,5 +1100,21 @@ mod tests {
         assert_eq!(fixed(one.model.f_end, 3), "0.896");
         assert!(predicts(&one, one.model.pullout_Nm));
         assert_eq!(fixed(hot_low(&with_variation(1.5)), 4), "-1.3442");
+
+        // The boss plateau (R-13): the magnets fit, and the boss sets the Outside diameter at the
+        // bottom of the slider's range.
+        let boss = boss_plateau();
+        let size = dimensions(&boss).expect("the boss plateau has size controls");
+        assert!(blocks_fit(&boss.coupling, &compute_all(&boss).model));
+        assert_eq!(size.diameter_mm, boss.metal.boss_od_mm);
+        assert_eq!(
+            [
+                size.diameter_mm,
+                size.diameter_range.min,
+                size.diameter_range.max
+            ]
+            .map(|mm| fixed(mm, 2)),
+            ["40.00", "40.00", "85.41"]
+        );
     }
 }

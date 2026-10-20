@@ -168,13 +168,6 @@ pub(crate) fn signed_change(x: f64, from: usize) -> String {
 /// precision): the larger of their [`change_decimals`] from `from`, so each keeps its true sign
 /// and a digit that is not zero, and the two read in their true ratio (-0.0063 and -0.0046 N·m
 /// read "-0.006" and "-0.005", not "-0.01" and "-0.005"). `None` for a row with no number.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the torque card's lines call it (slice 3 Task 4, which removes this)"
-    )
-)]
 pub(crate) fn shared_change_decimals(changes: &[f64], from: usize) -> Option<usize> {
     changes.iter().map(|&x| change_decimals(x, from)).max()
 }

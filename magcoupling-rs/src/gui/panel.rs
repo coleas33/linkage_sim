@@ -63,6 +63,7 @@ use crate::gui::sizing::{
     sizing_range, with_own_value,
 };
 use crate::gui::spreadsheet::Snapshot;
+use crate::gui::torque_card::{KEYWAY_BREAKS_THROUGH, SIDE_DOES_NOT_FIT};
 use crate::gui::trace::{CLEAR_TRACE, Trace, TraceKind};
 use crate::gui::xlsx::{XLSX_FILE_NAME, XLSX_MIME, now_unix_s, spreadsheet_bytes};
 use crate::{DesignInputs, DesignResults, compute_all};
@@ -157,6 +158,12 @@ pub const SOURCE: &str = "Source";
 /// The line at the top of the Assumptions view.
 pub const ASSUMPTIONS_NOTE: &str = "The model's assumptions, apart from the design inputs (each \
      also stays in its input group). The equation panel tags them and what they flow into.";
+
+/// The start of the Size tab's exploration lines: a design the checks rule out (its magnets do
+/// not fit, or the keyway breaks through the hub) is still drawn, for exploring. Each line ends
+/// in the torque card's side words ([`SIDE_DOES_NOT_FIT`], [`KEYWAY_BREAKS_THROUGH`]), so a
+/// change of those words reaches both (slice 3 spec 4.2).
+const EXPLORATION_ONLY: &str = "Exploration only: ";
 
 /// What the inputs side shows (decision M43-7): the design inputs, or the model assumptions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -908,14 +915,14 @@ impl MagcouplingPanel {
                 if !crate::engine::model::blocks_fit(&shown.coupling, &self.results.model) {
                     ui.colored_label(
                         ui.visuals().error_fg_color,
-                        "Exploration only: magnets do not fit at this diameter.",
+                        format!("{EXPLORATION_ONLY}{SIDE_DOES_NOT_FIT} at this diameter."),
                     );
                 }
                 let key_wall = self.results.model.hub_wall_past_key_mm;
                 if !key_wall.is_finite() || key_wall <= 0.0 {
                     ui.colored_label(
                         ui.visuals().error_fg_color,
-                        "Exploration only: the keyway breaks through the hub.",
+                        format!("{EXPLORATION_ONLY}{KEYWAY_BREAKS_THROUGH}."),
                     );
                 } else if key_wall < 2.5 {
                     ui.colored_label(
@@ -4896,17 +4903,18 @@ mod tests {
         .unwrap();
         harness.click_text("Size and torque");
         let output = harness.frame(Vec::new());
+        // The lines' words are the torque card's side words (slice 3 spec 4.2).
         assert_eq!(
             count(
                 &output,
-                "Exploration only: magnets do not fit at this diameter."
+                &format!("{EXPLORATION_ONLY}{SIDE_DOES_NOT_FIT} at this diameter.")
             ),
             1
         );
         assert_eq!(
             count(
                 &output,
-                "Exploration only: the keyway breaks through the hub."
+                &format!("{EXPLORATION_ONLY}{KEYWAY_BREAKS_THROUGH}.")
             ),
             1
         );
