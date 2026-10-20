@@ -2677,4 +2677,266 @@ mod tests {
         // Not vacuous: every number drawn at section 2's designs.
         assert_eq!(numbers, 1049);
     }
+
+    // The count row: the neighbour lines' tests, moved from `gui/guidance.rs` with the lines
+    // (slice 3 T5, spec 6.3; decision 7A), rewritten to the card's types and hot-low.
+
+    #[test]
+    fn the_count_row_s_sides_are_the_design_with_only_the_magnet_count_changed() {
+        // Was each_neighbour_is_the_design_with_only_the_magnet_count_changed: each side is
+        // compute_all of the design with only `coupling.npole` changed, the ring radius kept
+        // (FreeVariable::MagnetsPerRing.apply, as the neighbour lines were), now in hot-low, or
+        // words where its blocks do not fit.
+        let inputs = DesignInputs::default();
+        let results = compute_all(&inputs);
+        let npole = inputs.coupling.npole;
+        let [fewer, more] =
+            [false, true].map(|more| side_at(&inputs, None, Control::MagnetsPerRing, more));
+        for (count, side) in [(npole - 2, &fewer), (npole + 2, &more)] {
+            let design = FreeVariable::MagnetsPerRing.apply(&inputs, count as f64);
+            assert_eq!(
+                design.coupling.inner_back_apothem_mm,
+                inputs.coupling.inner_back_apothem_mm
+            );
+            let r = compute_all(&design);
+            match side {
+                Side::Change(change) => {
+                    assert!(is_valid(&design, &r), "{count}");
+                    assert_eq!(change.hot_low_Nm, r.metal.torque_hot_low_Nm, "{count}");
+                    assert_eq!(
+                        change.change_Nm,
+                        r.metal.torque_hot_low_Nm - results.metal.torque_hot_low_Nm,
+                        "{count}"
+                    );
+                }
+                Side::Words(Words::DoesNotFit) => {
+                    assert!(!blocks_fit(&design.coupling, &r.model), "{count}")
+                }
+                other => panic!("{count}: {other:?}"),
+            }
+        }
+        // The owner's case (spec 1): two fewer magnets fit and lose hot-low torque, the cup
+        // growing under the cap; two more do not fit at this ring size.
+        let fewer = number(&fewer);
+        assert!(fewer.change_Nm < 0.0, "{fewer:?}");
+        let fewer_cup =
+            compute_all(&FreeVariable::MagnetsPerRing.apply(&inputs, (npole - 2) as f64))
+                .model
+                .cup_od_mm;
+        assert!(fewer_cup > results.model.cup_od_mm, "{fewer_cup}");
+        assert_eq!(words(&more), Words::DoesNotFit);
+    }
+
+    #[test]
+    fn the_count_row_says_each_side_s_hot_low_change_or_why_not() {
+        // Was the_magnet_lines_name_each_neighbour_s_torque_and_cup_or_say_why_not: the count's
+        // numbers are the card's count row, in hot-low and the Size tab's number format, and the
+        // lines under Magnets per ring keep the ring-size line and the fit line only (7A).
+        use crate::gui::guidance::{Consequences, RING_SIZE_STAYS};
+        let inputs = DesignInputs::default();
+        let results = compute_all(&inputs);
+        let npole = inputs.coupling.npole;
+        let fewer = compute_all(&FreeVariable::MagnetsPerRing.apply(&inputs, (npole - 2) as f64));
+        let change = fewer.metal.torque_hot_low_Nm - results.metal.torque_hot_low_Nm;
+        let label = Control::MagnetsPerRing.label();
+        let line = card(&inputs, &results, None, PAUSED)
+            .lines(None)
+            .into_iter()
+            .find(|line| line.starts_with(&format!("{label}: ")))
+            .expect("the count row's line");
+        // The row's one number side, at its own decimals (T-14).
+        let fewer_text = format!(
+            "{label}: -2 -> {} N·m ({})",
+            signed_change(change, TORQUE_DECIMALS),
+            signed_percent(change / results.metal.torque_hot_low_Nm)
+        );
+        assert!(line.starts_with(&fewer_text), "{line}");
+        assert!(
+            line.ends_with(&format!("; +2 -> {SIDE_DOES_NOT_FIT}")),
+            "{line}"
+        );
+        let lines = Consequences::of(&inputs, &results, None, PAUSED).magnet_lines(npole, None);
+        assert_eq!(
+            lines.len(),
+            2,
+            "the ring-size line and the fit line: {lines:?}"
+        );
+        assert_eq!(lines[0], RING_SIZE_STAYS);
+        assert!(
+            !lines.iter().any(|line| line.starts_with("At ")),
+            "{lines:?}"
+        );
+    }
+
+    #[test]
+    fn at_either_end_of_the_magnet_slider_the_count_side_past_it_reads_its_end() {
+        // Was at_either_end_of_the_magnet_slider_only_the_neighbour_inside_it_is_shown: at 4
+        // magnets the -2 side, at 40 the +2 side reads 9A's "at the end of its range", and the
+        // side inside the slider is the design with that count. 40 blocks fit only when narrow
+        // (the default parts do not fit 40: that card is ShownDoesNotFit). An odd count (a
+        // design file's) draws the ring-size line under Magnets per ring and no count: its
+        // count row reads NOT_ON_THE_SLIDER both ways (the_words_follow_the_order_of_the_tests).
+        use crate::gui::guidance::{Consequences, RING_SIZE_STAYS};
+        use crate::gui::test_support::{forty_narrow_magnets, odd_count, with_poles};
+        let range = FreeVariable::MagnetsPerRing.range();
+        let (fewest, most) = (range.min as i64, range.max as i64);
+        for (inputs, past_is_more) in [(with_poles(fewest), false), (forty_narrow_magnets(), true)]
+        {
+            let npole = inputs.coupling.npole;
+            assert_eq!(npole, if past_is_more { most } else { fewest });
+            let [fewer, more] =
+                [false, true].map(|more| side_at(&inputs, None, Control::MagnetsPerRing, more));
+            let (past, inside, inside_count) = if past_is_more {
+                (&more, &fewer, npole - 2)
+            } else {
+                (&fewer, &more, npole + 2)
+            };
+            assert_eq!(*past, Side::Words(Words::EndOfRange), "{npole}");
+            let at = compute_all(&FreeVariable::MagnetsPerRing.apply(&inputs, inside_count as f64));
+            match inside {
+                Side::Change(change) => {
+                    assert_eq!(
+                        change.hot_low_Nm, at.metal.torque_hot_low_Nm,
+                        "{inside_count}"
+                    )
+                }
+                Side::Words(words) => assert_ne!(*words, Words::EndOfRange, "{inside_count}"),
+            }
+            let step = if past_is_more { "+2" } else { "-2" };
+            let line = card_at(&inputs, None)
+                .lines(None)
+                .pop()
+                .expect("the count row is the last line");
+            assert!(
+                line.contains(&format!("{step} -> {END_OF_RANGE}")),
+                "{line}"
+            );
+        }
+        let odd = odd_count();
+        let lines = Consequences::of(&odd, &compute_all(&odd), None, PAUSED)
+            .magnet_lines(odd.coupling.npole, None);
+        assert_eq!(lines[0], RING_SIZE_STAYS);
+        assert!(
+            !lines.iter().any(|line| line.starts_with("At ")),
+            "{lines:?}"
+        );
+    }
+
+    #[test]
+    fn a_keyway_through_the_hub_changes_no_count_side_s_hot_low() {
+        // Was a_keyway_through_the_hub_changes_no_neighbour_s_reading: the hub wall past the
+        // keyway does not depend on the magnet count, so the count row skips the keyway (D-1)
+        // and its numbers are the same with the keyway through the hub or not (the Size tab's
+        // exploration line says it breaks through; the other rows say so on each side).
+        let mut broken = DesignInputs::default();
+        broken.coupling.bore_mm = 16.0; // the bore and keyway sliders' maxima
+        broken.coupling.keyway_depth_mm = 4.0;
+        let mut intact = broken.clone();
+        intact.coupling.keyway_depth_mm = 0.0;
+        assert!(compute_all(&broken).model.hub_wall_past_key_mm <= 0.0);
+        assert!(compute_all(&intact).model.hub_wall_past_key_mm > 0.0);
+        // Each side's hot-low numbers, or its words.
+        let read = |inputs: &DesignInputs| -> Vec<Result<(f64, f64, f64), Words>> {
+            [false, true]
+                .map(|more| side_at(inputs, None, Control::MagnetsPerRing, more))
+                .into_iter()
+                .map(|side| match side {
+                    Side::Change(change) => {
+                        Ok((change.hot_low_Nm, change.change_Nm, change.fraction))
+                    }
+                    Side::Words(words) => Err(words),
+                })
+                .collect()
+        };
+        assert_eq!(read(&broken), read(&intact));
+        assert!(read(&broken)[0].is_ok(), "{:?}", read(&broken));
+    }
+
+    #[test]
+    fn with_hub_wall_past_the_keyway_a_count_side_reads_a_number_exactly_when_sizing_counts_it() {
+        // Was with_hub_wall_past_the_keyway_a_neighbour_reads_a_torque_exactly_when_sizing_counts_it:
+        // with wall past the keyway, a count side is a number exactly when its design counts for
+        // inverse sizing (sizing::is_valid), over the slider's even counts, at the defaults and at
+        // a design whose end effect is in range while two magnets fewer take it out (its -2
+        // side reads "no prediction").
+        let range = FreeVariable::MagnetsPerRing.range();
+        let (mut numbers, mut words) = (0, 0);
+        for design in [DesignInputs::default(), end_effect_at_a_step()] {
+            for npole in (range.min as i64..=range.max as i64).step_by(2) {
+                let inputs = FreeVariable::MagnetsPerRing.apply(&design, npole as f64);
+                let shown = card_at(&inputs, None);
+                // A design shown that does not fit or predicts nothing has no rows (test 0).
+                let Some(row) = shown
+                    .rows()
+                    .iter()
+                    .find(|row| row.control == Control::MagnetsPerRing)
+                else {
+                    continue;
+                };
+                for (more, side) in sides(row) {
+                    let Ok(count) = count_step(npole, more) else {
+                        assert_eq!(*side, Side::Words(Words::EndOfRange), "{npole}");
+                        continue;
+                    };
+                    let at = FreeVariable::MagnetsPerRing.apply(&inputs, count as f64);
+                    let r = compute_all(&at);
+                    assert!(r.model.hub_wall_past_key_mm > 0.0, "{npole} -> {count}");
+                    let number = matches!(side, Side::Change(_));
+                    assert_eq!(number, is_valid(&at, &r), "{npole} -> {count}: {side:?}");
+                    if number {
+                        numbers += 1;
+                    } else {
+                        words += 1;
+                    }
+                }
+            }
+        }
+        // Not vacuous: both outcomes occur.
+        assert!(numbers > 0 && words > 0, "{numbers} numbers, {words} words");
+    }
+
+    #[test]
+    fn with_no_prediction_on_the_design_shown_the_card_invents_no_change() {
+        // Was a_neighbour_without_a_prediction_reads_words_and_no_change_is_invented: the
+        // design shown has no prediction (its end effect just out of range) while two more
+        // magnets would have one. The neighbour line showed that count's torque with no change;
+        // the card compares nothing there (test 0, owner 9A): its one line, no row.
+        use crate::gui::test_support::end_effect_edge;
+        let inputs = end_effect_edge();
+        let results = compute_all(&inputs);
+        assert!(
+            !crate::engine::model::end_effect_in_range(results.model.f_end),
+            "{}",
+            results.model.f_end
+        );
+        let more = FreeVariable::MagnetsPerRing.apply(&inputs, (inputs.coupling.npole + 2) as f64);
+        assert!(
+            is_valid(&more, &compute_all(&more)),
+            "two more magnets predict"
+        );
+        let shown = card(&inputs, &results, None, PAUSED);
+        assert_eq!(shown, TorqueCard::ShownNoPrediction);
+        assert!(shown.rows().is_empty());
+        for auto in [None].into_iter().chain(FreeVariable::ALL.map(Some)) {
+            assert_eq!(shown.lines(auto), [SHOWN_NO_PREDICTION], "{auto:?}");
+        }
+    }
+
+    #[test]
+    fn with_magnets_too_short_for_the_model_the_card_names_no_count() {
+        // Was with_magnets_too_short_for_the_model_every_neighbour_reads_words: at short magnets
+        // (f_end below 0) the card draws its one line and no row, so no count's number shows,
+        // and the lines under Magnets per ring name no count either.
+        let inputs = short_magnets();
+        let results = compute_all(&inputs);
+        let shown = card(&inputs, &results, None, PAUSED);
+        assert_eq!(shown, TorqueCard::ShownNoPrediction);
+        assert_eq!(shown.lines(None), [SHOWN_NO_PREDICTION]);
+        let lines = crate::gui::guidance::Consequences::of(&inputs, &results, None, PAUSED)
+            .magnet_lines(inputs.coupling.npole, None);
+        assert!(
+            !lines.iter().any(|line| line.starts_with("At ")),
+            "{lines:?}"
+        );
+    }
 }

@@ -29,7 +29,7 @@
 use crate::engine::assumptions::{self, ASSUMPTIONS};
 use crate::engine::clamps;
 use crate::engine::meta::{InputSet, ResultSet, SliderRange, Value};
-use crate::engine::sizing::SizingOutcome;
+use crate::engine::sizing::{FreeVariable, SizingOutcome};
 use crate::gui::clamp_drawing::clamp_ui;
 use crate::gui::dashboard::{
     Level, dashboard_ui, end_effect_banner, end_effect_banner_ui, why_note_link,
@@ -40,10 +40,11 @@ use crate::gui::explorer::{
 use crate::gui::format::{format_value, search_needle, with_unit};
 use crate::gui::geometry_view::geometry_ui;
 use crate::gui::guidance::{
-    ConsequenceCache, FixCache, SIZE_TAB_ALIASES, TORQUE_BAND_NOTE, within_minimum_diameter,
+    ConsequenceCache, FixCache, SIZE_TAB_ALIASES, SIZE_TAB_NOTE, TORQUE_BAND_NOTE,
+    within_minimum_diameter,
 };
 use crate::gui::history::History;
-use crate::gui::input_ui::{CHANGED_DOT, RowEdit, hint_line, input_row, slider};
+use crate::gui::input_ui::{CHANGED_DOT, RowEdit, hint_line, input_row, slider, weak_line};
 use crate::gui::inputs::{
     ADVANCED_HEADING, FILTER_HINT, InputCatalogue, InputEntry, InputGroup, InputOrder,
     InputSection, KEY_DESIGN, filter_inputs, optional_seed,
@@ -63,7 +64,7 @@ use crate::gui::sizing::{
     sizing_range, with_own_value,
 };
 use crate::gui::spreadsheet::Snapshot;
-use crate::gui::torque_card::{KEYWAY_BREAKS_THROUGH, SIDE_DOES_NOT_FIT};
+use crate::gui::torque_card::{CARD_HEADING, KEYWAY_BREAKS_THROUGH, SIDE_DOES_NOT_FIT};
 use crate::gui::trace::{CLEAR_TRACE, Trace, TraceKind};
 use crate::gui::xlsx::{XLSX_FILE_NAME, XLSX_MIME, now_unix_s, spreadsheet_bytes};
 use crate::{DesignInputs, DesignResults, compute_all};
@@ -195,6 +196,10 @@ const DASHBOARD_WIDTH: f32 = 300.0;
 /// panel's rect under it, and its resize handle's id derives from it.
 const EQUATION_PANEL_ID: &str = "magcoupling_equation_panel";
 
+/// The id of the torque card's collapsing state on the Size tab (slice 3 spec 6.1): egui keeps
+/// the card open or closed under it.
+const TORQUE_CARD_ID: &str = "magcoupling_torque_card";
+
 /// What the panel asks of its host: the platform work an egui panel cannot do itself.
 #[derive(Clone, Debug, PartialEq)]
 pub enum PanelRequest {
@@ -313,8 +318,9 @@ pub struct MagcouplingPanel {
     input_order: InputOrder,
     /// The user-selected lower OD limit, a view preference that does not resize the design.
     minimum_diameter_mm: Option<f64>,
-    /// The Size tab's what-moves-what lines (spec 3.3) for the design shown and the minimum OD,
-    /// recomputed only when either changes: view state, in no design file, link or undo step.
+    /// The Size tab's what-moves-what lines (spec 3.3) and its torque card (slice 3) for the
+    /// design shown, the minimum OD and the shaft-clamp pause, recomputed only when one of the
+    /// three changes: view state, in no design file, link or undo step.
     consequences: ConsequenceCache,
     /// Every check guide's fixes for the design shown (spec 3.4), recomputed only when it
     /// changes: each fix runs `compute_all` on the design its move reaches.
@@ -420,6 +426,12 @@ impl MagcouplingPanel {
     /// The sizing state.
     pub fn sizing(&self) -> &SizingState {
         &self.sizing
+    }
+
+    /// The variable Auto sets while it is on (Torque → Magnets), `None` while it is off: the
+    /// size the Size tab's controls lock and the torque card holds (slice 3 spec 6.1).
+    fn auto(&self) -> Option<FreeVariable> {
+        (self.sizing.mode == SizingMode::TorqueToMagnets).then_some(self.sizing.variable)
     }
 
     /// The range Auto's solve searches ([`crate::gui::sizing::sizing_range`], spec guidance 3.5),
@@ -906,6 +918,54 @@ impl MagcouplingPanel {
         });
     }
 
+    /// The torque card (slice 3 spec 6.1), between the Size tab's readouts and its drawing: a
+    /// collapsing header, open, whose one wrapping row holds the heading, which opens and closes
+    /// the card as its arrow does, and the Why link to how the coupling makes torque; under it
+    /// the card's lines for `shown`, the design shown after this frame's edits (spec 3.5), weak
+    /// like the lines under the controls. The card's own `compute_all` is defensive: the cache's
+    /// key and the results it is handed come from one design whatever a later change puts between
+    /// the panel's results and this view.
+    fn torque_card_ui(&mut self, ui: &mut egui::Ui, readouts: &mut Readouts, shown: &DesignInputs) {
+        let results = compute_all(shown);
+        let auto = self.auto();
+        let lines = self
+            .consequences
+            .get(
+                shown,
+                &results,
+                self.minimum_diameter_mm,
+                self.clamps_paused,
+            )
+            .card
+            .lines(auto);
+        let state = egui::collapsing_header::CollapsingState::load_with_default_open(
+            ui.ctx(),
+            egui::Id::new(TORQUE_CARD_ID),
+            true,
+        );
+        // The heading toggles the card as the arrow does. `HeaderResponse` keeps the closure's
+        // return private until `body`, so the click is recorded here.
+        let mut heading_clicked = false;
+        let mut header = state.show_header(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                heading_clicked = ui
+                    .add(egui::Label::new(CARD_HEADING).sense(egui::Sense::click()))
+                    .clicked();
+                if why_note_link(ui, SIZE_TAB_NOTE) {
+                    readouts.open_note(SIZE_TAB_NOTE);
+                }
+            });
+        });
+        if heading_clicked {
+            header.toggle();
+        }
+        header.body(|ui| {
+            for line in &lines {
+                weak_line(ui, line);
+            }
+        });
+    }
+
     /// The view of the centre region the tabs select, of `shown`, the design shown, its values
     /// readouts (`readouts`). Each view fits itself to `ui`'s available height.
     fn view_ui(&mut self, ui: &mut egui::Ui, shown: &DesignInputs, readouts: &mut Readouts) {
@@ -932,10 +992,14 @@ impl MagcouplingPanel {
                         ),
                     );
                 }
-                ui.label("Build checks are shown in the dashboard. The geometry drawing fits the view; use the dimensions to compare sizes.");
+                // The design shown after this view's one edit, the Required slider's above (slice
+                // 3 spec 3.5): the card and the drawing below read this one copy, built once a
+                // frame (with Auto on the ring size each build runs two geometries).
+                let shown_after_edits = self.shown_inputs();
+                self.torque_card_ui(ui, readouts, &shown_after_edits);
                 geometry_ui(
                     ui,
-                    &self.shown_inputs(),
+                    &shown_after_edits,
                     &self.results,
                     self.clamps_paused,
                     readouts,
@@ -1130,21 +1194,23 @@ impl MagcouplingPanel {
             let asked = size_controls::auto_ui(ui, self.sizing);
             self.sizing.variable = asked.variable;
             self.set_sizing_mode(asked.mode);
-            let auto =
-                (self.sizing.mode == SizingMode::TorqueToMagnets).then_some(self.sizing.variable);
+            let auto = self.auto();
             let shown = self.shown_inputs();
             if auto.is_some() {
                 let (line, color) = self.auto_outcome(&shown, ui.visuals());
                 ui.add(egui::Label::new(egui::RichText::new(line).color(color)).wrap());
             }
             let minimum = self.minimum_diameter_mm;
-            // The cache keys on the design alone, so it is handed that design's own results:
-            // `self.results` can lag the inputs by a frame (the header's assumptions reset edits
-            // them after the last compute), and a lagging pull-out would stick in the lines until
-            // the next edit. One compute_all (about 17 us) per frame of this tab; the neighbour
-            // runs and the fit search rerun only when the design or the minimum changes.
+            // The cache keys on the design (with the minimum and the clamp pause), so it is
+            // handed that design's own results: `self.results` can lag the inputs by a frame (the
+            // header's assumptions reset edits them after the last compute), and a lagging
+            // number would stick in the lines until the next edit. One compute_all (about 17 us)
+            // per frame of this tab; the torque card's stepped runs and the fit search rerun only
+            // when the design, the minimum or the pause changes.
             let shown_results = compute_all(&shown);
-            let consequences = self.consequences.get(&shown, &shown_results, minimum);
+            let consequences =
+                self.consequences
+                    .get(&shown, &shown_results, minimum, self.clamps_paused);
             let output = size_controls::controls_ui(ui, &shown, minimum, consequences, auto);
             // A Why link under Magnets per ring or Outside diameter (spec 3.7) opens its note.
             if let Some(id) = output.note {
@@ -1596,12 +1662,10 @@ mod tests {
     use super::*;
     use crate::engine::api::HEADLINE;
     use crate::engine::size_controls::{DiameterFit, diameter_breakdown, dimensions};
-    use crate::engine::sizing::{FreeVariable, SizingOutcome};
+    use crate::engine::sizing::SizingOutcome;
     use crate::gui::dashboard::{END_EFFECT_BANNER, STORED_3D_LABEL, result_info};
     use crate::gui::format::{format_value, with_unit};
-    use crate::gui::guidance::{
-        AUTO_RESETS_LENGTH, AUTO_RESIZES_RING, Consequences, RING_SIZE_STAYS, plain_text_violations,
-    };
+    use crate::gui::guidance::{Consequences, RING_SIZE_STAYS, plain_text_violations};
     use crate::gui::input_ui::{BLANK_TEXT, CHANGED_DOT, OUTSIDE_RANGE_NOTE, RESET_LABEL};
     use crate::gui::inputs::WORKFLOW;
     use crate::gui::plain_text::{
@@ -1619,9 +1683,10 @@ mod tests {
     use crate::gui::test_support::{
         SCREEN, clamp_at_its_limit, drawn_texts, hot_day, hub_overstressed, key_event, key_tap,
         last_characters, only_the_clamp_fails, only_the_joint_fails, primary_button, select_all,
-        short_magnets, sized_frame, sized_frame_at, text_center, text_rect, text_rects,
-        tooltips_at_once, with_poles,
+        short_magnets, sized_frame, sized_frame_at, smoke_inputs, text_center, text_rect,
+        text_rects, tooltips_at_once, with_poles,
     };
+    use crate::gui::torque_card::{CAPTION, Control, held_line};
     use crate::headline;
 
     const FACE_GAP: &str = "metal.face_gap_mm";
@@ -2146,24 +2211,37 @@ mod tests {
     fn idle_frames_on_the_first_view_change_no_input() {
         // The Size tab's controls (the Required slider among them), like every input row, write
         // only on an edit (decision M41-2): idle frames on the first view keep values off the
-        // sliders' steps as they are.
+        // sliders' steps as they are. Slice 3 test 11: so do they under the torque card, open and
+        // closed by a click on its heading, at the shipped clamp pause (the first case is the
+        // harness's own, unpaused).
         let mut design = Design::default();
         design.inputs.metal.face_gap_mm = 1.4123;
         design.inputs.coupling.inner_back_apothem_mm += 0.01234;
         design.inputs.coupling.magnets.axial_length_mm = Some(12.7123);
         design.inputs.metal.measured_drag_Nm = Some(0.012345);
         design.inputs.metal.required_min_Nm = 2.2345;
-        let mut harness = Harness::first_view();
-        harness.panel.open_design(design.clone());
-        let mut output = harness.frame(Vec::new());
-        for _ in 0..15 {
-            output = harness.frame(Vec::new());
+        for card in [None, Some(true), Some(false)] {
+            let mut harness = Harness::first_view();
+            harness.panel.clamps_paused = card.is_some();
+            harness.panel.open_design(design.clone());
+            let mut output = harness.frame(Vec::new());
+            if card == Some(false) {
+                harness.click(text_center(&output, CARD_HEADING));
+            }
+            for _ in 0..15 {
+                output = harness.frame(Vec::new());
+            }
+            assert_eq!(harness.panel.centre, CentreView::SizeAndTorque);
+            assert_eq!(count(&output, WELCOME), 1);
+            assert_eq!(
+                count(&output, CAPTION),
+                usize::from(card != Some(false)),
+                "{card:?}: the card's caption shows exactly while it is open"
+            );
+            assert_eq!(harness.panel.design(), design, "{card:?}");
+            assert_eq!(harness.panel.last_error, None, "{card:?}");
+            assert_eq!(harness.panel.history.undo_len(), 0, "{card:?}");
         }
-        assert_eq!(harness.panel.centre, CentreView::SizeAndTorque);
-        assert_eq!(count(&output, WELCOME), 1);
-        assert_eq!(harness.panel.design(), design);
-        assert_eq!(harness.panel.last_error, None);
-        assert_eq!(harness.panel.history.undo_len(), 0);
     }
 
     #[test]
@@ -2393,6 +2471,23 @@ mod tests {
         assert_eq!(harness.panel.design(), design);
         assert_eq!(harness.panel.last_error, None);
         assert_eq!(harness.panel.history.undo_len(), 0);
+        // Slice 3 test 11: the Size tab under the torque card, open and then closed by a click
+        // on its heading, at the shipped clamp pause: idle frames still change no input.
+        harness.panel.clamps_paused = true;
+        harness.click_text(CentreView::SizeAndTorque.label());
+        for open in [true, false] {
+            let mut output = harness.frame(Vec::new());
+            if !open {
+                harness.click(text_center(&output, CARD_HEADING));
+            }
+            for _ in 0..15 {
+                output = harness.frame(Vec::new());
+            }
+            assert_eq!(count(&output, CAPTION), usize::from(open), "open {open}");
+            assert_eq!(harness.panel.design(), design, "open {open}");
+            assert_eq!(harness.panel.last_error, None, "open {open}");
+            assert_eq!(harness.panel.history.undo_len(), 0, "open {open}");
+        }
     }
 
     #[test]
@@ -4997,14 +5092,16 @@ mod tests {
         harness
     }
 
-    /// The what-moves-what lines of the design the panel shows, as the Size tab computes them:
-    /// that design, its own results, the panel's Minimum OD.
+    /// The what-moves-what lines and the torque card of the design the panel shows, as the Size
+    /// tab computes them: that design, its own results, the panel's Minimum OD and its
+    /// shaft-clamp pause.
     fn shown_consequences(harness: &Harness) -> Consequences {
         let shown = harness.panel.shown_inputs();
         Consequences::of(
             &shown,
             &compute_all(&shown),
             harness.panel.minimum_diameter_mm,
+            harness.panel.clamps_paused,
         )
     }
 
@@ -5254,6 +5351,79 @@ mod tests {
         }
     }
 
+    /// The label the torque card replaced under the Size tab's readouts (slice 3 spec 6.1), kept
+    /// as the record of what the card took the place of.
+    const REPLACED_LABEL: &str = "Build checks are shown in the dashboard. The geometry drawing fits the view; use the dimensions to compare sizes.";
+
+    #[test]
+    fn the_size_tab_draws_the_torque_card_in_place_of_the_label() {
+        // Slice 3 spec 6.1: under the readouts, the card's heading with its Why link, then the
+        // card's lines for the design shown, each drawn once, one under the next; the label it
+        // replaced is gone. A click on the heading closes the card, as one on its arrow does,
+        // and another opens it; neither edits the design.
+        let mut harness = size_tab(SCREEN, DesignInputs::default());
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, REPLACED_LABEL), 0);
+        assert_eq!(count(&output, CARD_HEADING), 1);
+        let lines = shown_consequences(&harness).card.lines(None);
+        assert_eq!(lines.first().map(String::as_str), Some(CAPTION));
+        let rect = |output: &egui::FullOutput, text: &str| {
+            text_rect(output, text).unwrap_or_else(|| panic!("no {text:?}"))
+        };
+        let mut above = rect(&output, CARD_HEADING);
+        for line in &lines {
+            assert_eq!(count(&output, line), 1, "{line}");
+            let at = rect(&output, line);
+            assert!(
+                above.bottom() <= at.top() + 0.5,
+                "{line:?} is not under the line above it"
+            );
+            above = at;
+        }
+        for open in [false, true] {
+            let output = harness.frame(Vec::new());
+            harness.click(text_center(&output, CARD_HEADING));
+            // Past the collapse animation.
+            let output = harness.frame_after(1.0, Vec::new());
+            assert_eq!(count(&output, CARD_HEADING), 1, "open {open}");
+            for line in &lines {
+                assert_eq!(
+                    count(&output, line),
+                    usize::from(open),
+                    "open {open}: {line}"
+                );
+            }
+        }
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+        assert_eq!(harness.panel.history.undo_len(), 0);
+    }
+
+    #[test]
+    fn a_required_edit_reaches_the_card_in_its_own_frame() {
+        // Slice 3 spec 3.5: the card draws the design shown after the frame's edits, the Required
+        // slider's included, which the readouts above it make. At the defaults (hot-low
+        // 2.29 N·m), Required 2.4 N·m lies under the Overall length +1 mm side's hot-low
+        // (2.49 N·m), so that side's Hot-low torque flips: the frame that applies the typed
+        // value draws the edited design's card, not the one before the edit.
+        let mut harness = size_tab(SCREEN, DesignInputs::default());
+        harness.panel.clamps_paused = true;
+        let output = harness.frame(Vec::new());
+        let before = shown_consequences(&harness).card.lines(None);
+        let (_, value_box) = beside(&output, REQUIRED).remove(0);
+        harness.click(value_box.center());
+        harness.frame([select_all(), vec![egui::Event::Text("2.4".to_owned())]].concat());
+        let output = harness.frame(key_tap(egui::Key::Enter));
+        assert_eq!(harness.panel.inputs().metal.required_min_Nm, 2.4);
+        let after = shown_consequences(&harness).card.lines(None);
+        assert_ne!(
+            after, before,
+            "Required 2.4 N·m moves a Hot-low torque flip"
+        );
+        for line in &after {
+            assert_eq!(count(&output, line), 1, "{line}");
+        }
+    }
+
     #[test]
     fn size_tab_draws_each_what_moves_what_line_under_its_control() {
         // Spec 3.3 at the default design: the Set-by line under Outside diameter, the length
@@ -5275,6 +5445,9 @@ mod tests {
         assert!(rect(length.as_str()).bottom() <= rect(GAP).top());
         let lines = consequences.magnet_lines(10, None);
         assert_eq!(lines.first().map(String::as_str), Some(RING_SIZE_STAYS));
+        // The ring-size line and the fit line (slice 3, decision 7A: the lines for two magnets
+        // fewer and two more are the torque card's count row).
+        assert_eq!(lines.len(), 2, "{lines:?}");
         let mut above = rect(MAGNETS);
         for line in &lines {
             assert_eq!(count(&output, line), 1, "{line}");
@@ -5456,23 +5629,39 @@ mod tests {
             .expect("a fit line at the slider's floor");
         assert!(fit.ends_with("set Minimum OD lower to reach it."), "{fit}");
         assert_eq!(count(&output, &fit), 1, "{fit}");
+        // Slice 3: two lines under Magnets per ring, and the torque card above the drawing
+        // answers the owner's question in numbers (decision 7A moved the neighbour lines there):
+        // every one of its lines is drawn.
+        assert_eq!(consequences.magnet_lines(8, None).len(), 2);
+        for line in consequences.card.lines(None) {
+            assert_eq!(count(&output, &line), 1, "{line}");
+        }
     }
 
     #[test]
     fn size_tab_first_magnet_line_follows_the_auto_state() {
-        // Physics review 3, N4: the line under Magnets per ring says what a new count does to
-        // the size Auto sets: the ring keeps its radius with Auto off, Auto resizes the ring
-        // or resets the length when it sets them, and with Auto on the count (its slider
-        // locked) no line speaks of changing it. Only the state's own line is drawn, under
-        // Magnets per ring, and the neighbour lines are drawn with each.
-        let firsts = [RING_SIZE_STAYS, AUTO_RESIZES_RING, AUTO_RESETS_LENGTH];
+        // Slice 3 spec 4.3 (physics review 3, N4, as the card leaves it): the line under
+        // Magnets per ring says what a new count does to the ring: it stays with Auto off and
+        // with Auto on the magnet length; with Auto on the ring size the torque card's Auto line
+        // says Auto sizes the ring again (decision 5A), and with Auto on the count (its slider
+        // locked) no line speaks of changing it. The lines under the control are drawn one under
+        // the next, and the card draws the Auto line of the state and no other.
+        use crate::gui::torque_card::{AUTO_HOLDS_COUNT, AUTO_HOLDS_LENGTH, AUTO_HOLDS_RING};
         let states = [
-            (None, Some(RING_SIZE_STAYS)),
-            (Some(FreeVariable::RingRadius), Some(AUTO_RESIZES_RING)),
-            (Some(FreeVariable::AxialLength), Some(AUTO_RESETS_LENGTH)),
-            (Some(FreeVariable::MagnetsPerRing), None),
+            (None, Some(RING_SIZE_STAYS), None),
+            (
+                Some(FreeVariable::AxialLength),
+                Some(RING_SIZE_STAYS),
+                Some(AUTO_HOLDS_LENGTH),
+            ),
+            (Some(FreeVariable::RingRadius), None, Some(AUTO_HOLDS_RING)),
+            (
+                Some(FreeVariable::MagnetsPerRing),
+                None,
+                Some(AUTO_HOLDS_COUNT),
+            ),
         ];
-        for (auto, first) in states {
+        for (auto, first, auto_line) in states {
             let mut harness = size_tab(SCREEN, DesignInputs::default());
             if let Some(variable) = auto {
                 harness.panel.sizing.variable = variable;
@@ -5481,12 +5670,22 @@ mod tests {
             harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
             harness.frame(Vec::new());
             let output = harness.frame(Vec::new());
-            for line in firsts {
-                let wanted = usize::from(Some(line) == first);
+            assert_eq!(
+                count(&output, RING_SIZE_STAYS),
+                usize::from(first.is_some()),
+                "{auto:?}"
+            );
+            for line in [AUTO_HOLDS_LENGTH, AUTO_HOLDS_RING, AUTO_HOLDS_COUNT] {
+                let wanted = usize::from(Some(line) == auto_line);
                 assert_eq!(count(&output, line), wanted, "{auto:?}: {line}");
             }
             let shown = harness.panel.shown_inputs();
             let lines = shown_consequences(&harness).magnet_lines(shown.coupling.npole, auto);
+            assert_eq!(
+                lines.len(),
+                1 + usize::from(first.is_some()),
+                "{auto:?}: {lines:?}"
+            );
             assert_eq!(
                 lines.first().map(String::as_str) == first,
                 first.is_some(),
@@ -5507,9 +5706,11 @@ mod tests {
     #[test]
     fn size_tab_what_moves_what_lines_follow_each_edit() {
         // Spec 6 test 5: the lines are recomputed when the design changes (the cache keys on
-        // it), from the magnet count's own slider and from any other input.
+        // it), from the magnet count's own slider and from any other input; so is the torque
+        // card that took over the neighbour lines (slice 3, decision 7A).
         let mut harness = size_tab(SCREEN, DesignInputs::default());
         let at_10 = shown_consequences(&harness).magnet_lines(10, None);
+        let card_at_10 = shown_consequences(&harness).card.lines(None);
         // The controls' widgets in drawing order: diameter, length, gap, magnets, Minimum OD.
         let magnets = harness.panel.design_widgets[3];
         harness.ctx.memory_mut(|m| m.request_focus(magnets));
@@ -5526,7 +5727,16 @@ mod tests {
         for line in at_10.iter().filter(|line| !at_8.contains(line)) {
             assert_eq!(count(&output, line), 0, "stale: {line}");
         }
-        // Another input: a wider face gap moves every neighbour's pull-out and cup.
+        let card_at_8 = shown_consequences(&harness).card.lines(None);
+        assert_ne!(card_at_8, card_at_10);
+        for line in &card_at_8 {
+            assert_eq!(count(&output, line), 1, "{line}");
+        }
+        for line in card_at_10.iter().filter(|line| !card_at_8.contains(line)) {
+            assert_eq!(count(&output, line), 0, "stale: {line}");
+        }
+        // Another input: a wider face gap moves the smallest diameter that fits and every step
+        // of the card.
         harness.panel.inputs.metal.face_gap_mm = 2.0;
         let output = harness.frame(Vec::new());
         let wider = shown_consequences(&harness);
@@ -5536,6 +5746,14 @@ mod tests {
             assert_eq!(count(&output, line), 1, "{line}");
         }
         for line in at_8.iter().filter(|line| !lines.contains(line)) {
+            assert_eq!(count(&output, line), 0, "stale: {line}");
+        }
+        let card_wider = wider.card.lines(None);
+        assert_ne!(card_wider, card_at_8);
+        for line in &card_wider {
+            assert_eq!(count(&output, line), 1, "{line}");
+        }
+        for line in card_at_8.iter().filter(|line| !card_wider.contains(line)) {
             assert_eq!(count(&output, line), 0, "stale: {line}");
         }
         for line in wider.diameter_line().into_iter().chain(wider.length_line()) {
@@ -5580,23 +5798,49 @@ mod tests {
 
     #[test]
     fn size_tab_magnet_slider_ends_show_only_the_neighbour_in_range() {
-        // Spec 5: at 4 or 40 magnets per ring the line for 2 or 42 is left out.
-        for (npole, inside, outside) in [(4, 6, 2), (40, 38, 42)] {
-            let mut harness = size_tab(SCREEN, with_poles(npole));
+        // Spec 5, as the torque card's count row has it (slice 3, decision 7A): at 4 or 40
+        // magnets per ring the side past the slider reads "at the end of its range", drawn on
+        // the card, the side inside it is a step, and no text names 2 or 42 magnets. The
+        // default blocks do not fit 40 magnets (the card reads its one line there); forty
+        // narrow blocks do.
+        use crate::gui::test_support::forty_narrow_magnets;
+        use crate::gui::torque_card::END_OF_RANGE;
+        for (inputs, past, inside) in [
+            (with_poles(4), "-2", "+2"),
+            (forty_narrow_magnets(), "+2", "-2"),
+        ] {
+            let npole = inputs.coupling.npole;
+            let mut harness = size_tab(SCREEN, inputs);
             let output = harness.frame(Vec::new());
             let consequences = shown_consequences(&harness);
-            let neighbours: Vec<i64> = consequences.neighbours.iter().map(|n| n.npole).collect();
-            assert_eq!(neighbours, [inside], "{npole}");
+            let row = format!("{}: ", Control::MagnetsPerRing.label());
+            let count_line = consequences
+                .card
+                .lines(None)
+                .into_iter()
+                .find(|line| line.starts_with(&row))
+                .unwrap_or_else(|| panic!("{npole}: no count row"));
+            assert!(
+                count_line.contains(&format!("{past} -> {END_OF_RANGE}")),
+                "{count_line}"
+            );
+            assert!(
+                !count_line.contains(&format!("{inside} -> {END_OF_RANGE}")),
+                "{count_line}"
+            );
+            assert_eq!(count(&output, &count_line), 1, "{count_line}");
+            // Two lines under Magnets per ring at a slider end (three before the card): the
+            // ring-size line and the fit line.
             let lines = consequences.magnet_lines(npole, None);
+            assert_eq!(lines.len(), 2, "{lines:?}");
             assert!(lines.contains(&RING_SIZE_STAYS.to_owned()), "{lines:?}");
             for line in &lines {
                 assert_eq!(count(&output, line), 1, "{line}");
             }
+            let outside = if past == "-2" { npole - 2 } else { npole + 2 };
             let texts = drawn_texts(&output);
             assert!(
-                !texts
-                    .iter()
-                    .any(|t| t.starts_with(&format!("At {outside}:"))),
+                !texts.iter().any(|t| t.contains(&format!("At {outside}:"))),
                 "{npole}: {texts:?}"
             );
         }
@@ -5680,7 +5924,11 @@ mod tests {
         ];
         let mut harness = size_tab(egui::vec2(1280.0, 4000.0), DesignInputs::default());
         let mut drawn = Vec::new();
-        let mut new_texts = vec![REQUIRED.to_owned(), HOT_LOW.to_owned()];
+        let mut new_texts = vec![
+            REQUIRED.to_owned(),
+            HOT_LOW.to_owned(),
+            CARD_HEADING.to_owned(),
+        ];
         for (inputs, minimum) in states {
             harness.panel.inputs = inputs;
             harness.panel.minimum_diameter_mm = minimum;
@@ -5691,6 +5939,8 @@ mod tests {
             let results = compute_all(&shown);
             let consequences = shown_consequences(&harness);
             let mut texts = consequences.magnet_lines(shown.coupling.npole, None);
+            // The torque card's lines (slice 3), the neighbour lines' numbers among them.
+            texts.extend(consequences.card.lines(None));
             if dimensions(&shown).is_some() {
                 texts.extend(consequences.diameter_line());
                 texts.extend(consequences.length_line());
@@ -8622,23 +8872,23 @@ mod tests {
 
     #[test]
     fn the_size_tab_s_why_links_open_their_notes() {
-        // Spec 3.7 (S2-8): under Magnets per ring and Outside diameter a link to how the
-        // coupling makes torque; at the end of the Required and Hot-low rows a link to the
-        // hot minimum check's note. Each opens its note on its own in the Equation panel.
+        // Spec 3.7 (S2-8): under Magnets per ring and Outside diameter, and on the torque card's
+        // heading (slice 3 spec 6.1, drawn open or closed), a link to how the coupling makes
+        // torque; at the end of the Required and Hot-low rows a link to the hot minimum check's
+        // note. Each opens its note on its own in the Equation panel.
         use crate::gui::dashboard::why_note_text;
         use crate::gui::explorer::reviewed_note;
-        use crate::gui::guidance::{SIZE_TAB_NOTE, TORQUE_BAND_NOTE};
         let mut harness = size_tab(SCREEN, DesignInputs::default());
-        for id in [SIZE_TAB_NOTE, TORQUE_BAND_NOTE] {
+        for (id, links) in [(SIZE_TAB_NOTE, 3), (TORQUE_BAND_NOTE, 2)] {
             let text =
                 why_note_text(reviewed_note(id).expect("a Size-tab link's note is reviewed"));
-            for index in 0..2 {
+            for index in 0..links {
                 harness.panel.explorer = Explorer::default();
                 let output = harness.frame(Vec::new());
                 // The Required and Hot-low links end wrapped rows: click their text.
-                let links = last_characters(&output, &text);
-                assert_eq!(links.len(), 2, "{text}");
-                harness.click(links[index]);
+                let at = last_characters(&output, &text);
+                assert_eq!(at.len(), links, "{text}");
+                harness.click(at[index]);
                 assert!(harness.panel.explorer.open, "{text} #{index}");
                 assert_eq!(harness.panel.explorer.note(), Some(id), "{text} #{index}");
             }
@@ -8649,7 +8899,8 @@ mod tests {
     #[test]
     fn without_the_diameter_control_the_size_tab_still_links_from_magnets_per_ring() {
         // An odd magnet count has no diameter range: the Outside diameter control and its link
-        // are not drawn; the link under Magnets per ring is.
+        // are not drawn; the link under Magnets per ring is, and the torque card's heading's (the
+        // card keeps its gap and count rows, slice 3 T-5).
         use crate::gui::dashboard::why_note_text;
         use crate::gui::explorer::reviewed_note;
         use crate::gui::guidance::SIZE_TAB_NOTE;
@@ -8661,7 +8912,7 @@ mod tests {
         let mut harness = size_tab(SCREEN, odd);
         let output = harness.frame(Vec::new());
         let text = why_note_text(reviewed_note(SIZE_TAB_NOTE).unwrap());
-        assert_eq!(text_rects(&output, &text).len(), 1);
+        assert_eq!(text_rects(&output, &text).len(), 2);
     }
 
     #[test]
@@ -8990,6 +9241,170 @@ mod tests {
         harness.frame(Vec::new());
         harness.frame(Vec::new());
         assert_eq!(harness.panel.fixes.computed, computed + 1);
+    }
+
+    #[test]
+    fn a_drag_computes_the_card_once_for_each_design_it_draws() {
+        // Slice 3 spec 3.5 and decision 13A: on a drag frame the card asks for the design after
+        // the frame's edit (one miss) and the next frame's controls ask for that same design (a
+        // hit), so a drag computes the consequences once per design drawn, never twice; at the
+        // smoke design with Auto on the magnet length, the drag the browser frame check times.
+        let mut harness = size_tab(SCREEN, smoke_inputs());
+        harness.panel.clamps_paused = true;
+        harness.panel.sizing.variable = FreeVariable::AxialLength;
+        harness.panel.set_sizing_mode(SizingMode::TorqueToMagnets);
+        harness.frame(Vec::new());
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        harness.frame(Vec::new());
+        let gap = harness.size_widget(GAP).rect;
+        let mut at = gap.left_center() + egui::vec2(20.0, 0.0);
+        harness.frame(vec![egui::Event::PointerMoved(at)]);
+        harness.frame(vec![primary_button(at, true)]);
+        harness.frame(Vec::new());
+        let computed = harness.panel.consequences.computed;
+        let mut designs = 0;
+        for i in 0..20 {
+            let before = harness.panel.shown_inputs();
+            at += egui::vec2(if i % 2 == 0 { 3.0 } else { -3.0 }, 0.0);
+            harness.frame(vec![egui::Event::PointerMoved(at)]);
+            designs += usize::from(harness.panel.shown_inputs() != before);
+        }
+        harness.frame(vec![primary_button(at, false)]);
+        harness.frame(Vec::new());
+        assert!(designs >= 10, "the drag moved the gap on {designs} frames");
+        assert_eq!(harness.panel.consequences.computed - computed, designs);
+    }
+
+    #[test]
+    fn idle_frames_compute_the_card_once_and_an_edit_again() {
+        // Slice 3 test 10: the torque card lives in the ConsequenceCache, keyed on the design
+        // shown, the Minimum OD and the clamp pause (spec 3.2), with the Auto marking applied
+        // outside it (spec 3.4). Idle frames compute nothing; a gap edit computes once (the frame
+        // that draws it asks with the edited design, the next frame's controls hit); a toggle of
+        // the clamp pause computes once; so does a new Minimum OD, which the drawn Outside
+        // diameter row follows.
+        let mut harness = size_tab(SCREEN, DesignInputs::default());
+        harness.panel.clamps_paused = true;
+        harness.frame(Vec::new());
+        let computed = harness.panel.consequences.computed;
+        for _ in 0..5 {
+            harness.frame(Vec::new());
+        }
+        assert_eq!(harness.panel.consequences.computed, computed, "idle frames");
+        let gap = harness.panel.design_widgets[2];
+        harness.ctx.memory_mut(|m| m.request_focus(gap));
+        harness.frame(Vec::new());
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        for _ in 0..3 {
+            harness.frame(Vec::new());
+        }
+        assert!(
+            harness.panel.inputs().metal.face_gap_mm > DesignInputs::default().metal.face_gap_mm
+        );
+        assert_eq!(
+            harness.panel.consequences.computed,
+            computed + 1,
+            "one gap edit"
+        );
+        harness.panel.clamps_paused = false;
+        for _ in 0..3 {
+            harness.frame(Vec::new());
+        }
+        assert_eq!(
+            harness.panel.consequences.computed,
+            computed + 2,
+            "the pause toggled"
+        );
+        // The key's third part, the Minimum OD (owner 9A: the diameter row steps the slider at
+        // the user's Minimum OD): set at the diameter shown, it computes once, and the drawn
+        // Outside diameter row reads the slider's end on its -1 mm side, where with none set it
+        // read that the magnets do not fit.
+        use crate::gui::torque_card::END_OF_RANGE;
+        let diameter_row = |harness: &Harness| {
+            let start = format!("{}: ", Control::OutsideDiameter.label());
+            shown_consequences(harness)
+                .card
+                .lines(None)
+                .into_iter()
+                .find(|line| line.starts_with(&start))
+                .expect("an Outside diameter row")
+        };
+        let unset = diameter_row(&harness);
+        assert!(
+            unset.contains(&format!("-1 mm -> {SIDE_DOES_NOT_FIT};")),
+            "{unset}"
+        );
+        let shown = dimensions(&harness.panel.shown_inputs()).expect("size controls");
+        harness.panel.minimum_diameter_mm = Some(shown.diameter_mm);
+        let mut output = harness.frame(Vec::new());
+        for _ in 0..3 {
+            output = harness.frame(Vec::new());
+        }
+        assert_eq!(
+            harness.panel.consequences.computed,
+            computed + 3,
+            "the Minimum OD set"
+        );
+        let at_shown = diameter_row(&harness);
+        assert!(
+            at_shown.contains(&format!("-1 mm -> {END_OF_RANGE};")),
+            "{at_shown}"
+        );
+        assert_eq!(count(&output, &at_shown), 1, "{at_shown}");
+        assert_eq!(count(&output, &unset), 0, "stale: {unset}");
+        // (i) The smoke design, Auto on the magnet length, solved: turning Auto off adopts the
+        // solved length (decision M41-7), so the design shown, and the card, stay; nothing is
+        // computed, and the Overall length row, held while Auto was on, reads its numbers.
+        let mut harness = size_tab(SCREEN, smoke_inputs());
+        harness.panel.clamps_paused = true;
+        harness.panel.sizing.variable = FreeVariable::AxialLength;
+        harness.panel.set_sizing_mode(SizingMode::TorqueToMagnets);
+        harness.frame(Vec::new());
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        let held = shown_consequences(&harness).card;
+        let held_row = held_line(Control::OverallLength);
+        assert_eq!(
+            count(&output, &held_row),
+            1,
+            "the held row while Auto is on"
+        );
+        let computed = harness.panel.consequences.computed;
+        harness.panel.set_sizing_mode(SizingMode::MagnetsToTorque);
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        assert_eq!(
+            harness.panel.consequences.computed, computed,
+            "Auto turned off"
+        );
+        assert_eq!(shown_consequences(&harness).card, held);
+        assert_eq!(count(&output, &held_row), 0);
+        let length = held
+            .lines(None)
+            .into_iter()
+            .find(|line| line.starts_with(&format!("{}: ", Control::OverallLength.label())))
+            .expect("a length row");
+        assert_eq!(count(&output, &length), 1, "{length}");
+        // (ii) The defaults, Auto on the magnet count: the best count is the one shown (10), so
+        // turning Auto on, letting it solve and turning it off computes nothing.
+        let mut harness = size_tab(SCREEN, DesignInputs::default());
+        harness.panel.clamps_paused = true;
+        harness.frame(Vec::new());
+        let computed = harness.panel.consequences.computed;
+        harness.panel.sizing.variable = FreeVariable::MagnetsPerRing;
+        harness.panel.set_sizing_mode(SizingMode::TorqueToMagnets);
+        harness.frame(Vec::new());
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        harness.frame(Vec::new());
+        assert_eq!(harness.panel.shown_inputs(), DesignInputs::default());
+        harness.panel.set_sizing_mode(SizingMode::MagnetsToTorque);
+        harness.frame(Vec::new());
+        harness.frame(Vec::new());
+        assert_eq!(
+            harness.panel.consequences.computed, computed,
+            "Auto on the count"
+        );
     }
 
     #[test]

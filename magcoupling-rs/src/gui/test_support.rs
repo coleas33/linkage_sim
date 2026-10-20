@@ -597,6 +597,39 @@ pub(crate) fn card_designs() -> Vec<CardDesign> {
     ]
 }
 
+/// A design whose own end effect is just out of range while two more magnets bring it back in
+/// and fit: the first ring radius of the solver's grid where two more magnets fit, the magnets
+/// cut halfway between the two counts' end-effect limits (f_end = 1 - c_end * pole pitch / L is
+/// zero at L = c_end * pole pitch, and the pitch falls as the count rises). Moved from
+/// `gui::guidance`'s tests (slice 3): they and the torque card's count-row tests read it.
+pub(crate) fn end_effect_edge() -> crate::DesignInputs {
+    use crate::engine::sizing::FreeVariable;
+    let with_magnets = |inputs: &crate::DesignInputs, npole: i64| {
+        FreeVariable::MagnetsPerRing.apply(inputs, npole as f64)
+    };
+    let base = crate::DesignInputs::default();
+    let more = base.coupling.npole + 2;
+    let radius = FreeVariable::RingRadius
+        .grid()
+        .into_iter()
+        .find(|&radius| {
+            let design = with_magnets(&FreeVariable::RingRadius.apply(&base, radius), more);
+            crate::engine::model::blocks_fit(&design.coupling, &crate::compute_all(&design).model)
+        })
+        .expect("two more magnets fit somewhere on the ring-radius slider");
+    let mut design = FreeVariable::RingRadius.apply(&base, radius);
+    // The end-effect coefficient's slider maximum: the length lands inside its slider.
+    design.coupling.c_end = 0.5;
+    let pitch = |npole: i64| {
+        crate::compute_all(&with_magnets(&design, npole))
+            .model
+            .pole_pitch_mm
+    };
+    let length = design.coupling.c_end * (pitch(base.coupling.npole) + pitch(more)) / 2.0;
+    design.coupling.magnets.axial_length_mm = Some(length);
+    design
+}
+
 /// The defaults with a 16 mm bore in a 12 mm boss and no boss length (BL-064): the cup has no
 /// wall around its bore, so its holding, bore stress, needed and elastic results are not a
 /// number, and its key no bearing length (the web alone, 2.5 mm, under the 3 mm key), so its

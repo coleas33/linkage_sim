@@ -30,12 +30,14 @@
 //! term of the check has a shown fix that moves it toward passing, and no shown fix turns
 //! another check red.
 //!
-//! What moves what (spec 3.3): [`Consequences`] are the lines under the Size tab's controls:
-//! two magnets fewer and two more (each one `compute_all` of the design with only the count
-//! changed; words, not numbers, where the blocks do not fit or the model has no prediction),
-//! the smallest outside diameter at which the count fits, and what sets the outside diameter
-//! and the overall length ([`crate::engine::size_controls`]). Every number comes from the
-//! engine. [`ConsequenceCache`] keeps them until the inputs or the minimum diameter change.
+//! What moves what (spec 3.3): [`Consequences`] are the lines under the Size tab's controls
+//! (the smallest outside diameter at which the count fits, and what sets the outside diameter
+//! and the overall length, [`crate::engine::size_controls`]) and the torque card the Size tab
+//! draws between its readouts and its drawing ([`crate::gui::torque_card`]: one step of each
+//! size control each way, its count row the lines for two magnets fewer and two more that
+//! stood under Magnets per ring until slice 3, decision 7A). Every number comes from the
+//! engine. [`ConsequenceCache`] keeps them until the inputs, the minimum diameter or the
+//! shaft-clamp pause change.
 //!
 //! The engine's verdict texts, the results table and the exports keep their wording (locked by
 //! `tests/python_schema.rs`): this is a GUI layer over them, in plain words
@@ -47,9 +49,7 @@ use crate::engine::deviations::Deviations;
 use crate::engine::grades::{GRADES, GradeFamily};
 use crate::engine::library::{MAGNET_LIBRARY, lookup};
 use crate::engine::meta::{InputSet, NumOrText, ResultSet, SliderRange, Value};
-use crate::engine::model::{
-    ResolvedMagnet, RingFit, blocks_fit, end_effect_in_range, resolve_magnets, ring_fits,
-};
+use crate::engine::model::{ResolvedMagnet, RingFit, blocks_fit, resolve_magnets, ring_fits};
 use crate::engine::shaft_joint::{
     self, CAUSES, CannotBeMade, Cause, Floor, HubFitLimit, ImpossibleValue, JointTerms, NoWall,
 };
@@ -62,16 +62,13 @@ use crate::engine::sizing::FreeVariable;
 use crate::engine::temperature::{CURE_MARGIN_MIN_C, DemagInputs};
 use crate::gui::dashboard::{DASHBOARD, Level, check_level, result_info};
 use crate::gui::format::{
-    SIGNIFICANT_DIGITS, fewest_decimals_apart, fixed, format_value, last_digit_step,
-    signed_percent, with_unit,
+    SIGNIFICANT_DIGITS, fewest_decimals_apart, fixed, format_value, last_digit_step, with_unit,
 };
 use crate::gui::inputs::{InputCatalogue, optional_seed, section_label};
 use crate::gui::pickers::{CUSTOM, GRADE_PATHS, PART_PATHS};
 use crate::gui::plain_text::{display_label, label_for};
 use crate::gui::size_controls;
-use crate::gui::torque_card::{
-    SIDE_DOES_NOT_FIT, SIDE_NO_PREDICTION, Words, count_step, side_words,
-};
+use crate::gui::torque_card::{TorqueCard, card};
 use crate::{DesignInputs, DesignResults, compute_all};
 
 /// Which way a fix moves its input.
@@ -630,8 +627,9 @@ pub fn row_learn(path: &str) -> Option<Learn> {
         .map(|&(_, learn)| learn)
 }
 
-/// Where the Why links under Magnets per ring and Outside diameter on the Size tab lead (spec
-/// 3.7): how the coupling makes torque, Start here's first step.
+/// Where the Size tab's Why links under Magnets per ring and Outside diameter (spec 3.7) and on
+/// the torque card's heading (slice 3 spec 6.1) lead: how the coupling makes torque, Start
+/// here's first step.
 pub const SIZE_TAB_NOTE: &str = "torque_from_shear";
 
 /// Where the Why links at the end of the Size tab's Required and Hot-low rows lead: the hot
@@ -2873,97 +2871,35 @@ fn fit_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<String>
     })
 }
 
-// What moves what (spec 3.3, 4.1). Lengths read to 0.1 mm (the Size tab sliders' precision),
-// torques to 0.01 N·m and changes to one decimal of percent (`signed_percent`, decision 10B).
+// What moves what (spec 3.3, 4.1). Lengths read to 0.1 mm (the Size tab sliders' precision).
+// Two magnets fewer and two more are the torque card's count row (slice 3, decision 7A), in
+// the Size tab's one number format (decision 10B).
 
-/// The first line under Magnets per ring with Auto off: the ring radius
-/// (`coupling.inner_back_apothem_mm`) is its own input; the magnet count only sets how many
-/// blocks go around it.
-pub const RING_SIZE_STAYS: &str = "The ring radius stays the same when you change the magnet count; the cup OD below can still change.";
-
-/// The first line under Magnets per ring with Auto on the ring size (physics review 3, N4): a
-/// new count changes the solve, so Auto solves the ring radius again, while the neighbour
-/// lines are built at the present ring.
-pub const AUTO_RESIZES_RING: &str = "Auto resizes the ring when you change the magnet count; the lines below keep the present ring radius.";
-
-/// The first line under Magnets per ring with Auto on the magnet length (physics review 3,
-/// N4): the ring stays, but Auto solves the length again, while the neighbour lines are built
-/// at the present length.
-pub const AUTO_RESETS_LENGTH: &str = "Auto resets the magnet length when you change the magnet count; the lines below keep the present length.";
+/// The first line under Magnets per ring with Auto off or on the magnet length: the ring radius
+/// (`coupling.inner_back_apothem_mm`) is its own input, the magnet count only sets how many
+/// blocks go around it, and Auto on the magnet length moves no ring. The cup can still change
+/// size: what a count step does to it is the torque card's count row now (slice 3 spec 4.3;
+/// decision 7A moved the neighbour lines' "cup OD" there).
+pub const RING_SIZE_STAYS: &str = "The ring radius stays the same when you change the magnet count; the cup can still change size.";
 
 /// The first line under Magnets per ring for the Auto state `auto` (`None`: Auto off): what a
-/// new magnet count does to the size Auto sets. `None` with Auto on the magnet count itself:
-/// its slider is locked, so no one changes the count there.
+/// new magnet count does to the ring (slice 3 spec 4.3). [`RING_SIZE_STAYS`] with Auto off and
+/// with Auto on the magnet length, which moves no ring. `None` with Auto on the ring size, which
+/// sizes the ring again after a count change (the torque card's Auto line says so, decision
+/// 5A), and with Auto on the magnet count itself, whose slider is locked.
 pub fn magnet_count_line(auto: Option<FreeVariable>) -> Option<&'static str> {
     match auto {
-        None => Some(RING_SIZE_STAYS),
-        Some(FreeVariable::RingRadius) => Some(AUTO_RESIZES_RING),
-        Some(FreeVariable::AxialLength) => Some(AUTO_RESETS_LENGTH),
-        Some(FreeVariable::MagnetsPerRing) => None,
-    }
-}
-
-/// What two magnets fewer or two more would do (spec 3.3).
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[allow(non_snake_case)] // unit suffix, as the engine's names
-pub enum NeighbourOutcome {
-    /// The blocks fit and the model predicts a torque.
-    Torque {
-        /// The neighbour's pull-out torque at the operating temperature (`model.pullout_Nm`).
-        pullout_Nm: f64,
-        /// Its change as a fraction of the pull-out of the design shown; NaN when that design
-        /// has no prediction itself, so there is nothing to compare with.
-        change: f64,
-        /// The neighbour's cup outer diameter (`model.cup_od_mm`).
-        cup_od_mm: f64,
-    },
-    /// The blocks do not fit at this ring size ([`blocks_fit`]).
-    DoesNotFit,
-    /// The blocks fit but the model has no number: the end effect is out of range
-    /// ([`end_effect_in_range`]) or a torque is not finite.
-    NoPrediction,
-}
-
-/// A magnet count next to the design's, and what it would do.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Neighbour {
-    pub npole: i64,
-    pub outcome: NeighbourOutcome,
-}
-
-impl Neighbour {
-    /// "At N: ..." (spec 3.3): the torque and cup, or why there is no number.
-    fn line(&self) -> String {
-        let at = format!("At {}:", self.npole);
-        match self.outcome {
-            NeighbourOutcome::Torque {
-                pullout_Nm: pullout,
-                change,
-                cup_od_mm,
-            } => {
-                let percent = if change.is_finite() {
-                    format!(" ({})", signed_percent(change))
-                } else {
-                    String::new()
-                };
-                format!(
-                    "{at} pull-out {}{percent}, cup OD {}",
-                    with_unit(fixed(pullout, 2), "N·m"),
-                    with_unit(fixed(cup_od_mm, 1), "mm")
-                )
-            }
-            NeighbourOutcome::DoesNotFit => format!("{at} {SIDE_DOES_NOT_FIT}"),
-            NeighbourOutcome::NoPrediction => format!("{at} {SIDE_NO_PREDICTION}"),
-        }
+        None | Some(FreeVariable::AxialLength) => Some(RING_SIZE_STAYS),
+        Some(FreeVariable::RingRadius | FreeVariable::MagnetsPerRing) => None,
     }
 }
 
 /// The "what moves what" readings of a design (spec 3.3), all from the engine.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Consequences {
-    /// Two magnets fewer and two more, ascending, where the count stays an even count inside
-    /// the magnet slider.
-    pub neighbours: Vec<Neighbour>,
+    /// The torque card of the design (slice 3, [`card`]): one step of each size control each
+    /// way, drawn between the Size tab's readouts and its drawing.
+    pub card: TorqueCard,
     /// The smallest outside diameter at which the design's magnets fit, over the Size tab's
     /// diameter range.
     pub fit: Option<DiameterFit>,
@@ -2979,12 +2915,15 @@ pub struct Consequences {
 
 impl Consequences {
     /// The consequences of `inputs`, whose results are `results` (`compute_all(inputs)`: each
-    /// neighbour's change compares with this design's pull-out), with the Size tab's minimum
-    /// diameter preference (`None`: the slider's own floor).
+    /// step of the torque card compares with this design's hot-low), with the Size tab's minimum
+    /// diameter preference (`None`: the slider's own floor) and the shaft-clamp pause
+    /// (`clamps_paused`, the panel's: the card's flips and margins run over the guides that
+    /// count, slice 3 spec 3.2).
     pub fn of(
         inputs: &DesignInputs,
         results: &DesignResults,
         minimum_diameter_mm: Option<f64>,
+        clamps_paused: bool,
     ) -> Self {
         let npole = inputs.coupling.npole;
         let fit = smallest_fitting_diameter(inputs, npole, minimum_diameter_mm);
@@ -2995,7 +2934,7 @@ impl Consequences {
             _ => None,
         };
         Self {
-            neighbours: neighbours(inputs, results),
+            card: card(inputs, results, minimum_diameter_mm, clamps_paused),
             fit,
             fit_unlocked,
             diameter: diameter_breakdown(inputs),
@@ -3003,16 +2942,15 @@ impl Consequences {
         }
     }
 
-    /// The lines under Magnets per ring: the line for the Auto state `auto`
-    /// ([`magnet_count_line`]; `None`: Auto off), one line per neighbour, then the smallest
-    /// diameter that fits. `npole` is the count the consequences were built for
-    /// (`inputs.coupling.npole`).
+    /// The lines under Magnets per ring (decision 7A): the line for the Auto state `auto`
+    /// ([`magnet_count_line`]; `None`: Auto off), then the smallest diameter that fits. `npole`
+    /// is the count the consequences were built for (`inputs.coupling.npole`). Two magnets fewer
+    /// and two more are the torque card's count row.
     pub fn magnet_lines(&self, npole: i64, auto: Option<FreeVariable>) -> Vec<String> {
         let mut lines: Vec<String> = magnet_count_line(auto)
             .map(str::to_owned)
             .into_iter()
             .collect();
-        lines.extend(self.neighbours.iter().map(Neighbour::line));
         lines.extend(self.fit.map(|fit| fit_line(fit, self.fit_unlocked, npole)));
         lines
     }
@@ -3039,43 +2977,6 @@ impl Consequences {
             )
         })
     }
-}
-
-/// The neighbours of `inputs` (`results` are its own), each one `compute_all` of the design
-/// with only the magnet count changed: two fewer and two more where the magnet slider takes
-/// the count ([`count_step`], the torque card's count row's step), read by the card's validity
-/// rule ([`side_words`]) but the keyway's (decision D-1: the hub wall past the keyway does not
-/// depend on the magnet count, so a neighbour fails it exactly when the design shown does, the
-/// Size tab already says so, and the torques still compare).
-fn neighbours(inputs: &DesignInputs, results: &DesignResults) -> Vec<Neighbour> {
-    let baseline = prediction(results);
-    [false, true]
-        .into_iter()
-        .filter_map(|more| count_step(inputs.coupling.npole, more).ok())
-        .map(|npole| {
-            let design = FreeVariable::MagnetsPerRing.apply(inputs, npole as f64);
-            let results = compute_all(&design);
-            let outcome = match side_words(&design, &results, false) {
-                None => NeighbourOutcome::Torque {
-                    pullout_Nm: results.model.pullout_Nm,
-                    change: baseline.map_or(f64::NAN, |base| results.model.pullout_Nm / base - 1.0),
-                    cup_od_mm: results.model.cup_od_mm,
-                },
-                Some(Words::DoesNotFit) => NeighbourOutcome::DoesNotFit,
-                // The keyway left out, the only other words are the prediction's.
-                Some(_) => NeighbourOutcome::NoPrediction,
-            };
-            Neighbour { npole, outcome }
-        })
-        .collect()
-}
-
-/// The pull-out of the design shown when the model predicts one: the end effect in range and
-/// a positive, finite torque. Without it a neighbour's change has nothing to compare with.
-fn prediction(results: &DesignResults) -> Option<f64> {
-    let pullout = results.model.pullout_Nm;
-    (end_effect_in_range(results.model.f_end) && pullout.is_finite() && pullout > 0.0)
-        .then_some(pullout)
 }
 
 /// The fit line under Magnets per ring (spec 3.3). A diameter named as fitting is rounded up,
@@ -3121,8 +3022,9 @@ fn up_to_tenth(mm: f64) -> f64 {
 }
 
 /// [`Consequences`] kept for the design they were built for (spec 4.1): the panel asks every
-/// frame, and the neighbours' `compute_all` runs and the fit search are not per-frame work. They
-/// are computed again only when the inputs or the minimum diameter change.
+/// frame, and the torque card's stepped `compute_all` runs and the fit search are not per-frame
+/// work. They are computed again only when the inputs, the minimum diameter or the shaft-clamp
+/// pause change: one key in three parts (slice 3 spec 3.2), as [`FixCache`] keys on the pause.
 #[derive(Default)]
 pub struct ConsequenceCache {
     last: Option<CachedConsequences>,
@@ -3131,31 +3033,38 @@ pub struct ConsequenceCache {
     pub(crate) computed: usize,
 }
 
-/// What a [`ConsequenceCache`] holds: the question and its answer.
+/// What a [`ConsequenceCache`] holds: the question (the design, the Minimum OD and the
+/// shaft-clamp pause) and its answer.
 struct CachedConsequences {
     inputs: DesignInputs,
     minimum_diameter_mm: Option<f64>,
+    clamps_paused: bool,
     consequences: Consequences,
 }
 
 impl ConsequenceCache {
     /// [`Consequences::of`] `inputs` (whose results are `results`) with the minimum diameter
-    /// preference, computed only when the inputs or the minimum differ from the last call's.
+    /// preference and the shaft-clamp pause, computed only when the inputs, the minimum or the
+    /// pause differ from the last call's.
     pub fn get(
         &mut self,
         inputs: &DesignInputs,
         results: &DesignResults,
         minimum_diameter_mm: Option<f64>,
+        clamps_paused: bool,
     ) -> &Consequences {
         let current = self.last.as_ref().is_some_and(|last| {
-            last.inputs == *inputs && last.minimum_diameter_mm == minimum_diameter_mm
+            last.inputs == *inputs
+                && last.minimum_diameter_mm == minimum_diameter_mm
+                && last.clamps_paused == clamps_paused
         });
         if !current {
             self.computed += 1;
             self.last = Some(CachedConsequences {
                 inputs: inputs.clone(),
                 minimum_diameter_mm,
-                consequences: Consequences::of(inputs, results, minimum_diameter_mm),
+                clamps_paused,
+                consequences: Consequences::of(inputs, results, minimum_diameter_mm, clamps_paused),
             });
         }
         &self.last.as_ref().expect("filled above").consequences
@@ -3177,10 +3086,11 @@ mod tests {
     use crate::gui::plain_text::label_for;
     use crate::gui::readouts::Readouts;
     use crate::gui::test_support::{
-        assert_glyphs, clamp_at_its_limit, drawn_texts, hot_day, hub_overstressed, is_shaft_joint,
-        keyway_through, mixed_rings, n42_parts, only_the_clamp_fails, only_the_gearbox_fails,
-        only_the_joint_fails, passing_design, reversed_hub_band, shaft_joint_input_rows,
-        shaft_joint_result_rows, short_magnets, sized_frame, slider_range, small_boss, with_poles,
+        assert_glyphs, clamp_at_its_limit, drawn_texts, end_effect_edge, hot_day, hub_overstressed,
+        is_shaft_joint, keyway_through, mixed_rings, n42_parts, only_the_clamp_fails,
+        only_the_gearbox_fails, only_the_joint_fails, passing_design, reversed_hub_band,
+        shaft_joint_input_rows, shaft_joint_result_rows, short_magnets, sized_frame, slider_range,
+        small_boss, with_poles,
     };
     use std::collections::BTreeSet;
 
@@ -4060,7 +3970,8 @@ mod tests {
     fn the_size_tab_and_banner_links_lead_where_their_checks_do() {
         // Spec 3.7: the Size tab's Required and Hot-low links lead where the hot minimum
         // check's Why does, the banner's where the end-effect check's does, and the links
-        // under Magnets per ring and Outside diameter to Start here's first step.
+        // under Magnets per ring and Outside diameter and on the torque card's heading (slice 3
+        // spec 6.1) to Start here's first step.
         assert_eq!(Learn::Note(TORQUE_BAND_NOTE), guide(HOT_MIN).unwrap().learn);
         assert_eq!(Learn::Note(BANNER_NOTE), guide(END_EFFECT).unwrap().learn);
         assert_eq!(notes::START_HERE[0].0, SIZE_TAB_NOTE);
@@ -6350,9 +6261,20 @@ mod tests {
     #[test]
     fn no_guide_text_calls_the_ring_radius_ring_size() {
         // One name per quantity (spec 3.5): the input row says Ring radius, so no guide, fix,
-        // problem or consequence line says "ring size".
+        // problem or consequence line says "ring size", nor the torque card's Auto lines, which
+        // took over the rule of the two Auto lines that stood under Magnets per ring (slice 3
+        // spec 4.3).
+        use crate::gui::torque_card::{AUTO_HOLDS_COUNT, AUTO_HOLDS_LENGTH, AUTO_HOLDS_RING};
         let mut texts = every_text();
-        texts.extend([RING_SIZE_STAYS, AUTO_RESIZES_RING, AUTO_RESETS_LENGTH].map(str::to_owned));
+        texts.extend(
+            [
+                RING_SIZE_STAYS,
+                AUTO_HOLDS_LENGTH,
+                AUTO_HOLDS_RING,
+                AUTO_HOLDS_COUNT,
+            ]
+            .map(str::to_owned),
+        );
         for text in texts {
             assert!(!text.to_lowercase().contains("ring size"), "{text:?}");
         }
@@ -9033,261 +8955,20 @@ mod tests {
 
     // What moves what (spec 3.3, test 5): every number is recomputed here with compute_all.
 
-    /// The consequences of `inputs` as the panel builds them: with the design's own results.
+    /// The consequences of `inputs` as the panel builds them: with the design's own results, at
+    /// the shipped shaft-clamp pause.
     fn consequences_of(inputs: &DesignInputs, minimum_diameter_mm: Option<f64>) -> Consequences {
-        Consequences::of(inputs, &compute_all(inputs), minimum_diameter_mm)
+        Consequences::of(
+            inputs,
+            &compute_all(inputs),
+            minimum_diameter_mm,
+            crate::engine::clamps::PAUSED,
+        )
     }
 
     /// `inputs` with `npole` magnets per ring and nothing else changed.
     fn with_magnets(inputs: &DesignInputs, npole: i64) -> DesignInputs {
         FreeVariable::MagnetsPerRing.apply(inputs, npole as f64)
-    }
-
-    /// A design whose own end effect is just out of range while two more magnets bring it back
-    /// in and fit: the first ring radius of the solver's grid where two more magnets fit, the
-    /// magnets cut halfway between the two counts' end-effect limits (f_end = 1 - c_end * pole
-    /// pitch / L is zero at L = c_end * pole pitch, and the pitch falls as the count rises).
-    fn end_effect_edge() -> DesignInputs {
-        let base = DesignInputs::default();
-        let more = base.coupling.npole + 2;
-        let radius = FreeVariable::RingRadius
-            .grid()
-            .into_iter()
-            .find(|&radius| {
-                let design = with_magnets(&FreeVariable::RingRadius.apply(&base, radius), more);
-                blocks_fit(&design.coupling, &compute_all(&design).model)
-            })
-            .expect("two more magnets fit somewhere on the ring-radius slider");
-        let mut design = FreeVariable::RingRadius.apply(&base, radius);
-        // The end-effect coefficient's slider maximum: the length lands inside its slider.
-        design.coupling.c_end = 0.5;
-        let pitch = |npole: i64| {
-            compute_all(&with_magnets(&design, npole))
-                .model
-                .pole_pitch_mm
-        };
-        let length = design.coupling.c_end * (pitch(base.coupling.npole) + pitch(more)) / 2.0;
-        design.coupling.magnets.axial_length_mm = Some(length);
-        design
-    }
-
-    #[test]
-    fn each_neighbour_is_the_design_with_only_the_magnet_count_changed() {
-        let inputs = DesignInputs::default();
-        let results = compute_all(&inputs);
-        let npole = inputs.coupling.npole;
-        let consequences = Consequences::of(&inputs, &results, None);
-        let counts: Vec<i64> = consequences.neighbours.iter().map(|n| n.npole).collect();
-        assert_eq!(counts, [npole - 2, npole + 2]);
-        for neighbour in &consequences.neighbours {
-            let design = with_magnets(&inputs, neighbour.npole);
-            let r = compute_all(&design);
-            match neighbour.outcome {
-                NeighbourOutcome::Torque {
-                    pullout_Nm: pullout,
-                    change,
-                    cup_od_mm,
-                } => {
-                    assert!(
-                        crate::engine::sizing::is_valid(&design, &r),
-                        "{neighbour:?}"
-                    );
-                    assert_eq!(pullout, r.model.pullout_Nm);
-                    assert_eq!(change, r.model.pullout_Nm / results.model.pullout_Nm - 1.0);
-                    assert_eq!(cup_od_mm, r.model.cup_od_mm);
-                }
-                NeighbourOutcome::DoesNotFit => {
-                    assert!(!blocks_fit(&design.coupling, &r.model), "{neighbour:?}")
-                }
-                NeighbourOutcome::NoPrediction => {
-                    assert!(!end_effect_in_range(r.model.f_end), "{neighbour:?}")
-                }
-            }
-        }
-        // The owner's case (spec 1): two fewer magnets fit, lose torque and grow the cup; two
-        // more do not fit at this ring size.
-        match consequences.neighbours[0].outcome {
-            NeighbourOutcome::Torque {
-                change, cup_od_mm, ..
-            } => {
-                assert!(change < 0.0, "{change}");
-                assert!(cup_od_mm > results.model.cup_od_mm, "{cup_od_mm}");
-            }
-            other => panic!("{} magnets fit at the default ring: {other:?}", npole - 2),
-        }
-        assert_eq!(
-            consequences.neighbours[1].outcome,
-            NeighbourOutcome::DoesNotFit
-        );
-    }
-
-    #[test]
-    fn the_magnet_lines_name_each_neighbour_s_torque_and_cup_or_say_why_not() {
-        let inputs = DesignInputs::default();
-        let results = compute_all(&inputs);
-        let npole = inputs.coupling.npole;
-        let fewer = compute_all(&with_magnets(&inputs, npole - 2));
-        let lines = Consequences::of(&inputs, &results, None).magnet_lines(npole, None);
-        assert_eq!(lines[0], RING_SIZE_STAYS);
-        // The change as the Size tab writes every percent (decision 10B: `signed_percent`,
-        // one decimal, pinned in `gui::format`'s tests).
-        assert_eq!(
-            lines[1],
-            format!(
-                "At {}: pull-out {:.2} N·m ({}), cup OD {:.1} mm",
-                npole - 2,
-                fewer.model.pullout_Nm,
-                signed_percent(fewer.model.pullout_Nm / results.model.pullout_Nm - 1.0),
-                fewer.model.cup_od_mm
-            )
-        );
-        assert_eq!(lines[2], format!("At {}: magnets do not fit", npole + 2));
-        assert_eq!(lines.len(), 4, "the fit line closes the list: {lines:?}");
-    }
-
-    #[test]
-    fn at_either_end_of_the_magnet_slider_only_the_neighbour_inside_it_is_shown() {
-        // Spec 5: at 4 or 40 magnets, only the neighbour inside the slider range.
-        let range = FreeVariable::MagnetsPerRing.range();
-        let (fewest, most) = (range.min as i64, range.max as i64);
-        for (npole, inside, outside) in
-            [(fewest, fewest + 2, fewest - 2), (most, most - 2, most + 2)]
-        {
-            let inputs = with_magnets(&DesignInputs::default(), npole);
-            let consequences = consequences_of(&inputs, None);
-            let counts: Vec<i64> = consequences.neighbours.iter().map(|n| n.npole).collect();
-            assert_eq!(counts, [inside], "{npole} magnets");
-            let lines = consequences.magnet_lines(npole, None);
-            assert!(
-                lines
-                    .iter()
-                    .any(|l| l.starts_with(&format!("At {inside}:"))),
-                "{lines:?}"
-            );
-            assert!(
-                !lines
-                    .iter()
-                    .any(|l| l.starts_with(&format!("At {outside}:"))),
-                "{lines:?}"
-            );
-        }
-        // An odd count (a design file's) shows the ring-size line and no neighbour: the slider
-        // takes neither count next to it (`torque_card::count_step`, whose own test pins the
-        // counts it takes).
-        let odd = with_magnets(&DesignInputs::default(), fewest + 5);
-        let lines = consequences_of(&odd, None).magnet_lines(odd.coupling.npole, None);
-        assert_eq!(lines[0], RING_SIZE_STAYS);
-        assert!(!lines.iter().any(|l| l.starts_with("At ")), "{lines:?}");
-    }
-
-    #[test]
-    fn a_keyway_through_the_hub_changes_no_neighbour_s_reading() {
-        // The hub wall past the keyway does not depend on the magnet count, so a neighbour
-        // fails it exactly when the design shown does (the Size tab says so already).
-        let mut broken = DesignInputs::default();
-        broken.coupling.bore_mm = 16.0; // the bore and keyway sliders' maxima
-        broken.coupling.keyway_depth_mm = 4.0;
-        let mut intact = broken.clone();
-        intact.coupling.keyway_depth_mm = 0.0;
-        assert!(compute_all(&broken).model.hub_wall_past_key_mm <= 0.0);
-        assert!(compute_all(&intact).model.hub_wall_past_key_mm > 0.0);
-        let read = |inputs: &DesignInputs| neighbours(inputs, &compute_all(inputs));
-        assert_eq!(read(&broken), read(&intact));
-        assert!(
-            matches!(read(&broken)[0].outcome, NeighbourOutcome::Torque { .. }),
-            "{:?}",
-            read(&broken)
-        );
-    }
-
-    #[test]
-    fn with_hub_wall_past_the_keyway_a_neighbour_reads_a_torque_exactly_when_sizing_counts_it() {
-        let range = FreeVariable::MagnetsPerRing.range();
-        for design in [
-            DesignInputs::default(),
-            crate::gui::test_support::short_magnets(),
-            end_effect_edge(),
-        ] {
-            for npole in (range.min as i64..=range.max as i64).step_by(2) {
-                let inputs = with_magnets(&design, npole);
-                for neighbour in neighbours(&inputs, &compute_all(&inputs)) {
-                    let at = with_magnets(&design, neighbour.npole);
-                    let r = compute_all(&at);
-                    assert!(r.model.hub_wall_past_key_mm > 0.0);
-                    assert_eq!(
-                        matches!(neighbour.outcome, NeighbourOutcome::Torque { .. }),
-                        crate::engine::sizing::is_valid(&at, &r),
-                        "{npole} -> {neighbour:?}"
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn a_neighbour_without_a_prediction_reads_words_and_no_change_is_invented() {
-        // Spec 5: words, not numbers. The design shown has no prediction either, so the
-        // neighbour that has one shows its torque without a change against a meaningless one.
-        let inputs = end_effect_edge();
-        let results = compute_all(&inputs);
-        assert!(
-            !end_effect_in_range(results.model.f_end),
-            "{}",
-            results.model.f_end
-        );
-        let npole = inputs.coupling.npole;
-        let consequences = Consequences::of(&inputs, &results, None);
-        assert_eq!(
-            consequences.neighbours[0],
-            Neighbour {
-                npole: npole - 2,
-                outcome: NeighbourOutcome::NoPrediction
-            }
-        );
-        let more = compute_all(&with_magnets(&inputs, npole + 2));
-        match consequences.neighbours[1].outcome {
-            NeighbourOutcome::Torque {
-                pullout_Nm: pullout,
-                change,
-                cup_od_mm,
-            } => {
-                assert_eq!(pullout, more.model.pullout_Nm);
-                assert!(change.is_nan(), "{change}");
-                assert_eq!(cup_od_mm, more.model.cup_od_mm);
-            }
-            other => panic!("{other:?}"),
-        }
-        let lines = consequences.magnet_lines(npole, None);
-        assert_eq!(lines[1], format!("At {}: no prediction", npole - 2));
-        assert_eq!(
-            lines[2],
-            format!(
-                "At {}: pull-out {:.2} N·m, cup OD {:.1} mm",
-                npole + 2,
-                more.model.pullout_Nm,
-                more.model.cup_od_mm
-            )
-        );
-    }
-
-    #[test]
-    fn with_magnets_too_short_for_the_model_every_neighbour_reads_words() {
-        let inputs = crate::gui::test_support::short_magnets();
-        let npole = inputs.coupling.npole;
-        let lines = consequences_of(&inputs, None).magnet_lines(npole, None);
-        let neighbour_lines: Vec<&String> = lines.iter().filter(|l| l.starts_with("At ")).collect();
-        assert_eq!(neighbour_lines.len(), 2, "{lines:?}");
-        for (line, count) in neighbour_lines.into_iter().zip([npole - 2, npole + 2]) {
-            let r = compute_all(&with_magnets(&inputs, count));
-            let words = if !blocks_fit(&with_magnets(&inputs, count).coupling, &r.model) {
-                "magnets do not fit"
-            } else if !end_effect_in_range(r.model.f_end) {
-                "no prediction"
-            } else {
-                panic!("{count} magnets give a torque on short magnets: {line}")
-            };
-            assert_eq!(*line, format!("At {count}: {words}"));
-        }
     }
 
     #[test]
@@ -9499,7 +9180,7 @@ mod tests {
     #[test]
     fn without_a_breakdown_or_a_fit_there_is_no_line_for_it() {
         let empty = Consequences {
-            neighbours: Vec::new(),
+            card: TorqueCard::Rows(Vec::new()),
             fit: None,
             fit_unlocked: None,
             diameter: None,
@@ -9512,8 +9193,9 @@ mod tests {
 
     #[test]
     fn every_consequence_line_has_its_glyphs_and_plain_words() {
-        // Spec tests 3 and 11, over every line form: a torque, a torque without a change, both
-        // word forms, the three fit forms and both breakdowns.
+        // Spec tests 3 and 11, over every line form under the controls: the ring-size line, the
+        // three fit forms and both breakdowns (the neighbour lines' torque and word forms are the
+        // torque card's count row since slice 3: its own tests hold its lines).
         let ctx = egui::Context::default();
         let _ = ctx.run(egui::RawInput::default(), |_| {});
         let range = FreeVariable::MagnetsPerRing.range();
@@ -9540,10 +9222,13 @@ mod tests {
 
     #[test]
     fn the_first_magnet_line_follows_the_auto_state() {
-        // Physics review 3, N4: the ring keeps its radius only with Auto off. With Auto on the
-        // ring size a new count is solved again, and on the magnet length the length is; the
-        // neighbour lines keep the present size, and the first line says so. With Auto on the
-        // count its slider is locked, so no line speaks of changing it.
+        // Slice 3 spec 4.3 (physics review 3, N4, as the card leaves it): the ring keeps its
+        // radius with Auto off and with Auto on the magnet length (that Auto moves no ring), so
+        // both draw the ring-size line. With Auto on the ring size a new count sizes the ring
+        // again, which the torque card's Auto line says (decision 5A), so no line under Magnets
+        // per ring speaks of it; with Auto on the count its slider is locked. The fit line
+        // follows in every state, and no line names a neighbouring count (decision 7A: the card's
+        // count row): 2 lines with the ring-size line, 1 without.
         let ctx = egui::Context::default();
         let _ = ctx.run(egui::RawInput::default(), |_| {});
         let inputs = DesignInputs::default();
@@ -9552,68 +9237,73 @@ mod tests {
         let off = consequences.magnet_lines(npole, None);
         let states: [(Option<FreeVariable>, Option<&str>); 4] = [
             (None, Some(RING_SIZE_STAYS)),
-            (
-                Some(FreeVariable::RingRadius),
-                Some(
-                    "Auto resizes the ring when you change the magnet count; the lines below keep the present ring radius.",
-                ),
-            ),
-            (
-                Some(FreeVariable::AxialLength),
-                Some(
-                    "Auto resets the magnet length when you change the magnet count; the lines below keep the present length.",
-                ),
-            ),
+            (Some(FreeVariable::AxialLength), Some(RING_SIZE_STAYS)),
+            (Some(FreeVariable::RingRadius), None),
             (Some(FreeVariable::MagnetsPerRing), None),
         ];
         for (auto, first) in states {
             assert_eq!(magnet_count_line(auto), first, "{auto:?}");
             let lines = consequences.magnet_lines(npole, auto);
-            // The first line alone follows the state: the rest are the Auto-off lines.
+            assert_eq!(
+                lines.len(),
+                1 + usize::from(first.is_some()),
+                "{auto:?}: {lines:?}"
+            );
+            // The first line alone follows the state: the rest is the Auto-off fit line.
             match first {
                 Some(first) => {
                     assert_eq!(lines[0], first, "{auto:?}");
                     assert_eq!(lines[1..], off[1..], "{auto:?}");
-                    crate::gui::test_support::assert_glyphs(&ctx, first, "a magnet count line");
-                    assert_eq!(plain_text_violations(first), Vec::<&str>::new(), "{first}");
                 }
                 None => assert_eq!(lines[..], off[1..], "{auto:?}"),
             }
         }
+        // The ring-size line's words (its clause is new in slice 3): glyphs and plain words.
+        crate::gui::test_support::assert_glyphs(&ctx, RING_SIZE_STAYS, "a magnet count line");
+        assert_eq!(plain_text_violations(RING_SIZE_STAYS), Vec::<&str>::new());
     }
 
     #[test]
     fn the_cache_computes_once_per_design_and_minimum_and_follows_an_edit() {
-        // Spec 4.1 and test 5: computed again only when the inputs or the minimum change; what
-        // it returns is always Consequences::of the design asked about.
+        // Spec 4.1 and test 5: computed again only when the inputs, the minimum or the
+        // shaft-clamp pause change (slice 3 spec 3.2: one key in three parts); what it returns is
+        // always Consequences::of the design asked about.
+        use crate::gui::torque_card::{Control, Side};
+        let paused = crate::engine::clamps::PAUSED;
         let mut cache = ConsequenceCache::default();
         let inputs = DesignInputs::default();
         let results = compute_all(&inputs);
-        let first = cache.get(&inputs, &results, None).clone();
-        assert_eq!(first, Consequences::of(&inputs, &results, None));
+        let first = cache.get(&inputs, &results, None, paused).clone();
+        assert_eq!(first, Consequences::of(&inputs, &results, None, paused));
         for _ in 0..5 {
-            assert_eq!(cache.get(&inputs, &results, None), &first);
+            assert_eq!(cache.get(&inputs, &results, None, paused), &first);
         }
         assert_eq!(
             cache.computed, 1,
             "a design asked about again is not computed again"
         );
-        // An edit: the neighbours' numbers follow it.
+        // An edit: the torque card's numbers follow it (its count row is the old neighbour
+        // lines, in hot-low).
         let mut hot = inputs.clone();
         hot.coupling.op_temp_C += 30.0;
         let hot_results = compute_all(&hot);
-        let edited = cache.get(&hot, &hot_results, None).clone();
+        let edited = cache.get(&hot, &hot_results, None, paused).clone();
         assert_eq!(cache.computed, 2);
-        assert_eq!(edited, Consequences::of(&hot, &hot_results, None));
-        assert_ne!(edited.neighbours, first.neighbours);
+        assert_eq!(edited, Consequences::of(&hot, &hot_results, None, paused));
+        assert_ne!(edited.card, first.card);
         let fewer = compute_all(&with_magnets(&hot, hot.coupling.npole - 2));
+        let count = edited
+            .card
+            .rows()
+            .iter()
+            .find(|row| row.control == Control::MagnetsPerRing)
+            .expect("the count row");
         assert!(
             matches!(
-                edited.neighbours[0].outcome,
-                NeighbourOutcome::Torque { pullout_Nm: pullout, .. } if pullout == fewer.model.pullout_Nm
+                &count.fewer,
+                Side::Change(change) if change.hot_low_Nm == fewer.metal.torque_hot_low_Nm
             ),
-            "{:?}",
-            edited.neighbours
+            "{count:?}"
         );
         // A new minimum diameter is a new question too.
         let lowest = crate::engine::size_controls::dimensions(&hot)
@@ -9621,12 +9311,29 @@ mod tests {
             .minimum_diameter_range
             .min;
         assert_eq!(
-            cache.get(&hot, &hot_results, Some(lowest)),
-            &Consequences::of(&hot, &hot_results, Some(lowest))
+            cache.get(&hot, &hot_results, Some(lowest), paused),
+            &Consequences::of(&hot, &hot_results, Some(lowest), paused)
         );
         assert_eq!(cache.computed, 3);
-        cache.get(&hot, &hot_results, Some(lowest));
+        cache.get(&hot, &hot_results, Some(lowest), paused);
         assert_eq!(cache.computed, 3);
+        // And so is the other pause: the card's flips and margins run over the guides that count
+        // (an unpaused test panel counts the shaft clamp's).
+        assert_eq!(
+            cache.get(&hot, &hot_results, Some(lowest), !paused),
+            &Consequences::of(&hot, &hot_results, Some(lowest), !paused)
+        );
+        assert_eq!(cache.computed, 4);
+        cache.get(&hot, &hot_results, Some(lowest), !paused);
+        assert_eq!(cache.computed, 4);
+        // The pause reaches the card: at the clamp's limit one step of length flips the shaft
+        // clamp, which counts only while its section is not paused (spec 3.2, test 7a).
+        let limit = clamp_at_its_limit();
+        let limit_results = compute_all(&limit);
+        assert_ne!(
+            Consequences::of(&limit, &limit_results, None, false).card,
+            Consequences::of(&limit, &limit_results, None, true).card
+        );
     }
 
     #[test]
@@ -9908,6 +9615,72 @@ mod tests {
             }
         }
 
+        // The torque card (slice 3; spec sections 4 and 10.1 step 2), for its G-3 review: the
+        // heading, then the lines `TorqueCard::lines` draws at every design of `card_designs()`,
+        // each in its own Auto state as the panel draws it, at the shipped clamp pause; then every
+        // Auto state at the four designs whose card takes a form of its own under Auto (the odd
+        // count has no size rows, so Auto on ring size or magnet length holds no row; the three
+        // one-line forms draw no Auto line: T-12, test 8). Tag: "card/<key>/<Auto state>/<line>",
+        // the line numbered from 00.
+        {
+            use crate::gui::test_support::card_designs;
+            use crate::gui::torque_card::{CARD_HEADING, card};
+            let state = |auto: Option<FreeVariable>| {
+                auto.map_or_else(|| "Auto off".to_owned(), |v| format!("Auto {v:?}"))
+            };
+            emit("card/heading", CARD_HEADING);
+            let cards: Vec<_> = card_designs()
+                .into_iter()
+                .map(|d| {
+                    let shown = card(
+                        &d.inputs,
+                        &compute_all(&d.inputs),
+                        d.minimum_diameter_mm,
+                        crate::engine::clamps::PAUSED,
+                    );
+                    (d, shown)
+                })
+                .collect();
+            for (d, shown) in &cards {
+                for (n, line) in shown.lines(d.auto).iter().enumerate() {
+                    emit(&format!("card/{}/{}/{n:02}", d.key, state(d.auto)), line);
+                }
+            }
+            let design = |key: &str| {
+                cards
+                    .iter()
+                    .find(|(d, _)| d.key == key)
+                    .unwrap_or_else(|| panic!("card_designs() has no design {key:?}"))
+            };
+            for key in [
+                "odd count",
+                "short magnets",
+                "shown does not fit",
+                "variation 1.0",
+            ] {
+                let (_, shown) = design(key);
+                for variable in FreeVariable::ALL {
+                    for (n, line) in shown.lines(Some(variable)).iter().enumerate() {
+                        emit(
+                            &format!("card/{key}/{}/{n:02}", state(Some(variable))),
+                            line,
+                        );
+                    }
+                }
+            }
+            // The readout's gap above the card, in the card's number format (decision 10B),
+            // for the review to read in context.
+            for key in ["(a)", "(b)", "(c)", "(e)", "(e2)"] {
+                let (d, _) = design(key);
+                let results = compute_all(&d.inputs);
+                let (gap, _) = sc::torque_gap_text(
+                    results.metal.torque_hot_low_Nm,
+                    d.inputs.metal.required_min_Nm,
+                );
+                emit(&format!("size tab/torque gap/{key}"), &gap);
+            }
+        }
+
         // The Size tab constants.
         emit("size tab/no prediction", sc::NO_PREDICTION);
         emit("size tab/no torque", sc::NO_TORQUE);
@@ -10001,6 +9774,7 @@ mod tests {
                 "size tab/under Magnets per ring and Outside diameter",
                 SIZE_TAB_NOTE,
             ),
+            ("size tab/the torque card's heading", SIZE_TAB_NOTE),
             (
                 "size tab/end of the Required and Hot-low rows",
                 TORQUE_BAND_NOTE,

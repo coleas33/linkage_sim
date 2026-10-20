@@ -4,10 +4,11 @@
 //! sets ([`variable_slider`]) at the value shown and names the change ([`change_text`]).
 //!
 //! Under each control, its hint line ([`hint_line`], slice 2 spec 3.5) and its what-moves-what
-//! lines (spec 3.3: [`Consequences`], computed by the guidance layer). The panel's centre view
-//! draws the torque readouts (spec 3.2) with the texts here: [`REQUIRED`], [`HOT_LOW`] with
-//! [`torque_gap_text`], [`pullout_label`], and [`NO_PREDICTION`] or [`NO_TORQUE`] where the model
-//! makes none ([`predicts`]).
+//! lines (spec 3.3: [`Consequences`], computed by the guidance layer); the lines for two magnets
+//! fewer and two more are the torque card's count row since slice 3 (decision 7A). The panel's
+//! centre view draws the torque readouts (spec 3.2) with the texts here: [`REQUIRED`],
+//! [`HOT_LOW`] with [`torque_gap_text`], [`pullout_label`], and [`NO_PREDICTION`] or
+//! [`NO_TORQUE`] where the model makes none ([`predicts`]), then the torque card.
 
 use crate::engine::meta::{InputMeta, InputSet, SliderRange, Value};
 use crate::engine::size_controls::{
@@ -639,7 +640,12 @@ mod tests {
         // the slider's minimum; the defaults pin none.
         let ctx = egui::Context::default();
         let pinned = |inputs: &DesignInputs| {
-            let consequences = Consequences::of(inputs, &compute_all(inputs), None);
+            let consequences = Consequences::of(
+                inputs,
+                &compute_all(inputs),
+                None,
+                crate::engine::clamps::PAUSED,
+            );
             let mut minimum = None;
             sized_frame(&ctx, SCREEN, Vec::new(), |ui| {
                 minimum = controls_ui(ui, inputs, None, &consequences, None).minimum_diameter_mm;
