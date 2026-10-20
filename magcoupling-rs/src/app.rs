@@ -275,6 +275,18 @@ mod tests {
             use crate::gui::torque_card::{
                 AUTO_HOLDS_LENGTH, CAPTION, CARD_HEADING, Control, held_line,
             };
+            // The first view and the card step both look for the heading, so the script types it
+            // once, as its own CARD_HEADING: a change of the heading reaches both steps.
+            assert_eq!(
+                quoted("CARD_HEADING"),
+                CARD_HEADING,
+                "the script's CARD_HEADING"
+            );
+            assert_eq!(
+                script.matches(CARD_HEADING).count(),
+                1,
+                "the smoke prompt types the card's heading once, in CARD_HEADING"
+            );
             for (what, text) in [
                 ("the card's heading", CARD_HEADING.to_owned()),
                 ("the card's caption", CAPTION.to_owned()),
@@ -300,10 +312,43 @@ mod tests {
         }
         // The drag's timer keeps only the frames the app draws (performance review 4.1): eframe
         // asks for an animation frame at every display refresh, so the timer marks a frame by its
-        // WebGL draw call.
+        // WebGL draw call. Read on the constant's own line, since the comment above it names
+        // drawElements too; that line is the whole timer, as T10's extraction and the stub read
+        // it. The card step installs this constant, not a timer of its own.
+        let timer = script
+            .lines()
+            .find(|line| line.starts_with("const FRAME_TIMER = `"))
+            .expect("the smoke prompt's frame timer");
         assert!(
-            script.contains("const FRAME_TIMER = `") && script.contains("drawElements"),
+            timer.ends_with('`'),
+            "the smoke prompt's frame timer is one line"
+        );
+        assert!(
+            timer.contains("drawElements") && timer.contains("if (window.__drew)"),
             "the smoke prompt's frame timer keeps only the frames the app draws"
+        );
+        assert!(
+            script.contains("page.addInitScript(${FRAME_TIMER})"),
+            "the card step installs the frame timer before it opens the link again"
+        );
+        // Every step's console messages reach console_errors. The Playwright MCP's
+        // browser_console_messages returns only the messages since the last navigation, so each
+        // page is collected after its last step: the first page after the scroll and before the
+        // link is opened again, the page opened again after the drag and before the close.
+        let collect = "Collect the console messages at level \"info\"";
+        let between = |from: &str, to: &str| -> &str {
+            let start = script.find(from).unwrap_or_else(|| panic!("no {from}"));
+            let end = script.find(to).unwrap_or_else(|| panic!("no {to}"));
+            assert!(start < end, "the smoke prompt has {from} before {to}");
+            &script[start..end]
+        };
+        assert!(
+            between("dashboard_scrolls=true", "page.goto(").contains(collect),
+            "the first page's console messages are collected before the link is opened again"
+        );
+        assert!(
+            between("drag_moved=true", "then close the browser").contains(collect),
+            "the console messages of the page opened again are collected after the drag"
         );
         // The app opens the link and the solve succeeds after its debounce.
         let ctx = egui::Context::default();
