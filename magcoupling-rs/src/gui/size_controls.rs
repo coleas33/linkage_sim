@@ -445,8 +445,11 @@ fn size_slider(
 mod tests {
     use super::*;
     use crate::compute_all;
+    use crate::gui::format::decimals_with_a_digit;
     use crate::gui::guidance::plain_text_violations;
-    use crate::gui::test_support::{SCREEN, assert_glyphs, short_magnets, sized_frame};
+    use crate::gui::test_support::{
+        SCREEN, assert_glyphs, card_designs, short_magnets, sized_frame,
+    };
 
     #[test]
     fn the_pull_out_label_names_the_live_operating_temperature() {
@@ -508,6 +511,96 @@ mod tests {
             torque_gap_text(-0.5, 0.0),
             ("short 0.50 N·m".to_owned(), false)
         );
+    }
+
+    #[test]
+    fn a_margin_past_the_cap_and_a_hot_low_that_is_not_finite_read_their_word_and_sign() {
+        // A margin past the cap (T-9) reads two decimals with its sign, as Auto's solve residual
+        // at (b) does (slice 3 spec section 5). A hot-low that is not finite never reaches the
+        // panel's gap (its readout reads NO_PREDICTION or NO_TORQUE, `predicts`), but
+        // `gui::torque_gap_text` is public: each reads its non_finite_text, never "++inf".
+        for (hot_low, required, text, meets) in [
+            (2.5 + 1.28e-10, 2.5, "margin +0.00 N·m (+0.0 %)", true),
+            (f64::INFINITY, 2.5, "margin +inf N·m (+inf %)", true),
+            (f64::NEG_INFINITY, 2.5, "short +inf N·m (-inf %)", false),
+            (f64::NAN, 2.5, "short NaN N·m (NaN %)", false),
+        ] {
+            assert_eq!(
+                torque_gap_text(hot_low, required),
+                (text.to_owned(), meets),
+                "{hot_low} against {required}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_gap_s_word_and_the_sign_of_its_percent_always_agree() {
+        // The word (and `meets`) is the engine's hot minimum check, `hot_low >= required`; the
+        // percent carries the gap's own sign. With finite torques and a positive requirement the
+        // two never disagree, however small the gap or large the torques: a difference of two
+        // doubles that is not zero never rounds to zero over the requirement, so a shortfall's
+        // percent reads "-" ("-0.0 %" a hair under) and a margin's "+" (an exact zero "+0.0 %",
+        // the house rule); one that overflows reads "+inf %" or "-inf %".
+        for required in [0.1, 1.5, 2.5, 10.0, 1e-300, 5e-324, 1e300, f64::MAX] {
+            let hair = [
+                required.next_up(),
+                required.next_down(),
+                required.next_up().next_up(),
+                required.next_down().next_down(),
+            ];
+            let offsets = [1e-10, 0.00004, 0.004, 0.29].into_iter();
+            let hot_lows = [required, 0.0, -required, 2.0 * required, -f64::MAX]
+                .into_iter()
+                .chain(hair)
+                .chain(offsets.flat_map(|step| [required + step, required - step]))
+                .filter(|hot_low| hot_low.is_finite());
+            for hot_low in hot_lows {
+                let (text, meets) = torque_gap_text(hot_low, required);
+                let what = format!("{hot_low:e} against {required:e}: {text}");
+                assert_eq!(meets, hot_low >= required, "{what}");
+                let (word, sign) = if meets {
+                    ("margin ", " (+")
+                } else {
+                    ("short ", " (-")
+                };
+                assert!(text.starts_with(word), "{what}");
+                assert!(text.contains(sign), "{what}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_gap_at_the_spec_s_designs_reads_as_its_section_5_gives_it() {
+        // Slice 3 spec section 5's table ("After", decision 10B): the readout's gap at (a), (b),
+        // (c), (e) and (e2) of the torque card's one table of designs, each hot-low from
+        // compute_all against the design's own requirement, as the panel draws it.
+        let mut read = Vec::new();
+        for design in card_designs() {
+            let (text, meets) = match design.key {
+                "(a)" => ("short 0.21 N·m (-8.6 %)", false),
+                "(b)" => ("margin +0.00 N·m (+0.0 %)", true),
+                "(c)" => ("short 1.06 N·m (-42.3 %)", false),
+                "(e)" => ("short 0.83 N·m (-33.1 %)", false),
+                "(e2)" => ("margin +0.17 N·m (+11.5 %)", true),
+                _ => continue,
+            };
+            let hot_low = compute_all(&design.inputs).metal.torque_hot_low_Nm;
+            let required = design.inputs.metal.required_min_Nm;
+            assert_eq!(
+                torque_gap_text(hot_low, required),
+                (text.to_owned(), meets),
+                "{}",
+                design.key
+            );
+            if design.key == "(b)" {
+                // Auto's solve residual: a margin past the cap, read as float noise (T-9).
+                let gap = hot_low - required;
+                assert!(gap > 0.0, "{gap:e}");
+                assert_eq!(decimals_with_a_digit(gap, TORQUE_DECIMALS), None, "{gap:e}");
+            }
+            read.push(design.key);
+        }
+        assert_eq!(read, ["(a)", "(b)", "(c)", "(e)", "(e2)"]);
     }
 
     #[test]
