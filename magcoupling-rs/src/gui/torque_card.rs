@@ -24,8 +24,8 @@ use crate::engine::size_controls::{SizeControls, dimensions, dimensions_with_min
 use crate::engine::sizing::FreeVariable;
 use crate::gui::dashboard::{Level, result_info};
 use crate::gui::format::{
-    CHANGE_EXTRA_DECIMALS, TORQUE_DECIMALS, fixed, reads_not_zero, shared_change_decimals,
-    signed_change, signed_fixed, signed_percent, with_unit,
+    TORQUE_DECIMALS, decimals_with_a_digit, shared_change_decimals, signed_change, signed_fixed,
+    signed_percent, with_unit,
 };
 use crate::gui::guidance::{FACE_GAP, check_terms, counted_guides, level, result_number};
 use crate::gui::inputs::InputCatalogue;
@@ -527,11 +527,13 @@ fn on_slider(value: f64, range: SliderRange) -> Option<f64> {
 }
 
 /// Whether a size or margin change is drawn (spec 3.6): it is finite and reads a digit that is
-/// not zero at `from` + [`CHANGE_EXTRA_DECIMALS`] decimals, the cap of section 5's format. So
-/// float noise (3.6e-15 mm) is never drawn as "+0.0 mm", nor is a NaN or an infinite change (a
-/// key with no bearing area, +inf against +inf).
+/// not zero within the cap of section 5's format, `from` + `CHANGE_EXTRA_DECIMALS` decimals
+/// (`gui::format`'s cap rule, [`decimals_with_a_digit`], which the change's own decimals read
+/// too; by rounding, the same as a digit at the cap itself). So float noise (3.6e-15 mm) is
+/// never drawn as "+0.0 mm", nor is a NaN or an infinite change (a key with no bearing area,
+/// +inf against +inf).
 fn shows(change: f64, from: usize) -> bool {
-    change.is_finite() && reads_not_zero(&fixed(change, from + CHANGE_EXTRA_DECIMALS))
+    decimals_with_a_digit(change, from).is_some()
 }
 
 /// The Magnet face gap slider's range: its input's, as the Size tab draws it.
@@ -746,6 +748,7 @@ mod tests {
     };
     use crate::engine::size_controls::{resize_diameter_with_minimum, resize_length};
     use crate::engine::sizing::is_valid;
+    use crate::gui::format::{fixed, reads_not_zero};
     use crate::gui::guidance::{
         CLAMP, CLEARANCE, COLD_HIGH, CUP_WALL, Consequences, GEARBOX, HOT_MIN, RING_SIZE_STAYS,
         SHAFT_JOINT, SPACE_CLAIM, SPACE_CLAIM_AXIS_SIZES, TEMPERATURE, WALL_NEEDED, guide,
@@ -2363,6 +2366,39 @@ mod tests {
         planted.diameter_change_mm = Some(0.04);
         assert!(draws_a_size(&planted, Control::FaceGap));
         assert!(!draws_a_size(&planted, Control::OutsideDiameter));
+    }
+
+    #[test]
+    fn a_change_is_drawn_exactly_where_its_own_decimals_read_a_digit() {
+        // One cap rule (decision 10B, T-9): the card draws a size or margin change (`shows`)
+        // exactly where the decimals the Size tab writes it at (`signed_change`) read a digit
+        // that is not zero, at every start: the sliders' 1, the N·m's 2, and a start whose cap
+        // lies past the 15 decimals of the guidance's search (`fewest_decimals_apart`).
+        for from in [0, 1, 2, 13, 14, 15, 16] {
+            for x in [
+                0.0,
+                -0.0,
+                0.2010,
+                -0.0063,
+                -0.0046,
+                -0.00012,
+                -0.00004,
+                6e-5,
+                1e-10,
+                3.6e-15,
+                6e-17,
+                -6e-17,
+                1e-17,
+                0.5,
+                1e300,
+                f64::NAN,
+                f64::INFINITY,
+                f64::NEG_INFINITY,
+            ] {
+                let drawn = reads_not_zero(&signed_change(x, from));
+                assert_eq!(shows(x, from), drawn, "{x} from {from}");
+            }
+        }
     }
 
     #[test]

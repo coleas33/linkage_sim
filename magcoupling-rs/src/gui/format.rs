@@ -90,11 +90,11 @@ pub(crate) fn fixed(x: f64, decimals: usize) -> String {
 /// its digits.
 const MOST_DECIMALS: usize = 15;
 
-/// The one search for more decimals (BL-059 NB-1): of the guidance's band and window quotes
-/// (`gui::guidance`'s `band_quotes` and `window_quotes`), its quote of an input typed below its
-/// slider's bottom, and the Size tab's change decimals ([`change_decimals`]). The fewest
-/// decimals, from `from` up to [`MOST_DECIMALS`], whose `quotes` read `apart`, with those
-/// quotes; else [`MOST_DECIMALS`] and its quotes.
+/// The guidance's search for more decimals (BL-059 NB-1): of its band and window quotes
+/// (`gui::guidance`'s `band_quotes` and `window_quotes`) and its quote of an input typed below
+/// its slider's bottom. The fewest decimals, from `from` up to [`MOST_DECIMALS`], whose `quotes`
+/// read `apart`, with those quotes; else [`MOST_DECIMALS`] and its quotes. A change's decimals
+/// stop at a cap instead ([`decimals_with_a_digit`]).
 pub(crate) fn fewest_decimals_apart<T>(
     from: usize,
     quotes: impl Fn(usize) -> T,
@@ -107,7 +107,7 @@ pub(crate) fn fewest_decimals_apart<T>(
 }
 
 /// How many decimals past its own a change may take to show a digit that is not zero
-/// ([`change_decimals`]; slice 3 spec T-9). A change still zero there is float noise, such as
+/// ([`decimals_with_a_digit`]; slice 3 spec T-9). A change still zero there is float noise, such as
 /// Auto's solve residual, and reads its own decimals with its true sign. The torque card draws
 /// a size or margin change only where it shows a digit within them.
 pub(crate) const CHANGE_EXTRA_DECIMALS: usize = 2;
@@ -118,32 +118,25 @@ pub(crate) const CHANGE_EXTRA_DECIMALS: usize = 2;
 pub(crate) const TORQUE_DECIMALS: usize = 2;
 
 /// Whether `text` reads a finite number that is not zero: "-0.005" does; "-0.00", "NaN" and
-/// "+inf" do not. What [`change_decimals`] looks for, decimal by decimal.
+/// "+inf" do not. What [`decimals_with_a_digit`] looks for, decimal by decimal.
 pub(crate) fn reads_not_zero(text: &str) -> bool {
     text.parse::<f64>().is_ok_and(|x| x.is_finite() && x != 0.0)
 }
 
-/// The decimals of a change `x` (decision 10B): the fewest, from `from` up to `from` +
-/// [`CHANGE_EXTRA_DECIMALS`], at which [`fixed`] reads a digit that is not zero
-/// ([`fewest_decimals_apart`]; -0.0046 from 2 takes 3, "-0.005"). `from` where `x` is zero or
-/// not finite, or reads zero even at the cap (T-9: -0.00004 from 2 reads "-0.00").
+/// The cap rule of a change `x` (decision 10B, T-9): the fewest decimals, from `from` up to
+/// `from` + [`CHANGE_EXTRA_DECIMALS`], at which [`fixed`] reads a digit that is not zero
+/// ([`reads_not_zero`]; -0.0046 from 2 takes 3, "-0.005"). `None` where none does: `x` is zero
+/// or not finite, or T-9 reads it as float noise (-0.00004 from 2 reads "-0.0000" at the cap).
+/// A change's decimals ([`change_decimals`]) and whether the torque card draws a change (its
+/// `shows`) both read it, so the two never disagree.
+pub(crate) fn decimals_with_a_digit(x: f64, from: usize) -> Option<usize> {
+    (from..=from + CHANGE_EXTRA_DECIMALS).find(|&decimals| reads_not_zero(&fixed(x, decimals)))
+}
+
+/// The decimals of a change `x` (decision 10B): its [`decimals_with_a_digit`] from `from`, else
+/// `from` (zero, not finite, or past the cap: T-9, -0.00004 from 2 reads "-0.00").
 pub(crate) fn change_decimals(x: f64, from: usize) -> usize {
-    if x == 0.0 || !x.is_finite() {
-        return from;
-    }
-    let (decimals, text) = fewest_decimals_apart(
-        from,
-        |decimals| fixed(x, decimals),
-        |text| reads_not_zero(text),
-    );
-    // The search has no cap of its own: it falls back to MOST_DECIMALS when no decimal reads
-    // a digit, or when `from` is past MOST_DECIMALS. Its answer counts only inside the cap,
-    // and only where it reads a digit.
-    if (from..=from + CHANGE_EXTRA_DECIMALS).contains(&decimals) && reads_not_zero(&text) {
-        decimals
-    } else {
-        from
-    }
+    decimals_with_a_digit(x, from).unwrap_or(from)
 }
 
 /// `x` to exactly `decimals` places with its true sign, as the Size tab writes a change: a
@@ -418,12 +411,12 @@ mod tests {
         ] {
             assert_eq!(signed_change(x, 2), text, "{x}");
         }
-        // The cap: where the search reads a digit only past `from` + CHANGE_EXTRA_DECIMALS
-        // (-0.00004 at 5 decimals, 1e-10 at 10, 1e-20 at none up to MOST_DECIMALS, where it
-        // falls back to MOST_DECIMALS), the change reads `from`.
-        for (x, past_the_cap) in [(-0.00004, 5), (1e-10, 10), (1e-20, MOST_DECIMALS)] {
-            let (found, _) = fewest_decimals_apart(2, |d| fixed(x, d), |t| reads_not_zero(t));
-            assert_eq!(found, past_the_cap, "{x}");
+        // The cap: a change whose first digit lies past `from` + CHANGE_EXTRA_DECIMALS
+        // (-0.00004 at 5 decimals, 1e-10 at 10, 1e-20 at 20, past the 15 of the guidance's
+        // search) reads `from`.
+        for (x, first_digit) in [(-0.00004, 5), (1e-10, 10), (1e-20, 20)] {
+            assert!(!reads_not_zero(&fixed(x, first_digit - 1)), "{x}");
+            assert!(reads_not_zero(&fixed(x, first_digit)), "{x}");
             assert_eq!(change_decimals(x, 2), 2, "{x}");
         }
         assert_eq!(change_decimals(-0.0063, 2), 2);
@@ -433,13 +426,36 @@ mod tests {
         // 6e-5 mm is past the cap there.
         assert_eq!(change_decimals(0.0046, 1), 3);
         assert_eq!(change_decimals(6e-5, 1), 1);
-        // Zero and numbers that are not finite read `from`, whatever `from` is; a `from` past
-        // what the search covers reads itself, never fewer decimals.
+        // Zero and numbers that are not finite read `from`, whatever `from` is.
         for x in [0.0, -0.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             assert_eq!(change_decimals(x, 1), 1, "{x}");
         }
-        assert_eq!(change_decimals(0.5, MOST_DECIMALS + 1), MOST_DECIMALS + 1);
-        assert_eq!(change_decimals(1e-17, MOST_DECIMALS - 1), MOST_DECIMALS - 1);
+        // The cap is `from` + CHANGE_EXTRA_DECIMALS wherever `from` starts, past the 15 decimals
+        // of the guidance's search (`fewest_decimals_apart`) too: 6e-17 from 14 takes 16
+        // ("0.0000000000000001"), 1e-17 from 14 reads 14, and 0.5 from 16 its own 16, never
+        // fewer.
+        assert_eq!(change_decimals(6e-17, 14), 16);
+        assert_eq!(change_decimals(1e-17, 14), 14);
+        assert_eq!(change_decimals(0.5, 16), 16);
+        // The cap rule itself, which change_decimals and the torque card's `shows` both read:
+        // the decimals at which a digit shows, `None` where none does within the cap.
+        for (x, from, decimals) in [
+            (0.2010, 2, Some(2)),
+            (-0.0046, 2, Some(3)),
+            (-0.00012, 2, Some(4)),
+            (0.0046, 1, Some(3)),
+            (6e-5, 2, Some(4)),
+            (6e-5, 1, None),
+            (-0.00004, 2, None),
+            (1e-10, 2, None),
+            (0.0, 2, None),
+            (-0.0, 2, None),
+            (f64::NAN, 2, None),
+            (f64::INFINITY, 1, None),
+            (f64::NEG_INFINITY, 1, None),
+        ] {
+            assert_eq!(decimals_with_a_digit(x, from), decimals, "{x} from {from}");
+        }
         // signed_fixed: exactly `decimals` places with the true sign; an exact zero reads "+".
         assert_eq!(signed_fixed(-0.0063, 3), "-0.006");
         assert_eq!(signed_fixed(-0.0046, 3), "-0.005");
@@ -463,8 +479,9 @@ mod tests {
 
     #[test]
     fn the_decimals_search_takes_the_fewest_from_its_start_else_the_most() {
-        // The one search for more decimals (BL-059 NB-1; the guidance's band and window quotes,
-        // a typed input below its slider's bottom, and the Size tab's change decimals).
+        // The guidance's search for more decimals (BL-059 NB-1: its band and window quotes and
+        // its quote of a typed input below its slider's bottom); a change's decimals stop at
+        // their cap instead (decimals_with_a_digit).
         let digit = |text: &String| reads_not_zero(text);
         assert_eq!(
             fewest_decimals_apart(2, |d| fixed(-0.0046, d), digit),
@@ -480,7 +497,8 @@ mod tests {
             fewest_decimals_apart(2, |d| fixed(1e-20, d), digit),
             (MOST_DECIMALS, fixed(1e-20, MOST_DECIMALS))
         );
-        // What reads apart here: a finite number that is not zero, of either sign.
+        // What reads a digit (`reads_not_zero`: the `apart` here, and what decimals_with_a_digit
+        // looks for): a finite number that is not zero, of either sign.
         for (text, apart) in [
             ("-0.005", true),
             ("0.50", true),
