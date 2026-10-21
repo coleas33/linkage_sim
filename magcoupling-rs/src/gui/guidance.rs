@@ -9347,8 +9347,10 @@ mod tests {
         assert_eq!(cache.computed, 4);
         cache.get(&hot, &hot_results, Some(lowest), !paused);
         assert_eq!(cache.computed, 4);
-        // The pause reaches the card: at the clamp's limit one step of length flips the shaft
-        // clamp, which counts only while its section is not paused (spec 3.2, test 7a).
+        // The pause reaches the card: at the clamp's limit the paused and the unpaused card
+        // differ (spec 3.2; that the difference is the shaft clamp's flip on one step of length,
+        // which counts only while its section is not paused, is the card's test 7a,
+        // the_card_names_the_clamp_only_while_unpaused).
         let limit = clamp_at_its_limit();
         let limit_results = compute_all(&limit);
         assert_ne!(

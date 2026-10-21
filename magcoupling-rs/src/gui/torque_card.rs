@@ -1828,10 +1828,14 @@ mod tests {
         );
         // Through the card's count row, with wall past the keyway: over the slider's even counts
         // at the defaults and at the end effect at a step, whose end effect two magnets fewer take
-        // out of range, a count side is a number exactly when its design counts for inverse
-        // sizing; a step the slider does not take reads END_OF_RANGE.
-        let (mut numbers, mut words) = (0, 0);
-        for base in [DesignInputs::default(), end_effect_at_a_step()] {
+        // out of range (its -2 side reads "no prediction"), a count side is a number exactly when
+        // its design counts for inverse sizing; a step the slider does not take reads
+        // END_OF_RANGE.
+        let (mut numbers, mut read) = (0, Vec::new());
+        for (at_the_edge, base) in [
+            (false, DesignInputs::default()),
+            (true, end_effect_at_a_step()),
+        ] {
             for npole in counts.clone() {
                 let (inputs, _) = at(&base, npole);
                 let shown = card_at(&inputs, None);
@@ -1862,13 +1866,19 @@ mod tests {
                     if number {
                         numbers += 1;
                     } else {
-                        words += 1;
+                        read.push((at_the_edge, npole, more, words(side)));
                     }
                 }
             }
         }
-        // Not vacuous: both outcomes occur.
-        assert!(numbers > 0 && words > 0, "{numbers} numbers, {words} words");
+        // Not vacuous: both outcomes occur, and at the end effect at a step, at its own count,
+        // the -2 side reads "no prediction".
+        assert!(numbers > 0, "{numbers} numbers, {read:?}");
+        let edge = end_effect_at_a_step().coupling.npole;
+        assert!(
+            read.contains(&(true, edge, false, Words::NoPrediction)),
+            "{read:?}"
+        );
     }
 
     // ------------------------------------------------------------------ what a step costs, drawn

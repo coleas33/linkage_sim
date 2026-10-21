@@ -5561,10 +5561,12 @@ mod tests {
 
     #[test]
     fn the_size_tab_draws_the_torque_card_in_place_of_the_label() {
-        // Slice 3 spec 6.1: under the readouts, the card's heading with its Why link, then the
-        // card's lines for the design shown, each drawn once, one under the next; the label it
-        // replaced is gone. A click on the heading closes the card, as one on its arrow does,
-        // and another opens it; neither edits the design.
+        // Slice 3 spec 6.1: the card's heading, then the card's lines for the design shown,
+        // each drawn once, one under the next; the label it replaced is gone. A click on the
+        // heading closes the card, as one on its arrow does, and another opens it; neither edits
+        // the design. Its place under the readouts is pinned by
+        // the_card_sits_between_the_readouts_and_the_drawing, and its Why link by
+        // the_size_tab_s_why_links_open_their_notes.
         let mut harness = size_tab(SCREEN, DesignInputs::default());
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, REPLACED_LABEL), 0);
