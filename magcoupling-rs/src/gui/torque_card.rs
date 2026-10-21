@@ -66,8 +66,10 @@ pub const AUTO_HOLDS_RING: &str =
 /// The Auto line with Auto on the magnet count.
 pub const AUTO_HOLDS_COUNT: &str =
     "Auto sets the magnet count again after a change; each row keeps the count shown.";
-/// A side off its slider's range ([`Words::EndOfRange`]; owner 9A's words).
-pub const END_OF_RANGE: &str = "at the end of its range";
+/// A side off its slider's range ([`Words::EndOfRange`]; owner 9A, in the words of the owner's
+/// FO-1 at the slice-3 STOP): true wherever the design shown sits, past an end included, and
+/// it names no end the control would be stopped at.
+pub const END_OF_RANGE: &str = "outside the slider's range";
 /// An odd count's sides ([`Words::NotOnTheSlider`]; T-4).
 pub const NOT_ON_THE_SLIDER: &str = "not a value the slider takes";
 /// A side whose blocks do not fit ([`Words::DoesNotFit`]): the neighbour lines' shipped words,
@@ -1359,8 +1361,8 @@ mod tests {
         );
         // At every design of section 2 the row reads the Outside diameter slider at the user's
         // Minimum OD: the range at `slider_minimum` (the controls' own expression) starts at it,
-        // and a side reads the end of its range exactly when its step lands more than
-        // STEP_SLACK_MM outside that range.
+        // and a side reads END_OF_RANGE exactly when its step lands more than STEP_SLACK_MM
+        // outside that range.
         let mut rows = 0;
         for design in &designs {
             let card = design.card();
@@ -1398,7 +1400,7 @@ mod tests {
     fn a_design_shown_past_a_slider_s_end_reads_the_end_of_its_range() {
         // A design file or link can carry a value past a slider's end (`validate()` checks only
         // that a number is finite). A side more than STEP_SLACK_MM outside the slider's range
-        // reads the end of its range (spec 3.3 step 2): on both sides where the design shown
+        // reads END_OF_RANGE (spec 3.3 step 2): on both sides where the design shown
         // itself lies past an end; a side that lands back on the slider is a number, the
         // slider's own design.
         use Control::{FaceGap, OutsideDiameter, OverallLength};
@@ -1446,6 +1448,32 @@ mod tests {
                 Words::EndOfRange
             );
         }
+        // At (a) with the Minimum OD at 45.0 mm the slider's range starts above the diameter
+        // shown, 42.80 mm: the +1 mm side asks for 43.80 mm, below that range, while the handle
+        // sits at its bottom and moves up from 45.00 mm. So the words name the slider's range and
+        // no end of it: "at the end of its range" named an end the control is not stopped at
+        // (the owner's FO-1 at the slice-3 STOP; G-3 decision D5).
+        let a = DesignInputs::default();
+        let shown = dimensions(&a).expect("size controls");
+        let range = dimensions_with_minimum_diameter(&a, slider_minimum(&shown, Some(45.0)))
+            .expect("a diameter range")
+            .diameter_range;
+        assert_eq!(
+            [shown.diameter_mm + 1.0, range.min].map(|mm| fixed(mm, 2)),
+            ["43.80", "45.00"]
+        );
+        assert!(shown.diameter_mm + 1.0 < range.min - STEP_SLACK_MM);
+        let card = card_at(&a, Some(45.0));
+        let row = &card.rows()[0];
+        assert_eq!(row.control, OutsideDiameter);
+        assert_eq!(
+            side_texts(&card.lines(None)[1], row)[1],
+            format!("+1 mm -> {END_OF_RANGE}")
+        );
+        assert!(
+            !END_OF_RANGE.split_whitespace().any(|word| word == "end"),
+            "{END_OF_RANGE}"
+        );
     }
 
     #[test]
@@ -1470,7 +1498,7 @@ mod tests {
         assert_eq!(count_step(most + 2, true), Err(Words::EndOfRange));
         assert_eq!(count_step(fewest - 2, true), Ok(fewest));
         assert_eq!(count_step(fewest - 2, false), Err(Words::EndOfRange));
-        // Never overflowing: checked arithmetic reads the end of the range.
+        // Never overflowing: checked arithmetic reads `EndOfRange`.
         for more in [false, true] {
             assert_eq!(count_step(most + 4, more), Err(Words::EndOfRange));
             assert_eq!(count_step(i64::MAX, more), Err(Words::EndOfRange));
@@ -1993,8 +2021,9 @@ mod tests {
 
         // The side words not drawn above, each where spec 2.3's Edges show it, and the caution
         // flip: the keyway through the hub on the length and gap rows, no prediction at the end
-        // effect's edge, the end of the range at the user's Minimum OD, and Temperature limits
-        // turning to a caution at the temperature edge, on those three sides only.
+        // effect's edge, a side outside the slider's range at the user's Minimum OD, and
+        // Temperature limits turning to a caution at the temperature edge, on those three sides
+        // only.
         let keyway = lines("keyway through");
         assert_eq!(
             keyway[2],
@@ -2468,9 +2497,9 @@ mod tests {
     #[test]
     fn where_the_boss_sets_the_outside_diameter_one_step_reads_the_slider_s_own_lift() {
         // Spec R-13 (on the STOP sheet; no diameter jump rule): the table's "R-13 boss plateau".
-        // The boss sets the Outside diameter at the slider's bottom: -1 mm reads the end of its
-        // range, and +1 mm, which lifts the cup from its own size to the boss plus the step, is
-        // a number (+7.55 %), as the slider does.
+        // The boss sets the Outside diameter at the slider's bottom: -1 mm reads END_OF_RANGE,
+        // and +1 mm, which lifts the cup from its own size to the boss plus the step, is a
+        // number (+7.55 %), as the slider does.
         let designs = card_designs();
         let design = find(&designs, "R-13 boss plateau");
         assert_eq!(
@@ -2936,8 +2965,8 @@ mod tests {
     #[test]
     fn at_either_end_of_the_magnet_slider_the_count_side_past_it_reads_its_end() {
         // Was at_either_end_of_the_magnet_slider_only_the_neighbour_inside_it_is_shown: at 4
-        // magnets the -2 side, at 40 the +2 side reads 9A's "at the end of its range", and the
-        // side inside the slider is the design with that count. 40 blocks fit only when narrow
+        // magnets the -2 side, at 40 the +2 side reads END_OF_RANGE (9A, in the words of the
+        // owner's FO-1), and the side inside the slider is the design with that count. 40 blocks fit only when narrow
         // (the default parts do not fit 40: that card is ShownDoesNotFit). An odd count (a
         // design file's) draws only the ring-size line under Magnets per ring: no count's line,
         // and no fit line, since an odd count has no diameter range to search
