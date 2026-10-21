@@ -916,16 +916,25 @@ pub(crate) fn drawn_count(output: &egui::FullOutput, text: &str) -> usize {
     drawn_texts(output).iter().filter(|t| *t == text).count()
 }
 
-/// Screen rects of every drawn text equal to `needle`, in paint order.
-pub(crate) fn text_rects(output: &egui::FullOutput, needle: &str) -> Vec<egui::Rect> {
-    flat_shapes(output)
+/// Every drawn text equal to `needle`, in paint order, the texts nested in a `Shape::Vec`
+/// included, each with the rect egui clips it to ([`clipped_flat_shapes`]): the one exact-text
+/// match that the text probes below and the tests' own read.
+pub(crate) fn text_shapes<'a>(
+    output: &'a egui::FullOutput,
+    needle: &'a str,
+) -> impl Iterator<Item = (egui::Rect, &'a egui::epaint::TextShape)> {
+    clipped_flat_shapes(output)
         .into_iter()
-        .filter_map(|shape| match shape {
-            egui::Shape::Text(text) if text.galley.text() == needle => {
-                Some(text.galley.rect.translate(text.pos.to_vec2()))
-            }
+        .filter_map(move |(clip, shape)| match shape {
+            egui::Shape::Text(text) if text.galley.text() == needle => Some((clip, text)),
             _ => None,
         })
+}
+
+/// Screen rects of every drawn text equal to `needle`, in paint order.
+pub(crate) fn text_rects(output: &egui::FullOutput, needle: &str) -> Vec<egui::Rect> {
+    text_shapes(output, needle)
+        .map(|(_, text)| text.galley.rect.translate(text.pos.to_vec2()))
         .collect()
 }
 
@@ -935,19 +944,15 @@ pub(crate) fn text_rects(output: &egui::FullOutput, needle: &str) -> Vec<egui::R
 /// before it on that row, while egui senses only the text: a click at the rect's centre can land
 /// on one of those widgets.
 pub(crate) fn last_characters(output: &egui::FullOutput, needle: &str) -> Vec<egui::Pos2> {
-    flat_shapes(output)
-        .into_iter()
-        .filter_map(|shape| match shape {
-            egui::Shape::Text(text) if text.galley.text() == needle => {
-                let row = text
-                    .galley
-                    .rows
-                    .last()?
-                    .rect()
-                    .translate(text.pos.to_vec2());
-                Some(egui::pos2(row.max.x - 2.0, row.center().y))
-            }
-            _ => None,
+    text_shapes(output, needle)
+        .filter_map(|(_, text)| {
+            let row = text
+                .galley
+                .rows
+                .last()?
+                .rect()
+                .translate(text.pos.to_vec2());
+            Some(egui::pos2(row.max.x - 2.0, row.center().y))
         })
         .collect()
 }
@@ -961,12 +966,9 @@ pub(crate) fn text_rect(output: &egui::FullOutput, needle: &str) -> Option<egui:
 /// The rect egui clips the first drawn text equal to `needle` to, such as a scroll area's
 /// visible part or the region a view is confined to. Panics when no such text is drawn.
 pub(crate) fn text_clip_rect(output: &egui::FullOutput, needle: &str) -> egui::Rect {
-    clipped_flat_shapes(output)
-        .into_iter()
-        .find_map(|(clip, shape)| match shape {
-            egui::Shape::Text(text) if text.galley.text() == needle => Some(clip),
-            _ => None,
-        })
+    text_shapes(output, needle)
+        .next()
+        .map(|(clip, _)| clip)
         .unwrap_or_else(|| panic!("no {needle:?} drawn"))
 }
 
@@ -1004,19 +1006,14 @@ pub(crate) fn assert_glyphs(ctx: &egui::Context, text: &str, what: &str) {
 /// The colour of the first drawn text equal to `needle`: its override, else its first section's
 /// colour (a `RichText` colour or a painter text's), else the fallback colour.
 pub(crate) fn text_color(output: &egui::FullOutput, needle: &str) -> Option<egui::Color32> {
-    flat_shapes(output)
-        .into_iter()
-        .find_map(|shape| match shape {
-            egui::Shape::Text(text) if text.galley.text() == needle => {
-                Some(text.override_text_color.unwrap_or_else(|| {
-                    match text.galley.job.sections.first().map(|s| s.format.color) {
-                        Some(color) if color != egui::Color32::PLACEHOLDER => color,
-                        _ => text.fallback_color,
-                    }
-                }))
+    text_shapes(output, needle).next().map(|(_, text)| {
+        text.override_text_color.unwrap_or_else(|| {
+            match text.galley.job.sections.first().map(|s| s.format.color) {
+                Some(color) if color != egui::Color32::PLACEHOLDER => color,
+                _ => text.fallback_color,
             }
-            _ => None,
         })
+    })
 }
 
 /// Every sheet of an .xlsx file as calamine reads it: its name and its rows from A1 (calamine's

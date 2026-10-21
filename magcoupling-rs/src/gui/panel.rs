@@ -1889,7 +1889,7 @@ mod tests {
         key_event, key_tap, last_characters, no_back_iron, only_the_clamp_fails,
         only_the_joint_fails, primary_button, row_line, select_all, short_magnets, sized_frame,
         sized_frame_at, smoke_inputs, text_center, text_clip_rect, text_rect, text_rects,
-        tooltips_at_once, with_poles,
+        text_shapes, tooltips_at_once, with_poles,
     };
     use crate::gui::torque_card::{CAPTION, Control, held_line};
     use crate::headline;
@@ -5312,14 +5312,9 @@ mod tests {
     /// The rows egui laid the first drawn text equal to `needle` out on: more than one once it
     /// wrapped.
     fn rows(output: &egui::FullOutput, needle: &str) -> usize {
-        crate::gui::test_support::flat_shapes(output)
-            .into_iter()
-            .find_map(|shape| match shape {
-                egui::Shape::Text(text) if text.galley.text() == needle => {
-                    Some(text.galley.rows.len())
-                }
-                _ => None,
-            })
+        text_shapes(output, needle)
+            .next()
+            .map(|(_, text)| text.galley.rows.len())
             .unwrap_or_else(|| panic!("no {needle:?}"))
     }
 
@@ -7273,14 +7268,9 @@ mod tests {
         let output = harness.frame(Vec::new());
         let status = format!("Design file loaded. {notice}");
         assert_eq!(count(&output, &status), 1);
-        let wrap = crate::gui::test_support::flat_shapes(&output)
-            .into_iter()
-            .find_map(|shape| match shape {
-                egui::Shape::Text(t) if t.galley.text() == status => {
-                    Some(t.galley.job.wrap.max_width)
-                }
-                _ => None,
-            });
+        let wrap = text_shapes(&output, &status)
+            .next()
+            .map(|(_, text)| text.galley.job.wrap.max_width);
         assert!(wrap.is_some_and(f32::is_finite), "the line wraps: {wrap:?}");
         assert_eq!(harness.panel.sizing().mode, SizingMode::TorqueToMagnets);
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
@@ -9181,16 +9171,9 @@ mod tests {
     /// The screen rect of the first drawn text equal to `needle` and the rect it is clipped
     /// to.
     fn clipped_text(output: &egui::FullOutput, needle: &str) -> Option<(egui::Rect, egui::Rect)> {
-        output
-            .shapes
-            .iter()
-            .find_map(|clipped| match &clipped.shape {
-                egui::Shape::Text(text) if text.galley.text() == needle => Some((
-                    text.galley.rect.translate(text.pos.to_vec2()),
-                    clipped.clip_rect,
-                )),
-                _ => None,
-            })
+        text_shapes(output, needle)
+            .next()
+            .map(|(clip, text)| (text.galley.rect.translate(text.pos.to_vec2()), clip))
     }
 
     #[test]
