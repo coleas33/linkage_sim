@@ -5309,6 +5309,12 @@ mod tests {
         )
     }
 
+    /// The torque card's lines for the design the panel shows, in the panel's Auto state, as the
+    /// Size tab draws them ([`shown_consequences`]).
+    fn card_lines(harness: &Harness) -> Vec<String> {
+        shown_consequences(harness).card.lines(harness.panel.auto())
+    }
+
     /// The rows egui laid the first drawn text equal to `needle` out on: more than one once it
     /// wrapped.
     fn rows(output: &egui::FullOutput, needle: &str) -> usize {
@@ -5566,7 +5572,7 @@ mod tests {
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, REPLACED_LABEL), 0);
         assert_eq!(count(&output, CARD_HEADING), 1);
-        let lines = shown_consequences(&harness).card.lines(None);
+        let lines = card_lines(&harness);
         assert_eq!(lines.first().map(String::as_str), Some(CAPTION));
         let rect = |output: &egui::FullOutput, text: &str| {
             text_rect(output, text).unwrap_or_else(|| panic!("no {text:?}"))
@@ -5609,13 +5615,13 @@ mod tests {
         let mut harness = size_tab(SCREEN, DesignInputs::default());
         harness.panel.clamps_paused = true;
         let output = harness.frame(Vec::new());
-        let before = shown_consequences(&harness).card.lines(None);
+        let before = card_lines(&harness);
         let (_, value_box) = beside(&output, REQUIRED).remove(0);
         harness.click(value_box.center());
         harness.frame([select_all(), vec![egui::Event::Text("2.4".to_owned())]].concat());
         let output = harness.frame(key_tap(egui::Key::Enter));
         assert_eq!(harness.panel.inputs().metal.required_min_Nm, 2.4);
-        let after = shown_consequences(&harness).card.lines(None);
+        let after = card_lines(&harness);
         assert_ne!(
             after, before,
             "Required 2.4 N·m moves a Hot-low torque flip"
@@ -5771,7 +5777,7 @@ mod tests {
     /// floor. Rule 3 alone opens the card where it is not negative. This is the tests' one copy
     /// of the rule in [`MagcouplingPanel::card_default`].
     fn rule_three_margin(harness: &Harness, output: &egui::FullOutput) -> f32 {
-        let lines = shown_consequences(harness).card.lines(harness.panel.auto());
+        let lines = card_lines(harness);
         let (open_height, floor) = scratch_measure(drawing_rect(output).width(), &lines);
         room_at_card(output) - open_height - item_spacing(harness) - floor
     }
@@ -5810,9 +5816,7 @@ mod tests {
                 heading.bottom() <= drawing.top(),
                 "{case}: {heading:?} {drawing:?}"
             );
-            let lines = shown_consequences(&harness)
-                .card
-                .lines(harness.panel.auto());
+            let lines = card_lines(&harness);
             for line in &lines {
                 assert_eq!(count(&output, line), 1, "{case}: {line}");
             }
@@ -6303,11 +6307,7 @@ mod tests {
             assert!(card_open(harness), "{case}");
             let drawing = drawing_rect(&output);
             assert!(keeps_its_floor(drawing), "{case}: {drawing:?}");
-            let last = shown_consequences(harness)
-                .card
-                .lines(harness.panel.auto())
-                .pop()
-                .expect("a row");
+            let last = card_lines(harness).pop().expect("a row");
             assert!(
                 text_rect(&output, &last)
                     .is_none_or(|row| row.bottom() > text_clip_rect(&output, &last).bottom() + 1.0),
@@ -6342,9 +6342,7 @@ mod tests {
             design_of(huge_calibration()),
             false,
         );
-        let longest = shown_consequences(&harness)
-            .card
-            .lines(harness.panel.auto())
+        let longest = card_lines(&harness)
             .iter()
             .map(|line| line.chars().count())
             .max()
@@ -6405,9 +6403,7 @@ mod tests {
             let drawn = drawn_card_height(&harness, &output);
             let header = heading.bottom().max(card_link(&output).0.bottom()) - heading.top();
             let body = drawn - header - spacing;
-            let lines = shown_consequences(&harness)
-                .card
-                .lines(harness.panel.auto());
+            let lines = card_lines(&harness);
             let (measured, floor) = scratch_measure(drawing.width(), &lines);
             let room = room_at_card(&output);
             let cap = (room - header - 2.0 * spacing - floor).max(body_row(&harness));
@@ -6710,7 +6706,7 @@ mod tests {
         // card that took over the neighbour lines (slice 3, decision 7A).
         let mut harness = size_tab(SCREEN, DesignInputs::default());
         let at_10 = shown_consequences(&harness).magnet_lines(10, None);
-        let card_at_10 = shown_consequences(&harness).card.lines(None);
+        let card_at_10 = card_lines(&harness);
         // The controls' widgets in drawing order: diameter, length, gap, magnets, Minimum OD.
         let magnets = harness.panel.design_widgets[3];
         harness.ctx.memory_mut(|m| m.request_focus(magnets));
@@ -6727,7 +6723,7 @@ mod tests {
         for line in at_10.iter().filter(|line| !at_8.contains(line)) {
             assert_eq!(count(&output, line), 0, "stale: {line}");
         }
-        let card_at_8 = shown_consequences(&harness).card.lines(None);
+        let card_at_8 = card_lines(&harness);
         assert_ne!(card_at_8, card_at_10);
         for line in &card_at_8 {
             assert_eq!(count(&output, line), 1, "{line}");
