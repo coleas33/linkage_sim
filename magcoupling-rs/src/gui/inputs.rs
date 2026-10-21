@@ -886,8 +886,8 @@ impl Default for InputCatalogue {
 
 /// The slider range of the input at `path`, from its metadata in the catalogue built once
 /// ([`InputCatalogue::get`]); `None` for an input without a slider or a path that is no input.
-/// The one spelling the torque card (the gap's and the count's sliders), the Size tab's controls,
-/// the guides and the tests read.
+/// The shared spelling the torque card (the gap's and the count's sliders), the Size tab's controls,
+/// the guides and the tests read (the Equation panel and the panel's Required slider keep their own).
 pub(crate) fn slider_range(path: &str) -> Option<SliderRange> {
     InputCatalogue::get()
         .entry(path)
