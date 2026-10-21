@@ -146,8 +146,9 @@ pub const CARD_RANKING_WORDS: [&str; 7] = [
 ];
 
 /// The words of [`CARD_RANKING_WORDS`] that `text` says, in that list's order, each once. A word
-/// of `text` (a run of letters and digits) says a listed word in any case by [`says`]: "levers"
-/// and "Rank" say "lever" and "ranks"; "almost" and "bestow" say none.
+/// of `text` (a run of letters and digits) says a listed word when it is that word whole, in any
+/// case, or that word with an `s` added or taken off (`says`, the rule the "skeptic" pattern
+/// shares): "levers" and "Rank" say "lever" and "ranks"; "almost" and "bestow" say none.
 pub fn ranking_words_in(text: &str) -> Vec<&'static str> {
     let lower = text.to_lowercase();
     CARD_RANKING_WORDS
