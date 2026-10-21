@@ -86,8 +86,9 @@ const ARGS = typeof args === 'string' ? JSON.parse(args || '{}') : (args || {})
 if (ARGS.selftest) { return { ok: true } }
 
 const url = ARGS.url || 'http://localhost:8080'
-// Only the release run sets frame_check: true (slice-3 spec 7.2 step 4); a slow drag frame then
-// fails the run. Otherwise the drag's times are recorded and never fail an ordinary or live run.
+// Only the release run sets frame_check: true (slice-3 spec 7.2 step 4); a drag that did not move
+// the gap, drew under MIN_DRAG_FRAMES frames or had a p95 over FRAME_BUDGET_MS then fails the
+// run. Otherwise the drag's times are recorded and never fail an ordinary or live run.
 const frameCheck = ARGS.frame_check === true
 
 let linkage = null
