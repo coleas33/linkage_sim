@@ -942,7 +942,10 @@ mod tests {
         // A row's slider names its own control, the one it was built for, so its step and its
         // row's rules (the keyway on the count row, the jumps) read that control and never
         // another's (the T3 review's M-8 (b)). Every control at every design of the table:
-        // where the Size tab draws a slider, it is that control's.
+        // where the Size tab draws a slider, it is that control's. The gap's and the count's
+        // are drawn at every design (spec 3.3 step 1), and each control's slider is checked at
+        // some design, so the test cannot pass by checking none.
+        let mut checked = [0; Control::ALL.len()];
         for design in card_designs() {
             let results = compute_all(&design.inputs);
             let shown = Shown {
@@ -951,12 +954,18 @@ mod tests {
                 size: dimensions(&design.inputs),
                 clamps_paused: PAUSED,
             };
-            for control in Control::ALL {
-                if let Some(slider) = Slider::of(control, &shown, design.minimum_diameter_mm) {
+            for (index, control) in Control::ALL.into_iter().enumerate() {
+                let slider = Slider::of(control, &shown, design.minimum_diameter_mm);
+                if matches!(control, Control::FaceGap | Control::MagnetsPerRing) {
+                    assert!(slider.is_some(), "{}: {control:?}", design.key);
+                }
+                if let Some(slider) = slider {
                     assert_eq!(slider.control(), control, "{}", design.key);
+                    checked[index] += 1;
                 }
             }
         }
+        assert!(checked.iter().all(|&sliders| sliders > 0), "{checked:?}");
     }
 
     #[test]
