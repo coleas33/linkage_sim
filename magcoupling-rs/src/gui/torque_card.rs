@@ -1562,24 +1562,83 @@ mod tests {
         // reads END_OF_RANGE (spec 3.3 step 2): on both sides where the design shown itself
         // lies past an end; a side that lands back on the slider is a number, the slider's own
         // design.
-        use Control::{FaceGap, OutsideDiameter, OverallLength};
+        use crate::gui::test_support::forty_narrow_magnets;
+        use Control::{FaceGap, MagnetsPerRing, OutsideDiameter, OverallLength};
         let with = |edit: fn(&mut DesignInputs)| {
             let mut inputs = DesignInputs::default();
             edit(&mut inputs);
             inputs
         };
+        // Review Focus item 3 at each slider: a gap of 5.5 or 6.0 mm and an axial override of
+        // 60 mm; a ring radius of 31.0 mm, past its slider's 30.0 mm, whose Outside diameter lies
+        // above its range's top; an axial override of 0.5 mm, under its slider's 2.0 mm (with no
+        // end effect, c_end 0, so the model predicts there), whose Overall length lies below its
+        // range's bottom; and 44 narrow magnets, which fit, past the magnet slider's 40.
         let gap_above = with(|i| i.metal.face_gap_mm = 5.5);
+        let gap_far_above = with(|i| i.metal.face_gap_mm = 6.0);
         let gap_below = with(|i| i.metal.face_gap_mm = 0.2);
         let long = with(|i| i.coupling.magnets.axial_length_mm = Some(60.0));
-        for (inputs, control) in [(&gap_above, FaceGap), (&long, OverallLength)] {
+        let wide = with(|i| i.coupling.inner_back_apothem_mm = 31.0);
+        let short = with(|i| {
+            i.coupling.c_end = 0.0;
+            i.coupling.magnets.axial_length_mm = Some(0.5);
+        });
+        let with_narrow_magnets = |npole: i64| {
+            let mut inputs = forty_narrow_magnets();
+            inputs.coupling.npole = npole;
+            inputs
+        };
+        let many = with_narrow_magnets(44);
+        // Every side of the six rows, then every one that is not END_OF_RANGE, so a failure
+        // names each case it reaches.
+        let mut not_at_the_end = Vec::new();
+        for (key, inputs, control) in [
+            ("gap 5.5", &gap_above, FaceGap),
+            ("gap 6.0", &gap_far_above, FaceGap),
+            ("override 60", &long, OverallLength),
+            ("ring 31.0", &wide, OutsideDiameter),
+            ("override 0.5, c_end 0", &short, OverallLength),
+            ("44 narrow magnets", &many, MagnetsPerRing),
+        ] {
             for more in [false, true] {
-                assert_eq!(
-                    words(&side_at(inputs, None, control, more)),
-                    Words::EndOfRange,
-                    "{control:?} {more}"
-                );
+                let side = side_at(inputs, None, control, more);
+                if side != Side::Words(Words::EndOfRange) {
+                    not_at_the_end.push((key, more, side));
+                }
             }
         }
+        assert!(not_at_the_end.is_empty(), "{not_at_the_end:?}");
+        // Each lies past its end by more than a step, so neither side lands back on the slider.
+        let size = |inputs: &DesignInputs| dimensions(inputs).expect("size controls");
+        let wide_size = size(&wide);
+        assert!(
+            wide_size.diameter_mm - 1.0 > wide_size.diameter_range.max + STEP_SLACK_MM,
+            "{wide_size:?}"
+        );
+        let short_size = size(&short);
+        assert!(
+            short_size.overall_length_mm + 1.0 < short_size.length_range.min - STEP_SLACK_MM,
+            "{short_size:?}"
+        );
+        let most = slider_range(FreeVariable::MagnetsPerRing.path()).max as i64;
+        assert!(many.coupling.npole - 2 > most);
+        assert!(blocks_fit(&many.coupling, &compute_all(&many).model));
+        // One step past the magnet slider's top, the -2 side lands back on it: the number of
+        // forty narrow magnets, bit for bit; the +2 side does not.
+        let forty_two = with_narrow_magnets(most + 2);
+        assert_eq!(
+            number(&side_at(&forty_two, None, MagnetsPerRing, false))
+                .hot_low_Nm
+                .to_bits(),
+            compute_all(&forty_narrow_magnets())
+                .metal
+                .torque_hot_low_Nm
+                .to_bits()
+        );
+        assert_eq!(
+            words(&side_at(&forty_two, None, MagnetsPerRing, true)),
+            Words::EndOfRange
+        );
         assert_eq!(
             words(&side_at(&gap_below, None, FaceGap, false)),
             Words::EndOfRange
