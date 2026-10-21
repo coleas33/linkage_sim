@@ -6572,9 +6572,8 @@ mod tests {
     fn size_tab_magnet_slider_ends_show_only_the_neighbour_in_range() {
         // Spec 5, as the torque card's count row has it (slice 3, decision 7A): at 4 or 40
         // magnets per ring the side past the slider reads END_OF_RANGE, drawn on the card, the
-        // side inside it is a step, and no text names 2 or 42 magnets. The
-        // default blocks do not fit 40 magnets (the card reads its one line there); forty
-        // narrow blocks do.
+        // side inside it is a step, and no text names 2 or 42 magnets. The default blocks do
+        // not fit 40 magnets (the card reads its one line there); forty narrow blocks do.
         use crate::gui::test_support::forty_narrow_magnets;
         use crate::gui::torque_card::END_OF_RANGE;
         for (inputs, past, inside) in [

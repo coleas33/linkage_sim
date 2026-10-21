@@ -90,8 +90,9 @@ pub const JUMP: &str =
     "not a step: the overlapping magnet length does not change by the step's amount";
 /// A diameter side that is not a step of the cup's diameter ([`Words::CupJump`]; the owner's
 /// FO-2 at the slice-3 STOP, spec risk R-13): where the shaft boss sets the Outside diameter,
-/// one step lifts the cup from its own size to the boss plus the step. It mirrors [`JUMP`]
-/// and names no cause.
+/// above the cup and the cap, one step lifts the cup by more than the step (on the boss
+/// plateau from its own size to the boss plus the step). It mirrors [`JUMP`] and names no
+/// cause.
 pub const CUP_JUMP: &str = "not a step: the cup diameter does not change by the step's amount";
 /// After a number whose stepped design takes another calibration factor (owner 16A): it names
 /// the change, never a cause.
@@ -1506,9 +1507,9 @@ mod tests {
     fn a_design_shown_past_a_slider_s_end_reads_the_end_of_its_range() {
         // A design file or link can carry a value past a slider's end (`validate()` checks only
         // that a number is finite). A side more than STEP_SLACK_MM outside the slider's range
-        // reads END_OF_RANGE (spec 3.3 step 2): on both sides where the design shown
-        // itself lies past an end; a side that lands back on the slider is a number, the
-        // slider's own design.
+        // reads END_OF_RANGE (spec 3.3 step 2): on both sides where the design shown itself
+        // lies past an end; a side that lands back on the slider is a number, the slider's own
+        // design.
         use Control::{FaceGap, OutsideDiameter, OverallLength};
         let with = |edit: fn(&mut DesignInputs)| {
             let mut inputs = DesignInputs::default();
@@ -3193,12 +3194,12 @@ mod tests {
     fn at_either_end_of_the_magnet_slider_the_count_side_past_it_reads_its_end() {
         // Was at_either_end_of_the_magnet_slider_only_the_neighbour_inside_it_is_shown: at 4
         // magnets the -2 side, at 40 the +2 side reads END_OF_RANGE (9A, in the words of the
-        // owner's FO-1), and the side inside the slider is the design with that count. 40 blocks fit only when narrow
-        // (the default parts do not fit 40: that card is ShownDoesNotFit). An odd count (a
-        // design file's) draws only the ring-size line under Magnets per ring: no count's line,
-        // and no fit line, since an odd count has no diameter range to search
-        // (`smallest_fitting_diameter` is `None`). Its count row reads NOT_ON_THE_SLIDER both
-        // ways (the_words_follow_the_order_of_the_tests).
+        // owner's FO-1), and the side inside the slider is the design with that count. 40
+        // blocks fit only when narrow (the default parts do not fit 40: that card is
+        // ShownDoesNotFit). An odd count (a design file's) draws only the ring-size line under
+        // Magnets per ring: no count's line, and no fit line, since an odd count has no
+        // diameter range to search (`smallest_fitting_diameter` is `None`). Its count row reads
+        // NOT_ON_THE_SLIDER both ways (the_words_follow_the_order_of_the_tests).
         use crate::gui::test_support::{forty_narrow_magnets, odd_count, with_poles};
         let range = FreeVariable::MagnetsPerRing.range();
         let (fewest, most) = (range.min as i64, range.max as i64);
