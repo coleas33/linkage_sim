@@ -6222,3 +6222,254 @@ answer: `.superpowers/sdd/2026-10-20-magcoupler-torque-card/textreview-T8-a-chan
 - T7's FO-1 to FO-4, SF-3 and SF-4 are for the owner at the STOP. SF-1 and SF-2 are Task 10's leftovers.
 - The prompt quotes `CAPTION` as reviewed (D4, MF-1). If the owner restores 12A's draft at the STOP, test 26 moves the prompt with it.
 - The implementer's C-4 stands for T9. The spec (4.1, and 4.4's trap row) and the plan still quote the draft caption; T9 quotes the reviewed one.
+
+### Re-review of the owner's picks and the review leftovers (2026-10-20)
+
+At the STOP of 2026-10-20 the owner's picks FO-1 to FO-4 and the review leftovers SF-1 and SF-2 changed the torque card's
+words and number format: `END_OF_RANGE`, `JUMP` and `SHOWN_NO_HOT_LOW` were reworded, the cup's jump words (`CUP_JUMP`)
+and the line for a magnet count below the slider (`SHOWN_COUNT_BELOW_SLIDER`) were added, and a number past six whole
+digits, or an N·m that reads zero at the cap beside a percent that reads a digit, now reads four significant digits on
+the card and in the readout's gap (folded in as `.superpowers/sdd/2026-10-20-magcoupler-torque-card/foldin-brief.md`'s
+WP-B and WP-C). Their G-3 re-review ran in a fresh context, and the reviewer's report follows unchanged (full answer:
+`.superpowers/sdd/2026-10-20-magcoupler-torque-card/foldin-g3-c1-r1.md`).
+
+Round 1 (as returned).
+
+1. Reviewer: physics reviewer (session model), fresh context, 2026-10-20; G-3 re-review of the owner's picks, round 1.
+
+2. Read:
+- The brief `foldin-g3-brief.md`; the first 39 lines of `t7-g3-brief-r2.md` (setup, audience, reachable inputs) and its
+  traps 1 to 18 and caps; `rulings.md` (B-1 to B-25); the owner decisions; the plan head to "## Tasks" (Global
+  Constraints, Review Focus, C-1 to C-10, PD-1 to PD-6, the plan review rulings); `foldin-brief.md` (Authority, WP-B,
+  WP-C); `foldin-WP-B-report.md` and `foldin-WP-C-report.md` ("Strings for the G-3 re-review"); the record's
+  "## Slice 3 torque card" (rounds 1 and 2, FO-1 to FO-4, SF-1, SF-2); the spec's sections 2.1, 2.3 (Edges), 3.1 to
+  3.3, 3.6, 4 and 5.
+- The code at HEAD 2562cd8 (`git log a08b8a7..HEAD`: 15 commits; `git show` of f6b7612, 66980be, ded2ad9, 83cbdc1,
+  bef6dbf, e213a3e, b7d0558, 2562cd8):
+  - `gui/torque_card.rs`: the constants, `Words::text`, `Row::torque_decimals` and `side_text`, test 0 in `card`,
+    `count_below_the_slider`, `Slider::step`, `on_slider`, `Shown::jump`; the tests 2a, 3 and 4, the plateau tests and
+    the robustness test;
+  - `gui/format.rs`: `signed_fixed`, `too_many_whole_digits`, `signed_significant`, `decimals_with_a_digit`,
+    `zero_beside_its_percent`, `signed_torque_change`, `torque_shortfall`, `signed_percent`, `format_number`;
+  - `gui/size_controls.rs`: `torque_gap_text`, `predicts`, `slider_minimum`, `SliderMapping`;
+  - `engine/size_controls.rs`: `geometry`'s ranges, `resize_diameter_using`, `resize_length`;
+  - `gui/panel.rs`: `torque_readouts_ui`, `torque_readout` and the exploration lines.
+- The sheet. `guidance_strings_for_review` at 2562cd8, built with a scratch `CARGO_TARGET_DIR`, against Task 7's
+  round-2 sheet `magcoupling-rs/target/g3/S3-guidance.txt`:
+  - `TOTAL STRINGS` 564 -> 567. 20 records differ and 3 are new. Each is explained by one change:
+    - SF-1: the mixed pair's and the short cavity's Overall length rows (2).
+    - FO-1: the end words of ten rows: Minimum OD 42.8, 45 and 43.3; the gap at 0.3 and 5.0; npole 4 and 40; Outside
+      diameter 80; Overall length 69.9 and 21.1.
+    - FO-1 and FO-2: the boss plateau's Outside diameter row (1).
+    - FO-3: the `i64::MIN` design (1 changed, 3 new Auto states).
+    - SF-2: six one-line cards (variation 1.0, 1.5 and zero torque; variation 1.0 under three Auto states).
+  - Nothing changed by FO-4: no card or gap line of the sheet draws an exponent. The libtest summary also differs (976
+    -> 984 filtered out).
+- The probes. A scratch crate (magcoupling-rs at HEAD, feature `gui`, its own `CARGO_TARGET_DIR`) called `card` at
+  `PAUSED` and `lines` under every Auto state. It read the readouts as `torque_readout` writes them (`format_value`,
+  `NO_PREDICTION`, `NO_TORQUE`) and the gap through `gui::torque_gap_text`.
+  - (1) `END_OF_RANGE`: 28 `EndOfRange` sides at 24 designs.
+    - The designs: the slider ends; Minimum OD 42.8, 43.3, 45 and 80; the plateau; a file's gap of 5.5, 6, 0, -1, 0.2
+      and 5.05 mm; overrides of 60 and 100 mm.
+    - Each request lies outside its slider's range by more than `STEP_SLACK_MM`. Examples: Minimum OD 45, 41.80 and
+      43.80 mm against 45.00-80.00; Minimum OD 80, a one-point range, 80.00-80.00, with both sides outside; override
+      60, 78.10 and 80.10 against 21.10-69.90.
+    - No such side has a request inside its range. The diameter and length mappings re-derive the range the card
+      checked, and the gap's and the count's `set` refuse only a value that is not finite.
+  - (2) `JUMP`: a cavity sweep (`metal.cup_depth_mm` 3.0-40.0 mm in 0.1 mm) at four part pairs: B842SH/B842SH,
+    B442/B442, the mixed pair and the reverse pair.
+    - Every side that moves the overlap by anything but the signed step reads `Jump`.
+    - Exactly one grid side moves it by minus the step: the defaults' parts at 10.7 mm, whose +1 mm side moves the
+      Overall length 27.00 -> 28.00 mm and the overlap 12.70 -> 11.70 mm (-1.000000000). A typed cavity of 4.35 mm at
+      B442/B442 does the same (6.35 -> 5.35 mm).
+    - At 11.7 mm the overlap moves 0. At 11.0 mm it moves -0.70 / -2.70 mm.
+    - The mixed pair reads `Jump` at every cavity depth. The reverse pair at the default cavity reads numbers
+      (+-0.20 N·m, +-19.9 %).
+  - (3) The diameter jump rule:
+    - The plateau's +1 mm side: the cup 37.78 -> 41.00 mm (+3.218). With the boss 0.01 mm below the cup, a number
+      (the cup +1.000000). With it 0.01 mm above, `CupJump` (the cup +1.010).
+    - The defaults at every even count 4-40: no `CupJump`.
+    - A boss sweep, 20-60 mm in 0.25 mm. At (a), 69 designs where the boss sets the Outside diameter gave 69 `CupJump`
+      sides, all +1 mm sides, and 92 number sides. At the plateau design: 89 and 89, with 72 numbers.
+    - Diameter slider sweeps, 0.5 mm apart: (a) 40.38-80.00 mm, 0 words and 148 numbers; (e), 0 and 156; the plateau,
+      40.00-85.41 mm, 1 (at 40.00 mm) and 177.
+    - A cap sweep at (a), 30-60 mm: 0 words and 61 numbers.
+    - Auto on length and on count at (a) and (e2): the cup moves +-1.000.
+    - The plateau at Minimum OD 39, 40, 40.5 and 41 reads `CUP_JUMP` on the +1 mm side; at Minimum OD 45 both sides
+      read `END_OF_RANGE`.
+    - The words appear exactly where the boss stands above the cup and the cap.
+  - (4) FO-3, counts from a file:
+    - 3 and 2 fit (readouts 0.2639 and 0.1094 N·m; at 2 the cup is 5.860e17 mm).
+    - 1, 0, -1, -2 and `i64::MIN` do not fit. Their readouts are `NO_PREDICTION`, `NO_TORQUE` or numbers, and the
+      exploration line "Exploration only: magnets do not fit at this diameter." stands above the card.
+    - Each draws the new line alone under every Auto state. Auto on the length or the ring at 2 and 3 keeps the count
+      (solved 50.8 mm, 9.0 mm and 12.47 mm): the line again.
+    - 4, 5 and 6 draw rows. 39, 40, 41, 42, 1e6 and `i64::MAX` draw the fit's line.
+  - (5) `SHOWN_NO_HOT_LOW`. Ten cases route to it, each beside readouts that show both torques (pull-out / hot-low,
+    N·m):
+    - variation 1.0, 2.688 / 0; variation 1.5, 2.688 / -1.344;
+    - zero torque, 0 / 0; (a) with `f_cal_original` 0, 0 / 0, and with variation 1.5 as well, 0 / -0;
+    - (a) with -0.95, -2.688 / -2.285, and with variation 1.5 as well, -2.688 / +1.344;
+    - (c) with -0.95 and variation 1.5, 1.697 / -0.849; an inner Br of -1 T, -2.068 / -1.758; an override of -1 mm,
+      -0.548 / -0.466.
+    - (c) with `f_cal_original` 0 reads `SHOWN_NO_PREDICTION` (both `NO_TORQUE`).
+    - "of zero or less" holds in every routed case.
+  - (6) FO-4:
+    - Probe 13's class, line for line as the WP-C report gives them: "+1.690e-11 N·m (+1.9 %)", "+2 -> +1.44 N·m
+      (+1.612e11 %)", "+8.401e298 N·m (+3.5 %)", "margin +2.405e300 N·m (+9.622e301 %)", "margin +2.29 N·m
+      (+2.285e302 %)".
+    - Card sides at changes of 999999.99 and 999999.996 / 1e6 N·m: "+999999.99 N·m" and "+1.000e6 N·m".
+    - The gap at 999999.9: "margin +999999.90 N·m", "short 999999.90 N·m". At 1e6: "+1.000e6", "short 1.000e6".
+    - The second clause in the gap: "margin +5.000e-7 N·m (+50.0 %)", "short 9.991e-7 N·m (-99.9 %)". With no percent
+      (Required 0) the gap reads "margin +0.00 N·m".
+    - `f_cal_original` 1e-307 and 1e-308 at no back iron and 8 magnets: "+2 -> +1.44 N·m (+inf %)", as before FO-4.
+    - `f_cal_original` 1e-320: "+1.680e-322 N·m (+1.9 %)". That number holds about two of its four digits, and the gap
+      row reads +3.4 % where 1e-9 reads +3.3 % (underflow).
+  - (7) Slider-reachable low torques: 840 designs with rows, every value on its slider. Both parts blank; both manual
+    Br 0.2, 0.25, 0.3 or 0.5 T; gaps 0.3-5 mm; 4-16 magnets; rings 9-30 mm; hot-low down to 0.007 N·m. 79 number sides
+    read four significant digits by FO-4's second clause, and 19 rows put one beside a fixed-form N·m (MF-2).
+  - (8) Guards over 609 probe lines and the proposed texts: `ranking_words_in`, `TORQUE_ORDER_WORDS`,
+    `mentions_gearbox_protection`, "clamp", `plain_text_violations`, and U+2192, U+2212, U+03BC and U+2019. No hit.
+- The repository's card, format and size-control tests at HEAD (scratch target): 66 passed. The working tree is
+  untouched.
+
+3. Table:
+
+| Item | Verdict | Reason |
+|---|---|---|
+| 1 `END_OF_RANGE` "outside the slider's range" (FO-1) | PASS | True at all 28 `EndOfRange` sides, the ordinary ends and a design shown past an end alike: every request lies outside its slider's range, and no mapping refuses an in-range request. It names no end the control is stopped at. At Minimum OD 45, "+1 mm -> outside the slider's range" is true while the handle sits at 45.00 mm. At 4 and 40 magnets, and at an odd 5 ("-2 -> outside the slider's range; +2 -> not a value the slider takes"), the two words now name two distinct reasons. |
+| 2 `JUMP` (SF-1) | MUST-FIX (MF-1) | False under the natural reading at a slider value. At the 10.7 mm cavity the +1 mm side moves the overlap by the step's size the other way (-1.00 mm), while the words say it "does not change by the step's amount". True at 11.7 mm (0) and at every other jump side. Never drawn at the reverse pair. |
+| 3 The diameter jump rule (FO-2) | PASS | `Shown::jump` fires exactly where the boss stands above the cup and the cap, on the +1 mm side. The -1 mm side there asks for less than the boss, below every diameter range, and reads `END_OF_RANGE` first. The rule fires nowhere the cap or the cup sets the Outside diameter: 0 words at the defaults' even counts 4-40, in the cap sweep and in the slider sweeps at (a) and (e). The text follows MF-1. |
+| 3a `CUP_JUMP` (new) | MUST-FIX (MF-1, mirror) | True at every side that draws it: the cup always moves the step's way by more (+3.22 mm on the plateau, +1.01 mm with the boss 0.01 mm above the cup). It changes only so the two jump texts read alike, as FO-2 asks. |
+| 4 Test 0's order (FO-3) | PASS | The count is checked first. At 0, 1, -1, -2 and `i64::MIN` the count line is the better reason: "the magnets ... do not fit" presumes magnets, and the exploration line above still says they do not fit. KEEP the count first. 42, 1e6 and `i64::MAX` still read the fit's line. No count of 4 or more is caught (the rule is `npole < 4`). |
+| 4a `SHOWN_COUNT_BELOW_SLIDER` (new) | PASS | True at 3, 2, 1, 0, -1, -2 and `i64::MIN` under every Auto state, beside readouts that show numbers (3, 2, -1, -2) or no prediction. It claims nothing about those readouts. It reads like its three siblings. No caption and no Auto line are drawn with it. |
+| 5 `SHOWN_NO_HOT_LOW` (SF-2) | PASS | The route is "both torques finite, and one of them at or below zero", which is exactly "a pull-out or hot-low torque of zero or less". It holds in all ten routed cases, including -0 and the pull-out-only case (-0.95 with variation 1.5). There is no double negative. |
+| 6 FO-4's forms | MUST-FIX (MF-2) | The bounds are right: 999999.99 reads fixed and 999999.996 / 1e6 read "+1.000e6", on the card and in the gap. The second clause removes every "+-0.00" beside a true percent. No design of section 2 changes. NaN and inf read as before (unreachable on screen but for "+inf %" at `f_cal_original` 1e-307). T-14 fails where one side crosses the second clause: 19 rows at slider values misstate their two N·m's ratio. |
+| 7 Strings that depend on these | PASS | `CAPTION`, `CARD_HEADING`, the Auto lines and the held row are unchanged and stay true. The plateau under Auto on length draws `CUP_JUMP` beside `AUTO_HOLDS_LENGTH`; under Auto on the ring the diameter row is held. The exploration lines and the readouts' gap at (a), (b), (c), (e) and (e2) are unchanged. At a file's count of 2 the readouts above the card are the model's numbers on a degenerate ring; FO-3 governs the card only (the owner's pick), so no item is raised. |
+
+4. MUST-FIX:
+
+- MF-1, applied here (string 5, the G-3 review's own words, which the fold-in took from SF-1; `CUP_JUMP` mirrors it on
+  FO-2's own terms).
+  - Place: `JUMP` and `CUP_JUMP` (`gui/torque_card.rs:90-91`, `:97`), drawn by `Words::text` in a side "{step} ->
+    {words}".
+  - Old:
+    - `JUMP`: "not a step: the overlapping magnet length does not change by the step's amount"
+    - `CUP_JUMP`: "not a step: the cup diameter does not change by the step's amount"
+  - New:
+    - `JUMP`: "not a step: the overlapping magnet length does not change by the step's amount and direction"
+    - `CUP_JUMP`: "not a step: the cup diameter does not change by the step's amount and direction"
+  - Why: the rule (`Shown::jump`) draws words wherever the signed change differs from the signed step, and that
+    includes a change of the step's size the other way.
+    - At (a) with `metal.cup_depth_mm` 10.7, a value on the cavity's slider (3-40 mm in 0.1 mm), the Overall length
+      +1 mm side lengthens the coupling 27.00 -> 28.00 mm. It moves the overlapping magnet length 12.70 -> 11.70 mm
+      (probe 2: -1.000000000 mm). Test 3's own comment calls this "the step's size the wrong way".
+    - The side reads "+1 mm -> not a step: the overlapping magnet length does not change by the step's amount".
+      "Amount" reads as a size, and the overlap changes by exactly that size. An engineer who checks the results
+      table's "Active (overlapping) length" finds the sentence false.
+    - It is the one grid case among the four part pairs swept. A typed cavity of 4.35 mm at B442/B442 reaches it too.
+    - The new words are true at every jump side under either reading:
+      - no change (11.7 mm);
+      - the step's way by more or less (11.0 mm, -1 mm side, -2.70; 12.0 mm, +1 mm side, +0.30);
+      - the other way by another size (11.0 mm, +1 mm side, -0.70; the mixed pair, +5.35 / +7.35);
+      - the other way by the same size (10.7 mm).
+    - `CUP_JUMP` never meets that case: the cup moves the step's way by more. It changes only so the two jump texts
+      read alike, and its words stay true.
+    - Cost: 14 characters a side. The mixed pair's and the short cavity's Overall length rows go 192 -> 220 characters
+      (about 2 -> 3 rows at 1280 x 800, by the record's 5.6 pt a character in the 609.9 pt body). The plateau's row
+      goes 129 -> 143 (2 rows either way). The defaults and the smoke design draw no jump words, so the layout tests do
+      not move.
+    - No typed number. The guards and glyphs pass.
+  - Pins:
+    - Test 2a, `the_card_s_lines_read_as_drafted`: `for text in [JUMP, CUP_JUMP] { assert!(text.ends_with("by the step's
+      amount and direction"), "{text}"); }` in place of `ends_with("by the step's amount")`, red on HEAD's texts. The
+      mirror equality (`replacen` of each quantity) is kept.
+    - Test 3, `the_words_follow_the_order_of_the_tests`: at `cavity(10.7)` the +1 mm side is `Words::Jump` (pinned).
+      Add `assert!((compute_all(&slider_step(OverallLength, &cavity(10.7), None, true)).model.active_length_mm -
+      compute_all(&cavity(10.7)).model.active_length_mm + 1.0).abs() <= STEP_SLACK_MM)`. This is the fact that makes
+      the direction part of the words.
+
+- MF-2, applied here (T-14 binds, by the plan's Global Constraints and the spec's section 5, and FO-4's words do not
+  lift it; no text and no number form is added). If the controller rules it a new card rule under B-3, it goes to the
+  owner with this rule and these lines.
+  - Place: the T-14 template of a row's two N·m, `Row::torque_decimals` and `Row::side_text`
+    (`gui/torque_card.rs:353-394`), through `format::signed_torque_change`.
+  - Old (rule): each side's N·m on its own. Four significant digits where its change reads zero at T-9's cap while its
+    percent reads a digit (FO-4's second clause); else the row's shared decimals.
+  - New (rule): a row's two N·m at one precision (T-14) under FO-4.
+    - Where either number side of a row reads four significant digits by FO-4's second clause, both number sides of
+      that row read their N·m in four significant digits with their sign (`signed_significant`, as `format_value`
+      writes values).
+    - A change of exactly zero keeps "+0.00".
+    - Every other row is drawn as now: the row's shared decimals, and past six whole digits four significant digits per
+      number.
+  - Lines at the pin's design:
+    - Old: "Outside diameter: -1 mm -> -0.0001 N·m (-0.7 %), Space claim: Rotating diameter -1.00 mm; +1 mm ->
+      +4.599e-5 N·m (+0.7 %), Space claim: Rotating diameter +1.00 mm"
+    - New: "Outside diameter: -1 mm -> -5.033e-5 N·m (-0.7 %), Space claim: Rotating diameter -1.00 mm; +1 mm ->
+      +4.599e-5 N·m (+0.7 %), Space claim: Rotating diameter +1.00 mm"
+    - At probe 13's count row (no back iron, 8 magnets, `f_cal_original` 1e-9), "+2 -> +1.44 N·m (+1.612e11 %)"
+      becomes "+2 -> +1.443 N·m (+1.612e11 %)".
+  - Why: trap 2's T-14 clause, drawn at slider values.
+    - FO-4's second clause is not confined to a design file's values. Take both parts blank, manual blocks at 0.2 to
+      0.5 T on the Br slider, a gap of 2 to 5 mm, and a ring and a count on their sliders (hot-low 0.007 to 0.05 N·m).
+      There, a one-step change can lie under 5e-5 N·m beside a percent of 0.1 % or more.
+    - Of 840 such designs with rows, 79 number sides read four significant digits. 19 rows put one of them beside a
+      fixed-form N·m at T-9's cap with one significant digit:
+      - both Br 0.2 T, gap 3.0 mm, 4 magnets, ring 15.0 mm: -0.0001 against +4.599e-5 N·m for true -5.033e-5 and
+        +4.599e-5 (1.09:1 drawn as 2.17:1, beside -0.7 and +0.7 %);
+      - Br 0.5 T, gap 4 mm, 4 magnets, ring 20 mm: +4.405e-5 against -0.0001 for -6.331e-5 (1:1.44 drawn as 1:2.27);
+      - Br 0.2 T, gap 5 mm, 8 magnets, ring 20 mm: +0.0001 against -4.099e-5 for +5.791e-5 (1.41:1 drawn as 2.44:1).
+    - That is T-14's own case: "-0.01" against "-0.005" for a true 1.35:1.
+    - Before FO-4 the same sides read "+0.0000 N·m (+0.7 %)", trap 2's zero. FO-4 applied number by number traded that
+      zero for the ratio clause.
+    - One precision per row restores T-14 inside FO-4's own form. No design of section 2 changes (no sheet line draws
+      an exponent). `NUMBER_SIDES` and test 18's 1045 stay. Four significant digits stay within `WIDEST_NUMBER`.
+  - Pins:
+    - A new test beside `at_a_design_file_s_magnitudes_a_number_reads_four_significant_digits`. The design is
+      `DesignInputs::default()` with `part_inner` and `part_outer` cleared, `manual_inner_br_T` and `manual_outer_br_T`
+      0.2, `metal.face_gap_mm` 3.0, `coupling.npole` 4 and `coupling.inner_back_apothem_mm` 15.0, each value on its
+      slider. Its `lines(None)[1]` equals the New line. Red at HEAD.
+    - In `the_card_never_panics_at_the_values_a_design_file_can_carry`, check every row of every card it draws. Where
+      either number side's change has no `decimals_with_a_digit` from `TORQUE_DECIMALS` while its percent reads a
+      digit, both drawn N·m must parse to their changes within half a unit of the fourth significant digit. Red at
+      HEAD at `f_cal_original` 1e-9's count row ("+1.44").
+    - The record test's `two_more` reads "+1.443".
+
+5. SHOULD-FIX offered:
+
+- SF-1, docs, for WP-I's item [70]; not an on-screen string.
+  - Place: the clause WP-I adds to `docs/ai/02-system.yaml` known_limitations, recording that FO-3 and FO-4 bound a
+    design file's degenerate values.
+  - Old: none yet. The WP-C report says FO-4 changes forms "only at a design file's values that no slider reaches".
+  - New: "FO-4's four significant digits also reach slider values: a change under 5e-5 N·m beside a percent that reads
+    a digit, as at manual blocks at the Br slider's floor with a gap of 2 to 5 mm (hot-low 0.007 to 0.05 N·m)."
+  - Why: probe 7 found 79 such sides at slider values. A docs line repeating the report's claim would be false.
+  - Pin: none (docs).
+
+6. Traps:
+- 1. Ranking: no new or changed text compares controls or says a listed word (ranking guard: no hit).
+- 2. Small change, sign, equal reads, ratio: FO-4 removes "+-0.00" beside a true percent, and signs agree. The ratio
+  clause fails at 19 rows at slider values; that is MF-2.
+- 3. Extrapolation: none. Each side keeps its own step.
+- 4. A jump read as a slope: the boss plateau now reads words (FO-2). `JUMP` is drawn at every length side that is not
+  a step; its words fail at the 10.7 mm cavity, which is MF-1.
+- 5. R_g² / "bigger gives more": no physics sentence added.
+- 6. Fewer poles: FO-3's line states the count against the slider, no pole physics.
+- 7. Calibration as physics: `CALIBRATION_CHANGE` is unchanged and names no cause.
+- 8. Assumptions as things to change: no text names `f_cal`, c_end, the variation or μ0. FO-3 names the slider's range,
+  not an input to edit.
+- 9. Torque order / "guaranteed": SF-2 names two torques and orders neither (`TORQUE_ORDER_WORDS`: no hit).
+- 10. Gearbox protection: none (`mentions_gearbox_protection`: no hit).
+- 11. "No effect" / "free": none. Near-zero changes show their digits (FO-4).
+- 12. Free grade / stored 3D: nothing added.
+- 13. Elasticity in °C: none.
+- 14. Under Auto: the one-line forms draw no Auto line, and no row says a torque rises.
+- 15. "clamp": none in any probed line.
+- 16. Slice-2 traps: none.
+- 17. Plain words and glyphs: `plain_text_violations` is empty. "slider's" and "step's" use ASCII apostrophes, and
+  e-notation is ASCII. No U+2192, U+2212, U+03BC or U+2019.
+- 18. Typed numbers: none. No changed or new constant (nor MF-1's texts) holds a digit. FO-4's numbers come from the
+  results, and the steps from `Control::step`.
+
+7. Verdict: MUST_FIX (MF-1 and MF-2, both applied here). Nothing for the owner.

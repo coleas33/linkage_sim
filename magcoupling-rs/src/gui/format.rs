@@ -109,9 +109,9 @@ pub(crate) fn fewest_decimals_apart<T>(
 /// How many decimals past its own a change may take to show a digit that is not zero
 /// ([`decimals_with_a_digit`]; slice 3 spec T-9). A change still zero there is read as float
 /// noise (T-9), such as Auto's solve residual, and reads its own decimals with its true sign,
-/// unless it is a torque change whose percent reads a digit ([`signed_torque_change`], the
-/// owner's FO-4). The torque card draws a size or margin change only where it shows a digit
-/// within them.
+/// unless it is a torque change whose percent reads a digit, or one on a torque card row with
+/// such a change ([`shared_torque_precision`]: the owner's FO-4, a row at one precision, T-14).
+/// The torque card draws a size or margin change only where it shows a digit within them.
 pub(crate) const CHANGE_EXTRA_DECIMALS: usize = 2;
 
 /// The decimals a torque change starts from on the Size tab (spec section 5: N·m to two
@@ -137,8 +137,8 @@ pub(crate) fn reads_not_zero(text: &str) -> bool {
 /// ([`reads_not_zero`]; -0.0046 from 2 takes 3, "-0.005"). `None` where none does: `x` is zero
 /// or not finite, or T-9 reads it as float noise (-0.00004 from 2 reads "-0.0000" at the cap).
 /// A change's decimals ([`change_decimals`]), whether the torque card draws a change (its
-/// `shows`) and whether a torque change beside its percent reads four significant digits
-/// ([`signed_torque_change`]) all read it, so they never disagree.
+/// `shows`) and whether torques beside their percents read four significant digits
+/// ([`shared_torque_precision`]) all read it, so they never disagree.
 pub(crate) fn decimals_with_a_digit(x: f64, from: usize) -> Option<usize> {
     (from..=from + CHANGE_EXTRA_DECIMALS).find(|&decimals| reads_not_zero(&fixed(x, decimals)))
 }
@@ -235,36 +235,73 @@ fn zero_beside_its_percent(torque_Nm: f64, fraction: Option<f64>) -> bool {
         && decimals_with_a_digit(torque_Nm, TORQUE_DECIMALS).is_none()
 }
 
-/// A torque change beside its percent of `fraction` (`None` where no percent is drawn), as a
-/// torque card side and the readout's margin write it: [`signed_fixed`] at `decimals`; where it
-/// reads zero at the cap while that percent reads a digit, four significant digits with its sign
-/// (the owner's FO-4 at the slice-3 STOP): "+1.690e-11 N·m (+1.9 %)", never "+0.00 N·m
-/// (+1.9 %)". Beside a percent that reads zero it reads as before (T-9): "+0.00 N·m (+0.0 %)".
-#[allow(non_snake_case)] // unit suffix
-pub(crate) fn signed_torque_change(
-    change_Nm: f64,
-    decimals: usize,
-    fraction: Option<f64>,
-) -> String {
-    if zero_beside_its_percent(change_Nm, fraction) {
-        signed_significant(change_Nm)
+/// The one precision of torques drawn side by side, each beside its percent (slice 3 spec T-14:
+/// a torque card row's two N·m at one precision; the readout's gap is a row of one), as
+/// [`shared_torque_precision`] finds it and [`signed_torque_change`] and [`torque_shortfall`]
+/// draw it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TorquePrecision {
+    /// Each to these decimals, past six whole digits four significant digits ([`signed_fixed`]).
+    Decimals(usize),
+    /// Each in four significant digits, as the readouts write values ([`format_value`]; the
+    /// owner's FO-4 at the slice-3 STOP): one of them reads zero at the cap while its percent
+    /// reads a digit. An exact zero still reads its [`TORQUE_DECIMALS`], "+0.00".
+    Significant,
+}
+
+/// The precision torques drawn side by side share (T-14), `torques` each a change, or a
+/// shortfall's size, with the fraction its percent is drawn from (`None` where none is):
+/// [`TorquePrecision::Significant`] where any of them reads zero at the cap while its percent
+/// reads a digit ([`zero_beside_its_percent`], the owner's FO-4), so a row never draws "-0.0001"
+/// beside "+4.599e-5" for a true -5.033e-5 (the fold-in's G-3 re-review, MF-2); else the larger
+/// of their decimals ([`shared_change_decimals`] from [`TORQUE_DECIMALS`]).
+pub(crate) fn shared_torque_precision(torques: &[(f64, Option<f64>)]) -> TorquePrecision {
+    if torques
+        .iter()
+        .any(|&(torque, fraction)| zero_beside_its_percent(torque, fraction))
+    {
+        TorquePrecision::Significant
     } else {
-        signed_fixed(change_Nm, decimals)
+        let torques: Vec<f64> = torques.iter().map(|&(torque, _)| torque).collect();
+        TorquePrecision::Decimals(
+            shared_change_decimals(&torques, TORQUE_DECIMALS).unwrap_or(TORQUE_DECIMALS),
+        )
     }
 }
 
-/// The size of a torque shortfall `size_Nm` beside its percent of `fraction` (`None` where no
-/// percent is drawn), as the readout's "short ..." writes it: [`fixed`] at `decimals`, no sign,
-/// with a margin's bound ([`signed_torque_change`]). Past six whole digits, or where it reads
-/// zero at the cap while that percent reads a digit, four significant digits as the readouts
-/// write values ([`format_value`]): "1.000e300", "5.000e-7".
+/// A torque change at its row's `precision` ([`shared_torque_precision`]), as a torque card side
+/// and the readout's margin write it: [`signed_fixed`] at the row's decimals, or four significant
+/// digits with its sign (the owner's FO-4 at the slice-3 STOP): "+1.690e-11 N·m (+1.9 %)", never
+/// "+0.00 N·m (+1.9 %)", and on that change's row the other change too, "-5.033e-5" beside
+/// "+4.599e-5", never "-0.0001" (T-14). An exact zero reads "+0.00" at either precision, and at
+/// the row's decimals a change past the cap reads as before (T-9): "+0.00 N·m (+0.0 %)".
 #[allow(non_snake_case)] // unit suffix
-pub(crate) fn torque_shortfall(size_Nm: f64, decimals: usize, fraction: Option<f64>) -> String {
-    let text = fixed(size_Nm, decimals);
-    if too_many_whole_digits(&text) || zero_beside_its_percent(size_Nm, fraction) {
-        format_number(size_Nm)
-    } else {
-        text
+pub(crate) fn signed_torque_change(change_Nm: f64, precision: TorquePrecision) -> String {
+    match precision {
+        TorquePrecision::Significant if change_Nm != 0.0 => signed_significant(change_Nm),
+        TorquePrecision::Significant => signed_fixed(change_Nm, TORQUE_DECIMALS),
+        TorquePrecision::Decimals(decimals) => signed_fixed(change_Nm, decimals),
+    }
+}
+
+/// The size of a torque shortfall `size_Nm` at the readout gap's `precision`
+/// ([`shared_torque_precision`]), as the readout's "short ..." writes it: [`fixed`] at its
+/// decimals, no sign, with a margin's bound ([`signed_torque_change`]). Past six whole digits,
+/// or where it reads zero at the cap while its percent reads a digit, four significant digits
+/// as the readouts write values ([`format_value`]): "1.000e300", "5.000e-7". A shortfall's size
+/// is never zero.
+#[allow(non_snake_case)] // unit suffix
+pub(crate) fn torque_shortfall(size_Nm: f64, precision: TorquePrecision) -> String {
+    match precision {
+        TorquePrecision::Significant => format_number(size_Nm),
+        TorquePrecision::Decimals(decimals) => {
+            let text = fixed(size_Nm, decimals);
+            if too_many_whole_digits(&text) {
+                format_number(size_Nm)
+            } else {
+                text
+            }
+        }
     }
 }
 
@@ -624,59 +661,118 @@ mod tests {
         ] {
             assert_eq!(signed_percent(fraction), text, "{fraction}");
         }
-        // A torque change beside its percent (a torque card side, the readout's margin): one that
-        // reads zero at the cap, from TORQUE_DECIMALS up to four decimals, while its percent
-        // reads a digit (from 0.05 %) reads four significant digits, never "+0.00 N·m (+1.9 %)"
-        // (trap 2). Beside a percent that reads zero, or with no percent drawn (a requirement that
-        // is no positive torque), it reads its own decimals with its true sign, as before (T-9).
-        for (change, decimals, fraction, text) in [
-            (1.69e-11, 2, Some(0.019), "+1.690e-11"),
-            (-2.7e-11, 2, Some(-0.027), "-2.700e-11"),
-            (4.99e-5, 2, Some(0.01), "+4.990e-5"),
-            (5.1e-5, 4, Some(0.01), "+0.0001"),
-            (-0.0046, 3, Some(-0.003), "-0.005"),
-            (1e-10, 2, Some(0.000_51), "+1.000e-10"),
-            (1e-10, 2, Some(0.000_49), "+0.00"),
-            (-0.00004, 2, Some(-0.0004), "-0.00"),
-            (1.28e-10, 2, Some(5.12e-11), "+0.00"),
-            (1e-10, 2, None, "+0.00"),
-            (0.0, 2, Some(0.0), "+0.00"),
-            (-0.0, 2, Some(-0.0), "+0.00"),
-            (2.405e300, 2, Some(9.622e299), "+2.405e300"),
-            (999_999.9, 4, Some(0.5), "+999999.9000"),
-            (f64::NAN, 2, Some(f64::NAN), "NaN"),
-            (f64::NAN, 2, Some(0.5), "NaN"),
-            (f64::INFINITY, 2, Some(f64::INFINITY), "+inf"),
-            (f64::INFINITY, 2, Some(0.5), "+inf"),
-            (f64::NEG_INFINITY, 2, Some(-0.5), "-inf"),
+        // A torque change beside its percent (a torque card side, the readout's margin), at the
+        // precision of its row (the readout's gap is a row of one): one that reads zero at the
+        // cap, from TORQUE_DECIMALS up to four decimals, while its percent reads a digit (from
+        // 0.05 %) reads four significant digits, never "+0.00 N·m (+1.9 %)" (trap 2). Beside a
+        // percent that reads zero, or with no percent drawn (a requirement that is no positive
+        // torque), it reads its own decimals with its true sign, as before (T-9).
+        for (change, fraction, decimals, text) in [
+            (1.69e-11, Some(0.019), None, "+1.690e-11"),
+            (-2.7e-11, Some(-0.027), None, "-2.700e-11"),
+            (4.99e-5, Some(0.01), None, "+4.990e-5"),
+            (5.1e-5, Some(0.01), Some(4), "+0.0001"),
+            (-0.0046, Some(-0.003), Some(3), "-0.005"),
+            (1e-10, Some(0.000_51), None, "+1.000e-10"),
+            (1e-10, Some(0.000_49), Some(2), "+0.00"),
+            (-0.00004, Some(-0.0004), Some(2), "-0.00"),
+            (1.28e-10, Some(5.12e-11), Some(2), "+0.00"),
+            (1e-10, None, Some(2), "+0.00"),
+            (0.0, Some(0.0), Some(2), "+0.00"),
+            (-0.0, Some(-0.0), Some(2), "+0.00"),
+            (2.405e300, Some(9.622e299), Some(2), "+2.405e300"),
+            (f64::NAN, Some(f64::NAN), Some(2), "NaN"),
+            (f64::NAN, Some(0.5), None, "NaN"),
+            (f64::INFINITY, Some(f64::INFINITY), Some(2), "+inf"),
+            (f64::INFINITY, Some(0.5), None, "+inf"),
+            (f64::NEG_INFINITY, Some(-0.5), None, "-inf"),
         ] {
+            // `None`: four significant digits.
+            let precision =
+                decimals.map_or(TorquePrecision::Significant, TorquePrecision::Decimals);
+            let what = format!("{change} beside {fraction:?}");
             assert_eq!(
-                signed_torque_change(change, decimals, fraction),
-                text,
-                "{change} at {decimals} beside {fraction:?}"
+                shared_torque_precision(&[(change, fraction)]),
+                precision,
+                "{what}"
+            );
+            assert_eq!(signed_torque_change(change, precision), text, "{what}");
+        }
+        // A torque card row's two N·m at one precision (T-14) under FO-4 (the fold-in's G-3
+        // re-review, MF-2): where either reads zero at the cap beside a percent that reads a
+        // digit, both read four significant digits, so they keep their true ratio ("-5.033e-5"
+        // beside "+4.599e-5" for a true 1.09:1, never "-0.0001", which reads 2.17:1, and "+1.443"
+        // beside "-5.182e-10", never "+1.44"), while a change of exactly zero still reads
+        // "+0.00". Every other row reads its shared decimals, past six whole digits four
+        // significant digits per number; a row of words draws none.
+        for (row, texts) in [
+            (
+                [
+                    (-5.032_924e-5, Some(-0.007_310)),
+                    (4.599_490e-5, Some(0.006_681)),
+                ],
+                ["-5.033e-5", "+4.599e-5"],
+            ),
+            (
+                [(-3.887e-6, Some(-0.0002)), (2.0072e-5, Some(0.0011))],
+                ["-3.887e-6", "+2.007e-5"],
+            ),
+            (
+                [(-5.182e-10, Some(-0.579)), (1.442_764, Some(1.6e9))],
+                ["-5.182e-10", "+1.443"],
+            ),
+            (
+                [(0.0, Some(0.0)), (1.69e-11, Some(0.019))],
+                ["+0.00", "+1.690e-11"],
+            ),
+            (
+                [(-0.0063, Some(-0.0037)), (-0.0046, Some(-0.0028))],
+                ["-0.006", "-0.005"],
+            ),
+            (
+                [(999_999.9, Some(0.5)), (0.00012, Some(0.1))],
+                ["+999999.9000", "+0.0001"],
+            ),
+            ([(1e6, Some(0.5)), (0.5, Some(0.1))], ["+1.000e6", "+0.50"]),
+            (
+                [(1.28e-10, Some(5.12e-11)), (0.2010, Some(0.088))],
+                ["+0.00", "+0.20"],
+            ),
+        ] {
+            let precision = shared_torque_precision(&row);
+            assert_eq!(
+                row.map(|(change, _)| signed_torque_change(change, precision)),
+                texts,
+                "{row:?}"
             );
         }
-        // The size of a torque shortfall (the readout's "short ...") keeps the same bound,
-        // without a sign; NaN and inf read as before ("short +inf N·m" for a hot-low of -inf).
-        for (size, decimals, fraction, text) in [
-            (0.29, 2, Some(-0.116), "0.29"),
-            (0.001, 3, Some(-0.0004), "0.001"),
-            (0.000_01, 2, Some(-0.000_004), "0.00"),
-            (5e-7, 2, Some(-0.5), "5.000e-7"),
-            (5e-7, 2, None, "0.00"),
-            (0.5, 2, None, "0.50"),
-            (999_999.9, 2, Some(-0.5), "999999.90"),
-            (999_999.996, 2, Some(-0.5), "1.000e6"),
-            (1e6, 2, Some(-0.5), "1.000e6"),
-            (1e300, 2, Some(-1.0), "1.000e300"),
-            (2e6, 2, None, "2.000e6"),
-            (f64::NAN, 2, Some(f64::NAN), "NaN"),
-            (f64::INFINITY, 2, Some(f64::NEG_INFINITY), "+inf"),
+        assert_eq!(
+            shared_torque_precision(&[]),
+            TorquePrecision::Decimals(TORQUE_DECIMALS)
+        );
+        // The size of a torque shortfall (the readout's "short ...", the gap below the
+        // requirement, a row of one) keeps the same bound, without a sign; NaN and inf read as
+        // before ("short +inf N·m" for a hot-low of -inf).
+        for (size, fraction, text) in [
+            (0.29, Some(-0.116), "0.29"),
+            (0.001, Some(-0.0004), "0.001"),
+            (0.000_01, Some(-0.000_004), "0.00"),
+            (5e-7, Some(-0.5), "5.000e-7"),
+            (5e-7, None, "0.00"),
+            (0.5, None, "0.50"),
+            (999_999.9, Some(-0.5), "999999.90"),
+            (999_999.996, Some(-0.5), "1.000e6"),
+            (1e6, Some(-0.5), "1.000e6"),
+            (1e300, Some(-1.0), "1.000e300"),
+            (2e6, None, "2.000e6"),
+            (f64::NAN, Some(f64::NAN), "NaN"),
+            (f64::INFINITY, Some(f64::NEG_INFINITY), "+inf"),
         ] {
+            let precision = shared_torque_precision(&[(-size, fraction)]);
             assert_eq!(
-                torque_shortfall(size, decimals, fraction),
+                torque_shortfall(size, precision),
                 text,
-                "{size} at {decimals} beside {fraction:?}"
+                "{size} beside {fraction:?}"
             );
         }
     }

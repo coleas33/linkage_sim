@@ -27,7 +27,7 @@ use crate::engine::size_controls::{SizeControls, dimensions, dimensions_with_min
 use crate::engine::sizing::FreeVariable;
 use crate::gui::dashboard::{Level, result_info};
 use crate::gui::format::{
-    TORQUE_DECIMALS, decimals_with_a_digit, shared_change_decimals, signed_change, signed_percent,
+    TorquePrecision, decimals_with_a_digit, shared_torque_precision, signed_change, signed_percent,
     signed_torque_change, with_unit,
 };
 use crate::gui::guidance::{
@@ -48,7 +48,7 @@ pub(crate) const STEP_SLACK_MM: f64 = 1e-6;
 const COUNT_STEP: i64 = 2;
 
 /// The decimals a size change starts from (spec section 5): the sliders' 0.1 mm. A torque change
-/// starts from the Size tab's own, [`TORQUE_DECIMALS`] (`gui::format`).
+/// starts from the Size tab's own, `TORQUE_DECIMALS` (`gui::format`).
 const SIZE_DECIMALS: usize = 1;
 
 // The card's texts (spec 4.1 and 4.2): drafts until the slice's G-3 review sets the words. A
@@ -86,15 +86,18 @@ pub const SIDE_NO_PREDICTION: &str = "no prediction";
 pub const KEYWAY_BREAKS_THROUGH: &str = "the keyway breaks through the hub";
 /// A length side that is not a step of the overlapping magnet length ([`Words::Jump`]; owner
 /// 9A, widened by question O-1). It names no cause, and it names the step's amount, so "by the
-/// step" never reads as the step's doing (the G-3 review's SF-1).
+/// step" never reads as the step's doing (the G-3 review's SF-1), and its direction, so it holds
+/// where the overlap moves by the step's size the other way (a cup cavity of 10.7 mm; the
+/// fold-in's G-3 re-review, MF-1).
 pub const JUMP: &str =
-    "not a step: the overlapping magnet length does not change by the step's amount";
+    "not a step: the overlapping magnet length does not change by the step's amount and direction";
 /// A diameter side that is not a step of the cup's diameter ([`Words::CupJump`]; the owner's
 /// FO-2 at the slice-3 STOP, spec risk R-13): where the shaft boss sets the Outside diameter,
 /// above the cup and the cap, one step lifts the cup by more than the step (on the boss
 /// plateau from its own size to the boss plus the step). It mirrors [`JUMP`] and names no
 /// cause.
-pub const CUP_JUMP: &str = "not a step: the cup diameter does not change by the step's amount";
+pub const CUP_JUMP: &str =
+    "not a step: the cup diameter does not change by the step's amount and direction";
 /// After a number whose stepped design takes another calibration factor (owner 16A): it names
 /// the change, never a cause.
 pub const CALIBRATION_CHANGE: &str = "includes a calibration change";
@@ -201,11 +204,11 @@ pub enum Words {
     KeywayBreaksThrough,
     /// The model has no prediction for the stepped design.
     NoPrediction,
-    /// The overlapping magnet length does not change by the step's amount (the Overall length
-    /// row).
+    /// The overlapping magnet length does not change by the step's amount and direction (the
+    /// Overall length row).
     Jump,
-    /// The cup's diameter does not change by the step's amount (the Outside diameter row, where
-    /// the shaft boss sets the Outside diameter: the owner's FO-2).
+    /// The cup's diameter does not change by the step's amount and direction (the Outside
+    /// diameter row, where the shaft boss sets the Outside diameter: the owner's FO-2).
     CupJump,
 }
 
@@ -348,42 +351,42 @@ pub struct Row {
 }
 
 impl Row {
-    /// The decimals of the row's two N·m (T-14: one precision for both, the larger of their
-    /// own, [`shared_change_decimals`]); a row of words draws none.
-    fn torque_decimals(&self) -> usize {
-        let changes: Vec<f64> = [&self.fewer, &self.more]
+    /// The precision of the row's two N·m (T-14: one for both, [`shared_torque_precision`] of
+    /// its number sides beside their percents): the larger of their own decimals, or four
+    /// significant digits for both where either reads zero at the cap beside a percent that
+    /// reads a digit (the owner's FO-4; the fold-in's G-3 re-review, MF-2). A row of words draws
+    /// none.
+    fn torque_precision(&self) -> TorquePrecision {
+        let changes: Vec<(f64, Option<f64>)> = [&self.fewer, &self.more]
             .into_iter()
             .filter_map(|side| match side {
-                Side::Change(change) => Some(change.change_Nm),
+                Side::Change(change) => Some((change.change_Nm, Some(change.fraction))),
                 Side::Words(_) => None,
             })
             .collect();
-        shared_change_decimals(&changes, TORQUE_DECIMALS).unwrap_or(TORQUE_DECIMALS)
+        shared_torque_precision(&changes)
     }
 
     /// "{label}: {fewer}; {more}" (spec 4.1), the two sides' N·m at the row's one precision.
     fn line(&self) -> String {
-        let decimals = self.torque_decimals();
+        let precision = self.torque_precision();
         format!(
             "{}: {}; {}",
             self.control.label(),
-            self.side_text(&self.fewer, false, decimals),
-            self.side_text(&self.more, true, decimals)
+            self.side_text(&self.fewer, false, precision),
+            self.side_text(&self.more, true, precision)
         )
     }
 
     /// One side (spec 4.1): "{step} -> {words}", or "{step} -> {N·m} N·m ({percent})" with the
-    /// N·m at the row's `decimals` beside its percent ([`signed_torque_change`]: past the owner's
-    /// FO-4 bound, four significant digits), then ", " and each cost.
-    fn side_text(&self, side: &Side, more: bool, decimals: usize) -> String {
+    /// N·m at the row's `precision` ([`signed_torque_change`]: past the owner's FO-4 bound, four
+    /// significant digits), then ", " and each cost.
+    fn side_text(&self, side: &Side, more: bool, precision: TorquePrecision) -> String {
         let step = self.control.step_text(more);
         match side {
             Side::Words(words) => format!("{step} -> {}", words.text()),
             Side::Change(change) => {
-                let torque = with_unit(
-                    signed_torque_change(change.change_Nm, decimals, Some(change.fraction)),
-                    "N·m",
-                );
+                let torque = with_unit(signed_torque_change(change.change_Nm, precision), "N·m");
                 let number = format!("{step} -> {torque} ({})", signed_percent(change.fraction));
                 std::iter::once(number)
                     .chain(change.costs(self.control))
@@ -820,7 +823,9 @@ mod tests {
     };
     use crate::engine::size_controls::{resize_diameter_with_minimum, resize_length};
     use crate::engine::sizing::is_valid;
-    use crate::gui::format::{fixed, reads_not_zero, signed_fixed};
+    use crate::gui::format::{
+        TORQUE_DECIMALS, fixed, last_digit_step, reads_not_zero, signed_fixed,
+    };
     use crate::gui::guidance::{
         CLAMP, CLEARANCE, COLD_HIGH, CUP_WALL, Consequences, GEARBOX, HOT_MIN, RING_SIZE_STAYS,
         SHAFT_JOINT, SPACE_CLAIM, SPACE_CLAIM_AXIS_SIZES, TEMPERATURE, WALL_NEEDED, guide,
@@ -1158,6 +1163,15 @@ mod tests {
             compute_all(&stepped).model.active_length_mm.to_bits(),
             overlap.to_bits()
         );
+        // At 10.7 mm, also on the cavity's slider, the +1 mm side (a jump, above) moves the
+        // overlap by the step's size the other way, 12.70 -> 11.70 mm: so the jump words name the
+        // step's direction as well as its amount (the fold-in's G-3 re-review, MF-1).
+        let reversed = cavity(10.7);
+        let moved = compute_all(&slider_step(OverallLength, &reversed, None, true))
+            .model
+            .active_length_mm
+            - compute_all(&reversed).model.active_length_mm;
+        assert!((moved + 1.0).abs() <= STEP_SLACK_MM, "{moved}");
         // ... and the diameter row's jump (the owner's FO-2): where the shaft boss sets the
         // Outside diameter, one step up lifts the cup by more than the step, and the step down
         // asks for less than the boss, below the slider's range.
@@ -1199,15 +1213,18 @@ mod tests {
         let more = number(&side_at(&unmeasured, None, MagnetsPerRing, true));
         assert!(more.calibration_changed);
         assert_eq!(more.hot_low_Nm, 0.0, "{more:?}");
-        // It is drawn as every number side: its N·m with its true sign at the row's decimals, and
-        // -100.0 %, the hot-low gone (physics review 5 SF-2).
+        // It is drawn as every number side: its N·m with its true sign at the row's precision,
+        // and -100.0 %, the hot-low gone (physics review 5 SF-2).
         assert_eq!(more.fraction, -1.0);
         let card = card_at(&unmeasured, None);
         let row = &card.rows()[3];
         assert!(
             side_texts(&card.lines(None)[4], row)[1].starts_with(&format!(
                 "+2 -> {} ({}), {CALIBRATION_CHANGE}",
-                torque(more.change_Nm, row.torque_decimals()),
+                with_unit(
+                    signed_torque_change(more.change_Nm, row.torque_precision()),
+                    "N·m"
+                ),
                 signed_percent(-1.0)
             )),
             "{:?}",
@@ -2101,10 +2118,16 @@ mod tests {
         );
         // The jump words name the step's amount, so "by the step" never reads as the step's
         // doing; they hold where the overlap does not move at all (the cup cavity of 11.7 mm,
-        // test 3), as round 1's "changes by a different amount" did not (G-3 round 2, SF-1).
-        // The two jump texts read alike, each naming its own quantity (FO-2 mirrors JUMP).
+        // test 3), as round 1's "changes by a different amount" did not (G-3 round 2, SF-1). They
+        // name its direction too, so "amount" never reads as a size alone: at a cup cavity of
+        // 10.7 mm the overlap moves by the step's size the other way (test 3; the fold-in's G-3
+        // re-review, MF-1). The two jump texts read alike, each naming its own quantity (FO-2
+        // mirrors JUMP).
         for text in [JUMP, CUP_JUMP] {
-            assert!(text.ends_with("by the step's amount"), "{text}");
+            assert!(
+                text.ends_with("by the step's amount and direction"),
+                "{text}"
+            );
         }
         assert_eq!(
             JUMP.replacen("the overlapping magnet length", "{}", 1),
@@ -2781,7 +2804,9 @@ mod tests {
         // owner ruled at the slice-3 STOP: a count below the slider's range draws one line
         // (FO-3), and no number on the card or in the readout's gap above it is wider than
         // WIDEST_NUMBER, nor does an N·m there read zero beside a percent that does not (FO-4: a
-        // calibration coefficient of 1e-9 or 1e300, a variation just under 1).
+        // calibration coefficient of 1e-9 or 1e300, a variation just under 1), and a row with
+        // such an N·m reads both its N·m in four significant digits (T-14; the fold-in's G-3
+        // re-review, MF-2).
         type Edit = fn(&mut DesignInputs);
         let edits: [(&str, Edit); 47] = [
             ("npole 0", |d| d.coupling.npole = 0),
@@ -2888,6 +2913,7 @@ mod tests {
                     let shown = card_at(&inputs, minimum);
                     assert_eq!(shown, card_at(&inputs, minimum), "{what}");
                     rows += shown.rows().len();
+                    assert_one_precision_per_row(&shown, &what);
                     for auto in [None].into_iter().chain(FreeVariable::ALL.map(Some)) {
                         let lines = shown.lines(auto);
                         assert!(!lines.is_empty(), "{what}");
@@ -2955,6 +2981,47 @@ mod tests {
         }
     }
 
+    /// Asserts T-14 under the owner's FO-4 on every row of `card` (the fold-in's G-3 re-review,
+    /// MF-2): where either number side's change reads zero at the cap (no
+    /// [`decimals_with_a_digit`] from [`TORQUE_DECIMALS`]) while its drawn percent reads a
+    /// digit, both drawn N·m are their changes to within half a unit of the fourth significant
+    /// digit ([`last_digit_step`]), so the row's two N·m keep their true ratio; a change of
+    /// exactly zero reads zero.
+    fn assert_one_precision_per_row(card: &TorqueCard, what: &str) {
+        let lines = card.lines(None);
+        for (row, line) in card.rows().iter().zip(&lines[1..]) {
+            let numbers: Vec<(f64, &str, &str)> = sides(row)
+                .into_iter()
+                .zip(side_texts(line, row))
+                .filter_map(|((_, side), text)| match side {
+                    Side::Change(change) => {
+                        let (torque, percent) = drawn_number(text);
+                        Some((change.change_Nm, torque, percent))
+                    }
+                    Side::Words(_) => None,
+                })
+                .collect();
+            let zero_beside_a_digit = numbers.iter().any(|&(change, _, percent)| {
+                decimals_with_a_digit(change, TORQUE_DECIMALS).is_none() && reads_not_zero(percent)
+            });
+            if !zero_beside_a_digit {
+                continue;
+            }
+            for (change, torque, _) in numbers {
+                let drawn = torque.parse::<f64>().unwrap_or(f64::NAN);
+                let true_to_four_digits = if change == 0.0 {
+                    drawn == 0.0
+                } else {
+                    (drawn - change).abs() <= 0.5 * last_digit_step(change.abs())
+                };
+                assert!(
+                    true_to_four_digits,
+                    "{what}: {torque} N·m for a change of {change:e} in {line}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn at_a_design_file_s_magnitudes_a_number_reads_four_significant_digits() {
         // The owner's FO-4 at the slice-3 STOP, at the G-3 record's probe 13: a calibration
@@ -2980,7 +3047,9 @@ mod tests {
             numbers_in(&lines[1]).1,
             ["+1.690e-11", "+1.9", "-0.01", "-2.412e-11", "-2.7", "+0.01"]
         );
-        let two_more = format!("; +2 -> +1.44 N·m (+1.612e11 %), {CALIBRATION_CHANGE}, ");
+        // Its -2 side reads zero at the cap beside -57.9 %, so the row's +2 side reads four
+        // significant digits too (T-14; the fold-in's G-3 re-review, MF-2).
+        let two_more = format!("; +2 -> +1.443 N·m (+1.612e11 %), {CALIBRATION_CHANGE}, ");
         assert!(
             lines[4].starts_with(&format!("{count}: ")) && lines[4].contains(&two_more),
             "{}",
@@ -2995,6 +3064,47 @@ mod tests {
         let mut low_required = DesignInputs::default();
         low_required.metal.required_min_Nm = 1e-300;
         assert_eq!(gap(&low_required), "margin +2.29 N·m (+2.285e302 %)");
+    }
+
+    #[test]
+    fn at_slider_values_a_row_s_two_n_m_read_four_significant_digits_together() {
+        // T-14 under the owner's FO-4 (the fold-in's G-3 re-review, MF-2): FO-4's second clause
+        // reaches slider values. With both parts blank, manual blocks of 0.2 T, a gap of 3.0 mm,
+        // 4 magnets and a ring of 15.0 mm, each on its slider, the Outside diameter row's +1 mm
+        // side changes hot-low by +4.599e-5 N·m (+0.7 %), zero at the cap, and its -1 mm side by
+        // -5.033e-5 N·m (-0.7 %), which reads "-0.0001" there: 2.17:1 drawn for a true 1.09:1.
+        // So the row draws both its N·m in four significant digits.
+        let mut inputs = DesignInputs::default();
+        inputs.coupling.magnets.part_inner.clear();
+        inputs.coupling.magnets.part_outer.clear();
+        inputs.coupling.magnets.manual_inner_br_T = 0.2;
+        inputs.coupling.magnets.manual_outer_br_T = 0.2;
+        inputs.metal.face_gap_mm = 3.0;
+        inputs.coupling.npole = 4;
+        inputs.coupling.inner_back_apothem_mm = 15.0;
+        for (path, value) in [
+            ("coupling.magnets.manual_inner_br_T", 0.2),
+            ("coupling.magnets.manual_outer_br_T", 0.2),
+            (FACE_GAP, 3.0),
+            (FreeVariable::MagnetsPerRing.path(), 4.0),
+            ("coupling.inner_back_apothem_mm", 15.0),
+        ] {
+            let range = slider_range(path);
+            let steps = (value - range.min) / range.step;
+            assert!(
+                (range.min..=range.max).contains(&value) && (steps - steps.round()).abs() < 1e-6,
+                "{path} {value} on its slider"
+            );
+        }
+        let [od, ..] = Control::ALL.map(Control::label);
+        let (space, rotating) = (label(SPACE_CLAIM), SPACE_CLAIM_AXIS_SIZES[0].0);
+        assert_eq!(
+            card_at(&inputs, None).lines(None)[1],
+            format!(
+                "{od}: -1 mm -> -5.033e-5 N·m (-0.7 %), {space}: {rotating} -1.00 mm; +1 mm -> \
+                 +4.599e-5 N·m (+0.7 %), {space}: {rotating} +1.00 mm"
+            )
+        );
     }
 
     /// The side texts of a row's line, "{label}: {fewer}; {more}": the two sides.

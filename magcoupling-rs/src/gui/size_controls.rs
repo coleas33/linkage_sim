@@ -18,7 +18,7 @@ use crate::engine::size_controls::{
 use crate::engine::sizing::FreeVariable;
 use crate::gui::dashboard::{end_effect_out_of_range, why_note_link};
 use crate::gui::format::{
-    TORQUE_DECIMALS, change_decimals, fixed, signed_percent, signed_torque_change, torque_shortfall,
+    fixed, shared_torque_precision, signed_percent, signed_torque_change, torque_shortfall,
 };
 use crate::gui::guidance::{Consequences, SIZE_TAB_NOTE};
 use crate::gui::input_ui::{hint_line, slider, weak_line};
@@ -177,7 +177,7 @@ pub fn pullout_label(op_temp_C: f64) -> String {
 /// The hot-low torque's gap to the requirement, and whether it meets it: `hot_low_Nm >=
 /// required_Nm`, as the engine's hot minimum check (which fails `hot_low < required`). The Size
 /// tab's one number format (decision 10B): the N·m to the fewest decimals, from two
-/// ([`TORQUE_DECIMALS`]), that read a digit that is not zero ([`change_decimals`], at most two
+/// (`TORQUE_DECIMALS`), that read a digit that is not zero (`change_decimals`, at most two
 /// more), a margin signed, and one decimal of percent of the requirement with the gap's own sign
 /// ([`signed_percent`]): "short 0.29 N·m (-11.6 %)", "margin +0.40 N·m (+16.0 %)", "short
 /// 0.001 N·m (-0.0 %)", so a design a hair under its requirement never reads like a pass. The
@@ -185,20 +185,22 @@ pub fn pullout_label(op_temp_C: f64) -> String {
 /// metadata minimum; a design file need not). A number whose fixed form would need more than six
 /// whole digits, or a gap that reads zero at the cap while its percent does not, reads four
 /// significant digits as the readouts write values, a margin with its sign and a shortfall's
-/// size without (the owner's FO-4 at the slice-3 STOP; `signed_torque_change` and
-/// `torque_shortfall`): "margin +2.29 N·m (+2.285e302 %)", "short 1.000e300 N·m (-100.0 %)".
+/// size without (the owner's FO-4 at the slice-3 STOP; `shared_torque_precision`, the gap a
+/// row of one, then `signed_torque_change` and `torque_shortfall`): "margin +2.29 N·m
+/// (+2.285e302 %)", "short 1.000e300 N·m (-100.0 %)".
 #[allow(non_snake_case)] // unit suffix
 pub fn torque_gap_text(hot_low_Nm: f64, required_Nm: f64) -> (String, bool) {
     let meets = hot_low_Nm >= required_Nm;
     let gap_Nm = hot_low_Nm - required_Nm;
     // The gap as a fraction of a positive requirement: the percent drawn beside it.
     let fraction = (required_Nm > 0.0).then(|| gap_Nm / required_Nm);
-    // The gap's own decimals, one rule for a margin and a shortfall.
-    let decimals = change_decimals(gap_Nm, TORQUE_DECIMALS);
+    // The gap's own precision, one rule for a margin and a shortfall: a torque card row's, the
+    // gap a row of one.
+    let precision = shared_torque_precision(&[(gap_Nm, fraction)]);
     let (word, torque) = if meets {
-        ("margin", signed_torque_change(gap_Nm, decimals, fraction))
+        ("margin", signed_torque_change(gap_Nm, precision))
     } else {
-        ("short", torque_shortfall(gap_Nm.abs(), decimals, fraction))
+        ("short", torque_shortfall(gap_Nm.abs(), precision))
     };
     let torque = format!("{word} {torque} N·m");
     let text = match fraction {
@@ -452,7 +454,7 @@ fn size_slider(
 mod tests {
     use super::*;
     use crate::compute_all;
-    use crate::gui::format::decimals_with_a_digit;
+    use crate::gui::format::{TORQUE_DECIMALS, decimals_with_a_digit};
     use crate::gui::guidance::plain_text_violations;
     use crate::gui::test_support::{
         SCREEN, assert_glyphs, card_designs, short_magnets, sized_frame,
