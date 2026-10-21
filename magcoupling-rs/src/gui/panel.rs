@@ -5643,9 +5643,10 @@ mod tests {
         }
     }
 
-    /// The defaults with a design file's calibration coefficient of 1e300 (Review Focus 5): the
-    /// torque card's longest lines a design file makes, 887 characters (each number within the
-    /// owner's FO-4 bound), three times the defaults' longest.
+    /// The defaults with a design file's calibration coefficient of 1e300 (Review Focus 5): of
+    /// the degenerate values the card's robustness test carries, the one whose card lines run
+    /// longest, 887 characters (each number within the owner's FO-4 bound), three times the
+    /// defaults' longest.
     fn huge_calibration() -> DesignInputs {
         let mut inputs = DesignInputs::default();
         inputs.calibration.f_cal_original = 1e300;
@@ -6250,7 +6251,7 @@ mod tests {
         // the view it was decided for is unchanged and no user choice is recorded.
         let screen = egui::vec2(1080.0, 800.0);
         // The card as `start` decided it after `what`, past the collapse animation, and what
-        // rule 3 would leave it at the design now shown ([`rule_three_margin`]).
+        // rule 3 would leave it at the design now shown (`rule_three_margin`).
         let kept = |harness: &mut Harness, start: Option<(CardView, bool)>, what: &str| {
             harness.frame_after(1.0, Vec::new());
             let output = harness.frame(Vec::new());
@@ -6291,11 +6292,11 @@ mod tests {
     fn the_card_body_scrolls_above_the_drawing_s_floor() {
         // Slice 3 spec 8.5 test 24: opened by a click on its heading at 930 x 800, where rule 2
         // starts it closed and its body is taller than the room, the card's body scrolls and the
-        // drawing keeps its 160 points, at the defaults and at no back iron (the tallest card of
-        // the shipped designs). So it does at 1280 x 800 at a design file's calibration
-        // coefficient of 1e300 (Review Focus 5), whose lines are the longest a design file
-        // makes: there rules 1 and 2 pass, and rule 3, reading the open card's height before it
-        // is drawn, starts it closed.
+        // drawing keeps its 160 points, at the defaults and at no back iron (a taller card). So
+        // it does at 1280 x 800 at a design file's calibration coefficient of 1e300 (Review Focus
+        // 5), whose lines are the longest of the card's robustness values (`huge_calibration`):
+        // there rules 1 and 2 pass, and rule 3, reading the open card's height before it is
+        // drawn, starts it closed.
         // Opened by a click on its heading, the body is capped, so its last row starts out of
         // view (not painted, or cut by the body's clip); the mouse wheel over the body brings it
         // into view, whole, and the drawing keeps its floor throughout.
@@ -6367,9 +6368,9 @@ mod tests {
         // at 1280 x 800, where its header is one row, and at 930 x 1024, where the row wraps and
         // a click on the heading opens the card (rule 2 starts it closed); the bodies are under
         // their caps there. So it does at 1280 x 1024 at a design file's calibration coefficient
-        // of 1e300, whose lines are the longest a design file makes (Review Focus 5). At 930 x
-        // 800 the bodies are over the cap: the drawn body is the cap, the room at the card less
-        // the header, two item spacings and the drawing's floor.
+        // of 1e300, whose lines are the longest of the card's robustness values (Review Focus 5,
+        // `huge_calibration`). At 930 x 800 the bodies are over the cap: the drawn body is the
+        // cap, the room at the card less the header, two item spacings and the drawing's floor.
         let body_row = |harness: &Harness| {
             let font = harness.ctx.style().text_styles[&egui::TextStyle::Body].clone();
             harness.ctx.fonts(|f| f.row_height(&font))
