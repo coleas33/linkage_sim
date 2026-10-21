@@ -80,8 +80,10 @@ pub const SIDE_NO_PREDICTION: &str = "no prediction";
 /// shipped words of the Size tab's exploration line, which is built from it.
 pub const KEYWAY_BREAKS_THROUGH: &str = "the keyway breaks through the hub";
 /// A length side that is not a step of the overlapping magnet length ([`Words::Jump`]; owner
-/// 9A, widened by question O-1). It names no cause.
-pub const JUMP: &str = "not a step: the overlapping magnet length does not change by the step";
+/// 9A, widened by question O-1). It names no cause, and it names the step's amount, so "by the
+/// step" never reads as the step's doing (the G-3 review's SF-1).
+pub const JUMP: &str =
+    "not a step: the overlapping magnet length does not change by the step's amount";
 /// After a number whose stepped design takes another calibration factor (owner 16A): it names
 /// the change, never a cause.
 pub const CALIBRATION_CHANGE: &str = "includes a calibration change";
@@ -181,7 +183,8 @@ pub enum Words {
     KeywayBreaksThrough,
     /// The model has no prediction for the stepped design.
     NoPrediction,
-    /// The overlapping magnet length does not change by the step (the Overall length row).
+    /// The overlapping magnet length does not change by the step's amount (the Overall length
+    /// row).
     Jump,
 }
 
@@ -1074,6 +1077,24 @@ mod tests {
                 "{mm}"
             );
         }
+        // At 11.7 mm, a value on the cavity's slider, the +1 mm side lengthens the coupling by
+        // the step and leaves the overlap where it was, 12.70 mm bit for bit: a jump whose
+        // words must hold where the overlap does not move at all (G-3 round 2, SF-1).
+        let still = cavity(11.7);
+        assert_eq!(
+            words(&side_at(&still, None, OverallLength, true)),
+            Words::Jump
+        );
+        let stepped = slider_step(OverallLength, &still, None, true);
+        let overall =
+            |inputs: &DesignInputs| dimensions(inputs).expect("size controls").overall_length_mm;
+        assert!((overall(&stepped) - overall(&still) - 1.0).abs() <= STEP_SLACK_MM);
+        let overlap = compute_all(&still).model.active_length_mm;
+        assert_eq!(fixed(overlap, 2), "12.70");
+        assert_eq!(
+            compute_all(&stepped).model.active_length_mm.to_bits(),
+            overlap.to_bits()
+        );
         for mm in [12.7, 15.5] {
             for more in [false, true] {
                 assert!(
@@ -1932,6 +1953,10 @@ mod tests {
         for key in ["mixed", "short cavity"] {
             assert_eq!(lines(key)[2], jumps, "{key}");
         }
+        // The jump words name the step's amount, so "by the step" never reads as the step's
+        // doing; they hold where the overlap does not move at all (the cup cavity of 11.7 mm,
+        // test 3), as round 1's "changes by a different amount" did not (G-3 round 2, SF-1).
+        assert!(JUMP.ends_with("by the step's amount"), "{JUMP}");
 
         // The caption claims one control's step alone, never that everything else is held: at
         // the reverse pair the Overall length slider's own mapping trims the longer inner ring
