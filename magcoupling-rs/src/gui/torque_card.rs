@@ -521,11 +521,7 @@ pub fn card(
 /// `results` is `compute_all(design)`. The Magnets per ring row passes `keyway` false (decision
 /// D-1): the wall past the keyway does not depend on the count, so the design shown says so.
 #[allow(clippy::neg_cmp_op_on_partial_ord)] // the negation is the point: a NaN wall fails it
-pub(crate) fn side_words(
-    design: &DesignInputs,
-    results: &DesignResults,
-    keyway: bool,
-) -> Option<Words> {
+fn side_words(design: &DesignInputs, results: &DesignResults, keyway: bool) -> Option<Words> {
     if !blocks_fit(&design.coupling, &results.model) {
         Some(Words::DoesNotFit)
     } else if keyway && !(results.model.hub_wall_past_key_mm > 0.0) {
@@ -543,7 +539,7 @@ pub(crate) fn side_words(
 /// range, or one that overflows (a design file's count), reads [`Words::EndOfRange`], as would
 /// every step of a count input without a range; an odd count inside the range, which a design
 /// file can hold, [`Words::NotOnTheSlider`].
-pub(crate) fn count_step(npole: i64, more: bool) -> Result<i64, Words> {
+fn count_step(npole: i64, more: bool) -> Result<i64, Words> {
     let range = slider_range(FreeVariable::MagnetsPerRing.path()).ok_or(Words::EndOfRange)?;
     let stepped = if more {
         npole.checked_add(COUNT_STEP)
