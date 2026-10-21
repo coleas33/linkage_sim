@@ -402,14 +402,15 @@ pub(crate) fn side_at(
 
 /// The design the panel shows from `inputs` with Auto on `variable` at the Minimum OD
 /// preference `minimum`: the solver's value, or its best where the requirement is out of
-/// reach (`SizingRunner`), set through `gui::sizing::sized`, over the range the panel
-/// searches (`gui::sizing::sizing_range`, the panel's own rule).
+/// reach, over the range the panel searches (`gui::sizing::sizing_range`, the panel's own
+/// rule), as the panel's own call makes it (`SizingRunner::shown`). Panics where the solve
+/// gives no value, which would leave the inputs as they are.
 fn auto_shown(
     inputs: &crate::DesignInputs,
     variable: crate::engine::sizing::FreeVariable,
     minimum: Option<f64>,
 ) -> crate::DesignInputs {
-    use crate::gui::sizing::{SizingMode, SizingRunner, SizingState, sized, sizing_range};
+    use crate::gui::sizing::{SizingMode, SizingRunner, SizingState, sizing_range};
     let range = sizing_range(inputs, variable, minimum);
     let state = SizingState {
         mode: SizingMode::TorqueToMagnets,
@@ -417,10 +418,11 @@ fn auto_shown(
     };
     let mut runner = SizingRunner::default();
     runner.solve_now(inputs, &state, range);
-    let value = runner
-        .value(variable)
-        .unwrap_or_else(|| panic!("Auto on {variable:?} shows a value"));
-    sized(variable, inputs, value)
+    assert!(
+        runner.value(variable).is_some(),
+        "Auto on {variable:?} shows a value"
+    );
+    runner.shown(inputs, &state, range)
 }
 
 /// The torque card's designs: those of the slice 3 spec's section 2.1 and its Edges, each with
