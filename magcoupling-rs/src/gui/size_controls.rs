@@ -17,7 +17,9 @@ use crate::engine::size_controls::{
 };
 use crate::engine::sizing::FreeVariable;
 use crate::gui::dashboard::{end_effect_out_of_range, why_note_link};
-use crate::gui::format::{TORQUE_DECIMALS, change_decimals, fixed, signed_fixed, signed_percent};
+use crate::gui::format::{
+    TORQUE_DECIMALS, change_decimals, fixed, signed_percent, signed_torque_change, torque_shortfall,
+};
 use crate::gui::guidance::{Consequences, SIZE_TAB_NOTE};
 use crate::gui::input_ui::{hint_line, slider, weak_line};
 use crate::gui::inputs::InputCatalogue;
@@ -180,23 +182,28 @@ pub fn pullout_label(op_temp_C: f64) -> String {
 /// ([`signed_percent`]): "short 0.29 N·m (-11.6 %)", "margin +0.40 N·m (+16.0 %)", "short
 /// 0.001 N·m (-0.0 %)", so a design a hair under its requirement never reads like a pass. The
 /// percent is left out when the requirement is not a positive torque (the slider stops at its
-/// metadata minimum; a design file need not).
+/// metadata minimum; a design file need not). A number whose fixed form would need more than six
+/// whole digits, or a gap that reads zero at the cap while its percent does not, reads four
+/// significant digits as the readouts write values, a margin with its sign and a shortfall's
+/// size without (the owner's FO-4 at the slice-3 STOP; `signed_torque_change` and
+/// `torque_shortfall`): "margin +2.29 N·m (+2.285e302 %)", "short 1.000e300 N·m (-100.0 %)".
 #[allow(non_snake_case)] // unit suffix
 pub fn torque_gap_text(hot_low_Nm: f64, required_Nm: f64) -> (String, bool) {
     let meets = hot_low_Nm >= required_Nm;
     let gap_Nm = hot_low_Nm - required_Nm;
+    // The gap as a fraction of a positive requirement: the percent drawn beside it.
+    let fraction = (required_Nm > 0.0).then(|| gap_Nm / required_Nm);
     // The gap's own decimals, one rule for a margin and a shortfall.
     let decimals = change_decimals(gap_Nm, TORQUE_DECIMALS);
     let (word, torque) = if meets {
-        ("margin", signed_fixed(gap_Nm, decimals))
+        ("margin", signed_torque_change(gap_Nm, decimals, fraction))
     } else {
-        ("short", fixed(gap_Nm.abs(), decimals))
+        ("short", torque_shortfall(gap_Nm.abs(), decimals, fraction))
     };
     let torque = format!("{word} {torque} N·m");
-    let text = if required_Nm > 0.0 {
-        format!("{torque} ({})", signed_percent(gap_Nm / required_Nm))
-    } else {
-        torque
+    let text = match fraction {
+        Some(fraction) => format!("{torque} ({})", signed_percent(fraction)),
+        None => torque,
     };
     (text, meets)
 }
@@ -524,6 +531,37 @@ mod tests {
             (f64::INFINITY, 2.5, "margin +inf N·m (+inf %)", true),
             (f64::NEG_INFINITY, 2.5, "short +inf N·m (-inf %)", false),
             (f64::NAN, 2.5, "short NaN N·m (NaN %)", false),
+        ] {
+            assert_eq!(
+                torque_gap_text(hot_low, required),
+                (text.to_owned(), meets),
+                "{hot_low} against {required}"
+            );
+        }
+    }
+
+    #[test]
+    fn past_six_whole_digits_or_zero_beside_its_percent_the_gap_reads_four_significant_digits() {
+        // The owner's FO-4 at the slice-3 STOP: a gap whose fixed form would need more than six
+        // whole digits, or that reads zero at the cap (T-9) while its percent does not, and a
+        // percent past six whole digits, read as the readouts write values (four significant
+        // digits); a shortfall's size follows the margin's bound. A design file reaches each: a
+        // Required of 1e-300 or 1e300, a calibration coefficient of 1e300, a Required of 1e-6.
+        for (hot_low, required, text, meets) in [
+            (2.29, 1e-300, "margin +2.29 N·m (+2.290e302 %)", true),
+            (2.405e300, 2.5, "margin +2.405e300 N·m (+9.620e301 %)", true),
+            (2.0, 1e300, "short 1.000e300 N·m (-100.0 %)", false),
+            (1.5e-6, 1e-6, "margin +5.000e-7 N·m (+50.0 %)", true),
+            (0.5e-6, 1e-6, "short 5.000e-7 N·m (-50.0 %)", false),
+            // The bound at six whole digits, either way.
+            (1_000_002.4, 2.5, "margin +999999.90 N·m (+4.000e7 %)", true),
+            (1_000_002.5, 2.5, "margin +1.000e6 N·m (+4.000e7 %)", true),
+            (-999_997.4, 2.5, "short 999999.90 N·m (-4.000e7 %)", false),
+            (-999_997.5, 2.5, "short 1.000e6 N·m (-4.000e7 %)", false),
+            // No percent drawn (a requirement that is no positive torque): the bound alone.
+            (2e6, 0.0, "margin +2.000e6 N·m", true),
+            (1e-9, 0.0, "margin +0.00 N·m", true),
+            (-1e-9, 0.0, "short 0.00 N·m", false),
         ] {
             assert_eq!(
                 torque_gap_text(hot_low, required),

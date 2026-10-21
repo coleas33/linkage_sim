@@ -17,8 +17,9 @@
 //!
 //! [`TorqueCard::lines`] draws it: every text a named constant here (drafts until the slice's G-3
 //! review sets them), every number from the results through the Size tab's one number format
-//! (decision 10B, `gui::format`), a row's two N·m at one precision (T-14). The Auto marking is
-//! drawn there too, outside the card the cache keeps, so one card serves every Auto state.
+//! (decision 10B with the owner's FO-4 bound, `gui::format`), a row's two N·m at one precision
+//! (T-14). The Auto marking is drawn there too, outside the card the cache keeps, so one card
+//! serves every Auto state.
 
 use crate::engine::meta::SliderRange;
 use crate::engine::model::blocks_fit;
@@ -26,8 +27,8 @@ use crate::engine::size_controls::{SizeControls, dimensions, dimensions_with_min
 use crate::engine::sizing::FreeVariable;
 use crate::gui::dashboard::{Level, result_info};
 use crate::gui::format::{
-    TORQUE_DECIMALS, decimals_with_a_digit, shared_change_decimals, signed_change, signed_fixed,
-    signed_percent, with_unit,
+    TORQUE_DECIMALS, decimals_with_a_digit, shared_change_decimals, signed_change, signed_percent,
+    signed_torque_change, with_unit,
 };
 use crate::gui::guidance::{
     CheckGuide, FACE_GAP, check_terms, counted_guides, level, result_number,
@@ -372,13 +373,17 @@ impl Row {
     }
 
     /// One side (spec 4.1): "{step} -> {words}", or "{step} -> {N·m} N·m ({percent})" with the
-    /// N·m at the row's `decimals`, then ", " and each cost.
+    /// N·m at the row's `decimals` beside its percent ([`signed_torque_change`]: past the owner's
+    /// FO-4 bound, four significant digits), then ", " and each cost.
     fn side_text(&self, side: &Side, more: bool, decimals: usize) -> String {
         let step = self.control.step_text(more);
         match side {
             Side::Words(words) => format!("{step} -> {}", words.text()),
             Side::Change(change) => {
-                let torque = with_unit(signed_fixed(change.change_Nm, decimals), "N·m");
+                let torque = with_unit(
+                    signed_torque_change(change.change_Nm, decimals, Some(change.fraction)),
+                    "N·m",
+                );
                 let number = format!("{step} -> {torque} ({})", signed_percent(change.fraction));
                 std::iter::once(number)
                     .chain(change.costs(self.control))
@@ -815,7 +820,7 @@ mod tests {
     };
     use crate::engine::size_controls::{resize_diameter_with_minimum, resize_length};
     use crate::engine::sizing::is_valid;
-    use crate::gui::format::{fixed, reads_not_zero};
+    use crate::gui::format::{fixed, reads_not_zero, signed_fixed};
     use crate::gui::guidance::{
         CLAMP, CLEARANCE, COLD_HIGH, CUP_WALL, Consequences, GEARBOX, HOT_MIN, RING_SIZE_STAYS,
         SHAFT_JOINT, SPACE_CLAIM, SPACE_CLAIM_AXIS_SIZES, TEMPERATURE, WALL_NEEDED, guide,
@@ -2772,9 +2777,11 @@ mod tests {
         // design it opens, so a panic here ends the app (wasm). At each such value, at both
         // back irons and at the Minimum OD's top, the card is computed and equals a second
         // card of the same design (no field holds a NaN, spec 3.1), and every line of every
-        // Auto state is drawn in plain words with the font's glyphs. What the numbers read at
-        // the degenerate ones (a count of 2, a calibration coefficient of 1e-9 or 1e300, a
-        // variation just under 1) is the owner's to rule at the release stop.
+        // Auto state is drawn in plain words with the font's glyphs. At the degenerate ones the
+        // owner ruled at the slice-3 STOP: a count below the slider's range draws one line
+        // (FO-3), and no number on the card or in the readout's gap above it is wider than
+        // WIDEST_NUMBER, nor does an N·m there read zero beside a percent that does not (FO-4: a
+        // calibration coefficient of 1e-9 or 1e300, a variation just under 1).
         type Edit = fn(&mut DesignInputs);
         let edits: [(&str, Edit); 47] = [
             ("npole 0", |d| d.coupling.npole = 0),
@@ -2892,13 +2899,102 @@ mod tests {
                                 "{what}: {line}"
                             );
                             assert_glyphs(&ctx, line, &what);
+                            // The owner's FO-4.
+                            assert_numbers_fit(line, &what);
+                            assert_no_zero_beside_its_percent(line, &what);
                         }
+                    }
+                    // The readout's gap above the card, where it draws one (the hot-low readout
+                    // shows a number), keeps the same bound.
+                    let results = compute_all(&inputs);
+                    let hot_low = results.metal.torque_hot_low_Nm;
+                    if predicts(&results, hot_low) {
+                        let required = inputs.metal.required_min_Nm;
+                        let (gap, _) = size_controls::torque_gap_text(hot_low, required);
+                        assert_numbers_fit(&gap, &what);
+                        assert_no_zero_beside_its_percent(&gap, &what);
                     }
                 }
             }
         }
         // Not vacuous: most of these designs draw rows.
         assert!(rows > 200, "{rows} rows");
+    }
+
+    /// The widest number a card line or the readout's gap draws (the owner's FO-4 at the slice-3
+    /// STOP): a sign, six whole digits, a point and the cap's four decimals ("+999999.9999", a
+    /// row's N·m at T-14's shared decimals). Four significant digits take at most 11
+    /// ("-4.941e-324").
+    const WIDEST_NUMBER: usize = 12;
+
+    /// Asserts that every number `text` draws ([`numbers_in`]) is at most [`WIDEST_NUMBER`]
+    /// characters wide.
+    fn assert_numbers_fit(text: &str, what: &str) {
+        for number in numbers_in(text).1 {
+            assert!(
+                number.chars().count() <= WIDEST_NUMBER,
+                "{what}: {number} in {text}"
+            );
+        }
+    }
+
+    /// Asserts that no N·m `text` draws beside its percent, "{N·m} N·m ({percent} %)" (a card
+    /// side, the readout's gap), reads zero while that percent reads a digit (trap 2; the owner's
+    /// FO-4 at the slice-3 STOP).
+    fn assert_no_zero_beside_its_percent(text: &str, what: &str) {
+        let mut pieces = text.split(" N·m (");
+        let mut before = pieces.next().unwrap_or_default();
+        for after in pieces {
+            let torque = before.rsplit(' ').next().unwrap_or_default();
+            let (percent, _) = after.split_once(" %)").expect("a percent after the N·m");
+            assert!(
+                reads_not_zero(torque) || !reads_not_zero(percent),
+                "{what}: {torque} N·m ({percent} %) in {text}"
+            );
+            before = after;
+        }
+    }
+
+    #[test]
+    fn at_a_design_file_s_magnitudes_a_number_reads_four_significant_digits() {
+        // The owner's FO-4 at the slice-3 STOP, at the G-3 record's probe 13: a calibration
+        // coefficient of 1e-9 with no back iron at 8 magnets puts the sides' changes near
+        // 1e-11 N·m beside true percents, which read "+0.00" and "-0.00", and one of 1e300 or a
+        // Required of 1e-300 put numbers of about 300 digits on the card and in the readout's
+        // gap. Each reads four significant digits with its sign, as the record writes the lines.
+        let [od, _, _, count] = Control::ALL.map(Control::label);
+        let gap = |inputs: &DesignInputs| {
+            let hot_low = compute_all(inputs).metal.torque_hot_low_Nm;
+            size_controls::torque_gap_text(hot_low, inputs.metal.required_min_Nm).0
+        };
+        let mut small = DesignInputs::default();
+        small.coupling.backiron = 0;
+        small.coupling.npole = 8;
+        small.calibration.f_cal_original = 1e-9;
+        let lines = card_at(&small, None).lines(None);
+        let start = format!("{od}: -1 mm -> +1.690e-11 N·m (+1.9 %), ");
+        assert!(lines[1].starts_with(&start), "{}", lines[1]);
+        // The row's numbers, each read whole, its exponent included, as the width pin of
+        // the_card_never_panics_at_the_values_a_design_file_can_carry reads them.
+        assert_eq!(
+            numbers_in(&lines[1]).1,
+            ["+1.690e-11", "+1.9", "-0.01", "-2.412e-11", "-2.7", "+0.01"]
+        );
+        let two_more = format!("; +2 -> +1.44 N·m (+1.612e11 %), {CALIBRATION_CHANGE}, ");
+        assert!(
+            lines[4].starts_with(&format!("{count}: ")) && lines[4].contains(&two_more),
+            "{}",
+            lines[4]
+        );
+        let mut large = DesignInputs::default();
+        large.calibration.f_cal_original = 1e300;
+        let lines = card_at(&large, None).lines(None);
+        let start = format!("{od}: -1 mm -> {SIDE_DOES_NOT_FIT}; +1 mm -> +8.401e298 N·m (+3.5 %)");
+        assert!(lines[1].starts_with(&start), "{}", lines[1]);
+        assert_eq!(gap(&large), "margin +2.405e300 N·m (+9.622e301 %)");
+        let mut low_required = DesignInputs::default();
+        low_required.metal.required_min_Nm = 1e-300;
+        assert_eq!(gap(&low_required), "margin +2.29 N·m (+2.285e302 %)");
     }
 
     /// The side texts of a row's line, "{label}: {fewer}; {more}": the two sides.
@@ -3028,7 +3124,8 @@ mod tests {
 
     /// `line` with each number it draws replaced by '#' (its skeleton), and those numbers. A
     /// side's step ("-1", "+0.1", "-2" before " mm -> " or " -> ") is the template's, so it
-    /// stays in the skeleton.
+    /// stays in the skeleton. A number in four significant digits keeps its exponent
+    /// ("+1.690e-11", "+1.000e6": `format_value`'s form, the owner's FO-4).
     fn numbers_in(line: &str) -> (String, Vec<String>) {
         let chars: Vec<char> = line.chars().collect();
         let (mut skeleton, mut numbers) = (String::new(), Vec::new());
@@ -3044,6 +3141,16 @@ mod tests {
             let mut end = i + 1;
             while end < chars.len() && (chars[end].is_ascii_digit() || chars[end] == '.') {
                 end += 1;
+            }
+            // An exponent: "e", a minus sign or none, then digits.
+            if chars.get(end) == Some(&'e') {
+                let digits = end + 1 + usize::from(chars.get(end + 1) == Some(&'-'));
+                if chars.get(digits).is_some_and(char::is_ascii_digit) {
+                    end = digits;
+                    while end < chars.len() && chars[end].is_ascii_digit() {
+                        end += 1;
+                    }
+                }
             }
             let number: String = chars[i..end].iter().collect();
             let after: String = chars[end..].iter().collect();
