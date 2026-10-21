@@ -233,8 +233,8 @@ pub(crate) fn list_row(ui: &egui::Ui) -> f32 {
 }
 
 /// The room the drawing needs to keep [`MIN_DRAWING_HEIGHT`] with [`MIN_LIST_ROWS`] rows of the
-/// callout list under it [points] (slice 3 spec 6.2): what the Size tab's torque card leaves
-/// above the drawing, starting closed rather than take it and capping its body above it.
+/// callout list under it [points] (slice 3 spec 6.2): the room the Size tab's torque card leaves
+/// the drawing below it, starting closed rather than take it and capping its body above it.
 pub(crate) fn drawing_floor(ui: &egui::Ui) -> f32 {
     MIN_DRAWING_HEIGHT + MIN_LIST_ROWS * list_row(ui)
 }
