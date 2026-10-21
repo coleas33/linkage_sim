@@ -826,8 +826,9 @@ mod tests {
         TORQUE_DECIMALS, fixed, last_digit_step, reads_not_zero, signed_fixed,
     };
     use crate::gui::guidance::{
-        CLAMP, CLEARANCE, COLD_HIGH, CUP_WALL, Consequences, GEARBOX, HOT_MIN, RING_SIZE_STAYS,
-        SHAFT_JOINT, SPACE_CLAIM, SPACE_CLAIM_AXIS_SIZES, TEMPERATURE, WALL_NEEDED, guide,
+        CLAMP, CLEARANCE, COLD_HIGH, CUP_WALL, Consequences, GEARBOX, HOT_MIN, Quoted,
+        RING_SIZE_STAYS, SHAFT_JOINT, SPACE_CLAIM, SPACE_CLAIM_AXIS_SIZES, TEMPERATURE,
+        WALL_NEEDED, guide,
     };
     use crate::gui::test_support::{
         CardDesign, SCREEN, assert_glyphs, card_at, card_designs, clamp_at_its_limit,
@@ -2368,8 +2369,9 @@ mod tests {
         // stepped design rebuilt here: the flips are exactly the counted checks whose level
         // differs, in the guides' order; each quoted change is of a check that fails on both
         // designs (never Hot-low torque, which is the row's own number, nor Temperature limits,
-        // whose terms read stored 3D fields: T-13), is drawn (`shows`), and is in its result's
-        // own unit, one of mm, µm, MPa, °C and N·m.
+        // whose terms read stored 3D fields: T-13), is drawn (`shows`), is in its result's own
+        // unit, one of mm, µm, MPa, °C and N·m, and is that result on the stepped design less
+        // the design shown's, bit for bit.
         let designs = card_designs();
         let mut quotes = 0;
         for design in &designs {
@@ -2407,14 +2409,26 @@ mod tests {
                         assert!(![HOT_MIN, TEMPERATURE].contains(&guide.check), "{what}");
                         assert!(shows(margin.change, margin.decimals), "{what}: {margin:?}");
                         assert!(QUOTED_UNITS.contains(&margin.unit), "{what}: {margin:?}");
-                        // The unit and the decimals are those of a term the check quotes.
-                        assert!(
-                            check_terms(guide.check, &design.inputs, &before)
-                                .iter()
-                                .filter_map(|term| term.quoted)
-                                .any(|q| q.name == margin.name
+                        // The unit and the decimals are those of the one term the check
+                        // quotes under its name, and the change is that term's result on the
+                        // stepped design less the design shown's, bit for bit.
+                        let quoted: Vec<Quoted> = check_terms(guide.check, &design.inputs, &before)
+                            .iter()
+                            .filter_map(|term| term.quoted)
+                            .filter(|q| {
+                                q.name == margin.name
                                     && q.decimals == margin.decimals
-                                    && unit_of(q.path) == margin.unit),
+                                    && unit_of(q.path) == margin.unit
+                            })
+                            .collect();
+                        let [quoted] = quoted[..] else {
+                            panic!("{what}: {margin:?} against {quoted:?}")
+                        };
+                        assert_eq!(
+                            margin.change.to_bits(),
+                            (result_number(&after, quoted.path)
+                                - result_number(&before, quoted.path))
+                            .to_bits(),
                             "{what}: {margin:?}"
                         );
                         quotes += 1;
@@ -3411,9 +3425,10 @@ mod tests {
         // N·m and as a fraction, each size change and each quoted change) is tripled: every line
         // keeps its skeleton, so its words are the template's and the constants', and differs at
         // every number it draws, so each number is read from the card (whose fields test 1 holds
-        // to compute_all). Three times a drawn value moves its first drawn digit; two designs
-        // could not show it, since a gap step's Running clearance change is the step itself at
-        // every design, and a torque that changes in proportion keeps every percent.
+        // to compute_all, and test 7 each quoted change). Three times a drawn value moves its
+        // first drawn digit; two designs could not show it, since a gap step's Running clearance
+        // change is the step itself at every design, and a torque that changes in proportion
+        // keeps every percent.
         let tripled = |card: &TorqueCard| -> TorqueCard {
             let mut card = card.clone();
             if let TorqueCard::Rows(rows) = &mut card {
