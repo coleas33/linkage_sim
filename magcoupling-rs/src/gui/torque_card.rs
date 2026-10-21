@@ -832,7 +832,7 @@ mod tests {
     use crate::gui::test_support::{
         CardDesign, SCREEN, assert_glyphs, card_at, card_designs, clamp_at_its_limit,
         end_effect_at_a_step, keyway_through, no_back_iron, only_the_clamp_fails, short_magnets,
-        side_at, sized_frame, slider_range,
+        side_at, sized_frame, slider_range, with_cup_depth,
     };
 
     /// The number sides of the cards of section 2's designs ([`card_designs`]): the tests that
@@ -1159,18 +1159,13 @@ mod tests {
         // 12.5 mm the +1 mm side moves it +0.30 and +0.80 mm; at 10.7 mm it moves -1.00 mm, the
         // step's size the wrong way (an unsigned comparison read it as a number). At 12.7 and
         // 15.5 mm both sides move it by exactly the step.
-        let cavity = |mm: f64| {
-            let mut inputs = DesignInputs::default();
-            inputs.metal.cup_depth_mm = mm;
-            inputs
-        };
         assert_eq!(
             words(&design("short cavity").side(OverallLength, false)),
             Words::Jump
         );
         for mm in [11.0, 12.0, 12.5, 10.7] {
             assert_eq!(
-                words(&side_at(&cavity(mm), None, OverallLength, true)),
+                words(&side_at(&with_cup_depth(mm), None, OverallLength, true)),
                 Words::Jump,
                 "{mm}"
             );
@@ -1178,7 +1173,7 @@ mod tests {
         // At 11.7 mm, a value on the cavity's slider, the +1 mm side lengthens the coupling by
         // the step and leaves the overlap where it was, 12.70 mm bit for bit: a jump whose
         // words must hold where the overlap does not move at all (G-3 round 2, SF-1).
-        let still = cavity(11.7);
+        let still = with_cup_depth(11.7);
         assert_eq!(
             words(&side_at(&still, None, OverallLength, true)),
             Words::Jump
@@ -1196,7 +1191,7 @@ mod tests {
         // At 10.7 mm, also on the cavity's slider, the +1 mm side (a jump, above) moves the
         // overlap by the step's size the other way, 12.70 -> 11.70 mm: so the jump words name the
         // step's direction as well as its amount (the fold-in's G-3 re-review, MF-1).
-        let reversed = cavity(10.7);
+        let reversed = with_cup_depth(10.7);
         let moved = compute_all(&slider_step(OverallLength, &reversed, None, true))
             .model
             .active_length_mm
@@ -1215,7 +1210,7 @@ mod tests {
             for more in [false, true] {
                 assert!(
                     matches!(
-                        side_at(&cavity(mm), None, OverallLength, more),
+                        side_at(&with_cup_depth(mm), None, OverallLength, more),
                         Side::Change(_)
                     ),
                     "{mm} {more}"
@@ -1727,9 +1722,12 @@ mod tests {
     #[test]
     fn a_side_reads_a_number_exactly_when_sizing_counts_its_design() {
         // Spec 3.3 steps 4-6: `side_words` is sizing's validity rule (`is_valid`) in its order,
-        // one rule for every row. Moved with the neighbour lines' tests of gui/guidance.rs: their
-        // designs at every even count (the defaults, magnets too short for the model, the end
-        // effect near its edge) and the keyway through the hub, broken and intact.
+        // one rule for every row, at every even count of the magnet slider over the defaults,
+        // magnets too short for the model, the end effect at a step (`end_effect_at_a_step()`)
+        // and the keyway through the hub, broken and intact. Modelled on the neighbour lines'
+        // test of gui/guidance.rs, which moved here with the lines as this test's last part, the
+        // card's count row, so the one rule is checked in one place (it was
+        // with_hub_wall_past_the_keyway_a_neighbour_reads_a_torque_exactly_when_sizing_counts_it).
         let range = FreeVariable::MagnetsPerRing.range();
         let counts = (range.min as i64..=range.max as i64).step_by(2);
         let mut intact = keyway_through();
@@ -1769,7 +1767,7 @@ mod tests {
         // Decision D-1: with the keyway left out, a keyway through the hub changes no side's
         // words; each count reads as with the keyway intact (the wall past it does not depend on
         // the count).
-        for npole in counts {
+        for npole in counts.clone() {
             let (broken, broken_results) = at(&keyway_through(), npole);
             let (whole, whole_results) = at(&intact, npole);
             assert_eq!(
@@ -1796,6 +1794,49 @@ mod tests {
             side_words(&short_and_keyed, &results, false),
             Some(Words::NoPrediction)
         );
+        // Through the card's count row, with wall past the keyway: over the slider's even counts
+        // at the defaults and at the end effect at a step, whose end effect two magnets fewer take
+        // out of range, a count side is a number exactly when its design counts for inverse
+        // sizing; a step the slider does not take reads END_OF_RANGE.
+        let (mut numbers, mut words) = (0, 0);
+        for base in [DesignInputs::default(), end_effect_at_a_step()] {
+            for npole in counts.clone() {
+                let (inputs, _) = at(&base, npole);
+                let shown = card_at(&inputs, None);
+                // A design shown that does not fit or predicts nothing has no rows (test 0).
+                let Some(row) = shown
+                    .rows()
+                    .iter()
+                    .find(|row| row.control == Control::MagnetsPerRing)
+                else {
+                    continue;
+                };
+                for (more, side) in sides(row) {
+                    let Ok(count) = count_step(npole, more) else {
+                        assert_eq!(*side, Side::Words(Words::EndOfRange), "{npole}");
+                        continue;
+                    };
+                    let (stepped, stepped_results) = at(&inputs, count);
+                    assert!(
+                        stepped_results.model.hub_wall_past_key_mm > 0.0,
+                        "{npole} -> {count}"
+                    );
+                    let number = matches!(side, Side::Change(_));
+                    assert_eq!(
+                        number,
+                        is_valid(&stepped, &stepped_results),
+                        "{npole} -> {count}: {side:?}"
+                    );
+                    if number {
+                        numbers += 1;
+                    } else {
+                        words += 1;
+                    }
+                }
+            }
+        }
+        // Not vacuous: both outcomes occur.
+        assert!(numbers > 0 && words > 0, "{numbers} numbers, {words} words");
     }
 
     // ------------------------------------------------------------------ what a step costs, drawn
@@ -3575,49 +3616,6 @@ mod tests {
         };
         assert_eq!(read(&broken), read(&intact));
         assert!(read(&broken)[0].is_ok(), "{:?}", read(&broken));
-    }
-
-    #[test]
-    fn with_hub_wall_past_the_keyway_a_count_side_reads_a_number_exactly_when_sizing_counts_it() {
-        // Was with_hub_wall_past_the_keyway_a_neighbour_reads_a_torque_exactly_when_sizing_counts_it:
-        // with wall past the keyway, a count side is a number exactly when its design counts for
-        // inverse sizing (sizing::is_valid), over the slider's even counts, at the defaults and at
-        // a design whose end effect is in range while two magnets fewer take it out (its -2
-        // side reads "no prediction").
-        let range = FreeVariable::MagnetsPerRing.range();
-        let (mut numbers, mut words) = (0, 0);
-        for design in [DesignInputs::default(), end_effect_at_a_step()] {
-            for npole in (range.min as i64..=range.max as i64).step_by(2) {
-                let inputs = FreeVariable::MagnetsPerRing.apply(&design, npole as f64);
-                let shown = card_at(&inputs, None);
-                // A design shown that does not fit or predicts nothing has no rows (test 0).
-                let Some(row) = shown
-                    .rows()
-                    .iter()
-                    .find(|row| row.control == Control::MagnetsPerRing)
-                else {
-                    continue;
-                };
-                for (more, side) in sides(row) {
-                    let Ok(count) = count_step(npole, more) else {
-                        assert_eq!(*side, Side::Words(Words::EndOfRange), "{npole}");
-                        continue;
-                    };
-                    let at = FreeVariable::MagnetsPerRing.apply(&inputs, count as f64);
-                    let r = compute_all(&at);
-                    assert!(r.model.hub_wall_past_key_mm > 0.0, "{npole} -> {count}");
-                    let number = matches!(side, Side::Change(_));
-                    assert_eq!(number, is_valid(&at, &r), "{npole} -> {count}: {side:?}");
-                    if number {
-                        numbers += 1;
-                    } else {
-                        words += 1;
-                    }
-                }
-            }
-        }
-        // Not vacuous: both outcomes occur.
-        assert!(numbers > 0 && words > 0, "{numbers} numbers, {words} words");
     }
 
     #[test]

@@ -266,12 +266,18 @@ pub(crate) fn keyway_through() -> crate::DesignInputs {
 }
 
 /// A cup cavity input shorter than the outer ring (slice 3 spec 2.1, "short cavity"):
-/// `metal.cup_depth_mm` 11.0 against B842SH's 12.7 mm, the axial override blank. The design
-/// reads as the defaults (hot-low 2.2852 N·m, failing the same 4 of 9 checks); its Overall
-/// length is 27.30 mm on a range of 18.30 to 67.10 mm.
+/// `metal.cup_depth_mm` 11.0 against B842SH's 12.7 mm, the axial override blank
+/// ([`with_cup_depth`]). The design reads as the defaults (hot-low 2.2852 N·m, failing the same
+/// 4 of 9 checks); its Overall length is 27.30 mm on a range of 18.30 to 67.10 mm.
 pub(crate) fn short_cavity() -> crate::DesignInputs {
+    with_cup_depth(11.0)
+}
+
+/// The defaults with the cup cavity input at `mm` (`metal.cup_depth_mm`), the axial override
+/// blank, as [`with_poles`] sets the count.
+pub(crate) fn with_cup_depth(mm: f64) -> crate::DesignInputs {
     let mut inputs = crate::DesignInputs::default();
-    inputs.metal.cup_depth_mm = 11.0;
+    inputs.metal.cup_depth_mm = mm;
     inputs
 }
 
