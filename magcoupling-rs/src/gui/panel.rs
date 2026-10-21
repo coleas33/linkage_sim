@@ -1089,15 +1089,17 @@ impl MagcouplingPanel {
     /// [`CARD_OPEN_MIN_WIDTH`] wide (rule 2) and the open card leaves the drawing its floor
     /// (rule 3: the card's height measured before it is drawn, [`card_open_height`] of `lines`,
     /// is at most the room `ui` has at the card over the drawing's floor,
-    /// [`room_over_the_floor`], which the card's body is capped at too).
+    /// [`room_over_the_floor`], which the card's body is capped at too). Rule 3 is read last:
+    /// its pre-measure lays every line out, so it runs only where rules 1 and 2 open the card.
     fn card_default(&mut self, ui: &egui::Ui, card: CardFrame, lines: &[String]) -> bool {
         if let Some((view, open)) = self.card_start
             && view == card.view
         {
             return open;
         }
-        let fits = card_open_height(ui, lines) <= room_over_the_floor(ui);
-        let open = !card.view.equation_open && card.region_width >= CARD_OPEN_MIN_WIDTH && fits;
+        let open = !card.view.equation_open
+            && card.region_width >= CARD_OPEN_MIN_WIDTH
+            && card_open_height(ui, lines) <= room_over_the_floor(ui);
         self.card_start = Some((card.view, open));
         open
     }
@@ -5882,6 +5884,60 @@ mod tests {
             assert_eq!((default, card_open(&harness)), (open, open));
             assert_eq!(harness.panel.card_choice, None);
         }
+    }
+
+    #[test]
+    fn the_card_s_default_opens_at_each_rule_s_boundary() {
+        // T6 M-2 (the fold-in): spec 6.2's rules say "at least", so each opens the card at its
+        // boundary. Rule 2: a centre region 400 points wide (T-10) opens it, one 399.99 wide
+        // closes it. Rule 3: a region exactly as tall as the open card's pre-measure, the item
+        // spacing before the drawing and the drawing's floor opens it, one 0.01 point shorter
+        // closes it. Rule 1: the Equation panel open closes it where rules 2 and 3 pass.
+        // card_default decides in a scratch frame of the case's width and height (a region at
+        // the origin, so its available height is that height exactly), each case on a new
+        // panel, so no stored default answers.
+        let defaults = DesignInputs::default();
+        let lines = Consequences::of(&defaults, &compute_all(&defaults), None, true)
+            .card
+            .lines(None);
+        let decide = |equation_open: bool, width: f32, height: f32| {
+            let mut panel = MagcouplingPanel::new();
+            let card = CardFrame {
+                view: CardView {
+                    equation_open,
+                    screen_width: 1280,
+                    screen_height: 800,
+                },
+                region_width: width,
+            };
+            let region = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
+            let mut open = None;
+            crate::gui::test_support::region_frame(
+                &egui::Context::default(),
+                egui::vec2(width + 100.0, 4000.0),
+                region,
+                |ui| open = Some(panel.card_default(ui, card, &lines)),
+            );
+            open.expect("decided")
+        };
+        // Rule 2, with room to spare for rule 3.
+        assert!(decide(false, 400.0, 4000.0), "400 points wide");
+        assert!(!decide(false, 399.99, 4000.0), "399.99 points wide");
+        // Rule 3, in a region wide enough for rule 2.
+        let width = 600.0;
+        let (open_height, floor) = scratch_measure(width, &lines);
+        let spacing = egui::Context::default().style().spacing.item_spacing.y;
+        let exact = open_height + spacing + floor;
+        // The room the panel reads in a region `exact` tall is the open height to the bit, so
+        // the case below sits on the boundary.
+        assert_eq!(exact - spacing - floor, open_height, "{exact}");
+        assert!(decide(false, width, exact), "exactly the room: {exact}");
+        assert!(
+            !decide(false, width, exact - 0.01),
+            "0.01 point short of {exact}"
+        );
+        // Rule 1 closes it where rules 2 and 3 pass.
+        assert!(!decide(true, width, 4000.0), "the Equation panel open");
     }
 
     #[test]
