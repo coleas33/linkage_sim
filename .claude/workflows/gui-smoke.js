@@ -89,6 +89,13 @@ const url = ARGS.url || 'http://localhost:8080'
 // Only the release run sets frame_check: true (slice-3 spec 7.2 step 4); a drag that did not move
 // the gap, drew under MIN_DRAG_FRAMES frames or had a p95 over FRAME_BUDGET_MS then fails the
 // run. Otherwise the drag's times are recorded and never fail an ordinary or live run.
+// frame_check is true, false or absent: any other value (the string "true", the number 1) stops
+// the run here, before its first step, rather than read as false and let a slow drag pass. The
+// calculator's result records frame_check, so a run shows whether its check applied.
+if (ARGS.frame_check !== undefined && typeof ARGS.frame_check !== 'boolean') {
+  const given = JSON.stringify(ARGS.frame_check)
+  throw new Error(`gui-smoke: frame_check must be true or false, not ${given}`)
+}
 const frameCheck = ARGS.frame_check === true
 
 let linkage = null
@@ -147,6 +154,7 @@ passed=true only if: page loaded, canvas present, first_view, details_toggle, sh
   magcoupling.drag_frames_within_60fps = magcoupling.drag_moved === true
     && Number.isInteger(magcoupling.drag_frames) && magcoupling.drag_frames >= MIN_DRAG_FRAMES
     && Number.isFinite(p95) && p95 <= FRAME_BUDGET_MS
+  magcoupling.frame_check = frameCheck
   if (frameCheck) magcoupling.passed = magcoupling.passed && magcoupling.drag_frames_within_60fps
 }
 
