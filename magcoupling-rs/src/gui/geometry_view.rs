@@ -757,12 +757,23 @@ mod tests {
         let results = compute_all(&inputs);
         let size = Vec2::new(1000.0, 900.0);
         let mut floor = f32::NAN;
+        // The figures by hand, not the formulas again: in egui's default style (this context's)
+        // a body text row is 14.375 points and the item spacing 3, so a list row is 17.375
+        // points and the floor 160 + 3 x 17.375 = 212.125 (spec 6.2's 160-point drawing over
+        // three list rows).
         sized_frame(&ctx, size, Vec::new(), |ui| {
-            let row = ui.text_style_height(&egui::TextStyle::Body) + ui.spacing().item_spacing.y;
-            assert_eq!(list_row(ui), row);
+            assert_eq!(
+                (
+                    ui.text_style_height(&egui::TextStyle::Body),
+                    ui.spacing().item_spacing.y
+                ),
+                (14.375, 3.0),
+                "egui's default style"
+            );
+            assert_eq!(list_row(ui), 17.375);
             floor = drawing_floor(ui);
-            assert_eq!(floor, MIN_DRAWING_HEIGHT + MIN_LIST_ROWS * row);
         });
+        assert_eq!(floor, 212.125);
         for (height, keeps) in [(floor, true), (floor - 1.0, false)] {
             let region = Rect::from_min_size(Pos2::new(20.0, 30.0), Vec2::new(700.0, height));
             let mut drawing = f32::NAN;

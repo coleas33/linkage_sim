@@ -5732,6 +5732,13 @@ mod tests {
         harness.ctx.style().spacing.item_spacing.y
     }
 
+    /// Whether `drawing` keeps the drawing's floor, [`MIN_DRAWING_HEIGHT`] (slice 3 spec 6.2), to
+    /// within 0.01 point: a card body capped to the room over the floor leaves the drawing that
+    /// tall up to rounding in the cap's arithmetic. The card tests' one check of the floor.
+    fn keeps_its_floor(drawing: egui::Rect) -> bool {
+        drawing.height() >= MIN_DRAWING_HEIGHT - 0.01
+    }
+
     /// The room at the torque card in `output` [points]: from its heading's top to the bottom
     /// of the heading's clip, the centre view's region (`confined` clips to it). It is the
     /// height that rule 3 reads at the card (`ui.available_height()`).
@@ -5814,10 +5821,7 @@ mod tests {
             for line in &lines {
                 assert_eq!(count(&output, line), 1, "{case}: {line}");
             }
-            assert!(
-                drawing.height() >= MIN_DRAWING_HEIGHT,
-                "{case}: {drawing:?}"
-            );
+            assert!(keeps_its_floor(drawing), "{case}: {drawing:?}");
             assert_eq!(count(&output, REPLACED_LABEL), 0, "{case}");
         }
     }
@@ -6028,10 +6032,7 @@ mod tests {
             assert!(card_open(harness), "{what}");
             assert_eq!(harness.panel.card_choice, Some(true), "{what}");
             let drawing = drawing_rect(&output);
-            assert!(
-                drawing.height() >= MIN_DRAWING_HEIGHT - 0.01,
-                "{what}: {drawing:?}"
-            );
+            assert!(keeps_its_floor(drawing), "{what}: {drawing:?}");
         };
         still_open(&mut harness, "the click");
         harness.panel.inputs.metal.face_gap_mm = 2.0;
@@ -6306,10 +6307,7 @@ mod tests {
             let output = harness.frame_after(1.0, Vec::new());
             assert!(card_open(harness), "{case}");
             let drawing = drawing_rect(&output);
-            assert!(
-                drawing.height() >= MIN_DRAWING_HEIGHT - 0.01,
-                "{case}: {drawing:?}"
-            );
+            assert!(keeps_its_floor(drawing), "{case}: {drawing:?}");
             let last = shown_consequences(harness)
                 .card
                 .lines(harness.panel.auto())
@@ -6336,10 +6334,7 @@ mod tests {
             let clip = text_clip_rect(&output, &last);
             assert!(clip.contains_rect(row), "{case}: {row:?} cut by {clip:?}");
             let drawing = drawing_rect(&output);
-            assert!(
-                drawing.height() >= MIN_DRAWING_HEIGHT - 0.01,
-                "{case}: {drawing:?}"
-            );
+            assert!(keeps_its_floor(drawing), "{case}: {drawing:?}");
             assert!(card_open(harness), "{case}");
         };
         let narrow = egui::vec2(930.0, 800.0);
@@ -6387,14 +6382,19 @@ mod tests {
             harness.ctx.fonts(|f| f.row_height(&font))
         };
         let defaults = || design_of(DesignInputs::default());
-        for (size, design) in [
-            (egui::vec2(1280.0, 800.0), defaults()),
-            (egui::vec2(1280.0, 800.0), smoke_design()),
-            (egui::vec2(930.0, 1024.0), defaults()),
-            (egui::vec2(930.0, 1024.0), smoke_design()),
-            (egui::vec2(1280.0, 1024.0), design_of(huge_calibration())),
-            (egui::vec2(930.0, 800.0), defaults()),
-            (egui::vec2(930.0, 800.0), smoke_design()),
+        // Each case: the screen, the design, and whether the body is over its cap there.
+        for (size, design, capped) in [
+            (egui::vec2(1280.0, 800.0), defaults(), false),
+            (egui::vec2(1280.0, 800.0), smoke_design(), false),
+            (egui::vec2(930.0, 1024.0), defaults(), false),
+            (egui::vec2(930.0, 1024.0), smoke_design(), false),
+            (
+                egui::vec2(1280.0, 1024.0),
+                design_of(huge_calibration()),
+                false,
+            ),
+            (egui::vec2(930.0, 800.0), defaults(), true),
+            (egui::vec2(930.0, 800.0), smoke_design(), true),
         ] {
             let (mut harness, _) = card_tab(size, design, false);
             if !card_open(&harness) {
@@ -6416,7 +6416,7 @@ mod tests {
             let (measured, floor) = scratch_measure(drawing.width(), &lines);
             let room = room_at_card(&output);
             let cap = (room - header - 2.0 * spacing - floor).max(body_row(&harness));
-            if size.y < 1000.0 && size.x < 1000.0 {
+            if capped {
                 assert!(measured > drawn + 1.0, "{case}: the body is capped");
                 assert!((body - cap).abs() <= 1.0, "{case}: body {body}, cap {cap}");
             } else {
