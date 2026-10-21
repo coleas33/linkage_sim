@@ -1635,7 +1635,8 @@ mod tests {
             }
         }
         assert!(not_at_the_end.is_empty(), "{not_at_the_end:?}");
-        // Each lies past its end by more than a step, so neither side lands back on the slider.
+        // The ring, the short override and the 44 magnets each lie past their end by more than a
+        // step, so neither side lands back on the slider.
         let size = |inputs: &DesignInputs| dimensions(inputs).expect("size controls");
         let wide_size = size(&wide);
         assert!(
