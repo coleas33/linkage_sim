@@ -4404,82 +4404,96 @@ mod tests {
             assert!(check_terms("no.such.check", &inputs, &results).is_empty());
         }
 
-        // Spec 3.6's table at the defaults: each check's terms, margins (larger is better) and
-        // quoted quantities. Hot-low torque, Temperature limits (T-13), the end effect and the
-        // magnets' fit quote none.
-        let defaults = DesignInputs::default();
-        let before = compute_all(&defaults);
-        let (md, materials) = (&before.metal, &before.materials);
+        // Spec 3.6's table at every test design, not the defaults alone: each check's terms,
+        // margins (larger is better) and quoted quantities, each margin the results' own fields
+        // bit for bit. Hot-low torque, Temperature limits (T-13), the end effect and the magnets'
+        // fit quote none.
         type Row = (String, u64, bool, Option<Quoted>);
-        let read = |check: &str| -> Vec<Row> {
-            check_terms(check, &defaults, &before)
-                .into_iter()
-                .map(|t| (t.name, t.margin.to_bits(), t.passes, t.quoted))
-                .collect()
-        };
         let row = |name: &str, margin: f64, quoted| -> Row {
             (name.to_owned(), margin.to_bits(), margin >= 0.0, quoted)
         };
-        assert_eq!(
-            read(HOT_MIN),
-            [row(
-                "hot-low torque",
-                md.torque_hot_low_Nm - defaults.metal.required_min_Nm,
-                None
-            )]
-        );
-        assert_eq!(
-            read(CLEARANCE),
-            [row(
-                "running clearance",
-                md.min_running_clearance_mm - defaults.metal.residual_target_mm,
-                Some(Quoted::new("metal.min_running_clearance_mm", None, 2))
-            )]
-        );
-        assert_eq!(
-            read(CUP_WALL),
-            [row(
-                "cup wall",
-                materials.cup_wall_corner_mm - materials.backiron_thickness_needed_mm,
-                Some(Quoted::new(
-                    "materials.backiron_thickness_needed_mm",
-                    Some(WALL_NEEDED),
-                    2
-                ))
-            )]
-        );
-        assert_eq!(
-            read(GEARBOX),
-            [row(
-                "gearbox input torque",
-                defaults.coupling.gearbox_input_rating_Nm - md.cold_high_input_Nm,
-                Some(Quoted::new("metal.cold_high_input_Nm", Some(COLD_HIGH), 2))
-            )]
-        );
         let axis = |index: usize| {
             let (name, size) = SPACE_CLAIM_AXIS_SIZES[index];
             Some(Quoted::new(size, Some(name), 2))
         };
-        assert_eq!(
-            read(SPACE_CLAIM),
-            [
-                row("diameter", md.diameter_reserve_mm, axis(0)),
-                row("overall length", md.axial_reserve_mm, axis(1)),
-                row("large-diameter bay", md.large_dia_reserve_mm, axis(2)),
-            ]
-        );
-        for check in [HOT_MIN, TEMPERATURE, END_EFFECT, FIT_CHECK] {
-            assert!(
-                read(check).iter().all(|(.., quoted)| quoted.is_none()),
-                "{check}"
+        for (name, inputs) in designs() {
+            let results = compute_all(&inputs);
+            let (md, materials) = (&results.metal, &results.materials);
+            let read = |check: &str| -> Vec<Row> {
+                check_terms(check, &inputs, &results)
+                    .into_iter()
+                    .map(|t| (t.name, t.margin.to_bits(), t.passes, t.quoted))
+                    .collect()
+            };
+            assert_eq!(
+                read(HOT_MIN),
+                [row(
+                    "hot-low torque",
+                    md.torque_hot_low_Nm - inputs.metal.required_min_Nm,
+                    None
+                )],
+                "{name}"
+            );
+            assert_eq!(
+                read(CLEARANCE),
+                [row(
+                    "running clearance",
+                    md.min_running_clearance_mm - inputs.metal.residual_target_mm,
+                    Some(Quoted::new("metal.min_running_clearance_mm", None, 2))
+                )],
+                "{name}"
+            );
+            assert_eq!(
+                read(CUP_WALL),
+                [row(
+                    "cup wall",
+                    materials.cup_wall_corner_mm - materials.backiron_thickness_needed_mm,
+                    Some(Quoted::new(
+                        "materials.backiron_thickness_needed_mm",
+                        Some(WALL_NEEDED),
+                        2
+                    ))
+                )],
+                "{name}"
+            );
+            assert_eq!(
+                read(GEARBOX),
+                [row(
+                    "gearbox input torque",
+                    inputs.coupling.gearbox_input_rating_Nm - md.cold_high_input_Nm,
+                    Some(Quoted::new("metal.cold_high_input_Nm", Some(COLD_HIGH), 2))
+                )],
+                "{name}"
+            );
+            assert_eq!(
+                read(SPACE_CLAIM),
+                [
+                    row("diameter", md.diameter_reserve_mm, axis(0)),
+                    row("overall length", md.axial_reserve_mm, axis(1)),
+                    row("large-diameter bay", md.large_dia_reserve_mm, axis(2)),
+                ],
+                "{name}"
+            );
+            for check in [HOT_MIN, TEMPERATURE, END_EFFECT, FIT_CHECK] {
+                assert!(
+                    read(check).iter().all(|(.., quoted)| quoted.is_none()),
+                    "{name}: {check}"
+                );
+            }
+            assert_eq!(
+                read(TEMPERATURE).len(),
+                TemperatureTerm::ALL.len(),
+                "{name}"
             );
         }
-        assert_eq!(read(TEMPERATURE).len(), TemperatureTerm::ALL.len());
+        let defaults = DesignInputs::default();
+        let before = compute_all(&defaults);
 
         // The shaft joints: eight terms in one order whether both joints are judged (the
         // defaults; the inner hub slipping), one is not (no wall past a keyway through the hub,
-        // a reversed band) or the check cannot be made (a safety factor of 0), where every term
-        // passes. Each quotes its joint's result for its cause, named by its label.
+        // a reversed band: each of the inner hub's four terms passes there) or the check cannot
+        // be made (a safety factor of 0), where every term passes. Each quotes its joint's result
+        // for its cause, named by its label, in that cause's unit.
         let names: Vec<String> = [shaft_joint::INNER_HUB, shaft_joint::CUP]
             .into_iter()
             .flat_map(|joint| CAUSES.map(|cause| joint_term(joint, cause)))
@@ -4508,6 +4522,14 @@ mod tests {
             let joint_terms = check_terms(SHAFT_JOINT, &inputs, &compute_all(&inputs));
             let read_names: Vec<&str> = joint_terms.iter().map(|t| t.name.as_str()).collect();
             assert_eq!(read_names, names, "{name}");
+            if ["keyway through", "reversed band"].contains(&name) {
+                let inner_hub: Vec<&CheckTerm> = joint_terms
+                    .iter()
+                    .filter(|t| t.name.starts_with(shaft_joint::INNER_HUB))
+                    .collect();
+                assert_eq!(inner_hub.len(), CAUSES.len(), "{name}");
+                assert!(inner_hub.iter().all(|t| t.passes), "{name}: {inner_hub:?}");
+            }
         }
         let unmade_results = compute_all(&unmade);
         assert!(shaft_joints(&unmade, &unmade_results).is_err());
@@ -4516,9 +4538,9 @@ mod tests {
                 .iter()
                 .all(|t| t.passes)
         );
-        let joints_quoted: Vec<Option<Quoted>> = read(SHAFT_JOINT)
+        let joints_quoted: Vec<Option<Quoted>> = check_terms(SHAFT_JOINT, &defaults, &before)
             .into_iter()
-            .map(|(.., quoted)| quoted)
+            .map(|t| t.quoted)
             .collect();
         let per_cause: Vec<Option<Quoted>> = JOINT_SIDES
             .iter()
@@ -4533,6 +4555,17 @@ mod tests {
             .map(|(path, decimals)| Some(Quoted::new(path, Some(label_for(path)), decimals)))
             .collect();
         assert_eq!(joints_quoted, per_cause);
+        // Each cause's unit, as the card quotes it, joint by joint: the needed interference in
+        // µm, the bore stress in MPa, the fitting temperature in °C and the key's pressure in
+        // MPa.
+        let units: Vec<&str> = joints_quoted
+            .iter()
+            .map(|quoted| {
+                let path = quoted.expect("every joint term quotes its result").path;
+                result_info(path).expect("a joint's result").meta.unit
+            })
+            .collect();
+        assert_eq!(units, ["µm", "MPa", "°C", "MPa"].repeat(2));
 
         // SPACE_CLAIM_AXES, axis_reserves and SPACE_CLAIM_AXIS_SIZES name the three axes in one
         // order: each reserve is its claim less the size SPACE_CLAIM_AXIS_SIZES names, bit for
