@@ -9168,14 +9168,6 @@ mod tests {
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
     }
 
-    /// The screen rect of the first drawn text equal to `needle` and the rect it is clipped
-    /// to.
-    fn clipped_text(output: &egui::FullOutput, needle: &str) -> Option<(egui::Rect, egui::Rect)> {
-        text_shapes(output, needle)
-            .next()
-            .map(|(clip, text)| (text.galley.rect.translate(text.pos.to_vec2()), clip))
-    }
-
     #[test]
     fn the_term_list_scrolls_sideways_in_a_narrow_centre_region() {
         // At 1000 points the centre region is about 380 wide: σ's term list (swatch, symbol,
@@ -9188,7 +9180,8 @@ mod tests {
         harness.frame(Vec::new());
         let output = harness.frame(Vec::new());
         assert!(
-            clipped_text(&output, ASSUMPTION_TAG).is_none_or(|(r, clip)| r.right() > clip.right()),
+            text_rect(&output, ASSUMPTION_TAG)
+                .is_none_or(|tag| tag.right() > text_clip_rect(&output, ASSUMPTION_TAG).right()),
             "the tag fits without scrolling: the test would prove nothing"
         );
         // The pointer on the start of the set's value, in view at the left of the list.
@@ -9207,7 +9200,8 @@ mod tests {
         for _ in 0..20 {
             output = harness.frame(Vec::new());
         }
-        let (tag, clip) = clipped_text(&output, ASSUMPTION_TAG).expect("the tag is drawn");
+        let tag = text_rect(&output, ASSUMPTION_TAG).expect("the tag is drawn");
+        let clip = text_clip_rect(&output, ASSUMPTION_TAG);
         assert!(clip.contains_rect(tag), "{tag:?} cut by {clip:?}");
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
     }
