@@ -392,7 +392,7 @@ pub struct MagcouplingPanel {
     /// [`MagcouplingPanel::size_tab_consequences`].
     consequences: ConsequenceCache,
     /// The results [`MagcouplingPanel::size_tab_consequences`] hands `consequences`, kept with
-    /// the design they were computed for: view state too.
+    /// the design they were computed for: a cache like it, in no design file, link or undo step.
     size_tab_results: ResultsCache,
     /// Every check guide's fixes for the design shown (spec 3.4), recomputed only when it
     /// changes: each fix runs `compute_all` on the design its move reaches.
