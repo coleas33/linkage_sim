@@ -119,9 +119,12 @@ pub const SHOWN_NO_PREDICTION: &str =
 pub const SHOWN_NO_HOT_LOW: &str =
     "No step is compared while the design shown has a pull-out or hot-low torque of zero or less.";
 /// A flip's words, drawn "{label}: {word}" ([`Flip`]): a phrase inside a sentence, not the
-/// dashboard badge's own words (`Level::word`).
+/// dashboard badge's own words (`Level::word`). This one for a check the step takes to
+/// `Level::Bad`.
 pub const FLIP_FAILS: &str = "fails";
+/// A flip's word for a check the step takes to `Level::Good` (drawn as [`FLIP_FAILS`] is).
 pub const FLIP_PASSES: &str = "passes";
+/// A flip's word for a check the step takes to `Level::Caution` (drawn as [`FLIP_FAILS`] is).
 pub const FLIP_CAUTION: &str = "caution";
 
 /// A Size-tab control the card steps (owner 2A), in the controls' order (6A).
@@ -837,8 +840,9 @@ mod tests {
         with_magnets,
     };
 
-    /// The number sides of the cards of section 2's designs ([`card_designs`]): the tests that
-    /// read every one count them, so none can pass by reading none.
+    /// The number sides of the cards of the table's designs ([`card_designs`]: section 2's, with
+    /// T-14's one-flip design and R-13's boss plateau): the tests that read every one count them,
+    /// so none can pass by reading none.
     const NUMBER_SIDES: usize = 276;
 
     /// The design keyed `key` in `designs` ([`card_designs`]).
@@ -1578,7 +1582,7 @@ mod tests {
             }
             rows += 1;
         }
-        // Not vacuous: every diameter row of section 2's designs.
+        // Not vacuous: every diameter row of the table's designs (`card_designs`).
         assert_eq!(rows, 44);
     }
 
@@ -2490,7 +2494,7 @@ mod tests {
                 quotes += 1;
             }
         });
-        // Not vacuous: every number side, and every quoted change, at section 2's designs.
+        // Not vacuous: every number side, and every quoted change, at the table's designs.
         assert_eq!(numbers, NUMBER_SIDES);
         assert_eq!(quotes, 515);
 
@@ -3525,7 +3529,7 @@ mod tests {
                 }
             }
         }
-        // Not vacuous: every number drawn at section 2's designs.
+        // Not vacuous: every number drawn at the table's designs (`card_designs`).
         assert_eq!(numbers, 1045);
     }
 

@@ -469,8 +469,9 @@ fn auto_shown(
     runner.shown(inputs, &state, range)
 }
 
-/// The torque card's designs: those of the slice 3 spec's section 2.1 and its Edges, each with
-/// its Minimum OD preference and Auto state (an Auto design solved as the panel solves it).
+/// The torque card's designs: those of the slice 3 spec's section 2.1 and its Edges, with T-14's
+/// one-flip design and R-13's boss plateau (plan review 2.2A), each with its Minimum OD
+/// preference and Auto state (an Auto design solved as the panel solves it).
 /// The one table the card's tests read (code review 4 SF-4), by key or all of it, so a design
 /// added once reaches every test. Each key is the spec's, without its Markdown, with
 /// ": <what differs>" where a row holds several designs.
