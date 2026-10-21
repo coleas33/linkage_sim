@@ -149,7 +149,11 @@ passed=true only if: both pages loaded, hub_page, canvas present, title_warning=
 // navigation, so each page's messages are collected after its last step, before the next
 // navigation or the close. src/app.rs checks that the prompt names the strip, the toggle, the
 // note's parts, the tab, the row and the card's words as the page does, that the card step
-// installs FRAME_TIMER and that each page's console messages are collected.
+// installs FRAME_TIMER, that the drag step reads SMOKE_GAP_SHOWN and the sizing lines' prefix as
+// the app has them and that each page's console messages are collected.
+// linkage-sim-rs/scripts/gui_smoke_verdict_test.cjs (gate 13) runs this script with a stub agent
+// and checks its own rules: the frame timer, frame_check, the calculator's checks, the drag's
+// verdict and the fallbacks.
 let magcoupling = null
 if (ARGS.magcoupling !== false) {
   const page = `${url}/tools/magcoupler/?m=${MAGCOUPLING_SMOKE_PAYLOAD}`
