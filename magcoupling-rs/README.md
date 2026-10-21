@@ -205,7 +205,12 @@ Required torque, "short X N·m (-P.P %)" in red or "margin +X N·m (+P.P %)" in 
 The gap is in the Size tab's one number format (decision 10B, `gui::format`): X to the fewest
 decimals, from two, that read a digit that is not zero (at most two more), and one decimal of
 percent with the gap's own sign, so a design a hair under its requirement reads
-"short 0.001 N·m (-0.0 %)". While the
+"short 0.001 N·m (-0.0 %)". Since the owner's FO-4 at the slice-3 STOP, on the gap and the
+torque card alike, a number whose fixed form would need more than six whole digits, or an N·m
+that still reads zero at two more decimals beside a percent that reads a digit, reads four
+significant digits as the readouts write values, a margin or a change with its sign and a
+shortfall's size without ("margin +2.405e300 N·m (+9.622e301 %)",
+"short 1.000e300 N·m (-100.0 %)", "margin +5.000e-7 N·m (+50.0 %)"). While the
 end-effect banner shows, Hot-low torque and the gap read "no prediction (magnets too short for
 the end-effect model at this pole pitch)" instead of a number.
 
