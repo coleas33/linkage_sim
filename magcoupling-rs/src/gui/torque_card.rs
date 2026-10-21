@@ -1838,7 +1838,7 @@ mod tests {
             (true, end_effect_at_a_step()),
         ] {
             for npole in counts.clone() {
-                let (inputs, _) = at(&base, npole);
+                let inputs = with_magnets(&base, npole);
                 let shown = card_at(&inputs, None);
                 // A design shown that does not fit or predicts nothing has no rows (test 0).
                 let Some(row) = shown
@@ -3530,7 +3530,9 @@ mod tests {
     }
 
     // The count row: the neighbour lines' tests, moved from `gui/guidance.rs` with the lines
-    // (slice 3 T5, spec 6.3; decision 7A), rewritten to the card's types and hot-low.
+    // (slice 3 T5, spec 6.3; decision 7A), rewritten to the card's types and hot-low. The one on
+    // the count sides' validity rule is the last part of
+    // a_side_reads_a_number_exactly_when_sizing_counts_its_design.
 
     #[test]
     fn the_count_row_s_sides_are_the_design_with_only_the_magnet_count_changed() {

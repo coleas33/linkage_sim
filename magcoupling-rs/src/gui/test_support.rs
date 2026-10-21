@@ -282,7 +282,7 @@ pub(crate) fn short_cavity() -> crate::DesignInputs {
 }
 
 /// The defaults with the cup cavity input at `mm` (`metal.cup_depth_mm`), the axial override
-/// blank, as [`with_poles`] sets the count.
+/// blank: [`short_cavity`] and the card's cavity cases at other depths.
 pub(crate) fn with_cup_depth(mm: f64) -> crate::DesignInputs {
     let mut inputs = crate::DesignInputs::default();
     inputs.metal.cup_depth_mm = mm;
