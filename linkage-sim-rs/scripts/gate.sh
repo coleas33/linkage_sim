@@ -18,6 +18,11 @@
 # suite, and a check that the committed differential test data is current.
 # Gate 12 needs a Python with the oracle's dependencies; see oracle_python
 # below. Without one it prints a SKIP line and does not fail.
+# Gate 13: the gui-smoke workflow's verdict test under node
+# (scripts/gui_smoke_verdict_test.cjs: the drag's frame timer and verdict,
+# frame_check, the calculator's checks and an agent's empty reading, with a
+# stub agent and no browser). Without node it prints a SKIP line and does
+# not fail. --full adds gate 14, the release WASM builds of both bundles.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 REPO_ROOT="$(cd .. && pwd)"
@@ -36,7 +41,7 @@ assert_guard_trips() {
   shift 2
   forced="$(cargo check "$@" --features "$feature" --message-format=json-render-diagnostics)"
   if magcoupling_assert_shipped "$bin" <<<"$forced" 2>/dev/null; then
-    echo "FAIL gate 10/12: the guard did not trip on $bin with workbook-parity forced on"
+    echo "FAIL gate 10/13: the guard did not trip on $bin with workbook-parity forced on"
     exit 1
   fi
   echo "negative control: the guard trips on $bin when workbook-parity is forced on"
@@ -71,39 +76,39 @@ oracle_python() {
   done
 }
 
-echo "== gate 1/12: cargo test --all (linkage-sim-rs) =="
+echo "== gate 1/13: cargo test --all (linkage-sim-rs) =="
 cargo test --all
 
-echo "== gate 2/12: cargo clippy --all-targets (linkage-sim-rs) =="
+echo "== gate 2/13: cargo clippy --all-targets (linkage-sim-rs) =="
 cargo clippy --all-targets
 
-echo "== gate 3/12: WASM check (linkage-sim-rs) =="
+echo "== gate 3/13: WASM check (linkage-sim-rs) =="
 cargo check "${LINKAGE_WEB_ARGS[@]}"
 
-echo "== gate 4/12: cargo test (magcoupling-rs) =="
+echo "== gate 4/13: cargo test (magcoupling-rs) =="
 cargo test --manifest-path "$MAGCOUPLING"
 
-echo "== gate 5/12: cargo clippy --all-targets, warnings as errors (magcoupling-rs) =="
+echo "== gate 5/13: cargo clippy --all-targets, warnings as errors (magcoupling-rs) =="
 cargo clippy --manifest-path "$MAGCOUPLING" --all-targets -- -D warnings
 
-echo "== gate 6/12: WASM check (magcoupling-rs) =="
+echo "== gate 6/13: WASM check (magcoupling-rs) =="
 cargo check --manifest-path "$MAGCOUPLING" --target wasm32-unknown-unknown --lib
 
-echo "== gate 7/12: cargo test --features app (magcoupling-rs panel and app, headless egui; bins build with workbook-parity unified) =="
+echo "== gate 7/13: cargo test --features app (magcoupling-rs panel and app, headless egui; bins build with workbook-parity unified) =="
 cargo test --manifest-path "$MAGCOUPLING" --features app
 
-echo "== gate 8/12: cargo clippy --all-targets --features app, warnings as errors (magcoupling-rs) =="
+echo "== gate 8/13: cargo clippy --all-targets --features app, warnings as errors (magcoupling-rs) =="
 cargo clippy --manifest-path "$MAGCOUPLING" --all-targets --features app -- -D warnings
 
-echo "== gate 9/12: WASM clippy, warnings as errors (magcoupling-rs gui panel; app web entry) =="
+echo "== gate 9/13: WASM clippy, warnings as errors (magcoupling-rs gui panel; app web entry) =="
 cargo clippy --manifest-path "$MAGCOUPLING" --target wasm32-unknown-unknown --features gui --lib -- -D warnings
 cargo clippy --manifest-path "$MAGCOUPLING" "${MAGCOUPLING_WEB_ARGS[@]}" -- -D warnings
 
-echo "== gate 10/12: workbook-parity guard (the calculator's shipped native and wasm32 builds; negative controls) =="
+echo "== gate 10/13: workbook-parity guard (the calculator's shipped native and wasm32 builds; negative controls) =="
 # The linkage builds are left out because they have no magcoupling-rs in them; if that
 # changes, they must come back into the guard.
 if grep -q 'magcoupling-rs' Cargo.toml; then
-  echo "FAIL gate 10/12: linkage-sim-rs depends on magcoupling-rs again; guard its builds here too"
+  echo "FAIL gate 10/13: linkage-sim-rs depends on magcoupling-rs again; guard its builds here too"
   exit 1
 fi
 cargo check --manifest-path "$MAGCOUPLING" "${MAGCOUPLING_NATIVE_ARGS[@]}" --message-format=json-render-diagnostics \
@@ -115,29 +120,37 @@ cargo check --manifest-path "$MAGCOUPLING" "${MAGCOUPLING_WEB_ARGS[@]}" --messag
 assert_guard_trips magcoupling-app workbook-parity --manifest-path "$MAGCOUPLING" "${MAGCOUPLING_NATIVE_ARGS[@]}"
 assert_guard_trips magcoupling-web workbook-parity --manifest-path "$MAGCOUPLING" "${MAGCOUPLING_WEB_ARGS[@]}"
 
-echo "== gate 11/12: wasm-bindgen parity (both web bundles are bound by the one wasm-bindgen-cli deploy-web.yml installs) =="
+echo "== gate 11/13: wasm-bindgen parity (both web bundles are bound by the one wasm-bindgen-cli deploy-web.yml installs) =="
 CLI_PIN="$(grep -oE 'wasm-bindgen-cli@[0-9.]+' "$REPO_ROOT/.github/workflows/deploy-web.yml" | head -n 1 | cut -d@ -f2)"
 for lock in "Cargo.lock" "$REPO_ROOT/magcoupling-rs/Cargo.lock"; do
   locked="$(lock_versions "$lock" wasm-bindgen)"
   if [[ -z "$CLI_PIN" || "$locked" != "$CLI_PIN" ]]; then
-    echo "FAIL gate 11/12: deploy-web.yml installs wasm-bindgen-cli '$CLI_PIN', $lock locks wasm-bindgen '$locked'"
+    echo "FAIL gate 11/13: deploy-web.yml installs wasm-bindgen-cli '$CLI_PIN', $lock locks wasm-bindgen '$locked'"
     exit 1
   fi
   echo "wasm-bindgen $locked in $lock, as deploy-web.yml's wasm-bindgen-cli"
 done
 
-echo "== gate 12/12: vendored Python oracle (parity suite, differential data freshness) =="
+echo "== gate 12/13: vendored Python oracle (parity suite, differential data freshness) =="
 PY="$(oracle_python)"
 if [[ -z "$PY" ]]; then
-  echo "SKIP gate 12/12: no Python for reference/magcoupling-py (create its .venv as in docs/ai/03-structure.yaml, or set MAGCOUPLING_PYTHON)"
+  echo "SKIP gate 12/13: no Python for reference/magcoupling-py (create its .venv as in docs/ai/03-structure.yaml, or set MAGCOUPLING_PYTHON)"
 else
   echo "oracle Python: $PY"
   (cd "$ORACLE" && "$PY" -m pytest -q tests -p no:cacheprovider)
   (cd "$ORACLE" && "$PY" tools/gen_differential.py --check)
 fi
 
+echo "== gate 13/13: gui-smoke verdict test (the workflow's own rules under node, a stub agent, no browser) =="
+if ! command -v node >/dev/null 2>&1; then
+  echo "SKIP gate 13/13: no node on PATH (install Node.js to run scripts/gui_smoke_verdict_test.cjs)"
+else
+  echo "node: $(command -v node) $(node --version)"
+  node scripts/gui_smoke_verdict_test.cjs
+fi
+
 if [[ "${1:-}" == "--full" ]]; then
-  echo "== gate 13 (--full): release WASM builds (linkage and magcoupling bundles) =="
+  echo "== gate 14 (--full): release WASM builds (linkage and magcoupling bundles) =="
   bash scripts/build_web.sh
 fi
 

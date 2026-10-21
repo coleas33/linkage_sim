@@ -650,7 +650,11 @@ and no path or spreadsheet cell, the header's "Show spreadsheet details" toggle 
 checks) and scrolls the dashboard to its last row, "Magnets fit", in a 1280 x 800 window; then (slice 3) it opens the link again with a timer on every frame the app draws (eframe asks for an animation frame at every display refresh; the timer keeps those that make a WebGL draw call), checks the torque card's heading with its Why link, caption, Auto line and four rows (the Overall length row held by Auto among them), and drags the Magnet face gap slider's handle, moving the pointer 60 times, 50 ms apart, alternately 3 px right and 3 px left of where it pressed: the drag's drawn-frame count, median, p95 and slowest frame are recorded on every run, and with `frame_check: true` (the release run) a drag that moved the gap, at least 30 frames and a p95 within one 60 fps frame (16.7 ms) are required (`frame_check` is `true`, `false` or absent: any other value stops the run before its first step, and the calculator's result records `frame_check`, so a run shows whether its check applied); the script checks the calculator agent's `passed` again from the agent's own fields (every check its prompt names true, no console error listed), and a step whose agent returns nothing reads every field its schema requires as false or empty; all with zero console
 errors (a test decodes the pinned link and the design file, and checks that the steps name the welcome strip, the
 toggle, the note's parts, the Geometry tab, the last row and the card's heading, caption, Auto line, held row and row starts as the page draws them). Its other step checks the hub page at `/tools/` and the linkage
-app at `/tools/linkage/`.
+app at `/tools/linkage/`. Gate 13 of `gate.sh` runs the script's own rules under node with a stub agent and no browser
+(`linkage-sim-rs/scripts/gui_smoke_verdict_test.cjs`; a SKIP line without node): the frame timer keeps only the
+frames that draw, the drag's verdict holds at its bounds, `frame_check` is refused unless it is `true` or `false`, the
+calculator's `passed` falls with any of its checks or a console error, an agent that returns nothing leaves every
+field its schema requires, and the run's `passed` is both steps'.
 
 **workbook-parity never ships.** The feature reaches `cargo test` and
 `cargo clippy --all-targets` through the self dev-dependency, and cargo then
@@ -682,7 +686,7 @@ depends on this crate (plan
 ```bash
 cargo test                      # from magcoupling-rs/: the engine
 cargo test --features app       # plus the panel and app tests (headless egui)
-bash linkage-sim-rs/scripts/gate.sh   # everything, both crates and the Python oracle
+bash linkage-sim-rs/scripts/gate.sh   # everything: both crates, the Python oracle and the gui-smoke verdict test
 ```
 
 | Test | Checks |
