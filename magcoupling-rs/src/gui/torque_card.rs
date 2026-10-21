@@ -1359,6 +1359,11 @@ mod tests {
         // NO_TORQUE, so the card reads no prediction, never SHOWN_NO_HOT_LOW.
         let mut zero_coefficient = no_back_iron();
         zero_coefficient.calibration.f_cal_original = 0.0;
+        // Hot-low alone not finite: a design file's variation of -1e308 takes hot-low past the
+        // largest float while the pull-out stays 2.69 N·m, so only the hot-low readout shows
+        // NO_TORQUE.
+        let mut overflowing_variation = DesignInputs::default();
+        overflowing_variation.metal.variation = -1e308;
         let fewest = slider_range(FreeVariable::MagnetsPerRing.path()).min;
         for (name, inputs, shown) in [
             // A design file's count below the magnet slider's range (the owner's FO-3): at 3 and
@@ -1421,6 +1426,11 @@ mod tests {
                 zero_coefficient,
                 TorqueCard::ShownNoPrediction,
             ),
+            (
+                "variation -1e308",
+                overflowing_variation,
+                TorqueCard::ShownNoPrediction,
+            ),
         ] {
             let results = compute_all(&inputs);
             let torques = [results.model.pullout_Nm, results.metal.torque_hot_low_Nm];
@@ -1463,6 +1473,12 @@ mod tests {
                     "{name}"
                 );
                 assert!(!torques[1].is_finite(), "{name}: {torques:?}");
+            }
+            if name == "variation -1e308" {
+                assert!(
+                    torques[0].is_finite() && !torques[1].is_finite(),
+                    "{torques:?}"
+                );
             }
             let card = card(&inputs, &results, None, PAUSED);
             assert_eq!(card, shown, "{name}");
