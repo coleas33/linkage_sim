@@ -277,7 +277,8 @@ pub(crate) fn short_cavity() -> crate::DesignInputs {
 
 /// A hot day just under the temperature verdict's edge (slice 3 spec 2.1, "temperature edge":
 /// the edge is at a hot-day ambient of 82.0913 °C): `temperature.duty.hot_ambient_C` 82.08.
-/// Hot-low 2.2852 N·m, failing the defaults' 4 of 9 checks, with Temperature limits passing.
+/// Hot-low 2.2852 N·m, failing the defaults' 4 of 9 checks, with Temperature limits passing; at
+/// 82.10 °C Temperature limits asks for a look (Caution).
 pub(crate) fn temperature_edge() -> crate::DesignInputs {
     let mut inputs = crate::DesignInputs::default();
     inputs.temperature.duty.hot_ambient_C = 82.08;
@@ -1027,7 +1028,7 @@ mod tests {
     use crate::engine::clamps::PAUSED;
     use crate::engine::model::blocks_fit;
     use crate::engine::size_controls::dimensions;
-    use crate::gui::dashboard::Level;
+    use crate::gui::dashboard::{Level, end_effect_out_of_range};
     use crate::gui::format::fixed;
     use crate::gui::guidance::{
         CLEARANCE, CUP_WALL, GEARBOX, HOT_MIN, SHAFT_JOINT, TEMPERATURE, counted_guides, level,
@@ -1114,14 +1115,19 @@ mod tests {
         assert!(predicts(&fewer, fewer.model.pullout_Nm));
         assert!(predicts(&fewer, fewer.metal.torque_hot_low_Nm));
 
-        // The end effect at a step: in range at 5.0 mm, not at 4.0 mm.
+        // The end effect at a step: in range at 5.0 mm, not at 4.0 mm (the end effect itself,
+        // not a torque that is not finite, which the readouts would also show no number for).
         let at_a_step = compute_all(&end_effect_at_a_step());
         assert_eq!(fixed(at_a_step.metal.torque_hot_low_Nm, 4), "0.1196");
         assert!(predicts(&at_a_step, at_a_step.metal.torque_hot_low_Nm));
         let mut shorter = end_effect_at_a_step();
         shorter.coupling.magnets.axial_length_mm = Some(4.0);
         let shorter = compute_all(&shorter);
-        assert!(!predicts(&shorter, shorter.metal.torque_hot_low_Nm));
+        assert!(
+            end_effect_out_of_range(&shorter).is_some(),
+            "{}",
+            shorter.model.f_end
+        );
 
         // An odd count: no size controls.
         assert_eq!(fixed(hot_low(&odd_count()), 4), "2.0295");
@@ -1146,10 +1152,14 @@ mod tests {
             ["27.30", "18.30", "67.10"]
         );
 
-        // The temperature edge: the defaults' torque and checks, Temperature limits passing.
+        // The temperature edge: the defaults' torque and checks, Temperature limits passing; at
+        // 82.10 °C, just past the edge, a caution, so the design sits at the edge (82.0913 °C).
         assert_eq!(fixed(hot_low(&temperature_edge()), 4), "2.2852");
         assert_eq!(checks_at(&temperature_edge(), Level::Bad), defaults_fail);
         assert_eq!(checks_at(&temperature_edge(), Level::Caution), none);
+        let mut past_the_edge = temperature_edge();
+        past_the_edge.temperature.duty.hot_ambient_C = 82.10;
+        assert_eq!(checks_at(&past_the_edge, Level::Caution), [TEMPERATURE]);
 
         // Forty narrow magnets fit.
         let forty = compute_all(&forty_narrow_magnets());
