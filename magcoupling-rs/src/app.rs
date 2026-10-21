@@ -331,6 +331,54 @@ mod tests {
             script.contains("page.addInitScript(${FRAME_TIMER})"),
             "the card step installs the frame timer before it opens the link again"
         );
+        // The drag step finds the Magnet face gap slider by the value its box shows, and judges
+        // drag_moved against it: the link's gap at the slider's decimals (its step's, which egui
+        // shows at a device pixel ratio of 1) with its unit, typed once as SMOKE_GAP_SHOWN.
+        {
+            use crate::gui::guidance::FACE_GAP;
+            use crate::gui::inputs::{InputCatalogue, slider_range, step_decimals};
+            let unit = InputCatalogue::get()
+                .entry(FACE_GAP)
+                .expect("the gap input")
+                .meta
+                .unit;
+            let step = slider_range(FACE_GAP).expect("the gap slider's range").step;
+            let shown = crate::gui::with_unit(
+                format!(
+                    "{:.*}",
+                    step_decimals(step),
+                    design.inputs.metal.face_gap_mm
+                ),
+                unit,
+            );
+            assert_eq!(
+                quoted("SMOKE_GAP_SHOWN"),
+                shown,
+                "the script's SMOKE_GAP_SHOWN"
+            );
+            assert_eq!(
+                script.matches(shown.as_str()).count(),
+                1,
+                "the smoke prompt types the gap's value once, in SMOKE_GAP_SHOWN"
+            );
+        }
+        // The drag counts the sizing solve's console lines (sizing_lines, expected 0) by the
+        // panel's own prefix, in its code and in the prompt's words.
+        for (what, text) in [
+            (
+                "the drag's code",
+                format!("m.text().includes('{SIZING_LOG_PREFIX}')"),
+            ),
+            (
+                "the prompt's words",
+                format!("the number of \"{SIZING_LOG_PREFIX}\" console lines"),
+            ),
+        ] {
+            assert!(
+                script.contains(&text),
+                "the sizing lines are counted by SIZING_LOG_PREFIX in {what}: {text}"
+            );
+        }
         // Every step's console messages reach console_errors. The Playwright MCP's
         // browser_console_messages returns only the messages since the last navigation, so each
         // page is collected after its last step: the first page after the scroll and before the
