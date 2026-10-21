@@ -265,7 +265,8 @@ pub(crate) fn odd_count() -> crate::DesignInputs {
 
 /// A keyway through the hub (slice 3 spec 2.1, "keyway through"): a 16 mm bore with a 2.5 mm
 /// keyway. The hub wall past the keyway is below zero (`model.hub_wall_past_key_mm`), so the
-/// shaft joints have no wall to judge and ask for a look (Caution).
+/// inner hub's joint has no wall to judge and Shaft joints asks for a look (Caution); the cup's
+/// is judged.
 pub(crate) fn keyway_through() -> crate::DesignInputs {
     let mut inputs = crate::DesignInputs::default();
     inputs.coupling.bore_mm = 16.0;
@@ -1196,7 +1197,7 @@ mod tests {
         assert_eq!(fixed(hot_low(&odd_count()), 4), "2.0295");
         assert!(dimensions(&odd_count()).is_none());
 
-        // The keyway through the hub: no wall past it, so the joints are not judged.
+        // The keyway through the hub: no wall past it, so the inner hub's joint is not judged.
         let keyway = compute_all(&keyway_through());
         assert!(keyway.model.hub_wall_past_key_mm < 0.0);
         assert_eq!(checks_at(&keyway_through(), Level::Caution), [SHAFT_JOINT]);
