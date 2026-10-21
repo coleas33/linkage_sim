@@ -4365,10 +4365,13 @@ mod tests {
                     let [screw] = tested.as_slice() else {
                         panic!("{name}: the clamp's one term: {tested:?}")
                     };
-                    assert_eq!(screw.name, "screw size");
-                    assert!(same(screw.margin, clamp_margin(&inputs, &results)));
+                    assert_eq!(screw.name, "screw size", "{name}");
+                    assert!(
+                        same(screw.margin, clamp_margin(&inputs, &results)),
+                        "{name}: {screw:?}"
+                    );
                     assert_eq!(screw.passes, results.clamps.index > 0, "{name}");
-                    assert_eq!(screw.quoted, None);
+                    assert_eq!(screw.quoted, None, "{name}");
                     continue;
                 }
                 assert!(!shared.is_empty(), "{name}: {} has terms", guide.check);

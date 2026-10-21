@@ -132,9 +132,9 @@ pub fn mentions_gearbox_protection(text: &str) -> bool {
 /// says them.
 pub const TORQUE_ORDER_WORDS: [&str; 3] = ["strongest", "most expected", "most torque expected"];
 
-/// Words that would rank the Size tab's controls on the torque card (slice 3 spec 4.4, owner
-/// decision 14A: its rows keep the controls' order and make no sorted claim): no card text says
-/// them, matched by [`ranking_words_in`].
+/// Words that would rank the Size tab's controls on the torque card (slice 3 spec 4.4: owner
+/// decision 6A keeps its rows in the controls' order with no sorted claim, and 14A makes these
+/// words the card's ban list): no card text says them, matched by [`ranking_words_in`].
 pub const CARD_RANKING_WORDS: [&str; 7] = [
     "strongest",
     "biggest",
