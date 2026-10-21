@@ -238,6 +238,29 @@ struct CardFrame {
     region_width: f32,
 }
 
+/// The results of the design the Size tab last asked its [`ConsequenceCache`] about, kept with
+/// that design (slice 3 spec 3.5): the lines under the controls and the torque card each ask
+/// once a frame, mostly about one design, so its `compute_all` runs once per design, not once
+/// per ask.
+#[derive(Default)]
+struct ResultsCache {
+    last: Option<(DesignInputs, DesignResults)>,
+    /// How many times results were computed (the tests check that idle frames compute none).
+    computed: usize,
+}
+
+impl ResultsCache {
+    /// `compute_all(inputs)`, computed only when `inputs` differs from the last call's.
+    fn get(&mut self, inputs: &DesignInputs) -> &DesignResults {
+        let current = self.last.as_ref().is_some_and(|(last, _)| last == inputs);
+        if !current {
+            self.computed += 1;
+            self.last = Some((inputs.clone(), compute_all(inputs)));
+        }
+        &self.last.as_ref().expect("filled above").1
+    }
+}
+
 /// What the panel asks of its host: the platform work an egui panel cannot do itself.
 #[derive(Clone, Debug, PartialEq)]
 pub enum PanelRequest {
@@ -368,6 +391,9 @@ pub struct MagcouplingPanel {
     /// three changes: view state, in no design file, link or undo step. Asked only through
     /// [`MagcouplingPanel::size_tab_consequences`].
     consequences: ConsequenceCache,
+    /// The results [`MagcouplingPanel::size_tab_consequences`] hands `consequences`, kept with
+    /// the design they were computed for: view state too.
+    size_tab_results: ResultsCache,
     /// Every check guide's fixes for the design shown (spec 3.4), recomputed only when it
     /// changes: each fix runs `compute_all` on the design its move reaches.
     fixes: FixCache,
@@ -427,6 +453,7 @@ impl MagcouplingPanel {
             input_order: InputOrder::default(),
             minimum_diameter_mm: None,
             consequences: ConsequenceCache::default(),
+            size_tab_results: ResultsCache::default(),
             fixes: FixCache::default(),
             input_filter: String::new(),
             banner: None,
@@ -492,19 +519,16 @@ impl MagcouplingPanel {
     /// 3 spec 3.5): the one cache ask of the lines under the controls (the design before this
     /// frame's edits) and of the card (the design after them), so both ask with one key, the
     /// design, the panel's Minimum OD and its shaft-clamp pause (spec 3.2). The cache is handed
-    /// that design's own results: `self.results` can lag the inputs by a frame (the header's
-    /// assumptions reset edits them after the last compute), and a lagging number would stick
-    /// in the lines until the next edit. One `compute_all` (about 17 us) per ask; the torque
-    /// card's stepped runs and the fit search rerun only when the design, the minimum or the
-    /// pause changes.
+    /// that design's own results, not `self.results`, which can lag the inputs by a frame (the
+    /// header's assumptions reset edits them after the last compute): a lagging number would
+    /// stick in the lines until the next edit. `size_tab_results` keeps them with their design,
+    /// so they are computed once per design, not once per ask: none on an idle frame, one on an
+    /// edit's. The torque card's stepped runs and the fit search rerun only when the design, the
+    /// minimum or the pause changes.
     fn size_tab_consequences(&mut self, shown: &DesignInputs) -> &Consequences {
-        let results = compute_all(shown);
-        self.consequences.get(
-            shown,
-            &results,
-            self.minimum_diameter_mm,
-            self.clamps_paused,
-        )
+        let results = self.size_tab_results.get(shown);
+        self.consequences
+            .get(shown, results, self.minimum_diameter_mm, self.clamps_paused)
     }
 
     /// The Size tab's Auto outcome line and its colour: what the solve changed, from the
@@ -10043,8 +10067,9 @@ mod tests {
     fn a_drag_computes_the_card_once_for_each_design_it_draws() {
         // Slice 3 spec 3.5 and decision 13A: on a drag frame the card asks for the design after
         // the frame's edit (one miss) and the next frame's controls ask for that same design (a
-        // hit), so a drag computes the consequences once per design drawn, never twice; at the
-        // smoke design with Auto on the magnet length, the drag the browser frame check times.
+        // hit), so a drag computes the consequences, and the design's results they are handed
+        // (T5 M-6), once per design drawn, never twice; at the smoke design with Auto on the
+        // magnet length, the drag the browser frame check times.
         let mut harness = size_tab(SCREEN, smoke_inputs());
         harness.panel.clamps_paused = true;
         harness.panel.sizing.variable = FreeVariable::AxialLength;
@@ -10058,6 +10083,7 @@ mod tests {
         harness.frame(vec![primary_button(at, true)]);
         harness.frame(Vec::new());
         let computed = harness.panel.consequences.computed;
+        let results = harness.panel.size_tab_results.computed;
         let mut designs = 0;
         for i in 0..20 {
             let before = harness.panel.shown_inputs();
@@ -10069,6 +10095,7 @@ mod tests {
         harness.frame(Vec::new());
         assert!(designs >= 10, "the drag moved the gap on {designs} frames");
         assert_eq!(harness.panel.consequences.computed - computed, designs);
+        assert_eq!(harness.panel.size_tab_results.computed - results, designs);
     }
 
     #[test]
@@ -10078,15 +10105,22 @@ mod tests {
         // outside it (spec 3.4). Idle frames compute nothing; a gap edit computes once (the frame
         // that draws it asks with the edited design, the next frame's controls hit); a toggle of
         // the clamp pause computes once; so does a new Minimum OD, which the drawn Outside
-        // diameter row follows.
+        // diameter row follows. The design's results the cache is handed are computed once per
+        // design (T5 M-6): none on idle frames, one for the gap edit, none for the pause or the
+        // Minimum OD, which leave the design as it is.
         let mut harness = size_tab(SCREEN, DesignInputs::default());
         harness.panel.clamps_paused = true;
         harness.frame(Vec::new());
         let computed = harness.panel.consequences.computed;
+        let results = harness.panel.size_tab_results.computed;
         for _ in 0..5 {
             harness.frame(Vec::new());
         }
         assert_eq!(harness.panel.consequences.computed, computed, "idle frames");
+        assert_eq!(
+            harness.panel.size_tab_results.computed, results,
+            "idle frames' results"
+        );
         let gap = harness.panel.design_widgets[2];
         harness.ctx.memory_mut(|m| m.request_focus(gap));
         harness.frame(Vec::new());
@@ -10102,6 +10136,11 @@ mod tests {
             computed + 1,
             "one gap edit"
         );
+        assert_eq!(
+            harness.panel.size_tab_results.computed,
+            results + 1,
+            "one gap edit's results"
+        );
         harness.panel.clamps_paused = false;
         for _ in 0..3 {
             harness.frame(Vec::new());
@@ -10110,6 +10149,11 @@ mod tests {
             harness.panel.consequences.computed,
             computed + 2,
             "the pause toggled"
+        );
+        assert_eq!(
+            harness.panel.size_tab_results.computed,
+            results + 1,
+            "the pause toggled: the same design's results"
         );
         // The key's third part, the Minimum OD (owner 9A: the diameter row steps the slider at
         // the user's Minimum OD): set at the diameter shown, it computes once, and the drawn
@@ -10140,6 +10184,11 @@ mod tests {
             harness.panel.consequences.computed,
             computed + 3,
             "the Minimum OD set"
+        );
+        assert_eq!(
+            harness.panel.size_tab_results.computed,
+            results + 1,
+            "the Minimum OD set: the same design's results"
         );
         let at_shown = diameter_row(&harness);
         assert!(
