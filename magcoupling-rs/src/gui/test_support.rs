@@ -406,6 +406,18 @@ pub(crate) fn side_at(
     }
 }
 
+/// Every Auto state the panel draws the torque card's lines in: Auto off, then Auto on each
+/// variable it can hold, in [`crate::engine::sizing::FreeVariable::ALL`]'s order.
+pub(crate) fn auto_states() -> impl Iterator<Item = Option<crate::engine::sizing::FreeVariable>> {
+    [None]
+        .into_iter()
+        .chain(crate::engine::sizing::FreeVariable::ALL.map(Some))
+}
+
+/// The units a quoted quantity's result carries (slice 3 spec 3.6: `check_terms`' quoted
+/// results, which the torque card's margins draw): mm, µm, MPa, °C and N·m.
+pub(crate) const QUOTED_UNITS: [&str; 5] = ["mm", "µm", "MPa", "°C", "N·m"];
+
 /// The design the panel shows from `inputs` with Auto on `variable` at the Minimum OD
 /// preference `minimum`: the solver's value, or its best where the requirement is out of
 /// reach, over the range the panel searches (`gui::sizing::sizing_range`, the panel's own
@@ -944,9 +956,18 @@ pub(crate) fn text_center(output: &egui::FullOutput, needle: &str) -> egui::Pos2
         .center()
 }
 
+/// A context whose fonts are loaded, for [`assert_glyphs`]: egui loads them on a context's first
+/// frame, so this runs one empty frame.
+pub(crate) fn glyph_context() -> egui::Context {
+    let ctx = egui::Context::default();
+    let _ = ctx.run(egui::RawInput::default(), |_| {});
+    ctx
+}
+
 /// Asserts that every character of `text` but whitespace has a glyph in egui's default fonts
 /// at proportional 14 (the UI's criterion): egui draws an empty box for one it lacks. `what`
-/// names the text's source in the failure. The fonts load on `ctx`'s first frame.
+/// names the text's source in the failure. The fonts load on `ctx`'s first frame
+/// ([`glyph_context`]).
 pub(crate) fn assert_glyphs(ctx: &egui::Context, text: &str, what: &str) {
     let font = egui::FontId::proportional(14.0);
     for c in text.chars().filter(|c| !c.is_whitespace()) {

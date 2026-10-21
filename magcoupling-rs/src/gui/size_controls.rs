@@ -469,7 +469,7 @@ mod tests {
     use crate::gui::format::{TORQUE_DECIMALS, decimals_with_a_digit};
     use crate::gui::guidance::plain_text_violations;
     use crate::gui::test_support::{
-        SCREEN, assert_glyphs, card_designs, short_magnets, sized_frame,
+        SCREEN, assert_glyphs, card_designs, glyph_context, short_magnets, sized_frame,
     };
 
     #[test]
@@ -674,9 +674,7 @@ mod tests {
 
     #[test]
     fn the_readout_texts_have_glyphs_and_plain_words() {
-        let ctx = egui::Context::default();
-        // The fonts load on the context's first frame.
-        sized_frame(&ctx, SCREEN, Vec::new(), |_| {});
+        let ctx = glyph_context();
         let texts = [
             REQUIRED.to_owned(),
             HOT_LOW.to_owned(),

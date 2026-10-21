@@ -3093,11 +3093,11 @@ mod tests {
     use crate::gui::plain_text::label_for;
     use crate::gui::readouts::Readouts;
     use crate::gui::test_support::{
-        assert_glyphs, clamp_at_its_limit, drawn_texts, end_effect_edge, hot_day, hub_overstressed,
-        is_shaft_joint, keyway_through, mixed_rings, n42_parts, only_the_clamp_fails,
-        only_the_gearbox_fails, only_the_joint_fails, passing_design, reversed_hub_band,
-        shaft_joint_input_rows, shaft_joint_result_rows, short_magnets, sized_frame, slider_range,
-        small_boss, with_poles,
+        QUOTED_UNITS, assert_glyphs, auto_states, clamp_at_its_limit, drawn_texts, end_effect_edge,
+        glyph_context, hot_day, hub_overstressed, is_shaft_joint, keyway_through, mixed_rings,
+        n42_parts, only_the_clamp_fails, only_the_gearbox_fails, only_the_joint_fails,
+        passing_design, reversed_hub_band, shaft_joint_input_rows, shaft_joint_result_rows,
+        short_magnets, sized_frame, slider_range, small_boss, with_poles,
     };
     use std::collections::BTreeSet;
 
@@ -4389,11 +4389,7 @@ mod tests {
                         .unwrap_or_else(|| panic!("{} is a result", quoted.path))
                         .meta
                         .unit;
-                    assert!(
-                        ["mm", "µm", "MPa", "°C", "N·m"].contains(&unit),
-                        "{}: {unit}",
-                        quoted.path
-                    );
+                    assert!(QUOTED_UNITS.contains(&unit), "{}: {unit}", quoted.path);
                     assert!(
                         matches!(results.get(quoted.path), Some(Value::Num(_))),
                         "{name}: {}",
@@ -6284,8 +6280,7 @@ mod tests {
 
     #[test]
     fn every_guide_text_has_glyphs_in_the_default_fonts() {
-        let ctx = egui::Context::default();
-        let _ = ctx.run(egui::RawInput::default(), |_| {});
+        let ctx = glyph_context();
         for text in every_text() {
             assert_glyphs(&ctx, &text, "guidance");
         }
@@ -9229,8 +9224,7 @@ mod tests {
         // Spec tests 3 and 11, over every line form under the controls: the ring-size line, the
         // three fit forms and both breakdowns (the neighbour lines' torque and word forms are the
         // torque card's count row since slice 3: its own tests hold its lines).
-        let ctx = egui::Context::default();
-        let _ = ctx.run(egui::RawInput::default(), |_| {});
+        let ctx = glyph_context();
         let range = FreeVariable::MagnetsPerRing.range();
         let default = DesignInputs::default();
         let designs = [
@@ -9262,8 +9256,7 @@ mod tests {
         // per ring speaks of it; with Auto on the count its slider is locked. The fit line
         // follows in every state, and no line names a neighbouring count (decision 7A: the card's
         // count row): 2 lines with the ring-size line, 1 without.
-        let ctx = egui::Context::default();
-        let _ = ctx.run(egui::RawInput::default(), |_| {});
+        let ctx = glyph_context();
         let inputs = DesignInputs::default();
         let npole = inputs.coupling.npole;
         let consequences = consequences_of(&inputs, None);
@@ -9623,7 +9616,7 @@ mod tests {
 
         // What moves what, under Magnets per ring, Outside diameter and Overall length.
         // The first line under Magnets per ring, in each Auto state (physics review 3, N4).
-        for auto in [None].into_iter().chain(FreeVariable::ALL.map(Some)) {
+        for auto in auto_states() {
             if let Some(line) = magnet_count_line(auto) {
                 emit(
                     &format!("size tab/under Magnets per ring/Auto {auto:?}"),

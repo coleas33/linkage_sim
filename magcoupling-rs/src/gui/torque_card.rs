@@ -831,9 +831,9 @@ mod tests {
         WALL_NEEDED, guide,
     };
     use crate::gui::test_support::{
-        CardDesign, SCREEN, assert_glyphs, card_at, card_designs, clamp_at_its_limit,
-        end_effect_at_a_step, keyway_through, no_back_iron, only_the_clamp_fails, short_magnets,
-        side_at, sized_frame, slider_range, with_cup_depth,
+        CardDesign, QUOTED_UNITS, assert_glyphs, auto_states, card_at, card_designs,
+        clamp_at_its_limit, end_effect_at_a_step, glyph_context, keyway_through, no_back_iron,
+        only_the_clamp_fails, short_magnets, side_at, slider_range, with_cup_depth,
     };
 
     /// The number sides of the cards of section 2's designs ([`card_designs`]): the tests that
@@ -895,6 +895,54 @@ mod tests {
             ),
         };
         mapping.design(inputs, value).expect("on the slider")
+    }
+
+    /// A number side of a card of the table ([`card_designs`]) with the two designs it compares:
+    /// the design shown and its results, and the stepped design rebuilt here through the
+    /// slider's own mapping ([`slider_step`]) and its results.
+    struct NumberSide<'a> {
+        /// "{key} {control:?} {more}", for a failure's message.
+        what: String,
+        design: &'a CardDesign,
+        change: &'a Change,
+        before: &'a DesignResults,
+        stepped: DesignInputs,
+        after: DesignResults,
+    }
+
+    /// Calls `check` on every number side of the cards of [`card_designs`], each design's card
+    /// asked as the panel asks for it, in the table's order; returns how many it read, so a
+    /// test can pin [`NUMBER_SIDES`].
+    fn for_each_number_side(mut check: impl FnMut(&NumberSide)) -> usize {
+        let mut numbers = 0;
+        for design in &card_designs() {
+            let before = compute_all(&design.inputs);
+            let card = card(&design.inputs, &before, design.minimum_diameter_mm, PAUSED);
+            for row in card.rows() {
+                for (more, side) in sides(row) {
+                    let Side::Change(change) = side else {
+                        continue;
+                    };
+                    let stepped = slider_step(
+                        row.control,
+                        &design.inputs,
+                        design.minimum_diameter_mm,
+                        more,
+                    );
+                    let after = compute_all(&stepped);
+                    check(&NumberSide {
+                        what: format!("{} {:?} {more}", design.key, row.control),
+                        design,
+                        change,
+                        before: &before,
+                        stepped,
+                        after,
+                    });
+                    numbers += 1;
+                }
+            }
+        }
+        numbers
     }
 
     /// The words of `side`; panics on a number.
@@ -974,56 +1022,44 @@ mod tests {
         // Spec 8.1 test 1 (owner 1A): every number side, at every design of section 2, is the
         // stepped design's compute_all less the design shown's, bit for bit, the stepped design
         // rebuilt here through the slider's own mapping.
-        let mut numbers = 0;
-        for design in card_designs() {
-            let before = compute_all(&design.inputs);
-            let card = card(&design.inputs, &before, design.minimum_diameter_mm, PAUSED);
-            for row in card.rows() {
-                for (more, side) in sides(row) {
-                    let Side::Change(change) = side else {
-                        continue;
-                    };
-                    let what = format!("{} {:?} {more}", design.key, row.control);
-                    let stepped = slider_step(
-                        row.control,
-                        &design.inputs,
-                        design.minimum_diameter_mm,
-                        more,
-                    );
-                    let after = compute_all(&stepped);
-                    let hot_low = after.metal.torque_hot_low_Nm;
-                    let change_nm = hot_low - before.metal.torque_hot_low_Nm;
-                    assert_eq!(change.hot_low_Nm.to_bits(), hot_low.to_bits(), "{what}");
-                    assert_eq!(change.change_Nm.to_bits(), change_nm.to_bits(), "{what}");
-                    assert_eq!(
-                        change.fraction.to_bits(),
-                        (change_nm / before.metal.torque_hot_low_Nm).to_bits(),
-                        "{what}"
-                    );
-                    // The sizes the sliders would show; none exactly where either design has no
-                    // size controls.
-                    let sizes = match (dimensions(&design.inputs), dimensions(&stepped)) {
-                        (Some(shown), Some(stepped)) => [
-                            Some(stepped.diameter_mm - shown.diameter_mm),
-                            Some(stepped.overall_length_mm - shown.overall_length_mm),
-                        ],
-                        _ => [None, None],
-                    };
-                    assert_eq!(
-                        [change.diameter_change_mm, change.length_change_mm]
-                            .map(|mm| mm.map(f64::to_bits)),
-                        sizes.map(|mm| mm.map(f64::to_bits)),
-                        "{what}"
-                    );
-                    assert_eq!(
-                        change.calibration_changed,
-                        after.model.f_cal != before.model.f_cal,
-                        "{what}"
-                    );
-                    numbers += 1;
-                }
-            }
-        }
+        let numbers = for_each_number_side(|side| {
+            let NumberSide {
+                what,
+                design,
+                change,
+                before,
+                stepped,
+                after,
+            } = side;
+            let hot_low = after.metal.torque_hot_low_Nm;
+            let change_nm = hot_low - before.metal.torque_hot_low_Nm;
+            assert_eq!(change.hot_low_Nm.to_bits(), hot_low.to_bits(), "{what}");
+            assert_eq!(change.change_Nm.to_bits(), change_nm.to_bits(), "{what}");
+            assert_eq!(
+                change.fraction.to_bits(),
+                (change_nm / before.metal.torque_hot_low_Nm).to_bits(),
+                "{what}"
+            );
+            // The sizes the sliders would show; none exactly where either design has no size
+            // controls.
+            let sizes = match (dimensions(&design.inputs), dimensions(stepped)) {
+                (Some(shown), Some(stepped)) => [
+                    Some(stepped.diameter_mm - shown.diameter_mm),
+                    Some(stepped.overall_length_mm - shown.overall_length_mm),
+                ],
+                _ => [None, None],
+            };
+            assert_eq!(
+                [change.diameter_change_mm, change.length_change_mm].map(|mm| mm.map(f64::to_bits)),
+                sizes.map(|mm| mm.map(f64::to_bits)),
+                "{what}"
+            );
+            assert_eq!(
+                change.calibration_changed,
+                after.model.f_cal != before.model.f_cal,
+                "{what}"
+            );
+        });
         assert_eq!(numbers, NUMBER_SIDES);
     }
 
@@ -1433,7 +1469,7 @@ mod tests {
                 TorqueCard::ShownNoHotLow => SHOWN_NO_HOT_LOW,
                 TorqueCard::Rows(_) => unreachable!("{name}"),
             };
-            for auto in [None].into_iter().chain(FreeVariable::ALL.map(Some)) {
+            for auto in auto_states() {
                 assert_eq!(card.lines(auto), [line], "{name} {auto:?}");
             }
         }
@@ -1836,9 +1872,6 @@ mod tests {
 
     // ------------------------------------------------------------------ what a step costs, drawn
 
-    /// The units a quoted quantity's result carries (spec 3.6): mm, µm, MPa, °C and N·m.
-    const QUOTED_UNITS: [&str; 5] = ["mm", "µm", "MPa", "°C", "N·m"];
-
     /// The label of the guide of `check`.
     fn label(check: &str) -> &'static str {
         guide(check).expect("a guide's check").label
@@ -2122,6 +2155,24 @@ mod tests {
         );
         let mm = |x: f64| quoted(x, 2, "mm");
         let cold = |x: f64| quoted(x, 2, "N·m");
+        // A Magnet face gap side as (a) and the odd count draw it: its N·m and percent, then
+        // the Running clearance, the wall needed and cold-high at the gearbox input it quotes.
+        let gap_side = |step: &str,
+                        torque_nm: f64,
+                        fraction: f64,
+                        clearance_mm: f64,
+                        wall_mm: f64,
+                        cold_high_nm: f64| {
+            format!(
+                "{step} -> {} ({}), {clearance} {}, {cup_wall}: {WALL_NEEDED} {}, \
+                 {gearbox}: {COLD_HIGH} {}",
+                torque(torque_nm, 2),
+                signed_percent(fraction),
+                mm(clearance_mm),
+                mm(wall_mm),
+                cold(cold_high_nm)
+            )
+        };
 
         // (a): the order within a side is the number, the size changes, the flips, then the
         // quoted changes in the checks' order.
@@ -2149,19 +2200,9 @@ mod tests {
                     cold(0.0707)
                 ),
                 format!(
-                    "{gap}: -0.1 mm -> {} ({}), {clearance} {}, {cup_wall}: {WALL_NEEDED} {}, \
-                     {gearbox}: {COLD_HIGH} {}; +0.1 mm -> {} ({}), {clearance} {}, \
-                     {cup_wall}: {WALL_NEEDED} {}, {gearbox}: {COLD_HIGH} {}",
-                    torque(0.0759, 2),
-                    signed_percent(0.0332),
-                    mm(-0.1),
-                    mm(0.0182),
-                    cold(0.0267),
-                    torque(-0.0733, 2),
-                    signed_percent(-0.0321),
-                    mm(0.1),
-                    mm(-0.0177),
-                    cold(-0.0258)
+                    "{gap}: {}; {}",
+                    gap_side("-0.1 mm", 0.0759, 0.0332, -0.1, 0.0182, 0.0267),
+                    gap_side("+0.1 mm", -0.0733, -0.0321, 0.1, -0.0177, -0.0258)
                 ),
                 format!(
                     "{count}: -2 -> {} ({}), {gearbox}: {FLIP_PASSES}, {cup_wall}: {WALL_NEEDED} \
@@ -2274,19 +2315,9 @@ mod tests {
             [
                 CAPTION.to_owned(),
                 format!(
-                    "{gap}: -0.1 mm -> {} ({}), {clearance} {}, {cup_wall}: {WALL_NEEDED} {}, \
-                     {gearbox}: {COLD_HIGH} {}; +0.1 mm -> {} ({}), {clearance} {}, \
-                     {cup_wall}: {WALL_NEEDED} {}, {gearbox}: {COLD_HIGH} {}",
-                    torque(0.0653, 2),
-                    signed_percent(0.0322),
-                    mm(-0.1),
-                    mm(0.0202),
-                    cold(0.0230),
-                    torque(-0.0628, 2),
-                    signed_percent(-0.031),
-                    mm(0.1),
-                    mm(-0.0197),
-                    cold(-0.0221)
+                    "{gap}: {}; {}",
+                    gap_side("-0.1 mm", 0.0653, 0.0322, -0.1, 0.0202, 0.0230),
+                    gap_side("+0.1 mm", -0.0628, -0.031, 0.1, -0.0197, -0.0221)
                 ),
                 format!("{count}: -2 -> {NOT_ON_THE_SLIDER}; +2 -> {NOT_ON_THE_SLIDER}"),
             ]
@@ -2366,73 +2397,64 @@ mod tests {
         // whose terms read stored 3D fields: T-13), is drawn (`shows`), is in its result's own
         // unit, one of mm, µm, MPa, °C and N·m, and is that result on the stepped design less
         // the design shown's, bit for bit.
-        let designs = card_designs();
         let mut quotes = 0;
-        for design in &designs {
-            let card = design.card();
-            let before = compute_all(&design.inputs);
-            for row in card.rows() {
-                for (more, side) in sides(row) {
-                    let Side::Change(change) = side else {
-                        continue;
-                    };
-                    let what = format!("{} {:?} {more}", design.key, row.control);
-                    let stepped = slider_step(
-                        row.control,
-                        &design.inputs,
-                        design.minimum_diameter_mm,
-                        more,
-                    );
-                    let after = compute_all(&stepped);
-                    let flips: Vec<Flip> = counted_guides(PAUSED)
-                        .filter_map(|guide| {
-                            let to = level(guide, &stepped, &after);
-                            (level(guide, &design.inputs, &before) != to).then_some(Flip {
-                                check: guide.label,
-                                to,
-                            })
-                        })
-                        .collect();
-                    assert_eq!(change.flips, flips, "{what}");
-                    for margin in &change.margins {
-                        let guide = counted_guides(PAUSED)
-                            .find(|guide| guide.label == margin.check)
-                            .unwrap_or_else(|| panic!("{what}: {margin:?}"));
-                        assert_eq!(level(guide, &design.inputs, &before), Level::Bad, "{what}");
-                        assert_eq!(level(guide, &stepped, &after), Level::Bad, "{what}");
-                        assert!(![HOT_MIN, TEMPERATURE].contains(&guide.check), "{what}");
-                        assert!(shows(margin.change, margin.decimals), "{what}: {margin:?}");
-                        assert!(QUOTED_UNITS.contains(&margin.unit), "{what}: {margin:?}");
-                        // The unit and the decimals are those of the one term the check
-                        // quotes under its name, and the change is that term's result on the
-                        // stepped design less the design shown's, bit for bit.
-                        let quoted: Vec<Quoted> = check_terms(guide.check, &design.inputs, &before)
-                            .iter()
-                            .filter_map(|term| term.quoted)
-                            .filter(|q| {
-                                q.name == margin.name
-                                    && q.decimals == margin.decimals
-                                    && unit_of(q.path) == margin.unit
-                            })
-                            .collect();
-                        let [quoted] = quoted[..] else {
-                            panic!("{what}: {margin:?} against {quoted:?}")
-                        };
-                        assert_eq!(
-                            margin.change.to_bits(),
-                            (result_number(&after, quoted.path)
-                                - result_number(&before, quoted.path))
-                            .to_bits(),
-                            "{what}: {margin:?}"
-                        );
-                        quotes += 1;
-                    }
-                }
+        let numbers = for_each_number_side(|side| {
+            let NumberSide {
+                what,
+                design,
+                change,
+                before,
+                stepped,
+                after,
+            } = side;
+            let flips: Vec<Flip> = counted_guides(PAUSED)
+                .filter_map(|guide| {
+                    let to = level(guide, stepped, after);
+                    (level(guide, &design.inputs, before) != to).then_some(Flip {
+                        check: guide.label,
+                        to,
+                    })
+                })
+                .collect();
+            assert_eq!(change.flips, flips, "{what}");
+            for margin in &change.margins {
+                let guide = counted_guides(PAUSED)
+                    .find(|guide| guide.label == margin.check)
+                    .unwrap_or_else(|| panic!("{what}: {margin:?}"));
+                assert_eq!(level(guide, &design.inputs, before), Level::Bad, "{what}");
+                assert_eq!(level(guide, stepped, after), Level::Bad, "{what}");
+                assert!(![HOT_MIN, TEMPERATURE].contains(&guide.check), "{what}");
+                assert!(shows(margin.change, margin.decimals), "{what}: {margin:?}");
+                assert!(QUOTED_UNITS.contains(&margin.unit), "{what}: {margin:?}");
+                // The unit and the decimals are those of the one term the check quotes under its
+                // name, and the change is that term's result on the stepped design less the
+                // design shown's, bit for bit.
+                let quoted: Vec<Quoted> = check_terms(guide.check, &design.inputs, before)
+                    .iter()
+                    .filter_map(|term| term.quoted)
+                    .filter(|q| {
+                        q.name == margin.name
+                            && q.decimals == margin.decimals
+                            && unit_of(q.path) == margin.unit
+                    })
+                    .collect();
+                let [quoted] = quoted[..] else {
+                    panic!("{what}: {margin:?} against {quoted:?}")
+                };
+                assert_eq!(
+                    margin.change.to_bits(),
+                    (result_number(after, quoted.path) - result_number(before, quoted.path))
+                        .to_bits(),
+                    "{what}: {margin:?}"
+                );
+                quotes += 1;
             }
-        }
-        // Not vacuous: every quoted change at section 2's designs.
+        });
+        // Not vacuous: every number side, and every quoted change, at section 2's designs.
+        assert_eq!(numbers, NUMBER_SIDES);
         assert_eq!(quotes, 515);
 
+        let designs = card_designs();
         let design = |key| find(&designs, key);
         // (a) gap -0.1 mm quotes Running clearance -0.10 mm (owner 8A's example), and the
         // gearbox's quantity by its name (T-11).
@@ -3043,9 +3065,7 @@ mod tests {
                 d.temperature.duty.hot_ambient_C = -1e300
             }),
         ];
-        let ctx = egui::Context::default();
-        // The fonts load on the context's first frame.
-        sized_frame(&ctx, SCREEN, Vec::new(), |_| {});
+        let ctx = glyph_context();
         let top = dimensions(&DesignInputs::default())
             .expect("size controls")
             .minimum_diameter_range
@@ -3062,7 +3082,7 @@ mod tests {
                     assert_eq!(shown, card_at(&inputs, minimum), "{what}");
                     rows += shown.rows().len();
                     assert_one_precision_per_row(&shown, &what);
-                    for auto in [None].into_iter().chain(FreeVariable::ALL.map(Some)) {
+                    for auto in auto_states() {
                         let lines = shown.lines(auto);
                         assert!(!lines.is_empty(), "{what}");
                         for line in &lines {
@@ -3335,7 +3355,7 @@ mod tests {
         let mut texts = vec![("heading".to_owned(), CARD_HEADING.to_owned())];
         for design in card_designs() {
             let card = design.card();
-            for auto in [None].into_iter().chain(FreeVariable::ALL.map(Some)) {
+            for auto in auto_states() {
                 for line in card.lines(auto) {
                     texts.push((format!("{} {auto:?}", design.key), line));
                 }
@@ -3372,9 +3392,7 @@ mod tests {
     #[test]
     fn every_card_text_has_its_glyphs() {
         // Spec 8.4 test 17.
-        let ctx = egui::Context::default();
-        // The fonts load on the context's first frame.
-        sized_frame(&ctx, SCREEN, Vec::new(), |_| {});
+        let ctx = glyph_context();
         for (what, text) in every_card_text() {
             assert_glyphs(&ctx, &text, &what);
         }
@@ -3659,7 +3677,7 @@ mod tests {
         let shown = card(&inputs, &results, None, PAUSED);
         assert_eq!(shown, TorqueCard::ShownNoPrediction);
         assert!(shown.rows().is_empty());
-        for auto in [None].into_iter().chain(FreeVariable::ALL.map(Some)) {
+        for auto in auto_states() {
             assert_eq!(shown.lines(auto), [SHOWN_NO_PREDICTION], "{auto:?}");
         }
     }
