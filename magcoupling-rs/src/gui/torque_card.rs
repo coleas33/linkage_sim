@@ -9,9 +9,10 @@
 //! first ([`TorqueCard::ShownDoesNotFit`], [`TorqueCard::ShownNoPrediction`],
 //! [`TorqueCard::ShownNoHotLow`]), then the slider's range within [`STEP_SLACK_MM`], the
 //! slider's mapping, the validity rule every row shares ([`side_words`]) and, on the Overall
-//! length row, the jump. A number side also says what the step costs (owner 8A, spec 3.6): the
-//! change in Outside diameter and Overall length, the counted dashboard checks whose level flips,
-//! and the change of each failing check's own quantity ([`check_terms`]).
+//! length and Outside diameter rows, the jump (the latter the owner's FO-2). A number side also
+//! says what the step costs (owner 8A, spec 3.6): the change in Outside diameter and Overall
+//! length, the counted dashboard checks whose level flips, and the change of each failing
+//! check's own quantity ([`check_terms`]).
 //!
 //! [`TorqueCard::lines`] draws it: every text a named constant here (drafts until the slice's G-3
 //! review sets them), every number from the results through the Size tab's one number format
@@ -35,7 +36,7 @@ use crate::gui::plain_text::label_for;
 use crate::gui::size_controls::{self, SET_BY_AUTO, SliderMapping, predicts, slider_minimum};
 use crate::{DesignInputs, DesignResults, compute_all};
 
-/// The one slack of the card's range test and its jump rule [mm] (spec 3.3 steps 2 and 7): far
+/// The one slack of the card's range test and its jump rules [mm] (spec 3.3 steps 2 and 7): far
 /// above the float noise of the sliders' mappings (a step that lands 1.42e-14 mm past a range's
 /// end, 3.6e-15 mm in `resize_length`'s subtraction), far below the sliders' 0.01 and 0.1 mm
 /// steps and any real change.
@@ -86,6 +87,11 @@ pub const KEYWAY_BREAKS_THROUGH: &str = "the keyway breaks through the hub";
 /// step" never reads as the step's doing (the G-3 review's SF-1).
 pub const JUMP: &str =
     "not a step: the overlapping magnet length does not change by the step's amount";
+/// A diameter side that is not a step of the cup's diameter ([`Words::CupJump`]; the owner's
+/// FO-2 at the slice-3 STOP, spec risk R-13): where the shaft boss sets the Outside diameter,
+/// one step lifts the cup from its own size to the boss plus the step. It mirrors [`JUMP`]
+/// and names no cause.
+pub const CUP_JUMP: &str = "not a step: the cup diameter does not change by the step's amount";
 /// After a number whose stepped design takes another calibration factor (owner 16A): it names
 /// the change, never a cause.
 pub const CALIBRATION_CHANGE: &str = "includes a calibration change";
@@ -188,6 +194,9 @@ pub enum Words {
     /// The overlapping magnet length does not change by the step's amount (the Overall length
     /// row).
     Jump,
+    /// The cup's diameter does not change by the step's amount (the Outside diameter row, where
+    /// the shaft boss sets the Outside diameter: the owner's FO-2).
+    CupJump,
 }
 
 impl Words {
@@ -200,6 +209,7 @@ impl Words {
             Words::KeywayBreaksThrough => KEYWAY_BREAKS_THROUGH,
             Words::NoPrediction => SIDE_NO_PREDICTION,
             Words::Jump => JUMP,
+            Words::CupJump => CUP_JUMP,
         }
     }
 }
@@ -664,21 +674,34 @@ impl Shown<'_> {
         if let Some(words) = side_words(&design, &results, keyway) {
             return Side::Words(words);
         }
-        // Step 7: a length step that is not a step of the overlapping magnet length.
-        if control == Control::OverallLength && !self.moves_by_the_step(&results, more) {
-            return Side::Words(Words::Jump);
+        // Step 7: a size step that is not a step of what it moves.
+        if let Some(words) = self.jump(control, &results, more) {
+            return Side::Words(words);
         }
         Side::Change(Box::new(self.change(&design, &results)))
     }
 
-    /// Whether the overlapping magnet length (`model.active_length_mm`) of the stepped design,
-    /// whose results are `stepped`, moves by exactly the Overall length step, within
-    /// [`STEP_SLACK_MM`] (spec 3.3 step 7: owner 9A, widened by question O-1). A change by
-    /// anything else, more or less or the other way, is a jump, and so is a length that is not
-    /// a number.
-    fn moves_by_the_step(&self, stepped: &DesignResults, more: bool) -> bool {
-        let moved = stepped.model.active_length_mm - self.results.model.active_length_mm;
-        (moved - Control::OverallLength.signed_step(more)).abs() <= STEP_SLACK_MM
+    /// The jump rules (spec 3.3 step 7): the words of a size row's side whose step does not
+    /// move what it moves by exactly the step, within [`STEP_SLACK_MM`]; `None` where it does,
+    /// and on the gap and count rows, which have no jump rule. `stepped` is the stepped design's
+    /// results, `more` the `+` side. A change by anything else, more or less or the other way,
+    /// is a jump, and so is a quantity that is not a number:
+    /// - the Overall length row moves the overlapping magnet length (`model.active_length_mm`),
+    ///   else [`Words::Jump`] (owner 9A, widened by question O-1);
+    /// - the Outside diameter row moves the cup's diameter (`model.cup_od_mm`), else
+    ///   [`Words::CupJump`] (the owner's FO-2 at the slice-3 STOP): the slider asks for the cup
+    ///   at the request less the cap's overhang, so where the shaft boss sets the Outside
+    ///   diameter, above the cup and the cap, one step lifts the cup by more than the step.
+    fn jump(&self, control: Control, stepped: &DesignResults, more: bool) -> Option<Words> {
+        let (moved_by_the_row, words): (fn(&DesignResults) -> f64, Words) = match control {
+            Control::OverallLength => (|results| results.model.active_length_mm, Words::Jump),
+            Control::OutsideDiameter => (|results| results.model.cup_od_mm, Words::CupJump),
+            Control::FaceGap | Control::MagnetsPerRing => return None,
+        };
+        let moved = moved_by_the_row(stepped) - moved_by_the_row(self.results);
+        // A NaN fails the comparison, so it reads the words too.
+        let by_the_step = (moved - control.signed_step(more)).abs() <= STEP_SLACK_MM;
+        (!by_the_step).then_some(words)
     }
 
     /// The number side of the stepped `design`, whose results are `stepped` (spec 3.3 step 8):
@@ -778,7 +801,7 @@ mod tests {
 
     /// The number sides of the cards of section 2's designs ([`card_designs`]): the tests that
     /// read every one count them, so none can pass by reading none.
-    const NUMBER_SIDES: usize = 277;
+    const NUMBER_SIDES: usize = 276;
 
     /// The design keyed `key` in `designs` ([`card_designs`]).
     fn find<'a>(designs: &'a [CardDesign], key: &str) -> &'a CardDesign {
@@ -1096,6 +1119,15 @@ mod tests {
         assert_eq!(
             compute_all(&stepped).model.active_length_mm.to_bits(),
             overlap.to_bits()
+        );
+        // ... and the diameter row's jump (the owner's FO-2): where the shaft boss sets the
+        // Outside diameter, one step up lifts the cup by more than the step, and the step down
+        // asks for less than the boss, below the slider's range.
+        let plateau = design("R-13 boss plateau");
+        assert_eq!(words(&plateau.side(OutsideDiameter, true)), Words::CupJump);
+        assert_eq!(
+            words(&plateau.side(OutsideDiameter, false)),
+            Words::EndOfRange
         );
         for mm in [12.7, 15.5] {
             for more in [false, true] {
@@ -1981,10 +2013,23 @@ mod tests {
         for key in ["mixed", "short cavity"] {
             assert_eq!(lines(key)[2], jumps, "{key}");
         }
+        // The boss plateau's Outside diameter row: outside the slider's range below the boss,
+        // and the cup's jump above it (the owner's FO-1 and FO-2).
+        assert_eq!(
+            lines("R-13 boss plateau")[1],
+            format!("{od}: -1 mm -> {END_OF_RANGE}; +1 mm -> {CUP_JUMP}")
+        );
         // The jump words name the step's amount, so "by the step" never reads as the step's
         // doing; they hold where the overlap does not move at all (the cup cavity of 11.7 mm,
         // test 3), as round 1's "changes by a different amount" did not (G-3 round 2, SF-1).
-        assert!(JUMP.ends_with("by the step's amount"), "{JUMP}");
+        // The two jump texts read alike, each naming its own quantity (FO-2 mirrors JUMP).
+        for text in [JUMP, CUP_JUMP] {
+            assert!(text.ends_with("by the step's amount"), "{text}");
+        }
+        assert_eq!(
+            JUMP.replacen("the overlapping magnet length", "{}", 1),
+            CUP_JUMP.replacen("the cup diameter", "{}", 1)
+        );
 
         // The caption claims one control's step alone, never that everything else is held: at
         // the reverse pair the Overall length slider's own mapping trims the longer inner ring
@@ -2145,7 +2190,7 @@ mod tests {
             }
         }
         // Not vacuous: every quoted change at section 2's designs.
-        assert_eq!(quotes, 517);
+        assert_eq!(quotes, 515);
 
         let design = |key| find(&designs, key);
         // (a) gap -0.1 mm quotes Running clearance -0.10 mm (owner 8A's example), and the
@@ -2496,18 +2541,125 @@ mod tests {
 
     #[test]
     fn where_the_boss_sets_the_outside_diameter_one_step_reads_the_slider_s_own_lift() {
-        // Spec R-13 (on the STOP sheet; no diameter jump rule): the table's "R-13 boss plateau".
-        // The boss sets the Outside diameter at the slider's bottom: -1 mm reads END_OF_RANGE,
-        // and +1 mm, which lifts the cup from its own size to the boss plus the step, is a
-        // number (+7.55 %), as the slider does.
+        // Spec R-13, ruled by the owner's FO-2 at the slice-3 STOP: the table's "R-13 boss
+        // plateau". The boss sets the Outside diameter at the slider's bottom: -1 mm reads
+        // END_OF_RANGE, and +1 mm, which lifts the cup from its own size to the boss plus the
+        // step, reads the cup's jump words: the number it drew, +7.55 % for one step that lifts
+        // the cup more than three, read a jump as a slope (trap 4).
         let designs = card_designs();
         let design = find(&designs, "R-13 boss plateau");
         assert_eq!(
             design.side(Control::OutsideDiameter, false),
             Side::Words(Words::EndOfRange)
         );
-        let more = number(&design.side(Control::OutsideDiameter, true));
-        assert_eq!(signed_fixed(100.0 * more.fraction, 2), "+7.55");
+        assert_eq!(
+            design.side(Control::OutsideDiameter, true),
+            Side::Words(Words::CupJump)
+        );
+        let (shown, stepped) = (
+            compute_all(&design.inputs),
+            compute_all(&slider_step(
+                Control::OutsideDiameter,
+                &design.inputs,
+                design.minimum_diameter_mm,
+                true,
+            )),
+        );
+        assert_eq!(
+            [shown.model.cup_od_mm, stepped.model.cup_od_mm].map(|mm| fixed(mm, 2)),
+            ["37.78", "41.00"]
+        );
+        assert!(stepped.model.cup_od_mm - shown.model.cup_od_mm > 1.0 + STEP_SLACK_MM);
+        let hot_low = |results: &DesignResults| results.metal.torque_hot_low_Nm;
+        assert_eq!(
+            signed_fixed(100.0 * (hot_low(&stepped) / hot_low(&shown) - 1.0), 2),
+            "+7.55"
+        );
+    }
+
+    #[test]
+    fn the_diameter_row_reads_the_cup_s_jump_exactly_where_the_boss_sets_the_outside_diameter() {
+        // The owner's FO-2 (spec 3.3 step 7, the diameter row's jump). The slider's mapping asks
+        // for the cup at the request less the cap's overhang (`resize_diameter_using`), so a
+        // step moves the cup by exactly the step wherever the cup or the cap sets the Outside
+        // diameter, and by more wherever the shaft boss sets it, above both. So a diameter side
+        // that reaches step 7 reads the cup's jump words exactly where the boss of the design
+        // shown sits more than STEP_SLACK_MM above its cup and its cap (`diameter_breakdown`),
+        // and is a number everywhere else: over the table's designs, the defaults at every even
+        // count of the magnet slider, and the boss plateau with its boss just below and just
+        // above its cup.
+        use crate::engine::size_controls::diameter_breakdown;
+        use crate::gui::test_support::{boss_plateau, with_poles};
+        let plateau = boss_plateau();
+        let cup = compute_all(&plateau).model.cup_od_mm;
+        let with_boss = |mm: f64| {
+            let mut inputs = plateau.clone();
+            inputs.metal.boss_od_mm = mm;
+            inputs
+        };
+        let range = FreeVariable::MagnetsPerRing.range();
+        let mut designs: Vec<(String, DesignInputs, Option<f64>)> = card_designs()
+            .into_iter()
+            .map(|design| {
+                (
+                    design.key.to_owned(),
+                    design.inputs,
+                    design.minimum_diameter_mm,
+                )
+            })
+            .collect();
+        designs.extend(
+            (range.min as i64..=range.max as i64)
+                .step_by(2)
+                .map(|npole| (format!("{npole} magnets"), with_poles(npole), None)),
+        );
+        designs.push((
+            "boss just below the cup".to_owned(),
+            with_boss(cup - 0.01),
+            None,
+        ));
+        designs.push((
+            "boss just above the cup".to_owned(),
+            with_boss(cup + 0.01),
+            None,
+        ));
+        let (mut jumps, mut numbers) = (Vec::new(), 0);
+        for (key, inputs, minimum) in &designs {
+            let card = card_at(inputs, *minimum);
+            let Some(row) = card
+                .rows()
+                .iter()
+                .find(|row| row.control == Control::OutsideDiameter)
+            else {
+                continue;
+            };
+            let parts = diameter_breakdown(inputs).expect("a diameter row has size controls");
+            let boss_sets_it = parts.boss_mm - parts.cup_mm.max(parts.cap_mm) > STEP_SLACK_MM;
+            for (more, side) in sides(row) {
+                match side {
+                    Side::Words(Words::CupJump) => {
+                        assert!(boss_sets_it, "{key} {more}: {parts:?}");
+                        jumps.push((key.as_str(), more));
+                    }
+                    Side::Change(_) => {
+                        assert!(!boss_sets_it, "{key} {more}: {parts:?}");
+                        numbers += 1;
+                    }
+                    Side::Words(_) => {}
+                }
+            }
+        }
+        // Not vacuous: the words where the boss sets the diameter, on the +1 mm side only (the
+        // -1 mm side asks for less than the boss, below the slider's range), and numbers
+        // elsewhere.
+        assert_eq!(
+            jumps,
+            [
+                ("R-13 boss plateau", true),
+                ("boss just above the cup", true)
+            ]
+        );
+        assert_eq!(numbers, 64);
     }
 
     #[test]
@@ -2874,7 +3026,7 @@ mod tests {
             }
         }
         // Not vacuous: every number drawn at section 2's designs.
-        assert_eq!(numbers, 1049);
+        assert_eq!(numbers, 1045);
     }
 
     // The count row: the neighbour lines' tests, moved from `gui/guidance.rs` with the lines
