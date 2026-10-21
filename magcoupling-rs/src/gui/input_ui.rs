@@ -274,8 +274,8 @@ fn widget(
     }
 }
 
-/// A line of weak text under a control, wrapped to the side's width: an input's hint line
-/// ([`hint_line`]) and the Size tab's what-moves-what lines.
+/// A line of weak text, wrapped to its region's width: an input's hint line ([`hint_line`]) and
+/// the Size tab's what-moves-what lines under a control, and the torque card's lines.
 pub(crate) fn weak_line(ui: &mut egui::Ui, text: &str) {
     ui.add(egui::Label::new(egui::RichText::new(text).weak()).wrap());
 }
