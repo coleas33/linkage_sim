@@ -1869,7 +1869,7 @@ mod tests {
     use crate::gui::dashboard::{END_EFFECT_BANNER, STORED_3D_LABEL, result_info};
     use crate::gui::format::{format_value, with_unit};
     use crate::gui::geometry_view::MIN_DRAWING_HEIGHT;
-    use crate::gui::guidance::{Consequences, RING_SIZE_STAYS, plain_text_violations};
+    use crate::gui::guidance::{Consequences, FACE_GAP, RING_SIZE_STAYS, plain_text_violations};
     use crate::gui::input_ui::{BLANK_TEXT, CHANGED_DOT, OUTSIDE_RANGE_NOTE, RESET_LABEL};
     use crate::gui::inputs::WORKFLOW;
     use crate::gui::plain_text::{
@@ -1894,7 +1894,6 @@ mod tests {
     use crate::gui::torque_card::{CAPTION, Control, held_line};
     use crate::headline;
 
-    const FACE_GAP: &str = "metal.face_gap_mm";
     const POLES: &str = "coupling.npole";
     const AXIAL_LENGTH: &str = "coupling.magnets.axial_length_mm";
     const PART_INNER: &str = "coupling.magnets.part_inner";

@@ -505,8 +505,8 @@ pub fn card(
                 let slider = Slider::of(control, &shown, minimum_diameter_mm)?;
                 Some(Row {
                     control,
-                    fewer: shown.side(control, &slider, false),
-                    more: shown.side(control, &slider, true),
+                    fewer: shown.side(&slider, false),
+                    more: shown.side(&slider, true),
                 })
             })
             .collect(),
@@ -646,17 +646,23 @@ impl Slider {
         }
     }
 
-    /// The design one step of `control` from `inputs` makes, `more` its `+` side; else why the
-    /// slider does not take that step (spec 3.3 steps 2 and 3): a value more than
+    /// The control whose slider this is, the one [`Slider::of`] made it for: the step and the
+    /// row's rules read it, so a slider cannot be stepped as another control.
+    fn control(&self) -> Control {
+        match self {
+            Slider::Diameter { .. } => Control::OutsideDiameter,
+            Slider::Length { .. } => Control::OverallLength,
+            Slider::FaceGap { .. } => Control::FaceGap,
+            Slider::MagnetsPerRing => Control::MagnetsPerRing,
+        }
+    }
+
+    /// The design one step of this slider's control from `inputs` makes, `more` its `+` side;
+    /// else why the slider does not take that step (spec 3.3 steps 2 and 3): a value more than
     /// [`STEP_SLACK_MM`] past an end of its range, one the mapping refuses, or a count
     /// [`count_step`] does not take.
-    fn step(
-        &self,
-        control: Control,
-        inputs: &DesignInputs,
-        more: bool,
-    ) -> Result<DesignInputs, Words> {
-        let step = control.signed_step(more);
+    fn step(&self, inputs: &DesignInputs, more: bool) -> Result<DesignInputs, Words> {
+        let step = self.control().signed_step(more);
         let on = |value: f64, range: SliderRange| on_slider(value, range).ok_or(Words::EndOfRange);
         match *self {
             // Each side through the slider's own mapping (`SliderMapping`, the controls' too).
@@ -692,10 +698,11 @@ impl Slider {
 }
 
 impl Shown<'_> {
-    /// The side of `control`'s row one step of its `slider` away, `more` the `+` side, by the
-    /// order of tests (spec 3.3 steps 2-8).
-    fn side(&self, control: Control, slider: &Slider, more: bool) -> Side {
-        let design = match slider.step(control, self.inputs, more) {
+    /// The side of the row of `slider`'s control one step of the slider away, `more` the `+`
+    /// side, by the order of tests (spec 3.3 steps 2-8).
+    fn side(&self, slider: &Slider, more: bool) -> Side {
+        let control = slider.control();
+        let design = match slider.step(self.inputs, more) {
             Ok(design) => design,
             Err(words) => return Side::Words(words),
         };
@@ -931,6 +938,28 @@ mod tests {
                 .collect();
             assert_eq!(held.len(), 1, "{variable:?}");
             assert_eq!(held[0].label(), size_controls::variable_slider(variable));
+        }
+    }
+
+    #[test]
+    fn each_control_s_slider_is_stepped_as_that_control() {
+        // A row's slider names its own control, the one it was built for, so its step and its
+        // row's rules (the keyway on the count row, the jumps) read that control and never
+        // another's (the T3 review's M-8 (b)). Every control at every design of the table:
+        // where the Size tab draws a slider, it is that control's.
+        for design in card_designs() {
+            let results = compute_all(&design.inputs);
+            let shown = Shown {
+                inputs: &design.inputs,
+                results: &results,
+                size: dimensions(&design.inputs),
+                clamps_paused: PAUSED,
+            };
+            for control in Control::ALL {
+                if let Some(slider) = Slider::of(control, &shown, design.minimum_diameter_mm) {
+                    assert_eq!(slider.control(), control, "{}", design.key);
+                }
+            }
         }
     }
 

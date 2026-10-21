@@ -20,7 +20,7 @@ use crate::gui::dashboard::{end_effect_out_of_range, why_note_link};
 use crate::gui::format::{
     fixed, shared_torque_precision, signed_percent, signed_torque_change, torque_shortfall,
 };
-use crate::gui::guidance::{Consequences, SIZE_TAB_NOTE};
+use crate::gui::guidance::{Consequences, FACE_GAP, SIZE_TAB_NOTE};
 use crate::gui::input_ui::{hint_line, slider, weak_line};
 use crate::gui::inputs::{InputCatalogue, slider_range};
 use crate::gui::plain_text::{
@@ -394,10 +394,10 @@ pub(crate) fn controls_ui(
             );
         }
         for (label, path, lines) in [
-            (GAP, "metal.face_gap_mm", Vec::new()),
+            (GAP, FACE_GAP, Vec::new()),
             (
                 MAGNETS,
-                "coupling.npole",
+                FreeVariable::MagnetsPerRing.path(),
                 consequences.magnet_lines(inputs.coupling.npole, auto),
             ),
         ] {
@@ -821,11 +821,9 @@ mod tests {
             SliderMapping::Length.design(&inputs, length),
             resize_length(&inputs, length)
         );
-        let gap = SliderMapping::Input {
-            path: "metal.face_gap_mm",
-        }
-        .design(&inputs, 1.5)
-        .expect("a gap on its slider");
+        let gap = SliderMapping::Input { path: FACE_GAP }
+            .design(&inputs, 1.5)
+            .expect("a gap on its slider");
         let mut expected = inputs.clone();
         expected.metal.face_gap_mm = 1.5;
         assert_eq!(gap, expected);
@@ -843,11 +841,9 @@ mod tests {
                 .is_err()
         );
         assert!(
-            SliderMapping::Input {
-                path: "metal.face_gap_mm",
-            }
-            .design(&inputs, f64::NAN)
-            .is_err()
+            SliderMapping::Input { path: FACE_GAP }
+                .design(&inputs, f64::NAN)
+                .is_err()
         );
         // The count is set as a whole number, as the slider sets it: a value a cast to the
         // count would change (not finite, not whole, or past what an i64 holds; 2^63 is one
@@ -886,10 +882,7 @@ mod tests {
         let mut expected = inputs.clone();
         expected.metal.face_gap_mm = 6.0;
         assert_eq!(
-            SliderMapping::Input {
-                path: "metal.face_gap_mm",
-            }
-            .design(&inputs, 6.0),
+            SliderMapping::Input { path: FACE_GAP }.design(&inputs, 6.0),
             Ok(expected)
         );
     }
