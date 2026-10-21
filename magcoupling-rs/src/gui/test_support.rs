@@ -216,7 +216,8 @@ pub(crate) fn mixed_lengths() -> crate::DesignInputs {
 /// The mixed-length pair the other way round (slice 3 spec 2.1, "reverse"): B842SH inside, B442
 /// outside, the axial override blank. Hot-low 1.0099 N·m, as [`mixed_lengths`]; it fails 3 of
 /// the 9 counted checks (Hot-low torque, Running clearance, Cup wall) and asks for a look at
-/// Temperature limits.
+/// Temperature limits. One +1 mm step of the Overall length slider (its own mapping) trims the
+/// longer inner ring by more than the step, 12.70 -> 7.35 mm (BL-074).
 pub(crate) fn reverse_lengths() -> crate::DesignInputs {
     let mut inputs = crate::DesignInputs::default();
     set_parts(&mut inputs, "B842SH", "B442");
@@ -1083,7 +1084,8 @@ mod tests {
     use crate::gui::guidance::{
         CLEARANCE, CUP_WALL, GEARBOX, HOT_MIN, SHAFT_JOINT, TEMPERATURE, counted_guides, level,
     };
-    use crate::gui::size_controls::predicts;
+    use crate::gui::size_controls::{SliderMapping, predicts};
+    use crate::gui::torque_card::Control;
     use crate::{DesignInputs, compute_all};
 
     /// The counted checks (the shaft-clamp section paused, as shipped) at `want` on `inputs`, in
@@ -1119,6 +1121,20 @@ mod tests {
             [HOT_MIN, CLEARANCE, CUP_WALL]
         );
         assert_eq!(checks_at(&reverse_lengths(), Level::Caution), [TEMPERATURE]);
+        // ... and one step of the Overall length slider trims its longer inner ring by more than
+        // the step: one control's step changes more than that control (BL-074).
+        let reverse = reverse_lengths();
+        let step = Control::OverallLength.step();
+        let length = dimensions(&reverse)
+            .expect("the reverse pair has size controls")
+            .overall_length_mm;
+        let longer = SliderMapping::Length
+            .design(&reverse, length + step)
+            .expect("a length on the slider");
+        let [shown, stepped] =
+            [&reverse, &longer].map(|inputs| compute_all(inputs).model.inner_length_mm);
+        assert!(shown - stepped > step, "{shown} -> {stepped}");
+        assert_eq!([shown, stepped].map(|mm| fixed(mm, 2)), ["12.70", "7.35"]);
 
         // No back iron, and with its calibration coefficient at -0.95: the measured factor on
         // the design shown, the coefficient itself on its Magnets per ring -2 design.

@@ -2311,14 +2311,42 @@ mod tests {
             CUP_JUMP.replacen("the cup diameter", "{}", 1)
         );
 
-        // The caption claims one control's step alone, never that everything else is held: at
-        // the reverse pair the Overall length slider's own mapping trims the longer inner ring
-        // (12.70 -> 7.35 mm on the +1 mm side), and no cost on its row shows it (G-3 round 1,
-        // MF-1, decision D4).
-        let reverse = &find(&designs, "reverse").inputs;
-        let trimmed = compute_all(&slider_step(Control::OverallLength, reverse, None, true));
-        assert!(trimmed.model.inner_length_mm < compute_all(reverse).model.inner_length_mm - 5.0);
-        assert!(!CAPTION.contains("held"), "{CAPTION}");
+        // The caption claims one control's step alone, never that everything else is held, in
+        // any words: at the reverse pair one step of the Overall length slider trims the longer
+        // inner ring by more than the step (the shared designs' test,
+        // the_shared_card_designs_read_as_section_2_1_says), and no cost on that row shows it
+        // (G-3 round 1, MF-1, decision D4).
+        let [_, reverse_length, ..] = four_rows(find(&designs, "reverse"));
+        for (more, side) in sides(&reverse_length) {
+            assert_eq!(
+                number(side).costs(Control::OverallLength),
+                Vec::<String>::new(),
+                "{more}"
+            );
+        }
+        let caption = CAPTION.to_lowercase();
+        let caption_words: Vec<&str> = caption.split(|c: char| !c.is_alphanumeric()).collect();
+        for word in [
+            "held",
+            "hold",
+            "holds",
+            "fixed",
+            "unchanged",
+            "constant",
+            "kept",
+            "same",
+        ] {
+            assert!(!caption_words.contains(&word), "{CAPTION}: {word}");
+        }
+        for phrase in [
+            "everything else",
+            "all else",
+            "all other",
+            "the rest",
+            "other input",
+        ] {
+            assert!(!caption.contains(phrase), "{CAPTION}: {phrase}");
+        }
 
         // The odd count: no size rows; the gap's numbers, and the count's two sides in words.
         assert_eq!(
