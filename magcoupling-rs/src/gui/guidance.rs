@@ -3097,7 +3097,7 @@ mod tests {
         glyph_context, hot_day, hub_overstressed, is_shaft_joint, keyway_through, mixed_rings,
         n42_parts, only_the_clamp_fails, only_the_gearbox_fails, only_the_joint_fails,
         passing_design, reversed_hub_band, shaft_joint_input_rows, shaft_joint_result_rows,
-        short_magnets, sized_frame, slider_range, small_boss, with_poles,
+        short_magnets, sized_frame, slider_range, small_boss, with_magnets, with_poles,
     };
     use std::collections::BTreeSet;
 
@@ -8994,11 +8994,6 @@ mod tests {
         )
     }
 
-    /// `inputs` with `npole` magnets per ring and nothing else changed.
-    fn with_magnets(inputs: &DesignInputs, npole: i64) -> DesignInputs {
-        FreeVariable::MagnetsPerRing.apply(inputs, npole as f64)
-    }
-
     #[test]
     fn the_fit_line_names_a_diameter_that_fits_and_one_step_below_does_not() {
         let inputs = DesignInputs::default();
@@ -9651,20 +9646,16 @@ mod tests {
         // "card/<key>/<Auto state>/<line>", the line numbered from 00.
         {
             use crate::gui::test_support::card_designs;
-            use crate::gui::torque_card::{CARD_HEADING, card};
+            use crate::gui::torque_card::CARD_HEADING;
             let state = |auto: Option<FreeVariable>| {
                 auto.map_or_else(|| "Auto off".to_owned(), |v| format!("Auto {v:?}"))
             };
             emit("card/heading", CARD_HEADING);
+            // Each design's card as the panel asks for it (`CardDesign::card`).
             let cards: Vec<_> = card_designs()
                 .into_iter()
                 .map(|d| {
-                    let shown = card(
-                        &d.inputs,
-                        &compute_all(&d.inputs),
-                        d.minimum_diameter_mm,
-                        crate::engine::clamps::PAUSED,
-                    );
+                    let shown = d.card();
                     (d, shown)
                 })
                 .collect();

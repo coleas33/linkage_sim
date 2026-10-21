@@ -21,6 +21,13 @@ pub(crate) fn with_poles(npole: i64) -> crate::DesignInputs {
     inputs
 }
 
+/// `inputs` with `npole` magnets per ring and nothing else changed, the ring radius kept, as
+/// inverse sizing sets the count (`FreeVariable::MagnetsPerRing.apply`): the one count edit of
+/// the guides' tests, [`end_effect_edge`] and the torque card's count-row tests.
+pub(crate) fn with_magnets(inputs: &crate::DesignInputs, npole: i64) -> crate::DesignInputs {
+    crate::engine::sizing::FreeVariable::MagnetsPerRing.apply(inputs, npole as f64)
+}
+
 /// A design that passes all 10 guided checks (`gui::guidance::CHECK_GUIDES`), each with room
 /// to spare: the defaults with a 1.8 mm face gap (running clearance about 0.1 mm over its
 /// target), a 2.0 mm cup wall (the flux needs about 1.85 mm at that gap), a 1.6 N·m
@@ -406,6 +413,23 @@ pub(crate) fn side_at(
     }
 }
 
+/// The line of `control`'s row among `card`'s lines with Auto on `auto` (`TorqueCard::lines`),
+/// found by its "{label}: " start, the row template's (slice 3 spec 4.1). Panics where the card
+/// draws no such row.
+pub(crate) fn row_line(
+    card: &crate::gui::torque_card::TorqueCard,
+    control: crate::gui::torque_card::Control,
+    auto: Option<crate::engine::sizing::FreeVariable>,
+) -> String {
+    let start = format!("{}: ", control.label());
+    let lines = card.lines(auto);
+    lines
+        .iter()
+        .find(|line| line.starts_with(&start))
+        .cloned()
+        .unwrap_or_else(|| panic!("no {control:?} row in {lines:?}"))
+}
+
 /// Every Auto state the panel draws the torque card's lines in: Auto off, then Auto on each
 /// variable it can hold, in [`crate::engine::sizing::FreeVariable::ALL`]'s order.
 pub(crate) fn auto_states() -> impl Iterator<Item = Option<crate::engine::sizing::FreeVariable>> {
@@ -623,9 +647,6 @@ pub(crate) fn card_designs() -> Vec<CardDesign> {
 /// `gui::guidance`'s tests (slice 3): they and the torque card's count-row tests read it.
 pub(crate) fn end_effect_edge() -> crate::DesignInputs {
     use crate::engine::sizing::FreeVariable;
-    let with_magnets = |inputs: &crate::DesignInputs, npole: i64| {
-        FreeVariable::MagnetsPerRing.apply(inputs, npole as f64)
-    };
     let base = crate::DesignInputs::default();
     let more = base.coupling.npole + 2;
     let radius = FreeVariable::RingRadius

@@ -833,7 +833,8 @@ mod tests {
     use crate::gui::test_support::{
         CardDesign, QUOTED_UNITS, assert_glyphs, auto_states, card_at, card_designs,
         clamp_at_its_limit, end_effect_at_a_step, glyph_context, keyway_through, no_back_iron,
-        only_the_clamp_fails, short_magnets, side_at, slider_range, with_cup_depth,
+        only_the_clamp_fails, row_line, short_magnets, side_at, slider_range, with_cup_depth,
+        with_magnets,
     };
 
     /// The number sides of the cards of section 2's designs ([`card_designs`]): the tests that
@@ -1167,7 +1168,7 @@ mod tests {
         let mut tiny = no_back_iron();
         tiny.coupling.npole = 8;
         tiny.calibration.f_cal_original = 1e-320;
-        let ten = compute_all(&FreeVariable::MagnetsPerRing.apply(&tiny, 10.0));
+        let ten = compute_all(&with_magnets(&tiny, 10));
         assert!(crate::gui::dashboard::end_effect_out_of_range(&ten).is_none());
         assert!(
             !ten.metal.torque_hot_low_Nm.is_finite(),
@@ -1262,7 +1263,7 @@ mod tests {
         // SF-2).
         let negative = design("(c), f_cal_original -0.95");
         let fewer = number(&negative.side(MagnetsPerRing, false));
-        let stepped = compute_all(&FreeVariable::MagnetsPerRing.apply(&negative.inputs, 8.0));
+        let stepped = compute_all(&with_magnets(&negative.inputs, 8));
         assert!(fewer.calibration_changed);
         assert!(fewer.hot_low_Nm < 0.0, "{fewer:?}");
         assert_eq!(
@@ -1764,7 +1765,7 @@ mod tests {
         let mut intact = keyway_through();
         intact.coupling.keyway_depth_mm = 0.0;
         let at = |inputs: &DesignInputs, npole: i64| {
-            let design = FreeVariable::MagnetsPerRing.apply(inputs, npole as f64);
+            let design = with_magnets(inputs, npole);
             let results = compute_all(&design);
             (design, results)
         };
@@ -3504,7 +3505,7 @@ mod tests {
         let [fewer, more] =
             [false, true].map(|more| side_at(&inputs, None, Control::MagnetsPerRing, more));
         for (count, side) in [(npole - 2, &fewer), (npole + 2, &more)] {
-            let design = FreeVariable::MagnetsPerRing.apply(&inputs, count as f64);
+            let design = with_magnets(&inputs, count);
             assert_eq!(
                 design.coupling.inner_back_apothem_mm,
                 inputs.coupling.inner_back_apothem_mm
@@ -3530,10 +3531,9 @@ mod tests {
         // growing under the cap; two more do not fit at this ring size.
         let fewer = number(&fewer);
         assert!(fewer.change_Nm < 0.0, "{fewer:?}");
-        let fewer_cup =
-            compute_all(&FreeVariable::MagnetsPerRing.apply(&inputs, (npole - 2) as f64))
-                .model
-                .cup_od_mm;
+        let fewer_cup = compute_all(&with_magnets(&inputs, npole - 2))
+            .model
+            .cup_od_mm;
         assert!(fewer_cup > results.model.cup_od_mm, "{fewer_cup}");
         assert_eq!(words(&more), Words::DoesNotFit);
     }
@@ -3546,14 +3546,14 @@ mod tests {
         let inputs = DesignInputs::default();
         let results = compute_all(&inputs);
         let npole = inputs.coupling.npole;
-        let fewer = compute_all(&FreeVariable::MagnetsPerRing.apply(&inputs, (npole - 2) as f64));
+        let fewer = compute_all(&with_magnets(&inputs, npole - 2));
         let change = fewer.metal.torque_hot_low_Nm - results.metal.torque_hot_low_Nm;
         let label = Control::MagnetsPerRing.label();
-        let line = card(&inputs, &results, None, PAUSED)
-            .lines(None)
-            .into_iter()
-            .find(|line| line.starts_with(&format!("{label}: ")))
-            .expect("the count row's line");
+        let line = row_line(
+            &card(&inputs, &results, None, PAUSED),
+            Control::MagnetsPerRing,
+            None,
+        );
         // The row's one number side, at its own decimals (T-14).
         let fewer_text = format!(
             "{label}: -2 -> {} N·m ({})",
@@ -3599,7 +3599,7 @@ mod tests {
                 (&fewer, &more, npole + 2)
             };
             assert_eq!(*past, Side::Words(Words::EndOfRange), "{npole}");
-            let at = compute_all(&FreeVariable::MagnetsPerRing.apply(&inputs, inside_count as f64));
+            let at = compute_all(&with_magnets(&inputs, inside_count));
             match inside {
                 Side::Change(change) => {
                     assert_eq!(
@@ -3669,7 +3669,7 @@ mod tests {
             "{}",
             results.model.f_end
         );
-        let more = FreeVariable::MagnetsPerRing.apply(&inputs, (inputs.coupling.npole + 2) as f64);
+        let more = with_magnets(&inputs, inputs.coupling.npole + 2);
         assert!(
             is_valid(&more, &compute_all(&more)),
             "two more magnets predict"

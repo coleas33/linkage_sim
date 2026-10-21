@@ -1887,7 +1887,7 @@ mod tests {
     use crate::gui::test_support::{
         SCREEN, clamp_at_its_limit, drawing_rect, drawn_texts, hot_day, hub_overstressed,
         key_event, key_tap, last_characters, no_back_iron, only_the_clamp_fails,
-        only_the_joint_fails, primary_button, select_all, short_magnets, sized_frame,
+        only_the_joint_fails, primary_button, row_line, select_all, short_magnets, sized_frame,
         sized_frame_at, smoke_inputs, text_center, text_clip_rect, text_rect, text_rects,
         tooltips_at_once, with_poles,
     };
@@ -6680,13 +6680,7 @@ mod tests {
             let mut harness = size_tab(SCREEN, inputs);
             let output = harness.frame(Vec::new());
             let consequences = shown_consequences(&harness);
-            let row = format!("{}: ", Control::MagnetsPerRing.label());
-            let count_line = consequences
-                .card
-                .lines(None)
-                .into_iter()
-                .find(|line| line.starts_with(&row))
-                .unwrap_or_else(|| panic!("{npole}: no count row"));
+            let count_line = row_line(&consequences.card, Control::MagnetsPerRing, None);
             assert!(
                 count_line.contains(&format!("{past} -> {END_OF_RANGE}")),
                 "{count_line}"
@@ -10229,13 +10223,11 @@ mod tests {
         // that the magnets do not fit.
         use crate::gui::torque_card::END_OF_RANGE;
         let diameter_row = |harness: &Harness| {
-            let start = format!("{}: ", Control::OutsideDiameter.label());
-            shown_consequences(harness)
-                .card
-                .lines(None)
-                .into_iter()
-                .find(|line| line.starts_with(&start))
-                .expect("an Outside diameter row")
+            row_line(
+                &shown_consequences(harness).card,
+                Control::OutsideDiameter,
+                None,
+            )
         };
         let unset = diameter_row(&harness);
         assert!(
@@ -10293,11 +10285,7 @@ mod tests {
         );
         assert_eq!(shown_consequences(&harness).card, held);
         assert_eq!(count(&output, &held_row), 0);
-        let length = held
-            .lines(None)
-            .into_iter()
-            .find(|line| line.starts_with(&format!("{}: ", Control::OverallLength.label())))
-            .expect("a length row");
+        let length = row_line(&held, Control::OverallLength, None);
         assert_eq!(count(&output, &length), 1, "{length}");
         // (ii) The defaults, Auto on the magnet count: the best count is the one shown (10), so
         // turning Auto on, letting it solve and turning it off computes nothing.
