@@ -64,7 +64,7 @@ use crate::gui::dashboard::{DASHBOARD, Level, check_level, result_info};
 use crate::gui::format::{
     SIGNIFICANT_DIGITS, fewest_decimals_apart, fixed, format_value, last_digit_step, with_unit,
 };
-use crate::gui::inputs::{InputCatalogue, optional_seed, section_label};
+use crate::gui::inputs::{InputCatalogue, optional_seed, section_label, slider_range};
 use crate::gui::pickers::{CUSTOM, GRADE_PATHS, PART_PATHS};
 use crate::gui::plain_text::{display_label, label_for};
 use crate::gui::size_controls;
@@ -2264,12 +2264,10 @@ fn cannot_be_made_problem(inputs: &DesignInputs, reason: &CannotBeMade) -> Strin
     }
 }
 
-/// The bottom of the slider of the input at `path`. Panics where `path` is not an input with a
-/// slider: the guide asks only for those.
+/// The bottom of the slider of the input at `path` ([`slider_range`]). Panics where `path` is
+/// not an input with a slider: the guide asks only for those.
 fn slider_bottom(path: &str) -> f64 {
-    InputCatalogue::get()
-        .entry(path)
-        .and_then(|entry| entry.meta.range)
+    slider_range(path)
         .map(|range| range.min)
         .unwrap_or_else(|| panic!("{path} has a slider"))
 }

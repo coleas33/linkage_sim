@@ -33,7 +33,7 @@ use crate::gui::format::{
 use crate::gui::guidance::{
     CheckGuide, FACE_GAP, check_terms, counted_guides, level, result_number,
 };
-use crate::gui::inputs::InputCatalogue;
+use crate::gui::inputs::slider_range;
 use crate::gui::plain_text::label_for;
 use crate::gui::size_controls::{self, SET_BY_AUTO, SliderMapping, predicts, slider_minimum};
 use crate::{DesignInputs, DesignResults, compute_all};
@@ -539,11 +539,12 @@ pub(crate) fn side_words(
 
 /// One step of the Magnets per ring slider from `npole`, `more` the `+` side (owner 3A: two
 /// magnets): the count, or why the slider does not take it. The slider takes the even counts
-/// of its range (one block per pole): a step past the range, or one that overflows (a design
-/// file's count), reads [`Words::EndOfRange`]; an odd count inside the range, which a design
+/// of its range (one block per pole; the count input's [`slider_range`]): a step past the
+/// range, or one that overflows (a design file's count), reads [`Words::EndOfRange`], as would
+/// every step of a count input without a range; an odd count inside the range, which a design
 /// file can hold, [`Words::NotOnTheSlider`].
 pub(crate) fn count_step(npole: i64, more: bool) -> Result<i64, Words> {
-    let range = FreeVariable::MagnetsPerRing.range();
+    let range = slider_range(FreeVariable::MagnetsPerRing.path()).ok_or(Words::EndOfRange)?;
     let stepped = if more {
         npole.checked_add(COUNT_STEP)
     } else {
@@ -567,7 +568,8 @@ pub(crate) fn count_step(npole: i64, more: bool) -> Result<i64, Words> {
 /// fit (at 0, 1 or fewer the count is the more exact reason). A count above the range is left
 /// to the fit, as before.
 fn count_below_the_slider(npole: i64) -> bool {
-    (npole as f64) < FreeVariable::MagnetsPerRing.range().min
+    slider_range(FreeVariable::MagnetsPerRing.path())
+        .is_some_and(|range| (npole as f64) < range.min)
 }
 
 /// Whether the readouts show both torques of `results` as numbers ([`predicts`]: the end
@@ -598,14 +600,6 @@ fn shows(change: f64, from: usize) -> bool {
     decimals_with_a_digit(change, from).is_some()
 }
 
-/// The Magnet face gap slider's range: its input's, as the Size tab draws it.
-fn face_gap_range() -> SliderRange {
-    InputCatalogue::get()
-        .entry(FACE_GAP)
-        .and_then(|entry| entry.meta.range)
-        .expect("the face gap has a slider")
-}
-
 /// The design shown, its results and its size controls ([`dimensions`]: `None` where the Size
 /// tab draws no size slider): what each side is compared with, over the guides that count at
 /// the shaft-clamp pause `clamps_paused`.
@@ -624,8 +618,9 @@ enum Slider {
     Diameter { size: SizeControls, minimum: f64 },
     /// The Overall length slider: its mapping over the size controls' length range.
     Length { size: SizeControls },
-    /// The Magnet face gap slider: its input set inside its input's range.
-    FaceGap { range: SliderRange },
+    /// The Magnet face gap slider: its input set inside its input's range ([`slider_range`]),
+    /// each side reading [`Words::EndOfRange`] where the input has none, as the count's do.
+    FaceGap { range: Option<SliderRange> },
     /// The Magnets per ring slider: [`count_step`], then the count set as the slider sets it,
     /// the ring radius kept.
     MagnetsPerRing,
@@ -645,7 +640,7 @@ impl Slider {
             }
             Control::OverallLength => Some(Slider::Length { size: shown.size? }),
             Control::FaceGap => Some(Slider::FaceGap {
-                range: face_gap_range(),
+                range: slider_range(FACE_GAP),
             }),
             Control::MagnetsPerRing => Some(Slider::MagnetsPerRing),
         }
@@ -678,6 +673,7 @@ impl Slider {
                     .map_err(|_| Words::EndOfRange)
             }
             Slider::FaceGap { range } => {
+                let range = range.ok_or(Words::EndOfRange)?;
                 let gap = on(inputs.metal.face_gap_mm + step, range)?;
                 SliderMapping::Input { path: FACE_GAP }
                     .design(inputs, gap)

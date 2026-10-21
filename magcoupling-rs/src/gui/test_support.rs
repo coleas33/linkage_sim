@@ -163,12 +163,10 @@ pub(crate) fn workflow_group(id: &str) -> &'static crate::gui::inputs::WorkflowG
         .unwrap_or_else(|| panic!("no workflow group {id}"))
 }
 
-/// The slider range of the input at `path`.
+/// The slider range of the input at `path` ([`crate::gui::inputs::slider_range`], the one
+/// spelling production reads), for a path the test knows has one.
 pub(crate) fn slider_range(path: &str) -> crate::engine::meta::SliderRange {
-    crate::gui::inputs::InputCatalogue::get()
-        .entry(path)
-        .and_then(|entry| entry.meta.range)
-        .unwrap_or_else(|| panic!("{path} has a slider"))
+    crate::gui::inputs::slider_range(path).unwrap_or_else(|| panic!("{path} has a slider"))
 }
 
 /// The defaults with every shaft joint input (BL-064) one slider step off its default: up, or

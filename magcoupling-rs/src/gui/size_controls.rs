@@ -22,7 +22,7 @@ use crate::gui::format::{
 };
 use crate::gui::guidance::{Consequences, SIZE_TAB_NOTE};
 use crate::gui::input_ui::{hint_line, slider, weak_line};
-use crate::gui::inputs::InputCatalogue;
+use crate::gui::inputs::{InputCatalogue, slider_range};
 use crate::gui::plain_text::{
     DIAMETER_HINT_KEY, HOT_LOW_TORQUE, LENGTH_HINT_KEY, MINIMUM_OD_HINT_KEY, REQUIRED_TORQUE,
     help_for,
@@ -414,7 +414,7 @@ pub(crate) fn controls_ui(
                 _ => unreachable!("the gap and magnet count are numbers"),
             };
             ui.label(label).on_hover_text(help_for(path));
-            let range: SliderRange = entry.meta.range.expect("a size control has a slider");
+            let range = slider_range(path).expect("a size control has a slider");
             let response = size_slider(ui, path, &mut value, entry.meta, range, is_locked(label));
             output.widgets.push(response.id);
             hint_line(ui, path);

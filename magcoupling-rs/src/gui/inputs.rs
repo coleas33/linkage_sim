@@ -884,6 +884,16 @@ impl Default for InputCatalogue {
     }
 }
 
+/// The slider range of the input at `path`, from its metadata in the catalogue built once
+/// ([`InputCatalogue::get`]); `None` for an input without a slider or a path that is no input.
+/// The one spelling the torque card (the gap's and the count's sliders), the Size tab's controls,
+/// the guides and the tests read.
+pub(crate) fn slider_range(path: &str) -> Option<SliderRange> {
+    InputCatalogue::get()
+        .entry(path)
+        .and_then(|entry| entry.meta.range)
+}
+
 /// The filter box's hint: it matches as the results search does (decision O-5).
 pub const FILTER_HINT: &str = "Filter inputs by label, path or cell";
 
@@ -1483,6 +1493,33 @@ mod tests {
         assert!(outside_range(face_gap, &Value::Int(7)));
         assert!(!outside_range(face_gap, &Value::None));
         assert!(!outside_range(None, &Value::Num(1e9)));
+    }
+
+    #[test]
+    fn an_input_s_slider_range_is_its_metadata_s_from_the_cached_catalogue() {
+        // The one spelling of an input's slider range (slice 3, the T3 review's M-2), which the
+        // torque card, the Size tab's controls, the guides and the tests read: the range of the
+        // input's own metadata, the one the engine's free variables read too.
+        use crate::engine::sizing::FreeVariable;
+        for variable in FreeVariable::ALL {
+            assert_eq!(
+                slider_range(variable.path()),
+                Some(variable.range()),
+                "{variable:?}"
+            );
+        }
+        let gap = InputCatalogue::new()
+            .entry("metal.face_gap_mm")
+            .expect("the face gap is an input")
+            .meta
+            .range;
+        assert!(gap.is_some());
+        assert_eq!(slider_range("metal.face_gap_mm"), gap);
+        // None for an input without a slider (a part name) and for a path that is no input.
+        let part = "coupling.magnets.part_inner";
+        assert!(InputCatalogue::get().entry(part).is_some());
+        assert_eq!(slider_range(part), None);
+        assert_eq!(slider_range("no.such.input"), None);
     }
 
     #[test]
