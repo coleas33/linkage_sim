@@ -5386,6 +5386,11 @@ round's report as returned. The text re-reviews of later changes follow its repo
 - Traps: none of the 18 is written in any card string. Round 1's must-fix was a false claim that no trap names
   ("everything else held", D4), fixed by MF-1. Two traps reach drawn lines only where a rule is the owner's: trap 4 at
   R-13's boss plateau (FO-2) and trap 2 at a design file's magnitudes (FO-4).
+  - Added 2026-10-21 (the slice-3 fold-in, WP-I, from Task 7's review M-3), not the review's words: the sentence
+    "none of the 18 is written in any card string" speaks of the constants and templates. Read alone, it would say
+    that no trap shows on screen, while this bullet's last sentence names two that reached drawn lines at round 2.
+    The owner picked FO-2 and FO-4 at the slice-3 STOP; both are applied, and the re-review of the owner's picks
+    below records them.
 - Verdict: PASS (round 2).
 
 ### Report for the record, round 1 (as returned)
