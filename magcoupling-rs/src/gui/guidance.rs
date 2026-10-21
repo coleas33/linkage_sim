@@ -691,12 +691,12 @@ fn failing(check: &str, inputs: &DesignInputs, results: &DesignResults) -> bool 
 
 /// The name the torque card gives the cup wall's quoted quantity, the wall the flux needs
 /// (`materials.backiron_thickness_needed_mm`): "Cup wall: wall needed +0.07 mm" (slice 3 spec
-/// 4.1; a draft until the slice's G-3 review sets it).
+/// 4.1; set by the slice's G-3 review).
 pub const WALL_NEEDED: &str = "wall needed";
 
 /// The name the torque card gives the gearbox check's quoted quantity, cold-high at the gearbox
 /// input (`metal.cold_high_input_Nm`): the torque it is (slice 3 spec T-11), "Gearbox input
-/// torque: cold-high +0.03 N·m"; a draft until the slice's G-3 review sets it.
+/// torque: cold-high +0.03 N·m"; set by the slice's G-3 review.
 pub const COLD_HIGH: &str = "cold-high";
 
 /// The quantity the torque card quotes for a term of a check that fails (slice 3 spec 3.6): the

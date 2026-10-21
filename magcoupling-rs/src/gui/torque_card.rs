@@ -15,11 +15,11 @@
 //! length, the counted dashboard checks whose level flips, and the change of each failing
 //! check's own quantity ([`check_terms`]).
 //!
-//! [`TorqueCard::lines`] draws it: every text a named constant here (drafts until the slice's G-3
-//! review sets them), every number from the results through the Size tab's one number format
-//! (decision 10B with the owner's FO-4 bound, `gui::format`), a row's two N·m at one precision
-//! (T-14). The Auto marking is drawn there too, outside the card the cache keeps, so one card
-//! serves every Auto state.
+//! [`TorqueCard::lines`] draws it: every text a named constant here (set by the slice's G-3
+//! review (docs/analyses/2026-10-14-magcoupler-help-review.md, Slice 3 torque card)), every
+//! number from the results through the Size tab's one number format (decision 10B with the
+//! owner's FO-4 bound, `gui::format`), a row's two N·m at one precision (T-14). The Auto marking
+//! is drawn there too, outside the card the cache keeps, so one card serves every Auto state.
 
 use crate::engine::meta::SliderRange;
 use crate::engine::model::blocks_fit;
@@ -51,8 +51,9 @@ const COUNT_STEP: i64 = 2;
 /// starts from the Size tab's own, `TORQUE_DECIMALS` (`gui::format`).
 const SIZE_DECIMALS: usize = 1;
 
-// The card's texts (spec 4.1 and 4.2): drafts until the slice's G-3 review sets the words. A
-// row's label is its Size control's ([`Control::label`]), a check's its guide's.
+// The card's texts (spec 4.1 and 4.2): set by the slice's G-3 review
+// (docs/analyses/2026-10-14-magcoupler-help-review.md, Slice 3 torque card). A row's label is
+// its Size control's ([`Control::label`]), a check's its guide's.
 
 /// The card's heading (named apart from `size_controls::HEADING` and `panel::HEADING`).
 pub const CARD_HEADING: &str = "One step of each size control";
@@ -2158,8 +2159,8 @@ mod tests {
     fn the_card_s_lines_read_as_drafted() {
         // Spec 8.1 test 2a (code review 2 MF-5): whole lines, built from the constants, the
         // labels, the step texts and section 2.3's numbers through the Size tab's format at the
-        // row's decimals (T-14). The drafted blocks of 2.3 are these lines; a G-3 word change
-        // flows through.
+        // row's decimals (T-14). The blocks of 2.3 are these lines, in the words set by the
+        // slice's G-3 review; a word change flows through.
         let designs = card_designs();
         let lines = |key| find(&designs, key).card().lines(None);
         let [od, length, gap, count] = Control::ALL.map(Control::label);
