@@ -40,7 +40,7 @@ use crate::gui::explorer::{
 use crate::gui::format::{format_value, search_needle, with_unit};
 use crate::gui::geometry_view::{drawing_floor, geometry_ui};
 use crate::gui::guidance::{
-    ConsequenceCache, FixCache, SIZE_TAB_ALIASES, SIZE_TAB_NOTE, TORQUE_BAND_NOTE,
+    ConsequenceCache, Consequences, FixCache, SIZE_TAB_ALIASES, SIZE_TAB_NOTE, TORQUE_BAND_NOTE,
     within_minimum_diameter,
 };
 use crate::gui::history::History;
@@ -365,7 +365,8 @@ pub struct MagcouplingPanel {
     minimum_diameter_mm: Option<f64>,
     /// The Size tab's what-moves-what lines (spec 3.3) and its torque card (slice 3) for the
     /// design shown, the minimum OD and the shaft-clamp pause, recomputed only when one of the
-    /// three changes: view state, in no design file, link or undo step.
+    /// three changes: view state, in no design file, link or undo step. Asked only through
+    /// [`MagcouplingPanel::size_tab_consequences`].
     consequences: ConsequenceCache,
     /// Every check guide's fixes for the design shown (spec 3.4), recomputed only when it
     /// changes: each fix runs `compute_all` on the design its move reaches.
@@ -485,6 +486,25 @@ impl MagcouplingPanel {
     /// read from the inputs, never the design shown, so a solve cannot move its own range.
     fn sizing_range(&self) -> SliderRange {
         sizing_range(&self.inputs, self.sizing.variable, self.minimum_diameter_mm)
+    }
+
+    /// The Size tab's what-moves-what lines and torque card for `shown`, the design shown (slice
+    /// 3 spec 3.5): the one cache ask of the lines under the controls (the design before this
+    /// frame's edits) and of the card (the design after them), so both ask with one key, the
+    /// design, the panel's Minimum OD and its shaft-clamp pause (spec 3.2). The cache is handed
+    /// that design's own results: `self.results` can lag the inputs by a frame (the header's
+    /// assumptions reset edits them after the last compute), and a lagging number would stick
+    /// in the lines until the next edit. One `compute_all` (about 17 us) per ask; the torque
+    /// card's stepped runs and the fit search rerun only when the design, the minimum or the
+    /// pause changes.
+    fn size_tab_consequences(&mut self, shown: &DesignInputs) -> &Consequences {
+        let results = compute_all(shown);
+        self.consequences.get(
+            shown,
+            &results,
+            self.minimum_diameter_mm,
+            self.clamps_paused,
+        )
     }
 
     /// The Size tab's Auto outcome line and its colour: what the solve changed, from the
@@ -977,9 +997,10 @@ impl MagcouplingPanel {
     /// card's lines for `shown`, the design shown after this frame's edits (spec 3.5), weak like
     /// the lines under the controls, in a body that scrolls above the drawing's floor (spec 6.2).
     /// Open or closed: the user's own choice for the session, else the default for `card`'s view
-    /// ([`MagcouplingPanel::card_default`]). The card's own `compute_all` is defensive: the
-    /// cache's key and the results it is handed come from one design whatever a later change
-    /// puts between the panel's results and this view.
+    /// ([`MagcouplingPanel::card_default`]). It asks the cache as the lines under the controls
+    /// do ([`MagcouplingPanel::size_tab_consequences`]), so the cache's key and the results it is
+    /// handed come from one design whatever a later change puts between the panel's results and
+    /// this view.
     fn torque_card_ui(
         &mut self,
         ui: &mut egui::Ui,
@@ -987,18 +1008,8 @@ impl MagcouplingPanel {
         card: CardFrame,
         shown: &DesignInputs,
     ) {
-        let results = compute_all(shown);
         let auto = self.auto();
-        let lines = self
-            .consequences
-            .get(
-                shown,
-                &results,
-                self.minimum_diameter_mm,
-                self.clamps_paused,
-            )
-            .card
-            .lines(auto);
+        let lines = self.size_tab_consequences(shown).card.lines(auto);
         let open = match self.card_choice {
             Some(choice) => choice,
             None => self.card_default(ui, card, &lines),
@@ -1313,16 +1324,9 @@ impl MagcouplingPanel {
                 ui.add(egui::Label::new(egui::RichText::new(line).color(color)).wrap());
             }
             let minimum = self.minimum_diameter_mm;
-            // The cache keys on the design (with the minimum and the clamp pause), so it is
-            // handed that design's own results: `self.results` can lag the inputs by a frame (the
-            // header's assumptions reset edits them after the last compute), and a lagging
-            // number would stick in the lines until the next edit. One compute_all (about 17 us)
-            // per frame of this tab; the torque card's stepped runs and the fit search rerun only
-            // when the design, the minimum or the pause changes.
-            let shown_results = compute_all(&shown);
-            let consequences =
-                self.consequences
-                    .get(&shown, &shown_results, minimum, self.clamps_paused);
+            // Asked before the controls write the minimum back, with the design before this
+            // frame's edits.
+            let consequences = self.size_tab_consequences(&shown);
             let output = size_controls::controls_ui(ui, &shown, minimum, consequences, auto);
             // A Why link under Magnets per ring or Outside diameter (spec 3.7) opens its note.
             if let Some(id) = output.note {
