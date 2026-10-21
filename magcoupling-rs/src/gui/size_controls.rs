@@ -242,7 +242,10 @@ pub(crate) enum SliderMapping {
     /// The Overall length slider: [`resize_length`].
     Length,
     /// The Magnet face gap or the Magnets per ring slider: its input at `path` set to the value
-    /// ([`InputSet::set`]), the magnet count as a whole number.
+    /// ([`InputSet::set`]), the magnet count as a whole number: a value a cast to the count
+    /// would change (not finite, not whole, or past what an `i64` holds) is refused. This arm
+    /// checks no range: its caller holds the value to the slider (the slider itself, and the
+    /// torque card's range test and `count_step`).
     Input { path: &'static str },
 }
 
@@ -256,6 +259,14 @@ impl SliderMapping {
             SliderMapping::Length => resize_length(inputs, value),
             SliderMapping::Input { path } => {
                 let value = if path == FreeVariable::MagnetsPerRing.path() {
+                    // `as` would truncate a fraction and saturate the rest (NaN to 0), so only
+                    // a whole number in [i64::MIN, 2^63) is cast: there the cast is exact.
+                    let whole = value.is_finite()
+                        && value.fract() == 0.0
+                        && (i64::MIN as f64..i64::MAX as f64).contains(&value);
+                    if !whole {
+                        return Err(format!("{path}: {value} is not a magnet count"));
+                    }
                     Value::Int(value as i64)
                 } else {
                     Value::Num(value)
@@ -837,6 +848,49 @@ mod tests {
             }
             .design(&inputs, f64::NAN)
             .is_err()
+        );
+        // The count is set as a whole number, as the slider sets it: a value a cast to the
+        // count would change (not finite, not whole, or past what an i64 holds; 2^63 is one
+        // past) is refused, never truncated or saturated.
+        let count_mapping = SliderMapping::Input {
+            path: FreeVariable::MagnetsPerRing.path(),
+        };
+        for refused in [
+            8.7,
+            -0.5,
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            1e19,
+            -1e19,
+            i64::MAX as f64,
+        ] {
+            assert!(count_mapping.design(&inputs, refused).is_err(), "{refused}");
+        }
+        // The Input arm checks no range (its caller holds the value to the slider): a whole
+        // count off the slider, the lowest an i64 holds and a gap past its slider map as set.
+        for (value, npole) in [
+            (2.0, 2),
+            (100.0, 100),
+            (-0.0, 0),
+            (i64::MIN as f64, i64::MIN),
+        ] {
+            let mut expected = inputs.clone();
+            expected.coupling.npole = npole;
+            assert_eq!(
+                count_mapping.design(&inputs, value),
+                Ok(expected),
+                "{value}"
+            );
+        }
+        let mut expected = inputs.clone();
+        expected.metal.face_gap_mm = 6.0;
+        assert_eq!(
+            SliderMapping::Input {
+                path: "metal.face_gap_mm",
+            }
+            .design(&inputs, 6.0),
+            Ok(expected)
         );
     }
 }
