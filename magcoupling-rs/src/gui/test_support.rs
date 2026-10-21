@@ -8,8 +8,7 @@
 pub(crate) fn short_magnets() -> crate::DesignInputs {
     let mut inputs = crate::DesignInputs::default();
     inputs.coupling.c_end = 0.5;
-    inputs.coupling.magnets.part_inner.clear();
-    inputs.coupling.magnets.part_outer.clear();
+    set_parts(&mut inputs, "", "");
     inputs.coupling.magnets.manual_inner_length_mm = 2.0;
     inputs.coupling.magnets.manual_outer_length_mm = 2.0;
     inputs
@@ -49,12 +48,19 @@ pub(crate) fn hot_day(inputs: &mut crate::DesignInputs) {
     inputs.temperature.duty.driving_rise_C = 60.0;
 }
 
+/// Both rings' library parts (`coupling.magnets.part_inner` and `part_outer`): the part named
+/// `inner` inside and `outer` outside, a blank part ("") leaving its ring on its manual
+/// dimensions. The one edit of both parts that this module's designs and edits make.
+pub(crate) fn set_parts(inputs: &mut crate::DesignInputs, inner: &str, outer: &str) {
+    inputs.coupling.magnets.part_inner = inner.to_owned();
+    inputs.coupling.magnets.part_outer = outer.to_owned();
+}
+
 /// Library N42 blocks (rated 80 °C) in both rings: their magnet limit is below the hot-day
 /// start, and on the example design the inner ring's single-ring onset less the cure margin is
 /// the inner hub's allowed fitting temperature (BL-064).
 pub(crate) fn n42_parts(inputs: &mut crate::DesignInputs) {
-    inputs.coupling.magnets.part_inner = "B842".to_owned();
-    inputs.coupling.magnets.part_outer = "B842".to_owned();
+    set_parts(inputs, "B842", "B842");
 }
 
 /// Mixed rings on manual dimensions (both parts cleared): N42M in the inner ring, N35 in the
@@ -63,8 +69,7 @@ pub(crate) fn n42_parts(inputs: &mut crate::DesignInputs) {
 /// temperature is still the inner ring's own onset less the cure margin (BL-064, the owner's
 /// ring ruling).
 pub(crate) fn mixed_rings(inputs: &mut crate::DesignInputs) {
-    inputs.coupling.magnets.part_inner.clear();
-    inputs.coupling.magnets.part_outer.clear();
+    set_parts(inputs, "", "");
     inputs.coupling.magnets.grade_inner = "N42M".to_owned();
     inputs.coupling.magnets.grade_outer = "N35".to_owned();
 }
@@ -199,8 +204,7 @@ pub(crate) fn shaft_joints_off_default() -> crate::DesignInputs {
 /// which mixes grades.
 pub(crate) fn mixed_lengths() -> crate::DesignInputs {
     let mut inputs = crate::DesignInputs::default();
-    inputs.coupling.magnets.part_inner = "B442".to_owned();
-    inputs.coupling.magnets.part_outer = "B842SH".to_owned();
+    set_parts(&mut inputs, "B442", "B842SH");
     inputs
 }
 
@@ -210,8 +214,7 @@ pub(crate) fn mixed_lengths() -> crate::DesignInputs {
 /// Temperature limits.
 pub(crate) fn reverse_lengths() -> crate::DesignInputs {
     let mut inputs = crate::DesignInputs::default();
-    inputs.coupling.magnets.part_inner = "B842SH".to_owned();
-    inputs.coupling.magnets.part_outer = "B442".to_owned();
+    set_parts(&mut inputs, "B842SH", "B442");
     inputs
 }
 
@@ -287,9 +290,8 @@ pub(crate) fn temperature_edge() -> crate::DesignInputs {
 /// parts blank and both rings' manual blocks 1.2 mm wide. The blocks fit; hot-low 0.4857 N·m.
 pub(crate) fn forty_narrow_magnets() -> crate::DesignInputs {
     let mut inputs = with_poles(40);
+    set_parts(&mut inputs, "", "");
     let magnets = &mut inputs.coupling.magnets;
-    magnets.part_inner.clear();
-    magnets.part_outer.clear();
     magnets.manual_inner_width_mm = 1.2;
     magnets.manual_outer_width_mm = 1.2;
     inputs
@@ -302,10 +304,8 @@ pub(crate) fn forty_narrow_magnets() -> crate::DesignInputs {
 /// torque, Running clearance) and asks for a look at 2 (Shaft joints, Gearbox input torque).
 pub(crate) fn zero_torque() -> crate::DesignInputs {
     let mut inputs = crate::DesignInputs::default();
-    let magnets = &mut inputs.coupling.magnets;
-    magnets.part_inner.clear();
-    magnets.part_outer.clear();
-    magnets.manual_inner_br_T = 0.0;
+    set_parts(&mut inputs, "", "");
+    inputs.coupling.magnets.manual_inner_br_T = 0.0;
     inputs
 }
 

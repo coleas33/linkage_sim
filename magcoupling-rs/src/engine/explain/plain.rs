@@ -70,7 +70,7 @@ pub fn plain_text_violations(text: &str) -> Vec<&'static str> {
         text.contains("Rust-only"),
         text.contains("Calculator!"),
         text.contains("M1 audit"),
-        words(&lower).any(|word| word == "skeptic" || word == "skeptics"),
+        words(&lower).any(|word| says(word, "skeptic")),
         lower.contains("plan a-"),
         followed_by_digit(&lower, "decision ") || followed_by_digit(&lower, "decisions "),
         text.contains("drawing.py"),
@@ -146,21 +146,23 @@ pub const CARD_RANKING_WORDS: [&str; 7] = [
 ];
 
 /// The words of [`CARD_RANKING_WORDS`] that `text` says, in that list's order, each once. A word
-/// of `text` (a run of letters and digits) says a listed word when it is that word whole, in any
-/// case, or that word with an `s` added or taken off: "levers" and "Rank" say "lever" and
-/// "ranks"; "almost" and "bestow" say none.
+/// of `text` (a run of letters and digits) says a listed word in any case by [`says`]: "levers"
+/// and "Rank" say "lever" and "ranks"; "almost" and "bestow" say none.
 pub fn ranking_words_in(text: &str) -> Vec<&'static str> {
     let lower = text.to_lowercase();
     CARD_RANKING_WORDS
         .into_iter()
-        .filter(|&listed| {
-            words(&lower).any(|word| {
-                word == listed
-                    || word.strip_suffix('s') == Some(listed)
-                    || listed.strip_suffix('s') == Some(word)
-            })
-        })
+        .filter(|&listed| words(&lower).any(|word| says(word, listed)))
         .collect()
+}
+
+/// Whether `word`, a lowercase word of a text ([`words`]), says the lowercase `listed`: it is
+/// that word whole, or that word with an `s` added or taken off. The one whole-word rule of the
+/// "skeptic" pattern ("skeptic" or "skeptics", never "skeptical") and of [`ranking_words_in`].
+fn says(word: &str, listed: &str) -> bool {
+    word == listed
+        || word.strip_suffix('s') == Some(listed)
+        || listed.strip_suffix('s') == Some(word)
 }
 
 /// Whether `c` continues a word: a letter, a digit or an underscore.

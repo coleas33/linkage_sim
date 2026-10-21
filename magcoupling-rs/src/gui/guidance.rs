@@ -709,6 +709,22 @@ pub(crate) struct Quoted {
     pub decimals: usize,
 }
 
+impl Quoted {
+    /// The result at `path`, named `name`, to `decimals` places: the one constructor of
+    /// [`check_terms`]' table and of its test's expected rows.
+    pub(crate) const fn new(
+        path: &'static str,
+        name: Option<&'static str>,
+        decimals: usize,
+    ) -> Self {
+        Quoted {
+            path,
+            name,
+            decimals,
+        }
+    }
+}
+
 /// One term of a counted check's verdict (slice 3 spec 3.6): its name, its margin (larger is
 /// better), whether it passes as the verdict compares it, and the quantity the torque card
 /// quotes for it, if any.
@@ -740,13 +756,6 @@ pub(crate) fn check_terms(
         quoted,
     };
     let at_least_zero = |name, margin: f64, quoted| term(name, margin, margin >= 0.0, quoted);
-    let quote = |path, name, decimals| {
-        Some(Quoted {
-            path,
-            name,
-            decimals,
-        })
-    };
     let (m, md) = (&results.model, &results.metal);
     match check {
         // The row's own number is this term's quantity: never quoted again.
@@ -758,16 +767,16 @@ pub(crate) fn check_terms(
         CLEARANCE => vec![at_least_zero(
             "running clearance",
             md.min_running_clearance_mm - inputs.metal.residual_target_mm,
-            quote("metal.min_running_clearance_mm", None, 2),
+            Some(Quoted::new("metal.min_running_clearance_mm", None, 2)),
         )],
         CUP_WALL => vec![at_least_zero(
             "cup wall",
             results.materials.cup_wall_corner_mm - results.materials.backiron_thickness_needed_mm,
-            quote(
+            Some(Quoted::new(
                 "materials.backiron_thickness_needed_mm",
                 Some(WALL_NEEDED),
                 2,
-            ),
+            )),
         )],
         TEMPERATURE => TemperatureTerm::ALL
             .into_iter()
@@ -781,13 +790,13 @@ pub(crate) fn check_terms(
             .zip(axis_reserves(results))
             .zip(SPACE_CLAIM_AXIS_SIZES)
             .map(|((name, reserve), (axis, size))| {
-                at_least_zero(name, reserve, quote(size, Some(axis), 2))
+                at_least_zero(name, reserve, Some(Quoted::new(size, Some(axis), 2)))
             })
             .collect(),
         GEARBOX => vec![at_least_zero(
             "gearbox input torque",
             inputs.coupling.gearbox_input_rating_Nm - md.cold_high_input_Nm,
-            quote("metal.cold_high_input_Nm", Some(COLD_HIGH), 2),
+            Some(Quoted::new("metal.cold_high_input_Nm", Some(COLD_HIGH), 2)),
         )],
         // The engine's four terms of each joint, with the guide's margins (BL-064 spec 5.2). A
         // joint that is not judged (no wall, a reversed band, or the check cannot be made) passes
@@ -801,9 +810,9 @@ pub(crate) fn check_terms(
                 .flat_map(|joint| {
                     CAUSES.map(|cause| {
                         let passes = !(judged && joint.determinate() && joint.fails(cause));
-                        let quoted = joint_side(joint.name).and_then(|(_, side)| {
+                        let quoted = joint_side(joint.name).map(|(_, side)| {
                             let (path, decimals) = side.quoted(cause);
-                            quote(path, Some(label_for(path)), decimals)
+                            Quoted::new(path, Some(label_for(path)), decimals)
                         });
                         term(
                             &joint_term(joint.name, cause),
@@ -4413,13 +4422,6 @@ mod tests {
         let row = |name: &str, margin: f64, quoted| -> Row {
             (name.to_owned(), margin.to_bits(), margin >= 0.0, quoted)
         };
-        let quote = |path, name, decimals| {
-            Some(Quoted {
-                path,
-                name,
-                decimals,
-            })
-        };
         assert_eq!(
             read(HOT_MIN),
             [row(
@@ -4433,7 +4435,7 @@ mod tests {
             [row(
                 "running clearance",
                 md.min_running_clearance_mm - defaults.metal.residual_target_mm,
-                quote("metal.min_running_clearance_mm", None, 2)
+                Some(Quoted::new("metal.min_running_clearance_mm", None, 2))
             )]
         );
         assert_eq!(
@@ -4441,11 +4443,11 @@ mod tests {
             [row(
                 "cup wall",
                 materials.cup_wall_corner_mm - materials.backiron_thickness_needed_mm,
-                quote(
+                Some(Quoted::new(
                     "materials.backiron_thickness_needed_mm",
                     Some(WALL_NEEDED),
                     2
-                )
+                ))
             )]
         );
         assert_eq!(
@@ -4453,12 +4455,12 @@ mod tests {
             [row(
                 "gearbox input torque",
                 defaults.coupling.gearbox_input_rating_Nm - md.cold_high_input_Nm,
-                quote("metal.cold_high_input_Nm", Some(COLD_HIGH), 2)
+                Some(Quoted::new("metal.cold_high_input_Nm", Some(COLD_HIGH), 2))
             )]
         );
         let axis = |index: usize| {
             let (name, size) = SPACE_CLAIM_AXIS_SIZES[index];
-            quote(size, Some(name), 2)
+            Some(Quoted::new(size, Some(name), 2))
         };
         assert_eq!(
             read(SPACE_CLAIM),
@@ -4530,7 +4532,7 @@ mod tests {
                     (side.key, 1),
                 ]
             })
-            .map(|(path, decimals)| quote(path, Some(label_for(path)), decimals))
+            .map(|(path, decimals)| Some(Quoted::new(path, Some(label_for(path)), decimals)))
             .collect();
         assert_eq!(joints_quoted, per_cause);
 
