@@ -108,9 +108,11 @@ pub const SHOWN_DOES_NOT_FIT: &str =
 /// readout shows `NO_PREDICTION` or `NO_TORQUE`).
 pub const SHOWN_NO_PREDICTION: &str =
     "No step is compared while the design shown has no torque prediction.";
-/// The card of a design shown whose readouts show a pull-out or hot-low not above zero
-/// ([`TorqueCard::ShownNoHotLow`]): true for either torque.
-pub const SHOWN_NO_HOT_LOW: &str = "No step is compared while the design shown has a pull-out or hot-low torque that is not above zero.";
+/// The card of a design shown whose readouts show a pull-out or hot-low of zero or less
+/// ([`TorqueCard::ShownNoHotLow`]): true for either torque, in plain words with no double
+/// negative (the G-3 review's SF-2).
+pub const SHOWN_NO_HOT_LOW: &str =
+    "No step is compared while the design shown has a pull-out or hot-low torque of zero or less.";
 /// A flip's words, drawn "{label}: {word}" ([`Flip`]): a phrase inside a sentence, not the
 /// dashboard badge's own words (`Level::word`).
 pub const FLIP_FAILS: &str = "fails";
@@ -1269,7 +1271,7 @@ mod tests {
         negative_pull_out.metal.variation = 1.5;
         // A torque that is not finite with the end effect in range (spec 2.1: (c) with a design
         // file's calibration coefficient of 0, whose measured factor is NaN): the readouts show
-        // NO_TORQUE, so the card reads no prediction, never "not above zero".
+        // NO_TORQUE, so the card reads no prediction, never SHOWN_NO_HOT_LOW.
         let mut zero_coefficient = no_back_iron();
         zero_coefficient.calibration.f_cal_original = 0.0;
         let fewest = slider_range(FreeVariable::MagnetsPerRing.path()).min;
@@ -1359,9 +1361,11 @@ mod tests {
                     }
                 }
                 TorqueCard::ShownNoPrediction => assert!(!shows_both, "{name}"),
-                TorqueCard::ShownNoHotLow => {
-                    assert!(shows_both && !both_above_zero, "{name}: {torques:?}")
-                }
+                // Its line's claim: both torques shown, and one of them zero or less.
+                TorqueCard::ShownNoHotLow => assert!(
+                    shows_both && torques.iter().any(|&torque| torque <= 0.0),
+                    "{name}: {torques:?}"
+                ),
                 _ => assert!(!fits, "{name}"),
             }
             if name == "f_cal_original -0.95, variation 1.5" {
@@ -1390,6 +1394,12 @@ mod tests {
                 assert_eq!(card.lines(auto), [line], "{name} {auto:?}");
             }
         }
+        // The hot-low line says it plainly, with no double negative ("not above zero"): the
+        // same truth in every case routed to it (the G-3 review's SF-2).
+        assert!(
+            !SHOWN_NO_HOT_LOW.contains("not above"),
+            "{SHOWN_NO_HOT_LOW}"
+        );
     }
 
     #[test]
