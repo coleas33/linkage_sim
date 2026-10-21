@@ -45,6 +45,22 @@ const MAGCOUPLING_SCHEMA = {
   },
 }
 
+// What a step's result reads when its agent returns nothing (an agent error): every field its
+// schema requires, each check false and each list empty, so a field the schema gains is in the
+// fallback too. The drag's numbers are not required, so they stay absent: the drag did not run.
+const noReading = schema => ({
+  ...Object.fromEntries(schema.required.map(field =>
+    [field, schema.properties[field].type === 'array' ? [] : false])),
+  notes: 'smoke agent returned no result (agent error)',
+})
+
+// The calculator's checks: the booleans its schema requires besides passed and the drag's two,
+// which the frame rule judges. This script checks the agent's passed again from them, so a
+// reading of torque_card false with passed true fails the run.
+const CALCULATOR_CHECKS = MAGCOUPLING_SCHEMA.required.filter(field =>
+  MAGCOUPLING_SCHEMA.properties[field].type === 'boolean'
+  && !['passed', 'drag_moved', 'drag_frames_within_60fps'].includes(field))
+
 // The design the /tools/magcoupler/ smoke opens through its share link (?m=): the default design
 // with the face gap at 1.5 mm, in Torque -> Magnets sizing the axial length to 2.5 N.m.
 // magcoupling-rs/src/app.rs (the_smoke_test_share_link_opens_its_design) decodes it and
@@ -107,7 +123,7 @@ Then navigate to ${url}/tools/linkage/ (the linkage app); wait 5 seconds for WAS
 title_warning=true if any console message contains "Unhandled egui viewport command: Title" (backlog BL-037: there must be none).
 passed=true only if: both pages loaded, hub_page, canvas present, title_warning=false, and zero console messages of type error on either page (other warnings are OK — put them in notes). List every console error string verbatim in console_errors. If navigation fails entirely, passed=false with the failure in notes — the server may not be running (caller must have run scripts/serve_web.sh).`,
     { label: 'gui-smoke', phase: 'Smoke', schema: SMOKE_SCHEMA, model: 'sonnet' },
-  ) || { passed: false, canvas_present: false, console_errors: [], hub_page: false, title_warning: false, notes: 'smoke agent returned no result (agent error)' }
+  ) || noReading(SMOKE_SCHEMA)
 }
 
 // The magnetic coupling calculator: deterministic state through its share link, checked in
@@ -119,8 +135,9 @@ passed=true only if: both pages loaded, hub_page, canvas present, title_warning=
 // off, and the dashboard scrolls to its last row at 1280 x 800. Then (slice 3, spec 7.2 and
 // 8.6) the link is opened again with a timer on every frame the app draws: on that fresh page the
 // torque card shows its heading, caption, Auto line and four rows between the readouts and the
-// drawing, and one drag of the gap slider is timed frame by frame. The script judges the drag
-// from its numbers (FRAME_BUDGET_MS, MIN_DRAG_FRAMES) and fails the run on it only with
+// drawing, and one drag of the gap slider is timed frame by frame. The script checks the agent's
+// passed again from its checks (CALCULATOR_CHECKS) and its console errors, judges the drag from
+// its numbers (FRAME_BUDGET_MS, MIN_DRAG_FRAMES) and fails the run on the drag only with
 // frame_check: true. The Playwright MCP returns only the console messages since the last
 // navigation, so each page's messages are collected after its last step, before the next
 // navigation or the close. src/app.rs checks that the prompt names the strip, the toggle, the
@@ -147,7 +164,13 @@ Collect the console messages at level "info" once more (it covers the reopened p
 share_link_loaded=true only if a console message contains "magcoupling: loaded the design from the share link". sizing_solved=true only if a console message contains "magcoupling sizing: Solved at". explorer_ready=true only if a console message contains "magcoupling explorer: " (the equation registry, built when the page starts).
 passed=true only if: page loaded, canvas present, first_view, details_toggle, share_link_loaded, sizing_solved, design_file_loaded, explorer_ready, why_link_opened, tooltip_plain, dashboard_scrolls, torque_card, and zero console messages of type error (warnings are OK — put them in notes); leave the drag's fields out of passed (this script judges them). List every console error string verbatim in console_errors. If navigation fails entirely, passed=false with the failure in notes — the server may not be running (serve linkage-sim-rs/web/ after running scripts/build_magcoupling_web.sh).`,
     { label: 'gui-smoke-magcoupling', phase: 'Smoke', schema: MAGCOUPLING_SCHEMA, model: 'sonnet' },
-  ) || { passed: false, canvas_present: false, console_errors: [], first_view: false, explorer_ready: false, share_link_loaded: false, sizing_solved: false, design_file_loaded: false, details_toggle: false, why_link_opened: false, tooltip_plain: false, dashboard_scrolls: false, torque_card: false, drag_moved: false, drag_frames: 0, drag_frames_within_60fps: false, notes: 'smoke agent returned no result (agent error)' }
+  ) || noReading(MAGCOUPLING_SCHEMA)
+  // The calculator's passed, checked again by this script from the agent's reading rather than
+  // taken on its word: the agent's own passed (it alone sees that the page loaded), every check
+  // true and no console error listed.
+  magcoupling.passed = magcoupling.passed === true
+    && CALCULATOR_CHECKS.every(field => magcoupling[field] === true)
+    && Array.isArray(magcoupling.console_errors) && magcoupling.console_errors.length === 0
   // The drag's verdict (slice-3 spec 7.2 steps 3 and 4), from its numbers by this script, not the
   // agent's arithmetic: recorded on every run, and failing the run only with frame_check: true.
   const p95 = magcoupling.drag_frame_ms_p95
