@@ -1066,12 +1066,11 @@ impl MagcouplingPanel {
         }
         header.body(|ui| {
             // The body scrolls inside a cap that keeps the drawing's floor under the card: the
-            // region left under the header, less the spacing before the drawing and its floor,
-            // and at least one row. The cap is also the body's least height while it scrolls:
-            // egui's own (64 points) would hold it taller and push the drawing under its floor
-            // beside the Equation panel.
-            let cap = (ui.available_height() - ui.spacing().item_spacing.y - drawing_floor(ui))
-                .max(ui.text_style_height(&egui::TextStyle::Body));
+            // room over the floor left under the header (`room_over_the_floor`, the room rule 3
+            // reads at the card), and at least one row. The cap is also the body's least height
+            // while it scrolls: egui's own (64 points) would hold it taller and push the drawing
+            // under its floor beside the Equation panel.
+            let cap = room_over_the_floor(ui).max(ui.text_style_height(&egui::TextStyle::Body));
             egui::ScrollArea::vertical()
                 .id_salt("magcoupling_torque_card_body")
                 .max_height(cap)
@@ -1088,20 +1087,17 @@ impl MagcouplingPanel {
     /// view, else decided now and kept with it, so a design change never decides it again. Open
     /// iff the Equation panel is closed (rule 1), the centre region is at least
     /// [`CARD_OPEN_MIN_WIDTH`] wide (rule 2) and the open card leaves the drawing its floor
-    /// (rule 3: `ui`'s height at the card, less the card's height measured before it is drawn,
-    /// [`card_open_height`] of `lines`, and the spacing before the drawing, is at least
-    /// [`drawing_floor`]).
+    /// (rule 3: the card's height measured before it is drawn, [`card_open_height`] of `lines`,
+    /// is at most the room `ui` has at the card over the drawing's floor,
+    /// [`room_over_the_floor`], which the card's body is capped at too).
     fn card_default(&mut self, ui: &egui::Ui, card: CardFrame, lines: &[String]) -> bool {
         if let Some((view, open)) = self.card_start
             && view == card.view
         {
             return open;
         }
-        let room =
-            ui.available_height() - card_open_height(ui, lines) - ui.spacing().item_spacing.y;
-        let open = !card.view.equation_open
-            && card.region_width >= CARD_OPEN_MIN_WIDTH
-            && room >= drawing_floor(ui);
+        let fits = card_open_height(ui, lines) <= room_over_the_floor(ui);
+        let open = !card.view.equation_open && card.region_width >= CARD_OPEN_MIN_WIDTH && fits;
         self.card_start = Some((card.view, open));
         open
     }
@@ -1817,6 +1813,15 @@ fn card_open_height(ui: &egui::Ui, lines: &[String]) -> f32 {
         .sum::<f32>()
         + spacing.item_spacing.y * lines.len().saturating_sub(1) as f32;
     header + spacing.item_spacing.y + body
+}
+
+/// The room `ui` has over the drawing's floor [points] (slice 3 spec 6.2): its available height
+/// less the item spacing before the drawing and [`drawing_floor`]. Rule 3 reads it at the
+/// torque card, where the open card must fit in it ([`MagcouplingPanel::card_default`]), and
+/// the card's body reads it under the header as its cap
+/// ([`MagcouplingPanel::torque_card_ui`]): one expression, so the rule and the cap agree.
+fn room_over_the_floor(ui: &egui::Ui) -> f32 {
+    ui.available_height() - ui.spacing().item_spacing.y - drawing_floor(ui)
 }
 
 /// Draws `add` in a child of `ui` (salted `id_salt`) confined to the space left in `ui`: the
