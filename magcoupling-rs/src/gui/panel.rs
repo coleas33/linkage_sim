@@ -197,7 +197,7 @@ const DASHBOARD_WIDTH: f32 = 300.0;
 const EQUATION_PANEL_ID: &str = "magcoupling_equation_panel";
 
 /// The id of the torque card's collapsing state on the Size tab (slice 3 spec 6.1): egui keeps
-/// the card open or closed under it.
+/// the card open or closed under it. The card's body salts its scroll area with it too.
 const TORQUE_CARD_ID: &str = "magcoupling_torque_card";
 
 /// The narrowest centre region the torque card starts open in [points] (slice 3 spec T-10,
@@ -1038,6 +1038,10 @@ impl MagcouplingPanel {
             Some(choice) => choice,
             None => self.card_default(ui, card, &lines),
         };
+        // `open` decides on every frame (`set_open`): egui keeps a card it already holds as it
+        // left it, so without it a default decided again for a new view would not reach the
+        // card. The default argument only builds the state of a card egui does not hold yet
+        // (egui has no other way to build one), where it is `open` too.
         let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(
             ui.ctx(),
             egui::Id::new(TORQUE_CARD_ID),
@@ -1072,7 +1076,7 @@ impl MagcouplingPanel {
             // under its floor beside the Equation panel.
             let cap = room_over_the_floor(ui).max(ui.text_style_height(&egui::TextStyle::Body));
             egui::ScrollArea::vertical()
-                .id_salt("magcoupling_torque_card_body")
+                .id_salt((TORQUE_CARD_ID, "body"))
                 .max_height(cap)
                 .min_scrolled_height(cap)
                 .show(ui, |ui| {
@@ -1774,7 +1778,9 @@ fn torque_readout(
 /// an indent wide, the heading, then the Why link continuing after it and wrapping under it in a
 /// narrow region, as egui lays a label out in a wrapping row, the row at least an interactive
 /// widget's height), then the item spacing and each of `lines` as a galley wrapped at the body's
-/// width (the row's, less the body's indent), with the item spacing between them.
+/// width (the row's, less the body's indent), with the item spacing between them. It repeats
+/// egui 0.32.3's label layout (`widgets/label.rs`), so an egui upgrade can move it:
+/// `the_card_s_measured_height_is_the_drawn_height` pins it to the drawn height.
 fn card_open_height(ui: &egui::Ui, lines: &[String]) -> f32 {
     let spacing = ui.spacing();
     let width = ui.available_width() - spacing.indent;
@@ -1807,6 +1813,8 @@ fn card_open_height(ui: &egui::Ui, lines: &[String]) -> f32 {
         .size()
         .y
         .max(heading.y),
+        // A note not reviewed has no link (`why_note_link` draws none). The release gate keeps
+        // this note reviewed, so only a later change to the note reaches this arm.
         None => heading.y,
     };
     let body: f32 = lines
