@@ -1239,20 +1239,14 @@ mod tests {
         let more = number(&side_at(&unmeasured, None, MagnetsPerRing, true));
         assert!(more.calibration_changed);
         assert_eq!(more.hot_low_Nm, 0.0, "{more:?}");
-        // It is drawn as every number side: its N·m with its true sign at the row's precision,
-        // and -100.0 %, the hot-low gone (physics review 5 SF-2).
+        // It is drawn as every number side, as spec 8.1 test 3 writes it: its N·m with its true
+        // sign at the row's precision, and -100.0 %, the hot-low gone (physics review 5 SF-2).
         assert_eq!(more.fraction, -1.0);
         let card = card_at(&unmeasured, None);
         let row = &card.rows()[3];
         assert!(
-            side_texts(&card.lines(None)[4], row)[1].starts_with(&format!(
-                "+2 -> {} ({}), {CALIBRATION_CHANGE}",
-                with_unit(
-                    signed_torque_change(more.change_Nm, row.torque_precision()),
-                    "N·m"
-                ),
-                signed_percent(-1.0)
-            )),
+            side_texts(&card.lines(None)[4], row)[1]
+                .starts_with(&format!("+2 -> -0.85 N·m (-100.0 %), {CALIBRATION_CHANGE}")),
             "{:?}",
             card.lines(None)
         );
@@ -2593,15 +2587,12 @@ mod tests {
         // Spec 8.1 test 8 (owner 5A; spec 3.4): Auto's marking is drawn by `lines`, outside the
         // card. For each Auto variable at (a) and (e2): the held row, the one `held_by` names,
         // reads `held_line` after the caption and the Auto line; the other rows read as with
-        // Auto off, which shows the held row's numbers; one card serves both.
+        // Auto off, which shows the held row's numbers. One card serves both: `card` takes no
+        // Auto argument, so the card cannot differ between them (the panel's cache test pins
+        // that turning Auto on or off computes none), and `lines` alone draws the marking.
         let designs = card_designs();
         for key in ["(a)", "(e2)"] {
             let card = find(&designs, key).card();
-            assert_eq!(
-                card,
-                find(&designs, key).card(),
-                "the card is the design's alone"
-            );
             let plain = card.lines(None);
             assert_eq!(plain[0], CAPTION);
             for variable in FreeVariable::ALL {
@@ -2613,12 +2604,25 @@ mod tests {
                 expected.insert(1, auto_line(variable).to_owned());
                 expected[2 + held] = held_line(Control::ALL[held]);
                 assert_eq!(card.lines(Some(variable)), expected, "{key} {variable:?}");
-                // Auto off, the held row shows its numbers.
-                assert!(
-                    plain[1 + held].starts_with(&format!("{}: -", Control::ALL[held].label())),
-                    "{}",
-                    plain[1 + held]
-                );
+                // Auto off, the held row shows its numbers: its line is the row's two sides, and
+                // each number side draws an N·m and its own percent.
+                let row = &card.rows()[held];
+                let mut numbers = 0;
+                for ((_, side), text) in sides(row)
+                    .into_iter()
+                    .zip(side_texts(&plain[1 + held], row))
+                {
+                    if let Side::Change(change) = side {
+                        let (_, percent) = drawn_number(text);
+                        assert_eq!(
+                            format!("{percent} %"),
+                            signed_percent(change.fraction),
+                            "{key} {variable:?}: {text}"
+                        );
+                        numbers += 1;
+                    }
+                }
+                assert!(numbers > 0, "{key} {variable:?}: {}", plain[1 + held]);
             }
         }
         // The three Auto lines, each the variable's own.
@@ -3087,8 +3091,8 @@ mod tests {
                 }
             }
         }
-        // Not vacuous: most of these designs draw rows.
-        assert!(rows > 200, "{rows} rows");
+        // Not vacuous: every row the 188 cards draw, counted.
+        assert_eq!(rows, 416);
     }
 
     /// The widest number a card line or the readout's gap draws (the owner's FO-4 at the slice-3
