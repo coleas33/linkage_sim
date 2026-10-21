@@ -6,7 +6,8 @@
 //! 3A: Outside diameter ±1 mm at the user's Minimum OD, Overall length ±1 mm, Magnet face gap
 //! ±0.1 mm, Magnets per ring ±2), and its number is the difference of two `compute_all` runs. A
 //! side with no honest number reads words, by the order of tests of spec 3.3: the design shown
-//! first ([`TorqueCard::ShownDoesNotFit`], [`TorqueCard::ShownNoPrediction`],
+//! first ([`TorqueCard::ShownCountBelowSlider`], the owner's FO-3, then
+//! [`TorqueCard::ShownDoesNotFit`], [`TorqueCard::ShownNoPrediction`],
 //! [`TorqueCard::ShownNoHotLow`]), then the slider's range within [`STEP_SLACK_MM`], the
 //! slider's mapping, the validity rule every row shares ([`side_words`]) and, on the Overall
 //! length and Outside diameter rows, the jump (the latter the owner's FO-2). A number side also
@@ -95,6 +96,11 @@ pub const CUP_JUMP: &str = "not a step: the cup diameter does not change by the 
 /// After a number whose stepped design takes another calibration factor (owner 16A): it names
 /// the change, never a cause.
 pub const CALIBRATION_CHANGE: &str = "includes a calibration change";
+/// The card of a design shown whose magnet count lies below the Magnets per ring slider's range
+/// ([`TorqueCard::ShownCountBelowSlider`]; the owner's FO-3 at the slice-3 STOP): a design
+/// file's 2 or 3 magnets per ring, or any lower count.
+pub const SHOWN_COUNT_BELOW_SLIDER: &str =
+    "No step is compared while the magnet count of the design shown is below the slider's range.";
 /// The card of a design shown whose magnets do not fit ([`TorqueCard::ShownDoesNotFit`]).
 pub const SHOWN_DOES_NOT_FIT: &str =
     "No step is compared while the magnets of the design shown do not fit.";
@@ -380,12 +386,15 @@ impl Row {
     }
 }
 
-/// The card of a design. `ShownNoHotLow`: the model predicts (the readouts show both torques),
-/// but hot-low, the percent's base, is not above zero (a design file's variation of 1 or more;
-/// physics review 2 MF-1), or the pull-out is not above zero (a magnet Br or calibration
-/// coefficient of 0 or less; physics review 3 MF-2).
+/// The card of a design. `ShownCountBelowSlider`: the design shown has fewer magnets per ring
+/// than the slider takes (a design file's 2 or 3, or any lower count: the owner's FO-3 at the
+/// slice-3 STOP; at 2 the polygon of blocks degenerates). `ShownNoHotLow`: the model predicts
+/// (the readouts show both torques), but hot-low, the percent's base, is not above zero (a
+/// design file's variation of 1 or more; physics review 2 MF-1), or the pull-out is not above
+/// zero (a magnet Br or calibration coefficient of 0 or less; physics review 3 MF-2).
 #[derive(Clone, Debug, PartialEq)]
 pub enum TorqueCard {
+    ShownCountBelowSlider,
     ShownDoesNotFit,
     ShownNoPrediction,
     ShownNoHotLow,
@@ -396,10 +405,11 @@ impl TorqueCard {
     /// The lines under the heading, as drawn and as the screen dump prints them. For the rows:
     /// [`CAPTION`], the Auto line while Auto is on (`auto` is its variable), then one line per
     /// row, the row Auto holds reading [`held_line`] (owner 5A; spec 3.4: the marking is drawn
-    /// here, outside the card the cache keeps). For the three one-line forms, their line alone,
+    /// here, outside the card the cache keeps). For the four one-line forms, their line alone,
     /// with no caption and no Auto line (T-12).
     pub fn lines(&self, auto: Option<FreeVariable>) -> Vec<String> {
         match self {
+            TorqueCard::ShownCountBelowSlider => vec![SHOWN_COUNT_BELOW_SLIDER.to_owned()],
             TorqueCard::ShownDoesNotFit => vec![SHOWN_DOES_NOT_FIT.to_owned()],
             TorqueCard::ShownNoPrediction => vec![SHOWN_NO_PREDICTION.to_owned()],
             TorqueCard::ShownNoHotLow => vec![SHOWN_NO_HOT_LOW.to_owned()],
@@ -418,11 +428,12 @@ impl TorqueCard {
         }
     }
 
-    /// The rows: empty for the three one-line forms.
+    /// The rows: empty for the four one-line forms.
     pub fn rows(&self) -> &[Row] {
         match self {
             TorqueCard::Rows(rows) => rows,
-            TorqueCard::ShownDoesNotFit
+            TorqueCard::ShownCountBelowSlider
+            | TorqueCard::ShownDoesNotFit
             | TorqueCard::ShownNoPrediction
             | TorqueCard::ShownNoHotLow => &[],
         }
@@ -455,7 +466,11 @@ pub fn card(
     minimum_diameter_mm: Option<f64>,
     clamps_paused: bool,
 ) -> TorqueCard {
-    // Test 0 (spec 3.3): the design shown, by the readouts' own rule.
+    // Test 0 (spec 3.3): the design shown. Its magnet count below the slider's range first (the
+    // owner's FO-3 at the slice-3 STOP), then the readouts' own rule.
+    if count_below_the_slider(inputs.coupling.npole) {
+        return TorqueCard::ShownCountBelowSlider;
+    }
     if !blocks_fit(&inputs.coupling, &results.model) {
         return TorqueCard::ShownDoesNotFit;
     }
@@ -533,6 +548,15 @@ pub(crate) fn count_step(npole: i64, more: bool) -> Result<i64, Words> {
         }
         _ => Err(Words::EndOfRange),
     }
+}
+
+/// Whether a magnet count `npole` lies below the range of the Magnets per ring slider, the one
+/// [`count_step`] reads: a design file's 2 or 3, or any lower count (the owner's FO-3 at the
+/// slice-3 STOP). The card of such a design shown draws one line, checked before the magnets'
+/// fit (at 0, 1 or fewer the count is the more exact reason). A count above the range is left
+/// to the fit, as before.
+fn count_below_the_slider(npole: i64) -> bool {
+    (npole as f64) < FreeVariable::MagnetsPerRing.range().min
 }
 
 /// Whether the readouts show both torques of `results` as numbers ([`predicts`]: the end
@@ -1008,8 +1032,9 @@ mod tests {
                 "{key}"
             );
         }
-        // A count from a design file the slider does not take: odd, or overflowing (the design
-        // shown does not fit there, so no row is reached; `count_step` itself is pinned by
+        // A count from a design file the slider does not take: odd, or overflowing (no row is
+        // reached: above the slider the design shown does not fit, and below it the count
+        // decides first, the owner's FO-3; `count_step` itself is pinned by
         // `count_step_keeps_even_counts_inside_the_slider_and_never_overflows`).
         for more in [false, true] {
             assert_eq!(
@@ -1017,9 +1042,14 @@ mod tests {
                 Words::NotOnTheSlider
             );
         }
-        for key in ["count overflow: i64::MAX", "count overflow: i64::MIN"] {
-            assert_eq!(design(key).card(), TorqueCard::ShownDoesNotFit, "{key}");
-        }
+        assert_eq!(
+            design("count overflow: i64::MAX").card(),
+            TorqueCard::ShownDoesNotFit
+        );
+        assert_eq!(
+            design("count overflow: i64::MIN").card(),
+            TorqueCard::ShownCountBelowSlider
+        );
 
         // Step 5: the keyway through the hub, on the diameter, length and gap rows; not on the
         // count row (decision D-1), whose -2 side is the number of the keyway intact.
@@ -1227,8 +1257,10 @@ mod tests {
 
     #[test]
     fn the_design_shown_decides_first() {
-        // Spec 8.1 test 4: the design shown decides before any row, by the readouts' own rule
-        // (physics review 3 MF-2).
+        // Spec 8.1 test 4: the design shown decides before any row: its magnet count below the
+        // magnet slider's range first (the owner's FO-3 at the slice-3 STOP), then the readouts'
+        // own rule (physics review 3 MF-2).
+        use crate::gui::test_support::with_poles;
         let designs = card_designs();
         let design = |key| find(&designs, key).inputs.clone();
         let mut negative_coefficient = DesignInputs::default();
@@ -1240,7 +1272,21 @@ mod tests {
         // NO_TORQUE, so the card reads no prediction, never "not above zero".
         let mut zero_coefficient = no_back_iron();
         zero_coefficient.calibration.f_cal_original = 0.0;
+        let fewest = slider_range(FreeVariable::MagnetsPerRing.path()).min;
         for (name, inputs, shown) in [
+            // A design file's count below the magnet slider's range (the owner's FO-3): at 3 and
+            // 2 the blocks fit and the model predicts, so the count alone keeps the card off its
+            // rows (at 2 blocks the polygon degenerates: the cup reads 5.86e17 mm); at 1, 0 and
+            // -2 the blocks do not fit, and the count, checked first, is the more exact reason.
+            ("npole 3", with_poles(3), TorqueCard::ShownCountBelowSlider),
+            ("npole 2", with_poles(2), TorqueCard::ShownCountBelowSlider),
+            ("npole 1", with_poles(1), TorqueCard::ShownCountBelowSlider),
+            ("npole 0", with_poles(0), TorqueCard::ShownCountBelowSlider),
+            (
+                "npole -2",
+                with_poles(-2),
+                TorqueCard::ShownCountBelowSlider,
+            ),
             // The end effect out of range: the readouts show no prediction.
             (
                 "short magnets",
@@ -1294,12 +1340,29 @@ mod tests {
             // What the readouts show (`size_controls::predicts`), and the torques' signs.
             let shows_both = torques.iter().all(|&torque| predicts(&results, torque));
             let both_above_zero = torques.iter().all(|&torque| torque > 0.0);
+            let fits = blocks_fit(&inputs.coupling, &results.model);
+            // The count decides first: exactly the counts below the slider read its line.
+            let below = (inputs.coupling.npole as f64) < fewest;
+            assert_eq!(below, shown == TorqueCard::ShownCountBelowSlider, "{name}");
             match shown {
+                TorqueCard::ShownCountBelowSlider => {
+                    // Without the count's rule 3 and 2 would draw rows, 1, 0 and -2 the fit's
+                    // line.
+                    let rows = fits && shows_both && both_above_zero;
+                    assert_eq!(rows, ["npole 3", "npole 2"].contains(&name), "{name}");
+                    if name == "npole 2" {
+                        assert!(
+                            results.model.cup_od_mm > 1e17,
+                            "{}",
+                            results.model.cup_od_mm
+                        );
+                    }
+                }
                 TorqueCard::ShownNoPrediction => assert!(!shows_both, "{name}"),
                 TorqueCard::ShownNoHotLow => {
                     assert!(shows_both && !both_above_zero, "{name}: {torques:?}")
                 }
-                _ => assert!(!blocks_fit(&inputs.coupling, &results.model), "{name}"),
+                _ => assert!(!fits, "{name}"),
             }
             if name == "f_cal_original -0.95, variation 1.5" {
                 assert!(torques[0] < 0.0 && torques[1] > 0.0, "{torques:?}");
@@ -1317,6 +1380,7 @@ mod tests {
             assert!(card.rows().is_empty(), "{name}");
             // Its one line alone: no caption, no Auto line, whatever the Auto state (T-12).
             let line = match card {
+                TorqueCard::ShownCountBelowSlider => SHOWN_COUNT_BELOW_SLIDER,
                 TorqueCard::ShownDoesNotFit => SHOWN_DOES_NOT_FIT,
                 TorqueCard::ShownNoPrediction => SHOWN_NO_PREDICTION,
                 TorqueCard::ShownNoHotLow => SHOWN_NO_HOT_LOW,
@@ -2888,6 +2952,7 @@ mod tests {
         );
         // The one-line forms draw no number.
         for key in [
+            "count overflow: i64::MIN",
             "short magnets",
             "shown does not fit",
             "variation 1.0",

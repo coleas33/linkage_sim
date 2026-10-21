@@ -9618,10 +9618,11 @@ mod tests {
         // The torque card (slice 3; spec sections 4 and 10.1 step 2), for its G-3 review: the
         // heading, then the lines `TorqueCard::lines` draws at every design of `card_designs()`,
         // each in its own Auto state as the panel draws it, at the shipped clamp pause; then every
-        // Auto state at the four designs whose card takes a form of its own under Auto (the odd
-        // count has no size rows, so Auto on ring size or magnet length holds no row; the three
-        // one-line forms draw no Auto line: T-12, test 8). Tag: "card/<key>/<Auto state>/<line>",
-        // the line numbered from 00.
+        // Auto state at the five designs whose card takes a form of its own under Auto (the odd
+        // count has no size rows, so Auto on ring size or magnet length holds no row; the four
+        // one-line forms draw no Auto line: T-12, test 8; the count below the slider's range,
+        // the owner's FO-3, by the table's count overflow at i64::MIN). Tag:
+        // "card/<key>/<Auto state>/<line>", the line numbered from 00.
         {
             use crate::gui::test_support::card_designs;
             use crate::gui::torque_card::{CARD_HEADING, card};
@@ -9654,6 +9655,7 @@ mod tests {
             };
             for key in [
                 "odd count",
+                "count overflow: i64::MIN",
                 "short magnets",
                 "shown does not fit",
                 "variation 1.0",
