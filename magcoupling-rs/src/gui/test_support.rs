@@ -1122,7 +1122,7 @@ mod tests {
         );
         assert_eq!(checks_at(&reverse_lengths(), Level::Caution), [TEMPERATURE]);
         // ... and one step of the Overall length slider trims its longer inner ring by more than
-        // the step: one control's step changes more than that control (BL-074).
+        // the step: a step of one control moves another part by more than the step (BL-074).
         let reverse = reverse_lengths();
         let step = Control::OverallLength.step();
         let length = dimensions(&reverse)

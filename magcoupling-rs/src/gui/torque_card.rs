@@ -2335,7 +2335,6 @@ mod tests {
             "unchanged",
             "constant",
             "kept",
-            "same",
         ] {
             assert!(!caption_words.contains(&word), "{CAPTION}: {word}");
         }
@@ -2345,6 +2344,7 @@ mod tests {
             "all other",
             "the rest",
             "other input",
+            "else the same",
         ] {
             assert!(!caption.contains(phrase), "{CAPTION}: {phrase}");
         }
