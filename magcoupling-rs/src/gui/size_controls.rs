@@ -465,6 +465,7 @@ fn size_slider(
 mod tests {
     use super::*;
     use crate::compute_all;
+    use crate::engine::size_controls::resize_diameter;
     use crate::gui::format::{TORQUE_DECIMALS, decimals_with_a_digit};
     use crate::gui::guidance::plain_text_violations;
     use crate::gui::test_support::{
@@ -815,6 +816,25 @@ mod tests {
         assert_eq!(
             SliderMapping::Diameter { minimum }.design(&inputs, diameter),
             resize_diameter_with_minimum(&inputs, diameter, minimum)
+        );
+        // At a Minimum OD below the default floor the slider reaches a diameter that floor
+        // refuses: the mapping resizes at the slider's own minimum, never at the default floor
+        // (`resize_diameter`, which spec 3.3 rules out), so the two differ here.
+        let lowest = size.minimum_diameter_range.min;
+        let below_the_floor = (lowest + minimum) / 2.0;
+        assert!(
+            resize_diameter(&inputs, below_the_floor).is_err(),
+            "{below_the_floor}"
+        );
+        let at_the_lowest =
+            SliderMapping::Diameter { minimum: lowest }.design(&inputs, below_the_floor);
+        assert!(
+            at_the_lowest.is_ok(),
+            "{below_the_floor}: {at_the_lowest:?}"
+        );
+        assert_eq!(
+            at_the_lowest,
+            resize_diameter_with_minimum(&inputs, below_the_floor, lowest)
         );
         let length = size.overall_length_mm + 1.0;
         assert_eq!(
