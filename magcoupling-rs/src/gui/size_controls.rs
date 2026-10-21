@@ -4,21 +4,25 @@
 //! sets ([`variable_slider`]) at the value shown and names the change ([`change_text`]).
 //!
 //! Under each control, its hint line ([`hint_line`], slice 2 spec 3.5) and its what-moves-what
-//! lines (spec 3.3: [`Consequences`], computed by the guidance layer). The panel's centre view
-//! draws the torque readouts (spec 3.2) with the texts here: [`REQUIRED`], [`HOT_LOW`] with
-//! [`torque_gap_text`], [`pullout_label`], and [`NO_PREDICTION`] or [`NO_TORQUE`] where the model
-//! makes none ([`predicts`]).
+//! lines (spec 3.3: [`Consequences`], computed by the guidance layer); the lines for two magnets
+//! fewer and two more are the torque card's count row since slice 3 (decision 7A). The panel's
+//! centre view draws the torque readouts (spec 3.2) with the texts here: [`REQUIRED`],
+//! [`HOT_LOW`] with [`torque_gap_text`], [`pullout_label`], and [`NO_PREDICTION`] or
+//! [`NO_TORQUE`] where the model makes none ([`predicts`]), then the torque card.
 
 use crate::engine::meta::{InputMeta, InputSet, SliderRange, Value};
 use crate::engine::size_controls::{
-    dimensions, dimensions_with_minimum_diameter, resize_diameter_with_minimum, resize_length,
+    SizeControls, dimensions, dimensions_with_minimum_diameter, resize_diameter_with_minimum,
+    resize_length,
 };
 use crate::engine::sizing::FreeVariable;
 use crate::gui::dashboard::{end_effect_out_of_range, why_note_link};
-use crate::gui::format::{fixed, signed_percent};
-use crate::gui::guidance::{Consequences, SIZE_TAB_NOTE};
+use crate::gui::format::{
+    fixed, shared_torque_precision, signed_percent, signed_torque_change, torque_shortfall,
+};
+use crate::gui::guidance::{Consequences, FACE_GAP, SIZE_TAB_NOTE};
 use crate::gui::input_ui::{hint_line, slider, weak_line};
-use crate::gui::inputs::InputCatalogue;
+use crate::gui::inputs::{InputCatalogue, slider_range};
 use crate::gui::plain_text::{
     DIAMETER_HINT_KEY, HOT_LOW_TORQUE, LENGTH_HINT_KEY, MINIMUM_OD_HINT_KEY, REQUIRED_TORQUE,
     help_for,
@@ -171,31 +175,37 @@ pub fn pullout_label(op_temp_C: f64) -> String {
 }
 
 /// The hot-low torque's gap to the requirement, and whether it meets it: `hot_low_Nm >=
-/// required_Nm`, as the engine's hot minimum check (which fails `hot_low < required`). Two
-/// decimals of N·m and a whole percent of the requirement, each signed: "short 0.29 N·m
-/// (-12 %)", "margin +0.40 N·m (+16 %)". The percent is left out when the requirement is not a
-/// positive torque (the slider stops at its metadata minimum; a design file need not).
+/// required_Nm`, as the engine's hot minimum check (which fails `hot_low < required`). The Size
+/// tab's one number format (decision 10B): the N·m to the fewest decimals, from two
+/// (`TORQUE_DECIMALS`), that read a digit that is not zero (`change_decimals`, at most two
+/// more), a margin signed, and one decimal of percent of the requirement with the gap's own sign
+/// (`signed_percent`): "short 0.29 N·m (-11.6 %)", "margin +0.40 N·m (+16.0 %)", "short
+/// 0.001 N·m (-0.0 %)", so a design a hair under its requirement never reads like a pass. The
+/// percent is left out when the requirement is not a positive torque (the slider stops at its
+/// metadata minimum; a design file need not). A number whose fixed form would need more than six
+/// whole digits, or a gap that reads zero at the cap while its percent does not, reads four
+/// significant digits as the readouts write values, a margin with its sign and a shortfall's
+/// size without (the owner's FO-4 at the slice-3 STOP; `shared_torque_precision`, the gap a
+/// row of one, then `signed_torque_change` and `torque_shortfall`): "margin +2.29 N·m
+/// (+2.285e302 %)", "short 1.000e300 N·m (-100.0 %)".
 #[allow(non_snake_case)] // unit suffix
 pub fn torque_gap_text(hot_low_Nm: f64, required_Nm: f64) -> (String, bool) {
     let meets = hot_low_Nm >= required_Nm;
-    let gap_Nm = (hot_low_Nm - required_Nm).abs();
+    let gap_Nm = hot_low_Nm - required_Nm;
+    // The gap as a fraction of a positive requirement: the percent drawn beside it.
+    let fraction = (required_Nm > 0.0).then(|| gap_Nm / required_Nm);
+    // The gap's own precision, one rule for a margin and a shortfall: a torque card row's, the
+    // gap a row of one.
+    let precision = shared_torque_precision(&[(gap_Nm, fraction)]);
     let (word, torque) = if meets {
-        ("margin", format!("+{}", fixed(gap_Nm, 2)))
+        ("margin", signed_torque_change(gap_Nm, precision))
     } else {
-        ("short", fixed(gap_Nm, 2))
+        ("short", torque_shortfall(gap_Nm.abs(), precision))
     };
-    let text = if required_Nm > 0.0 {
-        // `signed_percent` writes a change that rounds to zero as "+0 %". A shortfall keeps its
-        // sign ("-0 %"), so a design a hair under its requirement never reads like a pass.
-        let percent = signed_percent(gap_Nm / required_Nm);
-        let percent = if meets {
-            percent
-        } else {
-            percent.replacen('+', "-", 1)
-        };
-        format!("{word} {torque} N·m ({percent})")
-    } else {
-        format!("{word} {torque} N·m")
+    let torque = format!("{word} {torque} N·m");
+    let text = match fraction {
+        Some(fraction) => format!("{torque} ({})", signed_percent(fraction)),
+        None => torque,
     };
     (text, meets)
 }
@@ -206,6 +216,67 @@ pub fn torque_gap_text(hot_low_Nm: f64, required_Nm: f64) -> (String, bool) {
 #[allow(non_snake_case)] // unit suffix
 pub(crate) fn predicts(results: &DesignResults, torque_Nm: f64) -> bool {
     end_effect_out_of_range(results).is_none() && torque_Nm.is_finite()
+}
+
+/// The Outside diameter slider's lowest value (slice 3 spec 3.3): the user's Minimum OD
+/// `preference`, else the diameter range's start at the default floor, or the diameter shown
+/// where that is lower (a loaded smaller design starts with its own diameter exposed), held to
+/// the Minimum OD's own range. One expression for the controls and the torque card, each of
+/// which already holds the design's [`dimensions`] (`legacy`), so it runs no geometry.
+pub(crate) fn slider_minimum(legacy: &SizeControls, preference: Option<f64>) -> f64 {
+    let range = legacy.minimum_diameter_range;
+    preference
+        .unwrap_or(legacy.diameter_range.min.min(legacy.diameter_mm))
+        .clamp(range.min, range.max)
+}
+
+/// What a Size-tab slider does with a value (spec 3.3): the design its own mapping makes of it.
+/// The controls apply it on an edit and the torque card on each step of each control (slice 3,
+/// owner 3A: each control through its own slider's mapping), so a card side is the design the
+/// slider itself makes, and a change of a mapping reaches both.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum SliderMapping {
+    /// The Outside diameter slider: [`resize_diameter_with_minimum`] at the slider's lowest
+    /// value `minimum` ([`slider_minimum`]).
+    Diameter { minimum: f64 },
+    /// The Overall length slider: [`resize_length`].
+    Length,
+    /// The Magnet face gap or the Magnets per ring slider: its input at `path` set to the value
+    /// ([`InputSet::set`]), the magnet count as a whole number: a value a cast to the count
+    /// would change (not finite, not whole, or past what an `i64` holds) is refused. This arm
+    /// checks no range: its caller holds the value to the slider (the slider itself, and the
+    /// torque card's range test and `count_step`).
+    Input { path: &'static str },
+}
+
+impl SliderMapping {
+    /// The design the slider makes of `value` from `inputs`, or why its mapping refuses it.
+    pub(crate) fn design(self, inputs: &DesignInputs, value: f64) -> Result<DesignInputs, String> {
+        match self {
+            SliderMapping::Diameter { minimum } => {
+                resize_diameter_with_minimum(inputs, value, minimum)
+            }
+            SliderMapping::Length => resize_length(inputs, value),
+            SliderMapping::Input { path } => {
+                let value = if path == FreeVariable::MagnetsPerRing.path() {
+                    // `as` would truncate a fraction and saturate the rest (NaN to 0), so only
+                    // a whole number in [i64::MIN, 2^63) is cast: there the cast is exact.
+                    let whole = value.is_finite()
+                        && value.fract() == 0.0
+                        && (i64::MIN as f64..i64::MAX as f64).contains(&value);
+                    if !whole {
+                        return Err(format!("{path}: {value} is not a magnet count"));
+                    }
+                    Value::Int(value as i64)
+                } else {
+                    Value::Num(value)
+                };
+                let mut design = inputs.clone();
+                design.set(path, value).map_err(|error| error.to_string())?;
+                Ok(design)
+            }
+        }
+    }
 }
 
 pub(crate) struct ControlsOutput {
@@ -245,9 +316,7 @@ pub(crate) fn controls_ui(
                 .entry("coupling.inner_back_apothem_mm")
                 .expect("the diameter has input metadata");
             let range = legacy.minimum_diameter_range;
-            let mut minimum = minimum_diameter_mm
-                .unwrap_or(legacy.diameter_range.min.min(legacy.diameter_mm))
-                .clamp(range.min, range.max);
+            let mut minimum = slider_minimum(&legacy, minimum_diameter_mm);
             ui.label(MINIMUM).on_hover_text(
                 "Sets the lower end of the diameter slider without changing your current size.",
             );
@@ -271,7 +340,7 @@ pub(crate) fn controls_ui(
             // preference itself is local to this view, like the input ordering preference.
             let size = dimensions_with_minimum_diameter(inputs, minimum)
                 .expect("a bounded minimum defines a diameter range");
-            for (label, hover, path, hint, mut value, range, line) in [
+            for (label, hover, path, hint, mut value, range, mapping, line) in [
                 (
                     DIAMETER,
                     DIAMETER_HOVER,
@@ -279,6 +348,7 @@ pub(crate) fn controls_ui(
                     DIAMETER_HINT_KEY,
                     size.diameter_mm,
                     size.diameter_range,
+                    SliderMapping::Diameter { minimum },
                     consequences.diameter_line(),
                 ),
                 (
@@ -288,6 +358,7 @@ pub(crate) fn controls_ui(
                     LENGTH_HINT_KEY,
                     size.overall_length_mm,
                     size.length_range,
+                    SliderMapping::Length,
                     consequences.length_line(),
                 ),
             ] {
@@ -300,12 +371,7 @@ pub(crate) fn controls_ui(
                 output.widgets.push(response.id);
                 hint_line(ui, hint);
                 if response.changed() {
-                    let resized = if path == "coupling.inner_back_apothem_mm" {
-                        resize_diameter_with_minimum(&output.inputs, value, minimum)
-                    } else {
-                        resize_length(&output.inputs, value)
-                    };
-                    match resized {
+                    match mapping.design(&output.inputs, value) {
                         Ok(resized) => output.inputs = resized,
                         Err(error) => output.error = Some(error),
                     }
@@ -328,10 +394,10 @@ pub(crate) fn controls_ui(
             );
         }
         for (label, path, lines) in [
-            (GAP, "metal.face_gap_mm", Vec::new()),
+            (GAP, FACE_GAP, Vec::new()),
             (
                 MAGNETS,
-                "coupling.npole",
+                FreeVariable::MagnetsPerRing.path(),
                 consequences.magnet_lines(inputs.coupling.npole, auto),
             ),
         ] {
@@ -348,18 +414,14 @@ pub(crate) fn controls_ui(
                 _ => unreachable!("the gap and magnet count are numbers"),
             };
             ui.label(label).on_hover_text(help_for(path));
-            let range: SliderRange = entry.meta.range.expect("a size control has a slider");
+            let range = slider_range(path).expect("a size control has a slider");
             let response = size_slider(ui, path, &mut value, entry.meta, range, is_locked(label));
             output.widgets.push(response.id);
             hint_line(ui, path);
             if response.changed() {
-                let value = if path == "coupling.npole" {
-                    Value::Int(value as i64)
-                } else {
-                    Value::Num(value)
-                };
-                if let Err(error) = output.inputs.set(path, value) {
-                    output.error = Some(format!("{error}"));
+                match (SliderMapping::Input { path }).design(&output.inputs, value) {
+                    Ok(design) => output.inputs = design,
+                    Err(error) => output.error = Some(error),
                 }
             }
             for line in &lines {
@@ -403,8 +465,12 @@ fn size_slider(
 mod tests {
     use super::*;
     use crate::compute_all;
+    use crate::engine::size_controls::resize_diameter;
+    use crate::gui::format::{TORQUE_DECIMALS, decimals_with_a_digit};
     use crate::gui::guidance::plain_text_violations;
-    use crate::gui::test_support::{SCREEN, assert_glyphs, short_magnets, sized_frame};
+    use crate::gui::test_support::{
+        SCREEN, assert_glyphs, card_designs, glyph_context, short_magnets, sized_frame,
+    };
 
     #[test]
     fn the_pull_out_label_names_the_live_operating_temperature() {
@@ -416,23 +482,37 @@ mod tests {
 
     #[test]
     fn the_gap_reads_short_or_a_margin_against_the_requirement() {
+        // Decision 10B: N·m to the fewest decimals, from two, that read a digit that is not
+        // zero, and one decimal of percent with the gap's own sign.
         assert_eq!(
             torque_gap_text(2.21, 2.5),
-            ("short 0.29 N·m (-12 %)".to_owned(), false)
+            ("short 0.29 N·m (-11.6 %)".to_owned(), false)
         );
         assert_eq!(
             torque_gap_text(2.9, 2.5),
-            ("margin +0.40 N·m (+16 %)".to_owned(), true)
+            ("margin +0.40 N·m (+16.0 %)".to_owned(), true)
         );
         // The engine's hot minimum check passes at equality (it fails `hot_low < required`).
         assert_eq!(
             torque_gap_text(2.5, 2.5),
-            ("margin +0.00 N·m (+0 %)".to_owned(), true)
+            ("margin +0.00 N·m (+0.0 %)".to_owned(), true)
         );
-        // A shortfall too small to show still reads short, with its sign.
+        // A shortfall too small for two decimals shows its digit, and its percent keeps its
+        // sign, so a design a hair under its requirement never reads like a pass.
         assert_eq!(
             torque_gap_text(2.499, 2.5),
-            ("short 0.00 N·m (-0 %)".to_owned(), false)
+            ("short 0.001 N·m (-0.0 %)".to_owned(), false)
+        );
+        assert_eq!(
+            torque_gap_text(2.504, 2.5),
+            ("margin +0.004 N·m (+0.2 %)".to_owned(), true)
+        );
+        // Past the cap (two more decimals, T-9) a gap reads two decimals: a change that small is
+        // read as float noise (T-9), not a digit to show, though this one is a typed 0.00001 N·m
+        // shortfall. The word and the percent's sign still say which side it is on.
+        assert_eq!(
+            torque_gap_text(2.49999, 2.5),
+            ("short 0.00 N·m (-0.0 %)".to_owned(), false)
         );
     }
 
@@ -455,6 +535,127 @@ mod tests {
     }
 
     #[test]
+    fn a_margin_past_the_cap_and_a_hot_low_that_is_not_finite_read_their_word_and_sign() {
+        // A margin past the cap (T-9) reads two decimals with its sign, as Auto's solve residual
+        // at (b) does (slice 3 spec section 5). A hot-low that is not finite never reaches the
+        // panel's gap (its readout reads NO_PREDICTION or NO_TORQUE, `predicts`), but
+        // `gui::torque_gap_text` is public: each reads its non_finite_text, never "++inf".
+        for (hot_low, required, text, meets) in [
+            (2.5 + 1.28e-10, 2.5, "margin +0.00 N·m (+0.0 %)", true),
+            (f64::INFINITY, 2.5, "margin +inf N·m (+inf %)", true),
+            (f64::NEG_INFINITY, 2.5, "short +inf N·m (-inf %)", false),
+            (f64::NAN, 2.5, "short NaN N·m (NaN %)", false),
+        ] {
+            assert_eq!(
+                torque_gap_text(hot_low, required),
+                (text.to_owned(), meets),
+                "{hot_low} against {required}"
+            );
+        }
+    }
+
+    #[test]
+    fn past_six_whole_digits_or_zero_beside_its_percent_the_gap_reads_four_significant_digits() {
+        // The owner's FO-4 at the slice-3 STOP: a gap whose fixed form would need more than six
+        // whole digits, or that reads zero at the cap (T-9) while its percent does not, and a
+        // percent past six whole digits, read as the readouts write values (four significant
+        // digits); a shortfall's size follows the margin's bound. A design file reaches each: a
+        // Required of 1e-300 or 1e300, a calibration coefficient of 1e300, a Required of 1e-6.
+        for (hot_low, required, text, meets) in [
+            (2.29, 1e-300, "margin +2.29 N·m (+2.290e302 %)", true),
+            (2.405e300, 2.5, "margin +2.405e300 N·m (+9.620e301 %)", true),
+            (2.0, 1e300, "short 1.000e300 N·m (-100.0 %)", false),
+            (1.5e-6, 1e-6, "margin +5.000e-7 N·m (+50.0 %)", true),
+            (0.5e-6, 1e-6, "short 5.000e-7 N·m (-50.0 %)", false),
+            // The bound at six whole digits, either way.
+            (1_000_002.4, 2.5, "margin +999999.90 N·m (+4.000e7 %)", true),
+            (1_000_002.5, 2.5, "margin +1.000e6 N·m (+4.000e7 %)", true),
+            (-999_997.4, 2.5, "short 999999.90 N·m (-4.000e7 %)", false),
+            (-999_997.5, 2.5, "short 1.000e6 N·m (-4.000e7 %)", false),
+            // No percent drawn (a requirement that is no positive torque): the bound alone.
+            (2e6, 0.0, "margin +2.000e6 N·m", true),
+            (1e-9, 0.0, "margin +0.00 N·m", true),
+            (-1e-9, 0.0, "short 0.00 N·m", false),
+        ] {
+            assert_eq!(
+                torque_gap_text(hot_low, required),
+                (text.to_owned(), meets),
+                "{hot_low} against {required}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_gap_s_word_and_the_sign_of_its_percent_always_agree() {
+        // The word (and `meets`) is the engine's hot minimum check, `hot_low >= required`; the
+        // percent carries the gap's own sign. With finite torques and a positive requirement the
+        // two never disagree, however small the gap or large the torques: a difference of two
+        // doubles that is not zero never rounds to zero over the requirement, so a shortfall's
+        // percent reads "-" ("-0.0 %" a hair under) and a margin's "+" (an exact zero "+0.0 %",
+        // the house rule); one that overflows reads "+inf %" or "-inf %".
+        for required in [0.1, 1.5, 2.5, 10.0, 1e-300, 5e-324, 1e300, f64::MAX] {
+            let hair = [
+                required.next_up(),
+                required.next_down(),
+                required.next_up().next_up(),
+                required.next_down().next_down(),
+            ];
+            let offsets = [1e-10, 0.00004, 0.004, 0.29].into_iter();
+            let hot_lows = [required, 0.0, -required, 2.0 * required, -f64::MAX]
+                .into_iter()
+                .chain(hair)
+                .chain(offsets.flat_map(|step| [required + step, required - step]))
+                .filter(|hot_low| hot_low.is_finite());
+            for hot_low in hot_lows {
+                let (text, meets) = torque_gap_text(hot_low, required);
+                let what = format!("{hot_low:e} against {required:e}: {text}");
+                assert_eq!(meets, hot_low >= required, "{what}");
+                let (word, sign) = if meets {
+                    ("margin ", " (+")
+                } else {
+                    ("short ", " (-")
+                };
+                assert!(text.starts_with(word), "{what}");
+                assert!(text.contains(sign), "{what}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_gap_at_the_spec_s_designs_reads_as_its_section_5_gives_it() {
+        // Slice 3 spec section 5's table ("After", decision 10B): the readout's gap at (a), (b),
+        // (c), (e) and (e2) of the torque card's one table of designs, each hot-low from
+        // compute_all against the design's own requirement, as the panel draws it.
+        let mut read = Vec::new();
+        for design in card_designs() {
+            let (text, meets) = match design.key {
+                "(a)" => ("short 0.21 N·m (-8.6 %)", false),
+                "(b)" => ("margin +0.00 N·m (+0.0 %)", true),
+                "(c)" => ("short 1.06 N·m (-42.3 %)", false),
+                "(e)" => ("short 0.83 N·m (-33.1 %)", false),
+                "(e2)" => ("margin +0.17 N·m (+11.5 %)", true),
+                _ => continue,
+            };
+            let hot_low = compute_all(&design.inputs).metal.torque_hot_low_Nm;
+            let required = design.inputs.metal.required_min_Nm;
+            assert_eq!(
+                torque_gap_text(hot_low, required),
+                (text.to_owned(), meets),
+                "{}",
+                design.key
+            );
+            if design.key == "(b)" {
+                // Auto's solve residual: a margin past the cap, read as float noise (T-9).
+                let gap = hot_low - required;
+                assert!(gap > 0.0, "{gap:e}");
+                assert_eq!(decimals_with_a_digit(gap, TORQUE_DECIMALS), None, "{gap:e}");
+            }
+            read.push(design.key);
+        }
+        assert_eq!(read, ["(a)", "(b)", "(c)", "(e)", "(e2)"]);
+    }
+
+    #[test]
     fn a_torque_is_shown_only_inside_the_end_effect_range_and_finite() {
         let results = compute_all(&DesignInputs::default());
         assert!(predicts(&results, results.metal.torque_hot_low_Nm));
@@ -473,9 +674,7 @@ mod tests {
 
     #[test]
     fn the_readout_texts_have_glyphs_and_plain_words() {
-        let ctx = egui::Context::default();
-        // The fonts load on the context's first frame.
-        sized_frame(&ctx, SCREEN, Vec::new(), |_| {});
+        let ctx = glyph_context();
         let texts = [
             REQUIRED.to_owned(),
             HOT_LOW.to_owned(),
@@ -486,6 +685,9 @@ mod tests {
             torque_gap_text(2.21, 2.5).0,
             torque_gap_text(2.9, 2.5).0,
             torque_gap_text(2.0, 0.0).0,
+            // Decision 10B's new forms: an exact zero and a shortfall at three decimals.
+            torque_gap_text(2.5, 2.5).0,
+            torque_gap_text(2.499, 2.5).0,
             DIAMETER_HOVER.to_owned(),
             LENGTH_HOVER.to_owned(),
             LINKED_HOUSING.to_owned(),
@@ -543,6 +745,164 @@ mod tests {
                 "{hover}"
             );
         }
+    }
+
+    #[test]
+    fn the_slider_minimum_is_the_preference_else_the_range_start_or_the_diameter_shown() {
+        // Slice 3 spec 3.3: the Outside diameter slider's lowest value, one expression for the
+        // controls and the torque card.
+        use crate::engine::size_controls::with_ring_radius;
+        let size =
+            |inputs: &DesignInputs| dimensions(inputs).expect("the design has size controls");
+        // Unset: the range's start at the default floor, below the diameter shown ...
+        let defaults = size(&DesignInputs::default());
+        assert!(defaults.diameter_range.min < defaults.diameter_mm);
+        assert_eq!(slider_minimum(&defaults, None), defaults.diameter_range.min);
+        // ... or the diameter shown, where a loaded design is smaller than that start (the ring
+        // at 7.5 mm through the Outside diameter slider's own mapping).
+        let smaller = with_ring_radius(&DesignInputs::default(), 7.5)
+            .expect("7.5 mm is a ring radius the Outside diameter reaches");
+        let smaller_size = size(&smaller);
+        assert!(smaller_size.diameter_mm < smaller_size.diameter_range.min);
+        assert_eq!(
+            slider_minimum(&smaller_size, None),
+            smaller_size.diameter_mm
+        );
+        // Set: the preference itself inside the Minimum OD's range (the diameter shown, as at a
+        // user's Minimum OD of 42.8 mm, included), else the nearer end of that range.
+        let range = defaults.minimum_diameter_range;
+        for inside in [
+            range.min,
+            (range.min + range.max) / 2.0,
+            defaults.diameter_mm,
+        ] {
+            assert_eq!(slider_minimum(&defaults, Some(inside)), inside);
+        }
+        assert_eq!(slider_minimum(&defaults, Some(range.min - 1.0)), range.min);
+        assert_eq!(slider_minimum(&defaults, Some(range.max + 1.0)), range.max);
+        // The controls' own: on its first frame a loaded smaller design pins its starting floor,
+        // the slider's minimum; the defaults pin none.
+        let ctx = egui::Context::default();
+        let pinned = |inputs: &DesignInputs| {
+            let consequences = Consequences::of(
+                inputs,
+                &compute_all(inputs),
+                None,
+                crate::engine::clamps::PAUSED,
+            );
+            let mut minimum = None;
+            sized_frame(&ctx, SCREEN, Vec::new(), |ui| {
+                minimum = controls_ui(ui, inputs, None, &consequences, None).minimum_diameter_mm;
+            });
+            minimum
+        };
+        assert_eq!(pinned(&smaller), Some(slider_minimum(&smaller_size, None)));
+        assert_eq!(pinned(&DesignInputs::default()), None);
+    }
+
+    #[test]
+    fn each_size_slider_makes_its_design_through_its_own_mapping() {
+        // Slice 3 spec 3.3 (owner 3A): one mapping per Size-tab slider, which the controls apply
+        // on an edit and the torque card on each step. The Outside diameter through
+        // resize_diameter_with_minimum at the slider's lowest value, the Overall length through
+        // resize_length, the gap and the magnet count as their inputs (the count whole); a value
+        // a mapping refuses says why.
+        let inputs = DesignInputs::default();
+        let size = dimensions(&inputs).expect("the defaults have size controls");
+        let minimum = slider_minimum(&size, None);
+        let diameter = size.diameter_mm + 1.0;
+        assert_eq!(
+            SliderMapping::Diameter { minimum }.design(&inputs, diameter),
+            resize_diameter_with_minimum(&inputs, diameter, minimum)
+        );
+        // At a Minimum OD below the default floor the slider reaches a diameter that floor
+        // refuses: the mapping resizes at the slider's own minimum, never at the default floor
+        // (`resize_diameter`, which spec 3.3 rules out), so the two differ here.
+        let lowest = size.minimum_diameter_range.min;
+        let below_the_floor = (lowest + minimum) / 2.0;
+        assert!(
+            resize_diameter(&inputs, below_the_floor).is_err(),
+            "{below_the_floor}"
+        );
+        let at_the_lowest =
+            SliderMapping::Diameter { minimum: lowest }.design(&inputs, below_the_floor);
+        assert!(
+            at_the_lowest.is_ok(),
+            "{below_the_floor}: {at_the_lowest:?}"
+        );
+        assert_eq!(
+            at_the_lowest,
+            resize_diameter_with_minimum(&inputs, below_the_floor, lowest)
+        );
+        let length = size.overall_length_mm + 1.0;
+        assert_eq!(
+            SliderMapping::Length.design(&inputs, length),
+            resize_length(&inputs, length)
+        );
+        let gap = SliderMapping::Input { path: FACE_GAP }
+            .design(&inputs, 1.5)
+            .expect("a gap on its slider");
+        let mut expected = inputs.clone();
+        expected.metal.face_gap_mm = 1.5;
+        assert_eq!(gap, expected);
+        let count = SliderMapping::Input {
+            path: FreeVariable::MagnetsPerRing.path(),
+        }
+        .design(&inputs, 8.0)
+        .expect("a count on its slider");
+        let mut expected = inputs.clone();
+        expected.coupling.npole = 8;
+        assert_eq!(count, expected);
+        assert!(
+            SliderMapping::Length
+                .design(&inputs, size.length_range.max + 1.0)
+                .is_err()
+        );
+        assert!(
+            SliderMapping::Input { path: FACE_GAP }
+                .design(&inputs, f64::NAN)
+                .is_err()
+        );
+        // The count is set as a whole number, as the slider sets it: a value a cast to the
+        // count would change (not finite, not whole, or past what an i64 holds; 2^63 is one
+        // past) is refused, never truncated or saturated.
+        let count_mapping = SliderMapping::Input {
+            path: FreeVariable::MagnetsPerRing.path(),
+        };
+        for refused in [
+            8.7,
+            -0.5,
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            1e19,
+            -1e19,
+            i64::MAX as f64,
+        ] {
+            assert!(count_mapping.design(&inputs, refused).is_err(), "{refused}");
+        }
+        // The Input arm checks no range (its caller holds the value to the slider): a whole
+        // count off the slider, the lowest an i64 holds and a gap past its slider map as set.
+        for (value, npole) in [
+            (2.0, 2),
+            (100.0, 100),
+            (-0.0, 0),
+            (i64::MIN as f64, i64::MIN),
+        ] {
+            let mut expected = inputs.clone();
+            expected.coupling.npole = npole;
+            assert_eq!(
+                count_mapping.design(&inputs, value),
+                Ok(expected),
+                "{value}"
+            );
+        }
+        let mut expected = inputs.clone();
+        expected.metal.face_gap_mm = 6.0;
+        assert_eq!(
+            SliderMapping::Input { path: FACE_GAP }.design(&inputs, 6.0),
+            Ok(expected)
+        );
     }
 }
 

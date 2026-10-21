@@ -19,7 +19,7 @@
 
 use crate::DesignInputs;
 use crate::engine::meta::{InputSet, SliderRange, Value};
-use crate::engine::size_controls::{dimensions, with_ring_radius};
+use crate::engine::size_controls::{dimensions, ring_radius_range, with_ring_radius};
 use crate::engine::sizing::{FreeVariable, SizingError, SizingOutcome, solve_in};
 use crate::gui::format::{fixed, format_value, with_unit};
 use crate::gui::size_controls::DIAMETER;
@@ -110,6 +110,23 @@ pub fn sized(variable: FreeVariable, inputs: &DesignInputs, value: f64) -> Desig
             with_ring_radius(inputs, value).unwrap_or_else(|| variable.apply(inputs, value))
         }
         _ => variable.apply(inputs, value),
+    }
+}
+
+/// The range Auto searches for `variable` (spec guidance 3.5; slice 3: one rule for the panel
+/// and the torque card's test table): the ring size over the ring radii of the Size tab's
+/// diameter range, its Minimum OD `minimum_diameter_mm` included ([`ring_radius_range`]), or
+/// over its slider where the size controls define no range (an odd magnet count); every other
+/// variable over its slider.
+pub(crate) fn sizing_range(
+    inputs: &DesignInputs,
+    variable: FreeVariable,
+    minimum_diameter_mm: Option<f64>,
+) -> SliderRange {
+    match variable {
+        FreeVariable::RingRadius => ring_radius_range(inputs, minimum_diameter_mm)
+            .unwrap_or_else(|| FreeVariable::RingRadius.range()),
+        other => other.range(),
     }
 }
 

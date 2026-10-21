@@ -2404,10 +2404,8 @@ mod tests {
     fn every_note_draws_at_every_probe_design_with_glyphs_and_no_braces() {
         use crate::engine::explain::note_text::rendered_texts;
         use crate::engine::explain::probes::probe_designs;
-        use crate::gui::test_support::assert_glyphs;
-        let ctx = egui::Context::default();
-        // The fonts load on the context's first frame.
-        let _ = ctx.run(egui::RawInput::default(), |_| {});
+        use crate::gui::test_support::{assert_glyphs, glyph_context};
+        let ctx = glyph_context();
         for (name, inputs) in probe_designs() {
             let results = compute_all(&inputs);
             let view = NoteView {

@@ -267,6 +267,137 @@ mod tests {
         let fit =
             crate::gui::guidance::guide(crate::gui::guidance::FIT_CHECK).expect("the fit guide");
         assert!(script.contains(fit.label), "the dashboard's last row");
+        // Slice 3 (spec 8.6, test 26): the card step quotes the torque card whole as the page
+        // draws it at the smoke design (Auto on the magnet length): the heading, the caption, the
+        // Auto line and the held row; it names the other three rows by their starts. The G-3
+        // review (plan T7) set the words before the prompt quoted them; this keeps it current.
+        {
+            use crate::gui::torque_card::{
+                AUTO_HOLDS_LENGTH, CAPTION, CARD_HEADING, Control, held_line,
+            };
+            // The first view and the card step both look for the heading, so the script types it
+            // once, as its own CARD_HEADING: a change of the heading reaches both steps.
+            assert_eq!(
+                quoted("CARD_HEADING"),
+                CARD_HEADING,
+                "the script's CARD_HEADING"
+            );
+            assert_eq!(
+                script.matches(CARD_HEADING).count(),
+                1,
+                "the smoke prompt types the card's heading once, in CARD_HEADING"
+            );
+            for (what, text) in [
+                ("the card's heading", CARD_HEADING.to_owned()),
+                ("the card's caption", CAPTION.to_owned()),
+                ("the card's Auto line", AUTO_HOLDS_LENGTH.to_owned()),
+                ("the held row", held_line(Control::OverallLength)),
+            ] {
+                assert!(
+                    script.contains(&text),
+                    "the smoke prompt quotes {what} whole: {text}"
+                );
+            }
+            for control in [
+                Control::OutsideDiameter,
+                Control::FaceGap,
+                Control::MagnetsPerRing,
+            ] {
+                let start = format!("{}:", control.label());
+                assert!(
+                    script.contains(&start),
+                    "the smoke prompt names the row starting {start}"
+                );
+            }
+        }
+        // The drag's timer keeps only the frames the app draws (performance review 4.1): eframe
+        // asks for an animation frame at every display refresh, so the timer marks a frame by its
+        // WebGL draw call. Read on the constant's own line, since the comment above it names
+        // drawElements too; that line is the whole timer, as T10's extraction and the stub read
+        // it. The card step installs this constant, not a timer of its own.
+        let timer = script
+            .lines()
+            .find(|line| line.starts_with("const FRAME_TIMER = `"))
+            .expect("the smoke prompt's frame timer");
+        assert!(
+            timer.ends_with('`'),
+            "the smoke prompt's frame timer is one line"
+        );
+        assert!(
+            timer.contains("drawElements") && timer.contains("if (window.__drew)"),
+            "the smoke prompt's frame timer keeps only the frames the app draws"
+        );
+        assert!(
+            script.contains("page.addInitScript(${FRAME_TIMER})"),
+            "the card step installs the frame timer before it opens the link again"
+        );
+        // The drag step finds the Magnet face gap slider by the value its box shows, and judges
+        // drag_moved against it: the link's gap at the slider's decimals (its step's, which egui
+        // shows at a device pixel ratio of 1) with its unit, typed once as SMOKE_GAP_SHOWN.
+        {
+            use crate::gui::guidance::FACE_GAP;
+            use crate::gui::inputs::{InputCatalogue, slider_range, step_decimals};
+            let unit = InputCatalogue::get()
+                .entry(FACE_GAP)
+                .expect("the gap input")
+                .meta
+                .unit;
+            let step = slider_range(FACE_GAP).expect("the gap slider's range").step;
+            let shown = crate::gui::with_unit(
+                format!(
+                    "{:.*}",
+                    step_decimals(step),
+                    design.inputs.metal.face_gap_mm
+                ),
+                unit,
+            );
+            assert_eq!(
+                quoted("SMOKE_GAP_SHOWN"),
+                shown,
+                "the script's SMOKE_GAP_SHOWN"
+            );
+            assert_eq!(
+                script.matches(shown.as_str()).count(),
+                1,
+                "the smoke prompt types the gap's value once, in SMOKE_GAP_SHOWN"
+            );
+        }
+        // The drag counts the sizing solve's console lines (sizing_lines, expected 0) by the
+        // panel's own prefix, in its code and in the prompt's words.
+        for (what, text) in [
+            (
+                "the drag's code",
+                format!("m.text().includes('{SIZING_LOG_PREFIX}')"),
+            ),
+            (
+                "the prompt's words",
+                format!("the number of \"{SIZING_LOG_PREFIX}\" console lines"),
+            ),
+        ] {
+            assert!(
+                script.contains(&text),
+                "the sizing lines are counted by SIZING_LOG_PREFIX in {what}: {text}"
+            );
+        }
+        // Every step's console messages reach console_errors. The Playwright MCP's
+        // browser_console_messages returns only the messages since the last navigation, so each
+        // page is collected after its last step: the first page after the scroll and before the
+        // link is opened again, the page opened again after the drag and before the close.
+        let collect = "Collect the console messages at level \"info\"";
+        let between = |from: &str, to: &str| -> &str {
+            let start = script.find(from).unwrap_or_else(|| panic!("no {from}"));
+            let end = script.find(to).unwrap_or_else(|| panic!("no {to}"));
+            assert!(start < end, "the smoke prompt has {from} before {to}");
+            &script[start..end]
+        };
+        assert!(
+            between("dashboard_scrolls=true", "page.goto(").contains(collect),
+            "the first page's console messages are collected before the link is opened again"
+        );
+        assert!(
+            between("drag_moved=true", "then close the browser").contains(collect),
+            "the console messages of the page opened again are collected after the drag"
+        );
         // The app opens the link and the solve succeeds after its debounce.
         let ctx = egui::Context::default();
         let mut app = MagcouplingApp::new(&ctx);

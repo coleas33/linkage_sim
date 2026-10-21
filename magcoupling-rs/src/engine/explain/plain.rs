@@ -70,7 +70,7 @@ pub fn plain_text_violations(text: &str) -> Vec<&'static str> {
         text.contains("Rust-only"),
         text.contains("Calculator!"),
         text.contains("M1 audit"),
-        words(&lower).any(|word| word == "skeptic" || word == "skeptics"),
+        words(&lower).any(|word| says(word, "skeptic")),
         lower.contains("plan a-"),
         followed_by_digit(&lower, "decision ") || followed_by_digit(&lower, "decisions "),
         text.contains("drawing.py"),
@@ -131,6 +131,40 @@ pub fn mentions_gearbox_protection(text: &str) -> bool {
 /// Words that would order the coupling's torques (BL-064 spec 6.2, trap 2): no shaft-joint text
 /// says them.
 pub const TORQUE_ORDER_WORDS: [&str; 3] = ["strongest", "most expected", "most torque expected"];
+
+/// Words that would rank the Size tab's controls on the torque card (slice 3 spec 4.4: owner
+/// decision 6A keeps its rows in the controls' order with no sorted claim, and 14A makes these
+/// words the card's ban list): no card text says them, matched by [`ranking_words_in`].
+pub const CARD_RANKING_WORDS: [&str; 7] = [
+    "strongest",
+    "biggest",
+    "best",
+    "most",
+    "lever",
+    "dominant",
+    "ranks",
+];
+
+/// The words of [`CARD_RANKING_WORDS`] that `text` says, in that list's order, each once. A word
+/// of `text` (a run of letters and digits) says a listed word when it is that word whole, in any
+/// case, or that word with an `s` added or taken off (`says`, the rule the "skeptic" pattern
+/// shares): "levers" and "Rank" say "lever" and "ranks"; "almost" and "bestow" say none.
+pub fn ranking_words_in(text: &str) -> Vec<&'static str> {
+    let lower = text.to_lowercase();
+    CARD_RANKING_WORDS
+        .into_iter()
+        .filter(|&listed| words(&lower).any(|word| says(word, listed)))
+        .collect()
+}
+
+/// Whether `word`, a lowercase word of a text ([`words`]), says the lowercase `listed`: it is
+/// that word whole, or that word with an `s` added or taken off. The one whole-word rule of the
+/// "skeptic" pattern ("skeptic" or "skeptics", never "skeptical") and of [`ranking_words_in`].
+fn says(word: &str, listed: &str) -> bool {
+    word == listed
+        || word.strip_suffix('s') == Some(listed)
+        || listed.strip_suffix('s') == Some(word)
+}
 
 /// Whether `c` continues a word: a letter, a digit or an underscore.
 fn is_word(c: char) -> bool {
@@ -440,6 +474,62 @@ mod tests {
             "",
         ] {
             assert!(!mentions_gearbox_protection(text), "{text}");
+        }
+    }
+
+    #[test]
+    fn the_card_ranking_words_match_whole_in_any_case_with_an_s_added_or_taken_off() {
+        // Slice 3 spec 4.4 (owner decision 14A): the torque card's ban list, owner-confirmed.
+        assert_eq!(
+            CARD_RANKING_WORDS,
+            [
+                "strongest",
+                "biggest",
+                "best",
+                "most",
+                "lever",
+                "dominant",
+                "ranks"
+            ]
+        );
+        // Each listed word says itself: as it is, in capitals, with an s added, and inside a
+        // sentence.
+        for listed in CARD_RANKING_WORDS {
+            for text in [
+                listed.to_owned(),
+                listed.to_uppercase(),
+                format!("{listed}s"),
+                format!("The {listed}, here."),
+            ] {
+                assert_eq!(ranking_words_in(&text), [listed], "{text:?}");
+            }
+        }
+        // The spec's examples, an s taken off ("rank"), and several words in the list's order,
+        // each once.
+        for (text, said) in [
+            ("levers", &["lever"][..]),
+            ("Rank", &["ranks"]),
+            ("rank", &["ranks"]),
+            ("the most-used lever", &["most", "lever"]),
+            (
+                "Ranks: the STRONGEST lever, then the strongest LEVERS.",
+                &["strongest", "lever", "ranks"],
+            ),
+        ] {
+            assert_eq!(ranking_words_in(text), said, "{text:?}");
+        }
+        // A listed word inside a longer word is not that word.
+        for text in [
+            "almost",
+            "bestow",
+            "mostly",
+            "utmost",
+            "leverage",
+            "dominance",
+            "biggestly",
+            "",
+        ] {
+            assert_eq!(ranking_words_in(text), Vec::<&str>::new(), "{text:?}");
         }
     }
 }

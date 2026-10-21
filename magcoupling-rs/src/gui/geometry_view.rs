@@ -30,7 +30,7 @@ const VIEW_GAP_MM: f64 = 3.0;
 /// The smallest height of the drawing [points] while the list under it keeps
 /// [`MIN_LIST_ROWS`]; the list scrolls when space is short. Shorter still, the drawing shrinks
 /// below it (it is drawn to scale, so it only scales down).
-const MIN_DRAWING_HEIGHT: f32 = 160.0;
+pub(crate) const MIN_DRAWING_HEIGHT: f32 = 160.0;
 
 /// The rows of the callout list the drawing leaves room for when space is short.
 const MIN_LIST_ROWS: f32 = 3.0;
@@ -163,7 +163,7 @@ pub fn geometry_ui(
     readouts: &mut Readouts,
 ) -> GeometryLayout {
     let g = geometry(inputs, results, clamps_paused);
-    let row = ui.text_style_height(&egui::TextStyle::Body) + ui.spacing().item_spacing.y;
+    let row = list_row(ui);
     let rows = g.end.callouts.len() + g.side.callouts.len() + g.notes.len();
     let list = rows as f32 * row * 1.5;
     let height = drawing_height(ui.available_height(), list, row);
@@ -224,6 +224,19 @@ fn drawing_height(available: f32, list: f32, row: f32) -> f32 {
         .max(MIN_DRAWING_HEIGHT)
         .min(available - kept)
         .max(0.0)
+}
+
+/// The height of a row of the callout list under the drawing [points]: a body text row and the
+/// item spacing, as [`geometry_ui`] reserves it (one expression for it and [`drawing_floor`]).
+pub(crate) fn list_row(ui: &egui::Ui) -> f32 {
+    ui.text_style_height(&egui::TextStyle::Body) + ui.spacing().item_spacing.y
+}
+
+/// The room the drawing needs to keep [`MIN_DRAWING_HEIGHT`] with [`MIN_LIST_ROWS`] rows of the
+/// callout list under it [points] (slice 3 spec 6.2): the room the Size tab's torque card leaves
+/// the drawing below it, starting closed rather than take it and capping its body above it.
+pub(crate) fn drawing_floor(ui: &egui::Ui) -> f32 {
+    MIN_DRAWING_HEIGHT + MIN_LIST_ROWS * list_row(ui)
 }
 
 /// Paints one view's pieces, dashed lines and dimensions, and registers each dimension as a
@@ -731,6 +744,52 @@ mod tests {
         assert_eq!(drawing_height(0.0, 300.0, 20.0), 0.0);
         // A list shorter than three rows keeps all of it.
         assert_eq!(drawing_height(100.0, 30.0, 20.0), 70.0);
+    }
+
+    #[test]
+    fn the_drawing_floor_is_the_room_that_keeps_the_drawing_over_three_list_rows() {
+        // Slice 3 spec 6.2: drawing_floor is MIN_DRAWING_HEIGHT plus MIN_LIST_ROWS rows of the
+        // callout list (list_row, the row geometry_ui reserves). In a region of exactly that
+        // height the drawing of the defaults (a list of more than three rows) keeps its 160
+        // points; a point less and it shrinks below them.
+        let ctx = egui::Context::default();
+        let inputs = DesignInputs::default();
+        let results = compute_all(&inputs);
+        let size = Vec2::new(1000.0, 900.0);
+        let mut floor = f32::NAN;
+        // The figures by hand, not the formulas again: in egui's default style (this context's)
+        // a body text row is 14.375 points and the item spacing 3, so a list row is 17.375
+        // points and the floor 160 + 3 x 17.375 = 212.125 (spec 6.2's 160-point drawing over
+        // three list rows).
+        sized_frame(&ctx, size, Vec::new(), |ui| {
+            assert_eq!(
+                (
+                    ui.text_style_height(&egui::TextStyle::Body),
+                    ui.spacing().item_spacing.y
+                ),
+                (14.375, 3.0),
+                "egui's default style"
+            );
+            assert_eq!(list_row(ui), 17.375);
+            floor = drawing_floor(ui);
+        });
+        assert_eq!(floor, 212.125);
+        for (height, keeps) in [(floor, true), (floor - 1.0, false)] {
+            let region = Rect::from_min_size(Pos2::new(20.0, 30.0), Vec2::new(700.0, height));
+            let mut drawing = f32::NAN;
+            for _ in 0..2 {
+                crate::gui::test_support::region_frame(&ctx, size, region, |ui| {
+                    let layout =
+                        geometry_ui(ui, &inputs, &results, false, &mut Readouts::default());
+                    drawing = layout.rect.height();
+                });
+            }
+            assert_eq!(
+                drawing >= MIN_DRAWING_HEIGHT - 1e-3,
+                keeps,
+                "a region of {height}: a drawing of {drawing}"
+            );
+        }
     }
 
     #[test]
