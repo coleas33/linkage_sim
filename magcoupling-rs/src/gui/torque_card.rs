@@ -8,12 +8,12 @@
 //! side with no honest number reads words, by the order of tests of spec 3.3: the design shown
 //! first ([`TorqueCard::ShownCountBelowSlider`], the owner's FO-3, then
 //! [`TorqueCard::ShownDoesNotFit`], [`TorqueCard::ShownNoPrediction`],
-//! [`TorqueCard::ShownNoHotLow`]), then the slider's range within [`STEP_SLACK_MM`], the
-//! slider's mapping, the validity rule every row shares ([`side_words`]) and, on the Overall
+//! [`TorqueCard::ShownNoHotLow`]), then the slider's range within `STEP_SLACK_MM`, the
+//! slider's mapping, the validity rule every row shares (`side_words`) and, on the Overall
 //! length and Outside diameter rows, the jump (the latter the owner's FO-2). A number side also
 //! says what the step costs (owner 8A, spec 3.6): the change in Outside diameter and Overall
 //! length, the counted dashboard checks whose level flips, and the change of each failing
-//! check's own quantity ([`check_terms`]).
+//! check's own quantity (`check_terms`).
 //!
 //! [`TorqueCard::lines`] draws it: every text a named constant here (set by the slice's G-3
 //! review (docs/analyses/2026-10-14-magcoupler-help-review.md, Slice 3 torque card)), every
@@ -167,7 +167,7 @@ impl Control {
     }
 
     /// The Auto variable whose slider is this control: the inverse of
-    /// [`size_controls::variable_slider`]; `None` for the gap, which Auto never sets.
+    /// `size_controls::variable_slider`; `None` for the gap, which Auto never sets.
     pub fn held_by(self) -> Option<FreeVariable> {
         FreeVariable::ALL
             .into_iter()

@@ -179,7 +179,7 @@ pub fn pullout_label(op_temp_C: f64) -> String {
 /// tab's one number format (decision 10B): the N·m to the fewest decimals, from two
 /// (`TORQUE_DECIMALS`), that read a digit that is not zero (`change_decimals`, at most two
 /// more), a margin signed, and one decimal of percent of the requirement with the gap's own sign
-/// ([`signed_percent`]): "short 0.29 N·m (-11.6 %)", "margin +0.40 N·m (+16.0 %)", "short
+/// (`signed_percent`): "short 0.29 N·m (-11.6 %)", "margin +0.40 N·m (+16.0 %)", "short
 /// 0.001 N·m (-0.0 %)", so a design a hair under its requirement never reads like a pass. The
 /// percent is left out when the requirement is not a positive torque (the slider stops at its
 /// metadata minimum; a design file need not). A number whose fixed form would need more than six
