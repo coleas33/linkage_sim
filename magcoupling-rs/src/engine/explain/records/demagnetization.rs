@@ -97,6 +97,14 @@ pub const RECORDS: &[Record] = &[
                                  [H_k] · abs({temperature.demag.outer_beta_per_C}) - {temperature.demag.h_rev_likepole_kA_m} · abs({model.outer_alpha_br_per_C}))
                        - {temperature.demag.outer_calibration_offset_C} - {temperature.demag.design_margin_C})
            where [H_k] = {temperature.demag.knee_fraction} * {temperature.demag.outer_hcj20_kA_m}"#).corrected(&[E20]),
+    // Plan A-4: the outer ring's own single-ring onset, the twin of the inner one; E24's cure
+    // margin takes the lower of the two.
+    record("temperature.demag.outer_onset_single_ring_C", "ϑ_{sr,o}",
+        r#"cases({temperature.demag.outer_beta_per_C} > 0 => inf;
+               else => 20 + frac([H_k] - {temperature.demag.h_rev_single_ring_kA_m},
+                                 [H_k] · abs({temperature.demag.outer_beta_per_C}) - {temperature.demag.h_rev_single_ring_kA_m} · abs({model.outer_alpha_br_per_C}))
+                       - {temperature.demag.outer_calibration_offset_C})
+           where [H_k] = {temperature.demag.knee_fraction} * {temperature.demag.outer_hcj20_kA_m}"#).corrected(&[E20]),
     // temperature::cold_onset_C: with beta > 0 the knee falls as the magnet cools; the ring's
     // cold limit is its skipping cold onset plus the margin.
     record("temperature.demag.inner_cold_limit_C", "ϑ_{cold,i}",

@@ -1215,6 +1215,7 @@ fn m2() -> Deviations {
         DeviationId::E19,
         DeviationId::E20,
         DeviationId::E21,
+        DeviationId::E24,
     ]
     .into_iter()
     .fold(Deviations::ALL, Deviations::without)
@@ -2415,13 +2416,227 @@ fn e21_moves_only_pairs_with_a_negative_offset_and_never_raises_a_limit() {
             flips += usize::from(db.demag_ring != da.demag_ring);
             verdicts += usize::from(sb.verdict != sa.verdict);
         }
-        // (pairs with a moved cell, governing-ring flips, verdict changes): the report's table.
+        // (pairs with a moved cell, governing-ring flips, verdict changes): the report's table,
+        // but for six more pairs on the user basis: there E24, in every correction, reads the
+        // single-ring onset of a ring E21 holds at 0 that does not govern, so C24 moves.
         let want = match basis {
             "registry" => (214, 71, 0),
-            _ => (150, 39, 0),
+            _ => (156, 39, 0),
         };
         assert_eq!((moved, flips, verdicts), want, "{basis}");
     }
+}
+
+#[test]
+fn e24_leaves_every_default_cell_bit_for_bit() {
+    // Identical rings: both single-ring onsets are the governing ring's, bit for bit.
+    assert_a4_defaults_unchanged(DeviationId::E24);
+}
+
+#[test]
+fn e24_alone_moves_no_differential_case() {
+    // The double gate, as for E21 (A-4 report section 2.6): E24 refines E20, so on its own it
+    // is NONE on every corpus case, every result row bit for bit.
+    let alone = (Deviations::NONE, Deviations::only(DeviationId::E24));
+    assert_no_differential_case_moves_between(&[alone], "E24 alone");
+}
+
+#[test]
+fn e24_reproduces_the_report_s_cure_margins() {
+    // A-4 report section 2.8 (with E21, so on the user basis): the shown C24 before E24 and
+    // the lower ring's after it, in either ring order.
+    let pairs: [(&str, &str, f64, f64); 7] = [
+        ("N38UH", "SmCo_2_17_26", 205.0, 142.6),
+        ("N35EH", "SmCo_2_17_26", 205.0, 165.8),
+        ("SmCo_2_17_26", "SmCo_1_5_20", 205.0, 169.7),
+        ("SmCo_2_17_30", "N38UH", 169.4, 142.6),
+        ("SmCo_2_17_30", "N35EH", 169.4, 165.8),
+        ("SmCo_2_17_30", "N42H", 169.4, 90.83),
+        ("SmCo_2_17_30", "N42SH", 169.4, 121.4),
+    ];
+    let [_, (_, before, after)] = a4_bases(DeviationId::E24);
+    for (a, b, shown, lower) in pairs {
+        for (inner, outer) in [(a, b), (b, a)] {
+            let rings = grade_rings(inner, outer);
+            let what = format!("{inner}/{outer}");
+            let cure = |dev| cells_with(&rings, dev)["Temperature design!C24"].clone();
+            assert_sig4(&what, &cure(before), shown);
+            assert_sig4(&what, &cure(after), lower);
+        }
+    }
+    // The library parts: B842 (N42) beside B842-N52 (A-4 report probe 3), either order.
+    for (inner, outer) in [("B842", "B842-N52"), ("B842-N52", "B842")] {
+        let rings = part_rings(inner, outer);
+        let what = format!("{inner}/{outer}");
+        assert_sig4(
+            &what,
+            &cells_with(&rings, before)["Temperature design!C24"],
+            50.09,
+        );
+        assert_sig4(
+            &what,
+            &cells_with(&rings, after)["Temperature design!C24"],
+            47.83,
+        );
+    }
+}
+
+#[test]
+fn e24_takes_the_lower_ring_for_every_pair_and_moves_no_verdict() {
+    // Every ordered pair of grades and of library parts, alike or not, with each of the four
+    // adhesives, both hubs, both bases: C24 is the lower of the two rings' single-ring onsets
+    // less the cure temperature, never above the governing ring's, bit for bit where the
+    // governing ring has the lower onset; no verdict moves at the default sliders (A-4 report
+    // section 2.8: the lowest single-ring C24 of any grade is BCN-19's 12.26 C, above 10 C;
+    // a slider setting that turns one is the next test's).
+    use magcoupling::engine::grades::GRADES;
+    use magcoupling::engine::library::MAGNET_LIBRARY;
+    // (label, rings, whether the rings are library parts)
+    let mut configs: Vec<(String, Overrides, bool)> = Vec::new();
+    for (label, rings) in grade_pairs() {
+        configs.push((label, rings, false));
+    }
+    for g in &GRADES {
+        let rings = grade_rings(g.id, g.id).to_vec();
+        configs.push((format!("{} both rings", g.id), rings, false));
+    }
+    for (label, rings) in part_pairs() {
+        configs.push((label, rings, true));
+    }
+    for spec in &MAGNET_LIBRARY {
+        let rings = both_rings(spec.part).to_vec();
+        configs.push((format!("{} both rings", spec.part), rings, true));
+    }
+    for adhesive in 1..=4 {
+        for (hub, backiron) in HUBS {
+            for (basis, before, after) in a4_bases(DeviationId::E24) {
+                // How many grade configurations and part configurations C24 moves in.
+                let mut moved = [0, 0];
+                for (label, rings, part) in &configs {
+                    let mut o = rings.clone();
+                    o.push(("coupling.backiron", Value::Int(backiron)));
+                    o.push(("temperature.adhesive.selected", Value::Int(adhesive)));
+                    let what = format!("{label}, adhesive {adhesive}, {hub}, {basis}");
+                    let (b, a) = (results_with(&o, before), results_with(&o, after));
+                    let (d, cure) = (&a.temperature.demag, a.temperature.adhesive.cure_C);
+                    let lower = d.inner_onset_single_ring_C.min(d.outer_onset_single_ring_C);
+                    let (sb, sa) = (&b.temperature.summary, &a.temperature.summary);
+                    assert_eq!(sa.cure_margin_C, lower - cure, "{what}");
+                    assert!(sa.cure_margin_C <= sb.cure_margin_C, "{what}");
+                    if d.onset_single_ring_C == lower {
+                        assert_same_results(&b, &a, &what);
+                    }
+                    assert_eq!(sb.verdict, sa.verdict, "{what}");
+                    if sa.cure_margin_C != sb.cure_margin_C {
+                        moved[usize::from(*part)] += 1;
+                    }
+                }
+                // The same with every adhesive and hub: the rings decide which onset is lower.
+                let want = if basis == "registry" {
+                    [20, 0]
+                } else {
+                    [26, 28]
+                };
+                assert_eq!(moved, want, "adhesive {adhesive}, {hub}, {basis}");
+            }
+        }
+    }
+    let bonded = grade_rings("Bonded_NdFeB_BCN19", "Bonded_NdFeB_BCN19");
+    assert_sig4(
+        "BCN-19",
+        &cells_with(&bonded, Deviations::ALL)["Temperature design!C24"],
+        12.26,
+    );
+}
+
+#[test]
+fn e24_turns_the_verdict_where_the_lower_ring_cannot_take_a_hot_cure() {
+    // Decision A4-1: C25 is registered because E24 can turn the verdict, though at no default
+    // slider setting (the test above). Recoma 30 beside N42H, in either order, bonded with
+    // EA 9514 (cured at 120 C), with the knee fraction C46 at 0.95 and the design margin C51
+    // at 0: Recoma 30 governs and its single-ring onset gives C24 = 75.40 C, so the verdict
+    // reads OK; N42H's single-ring onset, 113.3 C, is below the cure, so with E24 C24 is
+    // -6.719 C and the verdict reads CHECK. Only C24 and C25 move, on both bases.
+    for (inner, outer) in [("SmCo_2_17_30", "N42H"), ("N42H", "SmCo_2_17_30")] {
+        let mut o = grade_rings(inner, outer).to_vec();
+        o.extend([
+            ("temperature.adhesive.selected", Value::Int(2)),
+            ("temperature.demag.knee_fraction", Value::Num(0.95)),
+            ("temperature.demag.design_margin_C", Value::Num(0.0)),
+        ]);
+        for (basis, before, after) in a4_bases(DeviationId::E24) {
+            let what = format!("{inner}/{outer}, {basis}");
+            let (b, a) = (results_with(&o, before), results_with(&o, after));
+            let (sb, sa) = (&b.temperature.summary, &a.temperature.summary);
+            assert_sig4(&what, &Value::Num(sb.cure_margin_C), 75.40);
+            assert_sig4(&what, &Value::Num(sa.cure_margin_C), -6.719);
+            assert_eq!(
+                (sb.verdict.as_str(), sa.verdict.as_str()),
+                (VERDICT_OK, VERDICT_CHECK),
+                "{what}"
+            );
+            assert_eq!(
+                moved_cells(&b, &a),
+                ["Temperature design!C24", "Temperature design!C25"],
+                "{what}"
+            );
+        }
+    }
+}
+
+#[test]
+fn e24_with_e21_gives_the_lower_ring_s_margin_on_probe_4() {
+    // A-4 report probe 4 (N38UH inside, Recoma 26 outside): E21 moves the block to Recoma 26,
+    // whose C24 is 205.0 C; with E24 the margin is N38UH's, 142.57635668906815 C (the note
+    // under decision 2 A).
+    let rings = grade_rings("N38UH", "SmCo_2_17_26");
+    let base = Deviations::NONE
+        .with(DeviationId::E20)
+        .with(DeviationId::E21);
+    let cure = |dev| cells_with(&rings, dev)["Temperature design!C24"].clone();
+    assert_eq!(cure(base), Value::Num(205.01249772124206));
+    assert_eq!(
+        cure(base.with(DeviationId::E24)),
+        Value::Num(142.57635668906815)
+    );
+}
+
+/// The two hubs of the A-4 harness: the default steel circuit (`coupling.backiron` 1) and no
+/// back iron (0, an aluminium hub).
+const HUBS: [(&str, i64); 2] = [("steel hub", 1), ("aluminium hub", 0)];
+
+#[test]
+fn e24_fails_a_cure_that_reaches_the_inner_ring_s_own_onset() {
+    // BL-072's red test: inner N42H, outer Recoma 30 (SmCo_2_17_30) on manual dimensions at
+    // gui::test_support::passing_design() (restated: a 1.8 mm face gap, a 2.0 mm cup wall, a
+    // 1.6 N m requirement, a 1.0 N m gearbox input rating), bonded with 2214 Hi-Temp (cured
+    // at 121 C). Recoma 30 has the lower magnet limit and governs, so before E24 the margin
+    // reads its single-ring onset and passes; with E24 it reads the lower ring's, N42H's own
+    // 112.83 C, which the cure exceeds: -8.17 C, below the 10 C minimum, and the verdict fails.
+    let mut o = grade_rings("N42H", "SmCo_2_17_30").to_vec();
+    o.extend([
+        ("metal.face_gap_mm", Value::Num(1.8)),
+        ("metal.cup_wall_corner_mm", Value::Num(2.0)),
+        ("metal.required_min_Nm", Value::Num(1.6)),
+        ("coupling.gearbox_input_rating_Nm", Value::Num(1.0)),
+        ("temperature.adhesive.selected", Value::Int(3)),
+    ]);
+    let [_, (_, before, after)] = a4_bases(DeviationId::E24);
+    let (b, a) = (results_with(&o, before), results_with(&o, after));
+    assert_eq!(a.temperature.demag.demag_ring, "outer");
+    assert!(b.temperature.summary.cure_margin_C >= 10.0);
+    let own = a.temperature.demag.inner_onset_single_ring_C;
+    assert_sig4("N42H's own onset", &Value::Num(own), 112.8);
+    assert_eq!(
+        a.temperature.summary.cure_margin_C,
+        own - a.temperature.adhesive.cure_C
+    );
+    assert_sig4(
+        "the cure margin",
+        &Value::Num(a.temperature.summary.cure_margin_C),
+        -8.170,
+    );
+    assert_eq!(a.temperature.summary.verdict, VERDICT_CHECK);
 }
 
 #[test]

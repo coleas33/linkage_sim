@@ -191,7 +191,7 @@ mod tests {
             .iter()
             .filter(|e| registry().equation_for(&e.path).is_some())
             .count();
-        assert_eq!((explained, table_entries().len()), (418, 1114));
+        assert_eq!((explained, table_entries().len()), (419, 1115));
         // Every input is a leaf of the registry: a click on any input's label traces it.
         for entry in crate::gui::inputs::InputCatalogue::get().all() {
             let trace = Trace::of(&entry.path).unwrap_or_else(|| panic!("{}", entry.path));

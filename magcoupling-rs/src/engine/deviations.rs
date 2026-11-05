@@ -9,10 +9,11 @@
 //! parts) and E20 (decision 19: each magnet's own coercivity), all approved on
 //! 2026-09-30. The Addendum A-4 verification
 //! (`docs/analyses/2026-10-01-magcoupling-addendum-a4-verification.md`) added
-//! E21 (decision 1: the rating-calibration offset held at 0 or more) and the
-//! planned E22 and E23 (decisions 4 to 10: per-grade magnet CTE and specific
-//! heat; registered, not yet in the code), approved on 2026-10-01. Everything
-//! else stays workbook-exact. This registry is the one place that says where
+//! E21 (decision 1: the rating-calibration offset held at 0 or more), E24
+//! (decision 2: the cure margin from the lower ring) and the planned E22 and
+//! E23 (decisions 4 to 10: per-grade magnet CTE and specific heat; registered,
+//! not yet in the code), approved on 2026-10-01. Everything else stays
+//! workbook-exact. This registry is the one place that says where
 //! the port departs from the workbook and why.
 //!
 //! # How a deviation is applied
@@ -36,7 +37,7 @@
 //!   workbook and the corrected value.
 //! - **Dependencies.** A correction that refines another one lists it in
 //!   `depends_on` (E15, E16 and E17 refine E9: without it the cup is steel;
-//!   E21 refines E20: without it there is one calibration, the inner ring's).
+//!   E21 and E24 refine E20: without it there is one ring, the inner one).
 //!   Its probes run with the dependencies on, on both sides (decision 15).
 //!
 //! # The test-only switch
@@ -92,11 +93,12 @@ pub enum DeviationId {
     E21,
     E22,
     E23,
+    E24,
 }
 
 impl DeviationId {
     /// Every identifier, in report order.
-    pub const ALL: [DeviationId; 23] = [
+    pub const ALL: [DeviationId; 24] = [
         DeviationId::E1,
         DeviationId::E2,
         DeviationId::E3,
@@ -120,6 +122,7 @@ impl DeviationId {
         DeviationId::E21,
         DeviationId::E22,
         DeviationId::E23,
+        DeviationId::E24,
     ];
 
     /// Position in [`DeviationId::ALL`] and in [`REGISTRY`].
@@ -228,7 +231,7 @@ pub struct Deviation {
     pub approval: Approval,
     /// Corrections this one refines; its probes run with them on, on both
     /// sides (decision 15). Empty for all but E15, E16 and E17 (on E9) and
-    /// E21 (on E20).
+    /// E21 and E24 (on E20).
     pub depends_on: &'static [DeviationId],
     pub status: DeviationStatus,
     /// Every workbook cell the report names for this entry (inputs, corrected
@@ -1683,6 +1686,47 @@ pub const REGISTRY: &[Deviation] = &[
         changes_file: None,
         probes: &[],
     },
+    Deviation {
+        id: DeviationId::E24,
+        title: "Under E20 the cure margin is the governing ring's, which need not have the lower single-ring demagnetization onset",
+        class: DeviationClass::Engine,
+        approval: Approval::AddendumA4 { decisions: &[2] },
+        depends_on: &[DeviationId::E20],
+        status: DeviationStatus::Applied,
+        cells: &["Temperature design!C24", "Temperature design!C25"],
+        corrected_formula: "C24 = MIN(C59_inner, C59_outer) - C77: the cure margin is the lower of both rings' \
+            single-ring onsets (each ring's own block, E20) less the cure temperature. The governing ring is the one with \
+            the lower magnet limit C60, and its C59 can be the higher one, so the shown C24 overstated the real minimum \
+            (by up to 79.05 C under E20 alone, Recoma 30 beside N42H, and up to 62.44 C once E21 moves the governing ring, \
+            N38UH beside Recoma 26). Gated on E20 (without it only the inner ring is checked); the block's onsets C56 to \
+            C59 and the summary C7, C8 stay the governing ring's. Each ring's single-ring onset is a Rust-only result. \
+            The verdict C25 reads C24; no verdict moves at default inputs (the lowest single-ring C24 of any grade or part \
+            is 12.26 C, BCN-19), but one can at a hot cure: Recoma 30 beside N42H with EA 9514 (120 C), the knee fraction \
+            C46 at 0.95 and the design margin C51 at 0 turns from OK to CHECK (N42H's single-ring onset, 113.3 C, is \
+            below the cure).",
+        workbook_input_defaults: &[],
+        workbook_help: &[("temperature.summary.cure_margin_C", "")],
+        changes_at_defaults: &[],
+        changes_file: None,
+        probes: &[Probe {
+            label: "Recoma 30 inner, N42H outer (manual dimensions): Recoma 30 has the lower magnet limit and governs, \
+                but N42H has the lower single-ring onset (A-4 report section 2.8, the E20 defect before E21: 79.05 C)",
+            inputs: &[
+                ("coupling.magnets.part_inner", Literal::Text("")),
+                ("coupling.magnets.part_outer", Literal::Text("")),
+                (
+                    "coupling.magnets.grade_inner",
+                    Literal::Text("SmCo_2_17_30"),
+                ),
+                ("coupling.magnets.grade_outer", Literal::Text("N42H")),
+            ],
+            expect: &[CellChange {
+                cell: "Temperature design!C24",
+                workbook: Literal::Num(169.87720052918982),
+                corrected: Literal::Num(90.82967381692148),
+            }],
+        }],
+    },
 ];
 
 /// A set of deviations switched on. Users only ever get [`Deviations::ALL`].
@@ -1823,6 +1867,10 @@ mod tests {
         assert_eq!(
             REGISTRY[DeviationId::E21.index()].evidence(),
             format!("{A4_REPORT}, section 5, decisions 1, 3")
+        );
+        assert_eq!(
+            REGISTRY[DeviationId::E24.index()].evidence(),
+            format!("{A4_REPORT}, section 5, decision 2")
         );
     }
 

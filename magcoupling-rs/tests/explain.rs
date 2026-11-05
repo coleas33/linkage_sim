@@ -1975,8 +1975,8 @@ fn explained_chains_have_every_record_and_scope_paths_exist() {
     let union: BTreeSet<&str> = SCOPE.iter().flat_map(|c| c.paths.iter().copied()).collect();
     assert_eq!(
         union.len(),
-        193,
-        "decision 31: the chains and the dashboard (report section 7), plan A-3 decision G1's 10 new geometry callouts, BL-064's inner-ring single-ring onset and its 23 shaft joint results"
+        194,
+        "decision 31: the chains and the dashboard (report section 7), plan A-3 decision G1's 10 new geometry callouts, BL-064's inner-ring single-ring onset and its 23 shaft joint results, and E24's outer-ring single-ring onset"
     );
 }
 

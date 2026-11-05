@@ -1714,7 +1714,7 @@ fn temperature_sentences(inputs: &DesignInputs, results: &DesignResults) -> Vec<
         sentences.push(format!(
             "The adhesive cures at {}, {margin} below the {} at which a ring alone on its carrier, as during the cure, starts to demagnetize; the margin must be at least {minimum}.",
             result_text(results, "temperature.adhesive.cure_C"),
-            result_text(results, "temperature.demag.onset_single_ring_C"),
+            result_text(results, cure_onset(results).0),
         ));
     }
     let cold_limits: Vec<String> = Ring::BOTH
@@ -1798,6 +1798,24 @@ fn default_reverse_fields(inputs: &DesignInputs) -> bool {
     fields(&inputs.temperature.demag) == fields(&DemagInputs::default())
 }
 
+/// The single-ring onset the cure margin is measured from, as (path, value): the lower of both
+/// rings' own (correction E24, BL-072), the inner ring's on a tie, as the engine takes it. The
+/// governing ring's onset (`temperature.demag.onset_single_ring_C`) can be the higher one.
+fn cure_onset(results: &DesignResults) -> (&'static str, f64) {
+    let d = &results.temperature.demag;
+    if d.outer_onset_single_ring_C < d.inner_onset_single_ring_C {
+        (
+            "temperature.demag.outer_onset_single_ring_C",
+            d.outer_onset_single_ring_C,
+        )
+    } else {
+        (
+            "temperature.demag.inner_onset_single_ring_C",
+            d.inner_onset_single_ring_C,
+        )
+    }
+}
+
 /// The cure margin and the minimum it must reach, each with as many decimals as the onset the
 /// margin is measured from shows, so the numbers printed beside it subtract ("6.0 °C below
 /// the 126.0 °C ... at least 10.0 °C"). Both read as any result does where the onset's text
@@ -1812,7 +1830,7 @@ fn cure_margin_texts(results: &DesignResults) -> (String, String) {
             number_text(CURE_MARGIN_MIN_C, MARGIN),
         )
     };
-    match shown_decimals(results.temperature.demag.onset_single_ring_C) {
+    match shown_decimals(cure_onset(results).1) {
         Some(decimals) if margin.is_finite() => {
             let shown = fixed(margin, decimals);
             let rounded_up_to_pass = margin < CURE_MARGIN_MIN_C
@@ -7683,9 +7701,11 @@ mod tests {
                 "10.00 °C".to_owned()
             )
         );
-        // An onset with no fixed decimals: both read as results do.
+        // An onset with no fixed decimals: both read as results do. The margin is measured from
+        // the lower of both rings' own onsets (E24).
         let mut no_decimals = results.clone();
-        no_decimals.temperature.demag.onset_single_ring_C = f64::INFINITY;
+        no_decimals.temperature.demag.inner_onset_single_ring_C = f64::INFINITY;
+        no_decimals.temperature.demag.outer_onset_single_ring_C = f64::INFINITY;
         assert_eq!(
             texts(&no_decimals),
             (
@@ -7701,6 +7721,49 @@ mod tests {
         // One that rounds down stays at the onset's decimals.
         close.temperature.summary.cure_margin_C = 9.94;
         assert_eq!(texts(&close), pair("9.9 °C", "10.0 °C"));
+    }
+
+    #[test]
+    fn the_cure_sentence_quotes_the_lower_ring_s_own_onset() {
+        // BL-072 (correction E24): inner N42H, outer Recoma 30 (SmCo_2_17_30) on manual
+        // dimensions, bonded with 2214 Hi-Temp (cured at 121 °C). Recoma 30 has the lower magnet
+        // limit and governs the block, but the margin is measured from N42H's own single-ring
+        // onset, the lower; the sentence quotes that onset, so the numbers it prints subtract.
+        let inputs = breaking(|i| {
+            i.coupling.magnets.part_inner.clear();
+            i.coupling.magnets.part_outer.clear();
+            i.coupling.magnets.grade_inner = "N42H".to_owned();
+            i.coupling.magnets.grade_outer = "SmCo_2_17_30".to_owned();
+            i.temperature.adhesive.selected = 3;
+        });
+        let results = compute_all(&inputs);
+        let d = &results.temperature.demag;
+        assert_eq!(d.demag_ring, "outer");
+        assert!(d.inner_onset_single_ring_C < d.onset_single_ring_C);
+        assert_eq!(
+            cure_onset(&results),
+            (
+                "temperature.demag.inner_onset_single_ring_C",
+                d.inner_onset_single_ring_C
+            )
+        );
+        let problem = problem(TEMPERATURE, &inputs).expect("the cure margin fails");
+        let (margin, minimum) = cure_margin_texts(&results);
+        assert!(
+            problem.contains(&format!(
+                "The adhesive cures at 121.0 °C, {margin} below the 112.8 °C at which a ring alone on its carrier, as during the cure, starts to demagnetize; the margin must be at least {minimum}."
+            )),
+            "{problem}"
+        );
+        assert_eq!((margin.as_str(), minimum.as_str()), ("-8.2 °C", "10.0 °C"));
+        // Swapped, the lower onset is the outer ring's.
+        let mut swapped = results.clone();
+        swapped.temperature.demag.inner_onset_single_ring_C = d.outer_onset_single_ring_C;
+        swapped.temperature.demag.outer_onset_single_ring_C = d.inner_onset_single_ring_C;
+        assert_eq!(
+            cure_onset(&swapped).0,
+            "temperature.demag.outer_onset_single_ring_C"
+        );
     }
 
     #[test]
