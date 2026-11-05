@@ -1446,6 +1446,7 @@ pub const REGISTRY: &[Deviation] = &[
             "Temperature design!C19",
             "Temperature design!C23",
             "Temperature design!C24",
+            "Temperature design!C25",
             "Temperature design!C42",
             "Temperature design!C43",
             "Temperature design!C47",
@@ -1477,7 +1478,11 @@ pub const REGISTRY: &[Deviation] = &[
             estimates: conservative for the demagnetization check (C58, C60, C12 and C15 never rise), not uniformly \
             downstream: the mismatch screen C101 to C106 relaxes where the magnets come to govern (decision 3, \
             documented in C101's help), and the shown cure margin C24 can rise under a governing-ring flip (E24 takes \
-            the lower ring's). C50 shows the applied offset (its help: held at 0 or more).",
+            the lower ring's). C50 shows the applied offset (its help: held at 0 or more). Beyond the report's \
+            section 2.4, whose \"never changed: C25\" covered only its 95 configurations: E21 can turn the verdict \
+            C25 (from OK to CHECK at a knee fraction C46 of 0.70 on the default design, and for N42's coercivity typed \
+            into C44 and C45 on the user basis), so C25 is registered (34 cells); and C201 moves by 1 ulp in one \
+            registry case, from rounding only (C105 C200 / C101 cancels C101).",
         workbook_input_defaults: &[],
         workbook_help: &[
             ("temperature.demag.calibration_offset_C", ""),
@@ -1688,7 +1693,7 @@ pub const REGISTRY: &[Deviation] = &[
     },
     Deviation {
         id: DeviationId::E24,
-        title: "Under E20 the cure margin is the governing ring's, which need not have the lower single-ring demagnetization onset",
+        title: "With both rings checked, the cure margin is the governing ring's, which need not have the lower single-ring demagnetization onset",
         class: DeviationClass::Engine,
         approval: Approval::AddendumA4 { decisions: &[2] },
         depends_on: &[DeviationId::E20],

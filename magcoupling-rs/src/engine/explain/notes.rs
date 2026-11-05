@@ -625,9 +625,9 @@ pub const NOTES: &[Note] = &[
         sentences: &[
             "Too much heat combined with a strong opposing field can weaken a magnet for good, unlike the loss with temperature that cooling undoes.",
             "A field pushing against the magnet's direction, a reverse field, does no lasting harm until it passes the knee, where the magnet stops springing back.",
-            "Heat lowers an NdFeB magnet's knee, so each reverse field has an onset temperature; above it, part of the magnetization is lost for good.",
-            "Slipping passes like poles face to face, the worst reverse field; its onset, here {temperature.demag.onset_skipping_C}, sets an NdFeB ring's limit.",
-            "Onsets shift down to fit the magnet's rating, never up; each NdFeB ring's limit is its slipping onset less a margin; the lower limit governs.",
+            "Heat lowers an NdFeB or SmCo magnet's knee, so each reverse field has an onset temperature, above which some magnetization is lost for good.",
+            "Slipping passes like poles face to face, the worst reverse field; its onset, here {temperature.demag.onset_skipping_C}, sets an NdFeB or SmCo ring's limit.",
+            "Onsets shift down to fit the rating, never up; each NdFeB or SmCo ring's limit is its slipping onset less a margin; the lower governs.",
         ],
         change: &[
             Change {
@@ -651,7 +651,7 @@ pub const NOTES: &[Note] = &[
         ],
         watch_out: &[
             "The reverse fields are stored from the example design's 3D model: they ignore magnet count, ring radius, gap, block size and grade, reading low for stronger grades.",
-            "N52, N50, N50M, N38UH, N35EH and 2:17 SmCo are rated above the model's onset and keep it: limits sit below the rating; onsets past a grade's tested range are extrapolated.",
+            "N52, N50, N50M, N38UH, N35EH and 2:17 SmCo are rated hotter than the model's reference onset, so limits come from the model alone; onsets past tested ranges are extrapolated.",
         ],
         diagram: Some(Diagram::DemagKnee),
         sources: &[
@@ -661,7 +661,11 @@ pub const NOTES: &[Note] = &[
             "Guidance audit of 2026-10-13: the stored reverse fields; the rating shift raised the onsets of grades rated above their model knee temperature",
             "Design ruling of 2026-10-01: a rating lowers the model's onsets, never raises them",
         ],
-        review: Review::Draft,
+        review: Review::Reviewed {
+            reviewer: "physics reviewer (session model)",
+            date: "2026-11-04",
+            record: "docs/analyses/2026-10-14-magcoupler-notes-review.md#demagnetization",
+        },
     },
     Note {
         id: "ferrite_cold_demag",

@@ -1800,10 +1800,12 @@ fn default_reverse_fields(inputs: &DesignInputs) -> bool {
 
 /// The single-ring onset the cure margin is measured from, as (path, value): the lower of both
 /// rings' own (correction E24, BL-072), the inner ring's on a tie, as the engine takes it. The
-/// governing ring's onset (`temperature.demag.onset_single_ring_C`) can be the higher one.
+/// governing ring's onset (`temperature.demag.onset_single_ring_C`) can be the higher one. A
+/// NaN on either ring is the one quoted, as the engine propagates it.
 fn cure_onset(results: &DesignResults) -> (&'static str, f64) {
     let d = &results.temperature.demag;
-    if d.outer_onset_single_ring_C < d.inner_onset_single_ring_C {
+    let outer = d.outer_onset_single_ring_C;
+    if outer.is_nan() || outer < d.inner_onset_single_ring_C {
         (
             "temperature.demag.outer_onset_single_ring_C",
             d.outer_onset_single_ring_C,
@@ -7756,6 +7758,11 @@ mod tests {
             "{problem}"
         );
         assert_eq!((margin.as_str(), minimum.as_str()), ("-8.2 °C", "10.0 °C"));
+        // The cure margin is the quoted onset less the cure, bit for bit.
+        assert_eq!(
+            cure_onset(&results).1 - results.temperature.adhesive.cure_C,
+            results.temperature.summary.cure_margin_C
+        );
         // Swapped, the lower onset is the outer ring's.
         let mut swapped = results.clone();
         swapped.temperature.demag.inner_onset_single_ring_C = d.outer_onset_single_ring_C;
@@ -7764,6 +7771,37 @@ mod tests {
             cure_onset(&swapped).0,
             "temperature.demag.outer_onset_single_ring_C"
         );
+    }
+
+    #[test]
+    fn the_cure_onset_is_the_outer_ring_s_where_it_is_lower() {
+        // Recoma 30 inside governs (the lower magnet limit), N42H outside has the lower
+        // single-ring onset: the quoted onset is the outer ring's, and the margin is it less the
+        // cure, bit for bit. A NaN on either ring is the one quoted.
+        let inputs = breaking(|i| {
+            i.coupling.magnets.part_inner.clear();
+            i.coupling.magnets.part_outer.clear();
+            i.coupling.magnets.grade_inner = "SmCo_2_17_30".to_owned();
+            i.coupling.magnets.grade_outer = "N42H".to_owned();
+            i.temperature.adhesive.selected = 3;
+        });
+        let results = compute_all(&inputs);
+        assert_eq!(results.temperature.demag.demag_ring, "inner");
+        let (path, onset) = cure_onset(&results);
+        assert_eq!(path, "temperature.demag.outer_onset_single_ring_C");
+        assert_eq!(
+            onset - results.temperature.adhesive.cure_C,
+            results.temperature.summary.cure_margin_C
+        );
+        for outer in [true, false] {
+            let mut nan = results.clone();
+            if outer {
+                nan.temperature.demag.outer_onset_single_ring_C = f64::NAN;
+            } else {
+                nan.temperature.demag.inner_onset_single_ring_C = f64::NAN;
+            }
+            assert!(cure_onset(&nan).1.is_nan(), "outer {outer}");
+        }
     }
 
     #[test]

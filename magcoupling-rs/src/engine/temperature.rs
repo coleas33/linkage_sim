@@ -567,7 +567,7 @@ results! {
             steel_thickness_mm: f64 => out("mm", "Steel thickness under the inner blocks", "", "Temperature design!C99"),
             cold_limit_C: f64 => out("°C", "Cold limit", "", "Temperature design!C100"),
             worst_swing_C: f64 => out("°C", "Worst swing from the stress-free (cure) temperature",
-                "The larger of the cold swing (cure less minimum magnet temperature) and the hot swing (governing limit less cure). Where the magnets govern, a lower magnet limit shrinks it.",
+                "The larger of the cold swing (cure less minimum magnet temperature) and the hot swing (governing limit less cure). Where the magnets govern, a lower magnet limit can shrink it.",
                 "Temperature design!C101"),
             current_bondline_mm: f64 => out("mm", "Current bondline", "", "Temperature design!C102"),
             peak_shear_current_MPa: f64 => out("MPa", "Peak end shear, current bondline", "", "Temperature design!C104"),
@@ -823,17 +823,7 @@ fn ring_demag(
         NumOrText::Num(tmax) => t_ref - tmax,
         NumOrText::Text(_) => 0.0,
     };
-    // E21 (refines E20; Addendum A-4 decision 1): the rating may lower the model's onsets,
-    // never raise them. A negative offset (the model's reference onset below the rating) would
-    // lift every onset above the model's own; held at 0, the onsets are the uncalibrated
-    // model's (each onset is the lower of the calibrated and the uncalibrated one). py_max(x, 0)
-    // is `if 0 > x { 0 } else { x }`: a NaN offset stays NaN, and every offset of 0 or more
-    // (-0.0 too) is kept bit for bit.
-    let offset = if dev.is_on(DeviationId::E20) && dev.is_on(DeviationId::E21) {
-        py_max(offset, 0.0)
-    } else {
-        offset
-    };
+    let offset = e21_hold(offset, dev);
     let on = |h: f64| {
         if cold_side {
             f64::INFINITY
@@ -898,6 +888,20 @@ fn ring_demag(
         cold_onsets,
         cold_limit,
         cold_ok,
+    }
+}
+
+/// E21 (refines E20; Addendum A-4 decision 1): the rating may lower the model's onsets, never
+/// raise them. A negative offset (the model's reference onset below the rating) would lift every
+/// onset above the model's own; held at 0, the onsets are the uncalibrated model's (each onset is
+/// the lower of the calibrated and the uncalibrated one). py_max(x, 0) is
+/// `if 0 > x { 0 } else { x }`: a NaN offset stays NaN, and every offset of 0 or more (-0.0
+/// too) is kept bit for bit.
+fn e21_hold(offset: f64, dev: Deviations) -> f64 {
+    if dev.is_on(DeviationId::E20) && dev.is_on(DeviationId::E21) {
+        py_max(offset, 0.0)
+    } else {
+        offset
     }
 }
 
@@ -1419,9 +1423,16 @@ pub fn compute(
     // ---- summary
     // E24 (refines E20; Addendum A-4 decision 2): the cure margin is the lower of both rings'
     // single-ring onsets; the governing ring (the lower magnet limit) can have the higher one.
-    // py_min keeps the inner ring's on a tie, so identical rings stay bit for bit.
+    // py_min keeps the inner ring's on a tie, so identical rings stay bit for bit; a NaN on
+    // either ring propagates (py_min alone would drop the outer ring's), so the verdict reads
+    // CHECK.
     let single_ring_onset = if dev.is_on(DeviationId::E20) && dev.is_on(DeviationId::E24) {
-        py_min(inner.onsets[3], outer_block.onsets[3])
+        let (i, o) = (inner.onsets[3], outer_block.onsets[3]);
+        if i.is_nan() || o.is_nan() {
+            f64::NAN
+        } else {
+            py_min(i, o)
+        }
     } else {
         on_cu
     };
@@ -2264,6 +2275,46 @@ mod tests {
             run(&ti, &k),
             "E24 refines E20"
         );
+    }
+
+    #[test]
+    fn e21_holds_the_offset_at_zero_and_keeps_minus_zero_bit_for_bit() {
+        // A-4 report section 2.1: py_max(x, 0) keeps -0.0 and every offset of 0 or more bit for
+        // bit, keeps a NaN, and raises a negative offset to 0; without E20 and E21 it is inert.
+        let on = Deviations::only(DeviationId::E20).with(DeviationId::E21);
+        for x in [-0.0, 0.0, 2.5, f64::INFINITY] {
+            assert_eq!(e21_hold(x, on).to_bits(), x.to_bits(), "{x}");
+        }
+        assert_eq!(e21_hold(-9.689, on).to_bits(), 0.0f64.to_bits());
+        assert!(e21_hold(f64::NAN, on).is_nan());
+        for off in [
+            Deviations::only(DeviationId::E20),
+            Deviations::only(DeviationId::E21),
+        ] {
+            assert_eq!(e21_hold(-9.689, off), -9.689);
+        }
+    }
+
+    #[test]
+    fn e24_propagates_a_nan_onset_on_either_ring() {
+        // A NaN rating gives that ring NaN onsets. Whichever ring it is on, the cure margin is
+        // NaN and the verdict reads CHECK (py_min alone would drop the outer ring's NaN).
+        let dev = Deviations::only(DeviationId::E20).with(DeviationId::E24);
+        let ti = TemperatureInputs::default();
+        let mut inner_nan = links();
+        inner_nan.tmax_lib_C = NumOrText::Num(f64::NAN);
+        let mut outer_nan = links();
+        outer_nan.outer_tmax_lib_C = NumOrText::Num(f64::NAN);
+        for (ring, k) in [("inner", inner_nan), ("outer", outer_nan)] {
+            let r = compute(&ti, &k, dev);
+            assert!(
+                r.demag.inner_onset_single_ring_C.is_nan()
+                    || r.demag.outer_onset_single_ring_C.is_nan(),
+                "{ring}: the NaN reaches the ring's onset"
+            );
+            assert!(r.summary.cure_margin_C.is_nan(), "{ring}");
+            assert_eq!(r.summary.verdict, VERDICT_CHECK, "{ring}");
+        }
     }
 
     #[test]
