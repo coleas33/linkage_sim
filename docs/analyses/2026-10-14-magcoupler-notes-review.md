@@ -4398,6 +4398,18 @@ Considered, no change (the reviewer's observations):
 - The SmCo grades follow the same limit rule (Recoma 26 161.95, Recoma 30 46.27, Recoma 20 101.74 °C), but sentence 4 names NdFeB only, as sentence 3 does; that narrowing is not false (round 2).
 - "the magnet's" on mixed rings reads per ring, because the next clause says "each NdFeB ring's limit"; the engine shifts each ring by its own rating (the governing ring's shift matched its own rating in 2885 of 2885 cases). "Each magnet's" would also fit the cap but is not needed (round 3).
 
+### BL-057 E21 re-review (2026-11-04)
+
+- Why: correction E21 (BL-057; Addendum A-4 decision 1, docs/analyses/2026-10-01-magcoupling-addendum-a4-verification.md section 2) holds each ring's rating-calibration offset at 0 or more, so a rating never raises the onsets. The rating shift the slice-2 text described (and SF-7 above recorded) no longer raises any grade's onsets, so sentence 4 and watch_out[1] changed in E21's commit (4b4a85d) and the note went back to Draft; E24 (BL-072, 532f6a0) needed no change in this note, which has no cure-margin sentence. The note's `review` date moves to the date in this heading. The slice-2 review above is not rewritten.
+- Changed fields (final text):
+  - sentences[2]: "Heat lowers an NdFeB or SmCo magnet's knee, so each reverse field has an onset temperature, above which some magnetization is lost for good."
+  - sentences[3]: "Slipping passes like poles face to face, the worst reverse field; its onset, here {temperature.demag.onset_skipping_C}, sets an NdFeB or SmCo ring's limit."
+  - sentences[4]: "Onsets shift down to fit the rating, never up; each NdFeB or SmCo ring's limit is its slipping onset less a margin; the lower governs."
+  - watch_out[1]: "N52, N50, N50M, N38UH, N35EH and 2:17 SmCo are rated hotter than the model's reference onset, so limits come from the model alone; onsets past tested ranges are extrapolated." (the reviewer's wording, shortened to the 30-word cap with its meaning and grade names kept; `the_demagnetization_watch_out_names_the_grades_rated_above_the_model_onset` derives the list from the engine)
+  - equations: the per-ring applied offsets `temperature.demag.inner_calibration_offset_C` and `outer_calibration_offset_C` added.
+  - sources: "Design ruling of 2026-10-01: a rating lowers the model's onsets, never raises them" added; the guidance-audit source now says the shift "raised" the onsets.
+- Reviewer: physics reviewer (session model), fresh context. Verdict: PASS, with (a) the watch_out[1] wording and (b) "NdFeB or SmCo" in sentences 2 to 4 (the SmCo grades go through the same knee calculation), both applied here. No blocker.
+
 ## ferrite_cold_demag
 
 Task T16. Rewrite of "Ferrite: the demagnetization risk is at cold" as "Ferrite magnets:

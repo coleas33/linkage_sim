@@ -454,7 +454,7 @@ fn the_inner_ring_s_own_single_ring_onset_whichever_ring_governs() {
             manual("N42H", "SmCo_2_17_30"),
             manual("N42H", "N42H"),
             RING_OUTER,
-            191.8772,
+            191.4272,
             112.8297,
         ),
         // SmCo 2:17-26 outside a manual N50M ring: the N50M ring governs.
@@ -463,8 +463,8 @@ fn the_inner_ring_s_own_single_ring_onset_whichever_ring_governs() {
             manual("N50M", "SmCo_2_17_26"),
             manual("N50M", "N50M"),
             RING_INNER,
-            98.8029,
-            98.8029,
+            91.2678,
+            91.2678,
         ),
     ];
     for (label, design, inner_on_both, ring, governing, inner) in cases {

@@ -153,6 +153,7 @@ pub const SCOPE: &[Chain] = &[
             "temperature.demag.onset_skipping_C",
             "temperature.demag.onset_single_ring_C",
             "temperature.demag.inner_onset_single_ring_C",
+            "temperature.demag.outer_onset_single_ring_C",
             "temperature.demag.magnet_limit_C",
             "temperature.summary.onset_aligned_C",
             "temperature.summary.onset_pullout_C",

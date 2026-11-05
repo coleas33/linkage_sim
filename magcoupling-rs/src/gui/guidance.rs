@@ -1714,7 +1714,7 @@ fn temperature_sentences(inputs: &DesignInputs, results: &DesignResults) -> Vec<
         sentences.push(format!(
             "The adhesive cures at {}, {margin} below the {} at which a ring alone on its carrier, as during the cure, starts to demagnetize; the margin must be at least {minimum}.",
             result_text(results, "temperature.adhesive.cure_C"),
-            result_text(results, "temperature.demag.onset_single_ring_C"),
+            result_text(results, cure_onset(results).0),
         ));
     }
     let cold_limits: Vec<String> = Ring::BOTH
@@ -1798,6 +1798,26 @@ fn default_reverse_fields(inputs: &DesignInputs) -> bool {
     fields(&inputs.temperature.demag) == fields(&DemagInputs::default())
 }
 
+/// The single-ring onset the cure margin is measured from, as (path, value): the lower of both
+/// rings' own (correction E24, BL-072), the inner ring's on a tie, as the engine takes it. The
+/// governing ring's onset (`temperature.demag.onset_single_ring_C`) can be the higher one. A
+/// NaN on either ring is the one quoted, as the engine propagates it.
+fn cure_onset(results: &DesignResults) -> (&'static str, f64) {
+    let d = &results.temperature.demag;
+    let outer = d.outer_onset_single_ring_C;
+    if outer.is_nan() || outer < d.inner_onset_single_ring_C {
+        (
+            "temperature.demag.outer_onset_single_ring_C",
+            d.outer_onset_single_ring_C,
+        )
+    } else {
+        (
+            "temperature.demag.inner_onset_single_ring_C",
+            d.inner_onset_single_ring_C,
+        )
+    }
+}
+
 /// The cure margin and the minimum it must reach, each with as many decimals as the onset the
 /// margin is measured from shows, so the numbers printed beside it subtract ("6.0 °C below
 /// the 126.0 °C ... at least 10.0 °C"). Both read as any result does where the onset's text
@@ -1812,7 +1832,7 @@ fn cure_margin_texts(results: &DesignResults) -> (String, String) {
             number_text(CURE_MARGIN_MIN_C, MARGIN),
         )
     };
-    match shown_decimals(results.temperature.demag.onset_single_ring_C) {
+    match shown_decimals(cure_onset(results).1) {
         Some(decimals) if margin.is_finite() => {
             let shown = fixed(margin, decimals);
             let rounded_up_to_pass = margin < CURE_MARGIN_MIN_C
@@ -3180,6 +3200,14 @@ mod tests {
         i.coupling.magnets.part_outer.clear();
         i.coupling.magnets.grade_inner = id.to_owned();
         i.coupling.magnets.grade_outer = id.to_owned();
+    }
+
+    /// Manual N42H blocks with the knee fraction at 0.70: the single-ring onset, 100.16 °C, is
+    /// above the inner hub's 93.27 °C fitting need, but the onset less the cure margin is below
+    /// it.
+    fn low_knee_n42h(i: &mut DesignInputs) {
+        graded(i, "N42H");
+        i.temperature.demag.knee_fraction = 0.70;
     }
 
     /// Manual Y30 ferrite blocks: the cold demagnetization check fails.
@@ -5898,19 +5926,20 @@ mod tests {
         // the 93.27 °C its fit needs. The joint fails on that term alone; the temperature check
         // stays amber. One step down on the hub's maximum raises the fitting margin and turns
         // nothing red, so it is shown; the wheel shaft is at its slider's bottom. The magnets'
-        // part or grade is the temperature guide's fix, never the joint's. N50M on manual
-        // dimensions too: its onset, 98.80 °C, is above the need; only the onset less the margin,
-        // 88.80 °C, is below it (the cup wall fails there too: the joint alone is asserted). The
-        // step down raises each fitting margin as spec 5.2 and 7.9 give it: -33.43 to -29.37 °C
-        // and -4.46 to -0.40 °C.
+        // part or grade is the temperature guide's fix, never the joint's. N42H on manual
+        // dimensions with the knee fraction at 0.70 too: its onset, 100.16 °C, is above the need;
+        // only the onset less the margin, 90.16 °C, is below it (the joint alone is asserted).
+        // (N50M at the default knee fraction was this case until correction E21 stopped its
+        // rating raising its onset, BL-057.) The step down raises each fitting margin as spec 5.2
+        // and 7.9 give it: -33.43 to -29.37 °C and -3.10 to +0.96 °C.
         let joint = guide(SHAFT_JOINT).unwrap();
         for (name, inputs, want_onset, want_margins) in [
             ("n42_parts", breaking(n42_parts), 69.8326, [-33.43, -29.37]),
             (
-                "N50M",
-                breaking(|i| graded(i, "N50M")),
-                98.8029,
-                [-4.46, -0.40],
+                "N42H, knee 0.70",
+                breaking(low_knee_n42h),
+                100.1634,
+                [-3.10, 0.96],
             ),
         ] {
             let results = compute_all(&inputs);
@@ -7674,9 +7703,11 @@ mod tests {
                 "10.00 °C".to_owned()
             )
         );
-        // An onset with no fixed decimals: both read as results do.
+        // An onset with no fixed decimals: both read as results do. The margin is measured from
+        // the lower of both rings' own onsets (E24).
         let mut no_decimals = results.clone();
-        no_decimals.temperature.demag.onset_single_ring_C = f64::INFINITY;
+        no_decimals.temperature.demag.inner_onset_single_ring_C = f64::INFINITY;
+        no_decimals.temperature.demag.outer_onset_single_ring_C = f64::INFINITY;
         assert_eq!(
             texts(&no_decimals),
             (
@@ -7692,6 +7723,85 @@ mod tests {
         // One that rounds down stays at the onset's decimals.
         close.temperature.summary.cure_margin_C = 9.94;
         assert_eq!(texts(&close), pair("9.9 °C", "10.0 °C"));
+    }
+
+    #[test]
+    fn the_cure_sentence_quotes_the_lower_ring_s_own_onset() {
+        // BL-072 (correction E24): inner N42H, outer Recoma 30 (SmCo_2_17_30) on manual
+        // dimensions, bonded with 2214 Hi-Temp (cured at 121 °C). Recoma 30 has the lower magnet
+        // limit and governs the block, but the margin is measured from N42H's own single-ring
+        // onset, the lower; the sentence quotes that onset, so the numbers it prints subtract.
+        let inputs = breaking(|i| {
+            i.coupling.magnets.part_inner.clear();
+            i.coupling.magnets.part_outer.clear();
+            i.coupling.magnets.grade_inner = "N42H".to_owned();
+            i.coupling.magnets.grade_outer = "SmCo_2_17_30".to_owned();
+            i.temperature.adhesive.selected = 3;
+        });
+        let results = compute_all(&inputs);
+        let d = &results.temperature.demag;
+        assert_eq!(d.demag_ring, "outer");
+        assert!(d.inner_onset_single_ring_C < d.onset_single_ring_C);
+        assert_eq!(
+            cure_onset(&results),
+            (
+                "temperature.demag.inner_onset_single_ring_C",
+                d.inner_onset_single_ring_C
+            )
+        );
+        let problem = problem(TEMPERATURE, &inputs).expect("the cure margin fails");
+        let (margin, minimum) = cure_margin_texts(&results);
+        assert!(
+            problem.contains(&format!(
+                "The adhesive cures at 121.0 °C, {margin} below the 112.8 °C at which a ring alone on its carrier, as during the cure, starts to demagnetize; the margin must be at least {minimum}."
+            )),
+            "{problem}"
+        );
+        assert_eq!((margin.as_str(), minimum.as_str()), ("-8.2 °C", "10.0 °C"));
+        // The cure margin is the quoted onset less the cure, bit for bit.
+        assert_eq!(
+            cure_onset(&results).1 - results.temperature.adhesive.cure_C,
+            results.temperature.summary.cure_margin_C
+        );
+        // Swapped, the lower onset is the outer ring's.
+        let mut swapped = results.clone();
+        swapped.temperature.demag.inner_onset_single_ring_C = d.outer_onset_single_ring_C;
+        swapped.temperature.demag.outer_onset_single_ring_C = d.inner_onset_single_ring_C;
+        assert_eq!(
+            cure_onset(&swapped).0,
+            "temperature.demag.outer_onset_single_ring_C"
+        );
+    }
+
+    #[test]
+    fn the_cure_onset_is_the_outer_ring_s_where_it_is_lower() {
+        // Recoma 30 inside governs (the lower magnet limit), N42H outside has the lower
+        // single-ring onset: the quoted onset is the outer ring's, and the margin is it less the
+        // cure, bit for bit. A NaN on either ring is the one quoted.
+        let inputs = breaking(|i| {
+            i.coupling.magnets.part_inner.clear();
+            i.coupling.magnets.part_outer.clear();
+            i.coupling.magnets.grade_inner = "SmCo_2_17_30".to_owned();
+            i.coupling.magnets.grade_outer = "N42H".to_owned();
+            i.temperature.adhesive.selected = 3;
+        });
+        let results = compute_all(&inputs);
+        assert_eq!(results.temperature.demag.demag_ring, "inner");
+        let (path, onset) = cure_onset(&results);
+        assert_eq!(path, "temperature.demag.outer_onset_single_ring_C");
+        assert_eq!(
+            onset - results.temperature.adhesive.cure_C,
+            results.temperature.summary.cure_margin_C
+        );
+        for outer in [true, false] {
+            let mut nan = results.clone();
+            if outer {
+                nan.temperature.demag.outer_onset_single_ring_C = f64::NAN;
+            } else {
+                nan.temperature.demag.inner_onset_single_ring_C = f64::NAN;
+            }
+            assert!(cure_onset(&nan).1.is_nan(), "outer {outer}");
+        }
     }
 
     #[test]
@@ -8444,16 +8554,16 @@ mod tests {
                 "from 11.62 µm to 13.88 µm",
             ],
         );
-        // N50M on manual dimensions: its onset is above the need, the onset less the margin
-        // below it.
+        // N42H on manual dimensions with the knee fraction at 0.70: its onset is above the need,
+        // the onset less the margin below it.
         assert_in_order(
-            &text(breaking(|i| graded(i, "N50M"))),
+            &text(breaking(low_knee_n42h)),
             &[
                 &format!(
-                    "above the 88.80 °C allowed: the magnets' single-ring onset, 98.80 °C, less {}.",
+                    "above the 90.16 °C allowed: the magnets' single-ring onset, 100.16 °C, less {}.",
                     margin(2)
                 ),
-                "from 12.21 µm to 17.45 µm",
+                "from 11.62 µm to 17.61 µm",
             ],
         );
         // 2214 Hi-Temp (177 °C) and the hub's limit typed at 150 °C: the onset less the margin,

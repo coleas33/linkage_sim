@@ -903,24 +903,28 @@ fn the_allowed_hub_temperature_is_the_lowest_of_three() {
     );
     assert_near(r.shaft_joint.hub_fit_temp_C, 93.267, 5e-4, "N42 needed");
     assert_eq!(r.shaft_joint.check, cannot_fit(INNER_HUB, "93.3", "59.8"));
-    // N50M on manual dimensions in both rings: its onset, 98.80 °C, is above the 93.27 °C
-    // need; only the onset less 10 °C, 88.80 °C, is below it.
-    let (r, limit) = allowed(&manual(passing(), "N50M", "N50M"));
+    // N42H on manual dimensions in both rings, with the knee fraction at 0.70: its onset,
+    // 100.16 °C, is above the 93.27 °C need; only the onset less 10 °C, 90.16 °C, is below it.
+    // (N50M at the default knee fraction was this case until correction E21 stopped its 80 °C
+    // rating raising its onset: 98.80 is now 91.27 °C, below the need, BL-057.)
+    let mut low_knee = manual(passing(), "N42H", "N42H");
+    low_knee.temperature.demag.knee_fraction = 0.70;
+    let (r, limit) = allowed(&low_knee);
     assert_eq!(limit, Some(HubFitLimit::MagnetOnset));
     assert_near(
         r.temperature.demag.inner_onset_single_ring_C,
-        98.8029,
+        100.1634,
         5e-5,
-        "N50M onset",
+        "N42H onset",
     );
     assert!(r.temperature.demag.inner_onset_single_ring_C > r.shaft_joint.hub_fit_temp_C);
     assert_near(
         r.shaft_joint.hub_fit_allowed_C,
-        88.8029,
+        90.1634,
         5e-5,
-        "N50M allowed",
+        "N42H allowed",
     );
-    assert_eq!(r.shaft_joint.check, cannot_fit(INNER_HUB, "93.3", "88.8"));
+    assert_eq!(r.shaft_joint.check, cannot_fit(INNER_HUB, "93.3", "90.2"));
     // Ferrite's onset is +inf: the cap never binds (the Y30 probe and `breaking(ferrite)`).
     for ferrite in [
         probe_designs()
@@ -997,14 +1001,14 @@ fn the_cap_reads_the_inner_ring_s_own_onset_with_mixed_rings() {
     assert_eq!(r.shaft_joint.check, cannot_fit(INNER_HUB, "93.3", "59.8"));
     // 2214 Hi-Temp, the hub input at its 130 °C slider top and a 22 µm hub maximum, inner N42H
     // with outer SmCo_2_17_30 (grade ids) on manual dimensions: the outer SmCo governs with
-    // 191.88 °C, the inner N42H's own onset is 112.83 °C. The same at `passing_design()` and at
+    // 191.43 °C, the inner N42H's own onset is 112.83 °C. The same at `passing_design()` and at
     // the defaults.
     for base in [passing(), DesignInputs::default()] {
         let mut inputs = manual(base, "N42H", "SmCo_2_17_30");
         inputs.temperature.adhesive.selected = 3;
         inputs.shaft_joint.hub_fit_max_C = 130.0;
         inputs.shaft_joint.hub_interference_max_um = 22.0;
-        let r = demag_pins(&inputs, "outer", 191.8772, 112.8297);
+        let r = demag_pins(&inputs, "outer", 191.4272, 112.8297);
         assert_eq!(r.shaft_joint.check, cannot_fit(INNER_HUB, "125.8", "102.8"));
     }
 }

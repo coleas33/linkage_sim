@@ -11,7 +11,7 @@
 //!
 //! Symbols: P power, ω_e the field's angular frequency (p ω_s), ω_s the slip speed, σ conductivity, ρ density, c specific heat, m mass.
 
-use crate::engine::deviations::DeviationId::{E5, E8, E9, E12, E15, E17};
+use crate::engine::deviations::DeviationId::{E5, E8, E9, E12, E15, E17, E20, E24};
 use crate::engine::explain::record::{Record, record};
 
 /// The plain records.
@@ -291,7 +291,10 @@ pub const RECORDS: &[Record] = &[
         "{temperature.summary.governing_limit_C} - {temperature.summary.service_max_C}"),
     record("temperature.summary.margin_hot_day_C", "Δϑ_{hot}",
         "{temperature.summary.governing_limit_C} - {temperature.duty.hot_day_start_C}"),
-    record("temperature.summary.cure_margin_C", "Δϑ_{cure}", "{temperature.demag.onset_single_ring_C} - {temperature.adhesive.cure_C}"),
+    // E24: the lower of both rings' single-ring onsets, whichever ring governs.
+    record("temperature.summary.cure_margin_C", "Δϑ_{cure}",
+        "min({temperature.demag.inner_onset_single_ring_C}, {temperature.demag.outer_onset_single_ring_C}) - {temperature.adhesive.cure_C}")
+        .corrected(&[E20, E24]),
     record("temperature.magnet_life.margin_onset_C", "Δϑ_{sk}", "{temperature.demag.onset_skipping_C} - {temperature.magnet_life.peak_C}"),
     record("temperature.magnet_life.margin_limit_C", "Δϑ_{mag}", "{temperature.demag.magnet_limit_C} - {temperature.magnet_life.peak_C}"),
 ];
