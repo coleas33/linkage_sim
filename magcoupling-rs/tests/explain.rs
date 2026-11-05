@@ -4225,7 +4225,8 @@ fn the_demagnetization_note_s_claims_hold_at_every_probe_design() {
 
 /// `demagnetization`'s two grade entries on the example design (N42SH on both rings), at the
 /// grades rated hotter that the review probes. On both rings, custom dimensions and the grade
-/// raise the magnet limit and lower the pull-out, and the adhesive then governs; on one ring
+/// raise the magnet limit and lower the pull-out, and for the NdFeB grades the adhesive then
+/// governs; on one ring
 /// alone that ring's limit rises but the other ring's still governs. Every grade rated hotter
 /// than the example's is weaker (a lower Br).
 #[test]
@@ -4259,11 +4260,18 @@ fn a_hotter_rated_grade_raises_its_ring_s_limit_costs_torque_and_alone_may_not_h
             r.model.pullout_Nm < base.model.pullout_Nm,
             "{id}: torque falls"
         );
-        assert_eq!(
-            summary.governing_limit_C, summary.adhesive_limit_C,
-            "{id}: the adhesive governs"
-        );
-        assert!(summary.adhesive_limit_C < d.magnet_limit_C, "{id}");
+        // Recoma 26 is rated above the model's own onset: the rating no longer raises it
+        // (correction E21, BL-057), so its 101.7 °C limit stays under the adhesive's 120 °C
+        // and its magnets govern; the note's entry names NdFeB grades only.
+        if id == "SmCo_2_17_26" {
+            assert_eq!(summary.governing_limit_C, d.magnet_limit_C, "{id}");
+        } else {
+            assert_eq!(
+                summary.governing_limit_C, summary.adhesive_limit_C,
+                "{id}: the adhesive governs"
+            );
+            assert!(summary.adhesive_limit_C < d.magnet_limit_C, "{id}");
+        }
         for rings in [Rings::Inner, Rings::Outer] {
             let d = compute_all(&on_grade(&example, rings, id))
                 .temperature
@@ -4284,25 +4292,29 @@ fn a_hotter_rated_grade_raises_its_ring_s_limit_costs_torque_and_alone_may_not_h
     }
 }
 
-/// `demagnetization`'s second watch-out names exactly the grades whose onsets the rating shift
-/// raises on custom dimensions: a negative offset, so each onset is the uncalibrated one plus its
-/// size; the two 2:17 SmCo grades go by one name. On the example design an onset lies past its
-/// grade's tested range. When the grade data or the shift change, this fails and the watch-out
-/// changes in the same commit (BL-057).
+/// `demagnetization`'s second watch-out names exactly the grades rated above the model's own
+/// onset on custom dimensions: the model's reference onset C49 below the rating C47, so the
+/// offset would be negative and raise every onset; held at 0 (correction E21, BL-057), each
+/// onset is the uncalibrated one, never above it. The two 2:17 SmCo grades go by one name. On
+/// the example design an onset lies past its grade's tested range. When the grade data or the
+/// calibration change, this fails and the watch-out changes in the same commit.
 #[test]
-fn the_demagnetization_watch_out_names_the_grades_the_rating_shift_raises() {
+fn the_demagnetization_watch_out_names_the_grades_rated_above_the_model_onset() {
     let watch_out = notes::note("demagnetization").expect("the note").watch_out[1];
     let example = DesignInputs::default();
     let knee = example.temperature.demag.knee_fraction;
     let like_poles = example.temperature.demag.h_rev_likepole_kA_m;
-    let mut raised = 0;
+    let mut rated_above = 0;
     for g in &GRADES {
         let d = compute_all(&on_grade(&example, Rings::Both, g.id))
             .temperature
             .demag;
-        let shifted_up = d.calibration_offset_C < 0.0;
-        if shifted_up {
-            raised += 1;
+        let above = match d.tmax_lib_C {
+            NumOrText::Num(rating) => d.t_ref_model_C < rating,
+            NumOrText::Text(_) => false,
+        };
+        if above {
+            rated_above += 1;
             let uncalibrated = demag_onset_C(
                 like_poles,
                 d.hcj20_used_kA_m,
@@ -4311,12 +4323,10 @@ fn the_demagnetization_watch_out_names_the_grades_the_rating_shift_raises() {
                 d.alpha_br,
                 0.0,
             );
-            assert!(
-                d.onset_skipping_C > uncalibrated,
-                "{}: shifted upward",
-                g.id
-            );
+            assert_eq!(d.calibration_offset_C, 0.0, "{}: held at 0", g.id);
+            assert_eq!(d.onset_skipping_C, uncalibrated, "{}: not raised", g.id);
         }
+        assert!(d.calibration_offset_C >= 0.0, "{}: no onset raised", g.id);
         let name = if g.family == GradeFamily::SmCo2_17 {
             "2:17 SmCo"
         } else {
@@ -4324,13 +4334,14 @@ fn the_demagnetization_watch_out_names_the_grades_the_rating_shift_raises() {
         };
         assert_eq!(
             names_word(watch_out, name),
-            shifted_up,
-            "{} (offset {} °C) in {watch_out:?}",
+            above,
+            "{} (model onset {} °C, rating {:?}) in {watch_out:?}",
             g.id,
-            d.calibration_offset_C
+            d.t_ref_model_C,
+            d.tmax_lib_C
         );
     }
-    assert!(raised > 0, "some grade's onsets are raised");
+    assert!(rated_above > 0, "some grade is rated above the model onset");
     let d = compute_all(&example).temperature.demag;
     let [_, tested_to] = N42SH.coefficient_range_C.expect("N42SH's tested range");
     assert!(

@@ -3182,6 +3182,14 @@ mod tests {
         i.coupling.magnets.grade_outer = id.to_owned();
     }
 
+    /// Manual N42H blocks with the knee fraction at 0.70: the single-ring onset, 100.16 °C, is
+    /// above the inner hub's 93.27 °C fitting need, but the onset less the cure margin is below
+    /// it.
+    fn low_knee_n42h(i: &mut DesignInputs) {
+        graded(i, "N42H");
+        i.temperature.demag.knee_fraction = 0.70;
+    }
+
     /// Manual Y30 ferrite blocks: the cold demagnetization check fails.
     fn ferrite(i: &mut DesignInputs) {
         graded(i, "Y30");
@@ -5898,19 +5906,20 @@ mod tests {
         // the 93.27 °C its fit needs. The joint fails on that term alone; the temperature check
         // stays amber. One step down on the hub's maximum raises the fitting margin and turns
         // nothing red, so it is shown; the wheel shaft is at its slider's bottom. The magnets'
-        // part or grade is the temperature guide's fix, never the joint's. N50M on manual
-        // dimensions too: its onset, 98.80 °C, is above the need; only the onset less the margin,
-        // 88.80 °C, is below it (the cup wall fails there too: the joint alone is asserted). The
-        // step down raises each fitting margin as spec 5.2 and 7.9 give it: -33.43 to -29.37 °C
-        // and -4.46 to -0.40 °C.
+        // part or grade is the temperature guide's fix, never the joint's. N42H on manual
+        // dimensions with the knee fraction at 0.70 too: its onset, 100.16 °C, is above the need;
+        // only the onset less the margin, 90.16 °C, is below it (the joint alone is asserted).
+        // (N50M at the default knee fraction was this case until correction E21 stopped its
+        // rating raising its onset, BL-057.) The step down raises each fitting margin as spec 5.2
+        // and 7.9 give it: -33.43 to -29.37 °C and -3.10 to +0.96 °C.
         let joint = guide(SHAFT_JOINT).unwrap();
         for (name, inputs, want_onset, want_margins) in [
             ("n42_parts", breaking(n42_parts), 69.8326, [-33.43, -29.37]),
             (
-                "N50M",
-                breaking(|i| graded(i, "N50M")),
-                98.8029,
-                [-4.46, -0.40],
+                "N42H, knee 0.70",
+                breaking(low_knee_n42h),
+                100.1634,
+                [-3.10, 0.96],
             ),
         ] {
             let results = compute_all(&inputs);
@@ -8444,16 +8453,16 @@ mod tests {
                 "from 11.62 µm to 13.88 µm",
             ],
         );
-        // N50M on manual dimensions: its onset is above the need, the onset less the margin
-        // below it.
+        // N42H on manual dimensions with the knee fraction at 0.70: its onset is above the need,
+        // the onset less the margin below it.
         assert_in_order(
-            &text(breaking(|i| graded(i, "N50M"))),
+            &text(breaking(low_knee_n42h)),
             &[
                 &format!(
-                    "above the 88.80 °C allowed: the magnets' single-ring onset, 98.80 °C, less {}.",
+                    "above the 90.16 °C allowed: the magnets' single-ring onset, 100.16 °C, less {}.",
                     margin(2)
                 ),
-                "from 12.21 µm to 17.45 µm",
+                "from 11.62 µm to 17.61 µm",
             ],
         );
         // 2214 Hi-Temp (177 °C) and the hub's limit typed at 150 °C: the onset less the margin,

@@ -7,8 +7,13 @@
 //! added E15 to E18 (its audit rows: the E9 residuals at back iron = 0 and the
 //! aluminium hub's mismatch screen), E19 (decision 2: the SuperMagnetMan arc
 //! parts) and E20 (decision 19: each magnet's own coercivity), all approved on
-//! 2026-09-30. Everything else stays workbook-exact. This registry is the one
-//! place that says where the port departs from the workbook and why.
+//! 2026-09-30. The Addendum A-4 verification
+//! (`docs/analyses/2026-10-01-magcoupling-addendum-a4-verification.md`) added
+//! E21 (decision 1: the rating-calibration offset held at 0 or more) and the
+//! planned E22 and E23 (decisions 4 to 10: per-grade magnet CTE and specific
+//! heat; registered, not yet in the code), approved on 2026-10-01. Everything
+//! else stays workbook-exact. This registry is the one place that says where
+//! the port departs from the workbook and why.
 //!
 //! # How a deviation is applied
 //!
@@ -26,11 +31,12 @@
 //!   `changes_file` instead (E3: `tests/data/deviations/E3.json`, E4:
 //!   `tests/data/deviations/E4.json`, E5: `tests/data/deviations/E5.json`).
 //! - **Probes.** A correction that changes nothing at default inputs (E7 to
-//!   E13, E15 to E20) lists `probes`: input overrides on which it shows (the
+//!   E13, E15 onward) lists `probes`: input overrides on which it shows (the
 //!   report's off-default example) and the cells it changes there, with the
 //!   workbook and the corrected value.
 //! - **Dependencies.** A correction that refines another one lists it in
-//!   `depends_on` (E15, E16 and E17 refine E9: without it the cup is steel).
+//!   `depends_on` (E15, E16 and E17 refine E9: without it the cup is steel;
+//!   E21 refines E20: without it there is one calibration, the inner ring's).
 //!   Its probes run with the dependencies on, on both sides (decision 15).
 //!
 //! # The test-only switch
@@ -55,6 +61,11 @@ pub const REPORT: &str = "docs/analyses/2026-09-29-magcoupling-math-audit.md";
 /// decisions the user approved on 2026-09-30).
 pub const ADDENDUM_REPORT: &str = "docs/analyses/2026-09-30-magcoupling-addendum-a-verification.md";
 
+/// The Addendum A-4 verification report E21 onward cite (section 5 holds the decisions the
+/// user approved on 2026-10-01; its data file is
+/// `docs/analyses/2026-10-01-magcoupling-addendum-a4-data.json`).
+pub const A4_REPORT: &str = "docs/analyses/2026-10-01-magcoupling-addendum-a4-verification.md";
+
 /// Identifier of an approved correction, numbered as in the audit report.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum DeviationId {
@@ -78,11 +89,14 @@ pub enum DeviationId {
     E18,
     E19,
     E20,
+    E21,
+    E22,
+    E23,
 }
 
 impl DeviationId {
     /// Every identifier, in report order.
-    pub const ALL: [DeviationId; 20] = [
+    pub const ALL: [DeviationId; 23] = [
         DeviationId::E1,
         DeviationId::E2,
         DeviationId::E3,
@@ -103,6 +117,9 @@ impl DeviationId {
         DeviationId::E18,
         DeviationId::E19,
         DeviationId::E20,
+        DeviationId::E21,
+        DeviationId::E22,
+        DeviationId::E23,
     ];
 
     /// Position in [`DeviationId::ALL`] and in [`REGISTRY`].
@@ -139,6 +156,9 @@ pub enum Approval {
     /// ([`ADDENDUM_REPORT`], section 8), approved (option A) on 2026-09-30.
     /// E15 to E18 also have an audit row there; E19 and E20 have none.
     Addendum { decisions: &'static [u32] },
+    /// These decisions of the Addendum A-4 verification report ([`A4_REPORT`],
+    /// section 5), approved (option A) on 2026-10-01. No audit row.
+    AddendumA4 { decisions: &'static [u32] },
 }
 
 /// Whether the correction is in the code yet.
@@ -207,7 +227,8 @@ pub struct Deviation {
     /// Where the user approved it.
     pub approval: Approval,
     /// Corrections this one refines; its probes run with them on, on both
-    /// sides (decision 15). Empty for all but E15, E16 and E17 (on E9).
+    /// sides (decision 15). Empty for all but E15, E16 and E17 (on E9) and
+    /// E21 (on E20).
     pub depends_on: &'static [DeviationId],
     pub status: DeviationStatus,
     /// Every workbook cell the report names for this entry (inputs, corrected
@@ -232,7 +253,7 @@ pub struct Deviation {
     /// `changes_at_defaults` stays empty for such entries.
     pub changes_file: Option<&'static str>,
     /// Off-default checks for corrections neutral at defaults (E7 to E13,
-    /// E15 to E20).
+    /// E15 onward).
     pub probes: &'static [Probe],
 }
 
@@ -242,24 +263,33 @@ impl Deviation {
         match self.approval {
             Approval::AuditRow => REPORT,
             Approval::Addendum { .. } => ADDENDUM_REPORT,
+            Approval::AddendumA4 { .. } => A4_REPORT,
         }
     }
 
-    /// Where the evidence is: the audit report entry, or the Addendum A decisions.
+    /// Where the evidence is: the audit report entry, or the Addendum A or A-4 decisions.
     pub fn evidence(&self) -> String {
         match self.approval {
             Approval::AuditRow => format!("{REPORT}, entry {}", self.id),
             Approval::Addendum { decisions } => {
-                let list: Vec<String> = decisions.iter().map(u32::to_string).collect();
-                let noun = if decisions.len() == 1 {
-                    "decision"
-                } else {
-                    "decisions"
-                };
-                format!("{ADDENDUM_REPORT}, section 8, {noun} {}", list.join(", "))
+                format!("{ADDENDUM_REPORT}, section 8, {}", decision_list(decisions))
+            }
+            Approval::AddendumA4 { decisions } => {
+                format!("{A4_REPORT}, section 5, {}", decision_list(decisions))
             }
         }
     }
+}
+
+/// "decision 2" or "decisions 10, 11": how the evidence names a report's decisions.
+fn decision_list(decisions: &[u32]) -> String {
+    let list: Vec<String> = decisions.iter().map(u32::to_string).collect();
+    let noun = if decisions.len() == 1 {
+        "decision"
+    } else {
+        "decisions"
+    };
+    format!("{noun} {}", list.join(", "))
 }
 
 /// The registry, in report order: `REGISTRY[id.index()].id == id`.
@@ -1395,6 +1425,264 @@ pub const REGISTRY: &[Deviation] = &[
             },
         ],
     },
+    Deviation {
+        id: DeviationId::E21,
+        title: "The rating calibration raises a grade's demagnetization onsets above the model when its rating exceeds the model's reference onset",
+        class: DeviationClass::Engine,
+        approval: Approval::AddendumA4 { decisions: &[1, 3] },
+        depends_on: &[DeviationId::E20],
+        status: DeviationStatus::Applied,
+        cells: &[
+            "Temperature design!C7",
+            "Temperature design!C8",
+            "Temperature design!C9",
+            "Temperature design!C10",
+            "Temperature design!C12",
+            "Temperature design!C13",
+            "Temperature design!C15",
+            "Temperature design!C19",
+            "Temperature design!C23",
+            "Temperature design!C24",
+            "Temperature design!C42",
+            "Temperature design!C43",
+            "Temperature design!C47",
+            "Temperature design!C48",
+            "Temperature design!C49",
+            "Temperature design!C50",
+            "Temperature design!C56",
+            "Temperature design!C57",
+            "Temperature design!C58",
+            "Temperature design!C59",
+            "Temperature design!C60",
+            "Temperature design!C61",
+            "Temperature design!C101",
+            "Temperature design!C104",
+            "Temperature design!C105",
+            "Temperature design!C106",
+            "Temperature design!C150",
+            "Temperature design!C151",
+            "Temperature design!C152",
+            "Temperature design!C153",
+            "Temperature design!C181",
+            "Temperature design!C182",
+            "Temperature design!F12",
+        ],
+        corrected_formula: "C50 = MAX(C49 - C47, 0) for each ring (E20 checks both), applied before E20 picks the \
+            weaker ring: the rating calibrates the model's onsets down, never up (equivalently, each onset is the lower \
+            of the calibrated and the uncalibrated one). Gated on E20; a positive beta (the cold side) and a magnet \
+            without a rating keep an offset of 0, and a NaN offset stays NaN. It takes the lower of two unvalidated \
+            estimates: conservative for the demagnetization check (C58, C60, C12 and C15 never rise), not uniformly \
+            downstream: the mismatch screen C101 to C106 relaxes where the magnets come to govern (decision 3, \
+            documented in C101's help), and the shown cure margin C24 can rise under a governing-ring flip (E24 takes \
+            the lower ring's). C50 shows the applied offset (its help: held at 0 or more).",
+        workbook_input_defaults: &[],
+        workbook_help: &[
+            ("temperature.demag.calibration_offset_C", ""),
+            ("temperature.mismatch.worst_swing_C", ""),
+        ],
+        changes_at_defaults: &[],
+        changes_file: None,
+        probes: &[
+            Probe {
+                label: "B842-N52 (N52: rating 80 C, model reference onset 70.31 C) on both rings, the library path: \
+                    offset -9.689 C held at 0 (supersedes Addendum A report 6.3 row B842-N52 under E20: C12 0.17 -> -9.52 C)",
+                inputs: &[
+                    ("coupling.magnets.part_inner", Literal::Text("B842-N52")),
+                    ("coupling.magnets.part_outer", Literal::Text("B842-N52")),
+                ],
+                expect: &[
+                    CellChange {
+                        cell: "Temperature design!C50",
+                        workbook: Literal::Num(-9.689222777921628),
+                        corrected: Literal::Num(0.0),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C58",
+                        workbook: Literal::Num(10.16793849876467),
+                        corrected: Literal::Num(0.4787157208430415),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C12",
+                        workbook: Literal::Num(0.16793849876466993),
+                        corrected: Literal::Num(-9.521284279156959),
+                    },
+                ],
+            },
+            Probe {
+                label: "Recoma 26 (SmCo_2_17_26: rating 350 C, model reference onset 289.8 C) for manual dimensions on \
+                    both rings: offset -60.21 C held at 0; the magnets govern instead of the adhesive",
+                inputs: &[
+                    ("coupling.magnets.part_inner", Literal::Text("")),
+                    ("coupling.magnets.part_outer", Literal::Text("")),
+                    (
+                        "coupling.magnets.grade_inner",
+                        Literal::Text("SmCo_2_17_26"),
+                    ),
+                    (
+                        "coupling.magnets.grade_outer",
+                        Literal::Text("SmCo_2_17_26"),
+                    ),
+                ],
+                expect: &[
+                    CellChange {
+                        cell: "Temperature design!C50",
+                        workbook: Literal::Num(-60.21319132809839),
+                        corrected: Literal::Num(0.0),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C12",
+                        workbook: Literal::Num(120.0),
+                        corrected: Literal::Num(101.73342351672972),
+                    },
+                    CellChange {
+                        cell: "Temperature design!F12",
+                        workbook: Literal::Text("Adhesive governs."),
+                        corrected: Literal::Text("Magnets govern (skipping case)."),
+                    },
+                ],
+            },
+            Probe {
+                label: "B842 inner (N42, offset +12.68 C), B842-N52 outer (N52, offset -9.689 C): holding the offset at 0 moves the \
+                    governing ring from inner to outer, and the block shows the N52 ring",
+                inputs: &[
+                    ("coupling.magnets.part_inner", Literal::Text("B842")),
+                    ("coupling.magnets.part_outer", Literal::Text("B842-N52")),
+                ],
+                expect: &[
+                    CellChange {
+                        cell: "Temperature design!C42",
+                        workbook: Literal::Num(1.3),
+                        corrected: Literal::Num(1.45),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C50",
+                        workbook: Literal::Num(12.681126305465526),
+                        corrected: Literal::Num(0.0),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C12",
+                        workbook: Literal::Num(-3.5174216150834887),
+                        corrected: Literal::Num(-9.521284279156959),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C24",
+                        workbook: Literal::Num(47.83256962065032),
+                        corrected: Literal::Num(50.08556444987687),
+                    },
+                ],
+            },
+            Probe {
+                label: "N38UH inner, Recoma 26 outer (manual dimensions): holding the offset at 0 moves the governing ring to \
+                    Recoma 26, so the block's alpha(Br) C43 and rating C47 change (A-4 report probe 4; C24 here is \
+                    the governing ring's, which E24 replaces by the lower ring's)",
+                inputs: &[
+                    ("coupling.magnets.part_inner", Literal::Text("")),
+                    ("coupling.magnets.part_outer", Literal::Text("")),
+                    ("coupling.magnets.grade_inner", Literal::Text("N38UH")),
+                    (
+                        "coupling.magnets.grade_outer",
+                        Literal::Text("SmCo_2_17_26"),
+                    ),
+                ],
+                expect: &[
+                    CellChange {
+                        cell: "Temperature design!C43",
+                        workbook: Literal::Num(-0.0012),
+                        corrected: Literal::Num(-0.00035),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C47",
+                        workbook: Literal::Num(180.0),
+                        corrected: Literal::Num(350.0),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C12",
+                        workbook: Literal::Num(120.0),
+                        corrected: Literal::Num(101.73342351672972),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C24",
+                        workbook: Literal::Num(149.91967217479288),
+                        corrected: Literal::Num(205.01249772124206),
+                    },
+                ],
+            },
+        ],
+    },
+    Deviation {
+        id: DeviationId::E22,
+        title: "The bond's thermal-mismatch screen gives every inner ring sintered NdFeB's expansion, though ferrite and SmCo expand differently",
+        class: DeviationClass::Engine,
+        approval: Approval::AddendumA4 {
+            decisions: &[4, 5, 6, 7, 9, 10],
+        },
+        depends_on: &[],
+        status: DeviationStatus::Planned,
+        cells: &[
+            "Temperature design!C104",
+            "Temperature design!C105",
+            "Temperature design!C106",
+            "Temperature design!C201",
+            "Temperature design!C202",
+        ],
+        corrected_formula: "Planned (A-4 report section 4): the inner ring's grade CTE in the bond plane (Y30 10.0e-6, \
+            Recoma 20 14.0e-6, Recoma 26 and Recoma 30 13.0e-6 /K; bonded NdFeB and sintered NdFeB keep C95) in the \
+            mismatch screen C104 to C106, C201, C202 and warning rule 6, the screens comparing the size of the shear \
+            (decision 9). Not in the code: the engine is workbook-exact here.",
+        workbook_input_defaults: &[],
+        workbook_help: &[],
+        changes_at_defaults: &[],
+        changes_file: None,
+        probes: &[],
+    },
+    Deviation {
+        id: DeviationId::E23,
+        title: "The heat capacity gives every magnet sintered NdFeB's specific heat, though ferrite, SmCo and bonded NdFeB differ",
+        class: DeviationClass::Engine,
+        approval: Approval::AddendumA4 {
+            decisions: &[4, 5, 8, 10],
+        },
+        depends_on: &[],
+        status: DeviationStatus::Planned,
+        cells: &[
+            "Temperature design!C19",
+            "Temperature design!C20",
+            "Temperature design!C141",
+            "Temperature design!C143",
+            "Temperature design!C145",
+            "Temperature design!C150",
+            "Temperature design!C151",
+            "Temperature design!C152",
+            "Temperature design!C154",
+            "Temperature design!C155",
+            "Temperature design!C156",
+            "Temperature design!C157",
+            "Temperature design!C158",
+            "Temperature design!C159",
+            "Temperature design!C160",
+            "Temperature design!C161",
+            "Temperature design!C171",
+            "Temperature design!C172",
+            "Temperature design!C180",
+            "Temperature design!C181",
+            "Temperature design!C182",
+            "Temperature design!C186",
+            "Temperature design!C189",
+            "Temperature design!C190",
+            "Temperature design!C192",
+            "Temperature design!C193",
+            "Temperature design!C196",
+        ],
+        corrected_formula: "Planned (A-4 report section 4): each ring's grade specific heat in the heat capacity C141 \
+            (Y30 700.0, Recoma 20 370.0, Recoma 26 and Recoma 30 350.0, bonded NdFeB 420.0 J/(kg K); sintered NdFeB \
+            keeps C138), m_inner c_inner + m_outer c_outer, and the thermal cells downstream. Not in the code: the \
+            engine is workbook-exact here.",
+        workbook_input_defaults: &[],
+        workbook_help: &[],
+        changes_at_defaults: &[],
+        changes_file: None,
+        probes: &[],
+    },
 ];
 
 /// A set of deviations switched on. Users only ever get [`Deviations::ALL`].
@@ -1486,16 +1774,27 @@ mod tests {
             );
             assert!(!d.cells.is_empty(), "{} names no cell", d.id);
             assert!(d.evidence().starts_with(d.report()), "{}", d.id);
+            // An Addendum entry is newer than the report's first id and cites its decisions.
+            let decided = |decisions: &[u32], first: DeviationId, last_decision: u32| {
+                assert!(
+                    d.id.index() >= first.index(),
+                    "{}: the report starts at {first}",
+                    d.id
+                );
+                assert!(!decisions.is_empty(), "{} cites no decision", d.id);
+                assert!(
+                    decisions.iter().all(|n| (1..=last_decision).contains(n)),
+                    "{}",
+                    d.id
+                );
+            };
             match d.approval {
                 Approval::AuditRow => {
                     assert!(d.id.index() < 14, "{}: only E1 to E14 are M1 rows", d.id);
                     assert!(d.evidence().ends_with(&format!("entry {}", d.id)));
                 }
-                Approval::Addendum { decisions } => {
-                    assert!(d.id.index() >= 14, "{}: E1 to E14 are M1 rows", d.id);
-                    assert!(!decisions.is_empty(), "{} cites no decision", d.id);
-                    assert!(decisions.iter().all(|n| (1..=31).contains(n)), "{}", d.id);
-                }
+                Approval::Addendum { decisions } => decided(decisions, DeviationId::E15, 31),
+                Approval::AddendumA4 { decisions } => decided(decisions, DeviationId::E21, 10),
             }
             for dep in d.depends_on {
                 assert!(
@@ -1521,6 +1820,23 @@ mod tests {
             REGISTRY[DeviationId::E17.index()].evidence(),
             format!("{ADDENDUM_REPORT}, section 8, decisions 10, 11, 12, 13, 14, 15")
         );
+        assert_eq!(
+            REGISTRY[DeviationId::E21.index()].evidence(),
+            format!("{A4_REPORT}, section 5, decisions 1, 3")
+        );
+    }
+
+    #[test]
+    fn e22_and_e23_are_registered_but_not_yet_applied() {
+        // The ids are index-based, so E24 needs E22 and E23 to exist; they stay Planned (no code
+        // reads them) until their own change lands (backlog BL-058).
+        for id in [DeviationId::E22, DeviationId::E23] {
+            assert_eq!(
+                REGISTRY[id.index()].status,
+                DeviationStatus::Planned,
+                "{id}"
+            );
+        }
     }
 
     #[test]

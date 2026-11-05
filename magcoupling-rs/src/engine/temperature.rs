@@ -33,7 +33,9 @@
 //! (the mismatch screen C104-C106, C201, C202 bonds to an aluminium hub when C6
 //! is not 1) and E20 (the demagnetization block checks each ring against its
 //! own grade, Br and rating, and shows the ring with the lower limit; a positive
-//! beta is limited on the cold side, [`cold_onset_C`]).
+//! beta is limited on the cold side, [`cold_onset_C`]) and E21 (on top of E20:
+//! each ring's rating-calibration offset C50 is held at 0 or more, so a rating
+//! never raises the onsets above the model's own).
 
 use std::f64::consts::PI;
 
@@ -476,7 +478,8 @@ results! {
             tmax_lib_C: NumOrText => out("°C", "Library maximum operating temperature", "", "Temperature design!C47"),
             h_ref_kA_m: f64 => out("kA/m", "Reverse field of a magnet at permeance coefficient 1", "", "Temperature design!C48"),
             t_ref_model_C: f64 => out("°C", "Model onset for that reference magnet", "", "Temperature design!C49"),
-            calibration_offset_C: f64 => out("°C", "Calibration offset (model minus library rating)", "", "Temperature design!C50"),
+            calibration_offset_C: f64 => out("°C", "Calibration offset (model minus library rating)",
+                "Held at 0 or more: the rating can lower the onsets below the model's own, never raise them.", "Temperature design!C50"),
             onset_aligned_C: f64 => out("°C", "Onset, rings aligned", "", "Temperature design!C56"),
             onset_pullout_C: f64 => out("°C", "Onset at pull-out", "", "Temperature design!C57"),
             onset_skipping_C: f64 => out("°C", "Onset while skipping", "", "Temperature design!C58"),
@@ -519,6 +522,10 @@ results! {
                 "As the inner ring's, for the outer ring."),
             outer_cold_limit_C: NumOrText => out_rust_only("°C", "Outer ring: cold magnet limit",
                 "As the inner ring's, for the outer ring."),
+            inner_calibration_offset_C: f64 => out_rust_only("°C", "Inner ring: calibration offset applied",
+                "The inner ring's own offset, whichever ring governs: its model onset for a reference magnet less its rating, held at 0 or more (0 for hard ferrite or no rating)."),
+            outer_calibration_offset_C: f64 => out_rust_only("°C", "Outer ring: calibration offset applied",
+                "As the inner ring's, for the outer ring."),
         }
     }
 }
@@ -553,7 +560,9 @@ results! {
             steel_E_GPa: f64 => out("GPa", "Steel elastic modulus (4140)", "", "Temperature design!C98"),
             steel_thickness_mm: f64 => out("mm", "Steel thickness under the inner blocks", "", "Temperature design!C99"),
             cold_limit_C: f64 => out("°C", "Cold limit", "", "Temperature design!C100"),
-            worst_swing_C: f64 => out("°C", "Worst swing from the stress-free (cure) temperature", "", "Temperature design!C101"),
+            worst_swing_C: f64 => out("°C", "Worst swing from the stress-free (cure) temperature",
+                "The larger of the cold swing (cure less minimum magnet temperature) and the hot swing (governing limit less cure). Where the magnets govern, a lower magnet limit shrinks it.",
+                "Temperature design!C101"),
             current_bondline_mm: f64 => out("mm", "Current bondline", "", "Temperature design!C102"),
             peak_shear_current_MPa: f64 => out("MPa", "Peak end shear, current bondline", "", "Temperature design!C104"),
             peak_shear_recommended_MPa: f64 => out("MPa", "Peak end shear, recommended bondline", "", "Temperature design!C105"),
@@ -808,6 +817,17 @@ fn ring_demag(
         NumOrText::Num(tmax) => t_ref - tmax,
         NumOrText::Text(_) => 0.0,
     };
+    // E21 (refines E20; Addendum A-4 decision 1): the rating may lower the model's onsets,
+    // never raise them. A negative offset (the model's reference onset below the rating) would
+    // lift every onset above the model's own; held at 0, the onsets are the uncalibrated
+    // model's (each onset is the lower of the calibrated and the uncalibrated one). py_max(x, 0)
+    // is `if 0 > x { 0 } else { x }`: a NaN offset stays NaN, and every offset of 0 or more
+    // (-0.0 too) is kept bit for bit.
+    let offset = if dev.is_on(DeviationId::E20) && dev.is_on(DeviationId::E21) {
+        py_max(offset, 0.0)
+    } else {
+        offset
+    };
     let on = |h: f64| {
         if cold_side {
             f64::INFINITY
@@ -1023,6 +1043,10 @@ pub fn compute(
         outer_beta_per_C: outer_block.beta,
         outer_magnet_limit_C: outer_block.mag_lim,
         outer_cold_limit_C: outer_block.cold_limit,
+        // Plan A-4: each ring's applied offset (E21 holds it at 0 or more), the explorer's term
+        // for both the ring's limit and its single-ring onset.
+        inner_calibration_offset_C: inner.offset,
+        outer_calibration_offset_C: outer_block.offset,
     };
 
     // ---- adhesive selection and loads
@@ -2092,6 +2116,7 @@ mod tests {
             want.outer_beta_per_C = cold.outer_beta_per_C;
             want.outer_magnet_limit_C = cold.outer_magnet_limit_C;
             want.outer_cold_limit_C = cold.outer_cold_limit_C;
+            want.outer_calibration_offset_C = cold.outer_calibration_offset_C;
             // Decision A2-7: the torque at the limit goes with both rings' Br, each ring with
             // its own coefficient (the NdFeB inner, the ferrite outer).
             want.torque_at_limit_Nm = mixed.pullout_20C_Nm
@@ -2119,6 +2144,7 @@ mod tests {
             r.demag.outer_beta_per_C = 0.0;
             r.demag.outer_magnet_limit_C = 0.0;
             r.demag.outer_cold_limit_C = NumOrText::Text("");
+            r.demag.outer_calibration_offset_C = 0.0;
             r
         };
         let mut one_alpha = mixed.clone();
@@ -2127,6 +2153,55 @@ mod tests {
             workbook_cells(run(&ti, &one_alpha)),
             workbook_cells(run(&ti, &links())),
             "the workbook reads the inner ring only"
+        );
+    }
+
+    #[test]
+    fn e21_clamps_a_negative_offset_on_each_ring_and_keeps_the_rest() {
+        // A-4 decision 1: on top of E20 each ring's offset is MAX(C49 - C47, 0). An N52 outer
+        // ring (Br 1.45 T, rated 80 C) has a negative offset: clamped to 0, its limit is the
+        // uncalibrated model's skipping onset less the margin. The N42SH inner ring's positive
+        // offset is kept bit for bit, E21 without E20 is inert, and a NaN offset (a NaN
+        // rating) stays NaN.
+        let e20 = Deviations::only(DeviationId::E20);
+        let both = e20.with(DeviationId::E21);
+        let ti = TemperatureInputs::default();
+        let mut k = links();
+        k.outer_grade = crate::engine::grades::grade("N52");
+        k.outer_br20_T = 1.45;
+        k.outer_tmax_lib_C = NumOrText::Num(80.0);
+        let before = compute(&ti, &k, e20).demag;
+        let after = compute(&ti, &k, both).demag;
+        assert!(before.outer_calibration_offset_C < 0.0);
+        assert_eq!(after.outer_calibration_offset_C, 0.0);
+        assert!(before.inner_calibration_offset_C > 0.0);
+        assert_eq!(
+            after.inner_calibration_offset_C.to_bits(),
+            before.inner_calibration_offset_C.to_bits()
+        );
+        let d = &ti.demag;
+        let n52 = k.outer_grade.expect("the N52 grade");
+        let model = demag_onset_C(
+            d.h_rev_likepole_kA_m,
+            n52.hcj20_kA_m,
+            n52.beta_hcj_per_C,
+            d.knee_fraction,
+            k.outer_alpha_br,
+            0.0,
+        );
+        assert_eq!(after.outer_magnet_limit_C, model - d.design_margin_C);
+        assert!(after.outer_magnet_limit_C < before.outer_magnet_limit_C);
+        assert_eq!(
+            compute(&ti, &k, Deviations::only(DeviationId::E21)),
+            run(&ti, &k),
+            "E21 refines E20"
+        );
+        k.outer_tmax_lib_C = NumOrText::Num(f64::NAN);
+        assert!(
+            compute(&ti, &k, both)
+                .demag
+                .outer_calibration_offset_C
+                .is_nan()
         );
     }
 

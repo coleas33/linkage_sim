@@ -19,14 +19,16 @@ use std::fs;
 use std::path::Path;
 
 use common::{
-    cell_values_for, json_to_value, num, read_json, read_text, repo_path, report, snapshot,
-    value_to_json,
+    cell_values_for, differential_files, json_to_value, load_cases, num, read_json, read_text,
+    repo_path, report, snapshot, value_to_json,
 };
-use magcoupling::engine::api::{DesignInputs, compute_all, compute_all_with, headline};
+use magcoupling::engine::api::{
+    DesignInputs, DesignResults, compute_all, compute_all_with, headline,
+};
 use magcoupling::engine::compat::parity_close;
 use magcoupling::engine::deviations::{
-    ADDENDUM_REPORT, Approval, Deviation, DeviationClass, DeviationId, DeviationStatus, Deviations,
-    Literal, Probe, REGISTRY, REPORT,
+    A4_REPORT, ADDENDUM_REPORT, Approval, Deviation, DeviationClass, DeviationId, DeviationStatus,
+    Deviations, Literal, Probe, REGISTRY, REPORT,
 };
 use magcoupling::engine::meta::{InputSet, NumOrText, Value, input_rows, result_rows};
 
@@ -206,6 +208,16 @@ fn every_entry_is_approved_in_its_report() {
         section8.contains("**Approved (user, 2026-09-30): option A on all 31 decisions.**"),
         "section 8 records the approval"
     );
+    // Section 5 of the Addendum A-4 report: its approval line and numbered decisions.
+    let a4 = read_text(&repo_path(A4_REPORT));
+    let section5 = a4
+        .split_once("\n## 5. Decisions for the user\n")
+        .map(|(_, rest)| rest)
+        .expect("the Addendum A-4 report has a section 5");
+    assert!(
+        section5.contains("**Approved (user, 2026-10-01): option A on all 10 decisions.**"),
+        "section 5 records the approval"
+    );
     for d in REGISTRY {
         match d.approval {
             Approval::AuditRow => {
@@ -246,6 +258,18 @@ fn every_entry_is_approved_in_its_report() {
                         "{}: row status {status:?} does not name decision {}",
                         d.id,
                         decisions[0]
+                    );
+                }
+                assert_eq!(d.class, DeviationClass::Engine, "{}", d.id);
+            }
+            // E21 onward have no audit row: the A-4 report's tables name cells, not statuses.
+            Approval::AddendumA4 { decisions } => {
+                for n in decisions {
+                    let heading = format!("{n}. **");
+                    assert!(
+                        section5.lines().any(|line| line.starts_with(&heading)),
+                        "{}: section 5 has no decision {n}",
+                        d.id
                     );
                 }
                 assert_eq!(d.class, DeviationClass::Engine, "{}", d.id);
@@ -650,14 +674,15 @@ fn each_probe_shows_its_correction() {
 
 #[test]
 fn addendum_entries_name_every_cell_their_probes_change() {
-    // The Addendum A entries (E15 to E20) name every cell their probes change, downstream
-    // cells included, so the registry alone says where each correction shows. The M1 entries
-    // (E1 to E14) name the corrected and report-named cells only: their probes change
-    // hundreds of sweep and downstream cells (E7, E8), and the broad ones keep golden files.
+    // The Addendum A and A-4 entries (E15 onward) name every cell their probes change,
+    // downstream cells included, so the registry alone says where each correction shows. The
+    // M1 entries (E1 to E14) name the corrected and report-named cells only: their probes
+    // change hundreds of sweep and downstream cells (E7, E8), and the broad ones keep golden
+    // files.
     let mut failures = Vec::new();
     for d in REGISTRY
         .iter()
-        .filter(|d| matches!(d.approval, Approval::Addendum { .. }))
+        .filter(|d| !matches!(d.approval, Approval::AuditRow))
     {
         let base = probe_base(d);
         for probe in d.probes {
@@ -1189,6 +1214,7 @@ fn m2() -> Deviations {
         DeviationId::E18,
         DeviationId::E19,
         DeviationId::E20,
+        DeviationId::E21,
     ]
     .into_iter()
     .fold(Deviations::ALL, Deviations::without)
@@ -1884,6 +1910,518 @@ fn e20_ferrite_with_the_stored_ndfeb_fields_is_past_its_knee_at_room_temperature
 fn e20_leaves_every_default_cell_bit_for_bit() {
     // The default part's grade N42SH carries the workbook's own Hcj and beta.
     assert_bit_for_bit_at_defaults(DeviationId::E20);
+}
+
+/// The verdict C25's two texts.
+const VERDICT_OK: &str = "OK on temperature. Confirm drag torque and thermal cycling by test.";
+const VERDICT_CHECK: &str = "CHECK: see the rows above.";
+
+/// The A-4 report's two bases for correction `id` (its section 1, "Conventions"): the
+/// registry basis (the corrections `id` refines, then `id` too; decision 15) and the user
+/// basis (every correction but `id`, then every correction).
+fn a4_bases(id: DeviationId) -> [(&'static str, Deviations, Deviations); 2] {
+    let registry = probe_base(&REGISTRY[id.index()]);
+    [
+        ("registry", registry, registry.with(id)),
+        ("user", Deviations::ALL.without(id), Deviations::ALL),
+    ]
+}
+
+/// Input overrides by path, applied to the defaults.
+type Overrides = Vec<(&'static str, Value)>;
+
+/// Manual dimensions with `inner` and `outer` picked as the rings' grades.
+fn grade_rings(inner: &str, outer: &str) -> [(&'static str, Value); 4] {
+    [
+        ("coupling.magnets.part_inner", Value::Text(String::new())),
+        ("coupling.magnets.part_outer", Value::Text(String::new())),
+        ("coupling.magnets.grade_inner", Value::Text(inner.into())),
+        ("coupling.magnets.grade_outer", Value::Text(outer.into())),
+    ]
+}
+
+/// The library part `inner` on the inner ring and `outer` on the outer ring.
+fn part_rings(inner: &str, outer: &str) -> [(&'static str, Value); 2] {
+    [
+        ("coupling.magnets.part_inner", Value::Text(inner.into())),
+        ("coupling.magnets.part_outer", Value::Text(outer.into())),
+    ]
+}
+
+/// Every ordered pair of different grades for manual dimensions (272 pairs, the A-4
+/// harness's section 2.3), labelled "inner/outer".
+fn grade_pairs() -> Vec<(String, Overrides)> {
+    use magcoupling::engine::grades::GRADES;
+    let mut pairs = Vec::new();
+    for gi in &GRADES {
+        for go in GRADES.iter().filter(|go| go.id != gi.id) {
+            let rings = grade_rings(gi.id, go.id).to_vec();
+            pairs.push((format!("{}/{}", gi.id, go.id), rings));
+        }
+    }
+    pairs
+}
+
+/// Every ordered pair of different library parts (210 pairs, the A-4 harness's section 2.3),
+/// labelled "inner/outer".
+fn part_pairs() -> Vec<(String, Overrides)> {
+    use magcoupling::engine::library::MAGNET_LIBRARY;
+    let mut pairs = Vec::new();
+    for pi in &MAGNET_LIBRARY {
+        for po in MAGNET_LIBRARY.iter().filter(|po| po.part != pi.part) {
+            let rings = part_rings(pi.part, po.part).to_vec();
+            pairs.push((format!("{}/{}", pi.part, po.part), rings));
+        }
+    }
+    pairs
+}
+
+/// Every result for `overrides` on the defaults `dev` implies, under `dev`.
+fn results_with(overrides: &[(&str, Value)], dev: Deviations) -> DesignResults {
+    compute_all_with(&inputs_with(overrides, dev), dev)
+}
+
+/// Bit for bit: a NaN equals a NaN of the same bits.
+fn same_value(x: &Value, y: &Value) -> bool {
+    match (x, y) {
+        (Value::Num(p), Value::Num(q)) => p.to_bits() == q.to_bits(),
+        (p, q) => p == q,
+    }
+}
+
+/// Every result row, Rust-only ones included, is bit for bit the same in `a` and `b`.
+fn assert_same_results(a: &DesignResults, b: &DesignResults, what: &str) {
+    let (rows_a, rows_b) = (result_rows(a), result_rows(b));
+    assert_eq!(rows_a.len(), rows_b.len(), "{what}");
+    for (x, y) in rows_a.iter().zip(&rows_b) {
+        assert!(
+            same_value(&x.value, &y.value),
+            "{what}: {} moved: {:?} -> {:?}",
+            x.path,
+            x.value,
+            y.value
+        );
+    }
+}
+
+/// The workbook cells whose result differs, bit for bit, from `a` to `b`, in row order.
+fn moved_cells(a: &DesignResults, b: &DesignResults) -> Vec<String> {
+    result_rows(a)
+        .into_iter()
+        .zip(result_rows(b))
+        .filter(|(x, y)| !same_value(&x.value, &y.value))
+        .filter_map(|(x, _)| x.cell)
+        .collect()
+}
+
+/// An A-4 correction keeps the defaults: every default cell bit for bit with only `id` on,
+/// and every result row, Rust-only ones included, on both of its bases.
+fn assert_a4_defaults_unchanged(id: DeviationId) {
+    assert_bit_for_bit_at_defaults(id);
+    for (basis, before, after) in a4_bases(id) {
+        assert_same_results(&results_with(&[], before), &results_with(&[], after), basis);
+    }
+}
+
+/// No differential case (3,391 today, every corpus file) moves from `before` to `after`, for
+/// each `(before, after)` in `bases`: every result row, Rust-only ones included, bit for bit.
+fn assert_no_differential_case_moves_between(bases: &[(Deviations, Deviations)], what: &str) {
+    let all: Vec<(String, BTreeMap<String, Value>)> = differential_files()
+        .into_iter()
+        .flat_map(|file| {
+            load_cases(file)
+                .into_iter()
+                .map(move |case| (format!("{file} case {}", case.id), case.inputs))
+        })
+        .collect();
+    assert!(!all.is_empty());
+    let threads = std::thread::available_parallelism().map_or(4, usize::from);
+    std::thread::scope(|s| {
+        for chunk in all.chunks(all.len().div_ceil(threads)) {
+            s.spawn(move || {
+                for (label, overrides) in chunk {
+                    for &(before, after) in bases {
+                        let mut inputs = DesignInputs::defaults_with(before);
+                        for (path, value) in overrides {
+                            inputs
+                                .set(path, value.clone())
+                                .unwrap_or_else(|e| panic!("{label}: {e}"));
+                        }
+                        assert_same_results(
+                            &compute_all_with(&inputs, before),
+                            &compute_all_with(&inputs, after),
+                            &format!("{what}, {label}"),
+                        );
+                    }
+                }
+            });
+        }
+    });
+}
+
+#[test]
+fn e21_leaves_every_default_cell_bit_for_bit() {
+    // Gated on E20, E21 alone is inert. On top of E20, and with every correction, the default
+    // part's offset is positive (+10.43 C on the registry basis, +9.921 C with E3's 1.30 T),
+    // so the clamp keeps every result, Rust-only ones included, bit for bit.
+    assert_a4_defaults_unchanged(DeviationId::E21);
+}
+
+#[test]
+fn e21_alone_moves_no_differential_case() {
+    // A-4 report section 2.6, the double gate: E21 refines E20, so on its own it is NONE on
+    // every corpus case, every result row bit for bit.
+    let alone = (Deviations::NONE, Deviations::only(DeviationId::E21));
+    assert_no_differential_case_moves_between(&[alone], "E21 alone");
+}
+
+#[test]
+fn e21_without_e20_changes_nothing() {
+    // N42's coercivity typed into C44 and C45 on the default part: without E20 the inputs act
+    // for both rings and the offset is negative (-56.55 C), yet E21 alone changes nothing,
+    // because it refines E20.
+    let typed = [
+        ("temperature.demag.hcj20_kA_m", Value::Num(954.9)),
+        ("temperature.demag.beta_hcj_per_C", Value::Num(-0.0062)),
+    ];
+    let workbook = results_with(&typed, Deviations::NONE);
+    assert!(workbook.temperature.demag.calibration_offset_C < 0.0);
+    assert_same_results(
+        &workbook,
+        &results_with(&typed, Deviations::only(DeviationId::E21)),
+        "E21 alone",
+    );
+}
+
+#[test]
+fn e21_clamps_exactly_the_negative_offsets() {
+    // Every grade on both rings (manual dimensions), on both bases. A grade whose model
+    // reference onset C49 is at or above its rating C47 moves nothing; below it, the offset
+    // is 0 and the onsets are the uncalibrated model's (A-4 report section 2.2).
+    use magcoupling::engine::grades::GRADES;
+    use magcoupling::engine::temperature::demag_onset_C;
+    let e21 = DeviationId::E21;
+    let d = DesignInputs::default().temperature.demag;
+    for (basis, before, after) in a4_bases(e21) {
+        let mut clamped = Vec::new();
+        for g in &GRADES {
+            let rings = grade_rings(g.id, g.id);
+            let (b, a) = (demag_with(&rings, before), demag_with(&rings, after));
+            if b.calibration_offset_C >= 0.0 {
+                assert_same_results(
+                    &results_with(&rings, before),
+                    &results_with(&rings, after),
+                    &format!("{basis} {}", g.id),
+                );
+                continue;
+            }
+            clamped.push(g.id);
+            let model = demag_onset_C(
+                d.h_rev_likepole_kA_m,
+                g.hcj20_kA_m,
+                g.beta_hcj_per_C,
+                d.knee_fraction,
+                g.alpha_br_per_C,
+                0.0,
+            );
+            assert_eq!(a.calibration_offset_C, 0.0, "{basis} {}", g.id);
+            assert_eq!(a.onset_skipping_C, model, "{basis} {}", g.id);
+            assert_eq!(
+                a.magnet_limit_C,
+                model - d.design_margin_C,
+                "{basis} {}",
+                g.id
+            );
+            assert!(a.onset_skipping_C < b.onset_skipping_C, "{basis} {}", g.id);
+            // Both rings carry the grade: each ring's applied offset is the block's.
+            assert_eq!(
+                (a.inner_calibration_offset_C, a.outer_calibration_offset_C),
+                (0.0, 0.0),
+                "{basis} {}",
+                g.id
+            );
+        }
+        assert_eq!(
+            clamped,
+            [
+                "N52",
+                "N50",
+                "N50M",
+                "N38UH",
+                "N35EH",
+                "SmCo_2_17_26",
+                "SmCo_2_17_30"
+            ],
+            "{basis}"
+        );
+    }
+}
+
+#[test]
+fn e21_clamps_exactly_the_parts_rated_above_their_model_onset() {
+    // A-4 report section 2.2, the library parts on both rings: the N52 parts move on both
+    // bases; the SuperMagnetMan arcs (N50 and N50M, stored ratings 80 and 100 C) move on the
+    // registry basis only, since on the user basis E19's 60 C rating is below their model
+    // onset (offset +12.98 C). Every other part is bit for bit unchanged, and no governing
+    // limit rises.
+    use magcoupling::engine::library::MAGNET_LIBRARY;
+    for (basis, before, after) in a4_bases(DeviationId::E21) {
+        let mut clamped = Vec::new();
+        for spec in &MAGNET_LIBRARY {
+            let rings = both_rings(spec.part);
+            let what = format!("{basis} {}", spec.part);
+            let (b, a) = (results_with(&rings, before), results_with(&rings, after));
+            if b.temperature.demag.calibration_offset_C >= 0.0 {
+                assert_same_results(&b, &a, &what);
+                continue;
+            }
+            clamped.push(spec.part);
+            assert_eq!(a.temperature.demag.calibration_offset_C, 0.0, "{what}");
+            let limit = |r: &DesignResults| r.temperature.summary.governing_limit_C;
+            assert!(limit(&a) < limit(&b), "{what}");
+        }
+        clamped.sort_unstable();
+        let want: &[&str] = if basis == "registry" {
+            &["B842-N52", "B882-N52", "M5026", "M5044", "M5045"]
+        } else {
+            &["B842-N52", "B882-N52"]
+        };
+        assert_eq!(clamped, want, "{basis}");
+    }
+}
+
+/// A row of the A-4 report's table 2.3: (grade, C50 before, C60, C12 and C24 as [before,
+/// after], C25 on both sides).
+type ClampRow = (
+    &'static str,
+    f64,
+    [f64; 2],
+    [f64; 2],
+    [f64; 2],
+    &'static str,
+);
+
+#[test]
+fn e21_changes_the_report_s_cells_to_the_report_s_figures() {
+    // A-4 report section 2.3, the grade on both rings: the same figures on both bases.
+    let rows: [ClampRow; 7] = [
+        (
+            "N52",
+            -9.689,
+            [0.1679, -9.521],
+            [0.1679, -9.521],
+            [59.77, 50.09],
+            VERDICT_CHECK,
+        ),
+        (
+            "N50",
+            -6.138,
+            [-3.383, -9.521],
+            [-3.383, -9.521],
+            [56.22, 50.09],
+            VERDICT_CHECK,
+        ),
+        (
+            "N50M",
+            -7.535,
+            [41.90, 34.37],
+            [41.90, 34.37],
+            [76.80, 69.27],
+            VERDICT_CHECK,
+        ),
+        (
+            "N38UH",
+            -7.343,
+            [131.9, 124.6],
+            [120.0, 120.0],
+            [149.9, 142.6],
+            VERDICT_OK,
+        ),
+        (
+            "N35EH",
+            -3.574,
+            [155.4, 151.9],
+            [120.0, 120.0],
+            [169.3, 165.8],
+            VERDICT_OK,
+        ),
+        (
+            "SmCo_2_17_26",
+            -60.21,
+            [161.9, 101.7],
+            [120.0, 101.7],
+            [265.2, 205.0],
+            VERDICT_OK,
+        ),
+        (
+            "SmCo_2_17_30",
+            -0.4500,
+            [46.27, 45.82],
+            [46.27, 45.82],
+            [169.9, 169.4],
+            VERDICT_CHECK,
+        ),
+    ];
+    for (basis, before, after) in a4_bases(DeviationId::E21) {
+        for (grade, offset, limit, governing, cure, verdict) in rows {
+            let rings = grade_rings(grade, grade);
+            let (b, a) = (cells_with(&rings, before), cells_with(&rings, after));
+            let what = |cell: &str| format!("{basis} {grade} {cell}");
+            assert_sig4(&what("C50"), &b["Temperature design!C50"], offset);
+            assert_eq!(
+                a["Temperature design!C50"],
+                Value::Num(0.0),
+                "{basis} {grade}"
+            );
+            for (cell, [want_b, want_a]) in [
+                ("Temperature design!C60", limit),
+                ("Temperature design!C12", governing),
+                ("Temperature design!C24", cure),
+            ] {
+                assert_sig4(&what(cell), &b[cell], want_b);
+                assert_sig4(&what(cell), &a[cell], want_a);
+            }
+            for c in [&b, &a] {
+                assert_eq!(
+                    c["Temperature design!C25"],
+                    Value::Text(verdict.into()),
+                    "{basis} {grade}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn e21_typed_n42_coercivity_on_a_150_c_rating_reads_check() {
+    // A-4 report section 2.5, the source-0 check: N42's Hcj and beta typed into C44 and C45 on
+    // the default part (rated 150 C), with the coercivity source at 0. On the user basis the
+    // clamp also turns the verdict from OK to CHECK.
+    let typed = [
+        ("temperature.demag.hcj20_kA_m", Value::Num(954.9)),
+        ("temperature.demag.beta_hcj_per_C", Value::Num(-0.0062)),
+        ("temperature.demag.coercivity_source", Value::Int(0)),
+    ];
+    // (basis, C50 before, C12 before, C24 before, C25 before); after: 0, 9.164, 60.51, CHECK.
+    let want = [
+        ("registry", -56.55, 65.71, 117.1, VERDICT_CHECK),
+        ("user", -57.32, 66.48, 117.8, VERDICT_OK),
+    ];
+    for ((basis, before, after), (label, offset, governing, cure, verdict)) in
+        a4_bases(DeviationId::E21).into_iter().zip(want)
+    {
+        assert_eq!(basis, label);
+        let (b, a) = (cells_with(&typed, before), cells_with(&typed, after));
+        assert_sig4(basis, &b["Temperature design!C50"], offset);
+        assert_sig4(basis, &b["Temperature design!C12"], governing);
+        assert_sig4(basis, &b["Temperature design!C24"], cure);
+        assert_eq!(
+            b["Temperature design!C25"],
+            Value::Text(verdict.into()),
+            "{basis}"
+        );
+        assert_eq!(a["Temperature design!C50"], Value::Num(0.0), "{basis}");
+        assert_sig4(basis, &a["Temperature design!C12"], 9.164);
+        assert_sig4(basis, &a["Temperature design!C24"], 60.51);
+        assert_eq!(
+            a["Temperature design!C25"],
+            Value::Text(VERDICT_CHECK.into()),
+            "{basis}"
+        );
+    }
+}
+
+#[test]
+fn e21_binds_on_the_default_part_only_below_the_knee_threshold() {
+    // A-4 report section 2.3: the default part's offset turns negative below a knee fraction
+    // of 0.78349 (slider step 0.01): 0.79 moves nothing, 0.78 is the first clamped setting,
+    // and at 0.70 the clamp turns the default design's verdict from OK to CHECK (C12 74.81 ->
+    // 65.42 C, user basis).
+    let knee = |k: f64| [("temperature.demag.knee_fraction", Value::Num(k))];
+    let [_, (_, before, after)] = a4_bases(DeviationId::E21);
+    assert_same_results(
+        &results_with(&knee(0.79), before),
+        &results_with(&knee(0.79), after),
+        "knee 0.79",
+    );
+    let first = results_with(&knee(0.78), before).temperature.demag;
+    assert!(
+        first.calibration_offset_C < 0.0,
+        "{}",
+        first.calibration_offset_C
+    );
+    let (b, a) = (
+        cells_with(&knee(0.70), before),
+        cells_with(&knee(0.70), after),
+    );
+    assert_sig4("C12 before", &b["Temperature design!C12"], 74.81);
+    assert_sig4("C12 after", &a["Temperature design!C12"], 65.42);
+    assert_eq!(b["Temperature design!C25"], Value::Text(VERDICT_OK.into()));
+    assert_eq!(
+        a["Temperature design!C25"],
+        Value::Text(VERDICT_CHECK.into())
+    );
+}
+
+#[test]
+fn e21_reorders_the_rings_where_the_clamp_moves_a_limit_and_ties_stay_inner() {
+    // Probe 3's pair: B842 inside (N42, offset +12.68 C), B842-N52 outside (offset -9.689 C).
+    // Clamped, the N52 ring has the lower limit: the block shows the outer ring. Each ring's
+    // applied offset is a Rust-only result: the inner one is kept, the outer one is 0.
+    use magcoupling::engine::temperature::{RING_INNER, RING_OUTER};
+    let rings = part_rings("B842", "B842-N52");
+    for (basis, before, after) in a4_bases(DeviationId::E21) {
+        let (b, a) = (demag_with(&rings, before), demag_with(&rings, after));
+        assert_eq!(
+            (b.demag_ring.as_str(), a.demag_ring.as_str()),
+            (RING_INNER, RING_OUTER),
+            "{basis}"
+        );
+        assert_eq!(a.inner_calibration_offset_C, b.inner_calibration_offset_C);
+        assert_sig4(basis, &Value::Num(b.outer_calibration_offset_C), -9.689);
+        assert_eq!(a.outer_calibration_offset_C, 0.0, "{basis}");
+    }
+    // N52 beside N50 is the one exact tie after the clamp (the A-4 report's "Ties"): both
+    // skipping onsets are 0.4787157208430415 C, and the tie resolves to the inner ring.
+    let tie = demag_with(&grade_rings("N52", "N50"), Deviations::ALL);
+    assert_eq!(tie.onset_skipping_C, 0.4787157208430415);
+    assert_eq!(tie.inner_magnet_limit_C, tie.outer_magnet_limit_C);
+    assert_eq!(tie.demag_ring, RING_INNER);
+}
+
+#[test]
+fn e21_moves_only_pairs_with_a_negative_offset_and_never_raises_a_limit() {
+    // A-4 report sections 2.3 and 2.6, every ordered pair of different grades and of
+    // different library parts (482 per basis): a pair in which neither ring's offset is
+    // negative is bit for bit unchanged, Rust-only rows included; in every other pair the
+    // clamp never raises the skipping onset C58, the magnet limit C60, the governing limit
+    // C12 or the hot-day margin C15.
+    for (basis, before, after) in a4_bases(DeviationId::E21) {
+        let (mut moved, mut flips, mut verdicts) = (0, 0, 0);
+        for (label, rings) in grade_pairs().into_iter().chain(part_pairs()) {
+            let what = format!("{basis} {label}");
+            let (b, a) = (results_with(&rings, before), results_with(&rings, after));
+            let (db, da) = (&b.temperature.demag, &a.temperature.demag);
+            if db.inner_calibration_offset_C >= 0.0 && db.outer_calibration_offset_C >= 0.0 {
+                assert_same_results(&b, &a, &what);
+                continue;
+            }
+            let (sb, sa) = (&b.temperature.summary, &a.temperature.summary);
+            assert!(da.onset_skipping_C <= db.onset_skipping_C, "{what}: C58");
+            assert!(da.magnet_limit_C <= db.magnet_limit_C, "{what}: C60");
+            assert!(sa.governing_limit_C <= sb.governing_limit_C, "{what}: C12");
+            assert!(sa.margin_hot_day_C <= sb.margin_hot_day_C, "{what}: C15");
+            moved += usize::from(!moved_cells(&b, &a).is_empty());
+            flips += usize::from(db.demag_ring != da.demag_ring);
+            verdicts += usize::from(sb.verdict != sa.verdict);
+        }
+        // (pairs with a moved cell, governing-ring flips, verdict changes): the report's table.
+        let want = match basis {
+            "registry" => (214, 71, 0),
+            _ => (150, 39, 0),
+        };
+        assert_eq!((moved, flips, verdicts), want, "{basis}");
+    }
 }
 
 #[test]

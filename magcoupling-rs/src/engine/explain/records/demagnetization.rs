@@ -11,7 +11,7 @@
 //!
 //! Symbols: ϑ temperature, H field [kA/m], β the Hcj coefficient, α the Br coefficient.
 
-use crate::engine::deviations::DeviationId::{E19, E20};
+use crate::engine::deviations::DeviationId::{E19, E20, E21};
 use crate::engine::explain::record::{Record, record};
 
 /// The plain records.
@@ -54,51 +54,49 @@ pub const RECORDS: &[Record] = &[
         r#"cases({temperature.demag.coercivity_source} = 1 and [β_{grade}] != none => [β_{grade}];
                else => {temperature.demag.beta_hcj_per_C})
            where [β_{grade}] = table("grades", {model.outer_grade}, "beta_hcj_per_C")"#).corrected(&[E20]),
-    // A ring's magnet limit: its skipping onset minus the margin, the onset calibrated so the
-    // reference magnet (permeance coefficient 1) reaches the knee at the rating; with a positive
-    // beta (hard ferrite) the knee is never reached on heating and the rating is the limit.
+    // A ring's calibration offset: the model's onset for the reference magnet (permeance
+    // coefficient 1) minus the ring's rating, so the reference magnet reaches its knee at the
+    // rating; E21 holds it at 0 or more, so a rating never raises the onsets. 0 with a positive
+    // beta (hard ferrite: the rating is not a knee rating) or without a rating.
+    record("temperature.demag.inner_calibration_offset_C", "Δϑ_{cal,i}",
+        r#"cases({temperature.demag.inner_beta_per_C} > 0 or {model.inner_tmax_C} = "n/a" => 0;
+               else => max(20 + frac([H_k] - [H_{ref,i}], [H_k] · abs({temperature.demag.inner_beta_per_C}) - [H_{ref,i}] · abs({model.inner_alpha_br_per_C}))
+                           - {model.inner_tmax_C}, 0))
+           where [H_k] = {temperature.demag.knee_fraction} * {temperature.demag.inner_hcj20_kA_m},
+                 [H_{ref,i}] = frac({model.inner_br_T}, 2 * {coupling.mu0}) / 1000"#).corrected(&[E20, E21]),
+    record("temperature.demag.outer_calibration_offset_C", "Δϑ_{cal,o}",
+        r#"cases({temperature.demag.outer_beta_per_C} > 0 or {model.outer_tmax_C} = "n/a" => 0;
+               else => max(20 + frac([H_k] - [H_{ref,o}], [H_k] · abs({temperature.demag.outer_beta_per_C}) - [H_{ref,o}] · abs({model.outer_alpha_br_per_C}))
+                           - {model.outer_tmax_C}, 0))
+           where [H_k] = {temperature.demag.knee_fraction} * {temperature.demag.outer_hcj20_kA_m},
+                 [H_{ref,o}] = frac({model.outer_br_T}, 2 * {coupling.mu0}) / 1000"#).corrected(&[E20, E21]),
+    // A ring's magnet limit: its skipping onset, calibrated by the ring's offset, minus the
+    // margin; with a positive beta (hard ferrite) the knee is never reached on heating and the
+    // rating is the limit.
     record("temperature.demag.inner_magnet_limit_C", "ϑ_{lim,i}",
         r#"cases({temperature.demag.inner_beta_per_C} > 0
                    => cases({model.inner_tmax_C} != "n/a" => {model.inner_tmax_C}; else => inf);
                else => 20 + frac([H_k] - {temperature.demag.h_rev_likepole_kA_m},
                                  [H_k] · abs({temperature.demag.inner_beta_per_C}) - {temperature.demag.h_rev_likepole_kA_m} · abs({model.inner_alpha_br_per_C}))
-                       - [Δϑ_{cal,i}] - {temperature.demag.design_margin_C})
-           where [H_k] = {temperature.demag.knee_fraction} * {temperature.demag.inner_hcj20_kA_m},
-                 [H_{ref,i}] = frac({model.inner_br_T}, 2 * {coupling.mu0}) / 1000,
-                 [Δϑ_{cal,i}] = cases({model.inner_tmax_C} != "n/a"
-                     => 20 + frac([H_k] - [H_{ref,i}], [H_k] · abs({temperature.demag.inner_beta_per_C}) - [H_{ref,i}] · abs({model.inner_alpha_br_per_C}))
-                        - {model.inner_tmax_C};
-                     else => 0)"#).corrected(&[E20]),
+                       - {temperature.demag.inner_calibration_offset_C} - {temperature.demag.design_margin_C})
+           where [H_k] = {temperature.demag.knee_fraction} * {temperature.demag.inner_hcj20_kA_m}"#).corrected(&[E20]),
     // BL-064 (owner R-15 ring): the inner ring's own single-ring onset, whichever ring governs
-    // (temperature::ring_demag's fourth onset of the inner block). The inner magnet limit's
+    // (temperature::ring_demag's fourth onset of the inner block): the inner magnet limit's
     // record with the single-ring field in place of the skipping field, no design margin, and
-    // +inf (not the rating) for a positive beta; its `where` terms repeat that record's. The
-    // BL-064 spec (section 4.5) keeps the copy: the drift guard (tests/explain.rs,
-    // every_record_reproduces_the_engine_everywhere) holds both records to the engine, and a
-    // per-ring calibration-offset result would let them share the terms.
+    // +inf (not the rating) for a positive beta. Both read the ring's offset result (plan A-4).
     record("temperature.demag.inner_onset_single_ring_C", "ϑ_{sr,i}",
         r#"cases({temperature.demag.inner_beta_per_C} > 0 => inf;
                else => 20 + frac([H_k] - {temperature.demag.h_rev_single_ring_kA_m},
                                  [H_k] · abs({temperature.demag.inner_beta_per_C}) - {temperature.demag.h_rev_single_ring_kA_m} · abs({model.inner_alpha_br_per_C}))
-                       - [Δϑ_{cal,i}])
-           where [H_k] = {temperature.demag.knee_fraction} * {temperature.demag.inner_hcj20_kA_m},
-                 [H_{ref,i}] = frac({model.inner_br_T}, 2 * {coupling.mu0}) / 1000,
-                 [Δϑ_{cal,i}] = cases({model.inner_tmax_C} != "n/a"
-                     => 20 + frac([H_k] - [H_{ref,i}], [H_k] · abs({temperature.demag.inner_beta_per_C}) - [H_{ref,i}] · abs({model.inner_alpha_br_per_C}))
-                        - {model.inner_tmax_C};
-                     else => 0)"#).corrected(&[E20]),
+                       - {temperature.demag.inner_calibration_offset_C})
+           where [H_k] = {temperature.demag.knee_fraction} * {temperature.demag.inner_hcj20_kA_m}"#).corrected(&[E20]),
     record("temperature.demag.outer_magnet_limit_C", "ϑ_{lim,o}",
         r#"cases({temperature.demag.outer_beta_per_C} > 0
                    => cases({model.outer_tmax_C} != "n/a" => {model.outer_tmax_C}; else => inf);
                else => 20 + frac([H_k] - {temperature.demag.h_rev_likepole_kA_m},
                                  [H_k] · abs({temperature.demag.outer_beta_per_C}) - {temperature.demag.h_rev_likepole_kA_m} · abs({model.outer_alpha_br_per_C}))
-                       - [Δϑ_{cal,o}] - {temperature.demag.design_margin_C})
-           where [H_k] = {temperature.demag.knee_fraction} * {temperature.demag.outer_hcj20_kA_m},
-                 [H_{ref,o}] = frac({model.outer_br_T}, 2 * {coupling.mu0}) / 1000,
-                 [Δϑ_{cal,o}] = cases({model.outer_tmax_C} != "n/a"
-                     => 20 + frac([H_k] - [H_{ref,o}], [H_k] · abs({temperature.demag.outer_beta_per_C}) - [H_{ref,o}] · abs({model.outer_alpha_br_per_C}))
-                        - {model.outer_tmax_C};
-                     else => 0)"#).corrected(&[E20]),
+                       - {temperature.demag.outer_calibration_offset_C} - {temperature.demag.design_margin_C})
+           where [H_k] = {temperature.demag.knee_fraction} * {temperature.demag.outer_hcj20_kA_m}"#).corrected(&[E20]),
     // temperature::cold_onset_C: with beta > 0 the knee falls as the magnet cools; the ring's
     // cold limit is its skipping cold onset plus the margin.
     record("temperature.demag.inner_cold_limit_C", "ϑ_{cold,i}",
@@ -142,8 +140,8 @@ pub const RECORDS: &[Record] = &[
          where [H_k] = {temperature.demag.knee_fraction} * {temperature.demag.hcj20_used_kA_m}").corrected(&[E20]),
     record("temperature.demag.calibration_offset_C", "Δϑ_{cal}",
         r#"cases({temperature.demag.beta_used_per_C} > 0 => 0;
-               {temperature.demag.tmax_lib_C} != "n/a" => {temperature.demag.t_ref_model_C} - {temperature.demag.tmax_lib_C};
-               else => 0)"#).corrected(&[E20]),
+               {temperature.demag.tmax_lib_C} != "n/a" => max({temperature.demag.t_ref_model_C} - {temperature.demag.tmax_lib_C}, 0);
+               else => 0)"#).corrected(&[E20, E21]),
     record("temperature.demag.onset_aligned_C", "ϑ_{al}",
         "cases({temperature.demag.beta_used_per_C} > 0 => inf;
                else => 20 + frac([H_k] - {temperature.demag.h_rev_aligned_kA_m},
