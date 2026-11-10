@@ -1,0 +1,7 @@
+{
+  "fixed": {},
+  "held": {
+    "INF-17": "the commented-out ignore rules also record that the golden fixtures and output GIFs are tracked on purpose; deleting them is a wording choice, not a defect.",
+    "LCS-12": "the stale `#[allow(dead_code)]` is removed (see the fixed list); `State::set_angle` and `JointConstraint::is_cam_follower` have no caller anywhere, but each is one member of a public family (`get_angle`, `is_revolute`, `is_prismatic`, `is_fixed`), so deleting them is your call. `rtol`/`atol` and the local-frame reactions are used only by tests."
+  }
+}

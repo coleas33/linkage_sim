@@ -1,0 +1,4 @@
+[
+  {"file": "linkage-sim-rs/src/gui/state/mod.rs", "old": "    /// Solve the position problem for the given driver angle (radians).\n    ///\n    /// Recompute `driver_display_offset` from the current mechanism.\n", "new": "    /// Recompute `driver_display_offset` from the current mechanism.\n", "count": 1},
+  {"file": "linkage-sim-rs/src/gui/state/mod.rs", "old": "    /// Uses `last_good_q` as the initial guess for Newton-Raphson.\n    /// On success, updates both `q` and `last_good_q`.\n", "new": "    /// Solve the position problem for the given driver angle (radians).\n    ///\n    /// Uses `last_good_q` as the initial guess for Newton-Raphson.\n    /// On success, updates both `q` and `last_good_q`.\n", "count": 1}
+]

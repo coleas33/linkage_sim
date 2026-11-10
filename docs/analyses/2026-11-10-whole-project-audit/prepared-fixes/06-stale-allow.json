@@ -1,0 +1,3 @@
+[
+  {"file": "linkage-sim-rs/src/core/constraint/prismatic.rs", "old": "    point_j_local: Vector2<f64>,\n    #[allow(dead_code)]\n    axis_local_i: Vector2<f64>,\n", "new": "    point_j_local: Vector2<f64>,\n    axis_local_i: Vector2<f64>,\n", "count": 1}
+]

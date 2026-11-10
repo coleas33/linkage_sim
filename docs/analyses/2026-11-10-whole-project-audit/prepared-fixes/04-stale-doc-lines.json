@@ -1,0 +1,7 @@
+[
+  {"file": "docs/FEATURES.md", "old": "- **Required power curve** -- P = F x v at each crank angle. Shows peak power for motor/pump sizing. Critical for selecting electric motors or hydraulic power units.\n", "new": "", "count": 1},
+  {"file": "docs/FEATURES.md", "old": "- **Actuator speed plot** -- dL/dt (extension/retraction rate) at each angle. Actuators have speed limits that must not be exceeded. Already computed internally, just needs display.\n", "new": "", "count": 1},
+  {"file": "docs/architecture/VALIDATION.md", "old": "python -m pytest tests/ -k benchmark --benchmark-report\n", "new": "python -m pytest tests/ -k benchmark\n", "count": 1},
+  {"file": "README.md", "old": "File map of all 107 Rust source files", "new": "File map of the Rust source files", "count": 1},
+  {"file": "docs/ai/03-structure.yaml", "old": "add SampleMechanism variant + all() + name/description/category", "new": "add SampleMechanism variant + all() + label/description/category", "count": 1}
+]

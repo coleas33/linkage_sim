@@ -1,0 +1,4 @@
+[
+  {"file": "linkage-sim-rs/src/gui/input_panel.rs", "old": "        let current_omega = state.driver_omega();\n        let current_theta_0 = state.driver_theta_0();\n", "new": "        let current_omega = state.driver_omega();\n", "count": 1},
+  {"file": "linkage-sim-rs/src/gui/input_panel.rs", "old": "            }\n            let _ = current_theta_0;\n        });\n", "new": "            }\n        });\n", "count": 1}
+]
