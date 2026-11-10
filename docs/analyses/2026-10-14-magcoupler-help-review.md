@@ -2911,6 +2911,13 @@ section 6 of the second is "Tests") and section 6 of the BL-059 spec
 
 - No must-fix, and no text changed in this round. SF-1, SF-2 and SF-3 stay open for the controller.
 
+**Fold-in (2026-11-10, the controller's review of 1065264).** SF-2 and SF-3 are taken. The first test also asserts
+"Hot-low torque 0.9300 N·m is below the required 0.9400 N·m:" on the same design at a requirement of 0.94 N·m, and
+`hot_min_problem` calls `apart_from(results, "metal.torque_hot_low_Nm", required, false)` in place of a copy of its
+branch. The 121 `gui::guidance` tests pass, and the text drawn is the one reviewed above. SF-1 is the owner's choice
+and stays at option A (no change) until the owner rules. The README's "or not a number" is dropped, and the tracker
+entry and BL-068's note now name this record.
+
 ## BL-064 shaft joints
 
 BL-064's G-3 review of every new on-screen text (plan Task 8) is recorded first in this section, with each round's

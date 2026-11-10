@@ -2154,15 +2154,14 @@ fn joined_or(sentences: Vec<String>, fallback: &str) -> String {
 
 fn hot_min_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<String> {
     failing(HOT_MIN, inputs, results).then(|| {
-        let hot_low = results.metal.torque_hot_low_Nm;
-        let required = inputs.metal.required_min_Nm;
         // Where both read the same at four significant digits, hot-low is quoted rounded down at
         // its last shown digit, one digit below the requirement as that is quoted (BL-068).
-        let hot_low_text = if quoted_value(hot_low) < quoted_value(required) {
-            result_text(results, "metal.torque_hot_low_Nm")
-        } else {
-            number_text(quoted_limit(hot_low, required), "metal.torque_hot_low_Nm")
-        };
+        let hot_low_text = apart_from(
+            results,
+            "metal.torque_hot_low_Nm",
+            inputs.metal.required_min_Nm,
+            false,
+        );
         format!(
             "Hot-low torque {hot_low_text} is below the required {}: the pull-out of {} at {}, less the {} variation allowance.",
             input_text(inputs, "metal.required_min_Nm"),
@@ -6782,7 +6781,16 @@ mod tests {
             text.starts_with("Hot-low torque 0.9299 N·m is below the required 0.9300 N·m:"),
             "{text}"
         );
-        // Where the two read apart, hot-low reads as its readout: the defaults are unchanged.
+        // Where the two read apart, hot-low reads as its readout, not rounded down: the same
+        // design one requirement step up reads 0.9300, where rounding down would give 0.9299.
+        assert!(slider_values("metal.required_min_Nm").contains(&0.94));
+        let apart = with_number(&close, "metal.required_min_Nm", 0.94).unwrap();
+        let text = problem(HOT_MIN, &apart).unwrap();
+        assert!(
+            text.starts_with("Hot-low torque 0.9300 N·m is below the required 0.9400 N·m:"),
+            "{text}"
+        );
+        // The defaults are unchanged.
         let text = problem(HOT_MIN, &DesignInputs::default()).unwrap();
         assert!(
             text.starts_with("Hot-low torque 2.285 N·m is below the required 2.500 N·m:"),
