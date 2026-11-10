@@ -5,6 +5,14 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-09 — The hot-minimum Problem never reads two equal numbers on the sliders (BL-068, branch magcoupling/off-default-fixes)
+- Why: where hot-low torque was below the requirement by less than half a last digit, the Problem quoted both at four significant digits and read alike ("Hot-low torque 0.9300 N·m is below the required 0.9300 N·m": an axial magnet length of 4.74 mm, a face gap of 0.5 mm and a required torque of 0.93 N·m, each on its slider).
+- Fix: `guidance::hot_min_problem` quotes hot-low through `quoted_limit` (rounded down at its last shown digit, one digit lower where that still reads equal) when the two would read the same: 0.9299 against 0.9300 N·m. Every other design reads as before (the defaults: 2.285 against 2.500 N·m); a hot-low that is not positive or not finite is quoted as it is. The mirror of the gearbox Problem fix (6cbc852).
+- Tests (red before the fix): `the_hot_minimum_problem_never_reads_two_equal_numbers` and `on_the_sliders_the_hot_minimum_problem_quotes_hot_low_below_the_requirement`. README: the Check guides paragraph and the guidance.rs test row. BL-068 is fixed; its changed sentence still needs the G-3 text re-review.
+- Audit (read-only): the clearance and cup wall Problems read two equal numbers on no slider-step design probed; no text changed.
+
+---
+
 ## 2026-11-04 — Magcoupler corrections E21 and E24: the rating never raises an onset, and the cure margin reads the lower ring (BL-057, BL-072, branch magcoupling/bl057-bl072-e21-e24)
 - Why: the owner approved the Addendum A-4 corrections on 2026-10-01 (docs/analyses/2026-10-01-magcoupling-addendum-a4-verification.md, section 5, option A on all 10 decisions); E21 and E24 had not landed. Plan: docs/superpowers/plans/2026-10-01-magcoupling-addendum-a4-corrections.md, Tasks 1 and 5, re-anchored to today's code.
 - E21 (BL-057): `temperature::ring_demag` holds each ring's rating-calibration offset at `py_max(offset, 0)` on E20 and E21, before E20 picks the governing ring. Registry entry E21 (`Approval::AddendumA4`, decisions 1 and 3; 33 cells; 4 probes at full precision); `A4_REPORT`; `decision_list`. Rust-only `temperature.demag.inner_calibration_offset_C` and `outer_calibration_offset_C`, which the per-ring magnet limit and single-ring onset records now read (the BL-064 copy of the offset terms is gone). C50's and C101's help reworded in plain words (no "clamp" on screen). The default design (offset +9.92 C) and every grade or part with an offset of 0 or more are bit for bit on every result row; the moved designs are the seven grades (N52, N50, N50M, N38UH, N35EH, Recoma 26, Recoma 30), the N52 parts on both bases and the SuperMagnetMan arcs on the registry basis only.

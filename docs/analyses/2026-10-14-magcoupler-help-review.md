@@ -2719,6 +2719,198 @@ No other doc in `docs/ai` or the README quotes the bracket.
 - **Historical quotes of the old forms in the help-review record.** These are :2162 and :2211 (the earlier rounds' as-returned reports) and :2517 (round 1's probe table, which marks the row as M-1). They record what was on screen at the time. No change.
 - **Commit 80d4d60's type.** It is typed `docs(magcoupler)` but carries the on-screen fix and a new test. It is history, so it needs no change.
 
+### Re-review after BL-068 (2026-11-09)
+
+BL-068 (`docs/ai/backlog.yaml`; filed at the owner's decision 2A of 2026-10-17 from SF-1 of this section's re-review
+after the whole-branch review's fix wave 1) changed the hot-minimum Problem (`hot_min_problem`, `gui/guidance.rs`).
+Where hot-low torque and the required minimum would read the same to 4 significant digits while the check fails,
+hot-low is now quoted rounded down at its last shown digit (`quoted_limit`, the mirror of `quoted_load`), so on the
+sliders a failing check never reads two equal numbers: "Hot-low torque 0.9299 N·m is below the required 0.9300 N·m",
+where it read "0.9300 ... 0.9300". Everywhere else it reads as before, the template is unchanged, and a hot-low at or
+below zero, or not finite, is quoted as it is.
+The changed sentence had its G-3 re-review in a fresh context on the uncommitted change in the worktree (branch
+`magcoupling/off-default-fixes`, base 1048962). The record stands in this section because BL-068 came from this
+section's SF-1 and the fix uses the helper reviewed here (`quoted_limit`, review I-2). The reviewer's report for the
+record follows.
+
+- Reviewer: fresh context, session model, 2026-11-09; G-3 re-review of the hot-minimum Problem as changed by BL-068
+  (round 1).
+- Verdict: PASS, no must-fix. The sentence is true at the defaults, at the slider design that read "0.9300 ... 0.9300"
+  (now "0.9299 ... 0.9300"), at every failing design of the slider sweeps (825 of them in the window that read two
+  equal numbers before), at every design Auto shows and at the rounding edges reached on real designs. It breaks none
+  of the physics traps (section 8 of the two guidance specs, section 6 of the BL-059 spec), it passes the plain-words
+  guard, and it says neither "clamp" nor that the coupling protects the gearbox.
+- Should-fix offered, none of them for the text as drawn on the sliders:
+  - SF-1 (a decade edge that only a file's values reach; the owner's choice): with hot-low within about 1e-13
+    (relative) below a requirement that sits on a power of ten (0.1000, 1.000 or 10.00 N·m), or with a file's
+    requirement a hair above a power of ten and hot-low between the two, the quoted hot-low steps down by the upper
+    decade's last digit. A hot-low of 0.9999999999999987 N·m (axial length 5.000687721091 mm) reads "Hot-low torque
+    0.9990 N·m is below the required 1.000 N·m", and 9.999999999999 N·m reads "9.990 ... 10.00". That is ten of the
+    quote's own last digits and 0.1 % under the true value: true in its direction and on the cautious side, but more
+    than the README's "rounded down at its last shown digit". No slider-step design in the sweeps reaches it. It is
+    `quoted_limit`'s behaviour, which gearbox sentence 2 shares and
+    `sentence_2_rounds_its_limits_toward_passing_and_past_what_they_limit` pins (1.00001 against 1.00004 gives
+    "0.9990"). Three ways to settle it:
+    - A (recommended): leave the text and the README as they are, with this record. It takes a file's value inside a
+      window of 1e-13, the reading is on the cautious side, and any change to the helper changes gearbox sentence 2,
+      which has passed its own reviews.
+    - B: make `quoted_limit` step by the last digit of the decade below ("0.9999 ... 1.000", "9.999 ... 10.00"). It
+      reads best, but it changes the pinned "0.9990" of gearbox sentence 2 and needs its own text round.
+    - C: one README clause after "(0.9299 against 0.9300 N·m)": "with a file's values at a power of ten it can step
+      by one digit of the requirement's reading (0.9990 against 1.000 N·m)".
+  - SF-2 (a test gap, for the code side): no test pins "where the two read apart, hot-low reads as its readout" on a
+    design that can tell. On a scratch copy of the crate, with hot-low always sent through `quoted_limit` (rounded down
+    even where the two read apart), all 744 `gui::` unit tests pass, though the design of the new test with the
+    requirement at 0.94 N·m then reads "Hot-low torque 0.9299 N·m is below the required 0.9400 N·m" (it draws "0.9300
+    ... 0.9400", its readout). The test's own check of that rule uses the defaults, where rounding down and rounding
+    to the nearest both give 2.285. Offered, and seen failing under that change and passing on the real code: in
+    `the_hot_minimum_problem_never_reads_two_equal_numbers`, the same design with the requirement at 0.94 (a slider
+    step) asserts `text.starts_with("Hot-low torque 0.9300 N·m is below the required 0.9400 N·m:")`.
+  - SF-3 (repetition, for the code side): the new branch in `hot_min_problem` is what `apart_from` (`gui/guidance.rs`,
+    BL-059 MF-1, used by the shaft-joint Problems and gearbox sentence 1) already does. `let hot_low_text =
+    apart_from(results, "metal.torque_hot_low_Nm", required, false);` draws the same texts (on the scratch copy all
+    `gui::` unit tests pass with it, the two new ones and SF-2's assertion among them).
+- For the step that commits: the tracker entry of 2026-11-09 and BL-068's note both say the changed sentence "still
+  needs" its G-3 text re-review. This record is that review; the reviewer may edit only this document, so those two
+  lines are left for that step.
+
+**Report for the record (as returned).**
+
+#### The changed text, as drawn (probe output on the worktree's change)
+
+Every design in this table sits on slider steps. "..." stands for the unchanged words of the sentence.
+
+| Design | hot-low (unrounded) | Hot-low readout | Problem | Size tab |
+|---|---|---|---|---|
+| defaults | 2.285204851 | 2.285 N·m | "Hot-low torque 2.285 N·m is below the required 2.500 N·m: the pull-out of 2.688 N·m at 50.00 °C, less the 15 % variation allowance." (unchanged) | short 0.21 N·m (-8.6 %) |
+| P1: axial length 4.74 mm, face gap 0.50 mm, required 0.93 N·m | 0.929955519 | 0.9300 N·m | "Hot-low torque 0.9299 N·m is below the required 0.9300 N·m: the pull-out of 1.094 N·m at 50.00 °C, less the 15 % variation allowance." (was "0.9300 ... 0.9300") | short 0.00 N·m (-0.0 %) |
+| P1 with required 0.94 N·m | 0.929955519 | 0.9300 N·m | "Hot-low torque 0.9300 N·m is below the required 0.9400 N·m: ..." (unchanged: the two read apart) | short 0.01 N·m (-1.1 %) |
+| P1 with required 0.92 N·m | 0.929955519 | 0.9300 N·m | none: the check passes ("Estimate covers hot min") | margin +0.01 N·m (+1.1 %) |
+| axial length 2.2 mm, face gap 1.5 mm, required 0.17 N·m | 0.169956557 | 0.1700 N·m | "Hot-low torque 0.1699 N·m is below the required 0.1700 N·m: the pull-out of 0.1999 N·m at 50.00 °C, ..." | short 0.00 N·m (-0.0 %) |
+| face gap 0.31 mm, axial length 15 mm, required 3.92 N·m | 3.919559929 | 3.920 N·m | "Hot-low torque 3.919 N·m is below the required 3.920 N·m: the pull-out of 4.611 N·m at 50.00 °C, ..." | short 0.0004 N·m (-0.0 %) |
+| `coupling.inner_back_apothem_mm` 9.14 mm, face gap 0.8 mm, required 2.54 N·m | 2.539628735 | 2.540 N·m | "Hot-low torque 2.539 N·m is below the required 2.540 N·m: the pull-out of 2.988 N·m at 50.00 °C, ..." | short 0.0004 N·m (-0.0 %) |
+| variation 10.5 %, axial length 20 mm, required 3.95 N·m | 3.949881349 | 3.950 N·m | "Hot-low torque 3.949 N·m is below the required 3.950 N·m: the pull-out of 4.413 N·m at 50.00 °C, less the 10.5 % variation allowance." | short 0.0001 N·m (-0.0 %) |
+| operating temperature -37.5 °C, axial length 9.5 mm, required 2.02 N·m | 2.019841571 | 2.020 N·m | "Hot-low torque 2.019 N·m is below the required 2.020 N·m: the pull-out of 2.376 N·m at -37.50 °C, less the 15 % variation allowance." | short 0.0002 N·m (-0.0 %) |
+| 20 poles (`coupling.npole`), axial length 20 mm, required 3.47 N·m | 3.469598410 | 3.470 N·m | "Hot-low torque 3.469 N·m is below the required 3.470 N·m: the pull-out of 4.082 N·m at 50.00 °C, ..." | short 0.0004 N·m (-0.0 %) |
+| axial length 45.05 mm, face gap 1.0 mm, required 10 N·m (the one slider design found across a decade) | 9.999958748 | 10.00 N·m | "Hot-low torque 9.999 N·m is below the required 10.00 N·m: the pull-out of 11.76 N·m at 50.00 °C, ..." | short 0.00 N·m (-0.0 %) |
+
+On every failing row the Hot-low row and the check's row carry the red badge, and the check's row reads "Below hot
+minimum".
+
+#### Sweeps
+
+A scratch crate on the public API (`compute_all`, `CHECK_GUIDES`, `check_level`, `dashboard_lines`,
+`greyed_by_end_effect`, `plain_text_violations`, `torque_gap_text`) checked each design for all of these:
+- the Problem shows exactly under a red badge, and the badge is red exactly where hot-low is below the requirement (the engine's strict rule), the greyed rows apart;
+- the requirement is quoted as its own readout;
+- the words after the two numbers are the old template's, character for character;
+- where the two readouts differ, the whole text is the old one, with hot-low as its readout;
+- where the two readouts are equal (the window), the quoted hot-low is never above the true value, is within one last digit of it, and reads below the requirement;
+- hot-low equals the pull-out times (1 - variation) (largest relative difference: 0);
+- the Size tab says "short";
+- `plain_text_violations` is empty; no "clamp", "protect", "gearbox", "guarantee" or "hot-day"; only ASCII, "·" and "°".
+
+The main sweep covered the axial length at every slider step (4881, 2 to 50.8 mm) × face gap 0.5, 1.0, 1.5 and 2.0 mm (19,524 geometries, each with hot-low above 0 and not greyed) × every requirement step (991, 0.10 to 10.00 N·m): 19,348,284 designs.
+- Failing: 9,271,394. In the window: 825, the count the 2026-10-17 SF-1 gave.
+- The 169,192 designs with the requirement within 1 % of hot-low were each worked out in full by `compute_all` (84,186 fail). The other 19,179,092 used the geometry's results with the verdict the engine's rule gives for the requirement, since hot-low does not depend on it (9,187,208 fail, none in the window).
+- In the window the quoted hot-low is 0.5000 to 0.9999 of its last digit below the true value. The least is axial length 30.53 mm, gap 0.5 mm, required 7.86 N·m (7.859500010, "7.859 ... 7.860"); the most is axial length 20.1 mm, gap 2.0 mm, required 3.11 N·m (3.109999879, "3.109 ... 3.110").
+- In 824 of the 825 the quote is exactly one last digit below the requirement as read. The other is the last row of the table: across a decade the quote's last digit (0.001) is a tenth of the requirement's (0.01), so "9.999 ... 10.00" is as close as four digits allow.
+- By the requirement's reading, the 825 are 816 with three decimals, 8 with four (requirements below 1 N·m) and 1 with two (10.00).
+- Outside the window every failing text is the old one. No rule above is broken anywhere.
+
+Other inputs, each at every slider step, with every requirement step within 1 % of hot-low worked out in full:
+
+| Swept | Geometries | Designs | Failing | In the window | Rules broken |
+|---|---|---|---|---|---|
+| face gap (0.30 to 5.00 mm) × axial lengths 4, 6, 9.5, 15, 25 and 40 mm | 2826 | 12,207 | 6074 | 88 | 0 |
+| `coupling.inner_back_apothem_mm` × face gaps 1.4 and 0.8 mm | 4202 | 21,760 | 10,845 | 206 | 0 |
+| `metal.variation` × axial lengths 9.5, 4.74 and 20 mm | 303 | 1093 | 543 | 9 | 0 |
+| `coupling.op_temp_C` × the same lengths | 1143 | 4611 | 2312 | 43 | 0 |
+| `coupling.npole`, every integer from 4 to 40, × the same lengths | 111 | 324 | 159 | 5 | 0 |
+
+In each of these the window quote is exactly one last digit below the requirement and 0.50 to 1.00 of a last digit
+below the true value.
+
+#### Auto
+
+`engine::sizing::solve` at every requirement step, for each free variable, at face gaps 0.5 and 1.4 mm; the design
+checked is the one the panel shows (`gui::sizing::sized`).
+
+| Free variable | Solved (gap 0.5 / 1.4) | Not reachable, best value shown (gap 0.5 / 1.4) |
+|---|---|---|
+| axial length | 991 / 984 | 0 / 7 |
+| magnets per ring | 297 / 219 | 694 / 772 |
+| ring radius | 338 / 250 | 653 / 741 |
+
+- Every solved design passes the check and shows no Problem. The smallest margin is 1.2e-14 (relative): Auto's own rule is "at or above" (`Sample::meets`), so a solve never lands in the window.
+- Where the requirement is not reachable, the best value shows a Problem whose two numbers read apart (none in the window), so its text is the old one.
+- No rule is broken on any of the 5946 designs.
+
+#### Rounding edges and edge pairs
+
+On real designs (the requirement on its slider, face gap 0.5 mm, the axial length bisected to put hot-low where wanted, so a file's value):
+- Required 0.93, 2.5 and 9.99 N·m, with hot-low from one float step to 0.49 of a last digit under: "0.9299 ... 0.9300", "2.499 ... 2.500", "9.989 ... 9.990".
+- The same requirements with hot-low 0.51 and 1.2 last digits under: the readout already reads apart, and the text is the old one.
+- Required 1.0 N·m: hot-low 1e-13 and 1e-9 (relative) under reads "0.9999 ... 1.000"; one float step under reads "0.9990 ... 1.000" (SF-1).
+- Required 10 N·m: hot-low 1e-9 under reads "9.999 ... 10.00"; one float step and 1e-13 under read "9.990 ... 10.00" (SF-1).
+
+Pairs set by hand (the text function alone, hot-low against the requirement):
+- Decades: 0.99996 against 1.0 gives "0.9999 ... 1.000"; 9.99996 against 10 gives "9.999 ... 10.00"; 0.099996 against 0.1 gives "0.09999 ... 0.1000".
+- Off-grid requirements: 0.93004 against 0.930045 gives "0.9299 ... 0.9300"; 2.50004 against 2.500049 gives "2.499 ... 2.500"; 9.9996 against 9.99961 gives "9.999 ... 10.00".
+- Off-grid at a decade: 1.00004 against 1.000045 gives "0.9990 ... 1.000" (SF-1).
+- Scientific range: 0.00099996 against 0.001 gives "9.999e-4 ... 0.001000"; 999999.6 against 1e6 gives "999900 ... 1.000e6".
+- Equal or above (2.5 against 2.5, 2.6 against 2.5): the check passes, and there is no Problem.
+
+Why the decade edge reads as it does: within 1e-9 of a last digit below a power of ten, the float-noise guard
+(`LAST_DIGIT_NOISE`) rounds "down" onto the power of ten itself. That still reads equal to the requirement, so
+`quoted_limit` takes one more digit off, and the digit it takes is the upper decade's (1.000 less 0.001).
+
+#### Values only a design file can hold
+
+- Variation 1.0: "Hot-low torque 0 N·m is below the required 2.500 N·m: the pull-out of 2.688 N·m at 50.00 °C, less the 100 % variation allowance."
+- Variation 1.5: "Hot-low torque -1.344 N·m is below the required 2.500 N·m: ... less the 150 % variation allowance."
+- Variation 1e308: "Hot-low torque -inf N·m is below the required 2.500 N·m: ... less the +inf % variation allowance."
+- Variation 1.5 with a requirement of hot-low + 1e-6 (a negative requirement): "-1.344 ... -1.344". By hand, -0.10001 against -0.1 gives "-0.1000 ... -0.1000". Two equal numbers, off the sliders only (see Recorded).
+- A hot-low that is not a number, or +inf: the check is not red, and there is no Problem.
+- Axial length 0.5 mm (the end-effect model out of range) and a face gap of 1e308 mm: the row is greyed, with no badge and no Problem.
+- Required 1e308: "2.285 ... 1.000e308". Required -1, 0 and 1e-300: the check passes.
+
+Each of these is what BL-068's acceptance asks for ("quoted as it is") or is unchanged by it.
+
+#### Traps and rules
+
+The template is unchanged; only the hot-low number differs, and only in the window. Against each rule:
+- "Is below" is true wherever the Problem shows, because the Problem shows only under the red badge and the engine's rule is strict (hot-low below the requirement).
+- The quoted hot-low is rounded down, never above the true value. That is the cautious side for a torque the coupling must at least hold, as rounding up is for a torque on the gearbox input (`quoted_load`, review I-2). Nothing overstates what the coupling holds.
+- Hot-low is the pull-out at the operating temperature less the variation allowance, exactly, on every design probed; the temperature quoted is the operating temperature (`coupling.op_temp_C`), not a "hot-day" figure.
+- No guarantee: the sentence gives the estimate and its allowance and claims nothing past them.
+- No gearbox, no "protects", no "clamp" (the shaft-clamp section stays paused), no id and no path.
+- The numbers read at 4 significant digits through `number_text` and `result_text` with the result's own unit, "N·m".
+- `plain_text_violations` is empty on every failing text of the sweeps.
+
+The trap lists read were section 8 of the slice-1 and slice-2 guidance specs
+(`docs/superpowers/specs/2026-10-13-magcoupler-guidance-design.md` and `2026-10-14-magcoupler-guidance-2-design.md`;
+section 6 of the second is "Tests") and section 6 of the BL-059 spec
+(`docs/superpowers/specs/2026-10-16-bl059-gearbox-check-design.md`).
+
+#### Tests and docs
+
+- On the worktree's change (built into a scratch target directory, nothing written in the worktree): `the_hot_minimum_problem_never_reads_two_equal_numbers`, `on_the_sliders_the_hot_minimum_problem_quotes_hot_low_below_the_requirement`, `sentence_2_rounds_its_limits_toward_passing_and_past_what_they_limit` and `no_guide_text_says_the_coupling_protects_the_gearbox` pass.
+- On a scratch copy of the crate with the old text put back, both new tests fail: at P1 on "0.9300 ... 0.9300", and in the sweep at axial length 2.2 mm, gap 1.5 mm, required 0.17 N·m on "0.1700 ... 0.1700". They were red before the fix, as the tracker says.
+- A second change on the scratch copy (hot-low always rounded down) passes all 744 `gui::` unit tests: SF-2.
+- The code comment at `hot_min_problem`, the tracker entry, BL-068's note and the README's Check guides sentence match what the code draws on the sliders: 0.9299 against 0.9300 N·m, the defaults' 2.285 against 2.500 N·m, and a hot-low at or below zero quoted as it is. The README's "or not a number" never shows: with a hot-low that is not a number the check is not red.
+
+#### Recorded, no change asked
+
+- **One last digit under the readout.** In the window the Problem's hot-low reads one last digit below the Hot-low row's own readout (0.9299 in the Problem, 0.9300 on the dashboard). This is the price of "never two equal numbers", the one accepted for gearbox sentence 1 (0.5401 beside a 0.5400 readout). Nothing reads false: the quoted figure is hot-low rounded down, and "below" is true.
+- **The reader's own product.** The quoted pull-out times (1 - variation) agrees with the quoted hot-low within the pull-out's rounding, as before: 1.094 × 0.85 = 0.9299 at P1, 2.688 × 0.85 = 2.285 at the defaults, 2.988 × 0.85 = 2.540 beside "2.539" at the apothem row.
+- **The Size tab at such a design.** It reads "short 0.00 N·m (-0.0 %)" or "short 0.0004 N·m (-0.0 %)". Its word is right and its numbers round to zero. It is not BL-068's text and is unchanged.
+- **Negative pairs from a file.** A hot-low below zero beside a negative requirement can still read two equal numbers. BL-068 quotes a hot-low at or below zero as it is, and the tracker's title says "on the sliders". This is the mirror of the 2026-10-17 SF-2.
+- **Requirements of 0.10 and 0.11 N·m.** No real design could be put at their rounding edge (hot-low is 0.462 N·m at an axial length of 3 mm with the 0.5 mm gap). The text function alone was probed there with pairs set by hand.
+- **Not done in this round.** The panel was not run on screen: the texts were read through the guide's Problem function and the dashboard lines. Whether the panel always hands the guide matching inputs and results was not probed; BL-068 does not change it. The tracker entry's audit of the clearance and cup wall Problems was not repeated.
+
+- No must-fix, and no text changed in this round. SF-1, SF-2 and SF-3 stay open for the controller.
+
 ## BL-064 shaft joints
 
 BL-064's G-3 review of every new on-screen text (plan Task 8) is recorded first in this section, with each round's

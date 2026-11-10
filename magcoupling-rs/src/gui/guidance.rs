@@ -2154,9 +2154,17 @@ fn joined_or(sentences: Vec<String>, fallback: &str) -> String {
 
 fn hot_min_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<String> {
     failing(HOT_MIN, inputs, results).then(|| {
+        let hot_low = results.metal.torque_hot_low_Nm;
+        let required = inputs.metal.required_min_Nm;
+        // Where both read the same at four significant digits, hot-low is quoted rounded down at
+        // its last shown digit, one digit below the requirement as that is quoted (BL-068).
+        let hot_low_text = if quoted_value(hot_low) < quoted_value(required) {
+            result_text(results, "metal.torque_hot_low_Nm")
+        } else {
+            number_text(quoted_limit(hot_low, required), "metal.torque_hot_low_Nm")
+        };
         format!(
-            "Hot-low torque {} is below the required {}: the pull-out of {} at {}, less the {} variation allowance.",
-            result_text(results, "metal.torque_hot_low_Nm"),
+            "Hot-low torque {hot_low_text} is below the required {}: the pull-out of {} at {}, less the {} variation allowance.",
             input_text(inputs, "metal.required_min_Nm"),
             result_text(results, "model.pullout_Nm"),
             input_text(inputs, "coupling.op_temp_C"),
@@ -6719,6 +6727,107 @@ mod tests {
         let claim =
             "The gearbox Problem's first sentence never reads two equal numbers on the sliders:";
         assert!(readme.contains(claim), "README.md should say {claim:?}");
+    }
+
+    /// The two numbers the hot-minimum Problem quotes, as they read: hot-low torque and the
+    /// required minimum.
+    fn hot_min_numbers(problem: &str) -> (f64, f64) {
+        let between = |start: &str, end: &str| -> f64 {
+            let from = problem
+                .find(start)
+                .unwrap_or_else(|| panic!("{start:?} in {problem}"))
+                + start.len();
+            let to = from
+                + problem[from..]
+                    .find(end)
+                    .unwrap_or_else(|| panic!("{end:?} after {start:?} in {problem}"));
+            problem[from..to]
+                .parse()
+                .unwrap_or_else(|_| panic!("a number between {start:?} and {end:?} in {problem}"))
+        };
+        (
+            between("Hot-low torque ", " N·m is below"),
+            between("is below the required ", " N·m:"),
+        )
+    }
+
+    #[test]
+    fn the_hot_minimum_problem_never_reads_two_equal_numbers() {
+        // BL-068. The Problem quoted hot-low and the requirement at four significant digits, so
+        // a failing design could read "0.9300 N·m is below the required 0.9300 N·m". Where the
+        // two read the same, hot-low is quoted rounded down at its last shown digit. On the
+        // sliders, a 4.74 mm magnet length, a 0.50 mm face gap and a 0.93 N·m requirement give
+        // a hot-low of about 0.929956 N·m.
+        let mut close = DesignInputs::default();
+        for (path, x) in [
+            ("coupling.magnets.axial_length_mm", 4.74),
+            ("metal.face_gap_mm", 0.5),
+            ("metal.required_min_Nm", 0.93),
+        ] {
+            assert!(
+                slider_values(path).contains(&x),
+                "{path}: {x} on a step of its slider"
+            );
+            close = with_number(&close, path, x).unwrap_or_else(|| panic!("{path}: {x}"));
+        }
+        let results = compute_all(&close);
+        assert_eq!(level_of(HOT_MIN, &close, &results), Level::Bad);
+        // The readouts show the two the same.
+        assert_eq!(
+            result_text(&results, "metal.torque_hot_low_Nm"),
+            input_text(&close, "metal.required_min_Nm")
+        );
+        let text = problem(HOT_MIN, &close).unwrap();
+        assert!(
+            text.starts_with("Hot-low torque 0.9299 N·m is below the required 0.9300 N·m:"),
+            "{text}"
+        );
+        // Where the two read apart, hot-low reads as its readout: the defaults are unchanged.
+        let text = problem(HOT_MIN, &DesignInputs::default()).unwrap();
+        assert!(
+            text.starts_with("Hot-low torque 2.285 N·m is below the required 2.500 N·m:"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn on_the_sliders_the_hot_minimum_problem_quotes_hot_low_below_the_requirement() {
+        // BL-068: every failing design on a sweep of slider steps (every magnet length, face
+        // gaps 0.5 to 2.0 mm, every requirement) quotes the two numbers with hot-low below.
+        let requirements = slider_values("metal.required_min_Nm");
+        let mut failing_designs = 0;
+        for length in slider_values("coupling.magnets.axial_length_mm") {
+            for gap in [0.5, 1.0, 1.5, 2.0] {
+                let base = with_number(
+                    &DesignInputs::default(),
+                    "coupling.magnets.axial_length_mm",
+                    length,
+                )
+                .and_then(|d| with_number(&d, "metal.face_gap_mm", gap))
+                .unwrap();
+                // Hot-low does not depend on the requirement; only requirements just above it can
+                // read the same, so only those are worked out in full.
+                let hot_low = compute_all(&base).metal.torque_hot_low_Nm;
+                for &required in &requirements {
+                    if required <= hot_low || required > hot_low * 1.01 {
+                        continue;
+                    }
+                    let inputs = with_number(&base, "metal.required_min_Nm", required).unwrap();
+                    let results = compute_all(&inputs);
+                    if level_of(HOT_MIN, &inputs, &results) != Level::Bad {
+                        continue;
+                    }
+                    failing_designs += 1;
+                    let text = hot_min_problem(&inputs, &results).unwrap();
+                    let (low, wanted) = hot_min_numbers(&text);
+                    assert!(
+                        low < wanted,
+                        "length {length}, gap {gap}, required {required}: {text}"
+                    );
+                }
+            }
+        }
+        assert!(failing_designs > 0);
     }
 
     // ------------------------------------------------------------------ the gearbox conflict
