@@ -10,9 +10,10 @@
 //! 2026-09-30. The Addendum A-4 verification
 //! (`docs/analyses/2026-10-01-magcoupling-addendum-a4-verification.md`) added
 //! E21 (decision 1: the rating-calibration offset held at 0 or more), E24
-//! (decision 2: the cure margin from the lower ring) and the planned E22 and
-//! E23 (decisions 4 to 10: per-grade magnet CTE and specific heat; registered,
-//! not yet in the code), approved on 2026-10-01. Everything else stays
+//! (decision 2: the cure margin from the lower ring), E22 (decisions 4 to 7, 9
+//! and 10: the inner ring's grade expansion in the bond plane) and the planned
+//! E23 (decisions 4, 5, 8 and 10: per-grade specific heat; registered, not yet
+//! in the code), approved on 2026-10-01. Everything else stays
 //! workbook-exact. This registry is the one place that says where
 //! the port departs from the workbook and why.
 //!
@@ -1625,7 +1626,7 @@ pub const REGISTRY: &[Deviation] = &[
             decisions: &[4, 5, 6, 7, 9, 10],
         },
         depends_on: &[],
-        status: DeviationStatus::Planned,
+        status: DeviationStatus::Applied,
         cells: &[
             "Temperature design!C104",
             "Temperature design!C105",
@@ -1633,15 +1634,81 @@ pub const REGISTRY: &[Deviation] = &[
             "Temperature design!C201",
             "Temperature design!C202",
         ],
-        corrected_formula: "Planned (A-4 report section 4): the inner ring's grade CTE in the bond plane (Y30 10.0e-6, \
-            Recoma 20 14.0e-6, Recoma 26 and Recoma 30 13.0e-6 /K; bonded NdFeB and sintered NdFeB keep C95) in the \
-            mismatch screen C104 to C106, C201, C202 and warning rule 6, the screens comparing the size of the shear \
-            (decision 9). Not in the code: the engine is workbook-exact here.",
+        corrected_formula: "The magnet expansion in the bond plane (across the magnetization) is the inner ring's grade \
+            value: Y30 10.0e-6, Recoma 20 14.0e-6, Recoma 26 and Recoma 30 13.0e-6 /C (decisions 5, 6); C95 (-0.8e-6) \
+            stays for sintered NdFeB (every library part), a manual magnet without a grade and bonded NdFeB (decision 7). \
+            Both consumers read it: the Volkersen screen (delta alpha = hub CTE - magnet CTE: C104, C105, C201) and \
+            warning rule 6. Only the inner ring is read: the hub bonds it, and the cup bond is not screened. A grade that \
+            expands more than the hub makes the shear negative, so C106 compares |C104| with the lap shear and C202 \
+            compares |C201| with the endurance limit, the signed values kept on display (decision 9); so does C95 set \
+            above the default back iron's C17, a slider corner where the size comparison reads sintered NdFeB too (plan \
+            decision A4-4). C95 keeps its label and range; its help and the Rust-only \
+            temperature.mismatch.magnet_cte_per_C show the value in effect (decision 10).",
         workbook_input_defaults: &[],
-        workbook_help: &[],
+        workbook_help: &[(
+            "temperature.mismatch.ndfeb_cte_per_C",
+            "Across the magnetization.",
+        )],
         changes_at_defaults: &[],
         changes_file: None,
-        probes: &[],
+        probes: &[
+            Probe {
+                label: "Recoma 26 (13.0e-6 /C) for manual dimensions on both rings, steel hub (A-4 report probe E22-1): \
+                    the mismatch turns negative and the screen reads Below",
+                inputs: &[
+                    ("coupling.magnets.part_inner", Literal::Text("")),
+                    ("coupling.magnets.part_outer", Literal::Text("")),
+                    (
+                        "coupling.magnets.grade_inner",
+                        Literal::Text("SmCo_2_17_26"),
+                    ),
+                    (
+                        "coupling.magnets.grade_outer",
+                        Literal::Text("SmCo_2_17_26"),
+                    ),
+                ],
+                expect: &[
+                    CellChange {
+                        cell: "Temperature design!C104",
+                        workbook: Literal::Num(64.07367112080888),
+                        corrected: Literal::Num(-3.423783953020314),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C106",
+                        workbook: Literal::Text("Above the lap-shear strength at the block ends"),
+                        corrected: Literal::Text("Below the lap-shear strength"),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C201",
+                        workbook: Literal::Num(11.365659614702166),
+                        corrected: Literal::Num(-0.6073253229230151),
+                    },
+                ],
+            },
+            Probe {
+                label: "Y30 (10.0e-6 /C) for manual dimensions on both rings, steel hub (A-4 report probe E22-2)",
+                inputs: &[
+                    ("coupling.magnets.part_inner", Literal::Text("")),
+                    ("coupling.magnets.part_outer", Literal::Text("")),
+                    ("coupling.magnets.grade_inner", Literal::Text("Y30")),
+                    ("coupling.magnets.grade_outer", Literal::Text("Y30")),
+                ],
+                expect: &[
+                    CellChange {
+                        cell: "Temperature design!C104",
+                        workbook: Literal::Num(64.07367112080888),
+                        corrected: Literal::Num(11.249575845638201),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C202",
+                        workbook: Literal::Text(
+                            "Above the fatigue endurance: qualify by thermal cycling",
+                        ),
+                        corrected: Literal::Text("Below the fatigue endurance"),
+                    },
+                ],
+            },
+        ],
     },
     Deviation {
         id: DeviationId::E23,
@@ -1880,16 +1947,13 @@ mod tests {
     }
 
     #[test]
-    fn e22_and_e23_are_registered_but_not_yet_applied() {
-        // The ids are index-based, so E24 needs E22 and E23 to exist; they stay Planned (no code
-        // reads them) until their own change lands (backlog BL-058).
-        for id in [DeviationId::E22, DeviationId::E23] {
-            assert_eq!(
-                REGISTRY[id.index()].status,
-                DeviationStatus::Planned,
-                "{id}"
-            );
-        }
+    fn e23_is_registered_but_not_yet_applied() {
+        // The ids are index-based, so E24 needs E23 to exist; it stays Planned (no code reads
+        // it) until its own change lands (backlog BL-076).
+        assert_eq!(
+            REGISTRY[DeviationId::E23.index()].status,
+            DeviationStatus::Planned
+        );
     }
 
     #[test]

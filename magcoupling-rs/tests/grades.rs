@@ -1,11 +1,13 @@
 //! The A6 grade table and the part table against the approved Addendum A data
 //! file (`docs/analyses/2026-09-30-magcoupling-addendum-a-data.json`): every
 //! value and every citation, every part resolving to a grade, and the places
-//! where a part's workbook value differs from its grade on purpose.
+//! where a part's workbook value differs from its grade on purpose. The magnets'
+//! expansion in the bond plane against the Addendum A-4 data file
+//! (`docs/analyses/2026-10-01-magcoupling-addendum-a4-data.json`).
 
 mod common;
 
-use common::{ADDENDUM_DATA, read_json, repo_path};
+use common::{A4_DATA, ADDENDUM_DATA, read_json, repo_path};
 use magcoupling::engine::constants::NDFEB_DENSITY_G_MM3;
 use magcoupling::engine::deviations::Deviations;
 use magcoupling::engine::grades::{GRADES, Grade, GradeFamily, N42SH, grade};
@@ -190,6 +192,58 @@ fn sintered_ndfeb_grades_are_bit_equal_to_the_engine_constants() {
         assert_eq!(g.alpha_br_per_C, alpha, "{}", g.id);
         assert_eq!(g.density_g_mm3, NDFEB_DENSITY_G_MM3, "{}", g.id);
     }
+}
+
+#[test]
+fn bond_plane_expansion_equals_the_a4_data_file() {
+    // Addendum A-4 decisions 5 to 7 (option A): ferrite and SmCo carry the data file's
+    // engine literal bit for bit and cite its source; bonded NdFeB has none (its proxies are
+    // 4x apart, decision 7); every sintered NdFeB grade has none and keeps the C95 input
+    // (the data file's `ndfeb_unchanged`).
+    let doc = read_json(&repo_path(A4_DATA));
+    let thermal = doc["grades"].as_object().expect("a grades object");
+    let ndfeb: Vec<&str> = doc["ndfeb_unchanged"]["grades"]
+        .as_array()
+        .expect("a grade list")
+        .iter()
+        .map(|g| g.as_str().expect("a grade id"))
+        .collect();
+    assert_eq!(
+        thermal.len() + ndfeb.len(),
+        GRADES.len(),
+        "one list per grade"
+    );
+    for g in &GRADES {
+        let id = g.id;
+        let Some(j) = thermal.get(id) else {
+            assert!(ndfeb.contains(&id), "{id} is in neither list");
+            assert_eq!(g.family, GradeFamily::NdFeB, "{id}");
+            assert_eq!(g.bond_plane_cte_per_C, None, "{id}");
+            assert_eq!(g.sources.bond_plane_cte, None, "{id}");
+            continue;
+        };
+        assert_ne!(g.family, GradeFamily::NdFeB, "{id}");
+        assert_eq!(
+            g.bond_plane_cte_per_C,
+            opt_f(&j["engine_literals"]["bond_plane_cte_per_C"]),
+            "{id} CTE"
+        );
+        // A value cites the data file's source for it; no value, no citation.
+        assert_eq!(
+            g.sources.bond_plane_cte,
+            g.bond_plane_cte_per_C.and(opt_s(
+                &j["fields"]["cte_perp_1e-6_per_K"]["value_source_url"]
+            )),
+            "{id} CTE source"
+        );
+    }
+    // The approved values (A-4 report section 3.2), as typed.
+    let pick = |id: &str| grade(id).map(|g| g.bond_plane_cte_per_C);
+    assert_eq!(pick("Y30"), Some(Some(10.0e-6)));
+    assert_eq!(pick("SmCo_1_5_20"), Some(Some(14.0e-6)));
+    assert_eq!(pick("SmCo_2_17_26"), Some(Some(13.0e-6)));
+    assert_eq!(pick("SmCo_2_17_30"), Some(Some(13.0e-6)));
+    assert_eq!(pick("Bonded_NdFeB_BCN19"), Some(None));
 }
 
 #[test]

@@ -47,6 +47,10 @@ const SLEEVE_LINER_INPUTS: [&str; 3] = [
     "temperature.thermal.c_316",
 ];
 
+/// The magnet expansion the bond screen reads: an inner-ring grade with a bond-plane expansion
+/// of its own (ferrite, SmCo) supplies it (correction E22).
+const MAGNET_CTE_INPUT: &str = "temperature.mismatch.ndfeb_cte_per_C";
+
 /// One magnet ring's inputs: its part and its grade, and the manual fields a library part
 /// replaces (length, width, thickness, then Br).
 struct Ring {
@@ -89,7 +93,8 @@ const RINGS: [Ring; 2] = [
 /// - a sleeve-and-liner pick other than the default (316L): their density, conductivity and
 ///   specific heat;
 /// - a ring's library part: its manual dimensions, its manual Br and its grade; with no
-///   library part, a grade of the grade table: its manual Br.
+///   library part, a grade of the grade table: its manual Br, and for an inner ring of
+///   ferrite or SmCo the NdFeB expansion input (correction E22).
 ///
 /// The cap pick sets no input on its own (the hub, cup and boss still read the aluminium
 /// values it replaces for the cap), and a selector code outside its choices sets none (the
@@ -129,6 +134,14 @@ pub fn set_by_pick(inputs: &DesignInputs, path: &str) -> Option<&'static str> {
         } else if grades::grade(grade).is_some() && path == br {
             return Some(ring.grade);
         }
+    }
+    // shortcut: every library part is sintered NdFeB, so only a typed grade is read; follow the
+    // part's grade once a ferrite or SmCo part is listed.
+    if path == MAGNET_CTE_INPUT
+        && library::lookup(&magnets.part_inner).is_none()
+        && grades::grade(&magnets.grade_inner).is_some_and(|g| g.bond_plane_cte_per_C.is_some())
+    {
+        return Some(RINGS[0].grade);
     }
     None
 }
@@ -266,6 +279,7 @@ mod tests {
             .chain(&[
                 DESIGN_FLUX_INPUT,
                 CIRCUIT_INPUT,
+                MAGNET_CTE_INPUT,
                 BACK_IRON_PICK,
                 SLEEVE_LINER_PICK,
             ])
@@ -355,15 +369,33 @@ mod tests {
                 "the cap sets nothing"
             );
         }
-        // A grade on custom dimensions supplies the Br; the dimensions stay the user's.
-        let mut y30 = DesignInputs::default();
-        y30.coupling.magnets.part_inner.clear();
-        y30.coupling.magnets.grade_inner = "Y30".to_owned();
+        // A grade on custom dimensions supplies the Br; the dimensions stay the user's. An
+        // inner ring of ferrite or SmCo supplies the magnet expansion too (correction E22); an
+        // NdFeB grade, or the outer ring, does not.
+        let inner = |grade: &str| {
+            let mut inputs = DesignInputs::default();
+            inputs.coupling.magnets.part_inner.clear();
+            inputs.coupling.magnets.grade_inner = grade.to_owned();
+            inputs
+        };
+        let y30 = inner("Y30");
+        let br = "coupling.magnets.manual_inner_br_T";
         assert_eq!(
             set(&y30, "coupling.magnets.grade_inner"),
-            strings(&["coupling.magnets.manual_inner_br_T"])
+            strings(&[br, MAGNET_CTE_INPUT])
         );
         assert!(set(&y30, "coupling.magnets.part_inner").is_empty());
+        assert_eq!(
+            set(&inner("N42"), "coupling.magnets.grade_inner"),
+            strings(&[br])
+        );
+        let mut outer = DesignInputs::default();
+        outer.coupling.magnets.part_outer.clear();
+        outer.coupling.magnets.grade_outer = "Y30".to_owned();
+        assert_eq!(
+            set(&outer, "coupling.magnets.grade_outer"),
+            strings(&["coupling.magnets.manual_outer_br_T"])
+        );
     }
 
     #[test]

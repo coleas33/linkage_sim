@@ -407,7 +407,8 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
         back_iron_needs_plating: back_iron.is_some_and(|m| m.needs_plating),
         plating_mm: mat_in.nickel.thickness_mm,
         hub_cte_per_C: hub_material.props.cte_per_C,
-        magnet_cte_per_C: ti.mismatch.ndfeb_cte_per_C,
+        // E22: the inner ring's grade expansion where it has one, as the mismatch screen reads it.
+        magnet_cte_per_C: temp.mismatch.magnet_cte_per_C,
     });
 
     // Addendum A1: the space claim, from the derived dimensions (both modes).

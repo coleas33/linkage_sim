@@ -388,7 +388,7 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "materials.steel.cte_per_C",
-        "Thermal expansion of the steel hub; its difference from the magnets' expansion sets the bond shear from temperature swings, so higher raises it. Picking another back-iron material replaces it.",
+        "Thermal expansion of the steel hub; the further from the magnets' expansion, the higher the bond shear from temperature swings. Picking another back-iron material replaces it.",
     ),
     (
         "materials.steel.modulus_GPa",
@@ -733,7 +733,7 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "temperature.mismatch.ndfeb_cte_per_C",
-        "Thermal expansion of the magnets in the bonded face; the further it is from the hub's, the higher the bond shear from temperature swings. Used whatever the magnet grade.",
+        "Magnet thermal expansion in the bonded face; the further from the hub's, the higher the bond shear from temperature swings. A ferrite or SmCo inner ring uses its grade's value.",
     ),
     (
         "temperature.slip_loss.high_multiplier",
@@ -1805,7 +1805,7 @@ mod batch_b_tests {
         ("materials.steel.conductivity_S_m", "example", "temperature.slip_loss.total_W", Up),
         ("materials.steel.conductivity_S_m", "1018 back iron", "temperature.slip_loss.total_W", Stays),
         ("temperature.mismatch.ndfeb_cte_per_C", "example", "temperature.mismatch.peak_shear_current_MPa", Down),
-        ("temperature.mismatch.ndfeb_cte_per_C", "Y30 grades", "temperature.mismatch.peak_shear_current_MPa", Down),
+        ("temperature.mismatch.ndfeb_cte_per_C", "Y30 grades", "temperature.mismatch.peak_shear_current_MPa", Stays),
         ("temperature.slip_loss.high_multiplier", "example", "temperature.thermal.steady_high_C", Up),
         ("temperature.slip_loss.high_multiplier", "measured drag", "temperature.thermal.steady_high_C", Stays),
         ("temperature.slip_loss.high_multiplier", "example", "temperature.slip_loss.total_W", Stays),
@@ -1864,6 +1864,7 @@ mod batch_b_tests {
                 "temperature.demag.hcj20_kA_m",
                 "temperature.demag.beta_hcj_per_C",
                 "temperature.mismatch.adhesive_shear_modulus_GPa",
+                "temperature.mismatch.ndfeb_cte_per_C",
             ]
         );
         for path in BATCH_B_OVERRIDES {

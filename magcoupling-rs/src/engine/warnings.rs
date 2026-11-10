@@ -107,7 +107,7 @@ results! {
             uncoated_low_alloy_steel: String => out_rust_only("", "Uncoated low-alloy steel",
                 "Fires for a plain or low-alloy steel back iron with a plating thickness of zero."),
             cte_mismatch_with_magnets: String => out_rust_only("", "Expansion mismatch with the magnets",
-                "Fires when the hub's expansion coefficient differs from the magnets' by more than 15e-6 /°C."),
+                "Fires when the hub's expansion coefficient differs from the inner ring magnets' by more than 15e-6 /°C."),
         }
     }
 }
@@ -136,7 +136,8 @@ pub struct WarningInputs {
     /// The hub's expansion coefficient in effect [1/°C] (the steel circuit's, or the
     /// body's with no back iron).
     pub hub_cte_per_C: f64,
-    /// The magnets' expansion coefficient in the bond plane (Temperature design C95) [1/°C].
+    /// The magnets' expansion coefficient in the bond plane [1/°C]: Temperature design C95,
+    /// or with E22 the inner ring's grade value (`temperature.mismatch.magnet_cte_per_C`).
     pub magnet_cte_per_C: f64,
 }
 
@@ -431,6 +432,69 @@ mod tests {
     }
 
     #[test]
+    fn a_ferrite_or_smco_inner_ring_fires_the_expansion_rule_on_no_listed_hub() {
+        // Correction E22: the rule reads the inner ring's grade expansion. The note says no
+        // listed hub fires it for these grades: a library change that breaks that fails here
+        // until the note follows.
+        use crate::engine::grades::GRADES;
+        let graded: Vec<&str> = GRADES
+            .iter()
+            .filter(|g| g.bond_plane_cte_per_C.is_some())
+            .map(|g| g.id)
+            .collect();
+        assert_eq!(graded.len(), 4, "{graded:?}");
+        for id in graded {
+            let mut design = DesignInputs::default();
+            design.coupling.magnets.part_inner = String::new();
+            design.coupling.magnets.grade_inner = id.to_owned();
+            for circuit in [1, 0] {
+                for code in every_back_iron() {
+                    let fired = fired_on(&with_back_iron_on(&design, code, circuit, plated()));
+                    assert!(
+                        !fired.contains(&"cte_mismatch_with_magnets"),
+                        "{id} on {}, circuit {circuit}: {fired:?}",
+                        short_name(code)
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_open_circuit_note_says_the_expansion_caution_fires_with_ndfeb_magnets() {
+        // The note's last sentence. At every probe design, wherever the open-circuit warning
+        // fires (a non-magnetic pick, or the circuit switched off), the expansion caution fires
+        // with it, except on the ferrite probe, whose inner ring is screened with its own
+        // expansion (correction E22; the SmCo grades are in the test above).
+        use crate::engine::explain::probes::{PROBE_GRADE, probe_designs};
+        let sentence = note("a5.non_ferromagnetic_back_iron").unwrap().sentences[4];
+        assert!(
+            sentence.contains("with NdFeB magnets the expansion-mismatch caution fires"),
+            "{sentence:?}"
+        );
+        for (design, inputs) in probe_designs() {
+            let ndfeb = inputs.coupling.magnets.grade_inner != PROBE_GRADE;
+            let mut open = 0;
+            for circuit in [1, 0] {
+                for code in every_back_iron() {
+                    let fired = fired_on(&with_back_iron_on(&inputs, code, circuit, plated()));
+                    if fired.contains(&"non_ferromagnetic_back_iron") {
+                        open += 1;
+                        assert_eq!(
+                            fired.contains(&"cte_mismatch_with_magnets"),
+                            ndfeb,
+                            "{design}: {} with circuit {circuit}: {fired:?}",
+                            short_name(code)
+                        );
+                    }
+                }
+            }
+            // Both non-magnetic picks on the steel circuit, and every pick with it off.
+            assert_eq!(open, 2 + every_back_iron().len(), "{design}");
+        }
+    }
+
+    #[test]
     fn with_plating_only_4140_and_1018_fire_no_warning() {
         // R11: 416, 17-4PH and 12L14 trade the plating caution for the low-saturation one.
         let quiet: Vec<i64> = every_back_iron()
@@ -512,8 +576,9 @@ mod tests {
         // Spec 3.1 (every entry names its trade-off; task review I-1): from an unplated steel that
         // fires the plating caution, at every probe design, each pick the entry offers clears it
         // at the cost the entry names: 416 and 17-4PH trip the low-saturation caution; 304 loses
-        // the torque the steel adds and fires the expansion caution.
-        use crate::engine::explain::probes::probe_designs;
+        // the torque the steel adds and, with NdFeB magnets, fires the expansion caution (the
+        // ferrite probe's inner ring is screened with its own expansion, correction E22).
+        use crate::engine::explain::probes::{PROBE_GRADE, probe_designs};
         let entry = note("a5.uncoated_low_alloy_steel")
             .unwrap()
             .change
@@ -523,7 +588,7 @@ mod tests {
         for cost in [
             "trip the low-saturation caution",
             "loses steel torque",
-            "fires the expansion caution",
+            "with NdFeB fires the expansion caution",
         ] {
             assert!(entry.text.contains(cost), "the entry names {cost:?}");
         }
@@ -564,9 +629,10 @@ mod tests {
                 for (_, pullout, fired) in offered {
                     assert!(!unplated(fired), "{design}: {name} needs no plating");
                     if name == "304" {
-                        assert!(
+                        assert_eq!(
                             fired.contains(&"cte_mismatch_with_magnets"),
-                            "{design}: 304 fires the expansion caution: {fired:?}"
+                            inputs.coupling.magnets.grade_inner != PROBE_GRADE,
+                            "{design}: 304 fires the expansion caution with NdFeB only: {fired:?}"
                         );
                         for (steel, steel_pullout, _) in &steels {
                             assert!(

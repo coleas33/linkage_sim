@@ -2260,7 +2260,7 @@
       "cell": "Temperature design!C95",
       "choices": [],
       "default": -8e-7,
-      "help": "Across the magnetization.",
+      "help": "Across the magnetization. Sintered NdFeB's value, used by every library part, every NdFeB grade (sintered or bonded) and a manual magnet without a grade. Correction E22: a ferrite or SmCo inner ring uses its grade's value instead (temperature.mismatch.magnet_cte_per_C shows the value in effect).",
       "label": "NdFeB expansion in the bond plane",
       "path": "temperature.mismatch.ndfeb_cte_per_C",
       "range": {

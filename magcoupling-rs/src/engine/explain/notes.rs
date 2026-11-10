@@ -1032,7 +1032,7 @@ pub const NOTES: &[Note] = &[
             "304 stainless and 6061 aluminium are non-magnetic, like air: picking either for the back iron, or switching the circuit off, selects the no-back-iron model.",
             "That model keeps much less torque: on this design the same layout gives {model.pullout_iron_Nm} with unsaturated steel and {model.pullout_noiron_Nm} without.",
             "Without steel the field also spreads outside the coupling and pulls in steel chips; the calculator does not compute this stray field.",
-            "The hub, cup and boss then become non-magnetic metal, the cup-wall check no longer applies, and the expansion-mismatch caution fires.",
+            "The hub, cup and boss then become non-magnetic metal, the cup-wall check no longer applies, and with NdFeB magnets the expansion-mismatch caution fires.",
         ],
         change: &[
             Change {
@@ -1066,7 +1066,7 @@ pub const NOTES: &[Note] = &[
         ],
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
-            date: "2026-10-14",
+            date: "2026-11-09",
             record: "docs/analyses/2026-10-14-magcoupler-notes-review.md#a5.non_ferromagnetic_back_iron",
         },
     },
@@ -1217,7 +1217,7 @@ pub const NOTES: &[Note] = &[
                 input: "materials.parts.back_iron",
                 step: Step::Choose,
                 aim: None,
-                text: "416 or 17-4PH need no plating here but trip the low-saturation caution; 304 needs none but loses steel torque and fires the expansion caution.",
+                text: "416 or 17-4PH need no plating here but trip the low-saturation caution; 304 needs none, loses steel torque and with NdFeB fires the expansion caution.",
             },
         ],
         watch_out: &[
@@ -1230,7 +1230,7 @@ pub const NOTES: &[Note] = &[
         ],
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
-            date: "2026-10-14",
+            date: "2026-11-09",
             record: "docs/analyses/2026-10-14-magcoupler-notes-review.md#a5.uncoated_low_alloy_steel",
         },
     },
@@ -1241,7 +1241,8 @@ pub const NOTES: &[Note] = &[
         sentences: &[
             "In the plane of the glue joint NdFeB barely expands with heat, while steel grows about 12 and aluminium about 24 µm/m per °C.",
             "The glue line between inner magnets and hub takes that difference as shear, highest at the block ends; the outer magnets are not screened.",
-            "The caution fires above a 15 µm/m per °C difference: 304 stainless or 6061 aluminium hubs, or no back iron; no listed magnetic steel does.",
+            "The caution fires above a 15 µm/m per °C difference: NdFeB on 304 stainless, 6061 aluminium or no back iron; no listed magnetic steel does.",
+            "Ferrite and SmCo inner rings use their own expansion, about 10 and 13 to 14 µm/m per °C: neither fires it on a listed hub.",
             "The caution ignores the temperature swing and the glue; the bond check counts both, here {temperature.mismatch.peak_shear_current_MPa} of peak end shear against {temperature.adhesive.lap_shear_MPa} lap-shear strength.",
         ],
         change: &[
@@ -1271,7 +1272,7 @@ pub const NOTES: &[Note] = &[
             },
         ],
         watch_out: &[
-            "The screen uses one NdFeB expansion for every grade, so ferrite and SmCo rings, which expand more in that plane, get overstated shear and false cautions.",
+            "Bonded NdFeB and a magnet with no grade use the NdFeB expansion input. A magnet that expands more than its hub shows a negative shear: the checks compare its size.",
             "The adhesive's shear modulus does not follow the adhesive picked: enter the new one's value when you change adhesive.",
         ],
         diagram: None,
@@ -1279,10 +1280,11 @@ pub const NOTES: &[Note] = &[
             "Material warning rules",
             "Math audit of 2026-09-29: the Volkersen shear-lag screen",
             "Design ruling: the aluminium hub's expansion",
+            "Design ruling of 2026-10-01: a ferrite or SmCo inner ring uses its grade's expansion; a negative shear is compared by its size",
         ],
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
-            date: "2026-10-14",
+            date: "2026-11-09",
             record: "docs/analyses/2026-10-14-magcoupler-notes-review.md#a5.cte_mismatch_with_magnets",
         },
     },

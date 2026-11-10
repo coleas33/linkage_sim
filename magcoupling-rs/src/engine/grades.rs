@@ -20,6 +20,12 @@
 //! dimensions with a grade: Addendum A-2 decision A2-7); a library part (every one
 //! sintered NdFeB, whose grade values equal them) keeps the calculator's single alpha
 //! (Calibration!C22) and the NdFeB density.
+//!
+//! The expansion in the bond plane, across the magnetization (Addendum A-4, decisions 5
+//! to 7, option A; data file `docs/analyses/2026-10-01-magcoupling-addendum-a4-data.json`,
+//! key `"grades"`): the ferrite and SmCo grades carry one, cited in [`GradeSources`] and
+//! compared with the data file by `tests/grades.rs`. Sintered NdFeB has none and keeps the
+//! C95 input; so does bonded NdFeB (decision 7). Correction E22 reads the inner ring's.
 
 /// K&J Magnetics, Neodymium Magnet Specifications & Tolerances (the NdFeB basis, decision D1/1).
 pub const KJ_SPECS: &str = "https://www.kjmagnetics.com/neodymium-magnet-specifications.asp";
@@ -71,6 +77,8 @@ pub struct GradeSources {
     pub mu_rec: Option<&'static str>,
     pub tmax: &'static str,
     pub density: &'static str,
+    /// The bond-plane CTE's source (Addendum A-4); `None` where the grade has no value.
+    pub bond_plane_cte: Option<&'static str>,
 }
 
 /// One magnet grade (the selected value of each field: the published minimum
@@ -107,6 +115,10 @@ pub struct Grade {
     pub tmax_C: f64,
     /// Density [g/mm³] (read in the grade mode, decision A2-7).
     pub density_g_mm3: f64,
+    /// Expansion coefficient in the bond plane, across the magnetization [1/°C] (Addendum
+    /// A-4 decisions 5 to 7; correction E22 reads the inner ring's): ferrite and SmCo.
+    /// `None` keeps the C95 input (sintered NdFeB; bonded NdFeB, decision 7).
+    pub bond_plane_cte_per_C: Option<f64>,
     pub sources: GradeSources,
     /// The report's resolutions (R#) and flags for this grade.
     pub notes: &'static str,
@@ -129,6 +141,7 @@ pub const GRADES: [Grade; 17] = [
         mu_rec: Some(1.05),
         tmax_C: 80.0,
         density_g_mm3: 0.0075,
+        bond_plane_cte_per_C: None,
         sources: GradeSources {
             br: KJ_SPECS,
             hcj: KJ_SPECS,
@@ -142,6 +155,7 @@ pub const GRADES: [Grade; 17] = [
             mu_rec: Some(KJ_SPECS),
             tmax: KJ_SPECS,
             density: KJ_SPECS,
+            bond_plane_cte: None,
         },
         notes: "R16, R17 (K&J low end, not stated as guaranteed).",
     },
@@ -160,6 +174,7 @@ pub const GRADES: [Grade; 17] = [
         mu_rec: Some(1.05),
         tmax_C: 80.0,
         density_g_mm3: 0.0075,
+        bond_plane_cte_per_C: None,
         sources: GradeSources {
             br: KJ_SPECS,
             hcj: KJ_SPECS,
@@ -173,6 +188,7 @@ pub const GRADES: [Grade; 17] = [
             mu_rec: Some(KJ_SPECS),
             tmax: KJ_SPECS,
             density: KJ_SPECS,
+            bond_plane_cte: None,
         },
         notes: "R16, R17.",
     },
@@ -191,6 +207,7 @@ pub const GRADES: [Grade; 17] = [
         mu_rec: Some(1.05),
         tmax_C: 80.0,
         density_g_mm3: 0.0075,
+        bond_plane_cte_per_C: None,
         sources: GradeSources {
             br: KJ_SPECS,
             hcj: KJ_SPECS,
@@ -204,6 +221,7 @@ pub const GRADES: [Grade; 17] = [
             mu_rec: Some(KJ_SPECS),
             tmax: KJ_SPECS,
             density: KJ_SPECS,
+            bond_plane_cte: None,
         },
         notes: "R16, R17 (Hcj: K&J 954.9, Arnold 875).",
     },
@@ -222,6 +240,7 @@ pub const GRADES: [Grade; 17] = [
         mu_rec: Some(1.05),
         tmax_C: 80.0,
         density_g_mm3: 0.0075,
+        bond_plane_cte_per_C: None,
         sources: GradeSources {
             br: KJ_SPECS,
             hcj: KJ_SPECS,
@@ -235,6 +254,7 @@ pub const GRADES: [Grade; 17] = [
             mu_rec: Some(KJ_SPECS),
             tmax: KJ_SPECS,
             density: KJ_SPECS,
+            bond_plane_cte: None,
         },
         notes: "R3 (Hcb 836 Arnold: K&J's 891.3 exceeds Hcj), R4 (Tmax 80 K&J; Arnold catalog 60, Eclipse 70), R16, R17.",
     },
@@ -253,6 +273,7 @@ pub const GRADES: [Grade; 17] = [
         mu_rec: Some(1.05),
         tmax_C: 80.0,
         density_g_mm3: 0.0075,
+        bond_plane_cte_per_C: None,
         sources: GradeSources {
             br: KJ_SPECS,
             hcj: KJ_SPECS,
@@ -266,6 +287,7 @@ pub const GRADES: [Grade; 17] = [
             mu_rec: Some(KJ_SPECS),
             tmax: KJ_SPECS,
             density: KJ_SPECS,
+            bond_plane_cte: None,
         },
         notes: "Library grade (M5044, M5026; M5045 under E19), not in the spec's A6 list (decision 30). R5, R16, R17.",
     },
@@ -284,6 +306,7 @@ pub const GRADES: [Grade; 17] = [
         mu_rec: Some(1.05),
         tmax_C: 100.0,
         density_g_mm3: 0.0075,
+        bond_plane_cte_per_C: None,
         sources: GradeSources {
             br: KJ_SPECS,
             hcj: KJ_SPECS,
@@ -297,6 +320,7 @@ pub const GRADES: [Grade; 17] = [
             mu_rec: Some(KJ_SPECS),
             tmax: KJ_SPECS,
             density: KJ_SPECS,
+            bond_plane_cte: None,
         },
         notes: "R16, R17.",
     },
@@ -315,6 +339,7 @@ pub const GRADES: [Grade; 17] = [
         mu_rec: Some(1.05),
         tmax_C: 100.0,
         density_g_mm3: 0.0075,
+        bond_plane_cte_per_C: None,
         sources: GradeSources {
             br: KJ_SPECS,
             hcj: KJ_SPECS,
@@ -328,6 +353,7 @@ pub const GRADES: [Grade; 17] = [
             mu_rec: Some(KJ_SPECS),
             tmax: KJ_SPECS,
             density: KJ_SPECS,
+            bond_plane_cte: None,
         },
         notes: "Library grade (M5045 as stored in the workbook), not in the spec's A6 list. R1 (Hcb), R6 (Tmax), R16, R17.",
     },
@@ -346,6 +372,7 @@ pub const GRADES: [Grade; 17] = [
         mu_rec: Some(1.05),
         tmax_C: 120.0,
         density_g_mm3: 0.0075,
+        bond_plane_cte_per_C: None,
         sources: GradeSources {
             br: KJ_SPECS,
             hcj: KJ_SPECS,
@@ -359,6 +386,7 @@ pub const GRADES: [Grade; 17] = [
             mu_rec: Some(KJ_SPECS),
             tmax: KJ_SPECS,
             density: KJ_SPECS,
+            bond_plane_cte: None,
         },
         notes: "R16, R17.",
     },
@@ -377,6 +405,7 @@ pub const GRADES: [Grade; 17] = [
         mu_rec: Some(1.05),
         tmax_C: 150.0,
         density_g_mm3: 0.0075,
+        bond_plane_cte_per_C: None,
         sources: GradeSources {
             br: KJ_SPECS,
             hcj: "https://www.arnoldmagnetics.com/wp-content/uploads/2017/11/N42SH-151021.pdf",
@@ -390,6 +419,7 @@ pub const GRADES: [Grade; 17] = [
             mu_rec: Some(KJ_SPECS),
             tmax: KJ_SPECS,
             density: KJ_SPECS,
+            bond_plane_cte: None,
         },
         notes: "Default grade (B842SH on both rings). Hcj 1592 Arnold (decision 17 A; K&J 1591.5). The engine keeps the workbook beta -0.005 /C; Arnold's -0.0055 is the reference (decision 18 A). R16, R17.",
     },
@@ -408,6 +438,7 @@ pub const GRADES: [Grade; 17] = [
         mu_rec: Some(1.05),
         tmax_C: 180.0,
         density_g_mm3: 0.0075,
+        bond_plane_cte_per_C: None,
         sources: GradeSources {
             br: KJ_SPECS,
             hcj: KJ_SPECS,
@@ -421,6 +452,7 @@ pub const GRADES: [Grade; 17] = [
             mu_rec: Some(KJ_SPECS),
             tmax: KJ_SPECS,
             density: KJ_SPECS,
+            bond_plane_cte: None,
         },
         notes: "R16, R17.",
     },
@@ -439,6 +471,7 @@ pub const GRADES: [Grade; 17] = [
         mu_rec: Some(1.05),
         tmax_C: 200.0,
         density_g_mm3: 0.0075,
+        bond_plane_cte_per_C: None,
         sources: GradeSources {
             br: KJ_SPECS,
             hcj: KJ_SPECS,
@@ -452,6 +485,7 @@ pub const GRADES: [Grade; 17] = [
             mu_rec: Some(KJ_SPECS),
             tmax: KJ_SPECS,
             density: KJ_SPECS,
+            bond_plane_cte: None,
         },
         notes: "R16, R17.",
     },
@@ -470,6 +504,7 @@ pub const GRADES: [Grade; 17] = [
         mu_rec: Some(1.05),
         tmax_C: 220.0,
         density_g_mm3: 0.0075,
+        bond_plane_cte_per_C: None,
         sources: GradeSources {
             br: KJ_SPECS,
             hcj: KJ_SPECS,
@@ -483,6 +518,7 @@ pub const GRADES: [Grade; 17] = [
             mu_rec: Some(KJ_SPECS),
             tmax: KJ_SPECS,
             density: KJ_SPECS,
+            bond_plane_cte: None,
         },
         notes: "R2 ((BH)max K&J 246.7; Arnold 215 min), R16, R17.",
     },
@@ -501,6 +537,7 @@ pub const GRADES: [Grade; 17] = [
         mu_rec: Some(1.05),
         tmax_C: 350.0,
         density_g_mm3: 0.0083,
+        bond_plane_cte_per_C: Some(13.0e-6),
         sources: GradeSources {
             br: ARNOLD_RECOMA,
             hcj: ARNOLD_RECOMA,
@@ -512,6 +549,7 @@ pub const GRADES: [Grade; 17] = [
             mu_rec: Some(ARNOLD_APEEM_2006),
             tmax: ARNOLD_RECOMA,
             density: ARNOLD_RECOMA,
+            bond_plane_cte: Some(ARNOLD_RECOMA),
         },
         notes: "Arnold Recoma 26, the low-Hcj sub-grade (decision 4 A; typ Hcj 2000). R9, R10, R11 (Tmax 350: may be considerably lower at a low load line), R14 (mu_rec class value).",
     },
@@ -530,6 +568,7 @@ pub const GRADES: [Grade; 17] = [
         mu_rec: Some(1.05),
         tmax_C: 250.0,
         density_g_mm3: 0.0083,
+        bond_plane_cte_per_C: Some(13.0e-6),
         sources: GradeSources {
             br: ARNOLD_RECOMA,
             hcj: ARNOLD_RECOMA,
@@ -541,6 +580,7 @@ pub const GRADES: [Grade; 17] = [
             mu_rec: Some(ARNOLD_APEEM_2006),
             tmax: ARNOLD_RECOMA,
             density: ARNOLD_RECOMA,
+            bond_plane_cte: Some(ARNOLD_RECOMA),
         },
         notes: "Arnold Recoma 30, the low-Hcj sub-grade (decision 4 A; 30HE/30S reach 1500/1750). R9, R10, R14.",
     },
@@ -559,6 +599,7 @@ pub const GRADES: [Grade; 17] = [
         mu_rec: Some(1.05),
         tmax_C: 250.0,
         density_g_mm3: 0.0084,
+        bond_plane_cte_per_C: Some(14.0e-6),
         sources: GradeSources {
             br: ARNOLD_RECOMA,
             hcj: ARNOLD_RECOMA,
@@ -570,6 +611,7 @@ pub const GRADES: [Grade; 17] = [
             mu_rec: Some(ARNOLD_APEEM_2006),
             tmax: ARNOLD_RECOMA,
             density: ARNOLD_RECOMA,
+            bond_plane_cte: Some(ARNOLD_RECOMA),
         },
         notes: "Arnold Recoma 20 (decision 4 A). R8 (beta -0.19 is 37-52 % smaller than the SmCo5 family values: the non-conservative side), R10, R14.",
     },
@@ -588,6 +630,7 @@ pub const GRADES: [Grade; 17] = [
         mu_rec: Some(1.05),
         tmax_C: 250.0,
         density_g_mm3: 0.005,
+        bond_plane_cte_per_C: Some(10.0e-6),
         sources: GradeSources {
             br: ECLIPSE_FERRITE,
             hcj: ECLIPSE_FERRITE,
@@ -599,6 +642,7 @@ pub const GRADES: [Grade; 17] = [
             mu_rec: Some(ARNOLD_APEEM_2006),
             tmax: ECLIPSE_FERRITE,
             density: ECLIPSE_FERRITE,
+            bond_plane_cte: Some(ECLIPSE_FERRITE),
         },
         notes: "Positive beta: coercivity falls as the magnet cools (decision 3 A: +0.35 %/C, Alliance C-5; Eclipse and TN 0303 give +0.27). Coefficient range borrowed from TN 0303's Ferrite 8 row (R15). Density: range midpoint (R12). R14.",
     },
@@ -617,6 +661,7 @@ pub const GRADES: [Grade; 17] = [
         mu_rec: None,
         tmax_C: 140.0,
         density_g_mm3: 0.0058,
+        bond_plane_cte_per_C: None,
         sources: GradeSources {
             br: ALLIANCE_BONDED_NEO,
             hcj: ALLIANCE_BONDED_NEO,
@@ -628,6 +673,7 @@ pub const GRADES: [Grade; 17] = [
             mu_rec: None,
             tmax: ALLIANCE_BONDED_NEO,
             density: ALLIANCE_BONDED_NEO,
+            bond_plane_cte: None,
         },
         notes: "Alliance BCN-19 (about 0.65 T). alpha and beta are Alliance's operating-point coefficients (Bd, Hd), no range printed (R13). mu_rec not sourced (Arnold gives 1.1-1.7 for isotropic bonded Neo). Density: range midpoint (R12).",
     },

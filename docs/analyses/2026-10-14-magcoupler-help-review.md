@@ -6874,3 +6874,538 @@ Round 2 (as returned).
   the results, and the steps from `Control::step`.
 
 7. Verdict: PASS. Nothing for the owner. One should-fix is offered, for docs (SF-1, WP-I's item [70]).
+
+## BL-058 E22 help texts
+
+BL-058 (`docs/ai/backlog.yaml`; correction E22) makes the bond's expansion screen and the expansion caution read a
+ferrite or SmCo inner ring's own expansion in the bond plane (the grade table's value: Y30 10.0e-6 /°C, Recoma 26 and
+Recoma 30 13.0e-6 /°C, Recoma 20 14.0e-6 /°C) where they read the NdFeB expansion input before, and makes the reading
+and the daily-cycle screen compare the shear's size. Four texts changed with it. They had their G-3 review on
+2026-11-10 in a fresh context on the uncommitted change in the worktree (branch `magcoupling/off-default-fixes`, HEAD
+6e15e4f, 20 changed files), together with the six unchanged help rows that speak of the same shear. The reviewer's
+report for the record follows.
+
+- Scope:
+  - changed: the overlay help of `temperature.mismatch.ndfeb_cte_per_C` (`gui/plain_text.rs`, line 736); the engine
+    help of the same input (`engine/temperature.rs`, line 216; exported to `tests/data/input_schema.json`, not drawn in
+    the GUI); the label and the help of the new result `temperature.mismatch.magnet_cte_per_C`
+    (`engine/temperature.rs`, lines 579 and 580); the help of warning rule 6 (`engine/warnings.rs`, line 110);
+  - unchanged, read again under E22 (`gui/plain_text.rs`): `materials.steel.cte_per_C` (line 391),
+    `materials.steel.modulus_GPa` (395), `temperature.mismatch.ndfeb_modulus_GPa` (399), `metal.bond_inner_mm` (411),
+    `temperature.mismatch.recommended_bondline_mm` (419) and `temperature.mismatch.adhesive_shear_modulus_GPa` (720).
+- Reviewer: fresh context, fable (the decider, physics review), 2026-11-10; round 1. Every number below is from the
+  reviewer's own probes on the GUI's basis (`compute_all`, every correction on).
+- Verdict: MUST_FIX, one. The four changed texts are true as read at the defaults, on every grade and hub probed and at
+  the slider ends. One unchanged row is not true any more on a state E22 makes ordinary (MF-1). Three should-fix are
+  offered. No text breaks a physics trap, says "clamp", says the coupling protects the gearbox or says a wall seals
+  the rings.
+- Must-fix:
+  - MF-1, `materials.steel.cte_per_C`, `magcoupling-rs/src/gui/plain_text.rs` line 391 (an unchanged row). "so higher
+    raises it" is false of the shear's size on a SmCo inner grade over a steel hub, and on a ferrite inner grade with
+    the steel expansion typed below 10.0e-6 /°C.
+    - Old: "Thermal expansion of the steel hub; its difference from the magnets' expansion sets the bond shear from
+      temperature swings, so higher raises it. Picking another back-iron material replaces it."
+    - New: "Thermal expansion of the steel hub; the further from the magnets' expansion, the higher the bond shear from
+      temperature swings. Picking another back-iron material replaces it." (26 words, 2 sentences, guard clean.)
+    - Design and numbers: Recoma 26 on both rings (custom dimensions), the default 4140 hub (its row is live, 12.3e-6
+      /°C). "Peak end shear, current bondline" reads -0.7004 MPa. One slider step up (12.4e-6) gives -0.6004 and one
+      down (12.2e-6) gives -0.8005: the size falls as the hub's expansion rises, to 0.0000 at 13.0e-6, and grows again
+      above it (14.0e-6 gives 1.0006). Recoma 20: -1.7012, up -1.6011, down -1.8013, zero at 14.0e-6. Y30 with the
+      steel expansion typed at 9.9e-6, 8.0e-6 and 5.0e-6: -0.1230, -2.4597 and -6.1492. Read across the picks the old
+      rule misleads the same way: on Recoma 26, going from 4140 (12.3e-6) to the lower-expansion 416 (10.08e-6) takes
+      the shear from -0.7004 to -2.9200 MPa, 4.2 times the size, where on the default NdFeB part it falls from 11.6814
+      to 9.6958.
+    - Why the size is the reading: the reading and the daily-cycle screen compare the size (Recoma 20 on 416 with the
+      adhesive shear modulus at 0.55 GPa: -15.5672 MPa reads Above, and the daily -3.3964 reads Above). The old words
+      are true of the signed number everywhere (it does rise with the hub's expansion), but no single reading makes the
+      six rows true on a SmCo inner ring over steel. Read by the signed number, the other five are false there (a
+      stiffer adhesive takes -1.7012 to -1.7159, "raises"; a thicker bondline takes -1.7012 to -1.5572, "lowers"). Read
+      by size, only this row is. The changed NdFeB expansion row already reads by size ("the further from the hub's,
+      the higher"), and the New text is its mirror.
+    - Why now: before E22 the negative shear needed both sliders in one corner (steel 5.0e-6 with the NdFeB expansion
+      at 6.0e-6 gives -0.8917 MPa). E22 puts it on every SmCo grade over every steel of the back-iron list (10.08e-6
+      to 12.3e-6, all below 13.0e-6).
+- Should-fix offered (the owner's choice; none is false as it stands):
+  - SF-1, the overlay help of `temperature.mismatch.ndfeb_cte_per_C` (`gui/plain_text.rs` line 736). The change
+    dropped "from temperature swings". The other five rows of the family all name "the bond shear from temperature
+    swings", and the same tab shows "Bond shear stress from magnetic torque", which this input does not move (0.403998
+    MPa with the input at -3e-6, -0.8e-6 and 6e-6, while the peak end shear reads 13.6432, 11.6814 and 5.6178).
+    - Old: "Thermal expansion of the magnets in the bonded face; the further from the hub's, the higher the bond shear.
+      A ferrite or SmCo inner ring uses its grade's own value."
+    - New: "Magnet thermal expansion in the bonded face; the further from the hub's, the higher the bond shear from
+      temperature swings. A ferrite or SmCo inner ring uses its grade's value." (30 words, 2 sentences, guard clean.)
+  - SF-2, the engine help of the same input (`engine/temperature.rs` line 216; ported help, outside the cap and the
+    guard, as "Correction E1:" is in the adhesive shear modulus help). Sentence 2 can be read as calling bonded NdFeB
+    sintered, and its list leaves out a sintered NdFeB grade on custom dimensions, which uses the input too (N42 on
+    both rings reads -0.8e-6 and 10.1927 MPa, the same as bonded NdFeB on both).
+    - Old: "Across the magnetization. Sintered NdFeB: every library part, a manual magnet without a grade, and bonded
+      NdFeB. Correction E22: a ferrite or SmCo inner ring uses its grade's value instead
+      (temperature.mismatch.magnet_cte_per_C shows the value in effect)."
+    - New: "Across the magnetization. Sintered NdFeB's value, used by every library part, every NdFeB grade (sintered
+      or bonded) and a manual magnet without a grade. Correction E22: a ferrite or SmCo inner ring uses its grade's
+      value instead (temperature.mismatch.magnet_cte_per_C shows the value in effect)." (43 words, 3 sentences. A
+      change here needs `tests/data/input_schema.json` blessed again.)
+  - SF-3, the help of the result `temperature.mismatch.magnet_cte_per_C` (`engine/temperature.rs` line 580). "The hub
+    bonds the inner ring." reads oddly: a hub does not bond.
+    - Old: "The magnet expansion the bond screen and the expansion caution use: a ferrite or SmCo inner ring's own
+      value, else the NdFeB expansion input. The hub bonds the inner ring."
+    - New: "The magnet expansion the bond screen and the expansion caution use: a ferrite or SmCo inner ring's value,
+      else the NdFeB expansion input. That ring is bonded to the hub." (30 words, 2 sentences, guard clean.)
+- The four changed texts, each as read:
+  - Overlay help of the NdFeB expansion: true. The further the input is from the hub's expansion, the larger the shear
+    on every hub (4140: 13.6432 at -3e-6, 5.6178 at 6e-6; with the steel at 5.0e-6 the shear is 0.0089 at 4.99e-6,
+    0.0000 at 5.00e-6 and -0.0089 at 5.01e-6). On a Y30 inner grade the input moves nothing (2.8286 MPa at -3e-6,
+    -0.8e-6 and 6e-6). See SF-1.
+  - Engine help of the same input: true to the code. See SF-2.
+  - Result label and help: true. The result reads 10.0e-6 on Y30, 13.0e-6 on Recoma 26 and Recoma 30, 14.0e-6 on
+    Recoma 20, and the input otherwise (a library part, no grade, N42, bonded NdFeB; a library part on the inner ring
+    with Y30 typed as its grade). See SF-3.
+  - Rule 6 help: true, no change asked. "More than" is strict and "the inner ring magnets'" is exact (the edges are in
+    the report).
+- The six unchanged rows, each as read under E22:
+  - `materials.steel.cte_per_C`: not true (MF-1).
+  - `materials.steel.modulus_GPa`: true. Default part, one step each way: 11.6800, 11.6814, 11.6828 MPa; the whole
+    slider moves it 7.42 % ("slightly"). Recoma 20 on 4140: the size rises (-1.70098, -1.70119, -1.70139). On 416 the
+    row moves nothing (9.6958 at both ends), as "Picking another back-iron material replaces it" says.
+  - `temperature.mismatch.ndfeb_modulus_GPa`: true. 11.6777, 11.6814, 11.6851 MPa; the whole slider moves it 3.96 %.
+    "Used whatever the magnet grade" holds under E22: on Y30 it still moves the shear (2.8277, 2.8286, 2.8295), and on
+    Recoma 20 the size rises (-1.70065, -1.70119, -1.70172).
+  - `metal.bond_inner_mm`: true. One step thicker takes 12.8722 to 11.6814 to 10.6925 MPa; the slider ends read
+    45.5489 and 3.0967. Recoma 20 on 4140: the size falls (-1.8746, -1.7012, -1.5572).
+  - `temperature.mismatch.recommended_bondline_mm`: true. The current-bondline shear stays (11.6814 at both ends); the
+    recommended-bondline shear reads 6.3772, 6.0710, 5.7929 and the daily-cycle shear 2.6925, 2.5632, 2.4458. Recoma
+    20 on 4140: the size falls (-0.9287, -0.8841, -0.8436).
+  - `temperature.mismatch.adhesive_shear_modulus_GPa`: true. 11.5804, 11.6814, 11.7823 MPa; the slider ends read
+    1.1729 and 131.9524. Recoma 20 on 4140: the size rises (-1.6865, -1.7012, -1.7159). Its second sentence was not
+    probed again; E22 does not touch it.
+- For the step that commits: the tracker entry of 2026-11-09 says the branch waits on this round. This is round 1 with
+  one must-fix, so the changed row, and any offered text that is taken, needs its re-read. The reviewer may edit only
+  this document; no help text, code, test or other doc was changed.
+
+**Report for the record (as returned).**
+
+#### Basis
+
+A throwaway test file in `magcoupling-rs/tests` (removed before the report), six tests run with `-- --nocapture`. Each
+design is `DesignInputs::default()` with inputs set by path and run through `compute_all`. Hubs: the back-iron codes 1
+to 8 (4140, 1018, 12L14, 416, 17-4PH H1150, 17-4PH H900, 304, 6061) and no back iron. Results read:
+`temperature.mismatch.magnet_cte_per_C`, `shaft_joint.part_cte_per_C` (the hub), `temperature.mismatch.worst_swing_C`,
+`temperature.mismatch.peak_shear_current_MPa`, `temperature.mismatch.peak_shear_recommended_MPa`,
+`temperature.adhesive_life.daily_peak_shear_MPa`, `temperature.mismatch.reading`,
+`temperature.adhesive_life.daily_screen`, `warnings.cte_mismatch_with_magnets` and
+`temperature.adhesive.bond_shear_MPa`.
+
+#### Magnet state against hub
+
+Peak end shear at the current bondline, MPa. "A" marks a reading of Above, "c" a design on which the expansion caution
+fires. "Used" is the result `temperature.mismatch.magnet_cte_per_C`.
+
+| Inner ring | Used, 1/°C | Swing, °C | 4140 | 1018 | 12L14 | 416 | H1150 | H900 | 304 | 6061 or no back iron |
+|---|---|---|---|---|---|---|---|---|---|---|
+| default part (B842SH) | -0.8e-6 | 71.06 | 11.6814 | 11.4139 | 10.9613 | 9.6958 | 11.3176 | 10.3373 | 15.7592 A c | 20.7601 A c |
+| N42 grade, and bonded NdFeB grade | -0.8e-6 | 62.00 | 10.1927 | 9.9592 | 9.5643 | 8.4602 | 9.8752 | 9.0199 | 13.7508 c | 18.1143 A c |
+| no grade (manual) | -0.8e-6 | 80.98 | 13.3124 | 13.0076 | 12.4918 | 11.0496 | 12.8979 | 11.7807 | 17.9596 A c | 23.6588 A c |
+| Y30 | 10.0e-6 | 98.00 | 2.8286 | 2.4597 | 1.8436 | 0.0983 | 2.3352 | 0.9833 | 8.4730 | 15.9590 A |
+| Recoma 20 | 14.0e-6 | 79.74 | -1.7012 | -2.0014 | -2.5002 | -3.9203 | -2.1001 | -3.2002 | 2.8976 | 9.1662 |
+| Recoma 26 | 13.0e-6 | 79.73 | -0.7004 | -1.0006 | -1.5000 | -2.9200 | -1.1000 | -2.2000 | 3.8964 | 10.1201 |
+| Recoma 30 | 13.0e-6 | 62.00 | -0.5446 | -0.7781 | -1.1664 | -2.2706 | -0.8553 | -1.7107 | 3.0298 | 7.8693 |
+
+- The hub's expansion read back (`shaft_joint.part_cte_per_C`): 12.3e-6, 12.0e-6, 11.5e-6, 10.08e-6, 11.9e-6, 10.8e-6,
+  16.9e-6 and 23.6e-6 /°C in the columns' order. With no back iron the 304 pick keeps its own column (16.9e-6); every
+  other pick reads the last column.
+- The caution fires on no Y30 or SmCo design of the table: the largest difference is 13.6e-6 (Y30 on aluminium).
+- Inner ring only: Y30 2.0509 MPa (10.0e-6 used), Recoma 26 -0.6242 MPa. Outer ring only, Y30 or Recoma 26: -0.8e-6
+  used and 11.6814 MPa, the default part's numbers. A library part on the inner ring with Y30 typed as its grade:
+  -0.8e-6 and 11.6814 MPa (the part wins).
+
+#### The steel expansion swept on the 4140 row
+
+Peak end shear at the current bondline, MPa, with `materials.steel.cte_per_C` typed (19 values each; these are the
+ones that carry the finding).
+
+| Steel, 1/°C | default part | Y30 | Recoma 20 | Recoma 26 |
+|---|---|---|---|---|
+| 5.0e-6 | 5.1719 | -6.1492 | -9.0063 | -8.0049 |
+| 8.0e-6 | 7.8470 | -2.4597 | -6.0042 | -5.0031 |
+| 9.9e-6 | 9.5413 | -0.1230 | -4.1029 | -3.1019 |
+| 10.0e-6 | 9.6305 | -0.0000 | -4.0028 | -3.0018 |
+| 10.1e-6 | 9.7196 | 0.1230 | -3.9027 | -2.9018 |
+| 12.3e-6 (default) | 11.6814 | 2.8286 | -1.7012 | -0.7004 |
+| 12.9e-6 | 12.2164 | 3.5666 | -1.1008 | -0.1001 |
+| 13.0e-6 | 12.3056 | 3.6895 | -1.0007 | 0.0000 |
+| 13.1e-6 | 12.3948 | 3.8125 | -0.9006 | 0.1001 |
+| 13.9e-6 | 13.1081 | 4.7964 | -0.1001 | 0.9005 |
+| 14.0e-6 | 13.1973 | 4.9194 | 0.0000 | 1.0006 |
+| 14.1e-6 | 13.2865 | 5.0424 | 0.1001 | 1.1007 |
+| 25.0e-6 | 23.0061 A c | 18.4477 A | 11.0077 | 12.0073 |
+
+- The size is the reading. The corner steel 5.0e-6, NdFeB expansion 6.0e-6, adhesive shear modulus 3.0 GPa, both
+  bondlines 0.01 mm: -22.7727 MPa, reading Above, daily screen Above. Recoma 20 on 416 with the adhesive shear modulus
+  at 0.107, 0.55, 1 and 3 GPa: -3.9203 (below), -15.5672 (Above), -23.4805 (Above), -44.1404 (Above).
+- The default part on the 4140 row: the caution is silent at 14.2e-6 and fires at 14.3e-6; the daily screen reads
+  Above at 15.0e-6 (daily 3.0915 MPa; below at 14.3e-6, 2.9545) and the reading Above at 20.0e-6 (18.5476 MPa; below
+  at 15.0e-6, 14.0890).
+
+#### One slider step each way
+
+20 designs (default part, N42, Y30, Recoma 20 and Recoma 26, each on 4140, 416, 304 and no back iron), seven sliders,
+three results: 420 rows, each with one step down, the base, one step up and both slider ends. Peak end shear at the
+current bondline unless said, MPa.
+
+| Slider (step) | default part on 4140: down, base, up | ends | Recoma 20 on 4140: down, base, up |
+|---|---|---|---|
+| `materials.steel.cte_per_C` (1e-7) | 11.5922, 11.6814, 11.7706 | 5.1719, 23.0061 | -1.8013, -1.7012, -1.6011 (size falls) |
+| `materials.steel.modulus_GPa` (1) | 11.6800, 11.6814, 11.6828 | 10.8666, 11.7334 | -1.70098, -1.70119, -1.70139 |
+| `temperature.mismatch.ndfeb_cte_per_C` (1e-8) | 11.6903, 11.6814, 11.6725 | 13.6432, 5.6178 | stays (the grade's value) |
+| `temperature.mismatch.ndfeb_modulus_GPa` (1) | 11.6777, 11.6814, 11.6851 | 11.3389, 11.8012 | -1.70065, -1.70119, -1.70172 |
+| `metal.bond_inner_mm` (0.005) | 12.8722, 11.6814, 10.6925 | 45.5489, 3.0967 | -1.8746, -1.7012, -1.5572 |
+| `temperature.mismatch.recommended_bondline_mm` (0.005), recommended-bondline shear | 6.3772, 6.0710, 5.7929 | 45.5188, 1.2544 | -0.9287, -0.8841, -0.8436 |
+| `temperature.mismatch.adhesive_shear_modulus_GPa` (0.001) | 11.5804, 11.6814, 11.7823 | 1.1729, 131.9524 | -1.6865, -1.7012, -1.7159 |
+
+- Of the 420 rows, the only ones where the size moves against a row's words are the three of
+  `materials.steel.cte_per_C` on Recoma 20 on 4140 and the three on Recoma 26 on 4140 (current bondline -0.8005,
+  -0.7004, -0.6004; recommended -0.4160, -0.3640, -0.3120; daily -0.1565, -0.1370, -0.1174).
+- The two steel rows move nothing on 416, 304 and no back iron (default part: 9.6958, 15.7592 and 20.7601 MPa at both
+  ends of both sliders).
+- "Slightly": the steel modulus slider end to end moves the current-bondline shear 7.42 % of its base and the
+  recommended-bondline and daily shears 4.07 %; the magnet modulus slider 3.96 % and 2.11 %.
+- The bond shear from magnetic torque reads 0.403998 MPa at the defaults, with the NdFeB expansion at -3e-6 and 6e-6,
+  with the steel expansion at 5e-6 and 25e-6, and on N42 grades: it follows neither expansion input.
+
+#### Rule 6 at its edges
+
+The rule is `(hub - magnet).abs() > 15e-6` (`engine/warnings.rs`, line 156). The hub's value is the steel expansion
+with a steel back iron (the input on the 4140 row, the pick's value on the other steel rows) and the body material's
+otherwise (6061, or the 304 pick). The differences below are the engine's own, printed to 18 digits.
+
+| Design | Difference, 1/°C | Caution |
+|---|---|---|
+| default part, steel 14.1e-6 | 1.48999999999999996e-5 | silent |
+| default part, steel 14.2e-6 (15.0e-6 on paper) | 1.49999999999999987e-5 | silent |
+| default part, steel 14.3e-6 | 1.51000000000000011e-5 | fires |
+| default hub, NdFeB expansion -2.69e-6 | 1.49900000000000005e-5 | silent |
+| default hub, NdFeB expansion -2.70e-6 (15.0e-6 on paper) | 1.50000000000000004e-5 | silent |
+| default hub, NdFeB expansion -2.71e-6 | 1.50100000000000003e-5 | fires |
+| Y30, steel 25e-6, the slider top (15.0e-6 on paper) | 1.50000000000000004e-5 | silent |
+| Recoma 20, steel 5e-6 (the largest negative difference on the sliders) | -9.0e-6 | silent |
+
+- At 15.0e-6 on paper the caution is silent in all three places, so "more than" is true as drawn. The default part on
+  304 (a difference of 17.7e-6) and on aluminium (24.4e-6) fires; its text there is "Large expansion mismatch between
+  the magnets and the hub they are bonded to: higher bond stress over temperature swings." (unchanged).
+
+#### Words
+
+Counted with the crate's `word_count` and `sentence_count`; the guard is the test helper `plain_problems`.
+
+| Text | Words | Sentences | Guard |
+|---|---|---|---|
+| overlay help of the NdFeB expansion (current) | 30 | 2 | clean |
+| engine help of the NdFeB expansion (current) | 36 | 3 | "Correction E22" and the dotted path (ported help: outside the guard) |
+| result help (current) | 30 | 2 | clean |
+| result label (current) | 7 | | clean |
+| rule 6 help (current) | 17 | 1 | clean |
+| the six unchanged rows | 29, 24, 22, 25, 24, 25 | 2 each | clean |
+| MF-1 New | 26 | 2 | clean |
+| SF-1 New | 30 | 2 | clean |
+| SF-2 New | 43 | 3 | as the current text |
+| SF-3 New | 30 | 2 | clean |
+
+No current or New text holds "clamp" or "gearbox".
+
+#### Traps and rules
+
+- Slice-2 spec 3.5 (one or two sentences, at most 30 words, which result moves and which way, say when a pick
+  overrides, no default numbers): the three capped texts keep it. The overlay help names the pick that overrides it;
+  `picks::set_by_pick` holds the input on a ferrite or SmCo inner grade on custom dimensions.
+- "The expansion caution counts the temperature swing" (slice-2 spec 8): not written. Rule 6 compares the two
+  coefficients only: Y30 on aluminium has the largest swing of the table (98.00 °C) and a reading of Above (15.9590
+  MPa), and the caution is silent at 13.6e-6.
+- "Each ring uses its own α" (slice-2 spec 8) is about the Br coefficient; no text here touches it.
+- "The expansion screen uses each grade's own expansion" (the trap list in the slice-2 plan): true now for a ferrite or
+  SmCo inner grade and for no other, which is what the three texts say.
+- BL-059 spec 6 (nothing false at the default, the probe designs or any reachable input): MF-1 is the one text that
+  fails it.
+- Standing rules: no text says the coupling protects the gearbox, says a wall seals the rings or holds "clamp"; the
+  overlay's words hold no cell name, correction id, file or code name.
+
+#### Tests
+
+On the worktree as found: `cargo test --test schema` 11 passed; `cargo test --test deviations e22` 6 passed;
+`cargo test --features gui --lib plain_text` 27 passed, 2 ignored. The direction table of `gui/plain_text.rs` checks
+the signed number on the example (`materials.steel.cte_per_C` Up), so MF-1's New text leaves it as it is. The eight
+tests that are red on purpose were not run and are not a finding.
+
+#### Not checked
+
+- The GUI was not run: the texts were read from the source, and the "set by the ... pick" line from the code.
+- The grade table's expansion values against their datasheets, the three teaching notes, the README and the Python
+  reference: other rounds' scope.
+- A worst swing below zero or of another sign convention: every probed swing is positive (62.00 to 98.00 °C). The New
+  texts speak of distance and do not lean on the sign.
+- Whether any on-screen text says what a negative peak end shear means: the two results' engine help is empty, and the
+  spreadsheet help was not read.
+
+#### Recorded, no change asked
+
+- A SmCo inner grade on any steel hub draws a negative peak end shear (-0.7004 MPa on the default hub). The screens
+  compare its size, and the five rows that stand are true of its size.
+- The magnet stiffness stays the NdFeB input on a ferrite or SmCo grade, as its row says; the whole slider is worth
+  3.96 % of the shear.
+- Bonded NdFeB keeps the NdFeB expansion input (the grade table's decision 7 of Addendum A-4); the engine help says so.
+- Only the inner ring's bond on the hub is screened: a ferrite or SmCo grade on the outer ring alone moves nothing
+  (11.6814 MPa, the default's number), though the outer ring is bonded to the cup.
+- With no back iron or a 304 hub the two steel rows speak of "the steel hub" and move nothing (as found before this
+  change), and the result `temperature.mismatch.steel_cte` ("Steel expansion coefficient (4140)") echoes the steel
+  input whatever the hub is (read in the code, `engine/temperature.rs` line 1173).
+- The trap list of the slice-2 plan still carries "the expansion screen uses each grade's own expansion" as false; after
+  E22 it is half true (docs, for the step that commits).
+
+Verdict: MUST_FIX (MF-1). Three should-fix offered (SF-1 to SF-3).
+
+### Re-review after the round-1 texts were applied (2026-11-10)
+
+Round 1 above returned MUST_FIX (MF-1) and offered three should-fix. All four New texts were then applied as written:
+MF-1 and SF-1 in the overlay (`gui/plain_text.rs`), SF-2 in the engine metadata (`engine/temperature.rs`) and in
+`tests/data/input_schema.json`, SF-3 in the engine metadata. Round 1 asked for a re-read of the changed row and of any
+offered text taken. This is that re-read, on the uncommitted change in the worktree (branch
+`magcoupling/off-default-fixes`, on 6e15e4f).
+
+- Reviewer: fresh context, session model (fable), 2026-11-10; G-3 re-review, round 2. The reviewer did not write the
+  four texts (they are round 1's New texts) and took no part in round 1.
+- Basis: each text was read in the source and compared with round 1's New text, character for character. Each was then
+  tried against `compute_all` in a throwaway integration test (`DesignInputs::default()`, `inputs.set`, every
+  correction on), deleted after its run. Probes A to G below are that test's output.
+- Verdict: PASS, no must-fix and no should-fix. No design that was tried makes any of the four texts false. Texts 1, 2
+  and 4 keep the 30-word cap, the two-sentence cap and the plain-words guard; text 3 is ported engine help, outside
+  the caps and the guard.
+- For the step that commits: the tracker's "Still owed before the branch merges" entry (`docs/ai/05-update-tracker.md`)
+  and BL-058's note (`docs/ai/backlog.yaml`) both still list the G-3 text re-review of the changed help. Round 1 and
+  this record are that review; the reviewer may edit only this document, so those two lines are left for that step.
+
+#### The four texts, as found in the source
+
+Each equals round 1's New text character for character.
+
+1. Overlay help of `materials.steel.cte_per_C`, `gui/plain_text.rs` line 391 (MF-1 New): "Thermal expansion of the
+   steel hub; the further from the magnets' expansion, the higher the bond shear from temperature swings. Picking
+   another back-iron material replaces it."
+2. Overlay help of `temperature.mismatch.ndfeb_cte_per_C`, `gui/plain_text.rs` line 736 (SF-1 New): "Magnet thermal
+   expansion in the bonded face; the further from the hub's, the higher the bond shear from temperature swings. A
+   ferrite or SmCo inner ring uses its grade's value."
+3. Engine help of the same input (cell C95), `engine/temperature.rs` line 216, and the same string in
+   `tests/data/input_schema.json` line 2263 (SF-2 New): "Across the magnetization. Sintered NdFeB's value, used by
+   every library part, every NdFeB grade (sintered or bonded) and a manual magnet without a grade. Correction E22: a
+   ferrite or SmCo inner ring uses its grade's value instead (temperature.mismatch.magnet_cte_per_C shows the value in
+   effect)."
+4. Help of the result `temperature.mismatch.magnet_cte_per_C`, `engine/temperature.rs` line 580 (SF-3 New): "The magnet
+   expansion the bond screen and the expansion caution use: a ferrite or SmCo inner ring's value, else the NdFeB
+   expansion input. That ring is bonded to the hub."
+
+#### Text 1, the steel expansion's overlay help (PASS)
+
+Probe A, the first sentence. The row is live in one state, the 4140 pick with the steel circuit. There, 19 magnet
+states (the default part, a manual magnet with no grade, and each of the 17 grades on both rings) by 10 steel values
+(5, 7.5, 10, 12.3, 13, 13.5, 14, 16, 20 and 25e-6 1/°C; the slider runs from 5e-6 to 25e-6) by 3 shears (current
+bondline, recommended bondline, daily) were run. In no pair of steel values does the one further from the magnet value
+in effect give the smaller size of shear: 0 breaks in all 19 states. The shear over (steel value less the magnet value
+in effect) is constant to about 4e-16 (relative) within each state, so the shear is a straight line through zero where
+the two expansions meet, and its size rises with the distance on both sides.
+
+Peak end shear at the current bondline, MPa, by steel value:
+
+| Magnets (value in effect, 1/°C) | Swing, °C | 5e-6 | 10e-6 | 12.3e-6 | 14e-6 | 20e-6 | 25e-6 |
+|---|---|---|---|---|---|---|---|
+| default part (-0.8e-6, the input) | 71.06 | 5.1719 | 9.6305 | 11.6814 | 13.1973 | 18.5476 | 23.0061 |
+| Y30 (10.0e-6) | 98.00 | -6.1492 | -0.0000 | 2.8286 | 4.9194 | 12.2985 | 18.4477 |
+| SmCo_2_17_26 (13.0e-6) | 79.73 | -8.0049 | -3.0018 | -0.7004 | 1.0006 | 7.0043 | 12.0073 |
+| SmCo_1_5_20 (14.0e-6) | 79.74 | -9.0063 | -4.0028 | -1.7012 | 0.0000 | 6.0042 | 11.0077 |
+
+- Round 1's MF-1 case now reads true: on SmCo_1_5_20 the steel values 12.3e-6, 13e-6 and 14e-6 give sizes of 1.7012,
+  1.0007 and 0.0000 MPa, the further the higher, where the old "so higher raises it" was false of the size.
+- The readings follow the size. The default part reads "Above the lap-shear strength at the block ends" at 20e-6 and
+  25e-6 (18.5476 and 23.0061 MPa), and Y30 at 25e-6 (18.4477 MPa); every other cell of the table reads Below.
+- At the default steel value the other states give 10.1927 MPa (N35 to N42H and the bonded NdFeB grade), 13.3124 (no
+  grade), 16.1110 (N38UH, N35EH, N33AH) and -0.5446 (SmCo_2_17_30); each rises in size with the distance as above.
+
+Probe B, the second sentence. The steel value was typed at 5e-6 and at 25e-6 on every back-iron pick with the steel
+circuit and the default part, and the result rows that moved were counted. The hub's expansion was backed out of the
+shear's straight line in the NdFeB input.
+
+| Back-iron pick | Hub expansion, 1/°C | Result rows that move | Shear at 5e-6 and at 25e-6, MPa |
+|---|---|---|---|
+| 1 (4140) | 12.3e-6, the row's own default | 21 | 5.1719 and 23.0061 |
+| 2 | 12.0e-6 | 0 | 11.4139 at both |
+| 3 | 11.5e-6 | 0 | 10.9613 at both |
+| 4 | 10.08e-6 | 0 | 9.6958 at both |
+| 5 | 11.9e-6 | 0 | 11.3176 at both |
+| 6 | 10.8e-6 | 0 | 10.3373 at both |
+| 7 (304) | 16.9e-6 | 1, the echo `temperature.mismatch.steel_cte` | 15.7592 at both |
+| 8 (6061) | 23.6e-6 | 1, the echo | 20.7601 at both |
+
+- "Picking another back-iron material replaces it" holds on all seven other picks: the hub's expansion is the pick's,
+  the row moves no result on picks 2 to 6 and only its echo on picks 7 and 8.
+- 26 words, 2 sentences, guard clean; no "clamp", no gearbox claim, nothing about a wall or a seal.
+- Recorded, outside this round's change: with no back iron (`coupling.backiron` 0) the row moves only its echo on
+  picks 1, 7 and 8 and nothing on picks 2 to 6. On pick 1 the shear is 20.7601 MPa at 5e-6 and at 25e-6 (the hub is
+  the aluminium, 23.6e-6), so the first sentence is then about a hub that is not there. The row read the same way
+  before this change, round 1 listed it under "no change asked", and the direction table pins it
+  (`materials.steel.cte_per_C`, "no back iron", Stays). More under "Recorded, no change asked" below.
+
+#### Text 2, the NdFeB expansion's overlay help (PASS)
+
+Probe C, the first sentence. The input was swept over its slider (-3, -0.8, 0, 2, 4, 4.5, 5, 5.5 and 6e-6 1/°C) with
+the default part on 12 hub states: the eight back-iron picks with the steel circuit, picks 1 and 7 with no back iron,
+and the 4140 pick with the steel value typed at 5.0e-6 and at 5.2e-6, which puts the crossing inside the slider. Over
+3 shears, in no pair of inputs does the one further from the hub's expansion give the smaller size: 0 breaks. The
+result `temperature.mismatch.magnet_cte_per_C` equals the input in every case.
+
+Peak end shear at the current bondline, MPa, by the input:
+
+| Hub (expansion, 1/°C) | -3e-6 | -0.8e-6 | 0 | 2e-6 | 4e-6 | 5e-6 | 6e-6 |
+|---|---|---|---|---|---|---|---|
+| 4140 (12.3e-6) | 13.6432 | 11.6814 | 10.9680 | 9.1846 | 7.4012 | 6.5095 | 5.6178 |
+| pick 4 (10.08e-6), the lowest of the picks | 11.6564 | 9.6958 | 8.9829 | 7.2006 | 5.4183 | 4.5271 | 3.6359 |
+| 304 (16.9e-6) | 17.7179 | 15.7592 | 15.0469 | 13.2662 | 11.4855 | 10.5952 | 9.7048 |
+| 6061 (23.6e-6), and pick 1 with no back iron | 22.6319 | 20.7601 | 20.0794 | 18.3778 | 16.6761 | 15.8253 | 14.9745 |
+| 4140, steel value typed at 5.0e-6 | 7.1337 | 5.1719 | 4.4585 | 2.6751 | 0.8917 | 0.0000 | -0.8917 |
+| 4140, steel value typed at 5.2e-6 | 7.3120 | 5.3503 | 4.6369 | 2.8535 | 1.0701 | 0.1783 | -0.7134 |
+
+- On every pick the input sits below the hub's expansion over its whole slider, so raising it brings it nearer and
+  lowers the shear, which is what the direction table checks on the example (Down). Past the crossing, which only a
+  steel value typed below 6e-6 reaches, the size rises again: with the steel at 5.0e-6 it is 0.4459 MPa at 4.5e-6,
+  0.0000 at 5e-6 and 0.4459 at 5.5e-6. "The further from the hub's, the higher" holds on both sides.
+
+Probe C2, the second sentence. With Y30, SmCo_1_5_20, SmCo_2_17_26 or SmCo_2_17_30 on both rings or on the inner ring
+only, the input was typed at -3e-6 and at 6e-6, on the default hub and on 6061 (pick 8) with no back iron. No result
+row moves in any of the 16 cases, and the value in effect is the grade's. With the grade on both rings:
+
+| Inner-ring grade | Value in effect, 1/°C | Shear on the default hub, MPa | Shear on 6061 with no back iron, MPa |
+|---|---|---|---|
+| Y30 | 10.0e-6 | 2.8286 | 15.9590 |
+| SmCo_1_5_20 | 14.0e-6 | -1.7012 | 9.1662 |
+| SmCo_2_17_26 | 13.0e-6 | -0.7004 | 10.1201 |
+| SmCo_2_17_30 | 13.0e-6 | -0.5446 | 7.8693 |
+
+- With the grade on the outer ring only, the input is the value in effect and 5 result rows move (13.6432 against
+  5.6178 MPa on the default hub with Y30 outside): "inner ring" is the right word.
+- 30 words, 2 sentences, guard clean; no "clamp", no gearbox claim, nothing about a wall or a seal.
+
+#### Text 3, the NdFeB expansion's engine help, cell C95 (PASS)
+
+- Ported engine help: it is outside the overlay's caps and the plain-words guard, as round 1's table said of SF-2 New.
+  It has 43 words in 3 sentences, and the guard would name "E22", "Correction E22" and the dotted path.
+- As the code reads, it is not drawn in the GUI: `help_for` (`gui/plain_text.rs`) returns the overlay row (text 2)
+  first, and `original_help` returns the deviation registry's `workbook_help` for this input, "Across the
+  magnetization." Text 3 is what the engine metadata and `tests/data/input_schema.json` carry (line 2263, the same
+  string; `cargo test --test schema` passes).
+- Probe D, with the input at 3e-6 so that it differs from every grade's value. All 15 library parts are NdFeB (grades
+  N42SH, N42, N52, N50 and N50M). 45 part cases read 3e-6: each part on both rings, the same with "Y30" typed as the
+  grade beside the part, and the part inside with SmCo_1_5_20 typed beside it and a manual Y30 ring outside. A grade
+  typed beside a library part changes nothing, as "every library part" says.
+- Probe D, the grades: 17 grades by 4 placements (both rings; the inner ring with the default part outside; the outer
+  ring with the default part inside; the outer ring with a manual magnet without a grade inside) give 68 cases. The 8
+  with Y30, SmCo_1_5_20, SmCo_2_17_26 or SmCo_2_17_30 on the inner ring read 10.0e-6, 14.0e-6, 13.0e-6 and 13.0e-6.
+  The other 60 read 3e-6, the 12 sintered NdFeB grades and the bonded one among them. A manual magnet without a grade
+  reads 3e-6. Wrong: 0.
+- "(temperature.mismatch.magnet_cte_per_C shows the value in effect)": that result is the number the shear's straight
+  line and the caution follow in probes A, C and E.
+
+#### Text 4, the help of the result `temperature.mismatch.magnet_cte_per_C` (PASS)
+
+- It has no overlay help or label row in `gui/plain_text.rs`, so it is drawn as the engine metadata holds it (label
+  "Magnet expansion in the bond plane used"; a Rust-only result with no cell). 30 words, 2 sentences, guard clean; no
+  "clamp", no gearbox claim, nothing about a wall or a seal.
+- "The bond screen ... use": in probes A and C the shear is a straight line in (hub expansion less this result), to
+  about 4e-16 (relative) in probe A.
+- "and the expansion caution use", probe E: 12 hub states by 6 magnet states (the default part, N42, the bonded grade,
+  Y30, SmCo_1_5_20, SmCo_2_17_30) by 5 inputs (-3, -0.8, 1.8, 2 and 6e-6) give 360 cases. The caution "Expansion
+  mismatch with the magnets" fires exactly where the hub's expansion and this result are more than 15e-6 apart: 0
+  cases off. The knife edge at 15.0e-6 was left to round 1's table.
+
+| Hub | Magnets | Input, 1/°C | Value in effect, 1/°C | Apart by, 1/°C | Caution | Shear, MPa |
+|---|---|---|---|---|---|---|
+| 304 | default part | 1.8e-6 | 1.8e-6 | 15.10e-6 | fires | 13.4443 |
+| 304 | default part | 2.0e-6 | 2.0e-6 | 14.90e-6 | silent | 13.2662 |
+| 304 | Y30 | each of the five | 10.0e-6 | 6.90e-6 | silent | 8.4730 |
+| 304 | SmCo_1_5_20 | each of the five | 14.0e-6 | 2.90e-6 | silent | 2.8976 |
+| 6061 | default part | -0.8e-6 | -0.8e-6 | 24.40e-6 | fires | 20.7601 |
+| 6061 | default part | 6e-6 | 6e-6 | 17.60e-6 | fires | 14.9745 |
+| 6061 | Y30 | each of the five | 10.0e-6 | 13.60e-6 | silent | 15.9590 (reads Above) |
+| 6061 | SmCo_1_5_20 | each of the five | 14.0e-6 | 9.60e-6 | silent | 9.1662 |
+
+- "else the NdFeB expansion input": probe D (all 45 part cases and 60 of the 68 grade cases read the input).
+- "That ring is bonded to the hub": a ferrite or SmCo grade on the outer ring alone leaves the value at the input
+  (probe C2), so the inner ring is the one that counts.
+- Readability, no change asked: with an NdFeB inner ring, "That ring" reads back to "a ferrite or SmCo inner ring".
+  The sentence is about the inner ring either way and stays true, and the text is at its 30-word cap.
+
+#### Words and guard
+
+Counted with the crate's `word_count` and `sentence_count`; the guard is `plain_text_violations`,
+`mentions_gearbox_protection` and the test helper `plain_problems`.
+
+| Text | Words | Sentences | Guard | "clamp", gearbox, wall or seal |
+|---|---|---|---|---|
+| 1 | 26 | 2 | clean | none |
+| 2 | 30 | 2 | clean | none |
+| 3 | 43 | 3 | `E\d{1,2}`, `correction E\d` and code names (ported engine help: outside the caps and the guard) | none |
+| 4 | 30 | 2 | clean | none |
+
+#### The swing (probe G)
+
+Texts 1 and 2 lean on a temperature swing that is not zero. The sliders `metal.min_temp_C` (-60 to 20 °C) and
+`coupling.op_temp_C` (-40 to 150 °C) were set to the corner that shrinks it, on the default part, for the four
+adhesives.
+
+| Adhesive (cure, °C) | Swing at the defaults, °C | Swing with the coldest temperature at 20 °C, °C |
+|---|---|---|
+| 1 (22) | 71.06 | 71.06 |
+| 2 (120) | 160.00 | 100.00 |
+| 3 (121) | 161.00 | 101.00 |
+| 4 (23) | 63.00 | 37.00 |
+
+The second column is the same with the operating temperature at -40 °C and at 20 °C. The smallest swing found is
+37.00 °C, where the steel values 5e-6, 12.3e-6 and 25e-6 still give 2.6931, 6.0827 and 11.9797 MPa in that order. No
+zero or negative swing was found.
+
+#### Tests
+
+On the worktree as found, after the throwaway test was deleted: `cargo test --test schema` 11 passed, 0 failed;
+`cargo test --test explain` 63 passed, 0 failed, 1 ignored; `cargo test --features gui --lib plain_text` 27 passed, 0
+failed, 2 ignored (`help_tests::help_for_review` and `tests::overlay_strings_for_review`), 963 filtered out. Only
+these three commands were run; the full gate was not, as instructed.
+
+#### Not checked
+
+- The GUI was not run. The texts were read from the source, and which text is drawn was read from `help_for` and
+  `original_help`.
+- The grade table's expansion values against their datasheets, the teaching notes, the README and the Python
+  reference: other rounds' scope.
+- The swing beyond the corners of probe G: not every adhesive, temperature and grade together.
+- Rule 6 at exactly 15.0e-6 apart: round 1's table has it.
+- The rows round 1 passed and this change left alone (the six unchanged overlay rows, rule 6's help, the result's
+  label) were not re-read.
+- Whether any on-screen text says what a negative peak end shear means: none was found (`peak_shear_current_MPa`,
+  `peak_shear_recommended_MPa` and `reading` have empty engine help and no overlay help row); the spreadsheet help was
+  not read.
+- How the GUI offers the grade (a list or typed text). In the engine a grade text the table does not hold ("y30",
+  "Y30 ", " Y30", "Ferrite", "SmCo", "N 42") reads as no grade and the input is used (3e-6 in probe D).
+
+#### Recorded, no change asked
+
+- With no back iron the steel expansion row says "the steel hub" and moves no shear (text 1 above; 20.7601 MPa at both
+  ends of the slider on pick 1). It was so before this change and round 1 recorded it, with the steel stiffness row.
+  The steel density row of the same table says "Unused with no back iron"; these two rows do not, and the expansion
+  row has 4 words of room where that clause takes 5. Not a finding on this branch. If the owner wants the two rows to
+  say it, it is its own backlog item and its own text round.
+- The signed number on display goes more negative as the steel value moves down from the magnets' on a ferrite or SmCo
+  inner ring (SmCo_1_5_20: -1.7012 MPa at 12.3e-6, -9.0063 at 5e-6). Its size rises, which is what texts 1 and 2 say
+  and what the screens compare (round 1's record).
+- A test gap, for the code side: the direction table checks the signed number on the example
+  (`materials.steel.cte_per_C` Up), and no row pins "the further, the higher" on the far side of the crossing, where
+  text 1 differs from the old one. The engine side of it is pinned
+  (`e22_compares_the_size_of_a_negative_shear_on_sintered_ndfeb_too`, `tests/deviations.rs`).
+- A ferrite or SmCo grade on the outer ring alone moves nothing in the bond screen, though that ring is bonded to the
+  cup (round 1's record); texts 2, 3 and 4 say "inner ring".
+
+Verdict: PASS. No must-fix, no should-fix.
