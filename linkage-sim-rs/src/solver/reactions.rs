@@ -68,10 +68,9 @@ impl ReactionSolveResult {
     /// - any caller that wants a quick "do I trust these numbers"
     ///   check before using the reactions downstream.
     ///
-    /// Tolerance: `1e-6 N` absolute on `residual_norm`, plus (when
-    /// `used_two_pass`) a `1e-6 N·m` check that the pass-2 driver
-    /// lambda has actually collapsed (the point of pass-2). On
-    /// well-conditioned systems both are typically ~1e-12.
+    /// Returns false only when `validation` is `ValidationState::Failed`
+    /// (an `Unverified` result counts as valid here). `residual_norm` is
+    /// not read; the validation state is computed by `compute_validation`.
     pub fn is_valid(&self) -> bool {
         !matches!(self.validation, ValidationState::Failed)
     }
@@ -133,12 +132,13 @@ const EQUILIBRIUM_REL_TOL: f64 = 1e-6;
 /// ΣF = 0 and ΣM = 0, so any sign/frame/Jacobian error the generalised
 /// residual hides surfaces here as a non-zero net force or moment.
 ///
-/// Returns `Some(relative_residual)` when every force element and joint type
-/// in `mech` is modeled (currently: Revolute joints + the rotational Driver,
-/// Gravity, and a single LinearActuator). Returns `None` when the mechanism
-/// contains anything else (force zones, springs, dampers, fixed/prismatic
-/// joints, multiple actuators) — callers MUST treat `None` as "unverified",
-/// never as pass or fail.
+/// Returns `Some(relative_residual)` when every joint is Revolute (plus the
+/// rotational Driver) and every force element is Gravity, at most one
+/// LinearActuator, a ForceZone, an ExternalForce or an ExternalTorque.
+/// Returns `None` for any other joint type (fixed, prismatic, cam) or force
+/// element (springs, dampers, gas springs, motors, friction, limits, torsion
+/// and rotary elements) and for more than one actuator; callers MUST treat
+/// `None` as "unverified", never as pass or fail.
 ///
 /// `eff_actuator_force` is the actuator's effective axial force at this pose
 /// (the back-solved value in pass-2, or stored `la.force` in pass-1); `None`

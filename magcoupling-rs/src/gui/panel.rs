@@ -130,7 +130,7 @@ pub const KEY_DESIGN_HEADING: &str = "Key design";
 /// requirement's value (decision G-2; the panel shows the requirement's own row).
 pub const TARGET_LABEL: &str = "Target hot-low torque";
 
-/// The label of the free-variable picker.
+/// The label of the free variable's row in the spreadsheet's Summary.
 pub const FREE_VARIABLE_LABEL: &str = "Free variable";
 
 /// The start of the log line of each sizing outcome (the web smoke test looks for it).

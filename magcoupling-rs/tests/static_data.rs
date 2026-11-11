@@ -1,5 +1,5 @@
-//! Static engine tables (magnet library, and later adhesives, alloys, screw
-//! sizes, checklists) equal the Python engine's, value for value.
+//! Static engine tables (magnet library, adhesives, alloys, screw sizes,
+//! checklists) equal the Python engine's, value for value.
 //! `tests/data/static_data.json` is written by
 //! `reference/magcoupling-py/tools/gen_differential.py`.
 

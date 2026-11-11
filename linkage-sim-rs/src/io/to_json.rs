@@ -1,7 +1,9 @@
 //! Mechanism -> JSON conversion.
 //!
-//! **Known limitation:** Driver constraints use closures, which cannot be
-//! serialized. Drivers are skipped on save and must be re-attached after load.
+//! **Known limitation:** only drivers that carry `DriverMeta` are saved
+//! (constant-speed, expression and linear). A driver built from a plain
+//! closure is skipped silently, and a cosine-stroke linear driver is saved
+//! as a constant-velocity one.
 
 use std::collections::HashMap;
 
@@ -252,7 +254,7 @@ pub fn mechanism_to_json(mech: &Mechanism) -> Result<MechanismJson, Serializatio
 
 /// Serialize a `Mechanism` to a JSON string.
 ///
-/// Driver constraints are skipped -- they must be re-attached after loading.
+/// Drivers that carry `DriverMeta` are saved; plain closure drivers are skipped.
 pub fn save_mechanism(mech: &Mechanism) -> Result<String, SerializationError> {
     let json_struct = mechanism_to_json(mech)?;
     let json_str = serde_json::to_string_pretty(&json_struct)?;

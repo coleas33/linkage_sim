@@ -19,7 +19,7 @@ pub enum CamProfile {
         phase: f64,
         offset: f64,
     },
-    /// Cubic spline through user-defined (theta, s) points.
+    /// Piecewise-linear interpolation through user-defined (theta, s) points.
     Spline { points: Vec<[f64; 2]> },
 }
 
@@ -85,7 +85,7 @@ fn spline_eval(points: &[[f64; 2]], theta: f64) -> f64 {
     // Clamp to range
     if theta <= points[0][0] { return points[0][1]; }
     if theta >= points.last().unwrap()[0] { return points.last().unwrap()[1]; }
-    // Binary search for segment
+    // Linear scan for the segment
     for w in points.windows(2) {
         if theta >= w[0][0] && theta <= w[1][0] {
             let t = (theta - w[0][0]) / (w[1][0] - w[0][0]).max(1e-15);

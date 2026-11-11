@@ -20,7 +20,8 @@
 //! [`crate::engine::meta::InputSet::set`] (modifies in place; clone first to keep
 //! the original); `headline(res)` is [`headline`] (a list of pairs in Python's
 //! order, not a dict). Rust-only: [`DesignInputs::validate`], for inputs that
-//! bypass `set`. `to_dict` is not ported: JSON export is M4.
+//! bypass `set`. `to_dict` is not ported: the design file is written by
+//! `gui::session::design_to_json`.
 
 use super::calibration::{self, CalibrationInputs, CalibrationResults};
 use super::clamps::{self, ClampInputs, ClampResults};

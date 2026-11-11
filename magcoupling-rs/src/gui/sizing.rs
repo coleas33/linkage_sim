@@ -45,7 +45,8 @@ impl SizingMode {
         }
     }
 
-    /// The text of the mode switch: ASCII arrows, since egui's default fonts have no U+2192.
+    /// The text of the mode in the spreadsheet's Summary and the log line: ASCII arrows,
+    /// since egui's default fonts have no U+2192.
     pub const fn label(self) -> &'static str {
         match self {
             SizingMode::MagnetsToTorque => "Magnets -> Torque",

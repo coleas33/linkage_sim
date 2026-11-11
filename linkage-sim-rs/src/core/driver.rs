@@ -13,8 +13,8 @@ use crate::core::state::State;
 /// Driver function triple: f(t), f'(t), f''(t).
 ///
 /// In Rust we use boxed closures instead of Python lambdas.
-/// For serialization, the Rust port will add expression-based drivers
-/// (meval/rhai) in a future step.
+/// For serialization, expression-based drivers are built by
+/// `expression_driver` (meval).
 pub struct DriverFn {
     pub f: Box<dyn Fn(f64) -> f64 + Send + Sync>,
     pub f_dot: Box<dyn Fn(f64) -> f64 + Send + Sync>,

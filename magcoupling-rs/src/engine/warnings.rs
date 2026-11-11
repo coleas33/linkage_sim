@@ -1,6 +1,6 @@
 //! Material consequence warnings (spec Addendum A5): six rules, each an engine
 //! output with plain-language text, a severity and a teaching-note id (the
-//! notes are Addendum A4's; the ids are placeholders until then).
+//! notes are Addendum A4's; each id names the `a5.*` note in `explain::notes`).
 //!
 //! Each rule reads the materials IN EFFECT (`material_library::PartProperties`
 //! and the inputs), so a value typed into an input can fire a rule as a library
@@ -27,7 +27,7 @@ pub struct WarningRule {
     /// The result field (`warnings.<id>`).
     pub id: &'static str,
     pub severity: Severity,
-    /// Addendum A4 teaching-note id (placeholder until the notes exist).
+    /// Addendum A4 teaching-note id: the `a5.*` note in `explain::notes`.
     pub note_id: &'static str,
     /// What the result reads when the rule fires.
     pub text: &'static str,

@@ -1115,8 +1115,6 @@ impl AppState {
         self.pending_fit_to_view = true;
     }
 
-    /// Solve the position problem for the given driver angle (radians).
-    ///
     /// Recompute `driver_display_offset` from the current mechanism.
     ///
     /// Finds the driver body, locates its grounded revolute pivot, and
@@ -1179,6 +1177,8 @@ impl AppState {
         (far.y - anchor.y).atan2(far.x - anchor.x)
     }
 
+    /// Solve the position problem for the given driver angle (radians).
+    ///
     /// Uses `last_good_q` as the initial guess for Newton-Raphson.
     /// On success, updates both `q` and `last_good_q`.
     /// On failure, keeps `last_good_q` unchanged and reports the failure in

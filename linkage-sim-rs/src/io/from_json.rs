@@ -118,8 +118,8 @@ pub(crate) fn apply_point_masses(body: &mut Body, point_masses: &[PointMassJson]
 /// Deserialize a JSON string into an **unbuilt** `Mechanism`.
 ///
 /// The caller can add drivers or make other modifications before calling
-/// `mech.build()`. Driver constraints from the JSON are skipped (closures
-/// are not serializable).
+/// `mech.build()`. Drivers stored in the JSON (constant-speed, expression
+/// and linear) are restored.
 pub fn load_mechanism_unbuilt(json_str: &str) -> Result<Mechanism, SerializationError> {
     let json_struct: MechanismJson = serde_json::from_str(json_str)?;
     load_mechanism_unbuilt_from_json(&json_struct)
@@ -368,9 +368,8 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
 
 /// Deserialize a JSON string into a **built** `Mechanism`.
 ///
-/// Driver constraints are **not** restored (closures are not serializable).
-/// If you need to add drivers before building, use [`load_mechanism_unbuilt`]
-/// instead.
+/// Drivers stored in the JSON are restored. If you need to add further
+/// drivers before building, use [`load_mechanism_unbuilt`] instead.
 pub fn load_mechanism(json_str: &str) -> Result<Mechanism, SerializationError> {
     let mut mech = load_mechanism_unbuilt(json_str)?;
     mech.build()
