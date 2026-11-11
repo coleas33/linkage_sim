@@ -46,8 +46,13 @@ pub const LINKED_HOUSING: &str = "Outside diameter moves the ring radius; the ca
 pub const DIAMETER_HOVER: &str = "The largest of the cup, cap and shaft boss diameters. Moving it changes the ring radius; the cap and its thread follow the cup.";
 
 /// The hover text of the Overall length control: what it is and what moving it changes (the
-/// axial magnet length override of both rings; the housing follows, `engine::housing`).
-pub const LENGTH_HOVER: &str = "The axial length of the coupling: the magnets and the housing around them. Moving it sets both rings' magnet length, and the housing follows.";
+/// axial magnet length override of both rings; the housing follows, `engine::housing`). It
+/// also says what the first move from a blank override does (BL-074): the override is counted
+/// from the outer ring the cup cavity holds, so that move is no step of the magnets where the
+/// rings' own lengths differ or the cavity is shorter than its ring
+/// (`engine::size_controls::resize_length`). Treating that as intended is an assumption under
+/// the owner's ruling of 2026-11-10, not the owner's answer.
+pub const LENGTH_HOVER: &str = "The axial length of the coupling: the magnets and the housing around them. Moving it sets both rings' magnet length, and the housing follows. While the axial magnet length is blank, the first move sets both rings to one length. With rings of unequal length, or a cup cavity shorter than the outer ring, that move can change the magnet length by more than the step, or the other way, and the torque with it.";
 
 /// The Auto row (spec guidance 3.5): "Auto: smallest [size] that meets the required torque".
 pub const AUTO: &str = "Auto: smallest";
@@ -737,14 +742,51 @@ mod tests {
             !DIAMETER_HOVER.to_lowercase().contains("rotating"),
             "{DIAMETER_HOVER}"
         );
-        // Spec 3.5's help caps: 1-2 sentences, at most 30 words.
-        for hover in [DIAMETER_HOVER, LENGTH_HOVER] {
-            assert!(word_count(hover) <= 30, "{hover}");
+        // Spec 3.5's help caps: 1-2 sentences, at most 30 words. The Overall length hover also
+        // says what the first move from a blank override does (BL-074), which those caps do not
+        // hold: its own cap is 4 sentences and 80 words.
+        for (hover, sentences, words) in [(DIAMETER_HOVER, 2, 30), (LENGTH_HOVER, 4, 80)] {
+            assert!(word_count(hover) <= words, "{hover}");
             assert!(
-                hover.ends_with('.') && (1..=2).contains(&sentence_count(hover)),
+                hover.ends_with('.') && (1..=sentences).contains(&sentence_count(hover)),
                 "{hover}"
             );
         }
+    }
+
+    #[test]
+    fn the_length_hover_says_the_first_move_from_a_blank_length_sets_both_rings_to_one_length() {
+        // BL-074: the slider's first move from a blank axial magnet length sets both rings to
+        // one length (pinned in tests/size_controls.rs). It is treated as intended, an
+        // assumption under the owner's ruling of 2026-11-10, so the hover says it.
+        let length = variable_label(FreeVariable::AxialLength).to_lowercase();
+        assert!(
+            LENGTH_HOVER.contains(&format!(
+                "While the {length} is blank, the first move sets both rings to one length."
+            )),
+            "{LENGTH_HOVER}"
+        );
+        // When that is not a step of the magnets: rings of unequal length (the first move
+        // lengthens or trims one of them), or a cup cavity shorter than its outer ring.
+        for case in [
+            "rings of unequal length",
+            "a cup cavity shorter than the outer ring",
+        ] {
+            assert!(LENGTH_HOVER.contains(case), "{case}: {LENGTH_HOVER}");
+        }
+        // What it does there: the magnet length can change by more than the step or the other
+        // way (1 mm longer overall shortens the magnets in an 11 mm cavity), and the torque too.
+        assert!(
+            LENGTH_HOVER.ends_with(
+                "the magnet length by more than the step, or the other way, and the torque with it."
+            ),
+            "{LENGTH_HOVER}"
+        );
+        // What the hover said before still holds, and it still says it first.
+        assert!(
+            LENGTH_HOVER.starts_with("The axial length of the coupling: the magnets and the housing around them. Moving it sets both rings' magnet length, and the housing follows. "),
+            "{LENGTH_HOVER}"
+        );
     }
 
     #[test]

@@ -9,7 +9,7 @@ use magcoupling::engine::size_controls::{
     with_ring_radius,
 };
 use magcoupling::engine::sizing::FreeVariable;
-use magcoupling::{DesignInputs, compute_all};
+use magcoupling::{DesignInputs, DesignResults, compute_all};
 
 fn close(actual: f64, expected: f64) {
     assert!((actual - expected).abs() < 1e-9, "{actual} != {expected}");
@@ -199,6 +199,147 @@ fn negative_axial_allowances_keep_the_existing_ring_length_floor() {
     assert_eq!(changed.metal.hub_length_mm, 5.0);
     assert_eq!(changed.metal.cup_depth_mm, 5.0);
     assert_eq!(changed.metal.retainer_span_mm, 5.0);
+}
+
+/// The Overall length slider's first move, `step_mm` from the length `base` shows with its
+/// override blank: the design the move sets and that design's results. The move sets the
+/// override and nothing else, and the overall length moves by the step.
+fn first_length_move(base: &DesignInputs, step_mm: f64) -> (DesignInputs, DesignResults) {
+    assert_eq!(base.coupling.magnets.axial_length_mm, None);
+    let shown = dimensions(base).unwrap().overall_length_mm;
+    let changed = resize_length(base, shown + step_mm).unwrap();
+    let mut only_the_override = base.clone();
+    only_the_override.coupling.magnets.axial_length_mm = changed.coupling.magnets.axial_length_mm;
+    assert_eq!(changed, only_the_override);
+    let results = compute_all(&changed);
+    close(results.metal.axial_stack_mm, shown + step_mm);
+    (changed, results)
+}
+
+/// The override, both rings and so their overlap are `length_mm` long.
+fn both_rings_are(changed: &DesignInputs, results: &DesignResults, length_mm: f64) {
+    close(changed.coupling.magnets.axial_length_mm.unwrap(), length_mm);
+    close(results.model.inner_length_mm, length_mm);
+    close(results.model.outer_length_mm, length_mm);
+    close(results.model.active_length_mm, length_mm);
+}
+
+// BL-074: the four tests below pin the Overall length slider's first move from a blank override
+// as the engine has it. Treating that move as intended is an assumption under the owner's
+// ruling of 2026-11-10 (docs/analyses/2026-11-10-conservative-assumptions.md, row A-11), not the
+// owner's answer; a mapping change chosen with the owner would move these numbers.
+
+#[test]
+fn a_first_length_move_moves_the_magnets_by_the_step_where_the_cavity_holds_the_ring() {
+    // The ordinary case: matched 12.7 mm parts in the default 15.5 mm cup cavity.
+    let base = DesignInputs::default();
+    let before = compute_all(&base);
+    close(before.model.inner_length_mm, 12.7);
+    close(before.model.outer_length_mm, 12.7);
+    close(before.model.active_length_mm, 12.7);
+    close(before.housing.cup_depth_mm, 15.5);
+    close(before.metal.torque_hot_low_Nm, 2.2852048507958824);
+    close(dimensions(&base).unwrap().overall_length_mm, 31.8);
+
+    for (step_mm, length_mm, hot_low) in [
+        (-1.0, 11.7, 2.084372095764424),
+        (1.0, 13.7, 2.48603760582734),
+    ] {
+        let (changed, after) = first_length_move(&base, step_mm);
+        both_rings_are(&changed, &after, length_mm);
+        close(
+            after.model.active_length_mm - before.model.active_length_mm,
+            step_mm,
+        );
+        close(after.metal.torque_hot_low_Nm, hot_low);
+    }
+}
+
+#[test]
+fn a_first_length_move_lengthens_a_shorter_inner_part_to_the_outer_rings_length() {
+    // A 6.35 mm inner part in a 12.7 mm outer ring. The override is counted from the outer
+    // ring the cup cavity holds, so the first move sets the inner ring to that length too.
+    let mut base = DesignInputs::default();
+    base.coupling.magnets.part_inner = "B442".to_owned();
+    base.coupling.magnets.part_outer = "B842SH".to_owned();
+    let before = compute_all(&base);
+    close(before.model.inner_length_mm, 6.35);
+    close(before.model.outer_length_mm, 12.7);
+    close(before.model.active_length_mm, 6.35);
+    close(before.housing.hub_length_mm, 13.0);
+    close(before.metal.torque_hot_low_Nm, 1.0099168563461234);
+    close(dimensions(&base).unwrap().overall_length_mm, 31.8);
+
+    // 1 mm shorter overall: 5.35 mm more overlap and the hot-low torque more than doubles
+    // (+106.39 %). The hub follows the inner ring.
+    let (changed, after) = first_length_move(&base, -1.0);
+    both_rings_are(&changed, &after, 11.7);
+    close(after.housing.hub_length_mm, 18.35);
+    close(after.metal.torque_hot_low_Nm, 2.084372095764424);
+
+    // 1 mm longer overall: 7.35 mm more overlap (+146.16 %).
+    let (changed, after) = first_length_move(&base, 1.0);
+    both_rings_are(&changed, &after, 13.7);
+    close(after.housing.hub_length_mm, 20.35);
+    close(after.metal.torque_hot_low_Nm, 2.48603760582734);
+}
+
+#[test]
+fn a_first_length_move_trims_a_longer_inner_ring_to_the_outer_parts_length() {
+    // The reverse pair: a 12.7 mm inner ring inside a 6.35 mm outer part. The overlap moves by
+    // the step, but the inner ring loses 7.35 or 5.35 mm of magnet and the hub follows it.
+    let mut base = DesignInputs::default();
+    base.coupling.magnets.part_inner = "B842SH".to_owned();
+    base.coupling.magnets.part_outer = "B442".to_owned();
+    let before = compute_all(&base);
+    close(before.model.inner_length_mm, 12.7);
+    close(before.model.outer_length_mm, 6.35);
+    close(before.model.active_length_mm, 6.35);
+    close(before.housing.hub_length_mm, 13.0);
+    close(before.metal.torque_hot_low_Nm, 1.0099168563461234);
+    let size = dimensions(&base).unwrap();
+    close(size.overall_length_mm, 31.8);
+    close(size.length_range.min, 27.45);
+
+    let (changed, after) = first_length_move(&base, -1.0);
+    both_rings_are(&changed, &after, 5.35);
+    close(after.housing.hub_length_mm, 5.65);
+    close(after.metal.torque_hot_low_Nm, 0.8090841013146649);
+
+    let (changed, after) = first_length_move(&base, 1.0);
+    both_rings_are(&changed, &after, 7.35);
+    close(after.housing.hub_length_mm, 7.65);
+    close(after.metal.torque_hot_low_Nm, 1.2107496113775804);
+}
+
+#[test]
+fn a_first_length_move_shortens_both_rings_where_the_cavity_is_shorter_than_its_ring() {
+    // Matched 12.7 mm parts with the cup cavity input at 11.0 mm: the housing does not hold
+    // the outer ring's own length, so the first move shortens both rings, whichever way it goes.
+    let mut base = DesignInputs::default();
+    base.metal.cup_depth_mm = 11.0;
+    let before = compute_all(&base);
+    close(before.model.inner_length_mm, 12.7);
+    close(before.model.outer_length_mm, 12.7);
+    close(before.model.active_length_mm, 12.7);
+    close(before.housing.cup_depth_mm, 11.0);
+    close(before.metal.torque_hot_low_Nm, 2.2852048507958824);
+    let size = dimensions(&base).unwrap();
+    close(size.overall_length_mm, 27.3);
+    close(size.length_range.min, 18.3);
+
+    // 1 mm shorter overall: 2.7 mm less overlap.
+    let (changed, after) = first_length_move(&base, -1.0);
+    both_rings_are(&changed, &after, 10.0);
+    close(after.housing.cup_depth_mm, 10.0);
+    close(after.metal.torque_hot_low_Nm, 1.742956412210946);
+
+    // 1 mm longer overall still shortens the magnets, by 0.7 mm: the torque falls (-6.15 %).
+    let (changed, after) = first_length_move(&base, 1.0);
+    both_rings_are(&changed, &after, 12.0);
+    close(after.housing.cup_depth_mm, 12.0);
+    close(after.metal.torque_hot_low_Nm, 2.144621922273862);
+    assert!(after.metal.torque_hot_low_Nm < before.metal.torque_hot_low_Nm);
 }
 
 #[test]

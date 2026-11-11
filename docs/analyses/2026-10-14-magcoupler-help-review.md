@@ -7409,3 +7409,212 @@ these three commands were run; the full gate was not, as instructed.
   cup (round 1's record); texts 2, 3 and 4 say "inner ring".
 
 Verdict: PASS. No must-fix, no should-fix.
+
+## BL-074 Overall length hover (2026-11-10)
+
+BL-074 (`docs/ai/backlog.yaml`) asks whether the first-move jump of the Overall length slider is intended. While the
+axial magnet length override is blank, the slider's first move sets both rings to one length, counted from the outer
+ring the cup cavity holds (`engine::size_controls::resize_length`), so on some designs that move is no step of the
+magnets. The owner has not answered. Under the owner's ruling of 2026-11-10 (an open question takes the conservative
+answer, and the assumption is made known) the jump is treated as intended for now: the mapping is not changed, four
+engine tests pin it (`tests/size_controls.rs`), and the control's hover says it (row A-11 of
+`docs/analyses/2026-11-10-conservative-assumptions.md`). That is an assumption, not the owner's answer, and the
+owner's review of the diff is still owed before a merge. One on-screen text changed: `LENGTH_HOVER` gained two
+sentences. It had its G-3 review on 2026-11-10 in a fresh context on the uncommitted change in the worktree (branch
+`magcoupling/off-default-fixes`, HEAD b46e073, 8 changed files). The reviewer's report for the record follows.
+
+- Scope: `LENGTH_HOVER` (`magcoupling-rs/src/gui/size_controls.rs`, line 55), whole: the two sentences it had and the
+  two it gained. `controls_ui` draws it on the Overall length label of the Size tab whenever the design has
+  dimensions, under Auto too. Read beside it: the length line under the slider (`consequences.length_line()`,
+  `gui/guidance.rs`), the torque card's jump rule (`gui/torque_card.rs`), the README's Size-tab paragraph and
+  `docs/ai/02-system.yaml`.
+- Reviewer: fresh context, general-purpose agent on fable (the decider, physics review), 2026-11-10; round 1. Every
+  number below is from the reviewer's own probe: a scratch crate outside the worktree that calls the engine
+  (`compute_all`, `SizeControls`) and reads the hover from the source file.
+- The text as found (75 words, 4 sentences, guard clean): "The axial length of the coupling: the magnets and the
+  housing around them. Moving it sets both rings' magnet length, and the housing follows. While the axial magnet
+  length is blank, the first move sets both rings to one length. With rings of unequal length, or a cup cavity shorter
+  than the outer ring, that move can change the magnet length by more than the step, or the other way, and the torque
+  with it."
+- Verdict: PASS. No must-fix. Every sentence is true in every state probed (38818 first moves on 231 designs and 15
+  cup cavities). The two conditions of sentence 4 are exactly the designs where a first move is not a plain step. The
+  text agrees with the length line beside it and with the torque card's rule. One should-fix is offered (SF-1). The
+  text breaks no physics trap, does not say "clamp", does not say the coupling protects the gearbox and does not say
+  a wall seals the rings.
+- Should-fix offered (the owner's choice; the text is not false as it stands):
+  - SF-1, sentence 4. It names two ways the first move departs from the step (more, the other way). Under the same two
+    conditions the magnet length also changes by less than the move in the same direction, or not at all: a 12.2 mm
+    cavity on 12.7 mm rings, +1 mm, gives +0.5 mm (hot-low +4.39 %); an 11.0 mm cavity, +5 mm, gives +3.3 mm; the
+    mixed pair, -8 mm, gives -1.65 mm; an 11.7 mm cavity, +1 mm, leaves 12.7 mm (0.00 %). In the scan the overlap
+    changed by less in 5088 moves and not at all in 679, against 11907 by more and 8099 the other way. The card's rule
+    speaks of "the step's amount and direction"; "more or less" covers the amount both ways.
+    - Old: "With rings of unequal length, or a cup cavity shorter than the outer ring, that move can change the magnet
+      length by more than the step, or the other way, and the torque with it."
+    - New: "With rings of unequal length, or a cup cavity shorter than the outer ring, that move can change the magnet
+      length by more or less than the step, or the other way, and the torque with it." (The whole hover: 77 words, 4
+      sentences, guard clean, inside its 80-word cap.)
+    - What changes with it: the tail the unit test pins (`gui/size_controls.rs` line 781) and its comment (lines 777
+      and 778), the hover's words as given in BL-074's entry of `docs/ai/backlog.yaml` and in
+      `docs/ai/05-update-tracker.md`, and the tracker's count (75 words to 77).
+- Each sentence as read:
+  - 1, "The axial length of the coupling: the magnets and the housing around them." Unchanged. True: the length line
+    under the slider splits the same number the same way ("Magnets 12.7 mm + housing 19.1 mm" on the default, overall
+    31.8 mm).
+  - 2, "Moving it sets both rings' magnet length, and the housing follows." Unchanged. True: every move taken left
+    both rings at the override's length, and the hub and the cup cavity followed (default, +1 mm: hub 13.0 to 14.0 mm,
+    cup cavity 15.5 to 16.5 mm).
+  - 3, "While the axial magnet length is blank, the first move sets both rings to one length." True in each of the
+    38818 first moves taken. "The axial magnet length" is the input row's name ("Axial magnet length, both rings"; the
+    test builds the sentence from `variable_label(FreeVariable::AxialLength)`), and "blank" is what that row reads
+    (`BLANK_TEXT`).
+  - 4, the two conditions. They are exact. Outside them (rings of equal length in a cavity at least as long as the
+    outer ring) all 6457 first moves were the step for both rings and for the overlap. "Shorter than" is strict: a
+    12.7 mm cavity on 12.7 mm rings gives the step, a 12.6 mm cavity does not (-0.1 mm gives -0.2 mm). Under either
+    condition no first move was a step of both rings (0 of 32361).
+  - 4, "can change the magnet length by more than the step, or the other way". Each happens under each condition.
+    More: the mixed pair, +1 mm, overlap +7.35 mm; the 11.0 mm cavity, -1 mm, -2.7 mm. The other way: the mixed pair,
+    -1 mm, overlap +5.35 mm; the 11.0 mm cavity, +1 mm, -0.7 mm. "Can" is right where "does" would not be: on the
+    reverse pair the overlap moves by the step and only the inner ring is trimmed by more (12.7 to 5.35 mm on -1 mm).
+  - 4, "and the torque with it". Hot-low moved the way the overlap moved in every move where the overlap changed
+    (38139) and stood still where it did not (679); it never moved against it. The mixed pair, -1 mm: 1.0099 to 2.0844
+    N·m (+106.39 %). The 11.0 mm cavity, +1 mm: 2.2852 to 2.1446 N·m (-6.15 %). Pull-out and cold-high moved by the
+    same percent in the cases printed.
+- Beside the hover:
+  - The length line shows the outer ring's length. On the 11.0 mm cavity it reads "Magnets 12.7 mm" before and
+    "Magnets 10.9 mm" after one 0.1 mm step down, the jump the hover names. On the mixed pair the line moves by the
+    step (12.7 to 11.7 mm on -1 mm) while the inner ring grows 5.35 mm and the torque doubles; "rings of unequal
+    length" and "both rings to one length" are the words that explain it. No number or badge beside the control says
+    otherwise.
+  - The torque card reads "not a step: the overlapping magnet length does not change by the step's amount and
+    direction" where the overlap does not change by the signed step (`STEP_SLACK_MM`, 1e-6 mm). The probe applied that
+    rule to the same moves (it did not call the card's code): "not a step" on every move where the hover's outcomes
+    happened to the overlap, a number where the overlap moved by the step (the default, the reverse pair).
+  - The README's Size-tab paragraph and `docs/ai/02-system.yaml` give the same account and the probe's numbers
+    (1.01 to 2.08 N·m, +106 %; 12.7 to 5.35 mm; 10.0 and 12.0 mm in the 11 mm cavity, -6.15 %).
+- For the step that commits: nothing must change. If SF-1 is taken, the changed sentence needs its re-read. The
+  reviewer edited only this document; no help text, code, test or other doc was changed.
+
+**Report for the record (as returned).**
+
+#### Basis
+
+A scratch crate outside the worktree (a path dependency on the worktree's `magcoupling-rs`, engine only), run once in
+release. Each design is `DesignInputs::default()` with the magnet parts or manual lengths and the cup cavity depth
+set, the axial magnet length left blank, and one move of the Overall length made through `SizeControls`, as the
+slider makes it. Moves: the slider's 0.1 mm step, the card's 1 mm step and longer drags. "Overlap" is
+`model.active_length_mm`, the length both rings share. Blank, the default reads hot-low 2.2852, pull-out 2.6885 and
+cold-high 3.8233 N·m; the mixed and the reverse pair read hot-low 1.0099 N·m.
+
+Lengths in the table are in mm.
+
+| Design, blank | First move | Both rings after | Overlap change | Hot-low after, N·m | Card's rule |
+|---|---|---|---|---|---|
+| Default: B842SH on both rings (12.7), cavity 15.5, overall 31.8 | -0.1 | 12.6 | -0.1 | 2.2651 (-0.88 %) | number |
+| | +1 | 13.7 | +1.0 | 2.4860 (+8.79 %) | number |
+| | -1 | 11.7 | -1.0 | 2.0844 (-8.79 %) | number |
+| Mixed pair: B442 inner (6.35), B842SH outer (12.7) | -0.1 | 12.6 | +6.25 | 2.2651 (+124.29 %) | not a step |
+| | +0.1 | 12.8 | +6.45 | 2.3053 (+128.27 %) | not a step |
+| | -1 | 11.7 | +5.35 | 2.0844 (+106.39 %) | not a step |
+| | +1 | 13.7 | +7.35 | 2.4860 (+146.16 %) | not a step |
+| | -8 | 4.7 | -1.65 | 0.6785 (-32.81 %) | not a step |
+| Reverse pair: B842SH inner, B442 outer | -1 | 5.35 | -1.0 (inner ring -7.35) | 0.8091 (-19.89 %) | number |
+| | +1 | 7.35 | +1.0 (inner ring -5.35) | 1.2107 (+19.89 %) | number |
+| | -8 | refused, below the range (27.45 to 76.25) | | | |
+| Matched parts, cavity 11.0, overall 27.3 | -0.1 | 10.9 | -1.8 | 1.9237 (-15.82 %) | not a step |
+| | +0.1 | 11.1 | -1.6 | 1.9639 (-14.06 %) | not a step |
+| | -1 | 10.0 | -2.7 | 1.7430 (-23.73 %) | not a step |
+| | +1 | 12.0 | -0.7 | 2.1446 (-6.15 %) | not a step |
+| | +5 | 16.0 | +3.3 | 2.9480 (+29.00 %) | not a step |
+| Matched parts, cavity 3.0 | -0.1 | 2.9 | -9.8 | 0.3170 (-86.13 %) | not a step |
+| Matched parts, cavity 10.7 | +1 | 11.7 | -1.0 | 2.0844 (-8.79 %) | not a step |
+| Matched parts, cavity 11.7 | +1 | 12.7 | 0.0 | 2.2852 (0.00 %) | not a step |
+| Matched parts, cavity 12.2 | +1 | 13.2 | +0.5 | 2.3856 (+4.39 %) | not a step |
+| | +0.1 | 12.3 | -0.4 | 2.2049 (-3.52 %) | not a step |
+| Matched parts, cavity 12.6 | -0.1 | 12.5 | -0.2 | 2.2450 (-1.76 %) | not a step |
+| | +0.1 | 12.7 | 0.0 | 2.2852 (0.00 %) | not a step |
+| Matched parts, cavity 12.7, 12.8, 20 and 40 | -1, -0.1, +0.1, +1 | the step | the step | as the default | number |
+| Manual lengths 12.5 inner, 12.7 outer (hot-low 2.2450) | -0.1 | 12.6 | +0.1 | 2.2651 (+0.89 %) | not a step |
+| | -1 | 11.7 | -0.8 | 2.0844 (-7.16 %) | not a step |
+| | +1 | 13.7 | +1.2 | 2.4860 (+10.73 %) | not a step |
+| Manual lengths 12.7 inner, 12.5 outer | -1 | 11.5 | -1.0 (inner ring -1.2) | 2.0442 (-8.95 %) | number |
+| Manual lengths 12.7 on both rings | -1, -0.1, +0.1, +1 | the step | the step | as the default | number |
+| Mixed pair in an 11.0 cavity | -1 | 10.0 | +3.65 | 1.7430 (+72.58 %) | not a step |
+| | +1 | 12.0 | +5.65 | 2.1446 (+112.36 %) | not a step |
+
+A second move, with the override set, was the step in every case printed.
+
+#### Scan
+
+231 designs (every pair of the 15 library parts and 6 manual pairs), 15 cup cavity depths from 3 to 40 mm and 12 first
+moves (0.1 to 8 mm, up and down): 38818 moves taken and 2762 refused as out of range. Both rings were at one length
+after every move taken. The overlap's change against the move, by the hover's two conditions:
+
+| Condition | The step | More | The other way | Less, same way | None |
+|---|---|---|---|---|---|
+| Neither (equal rings, the cavity holds the ring) | 6457 | 0 | 0 | 0 | 0 |
+| Rings of unequal length only | 6156 | 1632 | 1167 | 439 | 4 |
+| Cavity shorter than the outer ring only | 0 | 4121 | 2889 | 1718 | 331 |
+| Both | 432 | 6154 | 4043 | 2931 | 344 |
+
+The 6156 moves with unequal rings only where the overlap still moved by the step are the reverse pair's kind: the
+shorter ring is the outer one, so the overlap follows the slider and the longer inner ring is trimmed. The 432 under
+both conditions follow from the mapping the same way: the cavity there is exactly as deep as the shorter inner ring is
+long. Counted by a ring's own length, no move under a condition was the step (0 of 32361). Hot-low moved the way the
+overlap moved in 38139 moves, stood still with it in 679 and was a number every time.
+
+#### Words
+
+Counted with the crate's `word_count` and `sentence_count`; the guard is `plain_text_violations` and
+`mentions_gearbox_protection`.
+
+| Text | Words | Sentences (words in each) | Guard | "clamp", gearbox, wall or seal |
+|---|---|---|---|---|
+| the hover as found | 75 | 4 (13, 11, 16, 35) | clean | none |
+| the hover with SF-1 New | 77 | 4 (13, 11, 16, 37) | clean | none |
+
+#### Traps and rules
+
+- Slice-2 spec section 8 (the 17 physics traps): none is written or touched. The hover says the torque changes "with"
+  the magnet length and gives no law for it. The probe bears out the direction only (the default's 1 mm, 7.87 % of
+  12.7 mm, moves hot-low 8.79 %), which is all the text claims; it says nothing of the end factor.
+- Slice-2 spec 3.5 (help: one or two sentences, at most 30 words): the hover is over it at 4 sentences and 75 words
+  (the old text was 2 sentences and 24 words). The change gives it its own cap in the test (4 sentences, 80 words) and
+  says so in the test's comment and in the tracker. That is the implementer's departure, made so the jump is not
+  unannounced; it is the owner's to rule on with BL-074 (see Recorded).
+- The torque card's jump rule: agreed with, as read above.
+- Standing rules: the text does not say the coupling protects the gearbox, does not say a wall seals the rings and
+  does not hold "clamp"; it holds no cell name, correction id, file or code name.
+
+#### Tests
+
+On the worktree as found: `cargo test --features app --lib size_controls` 20 passed, 0 failed, 982 filtered out;
+`cargo test --test size_controls` 42 passed, 0 failed. A mutation check of the hover's unit test
+(`the_length_hover_says_the_first_move_from_a_blank_length_sets_both_rings_to_one_length`), three changes of the
+hover, one at a time: "by less than the step" failed it at line 779 (the tail), "to the same length" at line 763
+(sentence 3) and "a cup cavity longer than" at line 775 (the condition). The source file was put back byte for byte
+(the same SHA-256 before and after) and the 20 tests passed again. clippy, fmt and the full gate were not run; the
+reviewer changed no code.
+
+#### Not checked
+
+- The GUI was not run. The hover was read from the source and where it is drawn from `controls_ui`; how a 75-word
+  hover wraps on screen was not seen.
+- The card's own code was not called; the probe applied its rule to the engine's numbers.
+- That the input row reads "Axial magnet length, both rings" (no display overlay for it) was checked by grep only.
+- Inputs the mapping does not read (poles, gap, grades, temperatures) were held at the defaults in the scan.
+- Second and later moves: the cases printed, not the scan.
+
+#### Recorded, no change asked
+
+- "The magnet length" in sentence 4 can be read as the overlap (the card's "the overlapping magnet length") or as a
+  ring's own length. The sentence is true read either way, so no word is asked for.
+- The length line shows the outer ring only. On the mixed pair it moves by the step while the torque doubles, and the
+  hover is the one place on the Size tab that says why. A matter for the owner's review of BL-074, not for this text.
+- "The step" is the card's word for one move of the control. The hover does not introduce it; a drag is many steps and
+  the jump is on the first.
+- The cap departure (spec 3.5) is the owner's call. To bring the hover back inside 2 sentences and 30 words the
+  first-move words need another place; that is a design change with its own text round.
+- The length line shows 6.35 mm as "6.3" and 25.45 mm as "25.5" or "25.4" on the reverse pair. It was so before this
+  change and is not this item's.
+
+Verdict: PASS. No must-fix. One should-fix offered (SF-1).
