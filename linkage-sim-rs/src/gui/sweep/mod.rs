@@ -1178,17 +1178,14 @@ pub fn compute_trajectory(
         let mut phi_t = assemble_phi_t(mech, &q_k, t_mech_k);
         phi_t[driver_row] = -u_dot_k;
         let neg_phi_t = -phi_t;
-        let q_dot_k = phi_q
-            .clone()
-            .svd(true, true)
+        let phi_q_svd = phi_q.svd(true, true);
+        let q_dot_k = phi_q_svd
             .solve(&neg_phi_t, 1e-14)
             .map_err(|_| LinkageError::SvdSolveFailed)?;
 
         let mut gamma = assemble_gamma(mech, &q_k, &q_dot_k, t_mech_k);
         gamma[driver_row] = u_ddot_k;
-        let q_ddot_k = phi_q
-            .clone()
-            .svd(true, true)
+        let q_ddot_k = phi_q_svd
             .solve(&gamma, 1e-14)
             .map_err(|_| LinkageError::SvdSolveFailed)?;
 
