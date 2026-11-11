@@ -10,8 +10,8 @@ what_it_is: |
 architecture_invariants:
   - body-constraint incidence model (bodies are first-class; joints are
     constraints between them; no special-case code per mechanism type)
-  - constraint-first mathematics: Phi(q,t)=0, Phi_q Jacobian, Lagrange
-    multipliers. Every analysis mode layers on this one backbone.
+  - "constraint-first mathematics: Phi(q,t)=0, Phi_q Jacobian, Lagrange
+    multipliers. Every analysis mode layers on this one backbone."
   - SI internally (m, kg, s, N, N*m), engineering units at the GUI boundary
   - force elements are pluggable; each returns a Q contribution. Solvers
     never change when adding smooth elements.
@@ -59,7 +59,7 @@ major_subsystems:
 
   magcoupling:
     path: magcoupling-rs/
-    responsibility: magnetic slip coupling calculator, Rust port of the
+    responsibility: "magnetic slip coupling calculator, Rust port of the
       vendored Python oracle reference/magcoupling-py (workbook port).
       Workbook-exact except registered, approved corrections (deviation
       registry, M1 audit E1-E14, Addendum A E15-E20). Engine complete (M2), every module but fields3d;
@@ -78,7 +78,7 @@ major_subsystems:
       M5 embedded the panel in the linkage app (a Tools -> Magnetic coupling window); on 2026-10-06
       the calculator became a site of its own (colesorkness.com/tools/magcoupler) and linkage-sim-rs no
       longer depends on the crate: its Tools menu links to the site.
-       Guidance slice 1 (2026-10-13, BL-055, decisions G-1 to G-8) adds gui/guidance.rs (check guides, the design status line, what-moves-what consequence lines), the one torque number, the Size tab's Auto solver and the Size tab as the first view.
+       Guidance slice 1 (2026-10-13, BL-055, decisions G-1 to G-8) adds gui/guidance.rs (check guides, the design status line, what-moves-what consequence lines), the one torque number, the Size tab's Auto solver and the Size tab as the first view."
     key_files: [src/engine/meta.rs, src/engine/compat.rs, src/engine/deviations.rs, src/engine/api.rs, src/gui/panel.rs, src/gui/session.rs, src/gui/sizing.rs, src/gui/dashboard.rs, src/gui/guidance.rs, src/gui/torque_card.rs, src/gui/size_controls.rs, src/engine/size_controls.rs, src/gui/geometry.rs, src/gui/geometry_view.rs, src/gui/plots.rs, src/gui/clamp_drawing.rs, src/gui/typeset.rs, src/gui/readouts.rs, src/gui/explorer.rs, src/gui/pickers.rs, src/app.rs]
     invariants:
       - With Deviations::NONE every celled result, table cell and default input equals the workbook snapshot (1,149 checks; 1e-9 relative, 1e-12 absolute, text exact).
@@ -139,7 +139,7 @@ invariants_to_protect:
     world coords, body pose 0,0,0) so they render correctly without needing
     joint constraints to fix position. If you change this, you must update
     the conversion functions AND the force-zone geometry offset computation.
-  - Within one sweep, ALL data channels (angles_deg, body_angles,
+  - "Within one sweep, ALL data channels (angles_deg, body_angles,
     coupler_traces, reactions, etc.) must share the same length. Solver
     failures push NaN rows via push_nan_row() so the alignment survives.
     The length itself is 361 only for full-range sweeps (0..=360); a
@@ -148,8 +148,8 @@ invariants_to_protect:
     SweepData::weight_breakdown (per-weight gravity breakdown) obeys the
     same rule: every per-source and total series has angles_deg.len()
     entries; push_nan_row (and the velocity-failure branch) push a NaN row
-    into its WeightBreakdownBuilder.
-  - weight_breakdown_total_is_required_force — gui/sweep/weights.rs
+    into its WeightBreakdownBuilder."
+  - "weight_breakdown_total_is_required_force — gui/sweep/weights.rs
     required_totals: for an actuator, total_force = the sweep's
     actuator_forces as is. Since BL-026 that is already the required force
     in sizing and stored-force mode alike
@@ -161,7 +161,7 @@ invariants_to_protect:
     driver-effort shares (N*m, or N for a linear driver) with rate =
     driver rate. Force shares are NaN where |dL/dt| < 1 % of its sweep max;
     power shares and classification stay defined. A failed statics solve
-    gives NaN totals, not the 0 torque the plot shows.
+    gives NaN totals, not the 0 torque the plot shows."
   - Every state mutation that changes the blueprint MUST call push_undo()
     BEFORE the mutation and rebuild() AFTER. Skipping push_undo loses undo
     history; skipping rebuild leaves mechanism out of sync with blueprint.
@@ -215,7 +215,7 @@ invariants_to_protect:
     point_mass_screen_pos (AppState::body_local_to_world at the current q),
     so a weight is picked exactly where it is drawn. Ground and blank-id
     weights are neither drawn nor picked.
-  - weight_drag_commits_once_on_release — canvas weight drag
+  - "weight_drag_commits_once_on_release — canvas weight drag
     (interaction.rs handle_weight_drag) keeps only a preview in
     AppState::weight_drag (pointer snapped by GridSettings::snap_point) and
     calls move_point_mass exactly once on drag_stopped_by(Primary). The
@@ -227,7 +227,7 @@ invariants_to_protect:
     stays put. A drag egui ends without a primary release (Esc) or
     a release outside the canvas rect commits nothing. The drag starts from
     pointer.press_origin(): egui reports drag_started only after the pointer
-    has moved > 6 px.
+    has moved > 6 px."
   - weight_fields_commit_once_per_edit — in property_panel/weight_editor.rs
     every weight field (name, mass, body-local X/Y, in the selected-weight
     editor and the link editor's Weights section) edits a copy and emits
@@ -288,7 +288,8 @@ invariants_to_protect:
     handle_delete_shortcut returns early while ctx.wants_keyboard_input();
     before this, Backspace in any text/number field deleted the selected
     body, joint (and would have deleted a selected weight).
-  - gravity_breakdown_sources_sum_to_model_gravity — analysis::gravity_breakdown::weight_sources
+  - >-
+    gravity_breakdown_sources_sum_to_model_gravity — analysis::gravity_breakdown::weight_sources
     lists one link self-weight per non-ground body with positive finite base
     mass (base mass at base cg_local, id "link:<body>") plus every point mass
     the loader applies (the io::point_mass_skip_reason filter that
@@ -409,10 +410,10 @@ lessons_learned:
   - Uncommitted local changes in working tree can break deploys. After any
     edit in src/gui/, ALWAYS verify WASM build succeeds before pushing.
   - The dxf crate pulls uuid, which needs features = ["js"] for WASM.
-  - forces/elements/mod.rs is 1620 lines but almost entirely #[cfg(test)]
+  - "forces/elements/mod.rs is 1620 lines but almost entirely #[cfg(test)]
     test code. Production code lives in element_types.rs, evaluation.rs,
     force_element.rs, time_modulation.rs submodules. Do not chase this as
-    a refactor target.
+    a refactor target."
   - Verify "known broken" intel against the compiler before scheduling repair
     work — the tests/ struct-literal breakage was already fixed in b919485,
     but stale docs and an agent description kept reporting it for months.

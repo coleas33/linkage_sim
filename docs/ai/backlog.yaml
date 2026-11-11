@@ -372,8 +372,8 @@
   evidence: "PyYAML ScannerError at line 14 col 5 / line 15 col 3 (unquoted 'constraint-first mathematics: Phi(q,t)=0...' sequence item); verified identical at d7ee35c and e222aab (pre-existing)"
   acceptance: "python -c 'import yaml; yaml.safe_load(open(\"docs/ai/02-system.yaml\"))' succeeds with content semantically unchanged"
   priority: 3
-  status: open
-  notes: ""
+  status: fixed
+  notes: "Fixed 2026-11-10 on branch audit/2026-11-10-whole-project (whole-project audit, finding DOC-09: seven unquoted scalars, not one, at lines 13, 62, 142, 152, 218, 291 and 413). Each was quoted in place. The parsed value of each equals its original words, the file's words are unchanged apart from the added quote marks, and all four docs/ai YAML files load with yaml.safe_load."
 
 - id: BL-017
   title: Sizing-mode sweep of ChebyshevLambdaActuator panics debug builds (reactions.rs debug_assert)
