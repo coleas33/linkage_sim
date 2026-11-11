@@ -362,7 +362,6 @@ pub(crate) fn parse_keyframes_csv_str(csv: &str) -> Result<KeyframeTrajectory, S
 
 /// (Native only) Read a CSV file and parse it as keyframes.
 #[cfg(feature = "native")]
-#[allow(dead_code)] // used from the native-feature button path
 fn parse_keyframes_csv(path: &std::path::Path) -> Result<KeyframeTrajectory, String> {
     let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
     parse_keyframes_csv_str(&text)

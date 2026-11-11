@@ -22,7 +22,4 @@ pub enum SerializationError {
         x: f64,
         y: f64,
     },
-
-    #[error("Unknown joint type '{0}'")]
-    UnknownJointType(String),
 }
