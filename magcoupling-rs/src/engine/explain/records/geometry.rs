@@ -7,13 +7,16 @@
 //! chain and the dashboard); this batch adds the clearance's two parts and the space claim.
 //! Each formula is transcribed from `metal_design::compute` and `housing::compute`.
 
+use crate::engine::deviations::DeviationId::E25;
 use crate::engine::explain::record::{Record, record};
 
 /// The plain records.
 #[rustfmt::skip]
 pub const RECORDS: &[Record] = &[
     // --- The derived dimensions and their reserves (metal_design::compute) ---
-    record("metal.rotating_od_mm", "D_{rot}", "max({model.cup_od_mm}, {metal.cap_od_mm})"),
+    // E25 (an assumption, not approved: BL-061): the shaft boss counts too.
+    record("metal.rotating_od_mm", "D_{rot}", "max({model.cup_od_mm}, {metal.cap_od_mm}, {metal.boss_od_mm})")
+        .corrected(&[E25]),
     record("metal.axial_stack_mm", "L_{stack}",
         "{metal.cap_axial_mm} + {housing.cup_depth_mm} + {metal.web_mm} + {metal.boss_length_mm}"),
     record("metal.large_dia_stack_mm", "L_{large}", "{metal.cap_axial_mm} + {housing.cup_depth_mm} + {metal.web_mm}"),

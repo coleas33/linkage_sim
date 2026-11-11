@@ -18,7 +18,7 @@ use crate::engine::deviations::REGISTRY;
 use crate::engine::explain::render;
 use crate::engine::meta::{InputSet, ResultSet, Value};
 use crate::engine::warnings::Severity;
-use crate::gui::corrections::marks_values;
+use crate::gui::corrections::{listed_title, marks_values};
 use crate::gui::dashboard::{
     Level, STORED_3D_LABEL, WARNINGS_HEADING, dashboard_lines, end_effect_banner, result_info,
     severity_level, warning_lines,
@@ -379,7 +379,7 @@ fn summary_sheet(snapshot: &Snapshot) -> Sheet {
     for deviation in REGISTRY.iter().filter(|deviation| marks_values(deviation)) {
         rows.push(vec![
             Cell::text(deviation.id.to_string()),
-            Cell::text(deviation.title),
+            Cell::text(listed_title(deviation)),
         ]);
     }
     Sheet {
@@ -1187,7 +1187,12 @@ mod tests {
         );
         for (row, deviation) in rows[corrections + 1..].iter().zip(&applied) {
             assert_eq!(row[0], Cell::text(deviation.id.to_string()));
-            assert_eq!(row[1], Cell::text(deviation.title));
+            assert_eq!(row[1], Cell::text(listed_title(deviation)));
+            // The heading calls the approved ones on; only E25, an assumption, says it is not.
+            assert_eq!(
+                row[1].as_text().ends_with("(an assumption, not approved)"),
+                deviation.id == crate::engine::deviations::DeviationId::E25
+            );
         }
     }
 

@@ -480,12 +480,14 @@ const SPACE_CLAIM_GUIDE: CheckGuide = CheckGuide {
 };
 
 /// The inputs that shrink each space-claim axis, in the claim's order (diameter, overall
-/// length, large-diameter bay): the larger of the cap and the cup sets the diameter, and the
-/// Outside diameter's slider moves both; the magnets lengthen both stacks.
+/// length, large-diameter bay): the largest of the cap, the cup and the shaft boss sets the
+/// diameter (E25, an assumption that is not approved: BL-061), and the Outside diameter's
+/// slider moves the cap and the cup; the magnets lengthen both stacks.
 const SPACE_CLAIM_AXES: [&[(&str, Direction)]; 3] = [
     &[
         ("metal.cap_od_mm", Direction::Lower),
         (RING, Direction::Lower),
+        ("metal.boss_od_mm", Direction::Lower),
     ],
     &[(MAGNET_LENGTH, Direction::Lower)],
     &[(MAGNET_LENGTH, Direction::Lower)],
@@ -3421,6 +3423,12 @@ mod tests {
         i.coupling.inner_back_apothem_mm = 12.0;
     }
 
+    /// A 46 mm shaft boss (typed past its slider's top): past the diameter claim, the boss
+    /// setting the diameter (E25).
+    fn large_boss(i: &mut DesignInputs) {
+        i.metal.boss_od_mm = 46.0;
+    }
+
     /// A diameter claim that is not a number: the space claim asks for a look.
     fn unknown_claim(i: &mut DesignInputs) {
         i.metal.max_diameter_mm = f64::NAN;
@@ -3506,6 +3514,7 @@ mod tests {
             ("long_magnets", breaking(long_magnets)),
             ("large_cap", breaking(large_cap)),
             ("large_ring", breaking(large_ring)),
+            ("large_boss", breaking(large_boss)),
             ("unknown_claim", breaking(unknown_claim)),
             ("short_magnets", short_magnets()),
             ("twelve_poles", with_poles(12)),
@@ -4603,8 +4612,9 @@ mod tests {
 
         // SPACE_CLAIM_AXES, axis_reserves and SPACE_CLAIM_AXIS_SIZES name the three axes in one
         // order: each reserve is its claim less the size SPACE_CLAIM_AXIS_SIZES names, bit for
-        // bit, at every test design; and one step of each fix of an axis, from the defaults,
-        // shrinks that size and raises that reserve.
+        // bit, at every test design; and one step of each fix of an axis, from the defaults
+        // (the shaft boss from a boss that sets the diameter, E25), shrinks that size and
+        // raises that reserve.
         let claims = [
             "metal.max_diameter_mm",
             "metal.max_overall_axial_mm",
@@ -4624,8 +4634,13 @@ mod tests {
         for (index, axis_fixes) in SPACE_CLAIM_AXES.iter().enumerate() {
             let size = SPACE_CLAIM_AXIS_SIZES[index].1;
             for &(path, direction) in *axis_fixes {
-                let moved = moves(&defaults, &before, path, direction);
-                assert!(!moved.is_empty(), "{path} moves from the defaults");
+                let base = match path {
+                    "metal.boss_od_mm" => design(large_boss),
+                    _ => defaults.clone(),
+                };
+                let before = compute_all(&base);
+                let moved = moves(&base, &before, path, direction);
+                assert!(!moved.is_empty(), "{path} moves from its base");
                 for design in moved {
                     let after = compute_all(&design);
                     assert!(
@@ -4936,6 +4951,13 @@ mod tests {
                 "diameter",
             ),
             (
+                SPACE_CLAIM,
+                breaking(large_boss),
+                "metal.boss_od_mm",
+                Direction::Lower,
+                "diameter",
+            ),
+            (
                 END_EFFECT,
                 short_magnets(),
                 MAGNET_LENGTH,
@@ -5240,14 +5262,15 @@ mod tests {
     #[test]
     fn the_space_claim_fixes_follow_the_axis_over_its_claim() {
         // Review I-3: each axis over its claim brings the inputs that shrink it, each shown
-        // where one step does: the magnets for the two lengths; for the diameter the cap, and
-        // the Outside diameter, whose slider moves the cap with the cup. An axis whose claim is
-        // not a number has no fix: its Problem asks for the number.
+        // where one step does: the magnets for the two lengths; for the diameter the cap, the
+        // Outside diameter, whose slider moves the cap with the cup, and the shaft boss (E25).
+        // An axis whose claim is not a number has no fix: its Problem asks for the number.
         let space = guide(SPACE_CLAIM).unwrap();
         let shown = |inputs: DesignInputs| fixes(space, &inputs, &compute_all(&inputs), false);
         let magnets = (MAGNET_LENGTH, Direction::Lower);
         let cap = ("metal.cap_od_mm", Direction::Lower);
         let diameter = (RING, Direction::Lower);
+        let boss = ("metal.boss_od_mm", Direction::Lower);
         // Over the overall length and the bay: the magnets only.
         assert_eq!(shown(breaking(long_magnets)), [magnets]);
         // The cap sets the diameter: the cap, or the Outside diameter with the cap following.
@@ -5257,6 +5280,8 @@ mod tests {
         let results = compute_all(&ring);
         assert!(results.model.cup_od_mm > ring.metal.cap_od_mm);
         assert_eq!(shown(ring), [diameter]);
+        // The boss sets the diameter: a smaller cap or cup leaves it as it is.
+        assert_eq!(shown(breaking(large_boss)), [boss]);
         assert_eq!(shown(breaking(unknown_claim)), []);
         assert_eq!(shown(passing_design()), []);
     }
@@ -8116,6 +8141,11 @@ mod tests {
         assert_eq!(
             problem(SPACE_CLAIM, &design(large_cap)).unwrap(),
             "Rotating diameter 44.00 mm is 1.000 mm over the 43.00 mm claim."
+        );
+        // E25: the shaft boss counts where it is the largest.
+        assert_eq!(
+            problem(SPACE_CLAIM, &design(large_boss)).unwrap(),
+            "Rotating diameter 46.00 mm is 3.000 mm over the 43.00 mm claim."
         );
         assert_eq!(
             problem(SPACE_CLAIM, &design(unknown_claim)).unwrap(),

@@ -326,6 +326,20 @@ fn edge_points() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
                 Value::Num(default_num("metal.min_running_clearance_mm")),
             )],
         ),
+        // E25 (BL-061, an assumption that is not approved): a shaft boss above the cup and the
+        // 42.8 mm cap is the rotating diameter the space claim judges. The guard traces only the
+        // argument of `max` that governs, so it reads the record's boss term only where the boss
+        // is the largest: at two diameters here, so that the term takes two values.
+        on_edge(
+            "shaft boss 46 mm, above the cup and the cap",
+            vec![("metal.boss_od_mm", num(46.0))],
+            &[("metal.rotating_od_mm", 46.0)],
+        ),
+        on_edge(
+            "shaft boss 44 mm, above the cup and the cap",
+            vec![("metal.boss_od_mm", num(44.0))],
+            &[("metal.rotating_od_mm", 44.0)],
+        ),
         // The temperature chain's comparisons (the engine's own unit tests pin the same edges,
         // metal_design.rs and temperature.rs), each on the default design with an input set from
         // the defaults so that the comparison holds with equality. Where a magnet limit must

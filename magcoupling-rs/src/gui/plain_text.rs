@@ -126,7 +126,7 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "metal.max_diameter_mm",
-        "Largest diameter the coupling may take, over the cup or the front cap, whichever is larger. Past it, the space claim check fails.",
+        "Largest diameter the coupling may take, over the cup, the front cap or the shaft boss, whichever is largest. Past it, the space claim check fails.",
     ),
     (
         "metal.max_overall_axial_mm",
@@ -477,7 +477,7 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "metal.boss_od_mm",
-        "Outside diameter of the drawn shaft boss: it sets the boss mass and the outside diameter when larger than the cup and cap.",
+        "Outside diameter of the drawn shaft boss: it sets the boss mass and, when larger than the cup and cap, the outside diameter the space claim checks.",
     ),
     (
         "metal.cap_axial_mm",
@@ -2311,6 +2311,8 @@ mod batch_b_tests {
             dimensions(&big_boss).expect("a size").diameter_mm,
             outside + 1.0
         );
+        // ... and the space claim checks that diameter (E25, an assumption: BL-061).
+        assert_eq!(compute_all(&big_boss).metal.rotating_od_mm, outside + 1.0);
         // metal.cap_od_mm: the cap sets the outside diameter only when it is the largest part.
         let cap_step = 0.1;
         assert_eq!(example.metal.cap_od_mm, outside);

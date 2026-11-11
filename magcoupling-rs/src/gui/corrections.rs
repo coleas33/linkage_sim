@@ -1,7 +1,8 @@
 //! The "corrected vs workbook" markers (spec M4 "Layout": "corrected values carry a
 //! 'corrected vs workbook' marker with the deviation in its tooltip").
 //!
-//! The panel always computes with every approved correction on, and the test-only switch that
+//! The panel always computes with every approved correction on (and E25, an assumption that is
+//! not approved, which its title here says: [`listed_title`]), and the test-only switch that
 //! turns them off never ships, so a marker cannot come from comparing the two. It comes from
 //! the deviation registry instead (decision M41-10): a workbook cell carries a correction's
 //! marker when the registry ties the cell to it, in any of three ways:
@@ -25,7 +26,7 @@ use std::sync::OnceLock;
 use serde_json::Value as Json;
 
 use crate::engine::deviations::{
-    Deviation, DeviationClass, DeviationId, DeviationStatus, REGISTRY,
+    Approval, Deviation, DeviationClass, DeviationId, DeviationStatus, REGISTRY,
 };
 use crate::engine::meta::Value;
 use crate::gui::format::format_value;
@@ -178,9 +179,21 @@ pub const MARKER_HEADING: &str = "Differs from the original spreadsheet";
 pub const MARKER_SCOPE: &str =
     "Was and now are values at the default design, with only that correction applied.";
 
+/// What the lists of corrections say after the title of one the user did not approve (E25).
+pub const ASSUMED: &str = "an assumption, not approved";
+
+/// A correction's title as the lists and hover texts show it: an assumed correction's says
+/// that it is not approved ([`ASSUMED`]).
+pub(crate) fn listed_title(deviation: &Deviation) -> String {
+    match deviation.approval {
+        Approval::Assumed { .. } => format!("{} ({ASSUMED})", deviation.title),
+        _ => deviation.title.to_owned(),
+    }
+}
+
 /// A correction as the hover texts name it: its id and its title.
 pub fn correction_title(id: DeviationId) -> String {
-    format!("{id}: {}", REGISTRY[id.index()].title)
+    format!("{id}: {}", listed_title(&REGISTRY[id.index()]))
 }
 
 /// The hover lines of the markers (spec 3.6; shown only with the spreadsheet details): the
@@ -312,6 +325,20 @@ mod tests {
             correction_title(DeviationId::E7),
             format!("E7: {}", REGISTRY[DeviationId::E7.index()].title)
         );
+    }
+
+    #[test]
+    fn only_an_assumed_correction_s_title_says_it_is_not_approved() {
+        for deviation in REGISTRY {
+            let title = correction_title(deviation.id);
+            let assumed = matches!(deviation.approval, Approval::Assumed { .. });
+            assert_eq!(title.contains("not approved"), assumed, "{title}");
+        }
+        // E25 is the one, and it marks the rotating diameter the space claim judges.
+        let e25 = correction_title(DeviationId::E25);
+        assert!(e25.ends_with(&format!("({ASSUMED})")), "{e25}");
+        let marks = CorrectionIndex::get().marks(Some("Metal design!C135"));
+        assert!(marker_tooltip(marks).contains(&e25));
     }
 
     #[test]

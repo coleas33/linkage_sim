@@ -7618,3 +7618,263 @@ reviewer changed no code.
   change and is not this item's.
 
 Verdict: PASS. No must-fix. One should-fix offered (SF-1).
+
+## BL-061 the shaft boss in the space claim's diameter (2026-11-11)
+
+BL-061 (`docs/ai/backlog.yaml`) asks whether the shaft boss counts toward the diameter the space claim judges. The
+workbook judges the larger of the cup and the cap (Metal design C135), though the boss turns with them and can be
+larger. The owner has not answered. Under the owner's ruling of 2026-11-10 (an open question takes the conservative
+answer, and the assumption is made known) the boss counts for now: correction E25 makes the rotating diameter the
+largest of the cup, the cap and the shaft boss (`magcoupling-rs/src/engine/metal_design.rs`), and row A-7 of
+`docs/analyses/2026-11-10-conservative-assumptions.md` (kept in the owner's main checkout) records it. That is an
+assumption, not the owner's approval, and the owner's review of the diff is still owed before a merge. On screen,
+three help texts changed and a correction held on an assumption now says so wherever its title is listed. These
+texts had their G-3 review on 2026-11-11 in a fresh context on the uncommitted change in the worktree (branch
+`magcoupling/off-default-fixes`, HEAD 0a5add4, 23 changed files). The reviewer's report for the record follows.
+
+- Scope: three help texts and one mark, each whole.
+  - The help of the input `metal.max_diameter_mm`, "Maximum rotating coupling diameter"
+    (`magcoupling-rs/src/gui/plain_text.rs`, line 129).
+  - The help of the input `metal.boss_od_mm`, "Shaft boss outside diameter" (the same file, line 480).
+  - The help of the result `housing.diameter_overshoot_mm`, "Diameter beyond the space claim"
+    (`magcoupling-rs/src/engine/housing.rs`, line 53).
+  - The words "(an assumption, not approved)" (`ASSUMED`, `magcoupling-rs/src/gui/corrections.rs`, line 183).
+    `listed_title` puts them after the title of a correction whose approval is assumed, and every place that shows a
+    correction's title takes it from there: the hover of a marked cell, the explorer's list of corrections and the
+    Summary sheet's "Corrections applied" list. E25 is the only such correction.
+  - Read beside them, for the same design each time: the space claim check and its badge, the results rows, the Size
+    tab's Outside diameter with its "Set by" line and hover, the drawing's diameter dimension, the check's guide
+    (Problem and Fix) and the cap's help.
+- Reviewer: fresh context, general-purpose agent on fable, 2026-11-11; round 2 of the item's reviews. What round 1
+  asked for (the boss edge points at 46 and 44 mm in `edge_points()` of `magcoupling-rs/tests/explain.rs`, the
+  README's line and the tracker's entry of 2026-11-11) was found applied before the texts were read. Every number
+  below is from the reviewer's own probe: a scratch crate outside the worktree that calls the engine (`compute_all`)
+  and the crate's own text, guide, Size-tab, drawing and spreadsheet functions.
+- The texts as found (each guard clean):
+  - `metal.max_diameter_mm` (26 words, 2 sentences): "Largest diameter the coupling may take, over the cup, the front
+    cap or the shaft boss, whichever is largest. Past it, the space claim check fails." Before the change: "Largest
+    diameter the coupling may take, over the cup or the front cap, whichever is larger. Past it, the space claim
+    check fails."
+  - `metal.boss_od_mm` (27 words, 1 sentence): "Outside diameter of the drawn shaft boss: it sets the boss mass and,
+    when larger than the cup and cap, the outside diameter the space claim checks." Before the change: "Outside
+    diameter of the drawn shaft boss: it sets the boss mass and the outside diameter when larger than the cup and
+    cap."
+  - `housing.diameter_overshoot_mm` (26 words, 1 sentence): "How far the largest of the cup, cap and shaft boss
+    diameters exceeds the maximum diameter of the space claim; 0 inside or at the claim." Before the change: "How far
+    the larger of the cup and cap diameters exceeds the maximum diameter of the space claim; 0 inside or at the
+    claim."
+  - E25 as listed: "E25: The rotating diameter the space claim judges is the larger of the cup and the cap, though
+    the shaft boss turns with them and can be larger (an assumption, not approved)". The words in brackets are the
+    new ones. The title before them states what the workbook does, as every title of the registry does.
+- Verdict: PASS. No must-fix. Every sentence of the three helps is true in each of the 22 designs probed, and each
+  agrees with the check, its badge, the Size tab's Outside diameter and the drawing's dimension for the same design.
+  The boss's help says in plain words that the boss counts toward the diameter the space claim checks. No text says
+  or implies that the owner approved E25: every place that lists it says "not approved", and the three helps do not
+  name the correction. Three should-fix items are offered: two on unchanged neighbours (SF-1, SF-2) and one on the
+  tests (SF-3). The texts break no physics trap, do not say "clamp", do not say the coupling protects the gearbox and
+  do not say a wall seals the rings.
+- Should-fix offered (the owner's choice; no text of the item is false as it stands):
+  - SF-1, the heading over the Summary sheet's list of corrections (`CORRECTIONS_HEADING`, `gui/spreadsheet.rs`,
+    line 106; the item does not change it). The list under it now holds E25, which is on and is not approved. The
+    heading stays true (every approved correction is on) and E25's own row says "not approved", so nothing on the
+    sheet claims an approval. A reader who takes the heading as an account of the whole list still meets one row it
+    does not cover.
+    - Old: "Corrections applied (every approved correction is on)"
+    - New: "Corrections applied (every approved correction is on, and each assumption is marked)" (12 words, guard
+      clean.)
+    - What changes with it: the constant; the unit test finds the heading by the constant. The old words are quoted
+      in `docs/superpowers/plans/2026-10-03-magcoupling-xlsx-export.md` (line 1709) and in
+      `docs/superpowers/specs/2026-10-14-magcoupler-guidance-2-research/map-jargon.md` (line 167), both records of
+      their day.
+  - SF-2, the guide's no-fix line (`NO_FIX`, `gui/guidance.rs`, line 913; the item does not change it, and every
+    guide shares it). With E25 the space claim's guide reaches it one new way: the boss and the cap equal and both
+    past the claim (boss 42.8 on the default cap with a 42 mm claim; cap 38.0 and boss 38.0 on a 7 mm ring radius
+    with a 37 mm claim). Lowering either one alone leaves the other holding the diameter, so no single listed change
+    helps and the line's first words are true. Its list of reasons does not name what stops the two: each fails to
+    help only because the other still holds the diameter. Before E25 the cap alone held that diameter. The same gap
+    is there with no boss in it, by a rule the item does not change (a fix is shown only where one step raises the
+    reserve): with the cup the largest at the low end of the Outside diameter slider and a 38 mm claim, lowering the
+    smaller cap does nothing, and the line is shown. Because the line is shared and the gap is older than the item,
+    this is offered as its own backlog item, not as a change to BL-061.
+    - Old: "No listed change helps from here: each is at its slider's end, has no better choice or would fail another
+      check, or a value the check needs is not a number or is outside what it can be."
+    - New: "No listed change helps from here: each is at its slider's end, has no better choice, would fail another
+      check or does not help alone, or a value the check needs is not a number or is outside what it can be." (42
+      words, 1 sentence, guard clean; the line as found has 38.)
+    - What changes with it: the constant and its doc comment (lines 909 to 912). The two unit tests that read it
+      (`gui/guidance.rs`, lines 7986 and 8009) look for "not a number" and "outside what it can be", which stay. This
+      document quotes the old line three times in earlier records, which stand as records.
+  - SF-3, tests. No test pins that the three helps name the boss; only the Size tab's hover is pinned to hold "shaft
+    boss" (`gui/size_controls.rs`, line 740). A later edit could drop the boss from a help with every test green.
+    Offered: one unit test beside the helps that each of the three holds "shaft boss".
+- Each text as read:
+  - `metal.max_diameter_mm`, sentence 1, "Largest diameter the coupling may take, over the cup, the front cap or the
+    shaft boss, whichever is largest." True: the claim is compared with `metal.rotating_od_mm`, which was the largest
+    of the three in every design with numbers: the cap on the defaults (42.8), the cup with the cap made small
+    (41.33), the boss wherever it was the largest (42.9 to 300).
+  - `metal.max_diameter_mm`, sentence 2, "Past it, the space claim check fails." Unchanged words. True from one
+    float step past the claim (reserve -7.105e-15 mm: "Exceeds the space claim: diameter 0.01 mm over", badge Bad) to
+    257 mm past it. "Past" is strict and so is the engine: a boss of 43.0 mm on the 43 mm claim reads "Inside the
+    space claim", badge Good, reserve 0.
+  - `metal.boss_od_mm`, "it sets the boss mass". Unchanged words. True: the boss mass row reads 30.78 g at 22 mm,
+    34.38 g at 23 mm, 64.12 g at 30 mm and 161.58 g at 46 mm.
+  - `metal.boss_od_mm`, "and, when larger than the cup and cap, the outside diameter the space claim checks". True
+    both ways. Larger: a boss of 42.9 mm over the 42.8 mm cap gives Outside diameter 42.9 and rotating diameter 42.90
+    mm; with the cap at 30 mm, a boss 0.5 mm over the cup gives 41.83 mm. Not larger: at 22 mm and at 40 mm (the top
+    of the boss's slider) the defaults stay at 42.8 mm. Equal to the cap (42.8 mm) the diameter is 42.8 mm either
+    way. "The outside diameter" is the Size tab's name for the number, and it equalled the diameter the check uses
+    bit for bit in every design that has dimensions.
+  - `housing.diameter_overshoot_mm`. True: the row reads 0 inside the claim and at it, and the amount past it
+    otherwise (3.000 mm with the boss at 46 mm, 2.000 mm on the backlog's evidence design). Where the claim is not a
+    number the row reads NaN and the check reads "Space claim unknown: a dimension or a claim is not a number", which
+    is neither inside nor at the claim.
+  - "(an assumption, not approved)". True: the registry holds E25 as `Approval::Assumed` for BL-061, and the backlog
+    and the register say the owner has not approved it. The words stand in the hover of the two marked rows
+    (rotating diameter and diameter reserve, under "Differs from the original spreadsheet:"), in the explorer's list
+    for those two rows and for the diameter beyond the claim, and in the Summary sheet's row for E25.
+- Beside the texts:
+  - The check, the results rows, the Size tab, the drawing and the guide's Problem showed one diameter in every
+    design. On the evidence design (ring radius 7 mm, boss 40 mm, claim 38 mm): check "Exceeds the space claim:
+    diameter 2.00 mm over", badge Bad, as the backlog expects; rotating diameter 40.00 mm; reserve -2.000 mm; Size
+    tab "Set by: cap 36.2, cup 34.7, boss 40.0 mm"; drawing "Diameter: rotating OD 40.00 mm is 2.000 mm over the
+    38.00 mm claim"; Problem "Rotating diameter 40.00 mm is 2.000 mm over the 38.00 mm claim."; Fix "Lower Shaft
+    boss outside diameter".
+  - The guide offers "Lower Shaft boss outside diameter" wherever the boss alone holds the diameter past the claim,
+    and does not offer it where the boss is not the largest (cap 44 mm, boss 22 mm: "Lower Threaded cap OD" and
+    "Lower Outside diameter"). That matches the boss's help.
+  - The cap's help (unchanged: "Front cap diameter; when larger than the cup and boss, it sets the outside
+    diameter. ...") and the Size tab's hover and hint (unchanged: "The largest of the cup, cap and shaft boss
+    diameters. ..."; "Largest of cup, cap and boss; it moves the magnet rings.") say the same of the three parts as
+    the changed helps.
+  - The README and the `docs/ai` lines that name E25 call it an assumption that is not approved.
+- For the step that commits: nothing must change. If SF-1 or SF-2 is taken, the changed line needs its re-read. The
+  reviewer edited only this document; no help text, code, test or other doc was changed.
+
+**Report for the record (as returned).**
+
+#### Basis
+
+A scratch crate outside the worktree (a path dependency on the worktree's `magcoupling-rs` with its `gui` feature),
+run in debug. Each design is `DesignInputs::default()` with the boss, the cap, the claim or the ring radius set
+(`with_ring_radius` for the 7 mm ring). For each design the probe printed the engine's rotating diameter, reserve,
+overshoot and check; the results rows as the table shows them; the dashboard's row and badge; the Size tab's Outside
+diameter, range and "Set by" line; the drawing's dimensions and notes; the guide's Problem and Fix lines, with the
+shaft-joint section paused and shown; and the three records' derivations beside the engine's numbers. Defaults: cup
+41.326 mm, cap 42.8 mm, boss 22 mm, claim 43 mm.
+
+#### Cases
+
+Lengths are in mm. "Rotating" is the results row; the Size tab's Outside diameter was the same number bit for bit in
+every case with dimensions, and the drawing and the guide's Problem showed it too. "Lower boss" stands for the fix
+line "Lower Shaft boss outside diameter".
+
+| Case | Cup, cap, boss; claim | Rotating | Reserve | Check, badge | Fix line |
+|---|---|---|---|---|---|
+| Defaults | 41.33, 42.8, 22; 43 | 42.80 | 0.2000 | Inside, Good | none |
+| Boss just above the cap | 41.33, 42.8, 42.9; 43 | 42.90 | 0.1000 | Inside, Good | none |
+| Boss at the claim | 41.33, 42.8, 43.0; 43 | 43.00 | 0 | Inside, Good | none |
+| Boss one float step past it | 41.33, 42.8, 43.0 and a step; 43 | 43.00 | -7.105e-15 | 0.01 over, Bad | Lower boss |
+| Boss 0.004 past the claim | 41.33, 42.8, 43.004; 43 | 43.00 | -0.004000 | 0.01 over, Bad | Lower boss |
+| Boss just past the claim | 41.33, 42.8, 43.1; 43 | 43.10 | -0.1000 | 0.10 over, Bad | Lower boss |
+| Boss past the claim, cup and cap inside | 41.33, 42.8, 46; 43 | 46.00 | -3.000 | 3.00 over, Bad | Lower boss |
+| Backlog evidence, ring radius 7 | 34.70, 36.18, 40; 38 | 40.00 | -2.000 | 2.00 over, Bad | Lower boss |
+| Cap below the cup (thread 28) | 41.33, 30, 22; 43 | 41.33 | 1.674 | Inside, Good | none |
+| Cap below the cup, boss just above the cup | 41.33, 30, 41.83; 43 | 41.83 | 1.174 | Inside, Good | none |
+| Cap below the cup, boss past the claim | 41.33, 30, 50; 43 | 50.00 | -7.000 | 7.00 over, Bad | Lower boss |
+| Boss and cap both past the claim | 41.33, 42.8, 46; 40 | 46.00 | -6.000 | 6.00 over, Bad | Lower boss only |
+| Tie: boss equal to the cap | 41.33, 42.8, 42.8; 42 | 42.80 | -0.8000 | 0.80 over, Bad | the no-fix line |
+| Cap alone past the claim | 41.33, 44, 22; 43 | 44.00 | -1.000 | 1.00 over, Bad | Lower cap; Lower Outside diameter |
+| Claim not a number | 41.33, 42.8, 46; NaN | 46.00 | NaN | unknown, Caution | the no-fix line |
+| Boss not a number | 41.33, 42.8, NaN; 43 | 42.80 | 0.2000 | Inside, Good | none |
+| Boss far past the claim | 41.33, 42.8, 300; 43 | 300.0 | -257.0 | 257.00 over, Bad | Lower boss |
+| Cup alone past the claim | 41.33, 30, 22; 41 | 41.33 | -0.3265 | 0.33 over, Bad | Lower Outside diameter |
+| Tie on ring radius 7 | 34.70, 38.0, 38.0; 37 | 38.00 | -1.000 | 1.00 over, Bad | the no-fix line |
+| Boss 0.05 above the cap, both past | 41.33, 42.8, 42.85; 42 | 42.85 | -0.8500 | 0.85 over, Bad | Lower boss |
+| Boss at its slider's top | 41.33, 42.8, 40; 43 | 42.80 | 0.2000 | Inside, Good | none |
+| Cup at the diameter slider's low end | 38.91, 27.58, 22; 38 | 38.91 | -0.9081 | 0.91 over, Bad | the no-fix line |
+
+"Inside" is "Inside the space claim"; "x over" is "Exceeds the space claim: diameter x mm over"; "unknown" is "Space
+claim unknown: a dimension or a claim is not a number". Where the claim is not a number the Problem reads "Rotating
+diameter cannot be checked: it or its claim is not a number." The two designs with a value that is not a number are
+refused by `validate` (`NotFinite`) and have no Size-tab dimensions. The three records (`metal.rotating_od_mm`,
+`metal.diameter_reserve_mm`, `housing.diameter_overshoot_mm`) evaluated to the engine's numbers in every case; the
+record of the rotating diameter reads "D_{rot} = max(D_{cup}, D_{cap}, D_{boss})" and carries E25.
+
+#### Words
+
+Counted with the crate's `word_count` and `sentence_count`; the guard is `plain_text_violations` and
+`mentions_gearbox_protection`.
+
+| Text | Words | Sentences (words in each) | Guard | "clamp", gearbox, wall or seal |
+|---|---|---|---|---|
+| `metal.max_diameter_mm` help | 26 | 2 (19, 7) | clean | none |
+| `metal.boss_od_mm` help | 27 | 1 | clean | none |
+| `housing.diameter_overshoot_mm` help | 26 | 1 | clean | none |
+| "an assumption, not approved" | 4 | not a sentence | clean | none |
+| E25 as listed, with its id | 32 | not a sentence | the id "E25" only | none |
+| `metal.cap_od_mm` help (unchanged neighbour) | 29 | 2 | clean | none |
+| the Summary heading as found | 7 | not a sentence | clean | none |
+| the Summary heading with SF-1 New | 12 | not a sentence | clean | none |
+| the no-fix line as found | 38 | 1 | clean | none |
+| the no-fix line with SF-2 New | 42 | 1 | clean | none |
+
+The guard's hit on E25 as listed is the id that `correction_title` puts before every correction's title in the hover
+and the explorer; it was so before the item, for every correction. The Summary sheet lists the id in its own column.
+
+#### Traps and rules
+
+- Slice-2 spec section 8 (the 17 physics traps): none is written or touched. The texts say which diameters the claim
+  counts and what the check does past it; they give no law of torque, heat or strength.
+- Slice-2 spec 3.5 (help: one or two sentences, at most 30 words): the three helps are inside it.
+- E25 is an assumption that is not approved: no text says or implies an approval. The three helps state what the
+  calculator checks and do not name the correction; each listing of E25 ends "(an assumption, not approved)"; the
+  hover's heading says only "Differs from the original spreadsheet". SF-1 is about the one heading that speaks of
+  approval.
+- Standing rules: no text says the coupling protects the gearbox, says a wall seals the rings or holds "clamp". The
+  three helps hold no cell name, correction id, file or code name.
+
+#### Tests
+
+On the worktree as found, all green: `cargo test` (lib 242 passed, 1 ignored; `tests/explain.rs` 63 passed, 1
+ignored) and `cargo test --features app` (lib 997 passed, 6 ignored; `tests/explain.rs` 64 passed, 1 ignored);
+`cargo clippy` both ways and `cargo fmt --check` clean. One mutation check: with the boss term taken out of the
+record of `metal.rotating_od_mm` (`src/engine/explain/records/geometry.rs`, line 18),
+`every_record_reproduces_the_engine_everywhere` failed ("record Num(42.8), engine Num(46.0)"). The line was put back
+by hand, and before this record was added a fresh `git diff` and `git status` of the worktree matched the ones saved
+at the start line for line. The full gate was not run; the reviewer changed no code.
+
+#### Not checked
+
+- The GUI was not run. The texts were read from the crate's own functions and from where they are drawn; how a hover
+  wraps on screen was not seen.
+- The exported workbook file was not opened; the Summary sheet was read from the rows the crate builds for it.
+- No mutation check was made of a test of the three helps' words, because no test pins them (SF-3).
+- Inputs the diameter does not read (poles, gap, grades, temperatures) were held at the defaults.
+- `docs/ai/05-update-tracker.md` and the long lines of the README were read in part only.
+
+#### Recorded, no change asked
+
+- The check's sentence gives the overshoot to 0.01 mm and never less ("0.01 mm over" for 7.105e-15 mm and for 0.004
+  mm), while the reserve row, the drawing and the Problem give four digits ("0.004000 mm"). They agree that the
+  design is over. The formatting is not the item's, and a cap 0.004 mm past the claim read the same before.
+- At the claim exactly, the record of the overshoot evaluates to -0.0 where the engine holds 0.0. The record is not
+  the item's; how the explorer shows it was not looked at.
+- A boss that is not a number is left out of the largest (`py_max`), so the check reads "Inside the space claim"
+  while the boss mass reads NaN and the drawing says a part is not drawn. `validate` refuses such a design and no
+  slider reaches it; the cap is treated the same way.
+- The Space claim row has no correction mark and the explorer lists no correction for it: the check has no workbook
+  cell. The rotating diameter and the reserve carry the mark, and the explorer lists E25 for the diameter beyond the
+  claim.
+- The boss's slider ends at 40 mm. On the example design (cup 41.33 mm, cap 42.8 mm) the boss counts only when typed
+  past its slider, or on a smaller ring.
+- With the boss the largest, the Size tab's range starts at the boss and its card reads "-1 mm -> outside the
+  slider's range; +1 mm -> not a step: the cup diameter does not change by the step's amount and direction". The
+  Size tab counted the boss before the item; nothing there changed but a test's comment.
+- On the evidence design the Size tab shows 40.0 mm below its slider's range (40.38 to 80 mm): the 7 mm ring radius
+  is off that slider. That is the design's, not the item's.
+- E25's title states the workbook's behaviour ("is the larger of the cup and the cap"), by the registry's convention.
+  Under the hover's heading and among the Summary's other rows it reads as the defect corrected, and the help beside
+  the rows says what the calculator does.
+- The task text cites section 6 of the slice-2 spec for the traps; they are in section 8.
+
+Verdict: PASS. No must-fix. Three should-fix offered (SF-1, SF-2, SF-3).

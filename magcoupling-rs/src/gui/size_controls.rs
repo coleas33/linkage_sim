@@ -734,9 +734,9 @@ mod tests {
         let ring = label_for("coupling.inner_back_apothem_mm").to_lowercase();
         assert!(DIAMETER_HOVER.contains(&ring), "{DIAMETER_HOVER}");
         assert!(LENGTH_HOVER.contains("magnet length"), "{LENGTH_HOVER}");
-        // The Outside diameter counts the shaft boss, so it is not the space claim's rotating
-        // diameter (the cup and the cap only, `engine::metal_design`): the hover never uses
-        // that name.
+        // The Outside diameter counts the shaft boss. The space claim's rotating diameter counts
+        // it only with E25 (an assumption that is not approved; the workbook's is the cup and
+        // the cap only, `engine::metal_design`): the hover never uses that name.
         assert!(DIAMETER_HOVER.contains("shaft boss"), "{DIAMETER_HOVER}");
         assert!(
             !DIAMETER_HOVER.to_lowercase().contains("rotating"),

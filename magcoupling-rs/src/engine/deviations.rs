@@ -13,7 +13,11 @@
 //! (decision 2: the cure margin from the lower ring), E22 (decisions 4 to 7, 9
 //! and 10: the inner ring's grade expansion in the bond plane) and the planned
 //! E23 (decisions 4, 5, 8 and 10: per-grade specific heat; registered, not yet
-//! in the code), approved on 2026-10-01. Everything else stays
+//! in the code), approved on 2026-10-01. E25 (the space claim's diameter judges
+//! the shaft boss too) is NOT approved: it is an assumption, the conservative
+//! answer to an open question, taken under the owner's ruling of 2026-11-10 on
+//! open questions (`docs/ai/backlog.yaml`, BL-061; [`Approval::Assumed`]).
+//! Everything else stays
 //! workbook-exact. This registry is the one place that says where
 //! the port departs from the workbook and why.
 //!
@@ -68,7 +72,12 @@ pub const ADDENDUM_REPORT: &str = "docs/analyses/2026-09-30-magcoupling-addendum
 /// `docs/analyses/2026-10-01-magcoupling-addendum-a4-data.json`).
 pub const A4_REPORT: &str = "docs/analyses/2026-10-01-magcoupling-addendum-a4-verification.md";
 
-/// Identifier of an approved correction, numbered as in the audit report.
+/// The backlog an assumed correction (E25 onward, [`Approval::Assumed`]) cites: its item
+/// there holds the open question. It is not a report and approves nothing.
+pub const BACKLOG: &str = "docs/ai/backlog.yaml";
+
+/// Identifier of an approved correction, numbered as in the audit report. E25 is an
+/// assumption that is not approved ([`Approval::Assumed`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum DeviationId {
     E1,
@@ -95,11 +104,12 @@ pub enum DeviationId {
     E22,
     E23,
     E24,
+    E25,
 }
 
 impl DeviationId {
     /// Every identifier, in report order.
-    pub const ALL: [DeviationId; 24] = [
+    pub const ALL: [DeviationId; 25] = [
         DeviationId::E1,
         DeviationId::E2,
         DeviationId::E3,
@@ -124,6 +134,7 @@ impl DeviationId {
         DeviationId::E22,
         DeviationId::E23,
         DeviationId::E24,
+        DeviationId::E25,
     ];
 
     /// Position in [`DeviationId::ALL`] and in [`REGISTRY`].
@@ -151,7 +162,8 @@ pub enum DeviationClass {
     Documentation,
 }
 
-/// Where the user approved a correction.
+/// Where the user approved a correction; or, for [`Approval::Assumed`], that the user did
+/// not.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Approval {
     /// Its row of the M1 audit report ([`REPORT`]), approved on 2026-09-29.
@@ -163,6 +175,11 @@ pub enum Approval {
     /// These decisions of the Addendum A-4 verification report ([`A4_REPORT`],
     /// section 5), approved (option A) on 2026-10-01. No audit row.
     AddendumA4 { decisions: &'static [u32] },
+    /// NOT approved by the user. The conservative answer to an open question, taken under
+    /// the owner's ruling of 2026-11-10 on open questions. The named item of
+    /// `docs/ai/backlog.yaml` ([`BACKLOG`]) holds the question, the answer taken and the
+    /// other answers; the owner can rule otherwise at the review of the diff.
+    Assumed { item: &'static str },
 }
 
 /// Whether the correction is in the code yet.
@@ -221,14 +238,14 @@ pub struct Probe {
     pub expect: &'static [CellChange],
 }
 
-/// One approved correction.
+/// One approved correction; or (E25) one assumption that is not approved.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Deviation {
     pub id: DeviationId,
     /// Short statement of the workbook error (the report's Group column).
     pub title: &'static str,
     pub class: DeviationClass,
-    /// Where the user approved it.
+    /// Where the user approved it; [`Approval::Assumed`] when the user did not (E25).
     pub approval: Approval,
     /// Corrections this one refines; its probes run with them on, on both
     /// sides (decision 15). Empty for all but E15, E16 and E17 (on E9) and
@@ -238,7 +255,8 @@ pub struct Deviation {
     /// Every workbook cell the report names for this entry (inputs, corrected
     /// formulas and named downstream cells). Each exists in the snapshot.
     pub cells: &'static [&'static str],
-    /// The correction, as approved (the report's Proposed correction column).
+    /// The correction, as approved (the report's Proposed correction column); for an
+    /// assumption, the answer taken.
     pub corrected_formula: &'static str,
     /// Workbook defaults of inputs whose declared default this deviation
     /// corrects, by input path. Empty unless the deviation changes a default.
@@ -262,16 +280,19 @@ pub struct Deviation {
 }
 
 impl Deviation {
-    /// The report that approves this entry.
+    /// The report that approves this entry; for an assumption, the backlog that holds its
+    /// open question, which approves nothing.
     pub fn report(&self) -> &'static str {
         match self.approval {
             Approval::AuditRow => REPORT,
             Approval::Addendum { .. } => ADDENDUM_REPORT,
             Approval::AddendumA4 { .. } => A4_REPORT,
+            Approval::Assumed { .. } => BACKLOG,
         }
     }
 
-    /// Where the evidence is: the audit report entry, or the Addendum A or A-4 decisions.
+    /// Where the evidence is: the audit report entry, or the Addendum A or A-4 decisions;
+    /// for an assumption, its backlog item, said to be an assumption and not an approval.
     pub fn evidence(&self) -> String {
         match self.approval {
             Approval::AuditRow => format!("{REPORT}, entry {}", self.id),
@@ -280,6 +301,9 @@ impl Deviation {
             }
             Approval::AddendumA4 { decisions } => {
                 format!("{A4_REPORT}, section 5, {}", decision_list(decisions))
+            }
+            Approval::Assumed { item } => {
+                format!("{BACKLOG}, item {item}: an assumption, not an approval")
             }
         }
     }
@@ -1799,6 +1823,50 @@ pub const REGISTRY: &[Deviation] = &[
             }],
         }],
     },
+    Deviation {
+        id: DeviationId::E25,
+        title: "The rotating diameter the space claim judges is the larger of the cup and the cap, though the shaft boss turns with them and can be larger",
+        class: DeviationClass::Engine,
+        approval: Approval::Assumed { item: "BL-061" },
+        depends_on: &[],
+        status: DeviationStatus::Applied,
+        cells: &["Metal design!C135", "Metal design!C136"],
+        corrected_formula: "An assumption, not approved (docs/ai/backlog.yaml, BL-061: the conservative answer to an open \
+            question, under the owner's ruling of 2026-11-10). C135 = MAX(cup OD, cap OD C166, boss OD C127): the \
+            rotating outside diameter is the largest of the cup, the front cap and the shaft boss. The diameter reserve \
+            C136 = C131 - C135 reads it, and so do the Rust-only diameter overshoot and space-claim check. A boss at or \
+            below the larger of the cup and the cap changes nothing, so no cell moves at default inputs (boss 22 mm, \
+            cap 42.8 mm). The other answers (the boss named apart from the claim, or left out as in the workbook) are \
+            not built.",
+        workbook_input_defaults: &[],
+        workbook_help: &[],
+        changes_at_defaults: &[],
+        changes_file: None,
+        probes: &[Probe {
+            label: "Ring radius 7 mm (the cap and its thread follow the cup, as the Size tab sets them), boss 40 mm, \
+                claim 38 mm (backlog BL-061's evidence): the boss passes the claim by 2 mm and the workbook reads a \
+                reserve of 1.82 mm",
+            inputs: &[
+                ("coupling.inner_back_apothem_mm", Literal::Num(7.0)),
+                ("metal.cap_od_mm", Literal::Num(36.17578798729891)),
+                ("metal.cap_thread_dia_mm", Literal::Num(34.375787987298914)),
+                ("metal.boss_od_mm", Literal::Num(40.0)),
+                ("metal.max_diameter_mm", Literal::Num(38.0)),
+            ],
+            expect: &[
+                CellChange {
+                    cell: "Metal design!C135",
+                    workbook: Literal::Num(36.17578798729891),
+                    corrected: Literal::Num(40.0),
+                },
+                CellChange {
+                    cell: "Metal design!C136",
+                    workbook: Literal::Num(1.8242120127010892),
+                    corrected: Literal::Num(-2.0),
+                },
+            ],
+        }],
+    },
 ];
 
 /// A set of deviations switched on. Users only ever get [`Deviations::ALL`].
@@ -1808,7 +1876,8 @@ pub struct Deviations {
 }
 
 impl Deviations {
-    /// Every approved correction: what every user-facing computation uses.
+    /// Every approved correction, and the assumption E25, which is not approved: what every
+    /// user-facing computation uses.
     pub const ALL: Self = Self {
         mask: (1 << DeviationId::ALL.len()) - 1,
     };
@@ -1911,6 +1980,22 @@ mod tests {
                 }
                 Approval::Addendum { decisions } => decided(decisions, DeviationId::E15, 31),
                 Approval::AddendumA4 { decisions } => decided(decisions, DeviationId::E21, 10),
+                // An assumption is newer than every approved entry (E1 to E24) and names
+                // its backlog item; tests/deviations.rs reads the item's text.
+                Approval::Assumed { item } => {
+                    assert!(
+                        d.id.index() >= DeviationId::E25.index(),
+                        "{}: E1 to E24 are approved",
+                        d.id
+                    );
+                    assert!(item.starts_with("BL-"), "{} names no backlog item", d.id);
+                    assert!(
+                        d.evidence()
+                            .ends_with(&format!("item {item}: an assumption, not an approval")),
+                        "{}",
+                        d.id
+                    );
+                }
             }
             for dep in d.depends_on {
                 assert!(
@@ -1943,6 +2028,14 @@ mod tests {
         assert_eq!(
             REGISTRY[DeviationId::E24.index()].evidence(),
             format!("{A4_REPORT}, section 5, decision 2")
+        );
+        // E25 is an assumption: its evidence names the backlog item and claims no approval.
+        let e25 = &REGISTRY[DeviationId::E25.index()];
+        assert_eq!(e25.approval, Approval::Assumed { item: "BL-061" });
+        assert_eq!(e25.report(), BACKLOG);
+        assert_eq!(
+            e25.evidence(),
+            format!("{BACKLOG}, item BL-061: an assumption, not an approval")
         );
     }
 

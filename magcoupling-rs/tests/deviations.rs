@@ -27,10 +27,12 @@ use magcoupling::engine::api::{
 };
 use magcoupling::engine::compat::parity_close;
 use magcoupling::engine::deviations::{
-    A4_REPORT, ADDENDUM_REPORT, Approval, Deviation, DeviationClass, DeviationId, DeviationStatus,
-    Deviations, Literal, Probe, REGISTRY, REPORT,
+    A4_REPORT, ADDENDUM_REPORT, Approval, BACKLOG, Deviation, DeviationClass, DeviationId,
+    DeviationStatus, Deviations, Literal, Probe, REGISTRY, REPORT,
 };
+use magcoupling::engine::housing::INSIDE_THE_SPACE_CLAIM;
 use magcoupling::engine::meta::{InputSet, NumOrText, Value, input_rows, result_rows};
+use magcoupling::engine::size_controls::with_ring_radius;
 
 const BLESS_VAR: &str = "MAGCOUPLING_BLESS";
 
@@ -272,6 +274,22 @@ fn every_entry_is_approved_in_its_report() {
                         d.id
                     );
                 }
+                assert_eq!(d.class, DeviationClass::Engine, "{}", d.id);
+            }
+            // E25 is not approved. It is an assumption: the backlog item holds the open
+            // question and says the answer taken is not the owner's.
+            Approval::Assumed { item } => {
+                let backlog = read_text(&repo_path(BACKLOG));
+                let entry = backlog
+                    .split_once(&format!("\n- id: {item}\n"))
+                    .map(|(_, rest)| rest.split("\n- id: ").next().unwrap_or(rest))
+                    .unwrap_or_else(|| panic!("{BACKLOG} has no item {item}"));
+                assert!(
+                    entry.contains("It is an assumption, not the owner's answer to the question"),
+                    "{}: {BACKLOG} item {item} does not say it is an assumption",
+                    d.id
+                );
+                assert!(d.id.index() >= DeviationId::E25.index(), "{}", d.id);
                 assert_eq!(d.class, DeviationClass::Engine, "{}", d.id);
             }
         }
@@ -674,8 +692,8 @@ fn each_probe_shows_its_correction() {
 
 #[test]
 fn addendum_entries_name_every_cell_their_probes_change() {
-    // The Addendum A and A-4 entries (E15 onward) name every cell their probes change,
-    // downstream cells included, so the registry alone says where each correction shows. The
+    // The Addendum A and A-4 entries and the assumption E25 (E15 onward) name every cell their
+    // probes change, downstream cells included, so the registry alone says where each shows. The
     // M1 entries (E1 to E14) name the corrected and report-named cells only: their probes
     // change hundreds of sweep and downstream cells (E7, E8), and the broad ones keep golden
     // files.
@@ -1205,7 +1223,7 @@ fn assert_report_table(
 
 const NO_BACK_IRON: [(&str, Value); 1] = [("coupling.backiron", Value::Int(0))];
 
-/// The report's M2 basis: E1 to E14 on, the Addendum corrections off.
+/// The report's M2 basis: E1 to E14 on, the Addendum corrections and the assumption E25 off.
 fn m2() -> Deviations {
     [
         DeviationId::E15,
@@ -1217,6 +1235,7 @@ fn m2() -> Deviations {
         DeviationId::E21,
         DeviationId::E22,
         DeviationId::E24,
+        DeviationId::E25,
     ]
     .into_iter()
     .fold(Deviations::ALL, Deviations::without)
@@ -3042,6 +3061,80 @@ fn e22_moves_no_differential_case() {
         (Deviations::ALL.without(id), Deviations::ALL),
     ];
     assert_no_differential_case_moves_between(&bases, "E22");
+}
+
+/// E25's probe inputs (BL-061's evidence design) with the shaft boss at `boss_mm`.
+fn e25_design(boss_mm: f64) -> Overrides {
+    let mut overrides = probe_overrides(&REGISTRY[DeviationId::E25.index()].probes[0]);
+    for (path, value) in &mut overrides {
+        if *path == "metal.boss_od_mm" {
+            *value = Value::Num(boss_mm);
+        }
+    }
+    overrides
+}
+
+#[test]
+fn e25_probe_is_the_backlog_item_s_evidence_design() {
+    // BL-061's evidence: the default design at a 7 mm ring radius through
+    // size_controls::with_ring_radius (the cap and its thread follow the cup), the shaft boss
+    // at 40 mm and a 38 mm claim on the diameter.
+    let mut evidence = with_ring_radius(&DesignInputs::default(), 7.0).expect("a 7 mm ring radius");
+    evidence.metal.boss_od_mm = 40.0;
+    evidence.metal.max_diameter_mm = 38.0;
+    assert_eq!(inputs_with(&e25_design(40.0), Deviations::ALL), evidence);
+}
+
+#[test]
+fn e25_leaves_every_default_cell_bit_for_bit() {
+    // At defaults the 22 mm boss is under the 42.8 mm cap: the workbook's C135 stays.
+    assert_a4_defaults_unchanged(DeviationId::E25);
+}
+
+#[test]
+fn e25_moves_only_a_boss_larger_than_the_cup_and_cap() {
+    // BL-061, an assumption that is not approved. On the probe's design the cap (36.18 mm) is
+    // larger than the cup. A boss below it, or equal to it, leaves every result row bit for
+    // bit. The 40 mm boss moves the rotating diameter C135 and its reserve C136, no other
+    // cell, and the space claim no longer reads inside.
+    let cap = 36.17578798729891;
+    for (basis, before, after) in a4_bases(DeviationId::E25) {
+        for boss in [22.0, cap] {
+            let design = e25_design(boss);
+            assert_same_results(
+                &results_with(&design, before),
+                &results_with(&design, after),
+                &format!("{basis}, boss {boss}"),
+            );
+        }
+        let design = e25_design(40.0);
+        let (b, a) = (results_with(&design, before), results_with(&design, after));
+        assert_eq!(
+            moved_cells(&b, &a),
+            ["Metal design!C135", "Metal design!C136"],
+            "{basis}"
+        );
+        assert_eq!(b.metal.rotating_od_mm, cap, "{basis}");
+        assert_eq!(b.housing.space_claim_check, INSIDE_THE_SPACE_CLAIM);
+        assert_eq!(a.metal.rotating_od_mm, 40.0, "{basis}");
+        assert_eq!(a.metal.diameter_reserve_mm, -2.0, "{basis}");
+        assert_eq!(a.housing.diameter_overshoot_mm, 2.0, "{basis}");
+        assert_eq!(
+            a.housing.space_claim_check, "Exceeds the space claim: diameter 2.00 mm over",
+            "{basis}"
+        );
+    }
+}
+
+#[test]
+fn e25_moves_no_differential_case() {
+    // No case of the corpus has a shaft boss larger than its cup and its cap.
+    let id = DeviationId::E25;
+    let bases = [
+        (Deviations::NONE, Deviations::only(id)),
+        (Deviations::ALL.without(id), Deviations::ALL),
+    ];
+    assert_no_differential_case_moves_between(&bases, "E25");
 }
 
 #[test]

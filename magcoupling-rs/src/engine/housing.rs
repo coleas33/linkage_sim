@@ -50,7 +50,7 @@ results! {
     pub struct HousingResults {
         fields {
             diameter_overshoot_mm: f64 => out_rust_only("mm", "Diameter beyond the space claim",
-                "How far the larger of the cup and cap diameters exceeds the maximum diameter of the space claim; 0 inside or at the claim."),
+                "How far the largest of the cup, cap and shaft boss diameters exceeds the maximum diameter of the space claim; 0 inside or at the claim."),
             length_overshoot_mm: f64 => out_rust_only("mm", "Overall length beyond the space claim",
                 "How far the axial stack exceeds the maximum overall length of the space claim; 0 inside or at the claim."),
             bay_overshoot_mm: f64 => out_rust_only("mm", "Large-diameter stack beyond its bay",

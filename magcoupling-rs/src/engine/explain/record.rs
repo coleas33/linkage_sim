@@ -47,7 +47,8 @@ pub struct Record {
     pub formula: &'static str,
     pub eval: Eval,
     /// The approved corrections this formula embodies (E-ids): the GUI's "corrected vs
-    /// workbook" marker names them, and the traceability of a correction starts here.
+    /// workbook" marker names them, and the traceability of a correction starts here. E25 is
+    /// listed the same way and is an assumption that is not approved.
     pub corrections: &'static [DeviationId],
 }
 
@@ -63,7 +64,8 @@ pub const fn record(target: &'static str, symbol: &'static str, formula: &'stati
 }
 
 impl Record {
-    /// Names the approved corrections the formula embodies.
+    /// Names the approved corrections the formula embodies (and E25, an assumption that is not
+    /// approved).
     pub const fn corrected(self, corrections: &'static [DeviationId]) -> Self {
         Self {
             corrections,
