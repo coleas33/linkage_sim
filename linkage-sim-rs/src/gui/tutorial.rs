@@ -222,7 +222,7 @@ fn actuator_sizing_steps() -> Vec<TutorialStep> {
         TutorialStep {
             title: "Step 3: Position the Force Zone",
             description: "The force zone represents your output load.\n\n\
-                Check the Diagnostics section \u{2014} if it shows '0% overlap', \
+                Check the Diagnostics section \u{2014} if it shows '0 N applied', \
                 the zone doesn't cover the output link.\n\n\
                 Drag the crank angle slider to find where the output link passes \
                 through the zone. Adjust the zone position if needed.\n\n\
@@ -289,9 +289,9 @@ fn actuator_sizing_steps() -> Vec<TutorialStep> {
         },
         TutorialStep {
             title: "Step 9: Export Results",
-            description: "File > Export CSV to get force/speed/power data for every \
+            description: "File > Export Sweep CSV... to get force/speed/power data for every \
                 angle.\n\n\
-                File > Export HTML Report for a professional summary with \
+                File > Generate Report (HTML)... for a professional summary with \
                 interactive plots.\n\n\
                 The CSV includes columns:\n\
                 - actuator_force_N\n\
