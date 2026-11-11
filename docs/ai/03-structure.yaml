@@ -215,4 +215,4 @@ where_things_belong:
 
   add_new_sample_mechanism:
     - src/gui/samples/{fourbar,sixbar,special}.rs (add builder fn)
-    - src/gui/samples/mod.rs (add SampleMechanism variant + all() + name/description/category)
+    - src/gui/samples/mod.rs (add SampleMechanism variant + all() + label/description/category)

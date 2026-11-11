@@ -1,6 +1,6 @@
 # Analysis Modes
 
-All analysis modes share the same mathematical backbone: generalized coordinates `q`, constraint equations `Φ(q,t) = 0`, and the constraint Jacobian `Φ_q`. Each mode adds complexity incrementally. See `docs/NUMERICAL_FORMULATION.md` for exact equations.
+All analysis modes share the same mathematical backbone: generalized coordinates `q`, constraint equations `Φ(q,t) = 0`, and the constraint Jacobian `Φ_q`. Each mode adds complexity incrementally. See `docs/architecture/NUMERICAL_FORMULATION.md` for exact equations.
 
 ---
 
@@ -29,7 +29,7 @@ All analysis modes share the same mathematical backbone: generalized coordinates
 - Joint-space quantities: relative angles and displacements at each joint
 
 **Failure modes:**
-- Newton-Raphson does not converge → the requested configuration is not achievable (mechanism cannot reach that input angle), or the solver is near a toggle/bifurcation. The branch manager automatically halves step size and retries before reporting failure. See `docs/NUMERICAL_FORMULATION.md` § "Branch Management."
+- Newton-Raphson does not converge → the requested configuration is not achievable (mechanism cannot reach that input angle), or the solver is near a toggle/bifurcation. The branch manager automatically halves step size and retries before reporting failure. See `docs/architecture/NUMERICAL_FORMULATION.md` § "Branch Management."
 - Jacobian is singular → the mechanism is at a singular configuration (toggle point, dead point). The solver flags the configuration via `σ_min` monitoring, reduces step size, and attempts to approach from both sides.
 - Silent branch jump → the solver converges but to a different assembly mode. Detected by orientation invariant tracking (joint-angle sign changes, loop cross-product sign flips, pose discontinuity exceeding step-size-proportional threshold). On detection, the solver halves step size and re-solves from last good state.
 
@@ -67,11 +67,11 @@ The driver's entry is at a known position (the last constraint rows added during
 
 **Redundant constraint handling:** If `rank(Φ_q) < m` (number of constraint equations), the system `Φ_q^T * λ = -Q` is underdetermined. Use minimum-norm pseudoinverse solution `λ = Φ_q^T⁺ * (-Q)`. Warn the user that passive reactions in redundant directions are not unique. The driver reaction is still unique if the driver constraint is independent.
 
-**Singularity and conditioning:** At every configuration, the static solver reports `σ_min`, `κ(Φ_q)`, and driver mechanical advantage. Near singularities, reaction magnitudes blow up — the solver flags these configurations as unreliable rather than silently reporting large numbers as if they were trustworthy. See `docs/NUMERICAL_FORMULATION.md` § "Singularity Analysis and Conditioning" for thresholds and null-space reporting.
+**Singularity and conditioning:** At every configuration, the static solver reports `σ_min`, `κ(Φ_q)`, and driver mechanical advantage. Near singularities, reaction magnitudes blow up — the solver flags these configurations as unreliable rather than silently reporting large numbers as if they were trustworthy. See `docs/architecture/NUMERICAL_FORMULATION.md` § "Singularity Analysis and Conditioning" for thresholds and null-space reporting.
 
 **Outputs:**
 - Required input torque or force vs. position
-- Joint reaction forces at every joint (global, local, radial/tangential — see `docs/ENGINEERING_OUTPUTS.md`)
+- Joint reaction forces at every joint (global, local, radial/tangential — see `docs/architecture/ENGINEERING_OUTPUTS.md`)
 - Individual force element states (spring force, damper force, etc.) vs. position
 
 ---
@@ -133,7 +133,7 @@ M * q̈ + Φ_q^T * λ = Q(q, q̇, t) + Q_v(q, q̇)     (equations of motion)
 
 Sign note: here `λ` enters as `+Φ_q^T * λ`, the opposite of the statics / inverse-dynamics convention (Mode 3), so a forward-dynamics `λ` has the opposite sign for the same physical load.
 
-This is a differential-algebraic equation (DAE), not a plain ODE. The constraints `Φ = 0` are algebraic, not differential. See `docs/NUMERICAL_FORMULATION.md` for solution approaches.
+This is a differential-algebraic equation (DAE), not a plain ODE. The constraints `Φ = 0` are algebraic, not differential. See `docs/architecture/NUMERICAL_FORMULATION.md` for solution approaches.
 
 **Critical requirements:**
 
@@ -168,7 +168,7 @@ Do not lock the implementation to a specific library or method before testing wi
 
 ### Assembly Mode and Branch Management
 
-Assembly mode is managed by predictor-corrector continuation with branch-jump detection. See `docs/NUMERICAL_FORMULATION.md` § "Branch Management and Assembly Mode Tracking" for the full specification.
+Assembly mode is managed by predictor-corrector continuation with branch-jump detection. See `docs/architecture/NUMERICAL_FORMULATION.md` § "Branch Management and Assembly Mode Tracking" for the full specification.
 
 Key behaviors:
 
@@ -188,7 +188,7 @@ All modes depend on the Jacobian `Φ_q`. Near singular configurations:
 - Velocity and acceleration solutions may have large magnitudes (poor conditioning)
 - Static and inverse dynamic reactions may become very large (force transmission deteriorating)
 
-See `docs/NUMERICAL_FORMULATION.md` § "Singularity Analysis and Conditioning" for the full framework, which distinguishes three separate questions:
+See `docs/architecture/NUMERICAL_FORMULATION.md` § "Singularity Analysis and Conditioning" for the full framework, which distinguishes three separate questions:
 
 1. **Existence** — can equilibrium be achieved at this configuration?
 2. **Uniqueness** — are the Lagrange multipliers (reactions) uniquely determined, or do redundant constraints create indeterminate directions?

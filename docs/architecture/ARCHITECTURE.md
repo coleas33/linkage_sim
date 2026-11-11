@@ -67,7 +67,7 @@ JointConstraint {
 }
 ```
 
-**Revolute joint** — removes 2 translational DOF. Constrains the two attachment points to be coincident in the global frame. Allows relative rotation between the two bodies. See `docs/NUMERICAL_FORMULATION.md` for constraint equations.
+**Revolute joint** — removes 2 translational DOF. Constrains the two attachment points to be coincident in the global frame. Allows relative rotation between the two bodies. See `docs/architecture/NUMERICAL_FORMULATION.md` for constraint equations.
 
 **Prismatic joint** — removes 2 DOF (1 translational + 1 rotational). Constrains:
 - No relative displacement perpendicular to the slide axis
@@ -215,7 +215,7 @@ Mechanism {
 }
 ```
 
-**Schema versioning:** Every saved mechanism file includes `schema_version`. When the data model changes, the version increments. The loader checks the version and applies migration transforms if needed. This prevents every model change from breaking saved files.
+**Schema versioning:** Every saved mechanism file includes `schema_version`. When the data model changes, the version increments. The loader compares the major version and rejects a file whose major version differs; there is no migration step.
 
 **Coordinate representation note:** The v1 solver uses absolute coordinates (3 per moving body) for all mechanisms. This is the right starting point for arbitrary topology. However, the assembly and output APIs should not hardcode the assumption that the state vector is always full absolute coordinates. Keep interfaces agnostic enough to support future alternative representations:
 
@@ -320,7 +320,7 @@ Migration functions are registered in a version-ordered list. Each migration is 
 
 ## Rust Portability
 
-This data model is designed to port cleanly to Rust after Phase 4. Key mapping decisions are documented in `docs/RUST_MIGRATION.md`. During Python development, follow these conventions to keep the port mechanical:
+This data model is designed to port cleanly to Rust after Phase 4. Key mapping decisions are documented in `docs/history/RUST_MIGRATION.md`. During Python development, follow these conventions to keep the port mechanical:
 
 - **Body, Mechanism, JointConstraint, ForceElement, PointMass** → Rust structs with `serde` derive macros
 - **ForceElement.evaluate()** → `trait ForceElement { fn evaluate(&self, state: &State, t: f64) -> DVector<f64>; }`
