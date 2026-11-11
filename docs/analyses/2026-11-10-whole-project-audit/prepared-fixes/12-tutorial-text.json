@@ -1,0 +1,5 @@
+[
+  {"file": "linkage-sim-rs/src/gui/tutorial.rs", "old": "if it shows '0% overlap', ", "new": "if it shows '0 N applied', ", "count": 1},
+  {"file": "linkage-sim-rs/src/gui/tutorial.rs", "old": "File > Export CSV to get force/speed/power data", "new": "File > Export Sweep CSV... to get force/speed/power data", "count": 1},
+  {"file": "linkage-sim-rs/src/gui/tutorial.rs", "old": "File > Export HTML Report for a professional summary", "new": "File > Generate Report (HTML)... for a professional summary", "count": 1}
+]

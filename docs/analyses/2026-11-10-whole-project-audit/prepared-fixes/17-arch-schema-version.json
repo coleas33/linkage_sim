@@ -1,0 +1,3 @@
+[
+  {"file": "docs/architecture/ARCHITECTURE.md", "old": "The loader checks the version and applies migration transforms if needed. This prevents every model change from breaking saved files.", "new": "The loader compares the major version and rejects a file whose major version differs; there is no migration step.", "count": 1}
+]

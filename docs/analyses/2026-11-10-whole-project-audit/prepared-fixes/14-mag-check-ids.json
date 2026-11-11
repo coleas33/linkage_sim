@@ -1,0 +1,5 @@
+[
+  {"file": "magcoupling-rs/src/gui/guidance.rs", "old": "    (\"metal.hot_min_check\", HOT_MIN_GUIDE.learn),\n", "new": "    (HOT_MIN, HOT_MIN_GUIDE.learn),\n", "count": 1},
+  {"file": "magcoupling-rs/src/gui/guidance.rs", "old": "    (\"metal.clearance_check\", CLEARANCE_GUIDE.learn),\n", "new": "    (CLEARANCE, CLEARANCE_GUIDE.learn),\n", "count": 1},
+  {"file": "magcoupling-rs/src/gui/guidance.rs", "old": "    (\"materials.cup_wall_check\", CUP_WALL_GUIDE.learn),\n", "new": "    (CUP_WALL, CUP_WALL_GUIDE.learn),\n", "count": 1}
+]

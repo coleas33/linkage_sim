@@ -1,7 +1,41 @@
 {
-  "fixed": {},
+  "fixed": {
+    "DOC-04": {"commit": "cc3d498", "what": "`Required power curve` and `Actuator speed plot` are out of `Planned / Future` in docs/FEATURES.md (both shipped). Left for you: the force-margin and mobile-support lines."},
+    "DOC-05": {"commit": "cc3d498", "what": "README.md no longer gives a count of Rust source files (it said 107; the tree has 137)."},
+    "DOC-08": {"commit": "cc3d498", "what": "the benchmark command in VALIDATION.md no longer passes `--benchmark-report`. Left for you: the format and planned sections."},
+    "DOC-09": {"commit": "d6f5880", "what": "seven unquoted scalars in docs/ai/02-system.yaml quoted in place; the file loads and its words are unchanged. BL-015 set to fixed."},
+    "DOC-11": {"commit": "cc3d498", "what": "the sample checklist in docs/ai/03-structure.yaml names `label()`, the method that exists. Left for you: the modules the file does not list."},
+    "DMH-02": {"commit": "cc3d498", "what": "the status line of magcoupling-rs/README.md no longer lists BL-072 as open."},
+    "LCS-04": {"commit": "12b744e", "what": "two doc comments in solver/reactions.rs corrected (the tolerance check `is_valid` does not make; force zones are modelled)."},
+    "LCS-07": {"commit": "12b744e", "what": "the cam.rs comments say piecewise linear and linear scan, which is what the code does. Left for you: the guards, the `if let Ok`, and whether `Spline` should be cubic."},
+    "LCS-10": {"commit": "12b744e", "what": "`DriverFn`'s doc no longer calls expression drivers a future step. Left for you: the formula is parsed again on every evaluation."},
+    "LCS-12": {"commit": "6cbfac3", "what": "the stale `#[allow(dead_code)]` in prismatic.rs is gone. Left for you: `State::set_angle` and `JointConstraint::is_cam_follower` (no caller, each one member of a public family), and `rtol`/`atol` and the local-frame reactions (tests only)."},
+    "LFA-02": {"commit": "12b744e", "what": "the save and load docs in io/ say which drivers round-trip (constant-speed, expression, linear) and which are skipped (closures without DriverMeta)."},
+    "LFA-03": {"commit": "6cbfac3", "what": "`SerializationError::UnknownJointType` removed (never built, never matched). Left for you: `JointJson::RevoluteDriver`, which the canvas and blueprint code still match and old files may hold."},
+    "LFA-11": {"commit": "12b744e", "what": "comments in analysis/transmission.rs and forces/compound.rs corrected; the schema-version sentence of ARCHITECTURE.md corrected in `cc3d498`. Left for you: two dated comments in io/mod.rs (lines 6 and 10) and the test-module rename."},
+    "LGC-02": {"commit": "6cbfac3", "what": "the stale `#[allow(dead_code)]` on `parse_keyframes_csv` is gone. Left for you: the `SegmentHit` allow."},
+    "LGC-15": {"commit": "e7767cf", "what": "the actuator-sizing tutorial quotes the real diagnostic line and the real File menu items."},
+    "LGE-11": {"commit": "792f28c", "what": "`compute_trajectory` factors the constraint Jacobian once per sample, not twice. Same numbers; the time saved was not measured."},
+    "LGS-06": {"commit": "12b744e", "what": "the first two lines of `solve_at_angle`'s doc, which sat on another function, are back on it."},
+    "LGS-19": {"commit": "6cbfac3", "what": "the dead local `current_theta_0` in gui/input_panel.rs is gone. Left for you: `update_prismatic_axis`, `move_attachment_point` and `sync_active_load_case`."},
+    "MEX-02": {"commit": "12b744e", "what": "engine/warnings.rs no longer calls shipped code a placeholder."},
+    "MEX-03": {"commit": "12b744e", "what": "engine/assumptions.rs no longer says it belongs to plan A-3. Left for you: the copies of the sentence in docs/ai/03-structure.yaml:49 and tests/assumptions.rs:6 and :268."},
+    "MEX-11": {"commit": "12b744e", "what": "engine/api.rs no longer says JSON export is M4; it shipped."},
+    "MGG-03": {"commit": "c452531", "what": "six literals in gui/guidance.rs now name the file's own constants. Left for you: guidance.rs:199 and :1815, whose constants live elsewhere."},
+    "MGP-05": {"commit": "12b744e", "what": "comments in gui/panel.rs, gui/sizing.rs and gui/inputs.rs no longer name a sizing mode switch the screen does not draw. Left for you: panel.rs:1342 and README line 33."},
+    "INF-03": {"commit": "3c7f9bb", "what": "gate 11 of gate.sh prints its `no pin found` message when the wasm-bindgen pin is missing; before, the script exited silently one line earlier."},
+    "INF-15": {"commit": "e451bc7", "what": "the duplicate `meval` dev-dependency is gone; Cargo.lock unchanged. Left for you: the property test that exercises the meval crate and no code of this repository."},
+    "MT-04": {"commit": "6cbfac3", "what": "`let _ = &statics;` removed from magcoupling-rs/tests/explain.rs (the value is read a few lines later)."},
+    "MT-05": {"commit": "12b744e", "what": "the header comment of magcoupling-rs/tests/static_data.rs no longer calls tested tables `later`. Left for you: gen_differential.py:35."}
+  },
   "held": {
     "INF-17": "the commented-out ignore rules also record that the golden fixtures and output GIFs are tracked on purpose; deleting them is a wording choice, not a defect.",
-    "LCS-12": "the stale `#[allow(dead_code)]` is removed (see the fixed list); `State::set_angle` and `JointConstraint::is_cam_follower` have no caller anywhere, but each is one member of a public family (`get_angle`, `is_revolute`, `is_prismatic`, `is_fixed`), so deleting them is your call. `rtol`/`atol` and the local-frame reactions are used only by tests."
+    "INF-10": "the two files (the fbd-derive skill and the fbd-math-reviewer agent) are git-ignored and exist only in your main checkout, so they were not touched (register row A-16). The check gives the exact replacement text.",
+    "LGC-01": "two functions with no caller (`driver_lambda_units`, `draw_actuator_stroke_annotation`). The check gives the exact deletion; held because each reads as a feature that was started: delete or wire up is your call.",
+    "LGE-06": "`add_plotly_multi_chart` has no caller, and its job is written inline three times in `generate_html_report`. Delete the helper or use it: one decision, yours.",
+    "MGG-06": "two public typeset methods (`TermColors::is_empty`, `texts`) are called only by tests. Marking them `#[cfg(test)]` shrinks the library's public surface, so it is your call.",
+    "MGV-03": "two public functions (`Cell::as_text`, `package_label`) are called only by tests. Moving them into the test modules shrinks the public surface, so it is your call.",
+    "MGV-05": "plots.rs matches the sweep status by two literal strings the engine owns. Shared constants (the check's exact change) or a status enum: your choice, since the strings are also the Python oracle's.",
+    "MGV-08": "harmless: the `app` feature repeats two dependencies its `gui` feature already enables. Some keep such lists explicit on purpose."
   }
 }

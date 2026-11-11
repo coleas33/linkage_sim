@@ -63,7 +63,7 @@ for ver in sorted(findings.glob("*-verified.md")):
             what = f"**Fixed** in `{fixed[fid]['commit']}`: {fixed[fid]['what']}"
             counts["fixed"] += 1
         elif re.match(r"(REFUTED|NOT CONFIRMED|NOT A)", verdict, re.I):
-            what = "Dropped: the check refuted it."
+            what = "Dropped: the check could not confirm it."
             counts["dropped"] += 1
         elif fid in held:
             what = f"For you: {held[fid]}"

@@ -1,0 +1,3 @@
+[
+  {"file": "docs/ai/backlog.yaml", "old": "semantically unchanged\"\n  priority: 3\n  status: open\n  notes: \"\"\n", "new": "semantically unchanged\"\n  priority: 3\n  status: fixed\n  notes: \"Fixed 2026-11-10 on branch audit/2026-11-10-whole-project (whole-project audit, finding DOC-09: seven unquoted scalars, not one, at lines 13, 62, 142, 152, 218, 291 and 413). Each was quoted in place. The parsed value of each equals its original words, the file's words are unchanged apart from the added quote marks, and all four docs/ai YAML files load with yaml.safe_load.\"\n", "count": 1}
+]
