@@ -1873,6 +1873,34 @@
         let _ = std::fs::remove_file(&tmp);
     }
 
+    #[cfg(feature = "native")]
+    #[test]
+    fn recover_autosave_keeps_file_and_reports_when_load_fails() {
+        let tmp = std::env::temp_dir().join("linkage_test_recover_bad.json");
+        std::fs::write(&tmp, "not json").unwrap();
+        let mut state = AppState::default();
+
+        state.recover_autosave_file(&tmp);
+
+        assert!(tmp.exists(), "a failed recovery must not delete the autosave");
+        let msg = state.status_message.clone().expect("failure must show a status message");
+        assert!(msg.contains("recovery failed"), "{msg}");
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[cfg(feature = "native")]
+    #[test]
+    fn recover_autosave_deletes_file_after_successful_load() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        let tmp = std::env::temp_dir().join("linkage_test_recover_ok.json");
+        state.save_to_file(&tmp).expect("save should succeed");
+
+        state.recover_autosave_file(&tmp);
+
+        assert!(!tmp.exists(), "a successful recovery deletes the autosave");
+    }
+
     #[test]
     fn add_point_mass_modifies_blueprint() {
         let mut state = AppState::default();

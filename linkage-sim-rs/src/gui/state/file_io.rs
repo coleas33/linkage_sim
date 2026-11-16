@@ -572,6 +572,40 @@ impl AppState {
         Ok(())
     }
 
+    /// Recover the mechanism from an autosave file. The file is deleted only after a
+    /// load that succeeded; on failure it stays on disk (it may be the only copy of the
+    /// work) and the error goes to the status bar.
+    pub fn recover_autosave_file(&mut self, path: &Path) {
+        match self.load_from_file(path) {
+            Ok(()) => {
+                let _ = std::fs::remove_file(path);
+            }
+            Err(e) => {
+                log::error!("Failed to recover autosave: {}", e);
+                self.status_message = Some(format!(
+                    "Autosave recovery failed (the file was kept): {}",
+                    e
+                ));
+            }
+        }
+    }
+
+    /// Recover the mechanism from the localStorage autosave JSON; same rule as
+    /// [`Self::recover_autosave_file`]. `json_str` is `None` when nothing is stored.
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn recover_wasm_autosave(&mut self, json_str: Option<String>) {
+        match json_str.ok_or_else(|| "no autosave found".to_string()).and_then(|j| self.load_from_json_str(&j)) {
+            Ok(()) => Self::wasm_clear_autosave(),
+            Err(e) => {
+                log::error!("Failed to recover WASM autosave: {}", e);
+                self.status_message = Some(format!(
+                    "Autosave recovery failed (the autosave was kept): {}",
+                    e
+                ));
+            }
+        }
+    }
+
     // ── WASM autosave (localStorage) ─────────────────────────────────────
 
     /// Perform periodic autosave to localStorage on WASM.
