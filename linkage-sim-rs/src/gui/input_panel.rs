@@ -709,27 +709,24 @@ fn draw_driver_type_selector(ui: &mut egui::Ui, state: &mut AppState) {
                 state.expr_ddot_buf = expr_ddot.clone();
             }
 
-        let mut changed = false;
+        // The buffers live in AppState; the edit is applied once, when a box
+        // loses focus (Enter, Tab or a click elsewhere), so a half-typed
+        // expression is never applied. Esc puts the applied text back.
+        let mut ended = false;
         ui.horizontal(|ui| {
             ui.label("f(t) =");
             let response = ui.text_edit_singleline(&mut state.expr_buf);
-            if response.lost_focus() || response.changed() {
-                changed = true;
-            }
+            ended |= response.lost_focus();
         });
         ui.horizontal(|ui| {
             ui.label("f'(t) =");
             let response = ui.text_edit_singleline(&mut state.expr_dot_buf);
-            if response.lost_focus() || response.changed() {
-                changed = true;
-            }
+            ended |= response.lost_focus();
         });
         ui.horizontal(|ui| {
             ui.label("f''(t) =");
             let response = ui.text_edit_singleline(&mut state.expr_ddot_buf);
-            if response.lost_focus() || response.changed() {
-                changed = true;
-            }
+            ended |= response.lost_focus();
         });
 
         // Show error if present
@@ -737,24 +734,71 @@ fn draw_driver_type_selector(ui: &mut egui::Ui, state: &mut AppState) {
             ui.colored_label(state.nc(egui::Color32::from_rgb(220, 80, 80)), err);
         }
 
-        if changed {
-            // Validate by attempting to parse (fast feedback)
-            let expr = state.expr_buf.clone();
-            let expr_dot = state.expr_dot_buf.clone();
-            let expr_ddot = state.expr_ddot_buf.clone();
-
-            match crate::core::driver::expression_driver(
-                "validate", "a", "b", &expr, &expr_dot, &expr_ddot,
-            ) {
-                Ok(_) => {
-                    state.expr_error = None;
-                    state.set_expression_driver(&expr, &expr_dot, &expr_ddot);
+        let texts = (
+            state.expr_buf.clone(),
+            state.expr_dot_buf.clone(),
+            state.expr_ddot_buf.clone(),
+        );
+        let applied = state.blueprint.as_ref().and_then(expression_driver_texts);
+        let escape = ui.input(|i| i.key_pressed(egui::Key::Escape));
+        match expression_edit_action(ended, escape, applied.as_ref() == Some(&texts)) {
+            ExpressionEdit::None => {}
+            ExpressionEdit::Cancel => {
+                if let Some((expr, expr_dot, expr_ddot)) = applied {
+                    state.expr_buf = expr;
+                    state.expr_dot_buf = expr_dot;
+                    state.expr_ddot_buf = expr_ddot;
                 }
-                Err(e) => {
-                    state.expr_error = Some(e);
+                state.expr_error = None;
+            }
+            ExpressionEdit::Apply => {
+                let expr = state.expr_buf.clone();
+                let expr_dot = state.expr_dot_buf.clone();
+                let expr_ddot = state.expr_ddot_buf.clone();
+
+                match crate::core::driver::expression_driver(
+                    "validate", "a", "b", &expr, &expr_dot, &expr_ddot,
+                ) {
+                    Ok(_) => {
+                        state.expr_error = None;
+                        state.set_expression_driver(&expr, &expr_dot, &expr_ddot);
+                    }
+                    Err(e) => {
+                        state.expr_error = Some(e);
+                    }
                 }
             }
         }
+    }
+}
+
+/// What the expression-driver editor does this frame.
+#[derive(Debug, PartialEq)]
+enum ExpressionEdit {
+    None,
+    Apply,
+    Cancel,
+}
+
+/// A box lost focus (ended): Esc cancels, otherwise the edit is applied
+/// unless the buffers already equal the driver in the blueprint (a click
+/// into and out of a box must not push an undo step).
+fn expression_edit_action(ended: bool, escape: bool, matches_applied: bool) -> ExpressionEdit {
+    match (ended, escape, matches_applied) {
+        (false, _, _) | (true, false, true) => ExpressionEdit::None,
+        (true, true, _) => ExpressionEdit::Cancel,
+        (true, false, false) => ExpressionEdit::Apply,
+    }
+}
+
+/// The three expression texts of the blueprint's first driver, if it is an
+/// expression driver.
+fn expression_driver_texts(bp: &crate::io::MechanismJson) -> Option<(String, String, String)> {
+    match bp.drivers.values().next() {
+        Some(DriverJson::Expression { expr, expr_dot, expr_ddot, .. }) => {
+            Some((expr.clone(), expr_dot.clone(), expr_ddot.clone()))
+        }
+        _ => None,
     }
 }
 
@@ -1041,6 +1085,34 @@ fn draw_sensors_section(ui: &mut egui::Ui, state: &mut AppState) {
 mod tests {
     use super::*;
     use crate::gui::samples::SampleMechanism;
+
+    /// LGS-18: the expression editor applies only when a box loses focus, not
+    /// per keystroke; Esc cancels; an unchanged edit pushes no undo step.
+    #[test]
+    fn expression_edit_applies_once_when_the_edit_ends() {
+        use ExpressionEdit::*;
+        assert_eq!(expression_edit_action(false, false, false), None, "typing");
+        assert_eq!(expression_edit_action(false, true, false), None);
+        assert_eq!(expression_edit_action(true, false, false), Apply, "focus lost with a new text");
+        assert_eq!(expression_edit_action(true, false, true), None, "focus lost, nothing changed");
+        assert_eq!(expression_edit_action(true, true, false), Cancel, "Esc");
+        assert_eq!(expression_edit_action(true, true, true), Cancel);
+    }
+
+    /// The applied texts come from the blueprint's expression driver only.
+    #[test]
+    fn expression_driver_texts_reads_only_expression_drivers() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        let bp = state.blueprint.as_ref().expect("blueprint");
+        assert_eq!(expression_driver_texts(bp), Option::None, "constant-speed driver");
+        state.set_expression_driver("2*pi*t", "2*pi", "0");
+        let bp = state.blueprint.as_ref().expect("blueprint");
+        assert_eq!(
+            expression_driver_texts(bp),
+            Some(("2*pi*t".to_string(), "2*pi".to_string(), "0".to_string()))
+        );
+    }
 
     /// Run one frame of the input panel with no user input at all.
     fn one_idle_frame(state: &mut AppState) {
