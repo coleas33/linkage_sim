@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::mechanism::Mechanism;
 use crate::core::state::State;
+use crate::error::LinkageError;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ControlTarget {
@@ -361,6 +362,20 @@ impl ControlTarget {
             | ControlTarget::Projection { body_id, .. }
             | ControlTarget::Distance { body_id, .. } => body_id,
         }
+    }
+
+    /// Reject a target that `evaluate`/`gradient`/`hessian` would assert on.
+    /// The enum can be deserialized, so the `projection` constructor's checks may not have run.
+    pub fn validate(&self) -> Result<(), LinkageError> {
+        if let ControlTarget::Projection { axis_dir, .. } = self {
+            let norm = nalgebra::Vector2::new(axis_dir[0], axis_dir[1]).norm();
+            if norm.is_nan() || norm <= 1e-12 {
+                return Err(LinkageError::InvalidControlTarget(
+                    "Projection axis_dir must be non-zero".into(),
+                ));
+            }
+        }
+        Ok(())
     }
 }
 

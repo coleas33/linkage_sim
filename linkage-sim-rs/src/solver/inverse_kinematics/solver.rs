@@ -51,6 +51,7 @@ pub fn workspace_probe(
     assert!(n_samples >= 2, "workspace_probe requires at least 2 samples");
     assert!(nominal_rate.abs() > 1e-12, "nominal_rate must be non-zero");
     assert!(u_max > u_min, "u_max must be > u_min");
+    target.validate()?;
 
     let mut u_samples = Vec::with_capacity(n_samples);
     let mut g_samples = Vec::with_capacity(n_samples);
@@ -337,6 +338,28 @@ mod tests {
         let manual_max = probe.g_samples.iter().copied().fold(f64::NEG_INFINITY, f64::max);
         assert_abs_diff_eq!(probe.g_min, manual_min, epsilon = 1e-12);
         assert_abs_diff_eq!(probe.g_max, manual_max, epsilon = 1e-12);
+    }
+
+    #[test]
+    fn zero_direction_projection_target_is_an_error_not_a_panic() {
+        let mech = build_fourbar();
+        let q0 = solve_at(&mech, 0.0);
+        // Built as a literal, as a deserialized file would, so `projection()` is bypassed.
+        let target = ControlTarget::Projection {
+            body_id: "crank".into(),
+            local_pt: [0.005, 0.0],
+            axis_origin: [0.0, 0.0],
+            axis_dir: [0.0, 0.0],
+        };
+        let probe = workspace_probe(&mech, &q0, 0.0, PI, 0.0, 2.0 * PI, &target, 8);
+        assert!(matches!(probe, Err(LinkageError::InvalidControlTarget(_))));
+        let solve = solve_for_target(
+            &mech, &q0, &target, 0.0,
+            Severity::Analysis,
+            (0.0, 2.0 * PI), 0.0, 2.0 * PI,
+            1e-8, 50, 64,
+        );
+        assert!(matches!(solve, Err(LinkageError::InvalidControlTarget(_))));
     }
 
     #[test]

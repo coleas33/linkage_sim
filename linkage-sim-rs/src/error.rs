@@ -18,6 +18,10 @@ pub enum LinkageError {
     #[error("Mechanism has no driver; add a revolute driver before this analysis.")]
     NoDriver,
 
+    /// A control target holds values that cannot define an observable.
+    #[error("Invalid control target: {0}")]
+    InvalidControlTarget(String),
+
     // -- Numerical errors (solver failures) --
     /// The position Newton-Raphson iteration did not converge.
     #[error(
