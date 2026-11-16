@@ -169,6 +169,10 @@ pub struct LinearDriverJson {
     pub point_b: [f64; 2],
     pub velocity: f64,
     pub length_0: f64,
+    /// `[stroke_min, stroke_max]` of a cosine-stroke driver (`length_0` is then
+    /// its initial length). Absent in older files and for constant-velocity drivers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cosine_stroke: Option<[f64; 2]>,
 }
 
 /// JSON representation of a load case -- a named driver configuration.

@@ -279,6 +279,7 @@ impl AppState {
             point_b,
             velocity: 0.01, // 10 mm/s default; user can edit later
             length_0,
+            cosine_stroke: None,
         });
 
         // Transition kind to linear (a LinearDriver was just added).
