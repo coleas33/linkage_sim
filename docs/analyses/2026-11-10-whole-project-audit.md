@@ -250,8 +250,8 @@ Nothing here was measured. Each is a place where the code does the same work mor
 - **LCS-09** Inverse-kinematics helpers repeat the singularity guard four times and the finite-difference path repeats its own solves; the analytic path the notes call faster is unused.
 - **LCS-10** (the part not fixed) an expression driver parses its formula again on every evaluation.
 - **LFA-08** Every force evaluation allocates several full-size vectors per element.
-- **MEX-01** Assumption helpers rebuild the defaults and the whole input schema on every call, and the GUI calls them every frame.
-- **MEC-03** slider ranges are re-read from a freshly built input table on every call; the GUI caches the same data.
+- **MEX-01** Assumption helpers rebuild the defaults and the whole input schema on every call, and the GUI calls them every frame. FIXED f674edc: the defaults and the schema are cached in OnceLocks (`api::workbook_defaults`, `api::input_meta`) and the helpers read those.
+- **MEC-03** slider ranges are re-read from a freshly built input table on every call; the GUI caches the same data. FIXED 7ac33da: `FreeVariable::range` and `size_controls::geometry` read the cached `api::input_meta`.
 - **MGG-02** the fix search recomputes the same moved designs and an unchanged baseline. The check confirmed this only in part.
 - **MGP-02** Under Auto the design shown and the solve key are rebuilt several times a frame. The check confirmed this only in part.
 - **MGP-03** Every drawn input row builds its tooltip strings each frame, hovered or not.
