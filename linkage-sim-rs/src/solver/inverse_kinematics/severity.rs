@@ -63,19 +63,36 @@ mod tests {
 
     #[test]
     fn inverse_solve_status_constructs_all_variants() {
-        let _converged = InverseSolveStatus::Converged;
-        let _reach = InverseSolveStatus::Reachability {
+        let converged = InverseSolveStatus::Converged;
+        let reach = InverseSolveStatus::Reachability {
             target: 1.0,
             achieved_clamp: 0.5,
             workspace_min: Some(-0.5),
             workspace_max: Some(0.5),
         };
-        let _sing = InverseSolveStatus::Singularity { dg_du: 1e-9 };
-        let _branch = InverseSolveStatus::BranchJump { delta_q_norm: 0.1 };
-        let _nc = InverseSolveStatus::NonConvergent {
+        let sing = InverseSolveStatus::Singularity { dg_du: 1e-9 };
+        let branch = InverseSolveStatus::BranchJump { delta_q_norm: 0.1 };
+        let nc = InverseSolveStatus::NonConvergent {
             iterations: 50,
             residual: 1e-3,
         };
+
+        assert!(matches!(converged, InverseSolveStatus::Converged));
+        assert!(matches!(
+            reach,
+            InverseSolveStatus::Reachability {
+                target,
+                achieved_clamp,
+                workspace_min: Some(lo),
+                workspace_max: Some(hi),
+            } if target == 1.0 && achieved_clamp == 0.5 && lo == -0.5 && hi == 0.5
+        ));
+        assert!(matches!(sing, InverseSolveStatus::Singularity { dg_du } if dg_du == 1e-9));
+        assert!(matches!(branch, InverseSolveStatus::BranchJump { delta_q_norm } if delta_q_norm == 0.1));
+        assert!(matches!(
+            nc,
+            InverseSolveStatus::NonConvergent { iterations: 50, residual } if residual == 1e-3
+        ));
     }
 
     #[test]
