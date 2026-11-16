@@ -1185,13 +1185,15 @@ mod tests {
             corrections + 1 + applied.len(),
             "the corrections are last"
         );
+        use crate::engine::deviations::DeviationId::{E25, E26};
         for (row, deviation) in rows[corrections + 1..].iter().zip(&applied) {
             assert_eq!(row[0], Cell::text(deviation.id.to_string()));
             assert_eq!(row[1], Cell::text(listed_title(deviation)));
-            // The heading calls the approved ones on; only E25, an assumption, says it is not.
+            // The heading calls the approved ones on; only E25 and E26, assumptions, say they
+            // are not.
             assert_eq!(
                 row[1].as_text().ends_with("(an assumption, not approved)"),
-                deviation.id == crate::engine::deviations::DeviationId::E25
+                [E25, E26].contains(&deviation.id)
             );
         }
     }

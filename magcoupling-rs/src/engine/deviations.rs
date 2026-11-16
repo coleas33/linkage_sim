@@ -16,7 +16,9 @@
 //! in the code), approved on 2026-10-01. E25 (the space claim's diameter judges
 //! the shaft boss too) is NOT approved: it is an assumption, the conservative
 //! answer to an open question, taken under the owner's ruling of 2026-11-10 on
-//! open questions (`docs/ai/backlog.yaml`, BL-061; [`Approval::Assumed`]).
+//! open questions (`docs/ai/backlog.yaml`, BL-061; [`Approval::Assumed`]). So is
+//! E26 (the magnets' eddy heat reads each ring's conductivity by its grade's
+//! family; BL-062): NOT approved, an assumption under the same ruling.
 //! Everything else stays
 //! workbook-exact. This registry is the one place that says where
 //! the port departs from the workbook and why.
@@ -76,8 +78,8 @@ pub const A4_REPORT: &str = "docs/analyses/2026-10-01-magcoupling-addendum-a4-ve
 /// there holds the open question. It is not a report and approves nothing.
 pub const BACKLOG: &str = "docs/ai/backlog.yaml";
 
-/// Identifier of an approved correction, numbered as in the audit report. E25 is an
-/// assumption that is not approved ([`Approval::Assumed`]).
+/// Identifier of an approved correction, numbered as in the audit report. E25 and E26 are
+/// assumptions that are not approved ([`Approval::Assumed`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum DeviationId {
     E1,
@@ -105,11 +107,12 @@ pub enum DeviationId {
     E23,
     E24,
     E25,
+    E26,
 }
 
 impl DeviationId {
     /// Every identifier, in report order.
-    pub const ALL: [DeviationId; 25] = [
+    pub const ALL: [DeviationId; 26] = [
         DeviationId::E1,
         DeviationId::E2,
         DeviationId::E3,
@@ -135,6 +138,7 @@ impl DeviationId {
         DeviationId::E23,
         DeviationId::E24,
         DeviationId::E25,
+        DeviationId::E26,
     ];
 
     /// Position in [`DeviationId::ALL`] and in [`REGISTRY`].
@@ -238,14 +242,14 @@ pub struct Probe {
     pub expect: &'static [CellChange],
 }
 
-/// One approved correction; or (E25) one assumption that is not approved.
+/// One approved correction; or (E25, E26) one assumption that is not approved.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Deviation {
     pub id: DeviationId,
     /// Short statement of the workbook error (the report's Group column).
     pub title: &'static str,
     pub class: DeviationClass,
-    /// Where the user approved it; [`Approval::Assumed`] when the user did not (E25).
+    /// Where the user approved it; [`Approval::Assumed`] when the user did not (E25, E26).
     pub approval: Approval,
     /// Corrections this one refines; its probes run with them on, on both
     /// sides (decision 15). Empty for all but E15, E16 and E17 (on E9) and
@@ -1867,6 +1871,202 @@ pub const REGISTRY: &[Deviation] = &[
             ],
         }],
     },
+    Deviation {
+        id: DeviationId::E26,
+        title: "The magnets' eddy heat gives every ring sintered NdFeB's conductivity, though SmCo conducts more and ferrite and bonded NdFeB far less",
+        class: DeviationClass::Engine,
+        approval: Approval::Assumed { item: "BL-062" },
+        depends_on: &[],
+        status: DeviationStatus::Applied,
+        cells: &[
+            "Temperature design!C17",
+            "Temperature design!C18",
+            "Temperature design!C19",
+            "Temperature design!C20",
+            "Temperature design!C22",
+            "Temperature design!C129",
+            "Temperature design!C130",
+            "Temperature design!C131",
+            "Temperature design!C132",
+            "Temperature design!C134",
+            "Temperature design!C145",
+            "Temperature design!C146",
+            "Temperature design!C147",
+            "Temperature design!C148",
+            "Temperature design!C149",
+            "Temperature design!C150",
+            "Temperature design!C151",
+            "Temperature design!C152",
+            "Temperature design!C154",
+            "Temperature design!C155",
+            "Temperature design!C156",
+            "Temperature design!C157",
+            "Temperature design!C161",
+            "Temperature design!C169",
+            "Temperature design!C170",
+            "Temperature design!C171",
+            "Temperature design!C172",
+            "Temperature design!C173",
+            "Temperature design!C175",
+            "Temperature design!C176",
+            "Temperature design!C177",
+            "Temperature design!C180",
+            "Temperature design!C181",
+            "Temperature design!C182",
+            "Temperature design!C186",
+            "Temperature design!C189",
+            "Temperature design!C190",
+            "Temperature design!C192",
+            "Temperature design!C193",
+            "Temperature design!C196",
+        ],
+        corrected_formula: "An assumption, not approved (docs/ai/backlog.yaml, BL-062: the conservative answer to an open \
+            question, under the owner's ruling of 2026-11-10). C129 = (sigma_inner + sigma_outer) / 2 * we^2 * C122^2 * \
+            w^2 / 24 * block volume * 2 * poles: each ring's half of the magnets' eddy heat reads its own ring's \
+            conductivity, by the family of the ring's grade: Sm2Co17 1.54e6, SmCo5 2.5e6, sintered ferrite 1.0e2 (a \
+            maker's upper bound, not a measurement) and bonded NdFeB 2.5e4 S/m, each the highest value printed with a \
+            clear unit for its family, of the values the research kept (more conductivity is more heat here). Sintered \
+            NdFeB (every library part) and a manual magnet without a grade keep C113 (6.7e5 S/m), so no cell moves at \
+            default inputs. The total C130 and the thermal cells that read it follow; with a measured drag entered the \
+            estimate is not used. Nothing else in C129 changes: the stored field C122 and the block size (the inner \
+            ring's, for both rings) still do not follow the grade, so the heat is not exact for any grade. The values \
+            are Rust-only grade data and do not pass through C113's range check. C113 keeps its label and range; the \
+            Rust-only temperature.slip_loss.inner_magnet_sigma_S_m and outer_magnet_sigma_S_m show the value each ring \
+            reads. The other answers (the lower printed values of each family; a higher sintered NdFeB value, which moves the \
+            default example) are not built.",
+        workbook_input_defaults: &[],
+        workbook_help: &[],
+        changes_at_defaults: &[],
+        changes_file: None,
+        probes: &[
+            Probe {
+                label: "Y30 ferrite (1.0e2 S/m) for manual dimensions on both rings (backlog BL-062's probe design, 0.2278 W for \
+                    every grade without E26): the magnets' heat falls to 3.4e-5 W",
+                inputs: &[
+                    ("coupling.magnets.part_inner", Literal::Text("")),
+                    ("coupling.magnets.part_outer", Literal::Text("")),
+                    ("coupling.magnets.grade_inner", Literal::Text("Y30")),
+                    ("coupling.magnets.grade_outer", Literal::Text("Y30")),
+                ],
+                expect: &[
+                    CellChange {
+                        cell: "Temperature design!C129",
+                        workbook: Literal::Num(0.22784639081300484),
+                        corrected: Literal::Num(3.4006924001941014e-5),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C130",
+                        workbook: Literal::Num(2.4771082543421903),
+                        corrected: Literal::Num(2.249295870453188),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C149",
+                        workbook: Literal::Num(89.7710825434219),
+                        corrected: Literal::Num(87.49295870453187),
+                    },
+                ],
+            },
+            Probe {
+                label: "Recoma 26, Sm2Co17 (1.54e6 S/m) for manual dimensions on both rings: the magnets' heat rises by 1.54e6 / \
+                    6.7e5",
+                inputs: &[
+                    ("coupling.magnets.part_inner", Literal::Text("")),
+                    ("coupling.magnets.part_outer", Literal::Text("")),
+                    (
+                        "coupling.magnets.grade_inner",
+                        Literal::Text("SmCo_2_17_26"),
+                    ),
+                    (
+                        "coupling.magnets.grade_outer",
+                        Literal::Text("SmCo_2_17_26"),
+                    ),
+                ],
+                expect: &[
+                    CellChange {
+                        cell: "Temperature design!C129",
+                        workbook: Literal::Num(0.22784639081300484),
+                        corrected: Literal::Num(0.5237066296298916),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C130",
+                        workbook: Literal::Num(2.4771082543421903),
+                        corrected: Literal::Num(2.7729684931590772),
+                    },
+                ],
+            },
+            Probe {
+                label: "Recoma 20, SmCo5 (2.5e6 S/m) for manual dimensions on both rings: the magnets' heat rises by 2.5e6 / \
+                    6.7e5",
+                inputs: &[
+                    ("coupling.magnets.part_inner", Literal::Text("")),
+                    ("coupling.magnets.part_outer", Literal::Text("")),
+                    ("coupling.magnets.grade_inner", Literal::Text("SmCo_1_5_20")),
+                    ("coupling.magnets.grade_outer", Literal::Text("SmCo_1_5_20")),
+                ],
+                expect: &[
+                    CellChange {
+                        cell: "Temperature design!C129",
+                        workbook: Literal::Num(0.22784639081300484),
+                        corrected: Literal::Num(0.8501731000485255),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C130",
+                        workbook: Literal::Num(2.4771082543421903),
+                        corrected: Literal::Num(3.0994349635777114),
+                    },
+                ],
+            },
+            Probe {
+                label: "Bonded NdFeB BCN-19 (2.5e4 S/m) for manual dimensions on both rings",
+                inputs: &[
+                    ("coupling.magnets.part_inner", Literal::Text("")),
+                    ("coupling.magnets.part_outer", Literal::Text("")),
+                    (
+                        "coupling.magnets.grade_inner",
+                        Literal::Text("Bonded_NdFeB_BCN19"),
+                    ),
+                    (
+                        "coupling.magnets.grade_outer",
+                        Literal::Text("Bonded_NdFeB_BCN19"),
+                    ),
+                ],
+                expect: &[
+                    CellChange {
+                        cell: "Temperature design!C129",
+                        workbook: Literal::Num(0.22784639081300484),
+                        corrected: Literal::Num(0.008501731000485253),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C130",
+                        workbook: Literal::Num(2.4771082543421903),
+                        corrected: Literal::Num(2.257763594529671),
+                    },
+                ],
+            },
+            Probe {
+                label: "A mixed pair for manual dimensions, Y30 inner and N42 outer: half the NdFeB pair's heat plus half the \
+                    ferrite pair's (the mean of 1.0e2 and 6.7e5 S/m)",
+                inputs: &[
+                    ("coupling.magnets.part_inner", Literal::Text("")),
+                    ("coupling.magnets.part_outer", Literal::Text("")),
+                    ("coupling.magnets.grade_inner", Literal::Text("Y30")),
+                    ("coupling.magnets.grade_outer", Literal::Text("N42")),
+                ],
+                expect: &[
+                    CellChange {
+                        cell: "Temperature design!C129",
+                        workbook: Literal::Num(0.22784639081300484),
+                        corrected: Literal::Num(0.11394019886850336),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C130",
+                        workbook: Literal::Num(2.4771082543421903),
+                        corrected: Literal::Num(2.363202062397689),
+                    },
+                ],
+            },
+        ],
+    },
 ];
 
 /// A set of deviations switched on. Users only ever get [`Deviations::ALL`].
@@ -1876,8 +2076,8 @@ pub struct Deviations {
 }
 
 impl Deviations {
-    /// Every approved correction, and the assumption E25, which is not approved: what every
-    /// user-facing computation uses.
+    /// Every approved correction, and the assumptions E25 and E26, which are not approved:
+    /// what every user-facing computation uses.
     pub const ALL: Self = Self {
         mask: (1 << DeviationId::ALL.len()) - 1,
     };
@@ -2036,6 +2236,13 @@ mod tests {
         assert_eq!(
             e25.evidence(),
             format!("{BACKLOG}, item BL-061: an assumption, not an approval")
+        );
+        // So is E26.
+        let e26 = &REGISTRY[DeviationId::E26.index()];
+        assert_eq!(e26.approval, Approval::Assumed { item: "BL-062" });
+        assert_eq!(
+            e26.evidence(),
+            format!("{BACKLOG}, item BL-062: an assumption, not an approval")
         );
     }
 

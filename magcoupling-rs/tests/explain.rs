@@ -49,7 +49,7 @@ use magcoupling::engine::model::{ModelResults, blocks_fit};
 use magcoupling::engine::shaft_joint::{self, HubFitLimit};
 use magcoupling::engine::size_controls::with_ring_radius;
 use magcoupling::engine::temperature::{
-    CURE_MARGIN_MIN_C, NO_COLD_ONSET, RING_INNER, RING_OUTER, demag_onset_C,
+    CURE_MARGIN_MIN_C, NO_COLD_ONSET, RING_INNER, RING_OUTER, SlipLossResults, demag_onset_C,
 };
 
 /// One input set the guard evaluates at.
@@ -1989,8 +1989,8 @@ fn explained_chains_have_every_record_and_scope_paths_exist() {
     let union: BTreeSet<&str> = SCOPE.iter().flat_map(|c| c.paths.iter().copied()).collect();
     assert_eq!(
         union.len(),
-        194,
-        "decision 31: the chains and the dashboard (report section 7), plan A-3 decision G1's 10 new geometry callouts, BL-064's inner-ring single-ring onset and its 23 shaft joint results, and E24's outer-ring single-ring onset"
+        196,
+        "decision 31: the chains and the dashboard (report section 7), plan A-3 decision G1's 10 new geometry callouts, BL-064's inner-ring single-ring onset and its 23 shaft joint results, E24's outer-ring single-ring onset, and E26's two magnet conductivities, one per ring"
     );
 }
 
@@ -4096,8 +4096,9 @@ fn a_shorter_fault_slip_cannot_bring_the_peak_under_a_limit_the_start_reaches() 
 /// The slip notes' stored-field watch-outs (`when_slipping` and `slip_heating`): the slip
 /// losses read fields stored from the example design's 3D model, the same at every probe
 /// design, so they do not follow the magnet grade (the Y30 design, the example's geometry with
-/// ferrite on both rings, has the example's losses). When the fields follow the design, this
-/// fails, and those watch-outs change in the same commit.
+/// ferrite on both rings, has the example's loss in every part but the magnets; their heat
+/// reads ferrite's conductivity, correction E26, at the same stored field). When the fields
+/// follow the design, this fails, and those watch-outs change in the same commit.
 #[test]
 fn the_slip_losses_read_fields_stored_from_the_example_design() {
     let example = DesignInputs::default();
@@ -4122,10 +4123,14 @@ fn the_slip_losses_read_fields_stored_from_the_example_design() {
     let y30 = compute_all(&probe_inputs("Y30 ferrite, custom dimensions"));
     let r = compute_all(&example);
     assert_ne!(y30.model.pullout_Nm, r.model.pullout_Nm);
-    assert_eq!(
-        y30.temperature.slip_loss.total_W,
-        r.temperature.slip_loss.total_W
-    );
+    let (ferrite, ndfeb) = (&y30.temperature.slip_loss, &r.temperature.slip_loss);
+    let parts = |l: &SlipLossResults| [l.hub_W, l.cup_W, l.web_W, l.sleeve_W, l.liner_W, l.cap_W];
+    assert_eq!(parts(ferrite), parts(ndfeb));
+    // The magnets' heat alone differs, by the conductivities and nothing else: the field in
+    // it is still the example's.
+    let by_sigma = ferrite.inner_magnet_sigma_S_m / ndfeb.inner_magnet_sigma_S_m;
+    assert!(by_sigma < 1e-3);
+    assert!(close(ferrite.magnets_W, ndfeb.magnets_W * by_sigma));
 }
 
 // Slice 2 note claims: the demagnetization and ferrite notes (plan T16). Their entries choose a

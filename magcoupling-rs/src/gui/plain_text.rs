@@ -400,7 +400,7 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "temperature.slip_loss.sigma_ndfeb_S_m",
-        "Electrical conductivity of the magnets: eddy-current heat inside the blocks during slip rises with it. Used whatever the magnet grade, which overstates the heat in ferrite.",
+        "Electrical conductivity of sintered NdFeB magnets: their eddy-current slip heat rises with it. A ring with no grade uses it; SmCo, ferrite and bonded NdFeB rings use their family's value.",
     ),
     (
         "temperature.thermal.c_ndfeb",
@@ -1661,7 +1661,8 @@ mod batch_b_tests {
         ("temperature.mismatch.ndfeb_modulus_GPa", "example", "temperature.mismatch.peak_shear_current_MPa", Up),
         ("temperature.mismatch.ndfeb_modulus_GPa", "Y30 grades", "temperature.mismatch.peak_shear_current_MPa", Up),
         ("temperature.slip_loss.sigma_ndfeb_S_m", "example", "temperature.slip_loss.magnets_W", Up),
-        ("temperature.slip_loss.sigma_ndfeb_S_m", "Y30 grades", "temperature.slip_loss.magnets_W", Up),
+        ("temperature.slip_loss.sigma_ndfeb_S_m", "manual, no grade", "temperature.slip_loss.magnets_W", Up),
+        ("temperature.slip_loss.sigma_ndfeb_S_m", "Y30 grades", "temperature.slip_loss.magnets_W", Stays),
         ("temperature.thermal.c_ndfeb", "Y30 grades", "temperature.thermal.heat_capacity_J_K", Up),
         ("temperature.thermal.c_ndfeb", "example", "temperature.thermal.steady_high_C", Stays),
         ("temperature.thermal.c_ndfeb", "example", "temperature.thermal.heat_capacity_J_K", Up),

@@ -39,7 +39,9 @@
 //! cure margin C24 is the lower of both rings' single-ring onsets less the cure
 //! temperature) and E22 (the mismatch screen and warning rule 6 read the inner
 //! ring's grade expansion, [`bond_plane_cte_per_C`], and the screens C106 and
-//! C202 compare the size of the shear).
+//! C202 compare the size of the shear). E26 is an assumption that is NOT approved
+//! (backlog BL-062): the magnets' eddy heat C129 reads each ring's conductivity by
+//! its grade's family, [`magnet_sigma_S_m`], where the workbook reads C113 for both.
 
 use std::f64::consts::PI;
 
@@ -589,6 +591,10 @@ results! {
             steel_sigma_S_m: f64 => out("S/m", "Steel conductivity (4140)", "", "Temperature design!C109"),
             steel_mu_r: f64 => out("-", "Steel incremental relative permeability (4140)", "", "Temperature design!C110"),
             cap_sigma_S_m: f64 => out("S/m", "Aluminium cap conductivity (6061-T6)", "", "Temperature design!C112"),
+            inner_magnet_sigma_S_m: f64 => out_rust_only("S/m", "Inner ring magnet conductivity used",
+                "The conductivity the eddy-current heat inside the inner ring's magnets uses: the NdFeB conductivity input for sintered NdFeB or no grade, else the value taken for the grade's family."),
+            outer_magnet_sigma_S_m: f64 => out_rust_only("S/m", "Outer ring magnet conductivity used",
+                "The conductivity the eddy-current heat inside the outer ring's magnets uses: the NdFeB conductivity input for sintered NdFeB or no grade, else the value taken for the grade's family."),
             skin_depth_mm: f64 => out("mm", "Steel skin depth at the field frequency", "", "Temperature design!C115"),
             hub_W: f64 => out("W", "Hub surface (solid steel)",
                 "Eddy heating of the solid steel hub, limited by skin depth. With no back iron the hub is aluminium or the picked non-magnetic metal, in the free-space field.",
@@ -936,6 +942,19 @@ pub fn bond_plane_cte_per_C(input_per_C: f64, inner: Option<&Grade>, dev: Deviat
     }
 }
 
+/// E26 (backlog BL-062; an assumption, NOT approved): the conductivity the eddy heat inside one
+/// ring's magnets reads: the value of the ring's grade family where it has one (SmCo, ferrite,
+/// bonded NdFeB: [`crate::engine::grades::GradeFamily::magnet_sigma_S_m`]), else `input_S_m`
+/// (Temperature design C113: sintered NdFeB, so every library part, and a manual magnet
+/// without a grade).
+#[allow(non_snake_case)] // unit suffix, as the engine's names
+pub fn magnet_sigma_S_m(input_S_m: f64, ring: Option<&Grade>, dev: Deviations) -> f64 {
+    match ring.and_then(|g| g.family.magnet_sigma_S_m()) {
+        Some(sigma) if dev.is_on(DeviationId::E26) => sigma,
+        _ => input_S_m,
+    }
+}
+
 /// Linear-elastic shear-lag peak shear at the ends of a bonded block from thermal mismatch.
 #[allow(non_snake_case, clippy::too_many_arguments)] // Python names and signature
 pub fn volkersen_peak_shear_MPa(
@@ -1264,7 +1283,12 @@ pub fn compute(
         * (k.cap_face_mm / 1000.0)
         * omega.powi(2)
         * sl.cap_integral_T2m4;
-    let p_mag = sl.sigma_ndfeb_S_m
+    // E26: each ring's half of the magnets' heat reads its own ring's conductivity. Both
+    // rings are taken as the inner block (the factor 2.0 below), so that is the mean of the two
+    // in place of C113. Where both read C113, (s + s) / 2.0 is s exactly: the workbook's line.
+    let sigma_inner = magnet_sigma_S_m(sl.sigma_ndfeb_S_m, k.inner_grade, dev);
+    let sigma_outer = magnet_sigma_S_m(sl.sigma_ndfeb_S_m, k.outer_grade, dev);
+    let p_mag = (sigma_inner + sigma_outer) / 2.0
         * we.powi(2)
         * sl.b_magnet_T.powi(2)
         * (k.inner_width_mm / 1000.0).powi(2)
@@ -1283,6 +1307,8 @@ pub fn compute(
         steel_sigma_S_m: k.steel_sigma_S_m,
         steel_mu_r: k.steel_mu_r,
         cap_sigma_S_m: k.cap_sigma_S_m,
+        inner_magnet_sigma_S_m: sigma_inner,
+        outer_magnet_sigma_S_m: sigma_outer,
         skin_depth_mm: delta,
         hub_W: p_hub,
         cup_W: p_cup,

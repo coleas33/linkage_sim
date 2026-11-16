@@ -276,8 +276,8 @@ fn every_entry_is_approved_in_its_report() {
                 }
                 assert_eq!(d.class, DeviationClass::Engine, "{}", d.id);
             }
-            // E25 is not approved. It is an assumption: the backlog item holds the open
-            // question and says the answer taken is not the owner's.
+            // E25 and E26 are not approved. Each is an assumption: the backlog item holds the
+            // open question and says the answer taken is not the owner's.
             Approval::Assumed { item } => {
                 let backlog = read_text(&repo_path(BACKLOG));
                 let entry = backlog
@@ -692,8 +692,8 @@ fn each_probe_shows_its_correction() {
 
 #[test]
 fn addendum_entries_name_every_cell_their_probes_change() {
-    // The Addendum A and A-4 entries and the assumption E25 (E15 onward) name every cell their
-    // probes change, downstream cells included, so the registry alone says where each shows. The
+    // The Addendum A and A-4 entries and the assumptions E25 and E26 (E15 onward) name every cell
+    // their probes change, downstream cells included, so the registry alone says where each shows. The
     // M1 entries (E1 to E14) name the corrected and report-named cells only: their probes
     // change hundreds of sweep and downstream cells (E7, E8), and the broad ones keep golden
     // files.
@@ -1223,7 +1223,8 @@ fn assert_report_table(
 
 const NO_BACK_IRON: [(&str, Value); 1] = [("coupling.backiron", Value::Int(0))];
 
-/// The report's M2 basis: E1 to E14 on, the Addendum corrections and the assumption E25 off.
+/// The report's M2 basis: E1 to E14 on, the Addendum corrections and the assumptions E25 and E26
+/// off.
 fn m2() -> Deviations {
     [
         DeviationId::E15,
@@ -1236,6 +1237,7 @@ fn m2() -> Deviations {
         DeviationId::E22,
         DeviationId::E24,
         DeviationId::E25,
+        DeviationId::E26,
     ]
     .into_iter()
     .fold(Deviations::ALL, Deviations::without)
@@ -3155,6 +3157,148 @@ fn e25_moves_no_differential_case() {
         (Deviations::ALL.without(id), Deviations::ALL),
     ];
     assert_no_differential_case_moves_between(&bases, "E25");
+}
+
+/// The two Rust-only rows that show the conductivity each ring's magnets read (E26).
+const E26_ROWS: [&str; 2] = [
+    "temperature.slip_loss.inner_magnet_sigma_S_m",
+    "temperature.slip_loss.outer_magnet_sigma_S_m",
+];
+
+#[test]
+fn e26_leaves_every_default_cell_bit_for_bit() {
+    // The default part is sintered NdFeB on both rings: both read C113, and (s + s) / 2 is s.
+    assert_a4_defaults_unchanged(DeviationId::E26);
+}
+
+#[test]
+fn e26_moves_only_a_ring_of_another_family() {
+    // BL-062, an assumption that is not approved. Each ring's half of the magnets' eddy heat
+    // reads its own ring's conductivity: the family's value for a SmCo, ferrite or bonded NdFeB
+    // grade on manual dimensions, else C113. Nothing moves for a sintered NdFeB grade or for a
+    // library part, on both bases. Wired as built: E26 equals E26 off with C113 set to the mean
+    // of the two rings' conductivities, on every row but the two that show each ring's own.
+    use magcoupling::engine::grades::GRADES;
+    use magcoupling::engine::library::MAGNET_LIBRARY;
+    let c113 = DesignInputs::default()
+        .temperature
+        .slip_loss
+        .sigma_ndfeb_S_m;
+    let mut configs: Vec<(String, Overrides, [Option<f64>; 2])> = Vec::new();
+    for g in &GRADES {
+        let family = g.family.magnet_sigma_S_m();
+        for (placement, overrides) in grade_placements(g.id) {
+            let rings = match placement {
+                "both rings" => [family, family],
+                "inner only" => [family, None],
+                _ => [None, family],
+            };
+            configs.push((format!("{} {placement}", g.id), overrides, rings));
+        }
+    }
+    for spec in &MAGNET_LIBRARY {
+        configs.push((
+            format!("{} both rings", spec.part),
+            both_rings(spec.part).to_vec(),
+            [None, None],
+        ));
+    }
+    let mut moved = 0;
+    for (basis, before, after) in a4_bases(DeviationId::E26) {
+        for (label, overrides, rings) in &configs {
+            let what = format!("{label}, {basis}");
+            let (b, a) = (
+                results_with(overrides, before),
+                results_with(overrides, after),
+            );
+            let (lb, la) = (&b.temperature.slip_loss, &a.temperature.slip_loss);
+            assert_eq!(
+                (lb.inner_magnet_sigma_S_m, lb.outer_magnet_sigma_S_m),
+                (c113, c113),
+                "{what}"
+            );
+            if rings.iter().all(Option::is_none) {
+                assert_same_results(&b, &a, &what);
+                continue;
+            }
+            moved += 1;
+            let [inner, outer] = rings.map(|own| own.unwrap_or(c113));
+            assert_eq!(
+                (la.inner_magnet_sigma_S_m, la.outer_magnet_sigma_S_m),
+                (inner, outer),
+                "{what}"
+            );
+            assert_ne!(lb.magnets_W, la.magnets_W, "{what}");
+            let mut wired = inputs_with(overrides, before);
+            wired.temperature.slip_loss.sigma_ndfeb_S_m = (inner + outer) / 2.0;
+            let wired = result_rows(&compute_all_with(&wired, before));
+            for (x, y) in wired.iter().zip(result_rows(&a)) {
+                assert!(
+                    same_value(&x.value, &y.value) || E26_ROWS.contains(&x.path.as_str()),
+                    "{what}, wiring: {} {:?} is not {:?}",
+                    x.path,
+                    x.value,
+                    y.value
+                );
+            }
+        }
+    }
+    // Recoma 20, 26 and 30, Y30 and BCN-19; three placements; two bases.
+    assert_eq!(moved, 5 * 3 * 2);
+}
+
+#[test]
+fn e26_off_gives_every_grade_the_input_s_heat() {
+    // Backlog BL-062's probe: without E26 the magnets' heat on manual dimensions is one number
+    // for all 17 grades, 0.2278 W, Y30 ferrite and the SmCo grades included.
+    use magcoupling::engine::grades::GRADES;
+    for off in [Deviations::NONE, Deviations::ALL.without(DeviationId::E26)] {
+        for g in &GRADES {
+            let loss = results_with(&grade_rings(g.id, g.id), off)
+                .temperature
+                .slip_loss;
+            assert_eq!(loss.magnets_W, 0.22784639081300484, "{}", g.id);
+            assert_eq!(loss.inner_magnet_sigma_S_m, 6.7e5, "{}", g.id);
+            assert_eq!(loss.outer_magnet_sigma_S_m, 6.7e5, "{}", g.id);
+        }
+    }
+}
+
+#[test]
+fn e26_reaches_no_result_past_the_estimate_when_a_drag_is_measured() {
+    // With a bench drag entered (Metal design!C38) the loss used is the drag times the slip
+    // speed: E26 moves the magnets' estimate C129, the total C130 and its drag C131, and no
+    // cell after them.
+    let mut o = grade_rings("SmCo_1_5_20", "SmCo_1_5_20").to_vec();
+    o.push(("metal.measured_drag_Nm", Value::Num(0.05)));
+    for (basis, before, after) in a4_bases(DeviationId::E26) {
+        let (b, a) = (results_with(&o, before), results_with(&o, after));
+        assert_eq!(
+            moved_cells(&b, &a),
+            [
+                "Temperature design!C129",
+                "Temperature design!C130",
+                "Temperature design!C131"
+            ],
+            "{basis}"
+        );
+        assert_eq!(
+            a.temperature.slip_loss.used_W,
+            0.05 * a.temperature.duty.slip_rad_s,
+            "{basis}"
+        );
+    }
+}
+
+#[test]
+fn e26_moves_no_differential_case() {
+    // No case of the corpus picks a grade for manual dimensions (a Rust-only input).
+    let id = DeviationId::E26;
+    let bases = [
+        (Deviations::NONE, Deviations::only(id)),
+        (Deviations::ALL.without(id), Deviations::ALL),
+    ];
+    assert_no_differential_case_moves_between(&bases, "E26");
 }
 
 #[test]

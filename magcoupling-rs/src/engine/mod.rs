@@ -8,7 +8,7 @@
 //!   `inputs!`/`results!` macros, dynamic [`meta::Value`] access by path);
 //! - [`compat`]: the Python and Excel semantics the port reproduces exactly;
 //! - [`deviations`]: the registry of approved corrections to the workbook (and of
-//!   E25, an assumption that is not approved).
+//!   E25 and E26, assumptions that are not approved).
 
 pub mod api;
 pub mod assumptions;

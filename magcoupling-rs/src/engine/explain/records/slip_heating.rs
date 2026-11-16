@@ -1,5 +1,6 @@
 //! Slip heating (plan A-3 batch 3): the eddy-current slip losses (Temperature design C109 to
-//! C134, corrections E5, E17), the heat capacity and thermal time constant (C137 to C161, E15),
+//! C134, corrections E5, E17, and E26, an assumption that is not approved), the heat capacity
+//! and thermal time constant (C137 to C161, E15),
 //! the time and drag to the limit (E12), the metal-design slip rows, and what they need to
 //! reach inputs: the materials in effect (Addendum A5), the mass model (C110 to C114, E8, E9)
 //! with the axial housing (decision A2-8), the sleeve, liner, cap and endplates (Metal design
@@ -11,7 +12,7 @@
 //!
 //! Symbols: P power, ω_e the field's angular frequency (p ω_s), ω_s the slip speed, σ conductivity, ρ density, c specific heat, m mass.
 
-use crate::engine::deviations::DeviationId::{E5, E8, E9, E12, E15, E17, E20, E24};
+use crate::engine::deviations::DeviationId::{E5, E8, E9, E12, E15, E17, E20, E24, E26};
 use crate::engine::explain::record::{Record, record};
 
 /// The plain records.
@@ -129,11 +130,23 @@ pub const RECORDS: &[Record] = &[
     record("temperature.slip_loss.cap_W", "P_{cap}",
         "{temperature.slip_loss.end_factor} * {temperature.slip_loss.cap_sigma_S_m} * {metal.cap_axial_mm|m}
          * {temperature.duty.slip_rad_s}^2 * {temperature.slip_loss.cap_integral_T2m4}"),
-    // Eddy currents inside the blocks: σ ω_e² B² w² / 24 per volume, both rings.
+    // E26 (an assumption, not approved: BL-062): the conductivity each ring's magnets read
+    // (temperature::magnet_sigma_S_m). A grade whose family has a value of its own (SmCo,
+    // ferrite, bonded NdFeB) supplies it; sintered NdFeB, so every library part, and a ring
+    // with no grade keep the input.
+    record("temperature.slip_loss.inner_magnet_sigma_S_m", "σ_{mag,i}",
+        r#"cases([σ_{grade}] != none => [σ_{grade}]; else => {temperature.slip_loss.sigma_ndfeb_S_m})
+           where [σ_{grade}] = table("grades", {model.inner_grade}, "magnet_sigma_S_m")"#).corrected(&[E26]),
+    record("temperature.slip_loss.outer_magnet_sigma_S_m", "σ_{mag,o}",
+        r#"cases([σ_{grade}] != none => [σ_{grade}]; else => {temperature.slip_loss.sigma_ndfeb_S_m})
+           where [σ_{grade}] = table("grades", {model.outer_grade}, "magnet_sigma_S_m")"#).corrected(&[E26]),
+    // Eddy currents inside the blocks: σ ω_e² B² w² / 24 per volume, both rings taken as the
+    // inner block, each ring's half at its own conductivity (E26): the mean of the two.
     record("temperature.slip_loss.magnets_W", "P_{mag}",
-        "frac({temperature.slip_loss.sigma_ndfeb_S_m} * {temperature.duty.field_omega_rad_s}^2 * {temperature.slip_loss.b_magnet_T}^2
+        "frac(frac({temperature.slip_loss.inner_magnet_sigma_S_m} + {temperature.slip_loss.outer_magnet_sigma_S_m}, 2)
+              * {temperature.duty.field_omega_rad_s}^2 * {temperature.slip_loss.b_magnet_T}^2
               * {model.inner_width_mm|m}^2, 24) * ({model.inner_length_mm|m} * {model.inner_width_mm|m} * {model.inner_thickness_mm|m})
-         * 2 * {coupling.npole}"),
+         * 2 * {coupling.npole}").corrected(&[E26]),
     record("temperature.slip_loss.total_W", "P_{tot}",
         "{temperature.slip_loss.hub_W} + {temperature.slip_loss.cup_W} + {temperature.slip_loss.web_W} + {temperature.slip_loss.sleeve_W}
          + {temperature.slip_loss.liner_W} + {temperature.slip_loss.cap_W} + {temperature.slip_loss.magnets_W}"),

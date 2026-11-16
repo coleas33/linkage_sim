@@ -8225,3 +8225,362 @@ at the start byte for byte. The full gate was not run; the reviewer changed no c
 - The task text cites section 6 of the slice-2 spec for the traps; they are in section 8.
 
 Verdict: PASS. No must-fix. Four should-fix offered (SF-1, SF-2, SF-3, SF-4).
+
+## BL-062 the magnets' conductivity by grade family (2026-11-11)
+
+BL-062 (`docs/ai/backlog.yaml`) asks which electrical conductivity the magnets of each grade family take in the eddy
+heat inside the blocks. The workbook gives both rings the one input, sintered NdFeB's 6.7e5 S/m (Temperature design
+C113), whatever their grade, though SmCo conducts more and ferrite and bonded NdFeB far less. The research of
+2026-11-09 lists the printed values and leaves the choice to the owner, who has not answered. Under the owner's ruling
+of 2026-11-10 (an open question takes the conservative answer, and the assumption is made known) the answer taken for
+now is the research's options 1B, 2C, 3B, 4B and 5B: sintered NdFeB keeps the input, Sm2Co17 takes 1.54e6 S/m, SmCo5
+2.5e6 S/m, sintered ferrite 1.0e2 S/m (a maker's upper bound, not a measurement) and bonded NdFeB 2.5e4 S/m.
+Correction E26 makes each ring's half of the magnets' eddy heat (C129) read its own ring's conductivity, by the family
+of the ring's grade (`magcoupling-rs/src/engine/temperature.rs`, `magcoupling-rs/src/engine/grades.rs`), and row A-8 of
+`docs/analyses/2026-11-10-conservative-assumptions.md` (kept in the owner's main checkout) records it. That is an
+assumption, not the owner's answer, and the owner's review of the diff is still owed before a merge. On screen, one
+help text changed, two result rows are new (each with a label and a help), one derivation record changed and two are
+new, and E26's title is listed with the words "(an assumption, not approved)". These texts had their G-3 review in a
+fresh context on the uncommitted change in the worktree (branch `magcoupling/off-default-fixes`, HEAD 7596f47, 24
+changed files and one new test file). The reviewer's report for the record follows.
+
+- Scope: one changed help, two new labels and two new helps, three derivation records and one listed title, each
+  whole.
+  - The overlay help of the input `temperature.slip_loss.sigma_ndfeb_S_m`, "NdFeB conductivity"
+    (`magcoupling-rs/src/gui/plain_text.rs`, line 403).
+  - The label and the help of the new results `temperature.slip_loss.inner_magnet_sigma_S_m` and
+    `temperature.slip_loss.outer_magnet_sigma_S_m` (`magcoupling-rs/src/engine/temperature.rs`, lines 594 to 597).
+  - The derivation records of the two new results and of `temperature.slip_loss.magnets_W`
+    (`magcoupling-rs/src/engine/explain/records/slip_heating.rs`, lines 137 to 149).
+  - E26's title (`magcoupling-rs/src/engine/deviations.rs`, line 1876) as `listed_title` shows it: in the hover of a
+    marked value, in the hover of the Equation panel's "Embodies corrections" line and in the spreadsheet Summary's
+    list of corrections.
+  - Read beside them, for the same design each time: the two conductivity rows, "Magnet eddy currents (both rings)",
+    "Total estimated slip loss", "Equivalent mean drag torque", "Loss used below" and the steady temperatures, the
+    input's value and what moving it does, the Equation panel's terms, the unchanged helps of the stored field and of
+    the two other magnet properties, and the `slip_heating` note (the diff does not change it; it was read only for
+    agreement with the texts above).
+  - The diff changes no other text a user sees. The grades table's new field label (`engine/explain/tables.rs`) names
+    E26, but no label of that table is drawn: the panel draws the field's symbol alone. `picks::set_by_pick` now names
+    the conductivity input as set where both rings' grades are of another family; see "Recorded, no change asked".
+- Reviewer: fresh context, general-purpose agent on fable, 2026-11-11; round 2 of the item's text reviews. The step
+  was run on 2026-11-16, and every probe and test run below is of that day. What round 1 asked for was found applied
+  before the texts were read. (1) The README's `src/engine/explain/` row reads "..., E24's outer-ring single-ring
+  onset and E26's two magnet conductivities, one per ring: 196 paths", and the README holds no "194" any more. (2) The
+  words "of the values the research kept" stand in the four places (the doc comment of
+  `GradeFamily::magnet_sigma_S_m`, E26's `corrected_formula`, the README's E26 paragraph and its table row), and the
+  doc comment names the two prints set aside: Eclipse's "16.6-20" in 10^6 S/m for SmCo5 and the Alliance overview
+  table's "10 - 30" µΩ·m for bonded NdFeB, as the research file's section 4.3 and its skeptic check (S3, and S4
+  point 1) record them. Every number below is from the reviewer's own probes: a scratch crate outside the worktree
+  that calls the engine (`compute_all`, every correction on, the GUI's basis) and the crate's own text, hover, table,
+  explorer and spreadsheet functions.
+- The texts as found (each guard clean):
+  - `temperature.slip_loss.sigma_ndfeb_S_m` help (30 words, 2 sentences; at the cap): "Electrical conductivity of
+    sintered NdFeB magnets: their eddy-current slip heat rises with it. A ring with no grade uses it; SmCo, ferrite
+    and bonded NdFeB rings use their family's value." Before the change: "Electrical conductivity of the magnets:
+    eddy-current heat inside the blocks during slip rises with it. Used whatever the magnet grade, which overstates
+    the heat in ferrite."
+  - The new rows. Labels: "Inner ring magnet conductivity used" and "Outer ring magnet conductivity used". Help of the
+    inner row (29 words, 1 sentence): "The conductivity the eddy-current heat inside the inner ring's magnets uses:
+    the NdFeB conductivity input for sintered NdFeB or no grade, else the value taken for the grade's family." The
+    outer row's help is the same with "outer".
+  - The records, as the crate's plain renderer writes them (the Equation panel typesets the same parsed formula, and
+    the spreadsheet's Results sheet holds these lines):
+    - `σ_{mag,i} = { σ_{grade} if σ_{grade} ≠ none; σ_{NdFeB} otherwise }, where σ_{grade} = σ_{grade}(grade_{i,used})`
+    - `σ_{mag,o} = { σ_{grade} if σ_{grade} ≠ none; σ_{NdFeB} otherwise }, where σ_{grade} = σ_{grade}(grade_{o,used})`
+    - `P_{mag} = ((((σ_{mag,i} + σ_{mag,o})/2) ω_e^2 B_{mag}^2 w_i^2)/24) (L_i w_i t_i) 2 N`
+  - E26 as listed: "E26: The magnets' eddy heat gives every ring sintered NdFeB's conductivity, though SmCo conducts
+    more and ferrite and bonded NdFeB far less (an assumption, not approved)". The title before the brackets states
+    what the workbook does, as every title of the registry does.
+- Verdict: PASS. No must-fix. Every sentence of the changed help and of the two new helps is true in each of the 22
+  designs probed and with each of the 17 grades on both rings. In every design each conductivity row read the input
+  bit for bit where its ring was sintered NdFeB (a library part or a grade) or had no grade, and its family's value
+  elsewhere; the magnets' heat was the same design's heat with no grades times the mean of the two rows over the
+  input; and the input moved the heat exactly where a row read it. Each of the three records gave the engine's number
+  in every design (66 of 66). A reader can tell from the screen alone which conductivity each ring's magnets read: the
+  two rows name their ring and sit in the Slip heating group above the losses, the input's help says which rings read
+  it, and the record of the magnets' heat shows the mean of the two. No text calls the ferrite value a measurement.
+  No text says the magnets' heat is now right for a grade: the stored field's help and the note still say the field
+  does not follow the design. No text says or implies that the owner approved E26: every place that lists it says
+  "not approved", and the helps name no correction. Three should-fix items are offered: one on the changed help
+  (SF-1), one on an unchanged neighbour (SF-2) and one on the tracker (SF-3). The texts break no physics trap, do not
+  say "clamp", do not say the coupling protects the gearbox and do not say a wall seals the rings.
+- Should-fix offered (the owner's choice; no text of the item is false as it stands):
+  - SF-1, the changed help, sentence 2. Sentence 1 says whose conductivity the input is and that "their" heat rises
+    with it. Sentence 2 then names the ring with no grade as one that uses it. A reader can take that ring as the only
+    one that reads the input, though every library part and every sintered NdFeB grade reads it too (670000 S/m on
+    both rows with N42 on both rings). One word ties the two sentences.
+    - Old: the help as found (above).
+    - New: "Electrical conductivity of sintered NdFeB magnets: their eddy-current slip heat rises with it. Rings with
+      no grade use it too; SmCo, ferrite and bonded NdFeB rings use their family's value." (30 words, 2 sentences,
+      guard clean; at the cap.)
+  - SF-2, the heading over the Summary sheet's list of corrections (`CORRECTIONS_HEADING`, `gui/spreadsheet.rs`, line
+    106; the item does not change it). It is SF-1 of the BL-061 record above, still open. The list under it now holds
+    two rows that are on and not approved, E25 and E26. The heading stays true and each of the two rows says "not
+    approved", so nothing on the sheet claims an approval.
+    - Old: "Corrections applied (every approved correction is on)"
+    - New: "Corrections applied (every approved correction is on, and each assumption is marked)" (12 words, guard
+      clean.)
+  - SF-3, the tracker's entry of 2026-11-11 for E26 (`docs/ai/05-update-tracker.md`, its "Noted, not changed" line).
+    It leaves out one place that shows E26's listed title. With the spreadsheet details on, the Equation panel's line
+    "Embodies corrections: E26, E19" stands under the two new rows' equations (and E26 under 22 more results'), and
+    its hover gives the title with "(an assumption, not approved)".
+    - Old: "Outside the hover of a marked value (with the spreadsheet details on) and the spreadsheet Summary, nothing
+      on screen says the family values are an assumption: the two new rows have no cell and so no mark."
+    - New: "Outside the hover of a marked value and of the Equation panel's "Embodies corrections" line (both with the
+      spreadsheet details on) and the spreadsheet Summary, nothing on screen says the family values are an
+      assumption: the two new rows have no cell and so no mark in the results table."
+- Each text as read:
+  - The changed help, sentence 1, "Electrical conductivity of sintered NdFeB magnets: their eddy-current slip heat
+    rises with it." True. One slider step (1000 S/m) down, as found and up on the example design the magnets' heat
+    reads 0.22751, 0.22785 and 0.22819 W, and the slider's ends (1e5 and 2e6 S/m) read 0.03401 and 0.6801 W. The same
+    numbers, bit for bit, come from manual dimensions with N42 on both rings, with no grade, with a grade the table
+    does not have and from library parts with another family's grade typed.
+  - The changed help, sentence 2, "A ring with no grade uses it; SmCo, ferrite and bonded NdFeB rings use their
+    family's value." True in both halves, ring by ring. A ring with no grade read the input in each of the four
+    designs that have one (the grade the table does not have among them). A Y30 ring read 100.0 S/m, a Recoma 26 or
+    Recoma 30 ring 1.540e6 S/m, a Recoma 20 ring 2.500e6 S/m and a BCN-19 ring 25000 S/m, whichever ring it was and
+    wherever the input stood (as found, one step either side and at the slider's two ends). With both rings of those
+    families the input moved nothing (the Y30 pair reads 3.4006924001941014e-5 W at each of the five). With one such
+    ring it moved its half: Y30 inside N42 reads 0.11377, 0.11394 and 0.11411 W one step down, as found and up, half
+    the step of the NdFeB pair. See SF-1.
+  - The new rows' labels and helps. True. "The NdFeB conductivity input" is the input's own label. "Sintered NdFeB or
+    no grade" covers every case that read the input: the library part (its grade is the ring's, whatever is typed in
+    the grade field; `a_library_part_and_a_ring_with_no_grade_read_the_input` in `tests/magnet_conductivity.rs` holds
+    the other parts), each of the 12 sintered NdFeB grades, a blank grade and a grade the table does not have.
+    Bonded NdFeB is not sintered and takes "the value taken for the grade's family", 25000 S/m. With a measured drag
+    entered the rows and the magnets' heat do not move (2.500e6 S/m and 0.8502 W on Recoma 20 rings) and "Loss used
+    below" reads the bench value, 2.094 W, as its own help says.
+  - The three records. True. Each evaluated to the engine's result in all 22 designs. The terms listed under a
+    conductivity row's equation are "NdFeB conductivity" (670000 S/m) and "Inner magnet grade used" or "Outer magnet
+    grade used" (N42SH on the example, blank with no grade, Y30, N42, SmCo_1_5_20). The terms under the magnets' heat
+    are the two conductivity rows by their labels, the field angular frequency (1047 rad/s), the stored field (0.1900
+    T), the inner block's width, length and thickness (0.006350, 0.01270 and 0.003170 m) and the magnets per ring
+    (10). A click on either conductivity term opens its own record. The record shows what the label "(both rings)"
+    means: the inner block's heat, twice, at the mean of the two conductivities.
+  - E26 as listed. True, and marked. The title's facts hold against every value the research kept (Sm2Co17 1.05e6 to
+    1.54e6 S/m and SmCo5 1.43e6 to 2.5e6 S/m against 6.7e5 S/m; ferrite below 1.0e2 S/m; bonded NdFeB 4.0e3 to 2.5e4
+    S/m). All three places take the words in brackets from `listed_title`. The Summary's rows read "E25 | ... (an
+    assumption, not approved)" and "E26 | ... (an assumption, not approved)".
+- Beside the texts:
+  - The Slip heating group draws, in the grouped and in the original-sheet order: "Steel conductivity (4140)", "Steel
+    incremental relative permeability (4140)", "Aluminium cap conductivity (6061-T6)", "Inner ring magnet
+    conductivity used", "Outer ring magnet conductivity used", "Steel skin depth at the field frequency", the six
+    part losses, "Magnet eddy currents (both rings)", "Total estimated slip loss". At the defaults the two rows read
+    "670000 S/m" and the heat "0.2278 W".
+  - The hovers. The input's: the help, "Slider 100000 to 2000000 S/m, step 1000, logarithmic", "Default: 670000";
+    with the spreadsheet details its path and "Temperature design!C113". A conductivity row's: its label, its help,
+    "Exact value: 670000.0"; with the details its path and "Not in the original spreadsheet". The heat row's with the
+    details: its label, its path, "Temperature design!C129", "Differs from the original spreadsheet:", E26's line and
+    the exact value.
+  - The marks, with the spreadsheet details on. 40 results carry E26 beside their value: the magnets' heat ("E26"),
+    the total, its drag, the loss used and the high case ("E5 E17 E26") and the thermal and summary rows that read
+    them. The two new
+    rows have no cell, so their cell column reads "Rust-only" and they carry no mark; their Equation panel line reads
+    "Embodies corrections: E26, E19". No dashboard row carries E26.
+  - The table's search finds the two rows by "magnet conductivity" (those two alone) and by "conductivity" (seven
+    rows).
+  - The stored field's help (unchanged): "Alternating field inside the magnet blocks during slip; their eddy-current
+    heat grows with its square. Stored 3D value for the example design; it does not follow yours." True beside E26:
+    with Y30 on both rings and the field doubled the heat is four times (3.401e-5 to 1.360e-4 W) and both rows stay
+    100.0 S/m. The field is 0.1900 T on every grade.
+  - The `slip_heating` note (not changed). Its sentence on the magnets ("... and the magnets, heat through their
+    whole thickness, so their loss grows as the square of the speed") and its first watch-out ("... those fields do
+    not follow your magnet count, ring radius, gap, magnet size or grade") agree with the texts above. Its live
+    values follow E26: "an estimated 2.751 W, a drag of 0.01314 N·m" at the defaults, 2.523 W and 0.01205 N·m on Y30
+    rings, 3.374 W and 0.01611 N·m on Recoma 20 rings.
+  - The helps of the magnets' specific heat and modulus (unchanged) end "Used whatever the magnet grade." E26 does not
+    touch either, so both stay true.
+  - The README and the `docs/ai` lines that name E26 call it an assumption that is not approved, and call the ferrite
+    value a maker's upper bound, not a measurement.
+- For the step that commits: nothing must change. The tracker's entry and the backlog's notes still list the text
+  review as owed. If a should-fix text is taken, the changed line needs its re-read. The reviewer edited only this
+  document; no help text, code, test or other doc was changed.
+
+**Report for the record (as returned).**
+
+#### Basis
+
+A scratch crate outside the worktree (a path dependency on the worktree's `magcoupling-rs` with its `gui` feature),
+run in debug, two programs, both written in this run. Each design is `DesignInputs::default()` with inputs set by
+field or by path and run through `compute_all`. For each design the first program printed the input's row, the five
+rows as the results table draws them (label, value with its unit, cell column, mark), the two conductivities and the
+heat exactly, whether each row is the input bit for bit, the heat over the same design's heat with both grades blank
+beside the mean of the two rows over the input, the heat with the input one slider step down, one step up and at the
+slider's two ends, what each of the three records evaluates to beside the engine's result, and the pick that
+`set_by_pick` names for the input. It also printed each text with its word count and the guard's result, the hovers of
+the input and of five rows with the spreadsheet details off and on, each row's mark and its "Embodies corrections"
+line with its hover, the equations as the plain renderer writes them with their term rows, the rows of the Slip
+heating group in the order drawn, the table's search results, the `slip_heating` note rendered at three designs, the
+Summary sheet's list of corrections and the Results sheet's rows of the three results. The second program printed the
+dashboard's rows with their marks and the temperature rows of seven designs. Defaults: library part B842SH on both
+rings (grade N42SH), the input at 670000 S/m, the stored field 0.19 T, 10 magnets per ring, 4140 back iron.
+
+#### Cases
+
+"Inner" and "Outer" are the two conductivity rows as drawn, in S/m. "Heat" is "Magnet eddy currents (both rings)" and
+"Total" is "Total estimated slip loss", both in W as drawn. The last column is what one slider step up of the input
+(1000 S/m) does to the heat. Manual means no library part on that ring.
+
+| Case | Inner | Outer | Heat | Total | Input one step up |
+|---|---|---|---|---|---|
+| Defaults (library parts, N42SH) | 670000 | 670000 | 0.2278 | 2.751 | up |
+| Manual, no grade | 670000 | 670000 | 0.2278 | 2.751 | up |
+| Manual, Y30 on both rings | 100.0 | 100.0 | 3.401e-5 | 2.523 | stays |
+| Manual, Recoma 26 (Sm2Co17) on both rings | 1.540e6 | 1.540e6 | 0.5237 | 3.047 | stays |
+| Manual, Recoma 30 (Sm2Co17) on both rings | 1.540e6 | 1.540e6 | 0.5237 | 3.047 | stays |
+| Manual, Recoma 20 (SmCo5) on both rings | 2.500e6 | 2.500e6 | 0.8502 | 3.374 | stays |
+| Manual, bonded NdFeB BCN-19 on both rings | 25000 | 25000 | 0.008502 | 2.532 | stays |
+| Manual, Y30 inner, N42 outer | 100.0 | 670000 | 0.1139 | 2.637 | up, by half |
+| Manual, N42 inner, Y30 outer | 670000 | 100.0 | 0.1139 | 2.637 | up, by half |
+| Manual, Y30 inner, no grade outer | 100.0 | 670000 | 0.1139 | 2.637 | up, by half |
+| Manual, no grade inner, Recoma 20 outer | 670000 | 2.500e6 | 0.5390 | 3.062 | up, by half |
+| Manual, N42 on both rings | 670000 | 670000 | 0.2278 | 2.751 | up |
+| Manual, Recoma 20 inner, Y30 outer | 2.500e6 | 100.0 | 0.4251 | 2.949 | stays |
+| Manual, BCN-19 inner, Recoma 26 outer | 25000 | 1.540e6 | 0.2661 | 2.790 | stays |
+| Library parts, Y30 and Recoma 20 typed as grades | 670000 | 670000 | 0.2278 | 2.751 | up |
+| Library part inner, manual Y30 outer | 670000 | 100.0 | 0.1139 | 2.637 | up, by half |
+| Manual, a grade the table does not have ("N99") | 670000 | 670000 | 0.2278 | 2.751 | up |
+| Manual, Y30 inner, N42 outer, the input at 1.0e6 | 100.0 | 1.000e6 | 0.1701 | 2.694 | up, by half |
+| Manual, Y30 on both rings, the input at 2.0e6 | 100.0 | 100.0 | 3.401e-5 | 2.523 | stays |
+| Manual, Recoma 20 on both rings, a measured drag of 0.01 N·m | 2.500e6 | 2.500e6 | 0.8502 | 3.374 | stays |
+| Manual, Y30 on both rings, 6061-T6 hub and cup | 100.0 | 100.0 | 3.401e-5 | 2.690 | stays |
+| Manual, Y30 on both rings, the stored field doubled | 100.0 | 100.0 | 1.360e-4 | 2.524 | stays |
+
+`validate` accepted every design of the table. With the library parts the "grade used" rows read N42SH whatever was
+typed in the grade fields, and with "N99" they are blank. With the measured drag "Loss used below" reads 2.094 W and
+the high-case steady temperature 71.98 °C. The high-case steady temperature reads 92.51 °C at the defaults and with no
+grade, 90.23 °C on Y30 rings, 95.47 °C on Recoma 26 rings, 98.74 °C on Recoma 20 rings, 90.32 °C on BCN-19 rings and
+91.37 °C on Y30 inside N42. `set_by_pick` named the inner grade for the input in the 11 designs whose rings are both of
+another family, and nothing in the other 11.
+
+Each grade of the table on both rings (manual dimensions): the 12 sintered NdFeB grades (N35, N42, N48, N52, N50,
+N42M, N50M, N42H, N42SH, N38UH, N35EH, N33AH) read 670000 S/m on both rows and 0.2278 W; SmCo_2_17_26 and SmCo_2_17_30
+1.540e6 S/m and 0.5237 W; SmCo_1_5_20 2.500e6 S/m and 0.8502 W; Y30 100.0 S/m and 3.401e-5 W; Bonded_NdFeB_BCN19 25000
+S/m and 0.008502 W.
+
+#### What changing the input does
+
+The magnets' heat in W with the input one slider step down, as found, one step up, and at the slider's ends.
+
+| Design | Step down, as found, step up | At 1e5 S/m | At 2e6 S/m |
+|---|---|---|---|
+| Defaults | 0.22751, 0.22785, 0.22819 | 0.03401 | 0.6801 |
+| Manual, no grade | 0.22751, 0.22785, 0.22819 | 0.03401 | 0.6801 |
+| Manual, Y30 on both rings | 3.401e-5 each, bit for bit | 3.401e-5 | 3.401e-5 |
+| Manual, Recoma 20 on both rings | 0.8502 each, bit for bit | 0.8502 | 0.8502 |
+| Manual, BCN-19 on both rings | 0.008502 each, bit for bit | 0.008502 | 0.008502 |
+| Manual, Y30 inner, N42 outer | 0.11377, 0.11394, 0.11411 | 0.01702 | 0.3401 |
+| Manual, no grade inner, Recoma 20 outer | 0.53884, 0.53901, 0.53918 | 0.4421 | 0.7652 |
+| Manual, Recoma 20 inner, Y30 outer | 0.4251 each, bit for bit | 0.4251 | 0.4251 |
+
+In each design the heat over the heat of the same design with both grades blank equals the mean of the two rows over
+the input to 15 digits: 1 where both rows read the input, 0.50007 on Y30 with N42 or with no grade, 2.2985 on Recoma
+26, 3.7313 on Recoma 20, 1.4925e-4 on Y30, 0.037313 on BCN-19, 2.3657 on no grade inside Recoma 20, 1.8657 on Recoma 20
+inside Y30 and 1.1679 on BCN-19 inside Recoma 26.
+
+#### Words
+
+Counted with the crate's `word_count` and `sentence_count`; the guard is `plain_text_violations` and
+`mentions_gearbox_protection`.
+
+| Text | Words | Sentences (words in each) | Guard | "clamp", gearbox, wall or seal |
+|---|---|---|---|---|
+| `temperature.slip_loss.sigma_ndfeb_S_m` help | 30 | 2 (13, 17) | clean | none |
+| the same help before the change | 26 | 2 (15, 11) | clean | none |
+| the inner row's label | 5 | not a sentence | clean | none |
+| the outer row's label | 5 | not a sentence | clean | none |
+| the inner row's help | 29 | 1 | clean | none |
+| the outer row's help | 29 | 1 | clean | none |
+| E26's title | 21 | not a sentence | clean | none |
+| the stored field's help (unchanged neighbour) | 27 | 2 | clean | none |
+| the specific heat's help (unchanged neighbour) | 18 | 2 | clean | none |
+| the modulus's help (unchanged neighbour) | 22 | 2 | clean | none |
+| SF-1 New | 30 | 2 (13, 17) | clean | none |
+| SF-2 New | 12 | not a sentence | clean | none |
+
+E26 as listed is 26 words. Its id trips the guard's pattern for a correction number, as E25's does: the line is shown
+only with the spreadsheet details on.
+
+#### Traps and rules
+
+- Slice-2 spec section 8 (the 17 physics traps) and slice-1 spec section 8: none is written or touched. The nearest
+  are "Each ring uses its own α" (only rings with a picked grade do) and slice 1's "The stored 3D demagnetization
+  fields follow geometry or grade". The texts say the same of the conductivity as the first trap's bracket says of α:
+  a ring with no grade, and a sintered NdFeB ring, uses the input. No text says a stored field follows the grade.
+- Slice-2 spec 3.5 (help: one or two sentences, at most 30 words, what the input is, which results it moves and which
+  way, when a part pick replaces it, no default number, no spreadsheet or audit id): the changed help and the two new
+  helps are inside it. The changed help is at the cap.
+- The ferrite value is a maker's upper bound: no text of the item calls it a measurement, and none holds the word.
+- The stored field does not follow the grade: no text says the magnets' heat is now right for a grade.
+- E26 is an assumption that is not approved: no text says or implies an approval. The helps state what each ring
+  reads and name no owner, ruling, correction or approval; each listing of E26 ends "(an assumption, not approved)".
+- Standing rules: no text says the coupling protects the gearbox, says a wall seals the rings or holds "clamp". The
+  helps hold no cell name, correction id, file or code name.
+
+#### Tests
+
+On the worktree as found, all green: `cargo test` (lib 245 passed, 1 ignored; `tests/magnet_conductivity.rs` 7 passed;
+`tests/deviations.rs` 86 passed; `tests/explain.rs` 63 passed, 1 ignored) and `cargo test --features app` (lib 1000
+passed, 6 ignored); `cargo clippy` both ways and `cargo fmt --check` clean. One mutation check: with a ferrite ring
+kept on the input (`&& sigma > 1.0e3` added to the guard of `temperature::magnet_sigma_S_m`,
+`src/engine/temperature.rs`, line 953), `every_direction_a_batch_b_help_states_holds_one_slider_step_up` failed
+("temperature.slip_loss.sigma_ndfeb_S_m one step up on the Y30 grades design: temperature.slip_loss.magnets_W
+0.22784639081300484 -> 0.22818646005302426", Up where the help's claim row says Stays). So the changed help's second
+sentence is held by its claim rows. The line was put back by hand, the file's hash matched and the test passed again.
+Before this record was added, a fresh `git diff` and `git status` of the worktree matched the ones saved at the start
+byte for byte, and the new test file matched its saved copy. The full gate was not run; the reviewer changed no code.
+
+#### Not checked
+
+- The GUI was not run. The texts were read from the crate's own functions and from where they are drawn; how a hover
+  wraps and how the panel typesets the three formulas was not seen. Whether the table cuts the two new labels in a
+  narrow window was not worked out.
+- The exported files (CSV, JSON, XLSX) were not opened. The spreadsheet's rows were read from the sheets in memory.
+- No mutation check was made of the helps' words: no test pins them (the changed help's directions are pinned by its
+  claim rows, the "not approved" words by the tests of the titles and of the Summary).
+- The corrections were on in every probe, as the app shows them. E26 off was not probed.
+- Hubs: 4140, and 6061-T6 once. Poles, gap, ring radius and block sizes were held at the defaults. Of the library's
+  parts only the example's (B842SH) was probed.
+- The printed values behind the family numbers were not opened again: the research file was read, not its sources.
+  That is the physics review's ground.
+
+#### Recorded, no change asked
+
+- With the spreadsheet details off, nothing on the screen says the family values rest on an assumption. The two new
+  rows read as any other Rust-only result, and their help says "the value taken for the grade's family". With the
+  details on, E26 is listed in three places, each time as not approved. The register (row A-8), the backlog, the
+  README and `docs/ai` say it. Whether the rows should carry a mark of their own is the owner's to rule on with the
+  answer itself.
+- Nothing on the screen says the ferrite value is a bound. A Y30 ring's row reads "100.0 S/m" like any other value,
+  while the two values the research found printed for ferrite are 1.0e-2 and 1.0e-3 S/m. No text calls it a
+  measurement, and the heat at the bound
+  is 3.401e-5 W of a 2.523 W total, so nothing on the screen rides on it. The README, the registry and `docs/ai` call
+  it a maker's upper bound.
+- The mark E26 and the line "Differs from the original spreadsheet:" stand on the 40 cells at every design, the
+  example included, where E26 moves nothing (0.22784639081300484 W there, the workbook's value). That is how every
+  correction marks a cell the registry names for it: E17 marks the hub's loss on a steel hub, and E25 marks the
+  rotating diameter at the default boss. E26's line gives no "was, now", since it moves no default cell. With a
+  measured drag entered the marks on "Loss used below" and the rows after it stay, though E26 no longer reaches
+  them; E5 and E17 do the same.
+- Where both rings are of another family the input is still a live slider that moves nothing; its help says why.
+  `set_by_pick` then names it as set by the inner ring's grade, for a note's change entry. No note has a change entry
+  on this input, so "set by the Inner magnet grade (manual dimensions) pick" is drawn nowhere today. A click on the
+  input's label there still traces to the magnets' heat and the rows after it: the trace follows the records' terms,
+  not the design, as it does for the NdFeB expansion input on a ferrite inner ring.
+- The input keeps the workbook's label, "NdFeB conductivity", though a bonded NdFeB ring does not read it. The help's
+  first words say "sintered NdFeB", the new rows' help names the input by that label, and the rows show what each
+  ring reads.
+- The rows read "670000 S/m", "25000 S/m" and "100.0 S/m" beside "1.540e6 S/m" and "2.500e6 S/m": the table's own
+  number form. SmCo5's 2.5e6 S/m is above the input slider's top (2e6) and the ferrite and bonded values are below
+  its low end (1e5): the family values do not pass through the input's range check, as the README says.
+- In the two new records the local symbol and the table field's symbol are the same, so the clause reads "where
+  σ_grade = σ_grade(grade_i,used)". E20's records of the grade's coercivity temperature coefficient (β_grade) read
+  the same way.
+- No dashboard row carries E26. The temperature verdict reads the steady temperature, and the explorer lists E26
+  among its upstream corrections (24 results in all), but its cell is not one the registry names for E26; it is not
+  named for E5 or E17 either. On Recoma 20 rings the high-case steady temperature reads 98.74 °C, the governing
+  limit 101.7 °C and the verdict OK.
+- The task text cites section 6 of the slice-2 spec for the traps; they are in section 8.
+
+Verdict: PASS. No must-fix. Three should-fix offered (SF-1, SF-2, SF-3).

@@ -1,8 +1,8 @@
 //! The "corrected vs workbook" markers (spec M4 "Layout": "corrected values carry a
 //! 'corrected vs workbook' marker with the deviation in its tooltip").
 //!
-//! The panel always computes with every approved correction on (and E25, an assumption that is
-//! not approved, which its title here says: [`listed_title`]), and the test-only switch that
+//! The panel always computes with every approved correction on (and E25 and E26, which are not
+//! approved, as their titles here say: [`listed_title`]), and the test-only switch that
 //! turns them off never ships, so a marker cannot come from comparing the two. It comes from
 //! the deviation registry instead (decision M41-10): a workbook cell carries a correction's
 //! marker when the registry ties the cell to it, in any of three ways:
@@ -179,7 +179,8 @@ pub const MARKER_HEADING: &str = "Differs from the original spreadsheet";
 pub const MARKER_SCOPE: &str =
     "Was and now are values at the default design, with only that correction applied.";
 
-/// What the lists of corrections say after the title of one the user did not approve (E25).
+/// What the lists of corrections say after the title of one the user did not approve (E25,
+/// E26).
 pub const ASSUMED: &str = "an assumption, not approved";
 
 /// A correction's title as the lists and hover texts show it: an assumed correction's says
@@ -334,11 +335,17 @@ mod tests {
             let assumed = matches!(deviation.approval, Approval::Assumed { .. });
             assert_eq!(title.contains("not approved"), assumed, "{title}");
         }
-        // E25 is the one, and it marks the rotating diameter the space claim judges.
-        let e25 = correction_title(DeviationId::E25);
-        assert!(e25.ends_with(&format!("({ASSUMED})")), "{e25}");
-        let marks = CorrectionIndex::get().marks(Some("Metal design!C135"));
-        assert!(marker_tooltip(marks).contains(&e25));
+        // E25 and E26 are the two: E25 marks the rotating diameter the space claim judges, E26
+        // the magnets' eddy heat.
+        for (id, cell) in [
+            (DeviationId::E25, "Metal design!C135"),
+            (DeviationId::E26, "Temperature design!C129"),
+        ] {
+            let title = correction_title(id);
+            assert!(title.ends_with(&format!("({ASSUMED})")), "{title}");
+            let marks = CorrectionIndex::get().marks(Some(cell));
+            assert!(marker_tooltip(marks).contains(&title), "{cell}");
+        }
     }
 
     #[test]

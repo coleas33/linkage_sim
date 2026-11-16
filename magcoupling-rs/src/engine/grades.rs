@@ -26,6 +26,12 @@
 //! key `"grades"`): the ferrite and SmCo grades carry one, cited in [`GradeSources`] and
 //! compared with the data file by `tests/grades.rs`. Sintered NdFeB has none and keeps the
 //! C95 input; so does bonded NdFeB (decision 7). Correction E22 reads the inner ring's.
+//!
+//! The magnets' electrical conductivity ([`GradeFamily::magnet_sigma_S_m`], backlog BL-062):
+//! one value per family, Rust-only, in no data file. Sintered NdFeB has none and keeps the C113
+//! input. Correction E26 reads each ring's. The values are NOT approved: they are an assumption,
+//! the conservative answer to an open question under the owner's ruling of 2026-11-10 (research:
+//! `docs/analyses/2026-11-09-magcoupling-bl062-conductivity-research.md`, sections 4 and 5).
 
 /// K&J Magnetics, Neodymium Magnet Specifications & Tolerances (the NdFeB basis, decision D1/1).
 pub const KJ_SPECS: &str = "https://www.kjmagnetics.com/neodymium-magnet-specifications.asp";
@@ -46,6 +52,15 @@ pub const ALLIANCE_C5: &str =
 /// Alliance LLC, Compression Bonded Neo (BCN-19).
 pub const ALLIANCE_BONDED_NEO: &str =
     "https://allianceorg.com/magnetic-materials/bonded-magnets/compression-bonded-neo/";
+/// Vacuumschmelze VACODYM and VACOMAX, PD 002, edition 2015 (the copy hosted by CERN): p18,
+/// Table 3 "at room temperature (20 °C)", column "Specific electrical resistance", Ωmm²/m.
+pub const VAC_PD002_2015: &str = "https://indico.cern.ch/event/682107/attachments/1560598/2465492/VACODYM-VACOMAX-PD002_2015_en.pdf";
+/// MS-Schramberg HF 26/24 (sintered hard ferrite): p1, Mechanical values (08/2022), "spec.
+/// elec. resistance approx. 10^-6 Ωm".
+pub const MS_SCHRAMBERG_HF_26_24: &str = "https://magnete.de/fileadmin/user_upload/Magnetische_Kenndaten/Gesinterte_Hartferritmagnete/HF_26-24_Sr_E.pdf";
+/// Bunting / E-Magnets UK BREMAG bonded neodymium data sheet: p2, Issue 1 January 2017, Typical
+/// Value table, row "Resistivity", unit Ωcm.
+pub const BUNTING_BREMAG: &str = "https://e-magnetsuk.com/wp-content/uploads/2020/06/E-Magnets-UK-Bonded-Neodymium-Data-Sheet.pdf";
 
 /// The material family of a grade.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -60,6 +75,39 @@ pub enum GradeFamily {
     Ferrite,
     /// Isotropic compression-bonded NdFeB.
     BondedNdFeB,
+}
+
+impl GradeFamily {
+    /// The electrical conductivity [S/m] the magnets' eddy heat reads for a ring of this family
+    /// (correction E26, backlog BL-062). `None` for sintered NdFeB: it keeps the input
+    /// (Temperature design C113).
+    ///
+    /// NOT approved by the owner. Each value is the highest one printed with a clear unit for
+    /// its family, of the values the research kept (the report's options 2C, 3B, 4B and 5B):
+    /// more conductivity is more heat here. The research set two higher prints aside. For
+    /// SmCo5, Eclipse Magnetics' "16.6-20" in 10^6 S/m (its section 4.3, "NOT USED": ten times
+    /// off the three other sources, read as a slipped decimal). For bonded NdFeB, the Alliance
+    /// overview table's "10 - 30" µΩ·m, 3.3e4 to 1.0e5 S/m (its skeptic check, S3 and S4
+    /// point 1: a row judged not reliable enough to set a value).
+    /// Datasheet values, none a guaranteed one. They do not pass through the input's range
+    /// check (1e5 to 2e6 S/m).
+    #[allow(non_snake_case)] // unit suffix, as the engine's names
+    pub const fn magnet_sigma_S_m(self) -> Option<f64> {
+        match self {
+            GradeFamily::NdFeB => None,
+            // [`VAC_PD002_2015`], VACOMAX Sm2Co17: "0.65-0.95" Ωmm²/m. The low end,
+            // 0.65e-6 Ω·m, is 1.54e6 S/m.
+            GradeFamily::SmCo2_17 => Some(1.54e6),
+            // [`VAC_PD002_2015`], VACOMAX SmCo5: "0.4-0.7" Ωmm²/m. The low end, 0.4e-6 Ω·m,
+            // is 2.5e6 S/m.
+            GradeFamily::SmCo1_5 => Some(2.5e6),
+            // [`MS_SCHRAMBERG_HF_26_24`]: ">10^4" in 10^-6 Ωm, so above 1e-2 Ω·m and below
+            // 1.0e2 S/m. The maker's bound taken as the value, not a measurement.
+            GradeFamily::Ferrite => Some(1.0e2),
+            // [`BUNTING_BREMAG`]: "4 x 10^-3" Ωcm. 4e-5 Ω·m is 2.5e4 S/m.
+            GradeFamily::BondedNdFeB => Some(2.5e4),
+        }
+    }
 }
 
 /// Where each value of a grade comes from (a URL of the data file's `sources`).
@@ -710,5 +758,33 @@ mod tests {
         }
         let ids: std::collections::BTreeSet<&str> = GRADES.iter().map(|g| g.id).collect();
         assert_eq!(ids.len(), GRADES.len(), "grade ids are unique");
+    }
+
+    #[test]
+    fn each_family_s_magnet_conductivity_is_the_one_taken_for_bl062() {
+        // Backlog BL-062, the report's options 1B, 2C, 3B, 4B and 5B: an assumption, not approved.
+        use GradeFamily::{BondedNdFeB, Ferrite, NdFeB, SmCo1_5, SmCo2_17};
+        assert_eq!(NdFeB.magnet_sigma_S_m(), None, "the C113 input stays");
+        assert_eq!(SmCo2_17.magnet_sigma_S_m(), Some(1.54e6));
+        assert_eq!(SmCo1_5.magnet_sigma_S_m(), Some(2.5e6));
+        assert_eq!(Ferrite.magnet_sigma_S_m(), Some(1.0e2));
+        assert_eq!(BondedNdFeB.magnet_sigma_S_m(), Some(2.5e4));
+        // Each is the printed resistivity [Ω·m] turned over, to the figures typed.
+        for (rho_ohm_m, family) in [
+            (0.65e-6, SmCo2_17),
+            (0.4e-6, SmCo1_5),
+            (1e4 * 1e-6, Ferrite),
+            (4e-3 * 1e-2, BondedNdFeB),
+        ] {
+            let sigma = family.magnet_sigma_S_m().expect("a value");
+            assert!((1.0 / rho_ohm_m / sigma - 1.0).abs() < 2e-3, "{family:?}");
+        }
+        // Every grade's family is one of the five, and only the 12 sintered NdFeB grades keep
+        // the input.
+        let keep = GRADES
+            .iter()
+            .filter(|g| g.family.magnet_sigma_S_m().is_none())
+            .count();
+        assert_eq!(keep, 12);
     }
 }
