@@ -122,7 +122,7 @@ The repository's rule is more tests, not fewer, so none of these was changed. Ma
 - **LGS-14** Template and custom-sample tests write into the developer's real ~/.linkage-sim/. They leave "test", "roundtrip", "a", "b" and "only" in `~/.linkage-sim/templates/`, and "only" is never removed. `gui/state/templates.rs:96-112`. FIXED d8d3c57: unit tests use a temp storage root.
 - **MT-07** The vendored oracle's independent audit suite and its tools are run by nothing automatic.
 - **INF-07** gui-smoke.js re-derives the calculator's `passed` from its checks but takes the linkage step's `passed` on the agent's word.
-- **INF-02** Gate 2 (`cargo clippy --all-targets`, linkage-sim-rs) can only fail on a compile error.
+- **INF-02** Gate 2 (`cargo clippy --all-targets`, linkage-sim-rs) can only fail on a compile error. FIXED 3998a12: linkage-sim-rs is at zero clippy warnings (8722228, 9a03b3c) and gate 2 runs with -D warnings.
 - **MT-06** The ignore guard checks six files, but its name and doc say "only the review tools are ignored". The check confirmed this only in part. FIXED 86cc4b0: the guard is renamed to say it reads six files.
 - **MEX-06** `notes_before_snapshot` is a write-once generator that can only fail. FIXED ee08985: the generator is documented and cannot fail.
 - **MGP-11** An allowlist in a test is permanently empty. FIXED 09608a3: the empty allowlist is asserted empty with its reason.
