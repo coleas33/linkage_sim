@@ -5,6 +5,18 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - Template tests stop writing to the real ~/.linkage-sim (audit LGS-14; branch audit/2026-11-16-section-c)
+- What changed: gui/state/templates.rs gets storage_root(): ~/.linkage-sim normally, a per-process temp dir in unit tests. New test tests_persist_under_temp_dir_not_home. The developer's existing files ("test", "roundtrip", "a", "b", "only") were left in place.
+- Tests: shown to bite: pointing storage_root() back at the home dir in test builds fails the new test. Reverted. Commit d8d3c57.
+
+## 2026-11-16 - braindump_repro.rs header says what the file is (audit INF-11; branch audit/2026-11-16-section-c)
+- What changed: the "TEMPORARY ... Not for commit" header is now "tracked repro for BL-017; keep it". Comment only. The backlog note "(untracked)" in BL-017 is still stale; left for the owner.
+- Tests: none needed (comment only). Commit e700cd4.
+
+## 2026-11-16 - Duplicate sample-count test removed; PeaucellierLipkin documented (audit LGE-20; branch audit/2026-11-16-section-c)
+- What changed: samples/mod.rs sample_count_is_30 (exact copy of all_samples_listed) deleted. The PeaucellierLipkin variant builds a change-point 4-bar; it is public API so it is not renamed, a doc comment says so (the label already reads "Coupler Curve (figure-8)"). Renaming is an owner call.
+- Tests: all_samples_listed still asserts 30. Commit d4d9f4e.
+
 ## 2026-11-16 - The two weak solver tests assert something that can fail (audit LCS-16; branch audit/2026-11-16-section-c)
 - What changed: inverse_solve_status_constructs_all_variants (severity.rs) matches every variant and its fields; fourbar_reactions_extract (statics.rs) requires resultant == hypot(force_global) per joint and one nonzero joint reaction. The duplicated 4-bar fixture is left: no crate-wide test-support module exists (the helper is pub(crate) inside inverse_kinematics only), so sharing it is a refactor for the owner to decide.
 - Tests: shown to bite: a changed Singularity field fails the severity test; resultant forced to 0.0 fails the statics test. Both reverted. Commit 5e344f9.

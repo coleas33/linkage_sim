@@ -119,16 +119,16 @@ The repository's rule is more tests, not fewer, so none of these was changed. Ma
 - **PY-08** Sweep-based finite-difference tests can pass without checking anything. The check confirmed this only in part.
 - **PY-03** A test with no assertion can never fail. The check confirmed this only in part.
 - **LCS-16** Two tests assert nothing that can fail, and a fourth copy of the same 4-bar fixture sits in each module. The check confirmed this only in part. FIXED 5e344f9: both tests now assert; the fixture copies are left (no crate-wide test-support module exists).
-- **LGS-14** Template and custom-sample tests write into the developer's real ~/.linkage-sim/. They leave "test", "roundtrip", "a", "b" and "only" in `~/.linkage-sim/templates/`, and "only" is never removed. `gui/state/templates.rs:96-112`.
+- **LGS-14** Template and custom-sample tests write into the developer's real ~/.linkage-sim/. They leave "test", "roundtrip", "a", "b" and "only" in `~/.linkage-sim/templates/`, and "only" is never removed. `gui/state/templates.rs:96-112`. FIXED d8d3c57: unit tests use a temp storage root.
 - **MT-07** The vendored oracle's independent audit suite and its tools are run by nothing automatic.
 - **INF-07** gui-smoke.js re-derives the calculator's `passed` from its checks but takes the linkage step's `passed` on the agent's word.
 - **INF-02** Gate 2 (`cargo clippy --all-targets`, linkage-sim-rs) can only fail on a compile error.
 - **MT-06** The ignore guard checks six files, but its name and doc say "only the review tools are ignored". The check confirmed this only in part.
 - **MEX-06** `notes_before_snapshot` is a write-once generator that can only fail.
 - **MGP-11** An allowlist in a test is permanently empty.
-- **INF-11** tests/braindump_repro.rs is tracked and still the repro BL-017 depends on, yet its header says "TEMPORARY ... Not for commit".
+- **INF-11** tests/braindump_repro.rs is tracked and still the repro BL-017 depends on, yet its header says "TEMPORARY ... Not for commit". FIXED e700cd4: header now says it is the tracked BL-017 repro.
 - **PY-07** Two golden files are used only by the Python tests, and the Python loader turns a missing fixture into a skip.
-- **LGE-20** Two identical sample-count tests, and a sample whose enum name does not match what it builds.
+- **LGE-20** Two identical sample-count tests, and a sample whose enum name does not match what it builds. FIXED d4d9f4e: duplicate test deleted, variant documented (not renamed: public API).
 - **INF-15** (the part not fixed) the property test `expression_driver_matches_constant_speed` exercises the `meval` crate and no code of this repository.
 
 ### D. Build, deploy, gate and local tooling (15)
