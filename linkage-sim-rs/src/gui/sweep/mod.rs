@@ -35,7 +35,7 @@ use crate::solver::inverse_kinematics::{
 use crate::solver::kinematics::{solve_acceleration, solve_position, solve_velocity};
 use crate::solver::reactions::{
     actuator_length_rate, required_actuator_force, solve_reactions_with_actuator,
-    solve_reactions_with_actuator_using_q_dot,
+    solve_reactions_with_actuator_using_q_dot, ReactionSolveResult,
 };
 use crate::solver::statics::JointReaction;
 
@@ -617,20 +617,9 @@ pub(crate) fn compute_sweep_data_with_weights(
                 // reactions reflect the actuator as the prime mover. The
                 // GUI's per-pose display calls the same helper, which is
                 // why the canvas / property panel and the plot agree.
-                let pending_reactions: Option<Vec<JointReaction>> =
-                    match solve_reactions_with_actuator(mech, &q, t, omega) {
-                        Ok(r) => {
-                            data.driver_torques
-                                .as_mut()
-                                .unwrap()
-                                .push(r.driver_torque.unwrap_or(0.0));
-                            Some(r.reactions)
-                        }
-                        Err(_) => {
-                            data.driver_torques.as_mut().unwrap().push(0.0);
-                            None
-                        }
-                    };
+                let (torque, pending_reactions) =
+                    statics_sample(solve_reactions_with_actuator(mech, &q, t, omega));
+                data.driver_torques.as_mut().unwrap().push(torque);
 
                 // Velocity solve for energy and mechanical advantage.
                 if let Ok(q_dot) = solve_velocity(mech, &q, t) {
@@ -740,8 +729,8 @@ pub(crate) fn compute_sweep_data_with_weights(
                     }
 
                     if let Some(builder) = breakdown.as_mut() {
-                        // A failed statics solve pushed a 0 driver torque above;
-                        // the breakdown reports NaN totals there, not a fake zero.
+                        // A failed statics solve pushed a NaN driver torque above;
+                        // the breakdown reports NaN totals there too.
                         let statics_ok = pending_reactions.is_some();
                         let last = |series: &Option<Vec<f64>>| {
                             series.as_ref().and_then(|s| s.last().copied()).unwrap_or(f64::NAN)
@@ -910,6 +899,17 @@ fn solve_sweep_positions(
     }
 
     positions
+}
+
+/// Driver torque and reactions of one statics solve. A failed solve gives
+/// `(NaN, None)`, never a fake zero torque, in both sweep modes (LGE-02).
+fn statics_sample(
+    solved: Result<ReactionSolveResult, LinkageError>,
+) -> (f64, Option<Vec<JointReaction>>) {
+    match solved {
+        Ok(r) => (r.driver_torque.unwrap_or(0.0), Some(r.reactions)),
+        Err(_) => (f64::NAN, None),
+    }
 }
 
 /// Append one joint's reaction at the current sample. A joint seen for the
@@ -1247,21 +1247,10 @@ pub fn compute_trajectory(
         // this sample) and uses u_dot_k as the input rate, so we use the
         // q_dot variant of the helper. solve_velocity's constant-speed
         // Φ_t would give the wrong scaling here.
-        let mut pending_reactions: Option<Vec<JointReaction>> = None;
-        let mut driver_effort_now = f64::NAN;
-        match solve_reactions_with_actuator_using_q_dot(
-            mech, &q_k, &q_dot_k, t_mech_k, u_dot_k,
-        ) {
-            Ok(r) => {
-                let torque = r.driver_torque.unwrap_or(0.0);
-                data.driver_torques.as_mut().unwrap().push(torque);
-                driver_effort_now = torque;
-                pending_reactions = Some(r.reactions);
-            }
-            Err(_) => {
-                data.driver_torques.as_mut().unwrap().push(f64::NAN);
-            }
-        }
+        let (driver_effort_now, pending_reactions) = statics_sample(
+            solve_reactions_with_actuator_using_q_dot(mech, &q_k, &q_dot_k, t_mech_k, u_dot_k),
+        );
+        data.driver_torques.as_mut().unwrap().push(driver_effort_now);
 
         // Actuator force per sample. Two paths:
         //   1) LinearDriver constraint: the driver's Lagrange multiplier (statics
@@ -2300,6 +2289,16 @@ mod tests {
                 assert_eq!(series[k].is_nan(), a.is_nan(), "joint {id} sample {k}: reaction NaN iff the pose failed");
             }
         }
+    }
+
+    /// LGE-02: a statics solve that fails is no torque reading. The forward
+    /// sweep stored 0.0 (trajectory mode stored NaN), so a failed sample read
+    /// as "no torque needed" in plots, envelopes and the actuator force.
+    #[test]
+    fn failed_statics_solve_is_a_nan_driver_torque() {
+        let (torque, reactions) = statics_sample(Err(LinkageError::SvdSolveFailed));
+        assert!(torque.is_nan(), "failed statics solve gave torque {torque}");
+        assert!(reactions.is_none());
     }
 
     // ── SweepData::index_at_driver (BL-010 label lookup) ──────────────────

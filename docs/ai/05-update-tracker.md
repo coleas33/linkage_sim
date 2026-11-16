@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 — A failed statics solve is a NaN driver torque in both sweep modes (audit LGE-02; branch audit/2026-11-16-section-a)
+- What changed: in `linkage-sim-rs/src/gui/sweep/mod.rs` the forward sweep stored a failed statics solve as a driver torque of 0.0 (trajectory mode stored NaN), so a failed sample read as "no torque needed". Both modes now call `statics_sample`, which gives NaN on a failed solve. Readers of `driver_torques` checked: the plots (gaps), `compute_envelope` (filters non-finite), the CSV and report exports (NaN or null), the weight breakdown, the actuator force and power (NaN in, NaN out) and motion_profile.rs (skips non-finite) already handle NaN as trajectory mode does; `ParametricMetric::RmsDriverTorque` (state/parametric.rs) turned the whole sweep NaN, so it now takes the RMS of the solved samples.
+- Tests: `failed_statics_solve_is_a_nan_driver_torque` (gui/sweep/mod.rs) and `rms_driver_torque_metric_skips_failed_samples` (gui/state/tests.rs). The statics solve only fails on an unbuilt mechanism or an SVD failure, which no sweep fixture reaches, so the test calls `statics_sample` with a failed solve.
+
 ## 2026-11-16 — Joint reaction series stay aligned with the angle axis when early sweep samples fail (audit LGE-01; branch audit/2026-11-16-section-a)
 - What changed: in `linkage-sim-rs/src/gui/sweep/mod.rs` a joint's reaction series was created at the first sample that solved, so a sweep whose first samples fail left it shorter than `angles_deg` and every later reaction was plotted and exported against the wrong angle. The new `push_reaction` pads a new series with NaN up to the current sample; the forward sweep and trajectory mode both use it.
 - Test: `sweep_reaction_series_stay_aligned_when_first_sample_fails` (a 4-bar whose 0 deg sample cannot assemble).

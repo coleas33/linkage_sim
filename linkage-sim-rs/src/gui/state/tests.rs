@@ -2964,6 +2964,20 @@
         assert!(ke >= 0.0, "peak KE should be non-negative, got {}", ke);
     }
 
+    /// LGE-02: failed statics samples are NaN driver torques; the RMS metric
+    /// must skip them, not turn the whole sweep into NaN.
+    #[test]
+    fn rms_driver_torque_metric_skips_failed_samples() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.compute_sweep();
+        let mut sweep = state.sweep_data.clone().expect("should have sweep data");
+        let all = ParametricMetric::RmsDriverTorque.extract(&sweep);
+        sweep.driver_torques.as_mut().unwrap()[0] = f64::NAN;
+        let with_gap = ParametricMetric::RmsDriverTorque.extract(&sweep);
+        assert!(all.is_finite() && with_gap.is_finite(), "{all} {with_gap}");
+    }
+
     // ── Counterbalance tests ──────────────────────────────────────────────
 
     #[test]

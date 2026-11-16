@@ -126,9 +126,10 @@ impl ParametricMetric {
                 .driver_torques
                 .as_ref()
                 .map(|v| {
-                    let n = v.len() as f64;
-                    if n == 0.0 { return 0.0; }
-                    (v.iter().map(|x| x * x).sum::<f64>() / n).sqrt()
+                    // Failed samples are NaN: RMS over the solved ones.
+                    let solved: Vec<f64> = v.iter().copied().filter(|x| x.is_finite()).collect();
+                    if solved.is_empty() { return 0.0; }
+                    (solved.iter().map(|x| x * x).sum::<f64>() / solved.len() as f64).sqrt()
                 })
                 .unwrap_or(0.0),
             Self::MinTransmissionAngle => sweep
