@@ -11,7 +11,7 @@
 //! and E16 (C189: the disc bored out of the web for the adapter pilot is priced
 //! at the cup's density, aluminium with no back iron under E9); and E25 (C135,
 //! C136: the rotating diameter is the largest of the cup, the cap and the shaft
-//! boss), an assumption that is not approved (docs/ai/backlog.yaml BL-061).
+//! boss), approved by the owner on 2026-11-16 (docs/ai/backlog.yaml BL-061).
 
 use std::f64::consts::PI;
 

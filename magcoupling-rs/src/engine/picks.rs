@@ -53,7 +53,7 @@ const MAGNET_CTE_INPUT: &str = "temperature.mismatch.ndfeb_cte_per_C";
 
 /// The magnet conductivity the magnets' eddy heat reads: where both rings' grades are of a
 /// family with a conductivity of its own (SmCo, ferrite, bonded NdFeB), neither ring reads it
-/// (correction E26, an assumption that is not approved).
+/// (correction E26, approved by the owner on 2026-11-16).
 const MAGNET_SIGMA_INPUT: &str = "temperature.slip_loss.sigma_ndfeb_S_m";
 
 /// One magnet ring's inputs: its part and its grade, and the manual fields a library part

@@ -1,5 +1,5 @@
 //! Slip heating (plan A-3 batch 3): the eddy-current slip losses (Temperature design C109 to
-//! C134, corrections E5, E17, and E26, an assumption that is not approved), the heat capacity
+//! C134, corrections E5, E17, and E26, approved by the owner on 2026-11-16), the heat capacity
 //! and thermal time constant (C137 to C161, E15),
 //! the time and drag to the limit (E12), the metal-design slip rows, and what they need to
 //! reach inputs: the materials in effect (Addendum A5), the mass model (C110 to C114, E8, E9)
@@ -130,7 +130,7 @@ pub const RECORDS: &[Record] = &[
     record("temperature.slip_loss.cap_W", "P_{cap}",
         "{temperature.slip_loss.end_factor} * {temperature.slip_loss.cap_sigma_S_m} * {metal.cap_axial_mm|m}
          * {temperature.duty.slip_rad_s}^2 * {temperature.slip_loss.cap_integral_T2m4}"),
-    // E26 (an assumption, not approved: BL-062): the conductivity each ring's magnets read
+    // E26 (approved by the owner on 2026-11-16: BL-062): the conductivity each ring's magnets read
     // (temperature::magnet_sigma_S_m). A grade whose family has a value of its own (SmCo,
     // ferrite, bonded NdFeB) supplies it; sintered NdFeB, so every library part, and a ring
     // with no grade keep the input.

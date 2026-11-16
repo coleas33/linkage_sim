@@ -39,7 +39,7 @@
 //! cure margin C24 is the lower of both rings' single-ring onsets less the cure
 //! temperature) and E22 (the mismatch screen and warning rule 6 read the inner
 //! ring's grade expansion, [`bond_plane_cte_per_C`], and the screens C106 and
-//! C202 compare the size of the shear). E26 is an assumption that is NOT approved
+//! C202 compare the size of the shear). E26 is approved by the owner (2026-11-16)
 //! (backlog BL-062): the magnets' eddy heat C129 reads each ring's conductivity by
 //! its grade's family, [`magnet_sigma_S_m`], where the workbook reads C113 for both.
 
@@ -942,7 +942,7 @@ pub fn bond_plane_cte_per_C(input_per_C: f64, inner: Option<&Grade>, dev: Deviat
     }
 }
 
-/// E26 (backlog BL-062; an assumption, NOT approved): the conductivity the eddy heat inside one
+/// E26 (backlog BL-062; approved by the owner on 2026-11-16): the conductivity the eddy heat inside one
 /// ring's magnets reads: the value of the ring's grade family where it has one (SmCo, ferrite,
 /// bonded NdFeB: [`crate::engine::grades::GradeFamily::magnet_sigma_S_m`]), else `input_S_m`
 /// (Temperature design C113: sintered NdFeB, so every library part, and a manual magnet

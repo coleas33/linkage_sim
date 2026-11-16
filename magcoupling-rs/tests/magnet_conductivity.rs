@@ -2,8 +2,8 @@
 //! `src/engine/temperature.rs`) reads each ring's conductivity by its grade's family
 //! (`GradeFamily::magnet_sigma_S_m`), end to end through `compute_all`. Sintered NdFeB, every
 //! library part and a ring with no grade keep the input (Temperature design!C113). The
-//! per-family values are an assumption under the owner's ruling of 2026-11-10 on open questions,
-//! not the owner's answer. The switch that turns E26 off is tested in `tests/deviations.rs`.
+//! per-family values were first the conservative answer under the owner's ruling of 2026-11-10 on
+//! open questions; the owner approved them on 2026-11-16. The switch that turns E26 off is tested in `tests/deviations.rs`.
 
 use magcoupling::compute_all;
 use magcoupling::engine::api::DesignInputs;

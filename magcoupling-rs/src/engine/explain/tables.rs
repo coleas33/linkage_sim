@@ -47,7 +47,7 @@ pub const TABLE_FIELDS: &[TableField] = &[
     TableField { table: "grades", field: "beta_hcj_per_C", symbol: "β_{grade}", unit: "1/°C", label: "Grade Hcj temperature coefficient (positive for hard ferrite)" },
     TableField { table: "grades", field: "tmax_C", symbol: "ϑ_{max,grade}", unit: "°C", label: "Grade maximum operating temperature" },
     TableField { table: "grades", field: "density_g_mm3", symbol: "ρ_{grade}", unit: "g/mm³", label: "Grade density" },
-    TableField { table: "grades", field: "magnet_sigma_S_m", symbol: "σ_{grade}", unit: "S/m", label: "Magnet conductivity of the grade's family (E26, an assumption that is not approved; none for sintered NdFeB)" },
+    TableField { table: "grades", field: "magnet_sigma_S_m", symbol: "σ_{grade}", unit: "S/m", label: "Magnet conductivity of the grade's family (E26; none for sintered NdFeB)" },
     TableField { table: "back_iron", field: "ferromagnetic", symbol: "ferro", unit: "-", label: "Back-iron material is ferromagnetic (1) or not (0)" },
     TableField { table: "back_iron", field: "sigma_S_m", symbol: "σ_{BI}", unit: "S/m", label: "Back-iron material conductivity (library)" },
     TableField { table: "back_iron", field: "density_g_mm3", symbol: "ρ_{BI}", unit: "g/mm³", label: "Back-iron material density (library)" },

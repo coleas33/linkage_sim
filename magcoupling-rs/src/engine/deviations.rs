@@ -14,11 +14,11 @@
 //! and 10: the inner ring's grade expansion in the bond plane) and the planned
 //! E23 (decisions 4, 5, 8 and 10: per-grade specific heat; registered, not yet
 //! in the code), approved on 2026-10-01. E25 (the space claim's diameter judges
-//! the shaft boss too) is NOT approved: it is an assumption, the conservative
-//! answer to an open question, taken under the owner's ruling of 2026-11-10 on
-//! open questions (`docs/ai/backlog.yaml`, BL-061; [`Approval::Assumed`]). So is
-//! E26 (the magnets' eddy heat reads each ring's conductivity by its grade's
-//! family; BL-062): NOT approved, an assumption under the same ruling.
+//! the shaft boss too) was first taken as the conservative answer to an open
+//! question, under the owner's ruling of 2026-11-10 on open questions, and the owner
+//! approved it on 2026-11-16 (`docs/ai/backlog.yaml`, BL-061; [`Approval::Owner`]).
+//! So was E26 (the magnets' eddy heat reads each ring's conductivity by its grade's
+//! family; BL-062): approved by the owner on 2026-11-16.
 //! Everything else stays
 //! workbook-exact. This registry is the one place that says where
 //! the port departs from the workbook and why.
@@ -74,12 +74,12 @@ pub const ADDENDUM_REPORT: &str = "docs/analyses/2026-09-30-magcoupling-addendum
 /// `docs/analyses/2026-10-01-magcoupling-addendum-a4-data.json`).
 pub const A4_REPORT: &str = "docs/analyses/2026-10-01-magcoupling-addendum-a4-verification.md";
 
-/// The backlog an assumed correction (E25 onward, [`Approval::Assumed`]) cites: its item
-/// there holds the open question. It is not a report and approves nothing.
+/// The backlog an owner-approved correction (E25 onward, [`Approval::Owner`]) cites: its
+/// item there holds the question, the answer and the dated approval. It is not a report.
 pub const BACKLOG: &str = "docs/ai/backlog.yaml";
 
-/// Identifier of an approved correction, numbered as in the audit report. E25 and E26 are
-/// assumptions that are not approved ([`Approval::Assumed`]).
+/// Identifier of an approved correction, numbered as in the audit report. E25 and E26 were
+/// approved by the owner on 2026-11-16 ([`Approval::Owner`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum DeviationId {
     E1,
@@ -166,8 +166,7 @@ pub enum DeviationClass {
     Documentation,
 }
 
-/// Where the user approved a correction; or, for [`Approval::Assumed`], that the user did
-/// not.
+/// Where the user approved a correction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Approval {
     /// Its row of the M1 audit report ([`REPORT`]), approved on 2026-09-29.
@@ -179,11 +178,12 @@ pub enum Approval {
     /// These decisions of the Addendum A-4 verification report ([`A4_REPORT`],
     /// section 5), approved (option A) on 2026-10-01. No audit row.
     AddendumA4 { decisions: &'static [u32] },
-    /// NOT approved by the user. The conservative answer to an open question, taken under
-    /// the owner's ruling of 2026-11-10 on open questions. The named item of
-    /// `docs/ai/backlog.yaml` ([`BACKLOG`]) holds the question, the answer taken and the
-    /// other answers; the owner can rule otherwise at the review of the diff.
-    Assumed { item: &'static str },
+    /// Approved by the owner on 2026-11-16 at the review of the item's diff (the owner's
+    /// words: "Approve and yes. Stop asking for my direction and do what you think is
+    /// best"). The answer was first taken as the conservative answer to an open question
+    /// under the owner's ruling of 2026-11-10. The named item of `docs/ai/backlog.yaml`
+    /// ([`BACKLOG`]) holds the question, the answer and the dated approval.
+    Owner { item: &'static str },
 }
 
 /// Whether the correction is in the code yet.
@@ -242,14 +242,14 @@ pub struct Probe {
     pub expect: &'static [CellChange],
 }
 
-/// One approved correction; or (E25, E26) one assumption that is not approved.
+/// One approved correction.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Deviation {
     pub id: DeviationId,
     /// Short statement of the workbook error (the report's Group column).
     pub title: &'static str,
     pub class: DeviationClass,
-    /// Where the user approved it; [`Approval::Assumed`] when the user did not (E25, E26).
+    /// Where the user approved it; [`Approval::Owner`] for E25 and E26.
     pub approval: Approval,
     /// Corrections this one refines; its probes run with them on, on both
     /// sides (decision 15). Empty for all but E15, E16 and E17 (on E9) and
@@ -260,7 +260,7 @@ pub struct Deviation {
     /// formulas and named downstream cells). Each exists in the snapshot.
     pub cells: &'static [&'static str],
     /// The correction, as approved (the report's Proposed correction column); for an
-    /// assumption, the answer taken.
+    /// owner approval, the answer taken and approved.
     pub corrected_formula: &'static str,
     /// Workbook defaults of inputs whose declared default this deviation
     /// corrects, by input path. Empty unless the deviation changes a default.
@@ -284,19 +284,19 @@ pub struct Deviation {
 }
 
 impl Deviation {
-    /// The report that approves this entry; for an assumption, the backlog that holds its
-    /// open question, which approves nothing.
+    /// The report that approves this entry; for an owner approval (E25, E26), the backlog
+    /// that holds the question, the answer and the dated approval.
     pub fn report(&self) -> &'static str {
         match self.approval {
             Approval::AuditRow => REPORT,
             Approval::Addendum { .. } => ADDENDUM_REPORT,
             Approval::AddendumA4 { .. } => A4_REPORT,
-            Approval::Assumed { .. } => BACKLOG,
+            Approval::Owner { .. } => BACKLOG,
         }
     }
 
     /// Where the evidence is: the audit report entry, or the Addendum A or A-4 decisions;
-    /// for an assumption, its backlog item, said to be an assumption and not an approval.
+    /// for an owner approval, its backlog item and the date.
     pub fn evidence(&self) -> String {
         match self.approval {
             Approval::AuditRow => format!("{REPORT}, entry {}", self.id),
@@ -306,8 +306,8 @@ impl Deviation {
             Approval::AddendumA4 { decisions } => {
                 format!("{A4_REPORT}, section 5, {}", decision_list(decisions))
             }
-            Approval::Assumed { item } => {
-                format!("{BACKLOG}, item {item}: an assumption, not an approval")
+            Approval::Owner { item } => {
+                format!("{BACKLOG}, item {item}: approved by the owner on 2026-11-16")
             }
         }
     }
@@ -1831,11 +1831,11 @@ pub const REGISTRY: &[Deviation] = &[
         id: DeviationId::E25,
         title: "The rotating diameter the space claim judges is the larger of the cup and the cap, though the shaft boss turns with them and can be larger",
         class: DeviationClass::Engine,
-        approval: Approval::Assumed { item: "BL-061" },
+        approval: Approval::Owner { item: "BL-061" },
         depends_on: &[],
         status: DeviationStatus::Applied,
         cells: &["Metal design!C135", "Metal design!C136"],
-        corrected_formula: "An assumption, not approved (docs/ai/backlog.yaml, BL-061: the conservative answer to an open \
+        corrected_formula: "Approved by the owner on 2026-11-16 (docs/ai/backlog.yaml, BL-061; first taken as the conservative answer to an open \
             question, under the owner's ruling of 2026-11-10). C135 = MAX(cup OD, cap OD C166, boss OD C127): the \
             rotating outside diameter is the largest of the cup, the front cap and the shaft boss. The diameter reserve \
             C136 = C131 - C135 reads it, and so do the Rust-only diameter overshoot and space-claim check. A boss at or \
@@ -1875,7 +1875,7 @@ pub const REGISTRY: &[Deviation] = &[
         id: DeviationId::E26,
         title: "The magnets' eddy heat gives every ring sintered NdFeB's conductivity, though SmCo conducts more and ferrite and bonded NdFeB far less",
         class: DeviationClass::Engine,
-        approval: Approval::Assumed { item: "BL-062" },
+        approval: Approval::Owner { item: "BL-062" },
         depends_on: &[],
         status: DeviationStatus::Applied,
         cells: &[
@@ -1920,7 +1920,7 @@ pub const REGISTRY: &[Deviation] = &[
             "Temperature design!C193",
             "Temperature design!C196",
         ],
-        corrected_formula: "An assumption, not approved (docs/ai/backlog.yaml, BL-062: the conservative answer to an open \
+        corrected_formula: "Approved by the owner on 2026-11-16 (docs/ai/backlog.yaml, BL-062; first taken as the conservative answer to an open \
             question, under the owner's ruling of 2026-11-10). C129 = (sigma_inner + sigma_outer) / 2 * we^2 * C122^2 * \
             w^2 / 24 * block volume * 2 * poles: each ring's half of the magnets' eddy heat reads its own ring's \
             conductivity, by the family of the ring's grade: Sm2Co17 1.54e6, SmCo5 2.5e6, sintered ferrite 1.0e2 (a \
@@ -2076,7 +2076,7 @@ pub struct Deviations {
 }
 
 impl Deviations {
-    /// Every approved correction, and the assumptions E25 and E26, which are not approved:
+    /// Every approved correction, E25 and E26 (owner-approved on 2026-11-16) included:
     /// what every user-facing computation uses.
     pub const ALL: Self = Self {
         mask: (1 << DeviationId::ALL.len()) - 1,
@@ -2180,9 +2180,9 @@ mod tests {
                 }
                 Approval::Addendum { decisions } => decided(decisions, DeviationId::E15, 31),
                 Approval::AddendumA4 { decisions } => decided(decisions, DeviationId::E21, 10),
-                // An assumption is newer than every approved entry (E1 to E24) and names
-                // its backlog item; tests/deviations.rs reads the item's text.
-                Approval::Assumed { item } => {
+                // An owner approval is newer than every report-approved entry (E1 to E24)
+                // and names its backlog item; tests/deviations.rs reads the item's text.
+                Approval::Owner { item } => {
                     assert!(
                         d.id.index() >= DeviationId::E25.index(),
                         "{}: E1 to E24 are approved",
@@ -2190,8 +2190,9 @@ mod tests {
                     );
                     assert!(item.starts_with("BL-"), "{} names no backlog item", d.id);
                     assert!(
-                        d.evidence()
-                            .ends_with(&format!("item {item}: an assumption, not an approval")),
+                        d.evidence().ends_with(&format!(
+                            "item {item}: approved by the owner on 2026-11-16"
+                        )),
                         "{}",
                         d.id
                     );
@@ -2229,20 +2230,20 @@ mod tests {
             REGISTRY[DeviationId::E24.index()].evidence(),
             format!("{A4_REPORT}, section 5, decision 2")
         );
-        // E25 is an assumption: its evidence names the backlog item and claims no approval.
+        // E25 is approved by the owner: its evidence names the backlog item and the date.
         let e25 = &REGISTRY[DeviationId::E25.index()];
-        assert_eq!(e25.approval, Approval::Assumed { item: "BL-061" });
+        assert_eq!(e25.approval, Approval::Owner { item: "BL-061" });
         assert_eq!(e25.report(), BACKLOG);
         assert_eq!(
             e25.evidence(),
-            format!("{BACKLOG}, item BL-061: an assumption, not an approval")
+            format!("{BACKLOG}, item BL-061: approved by the owner on 2026-11-16")
         );
         // So is E26.
         let e26 = &REGISTRY[DeviationId::E26.index()];
-        assert_eq!(e26.approval, Approval::Assumed { item: "BL-062" });
+        assert_eq!(e26.approval, Approval::Owner { item: "BL-062" });
         assert_eq!(
             e26.evidence(),
-            format!("{BACKLOG}, item BL-062: an assumption, not an approval")
+            format!("{BACKLOG}, item BL-062: approved by the owner on 2026-11-16")
         );
     }
 

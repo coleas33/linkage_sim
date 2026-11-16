@@ -29,8 +29,9 @@
 //!
 //! The magnets' electrical conductivity ([`GradeFamily::magnet_sigma_S_m`], backlog BL-062):
 //! one value per family, Rust-only, in no data file. Sintered NdFeB has none and keeps the C113
-//! input. Correction E26 reads each ring's. The values are NOT approved: they are an assumption,
-//! the conservative answer to an open question under the owner's ruling of 2026-11-10 (research:
+//! input. Correction E26 reads each ring's. The values were approved by the owner on 2026-11-16;
+//! they were first the conservative answer to an open question under the owner's ruling of
+//! 2026-11-10 (research:
 //! `docs/analyses/2026-11-09-magcoupling-bl062-conductivity-research.md`, sections 4 and 5).
 
 /// K&J Magnetics, Neodymium Magnet Specifications & Tolerances (the NdFeB basis, decision D1/1).
@@ -82,7 +83,7 @@ impl GradeFamily {
     /// (correction E26, backlog BL-062). `None` for sintered NdFeB: it keeps the input
     /// (Temperature design C113).
     ///
-    /// NOT approved by the owner. Each value is the highest one printed with a clear unit for
+    /// Approved by the owner on 2026-11-16. Each value is the highest one printed with a clear unit for
     /// its family, of the values the research kept (the report's options 2C, 3B, 4B and 5B):
     /// more conductivity is more heat here. The research set two higher prints aside. For
     /// SmCo5, Eclipse Magnetics' "16.6-20" in 10^6 S/m (its section 4.3, "NOT USED": ten times
@@ -762,7 +763,7 @@ mod tests {
 
     #[test]
     fn each_family_s_magnet_conductivity_is_the_one_taken_for_bl062() {
-        // Backlog BL-062, the report's options 1B, 2C, 3B, 4B and 5B: an assumption, not approved.
+        // Backlog BL-062, the report's options 1B, 2C, 3B, 4B and 5B: approved by the owner on 2026-11-16.
         use GradeFamily::{BondedNdFeB, Ferrite, NdFeB, SmCo1_5, SmCo2_17};
         assert_eq!(NdFeB.magnet_sigma_S_m(), None, "the C113 input stays");
         assert_eq!(SmCo2_17.magnet_sigma_S_m(), Some(1.54e6));

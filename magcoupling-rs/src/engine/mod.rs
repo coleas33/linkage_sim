@@ -7,8 +7,8 @@
 //! - [`meta`]: field metadata for inputs and results (`param`/`out`, the
 //!   `inputs!`/`results!` macros, dynamic [`meta::Value`] access by path);
 //! - [`compat`]: the Python and Excel semantics the port reproduces exactly;
-//! - [`deviations`]: the registry of approved corrections to the workbook (and of
-//!   E25 and E26, assumptions that are not approved).
+//! - [`deviations`]: the registry of approved corrections to the workbook (E25 and E26,
+//!   approved by the owner on 2026-11-16, included).
 
 pub mod api;
 pub mod assumptions;

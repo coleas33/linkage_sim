@@ -1004,8 +1004,8 @@ fn small_ring_with_boss(boss_mm: f64) -> DesignInputs {
 
 #[test]
 fn a_boss_larger_than_the_cup_and_cap_and_past_the_claim_fails_the_diameter_axis() {
-    // BL-061, correction E25 (an assumption under the owner's ruling of 2026-11-10, not an
-    // approval): the claim's diameter judges the largest of the cup, the cap and the shaft boss.
+    // BL-061, correction E25 (first an assumption under the owner's ruling of 2026-11-10;
+    // approved by the owner on 2026-11-16): the claim's diameter judges the largest of the cup, the cap and the shaft boss.
     // On the evidence design the cup and the cap are inside the 38 mm claim and the 40 mm boss
     // is 2 mm past it. The workbook's C135 leaves the boss out and read inside.
     let inputs = small_ring_with_boss(40.0);

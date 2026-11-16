@@ -50,8 +50,8 @@ pub const DIAMETER_HOVER: &str = "The largest of the cup, cap and shaft boss dia
 /// also says what the first move from a blank override does (BL-074): the override is counted
 /// from the outer ring the cup cavity holds, so that move is no step of the magnets where the
 /// rings' own lengths differ or the cavity is shorter than its ring
-/// (`engine::size_controls::resize_length`). Treating that as intended is an assumption under
-/// the owner's ruling of 2026-11-10, not the owner's answer.
+/// (`engine::size_controls::resize_length`). Treating that as intended was first an assumption
+/// under the owner's ruling of 2026-11-10; the owner approved it on 2026-11-16.
 pub const LENGTH_HOVER: &str = "The axial length of the coupling: the magnets and the housing around them. Moving it sets both rings' magnet length, and the housing follows. While the axial magnet length is blank, the first move sets both rings to one length. With rings of unequal length, or a cup cavity shorter than the outer ring, that move can change the magnet length by more than the step, or the other way, and the torque with it.";
 
 /// The Auto row (spec guidance 3.5): "Auto: smallest [size] that meets the required torque".
@@ -735,7 +735,7 @@ mod tests {
         assert!(DIAMETER_HOVER.contains(&ring), "{DIAMETER_HOVER}");
         assert!(LENGTH_HOVER.contains("magnet length"), "{LENGTH_HOVER}");
         // The Outside diameter counts the shaft boss. The space claim's rotating diameter counts
-        // it only with E25 (an assumption that is not approved; the workbook's is the cup and
+        // it only with E25 (approved by the owner on 2026-11-16; the workbook's is the cup and
         // the cap only, `engine::metal_design`): the hover never uses that name.
         assert!(DIAMETER_HOVER.contains("shaft boss"), "{DIAMETER_HOVER}");
         assert!(

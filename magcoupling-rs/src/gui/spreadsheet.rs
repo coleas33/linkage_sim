@@ -18,7 +18,7 @@ use crate::engine::deviations::REGISTRY;
 use crate::engine::explain::render;
 use crate::engine::meta::{InputSet, ResultSet, Value};
 use crate::engine::warnings::Severity;
-use crate::gui::corrections::{listed_title, marks_values};
+use crate::gui::corrections::marks_values;
 use crate::gui::dashboard::{
     Level, STORED_3D_LABEL, WARNINGS_HEADING, dashboard_lines, end_effect_banner, result_info,
     severity_level, warning_lines,
@@ -379,7 +379,7 @@ fn summary_sheet(snapshot: &Snapshot) -> Sheet {
     for deviation in REGISTRY.iter().filter(|deviation| marks_values(deviation)) {
         rows.push(vec![
             Cell::text(deviation.id.to_string()),
-            Cell::text(listed_title(deviation)),
+            Cell::text(deviation.title),
         ]);
     }
     Sheet {
@@ -1185,16 +1185,11 @@ mod tests {
             corrections + 1 + applied.len(),
             "the corrections are last"
         );
-        use crate::engine::deviations::DeviationId::{E25, E26};
         for (row, deviation) in rows[corrections + 1..].iter().zip(&applied) {
             assert_eq!(row[0], Cell::text(deviation.id.to_string()));
-            assert_eq!(row[1], Cell::text(listed_title(deviation)));
-            // The heading calls the approved ones on; only E25 and E26, assumptions, say they
-            // are not.
-            assert_eq!(
-                row[1].as_text().ends_with("(an assumption, not approved)"),
-                [E25, E26].contains(&deviation.id)
-            );
+            assert_eq!(row[1], Cell::text(deviation.title));
+            // The heading calls the approved ones on, and every listed one is approved.
+            assert!(!row[1].as_text().contains("not approved"));
         }
     }
 

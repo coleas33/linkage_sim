@@ -481,7 +481,7 @@ const SPACE_CLAIM_GUIDE: CheckGuide = CheckGuide {
 
 /// The inputs that shrink each space-claim axis, in the claim's order (diameter, overall
 /// length, large-diameter bay): the largest of the cap, the cup and the shaft boss sets the
-/// diameter (E25, an assumption that is not approved: BL-061), and the Outside diameter's
+/// diameter (E25, approved by the owner on 2026-11-16: BL-061), and the Outside diameter's
 /// slider moves the cap and the cup; the magnets lengthen both stacks.
 const SPACE_CLAIM_AXES: [&[(&str, Direction)]; 3] = [
     &[

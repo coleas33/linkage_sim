@@ -3,8 +3,8 @@
 //! through `compute_all`. The workbook's screen (Temperature design!C201 and C202) reads the
 //! shear at the recommended bondline (C103) and stays cell for cell; the second screen reads
 //! the shear at the bondline the user entered (Metal design!C120). Two Rust-only results. The
-//! answer "report both" is an assumption under the owner's ruling of 2026-11-10 on open
-//! questions, not the owner's answer.
+//! answer "report both" was first the conservative answer under the owner's ruling of 2026-11-10
+//! on open questions; the owner approved it on 2026-11-16.
 
 use std::cmp::Ordering;
 

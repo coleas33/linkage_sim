@@ -225,9 +225,9 @@ fn both_rings_are(changed: &DesignInputs, results: &DesignResults, length_mm: f6
 }
 
 // BL-074: the four tests below pin the Overall length slider's first move from a blank override
-// as the engine has it. Treating that move as intended is an assumption under the owner's
-// ruling of 2026-11-10 (docs/analyses/2026-11-10-conservative-assumptions.md, row A-11), not the
-// owner's answer; a mapping change chosen with the owner would move these numbers.
+// as the engine has it. Treating that move as intended was first an assumption under the owner's
+// ruling of 2026-11-10 (docs/analyses/2026-11-10-conservative-assumptions.md, row A-11); the
+// owner approved it on 2026-11-16; a mapping change chosen with the owner would move these numbers.
 
 #[test]
 fn a_first_length_move_moves_the_magnets_by_the_step_where_the_cavity_holds_the_ring() {

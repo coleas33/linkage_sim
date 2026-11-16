@@ -14,7 +14,7 @@ use crate::engine::explain::record::{Record, record};
 #[rustfmt::skip]
 pub const RECORDS: &[Record] = &[
     // --- The derived dimensions and their reserves (metal_design::compute) ---
-    // E25 (an assumption, not approved: BL-061): the shaft boss counts too.
+    // E25 (approved by the owner on 2026-11-16: BL-061): the shaft boss counts too.
     record("metal.rotating_od_mm", "D_{rot}", "max({model.cup_od_mm}, {metal.cap_od_mm}, {metal.boss_od_mm})")
         .corrected(&[E25]),
     record("metal.axial_stack_mm", "L_{stack}",

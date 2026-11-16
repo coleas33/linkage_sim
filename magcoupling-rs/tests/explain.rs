@@ -326,7 +326,7 @@ fn edge_points() -> Vec<(&'static str, Vec<(&'static str, Value)>)> {
                 Value::Num(default_num("metal.min_running_clearance_mm")),
             )],
         ),
-        // E25 (BL-061, an assumption that is not approved): a shaft boss above the cup and the
+        // E25 (BL-061, approved by the owner on 2026-11-16): a shaft boss above the cup and the
         // 42.8 mm cap is the rotating diameter the space claim judges. The guard traces only the
         // argument of `max` that governs, so it reads the record's boss term only where the boss
         // is the largest: at two diameters here, so that the term takes two values.

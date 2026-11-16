@@ -276,17 +276,17 @@ fn every_entry_is_approved_in_its_report() {
                 }
                 assert_eq!(d.class, DeviationClass::Engine, "{}", d.id);
             }
-            // E25 and E26 are not approved. Each is an assumption: the backlog item holds the
-            // open question and says the answer taken is not the owner's.
-            Approval::Assumed { item } => {
+            // E25 and E26 are approved by the owner, not by a report: the backlog item holds
+            // the question, the answer and the dated approval.
+            Approval::Owner { item } => {
                 let backlog = read_text(&repo_path(BACKLOG));
                 let entry = backlog
                     .split_once(&format!("\n- id: {item}\n"))
                     .map(|(_, rest)| rest.split("\n- id: ").next().unwrap_or(rest))
                     .unwrap_or_else(|| panic!("{BACKLOG} has no item {item}"));
                 assert!(
-                    entry.contains("It is an assumption, not the owner's answer to the question"),
-                    "{}: {BACKLOG} item {item} does not say it is an assumption",
+                    entry.contains("Approved by the owner on 2026-11-16"),
+                    "{}: {BACKLOG} item {item} does not hold the dated owner approval",
                     d.id
                 );
                 assert!(d.id.index() >= DeviationId::E25.index(), "{}", d.id);
@@ -3115,7 +3115,7 @@ fn e25_leaves_every_default_cell_bit_for_bit() {
 
 #[test]
 fn e25_moves_only_a_boss_larger_than_the_cup_and_cap() {
-    // BL-061, an assumption that is not approved. On the probe's design the cap (36.18 mm) is
+    // BL-061, approved by the owner on 2026-11-16. On the probe's design the cap (36.18 mm) is
     // larger than the cup. A boss below it, or equal to it, leaves every result row bit for
     // bit. The 40 mm boss moves the rotating diameter C135 and its reserve C136, no other
     // cell, and the space claim no longer reads inside.
@@ -3173,7 +3173,7 @@ fn e26_leaves_every_default_cell_bit_for_bit() {
 
 #[test]
 fn e26_moves_only_a_ring_of_another_family() {
-    // BL-062, an assumption that is not approved. Each ring's half of the magnets' eddy heat
+    // BL-062, approved by the owner on 2026-11-16. Each ring's half of the magnets' eddy heat
     // reads its own ring's conductivity: the family's value for a SmCo, ferrite or bonded NdFeB
     // grade on manual dimensions, else C113. Nothing moves for a sintered NdFeB grade or for a
     // library part, on both bases. Wired as built: E26 equals E26 off with C113 set to the mean

@@ -81,8 +81,8 @@ results! {
     }
 }
 
-/// Computes every result from the inputs, with all approved corrections (and E25 and E26,
-/// assumptions that are not approved).
+/// Computes every result from the inputs, with all approved corrections (E25 and E26,
+/// approved by the owner on 2026-11-16, included).
 ///
 /// Pure: no I/O, no global state; cheap enough to call on every GUI frame.
 pub fn compute_all(inputs: &DesignInputs) -> DesignResults {
