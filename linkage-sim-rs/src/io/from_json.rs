@@ -186,7 +186,7 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
         // ones the loader rejects (listed for the user by `point_mass_warnings`).
         apply_point_masses(&mut body, &body_json.point_masses);
         mech.add_body(body)
-            .map_err(|e| SerializationError::Build(e.to_string()))?;
+            .map_err(SerializationError::build)?;
     }
 
     // Rebuild joints (geometric constraints only; drivers are separate)
@@ -200,7 +200,7 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
                 ..
             } => {
                 mech.add_revolute_joint(joint_id, body_i, point_i, body_j, point_j)
-                    .map_err(|e| SerializationError::Build(e.to_string()))?;
+                    .map_err(SerializationError::build)?;
             }
             JointJson::Fixed {
                 body_i,
@@ -218,7 +218,7 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
                     point_j,
                     *delta_theta_0,
                 )
-                .map_err(|e| SerializationError::Build(e.to_string()))?;
+                .map_err(SerializationError::build)?;
             }
             JointJson::Prismatic {
                 body_i,
@@ -238,7 +238,7 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
                     Vector2::new(axis_local_i[0], axis_local_i[1]),
                     *delta_theta_0,
                 )
-                .map_err(|e| SerializationError::Build(e.to_string()))?;
+                .map_err(SerializationError::build)?;
             }
             JointJson::CamFollower {
                 body_i,
@@ -258,7 +258,7 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
                     Vector2::new(follower_direction[0], follower_direction[1]),
                     profile.clone(),
                 )
-                .map_err(|e| SerializationError::Build(e.to_string()))?;
+                .map_err(SerializationError::build)?;
             }
             JointJson::RevoluteDriver { .. } => {
                 // Legacy format: drivers in the joints map. Skip silently --
@@ -281,7 +281,7 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
                 // animatable mechanisms.
                 let safe_omega = clamp_driver_omega(*omega);
                 mech.add_constant_speed_driver(driver_id, body_i, body_j, safe_omega, *theta_0)
-                    .map_err(|e| SerializationError::Build(e.to_string()))?;
+                    .map_err(SerializationError::build)?;
             }
             DriverJson::Expression {
                 body_i,
@@ -293,7 +293,7 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
                 mech.add_expression_driver(
                     driver_id, body_i, body_j, expr, expr_dot, expr_ddot,
                 )
-                .map_err(|e| SerializationError::Build(e.to_string()))?;
+                .map_err(SerializationError::build)?;
             }
         }
     }
@@ -322,7 +322,7 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
             ),
         };
         mech.add_linear_driver(driver)
-            .map_err(|e| SerializationError::Build(e.to_string()))?;
+            .map_err(SerializationError::build)?;
     }
 
     // Restore force elements, resolving any named mount/attachment points
@@ -336,7 +336,7 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
             Ok(r) => resolved_forces.push(r),
             // A force on a body that does not exist cannot load.
             Err(e @ BodyError::UnknownBody { .. }) => {
-                return Err(SerializationError::Build(e.to_string()))
+                return Err(SerializationError::build(e))
             }
             Err(e) => {
                 log::warn!("Failed to resolve force point name: {e}");
@@ -402,7 +402,7 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
 pub fn load_mechanism(json_str: &str) -> Result<Mechanism, SerializationError> {
     let mut mech = load_mechanism_unbuilt(json_str)?;
     mech.build()
-        .map_err(|e| SerializationError::Build(e.to_string()))?;
+        .map_err(SerializationError::build)?;
     Ok(mech)
 }
 
