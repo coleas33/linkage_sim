@@ -251,8 +251,8 @@
   evidence: "cargo clippy --all-targets 2026-08-08: lib 289 warnings, lib-test 305 (278 dupes); top lints collapsible_if 167, too_many_arguments 17, empty_line_after_doc_comments 13"
   acceptance: "cargo clippy --all-targets produces 0 warnings on lib and lib-test targets; cargo test --all stays green"
   priority: 3
-  status: open
-  notes: "Mostly cargo clippy --fix + review; too_many_arguments items may be deferred individually with reasons."
+  status: fixed
+  notes: "Fixed 2026-11-16 (INF-02): zero warnings, gate 2 now runs -D warnings. Mostly cargo clippy --fix + review; too_many_arguments items may be deferred individually with reasons."
 
 - id: BL-004
   title: docs/guides/WASM_DEPLOYMENT.md drifted from actual build/deploy config
