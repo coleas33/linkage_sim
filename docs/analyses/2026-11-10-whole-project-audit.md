@@ -266,10 +266,10 @@ You asked for repetition to be flagged hard. None of these was merged: each merg
 - **LGC-10** Force editor repeats one DragValue block about 50 times in a 1,100-line function.
 - **LGC-06** Fourteen copies of the plot trailer and the per-plot Plot builder.
 - **LGS-15** Templates and custom samples are two full copies of the same persistence and CRUD code.
-- **LGS-09** Eight-plus copies of the "generate text, download, report outcome" menu block.
-- **LGE-15** The four-bar skeleton is hand-copied into eleven sample builders although build_standard_fourbar exists.
+- **LGS-09** Eight-plus copies of the "generate text, download, report outcome" menu block. FIXED 0a115f4: `download_generated` in menu_bar.rs used by all eleven sites; unused `download_text` removed.
+- **LGE-15** The four-bar skeleton is hand-copied into eleven sample builders although build_standard_fourbar exists. FIXED ed2f476: six builders (quick-return, toggle clamp, Hoeken, Roberts, figure-8 curve, pantograph) use it; the rest differ and stay.
 - **LGE-12** compute_sweep_data_with_weights and compute_trajectory repeat the same setup; SweepData is built long-hand three times.
-- **LGE-13** write_sweep_csv codes each of eleven optional columns twice.
+- **LGE-13** write_sweep_csv codes each of eleven optional columns twice. FIXED 034ffc3: one column list drives header and rows; output pinned byte for byte.
 - **LFA-06** The "four two-point forces" match is written out in eight places. FIXED 3f5635f: `ForceElement::two_point_ends` (and `_mut`) used by seven sites; `attached_body_ids` left, the compiler checks it.
 - **LFA-04** Four identical copies of the body-lookup block in `joint_to_json`. FIXED b1c80a1: `joint_bodies` helper.
 - **LFA-14** `.map_err(|e| SerializationError::Build(e.to_string()))` repeated nine times in from_json and four more lookups in to_json. FIXED 2cf46d2 (from_json, `SerializationError::build`) and b1c80a1 (to_json lookups).

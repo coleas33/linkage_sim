@@ -5,6 +5,18 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - sweep CSV column list (audit LGE-13; branch audit/2026-11-16-dry)
+- What changed: LGE-13 (034ffc3): `write_sweep_csv` in gui/export/csv.rs builds one list of columns (header, decimals, series) and writes the header and every row from it; the toggle column stays sparse (blank on NaN). Output is byte-identical.
+- Tests: new `sweep_csv_all_columns_pinned` pins header and rows with every optional column, a short series and a toggle; it passed on the old code first. cargo test --all and cargo clippy --all-targets -- -D warnings pass.
+
+## 2026-11-16 - menu download helper (audit LGS-09; branch audit/2026-11-16-dry)
+- What changed: LGS-09 (0a115f4): the File menu's "generate, download, report" block (eleven sites) is `download_generated` in gui/menu_bar.rs, with the same file names, MIME types, filters and error messages. `download::download_text` had no caller left and is removed; `download_bytes` takes text as bytes.
+- Tests: new `a_failed_generation_is_logged_with_its_prefix_and_opens_the_error_panel`; the Ok path opens a save dialog and cannot run headless. cargo test --all and cargo clippy --all-targets -- -D warnings pass; wasm32 lib check compiles the web-only JSON download.
+
+## 2026-11-16 - sample builders use build_standard_fourbar (audit LGE-15; branch audit/2026-11-16-dry)
+- What changed: LGE-15 (ed2f476): quick-return, toggle clamp, Hoeken, Roberts, figure-8 coupler curve and pantograph call `build_standard_fourbar` (now `pub(super)`; coupler point is an optional (x, y), plus an `above` flag). Left as they are because the skeleton differs: build_fourbar_with_driver, parallelogram press and actuator, both Chebyshev samples, slider-cranks, Whitworth, bell crank, six-bars. No behaviour change.
+- Tests: new `standard_fourbar_samples_keep_their_coupler_point_and_branch`; golden fixture tests unchanged and green; cargo test --all and cargo clippy --all-targets -- -D warnings pass.
+
 ## 2026-11-16 - serialization error helper, joint body lookup and two-point force view (audit LFA-14, LFA-04, LFA-06; branch audit/2026-11-16-dry)
 - What changed: LFA-14 (2cf46d2): `SerializationError::build(cause)` replaces the `|e| SerializationError::Build(e.to_string())` closure at ten sites in io/from_json.rs. LFA-04 (b1c80a1): `joint_bodies` in io/to_json.rs does the two body lookups of the four `joint_to_json` arms (this also covers the four to_json lookups LFA-14 listed; message unchanged). LFA-06 (3f5635f): `ForceElement::two_point_ends` and `two_point_ends_mut` name the spring, damper, gas spring and actuator once; compound.rs (three functions and a test), `resolve_named_points` and from_json.rs (two helpers) use them. `attached_body_ids` keeps its full variant list (the compiler checks it). No behaviour change; no copy differed.
 - Tests: new `joint_bodies_tests` (exact messages) and a `two_point_ends` test; cargo test --all and cargo clippy --all-targets -- -D warnings pass.
