@@ -1,4 +1,7 @@
-# Upda## 2026-11-16 - A failed open, save or shared-link load shows in the status line (audit LGS-10; branch audit/2026-11-16-section-a)
+# Upda## 2026-11-16 - The deploy runs the tests before it builds or deploys (audit INF-05; branch audit/2026-11-16-section-a)
+- What changed: .github/workflows/deploy-web.yml has three new steps before the wasm-bindgen install and build: cargo test --all (linkage-sim-rs), cargo test and cargo test --features app (magcoupling-rs), gate.sh gates 1, 4 and 7 on the pinned 1.89.0 toolchain and the existing cache. Clippy, the Python oracle and the wasm-bindgen parity gates stay local. docs/guides/WASM_DEPLOYMENT.md said the deploy installs the stable toolchain; it now says 1.89.0 and lists the test step.
+- Tests: none possible for CI YAML. The YAML parses (python yaml.safe_load, step order checked) and each added command exits 0 locally.
+## 2026-11-16 - A failed open, save or shared-link load shows in the status line (audit LGS-10; branch audit/2026-11-16-section-a)
 - What changed: new AppState::report_failure (gui/state/file_io.rs) logs and sets status_message (5 s) to "<what>: <error>". Open JSON, Recent Files, Save, Save As (menu_bar.rs), Ctrl+S, Ctrl+Shift+S and the shared-URL load (gui/mod.rs) call it instead of log::error! alone. Readers checked: recover_autosave_file and recover_wasm_autosave already set a status on failure, left as is; save_to_file/load_from_file still return Err unchanged; the status line reader is unchanged.
 - Tests: failed_save_is_shown_in_the_status_line (red first: report_failure stubbed as a no-op, the status stayed empty). Commit 78f4fe4.
 ## 2026-11-16 - GIF export fails when no frame is written or the driver speed is zero (audit LGE-04; branch audit/2026-11-16-section-a)
