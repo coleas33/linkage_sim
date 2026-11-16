@@ -31,46 +31,7 @@ impl TimeModulation {
     /// Note: for the `Expression` variant this re-parses the expression string
     /// on every call. In hot loops prefer [`compile`] to pre-parse once.
     pub fn factor(&self, t: f64) -> f64 {
-        match self {
-            TimeModulation::Constant => 1.0,
-            TimeModulation::Sinusoidal { omega, phase } => (omega * t + phase).sin(),
-            TimeModulation::Step { t_on } => {
-                if t >= *t_on {
-                    1.0
-                } else {
-                    0.0
-                }
-            }
-            TimeModulation::Ramp { t_start, t_end } => {
-                if t <= *t_start {
-                    0.0
-                } else if t >= *t_end {
-                    1.0
-                } else {
-                    (t - t_start) / (t_end - t_start)
-                }
-            }
-            TimeModulation::Expression { expr } => {
-                // Parse and evaluate (re-parse each call for thread safety,
-                // same pattern as ExprEval in the driver module).
-                match expr.parse::<meval::Expr>() {
-                    Ok(parsed) => match parsed.bind("t") {
-                        Ok(f) => {
-                            let val = f(t);
-                            if val.is_finite() { val } else { 0.0 }
-                        }
-                        Err(_) => {
-                            log::warn!("TimeModulation: failed to bind variable 't' in expression '{expr}' — force disabled");
-                            0.0
-                        }
-                    },
-                    Err(_) => {
-                        log::warn!("TimeModulation: failed to parse expression '{expr}' — force disabled");
-                        0.0
-                    }
-                }
-            }
-        }
+        self.compile()(t)
     }
 
     /// Pre-compile this modulation into a closure that can be called repeatedly
@@ -127,5 +88,33 @@ impl TimeModulation {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn factor_matches_each_variant() {
+        assert_eq!(TimeModulation::Constant.factor(3.0), 1.0);
+        let s = TimeModulation::Sinusoidal { omega: 2.0, phase: 0.5 };
+        assert!((s.factor(1.0) - (2.5_f64).sin()).abs() < 1e-15);
+        let step = TimeModulation::Step { t_on: 1.0 };
+        assert_eq!((step.factor(0.99), step.factor(1.0)), (0.0, 1.0));
+        let ramp = TimeModulation::Ramp { t_start: 1.0, t_end: 3.0 };
+        assert_eq!((ramp.factor(0.0), ramp.factor(2.0), ramp.factor(4.0)), (0.0, 0.5, 1.0));
+        let e = TimeModulation::Expression { expr: "2*t".to_string() };
+        assert_eq!(e.factor(1.5), 3.0);
+    }
+
+    #[test]
+    fn expression_bad_or_non_finite_gives_zero() {
+        let bad = TimeModulation::Expression { expr: "sin(".to_string() };
+        assert_eq!(bad.factor(1.0), 0.0);
+        let unbound = TimeModulation::Expression { expr: "x + 1".to_string() };
+        assert_eq!(unbound.factor(1.0), 0.0);
+        let inf = TimeModulation::Expression { expr: "1/t".to_string() };
+        assert_eq!(inf.factor(0.0), 0.0);
     }
 }
