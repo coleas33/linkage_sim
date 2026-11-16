@@ -119,12 +119,26 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                     // ── Label + Delete ───────────────────────────────────
                     if body_id != GROUND_ID {
                         ui.horizontal(|ui| {
-                            let mut label = body.label.clone();
-                            if ui.text_edit_singleline(&mut label).changed() {
-                                pending = Some(PendingPropertyEdit::UpdateLabel {
-                                    body_id: body_id.clone(),
-                                    label,
-                                });
+                            // The text being typed lives in egui memory; one edit
+                            // (one undo step) commits when the field loses focus.
+                            let typing_id = ui.id().with(("link_label_typing", &body_id));
+                            let mut label = ui
+                                .data(|d| d.get_temp::<String>(typing_id))
+                                .unwrap_or_else(|| body.label.clone());
+                            let response = ui.text_edit_singleline(&mut label);
+                            if response.has_focus() {
+                                ui.data_mut(|d| d.insert_temp(typing_id, label));
+                            } else {
+                                ui.data_mut(|d| d.remove::<String>(typing_id));
+                                if response.lost_focus()
+                                    && label != body.label
+                                    && !ui.input(|i| i.key_pressed(egui::Key::Escape))
+                                {
+                                    pending = Some(PendingPropertyEdit::UpdateLabel {
+                                        body_id: body_id.clone(),
+                                        label,
+                                    });
+                                }
                             }
                             let delete_btn = egui::Button::new(
                                 egui::RichText::new("Delete")

@@ -934,6 +934,47 @@ mod tests {
     }
 
     #[test]
+    fn cosine_linear_driver_round_trips_through_json() {
+        use crate::core::constraint::Constraint;
+        use crate::core::driver::DriverMeta;
+        use crate::core::linear_driver::cosine_linear_driver;
+
+        let ground = make_ground(&[("O", 0.0, 0.0), ("P", 0.0, 0.0)]);
+        let crank = make_bar("crank", "A", "B", 1.0, 2.0, 0.01);
+        let mut mech = Mechanism::new();
+        mech.add_body(ground).unwrap();
+        mech.add_body(crank).unwrap();
+        mech.add_revolute_joint("J1", "ground", "O", "crank", "A").unwrap();
+        let driver = cosine_linear_driver(
+            "LD1", "ground", [0.0, 0.0], "crank", [1.0, 0.0], 0.5, 1.5, 0.8,
+        );
+        mech.add_linear_driver(driver).unwrap();
+        mech.build().unwrap();
+        // phi_t = -f'(t): compares the driven motion of original and loaded.
+        let q = nalgebra::DVector::zeros(mech.state().n_coords());
+        let orig_vals: Vec<f64> = [0.0, 0.13, 0.4]
+            .iter()
+            .map(|&t| mech.linear_drivers()[0].phi_t(mech.state(), &q, t)[0])
+            .collect();
+
+        let json_str = save_mechanism(&mech).unwrap();
+        let mut loaded = load_mechanism_unbuilt(&json_str).unwrap();
+        loaded.build().unwrap();
+        let ld = &loaded.linear_drivers()[0];
+        match ld.meta() {
+            Some(DriverMeta::CosineStroke { stroke_min, stroke_max, initial_length }) => {
+                assert_abs_diff_eq!(*stroke_min, 0.5, epsilon = 1e-15);
+                assert_abs_diff_eq!(*stroke_max, 1.5, epsilon = 1e-15);
+                assert_abs_diff_eq!(*initial_length, 0.8, epsilon = 1e-15);
+            }
+            other => panic!("Expected CosineStroke meta, got {:?}", other),
+        }
+        for (&t, v) in [0.0, 0.13, 0.4].iter().zip(orig_vals) {
+            assert_abs_diff_eq!(ld.phi_t(loaded.state(), &q, t)[0], v, epsilon = 1e-12);
+        }
+    }
+
+    #[test]
     fn old_json_without_linear_drivers_loads_cleanly() {
         // Simulate a file from before linear_drivers existed.
         let json = r#"{

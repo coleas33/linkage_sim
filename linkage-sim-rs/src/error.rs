@@ -14,6 +14,14 @@ pub enum LinkageError {
     #[error("Mechanism must be built before solving.")]
     MechanismNotBuilt,
 
+    /// The mechanism is built but has no revolute driver, so there is no input to size.
+    #[error("Mechanism has no driver; add a revolute driver before this analysis.")]
+    NoDriver,
+
+    /// A control target holds values that cannot define an observable.
+    #[error("Invalid control target: {0}")]
+    InvalidControlTarget(String),
+
     // -- Numerical errors (solver failures) --
     /// The position Newton-Raphson iteration did not converge.
     #[error(

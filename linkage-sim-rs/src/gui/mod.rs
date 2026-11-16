@@ -1151,22 +1151,7 @@ impl eframe::App for LinkageApp {
                         .num_columns(2)
                         .spacing([20.0, 6.0])
                         .show(ui, |ui| {
-                            let shortcuts = [
-                                ("Ctrl+N", "New empty mechanism"),
-                                ("Ctrl+S", "Save (quick save to last path)"),
-                                ("Ctrl+Shift+S", "Save As (choose new path)"),
-                                ("Ctrl+Z", "Undo"),
-                                ("Ctrl+Y / Ctrl+Shift+Z", "Redo"),
-                                ("Delete / Backspace", "Delete selected entity"),
-                                ("Escape", "Cancel current tool / operation"),
-                                ("Enter / Double-click", "Finish multi-point body"),
-                                ("Mouse wheel", "Zoom in/out"),
-                                ("Right-click drag", "Pan canvas"),
-                                ("Left-click", "Select / place point"),
-                                ("Right-click joint", "Set Driver / Create Joint"),
-                                ("Right-click body edge", "Add Pivot Here"),
-                                ("Right-click canvas", "Add Ground Pivot / Body"),
-                            ];
+                            let shortcuts = shortcut_rows(cfg!(target_arch = "wasm32"));
                             for (key, action) in shortcuts {
                                 ui.strong(key);
                                 ui.label(action);
@@ -1230,6 +1215,31 @@ fn send_title(ctx: &egui::Context, sent: &mut Option<String>, title: String) {
 }
 
 // ── Keyboard shortcuts ──────────────────────────────────────────────────────
+
+/// Rows of the keyboard shortcuts window: (keys, action). The browser build has no
+/// Ctrl+S or Ctrl+Shift+S handler (see `handle_keyboard_shortcuts`), so `browser` hides those rows.
+fn shortcut_rows(browser: bool) -> Vec<(&'static str, &'static str)> {
+    let mut rows = vec![
+        ("Ctrl+N", "New empty mechanism"),
+        ("Ctrl+S", "Save (quick save to last path)"),
+        ("Ctrl+Shift+S", "Save As (choose new path)"),
+        ("Ctrl+Z", "Undo"),
+        ("Ctrl+Y / Ctrl+Shift+Z", "Redo"),
+        ("Delete / Backspace", "Delete selected entity"),
+        ("Escape", "Cancel current tool / operation"),
+        ("Enter / Double-click", "Finish multi-point body"),
+        ("Mouse wheel", "Zoom in/out"),
+        ("Right-click drag", "Pan canvas"),
+        ("Left-click", "Select / place point"),
+        ("Right-click joint", "Set Driver / Create Joint"),
+        ("Right-click body edge", "Add Pivot Here"),
+        ("Right-click canvas", "Add Ground Pivot / Body"),
+    ];
+    if browser {
+        rows.retain(|(keys, _)| !keys.starts_with("Ctrl+S") && !keys.starts_with("Ctrl+Shift+S"));
+    }
+    rows
+}
 
 /// Ctrl+Z undo, Ctrl+Y or Ctrl+Shift+Z redo, Ctrl+S save, Ctrl+Shift+S save as (native),
 /// Ctrl+N new mechanism, Ctrl+V the paste hint.
@@ -1447,6 +1457,14 @@ fn load_background_image(
 mod tests {
     use super::*;
     use crate::gui::test_support::{central_panel_frame, drawn_texts, drew_text, key_press, key_tap, screen_input, typed, NATIVE_SCREEN};
+
+    #[test]
+    fn shortcut_help_lists_save_rows_only_outside_the_browser() {
+        let keys = |browser| shortcut_rows(browser).iter().map(|r| r.0).collect::<Vec<_>>();
+        assert!(keys(false).contains(&"Ctrl+S") && keys(false).contains(&"Ctrl+Shift+S"));
+        assert!(!keys(true).contains(&"Ctrl+S") && !keys(true).contains(&"Ctrl+Shift+S"));
+        assert!(keys(true).contains(&"Ctrl+Z"), "the other rows stay");
+    }
 
     /// Four-bar with weights W1 and W2 on the coupler.
     fn fourbar_with_weights() -> AppState {

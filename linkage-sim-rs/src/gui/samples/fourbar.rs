@@ -576,8 +576,12 @@ pub(super) fn chebyshev_lambda_m_position(
 /// Driven by a standard revolute driver on J1 (like all other samples).
 /// The LinearActuator is a force element only (not a driver constraint).
 pub(super) fn build_chebyshev_lambda_actuator(
-    _driver_joint_id: Option<&str>,
+    driver_joint_id: Option<&str>,
 ) -> Result<(Mechanism, DVector<f64>), String> {
+    // The crank driver is fixed on J1; no other joint can take it.
+    if let Some(id) = driver_joint_id.filter(|id| *id != "J1") {
+        return Err(format!("Chebyshev lambda actuator is driven on J1; cannot drive '{id}'"));
+    }
     // Link lengths (meters).
     let o2 = (0.0_f64, 0.0_f64);
     let o4 = (0.076_f64, 0.0_f64);

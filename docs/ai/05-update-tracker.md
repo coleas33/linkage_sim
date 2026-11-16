@@ -5,6 +5,42 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - A control target with a zero direction is an error, not a panic (audit LCS-13; branch audit/2026-11-16-section-a)
+- What changed: new ControlTarget::validate (inverse_kinematics/control_target.rs) returns the new LinkageError::InvalidControlTarget for a Projection whose axis_dir is zero or NaN; workspace_probe calls it first, so solve_for_target and the trajectory sweep return an Err (Strict and Analysis alike) instead of stopping at the assert. The asserts in evaluate/gradient/hessian and the projection() constructor stay. Readers checked: evaluate/gradient/hessian are reached only after a probe (solve_for_target, sweep, trajectory_ops); no match on LinkageError is exhaustive.
+- Tests: zero_direction_projection_target_is_an_error_not_a_panic (red first: panicked "Projection axis_dir is zero"). Commit 134b45d.
+
+## 2026-11-16 - check_grashof no longer panics on a NaN link length (audit LFA-18; branch audit/2026-11-16-section-a)
+- What changed: the sort and the shortest-link search in analysis/grashof.rs use unwrap_or(Ordering::Equal), as motor_sizing.rs does. A NaN length gives is_grashof false, is_change_point false and NonGrashof. Readers checked: update_grashof (blueprint_ops.rs) and crank_selection.rs read only the result fields.
+- Tests: nan_link_length_is_not_grashof_and_does_not_panic (red first: panicked at the old unwrap). Commit c287553.
+
+## 2026-11-16 - The virtual-work check names a missing driver (audit LFA-12; branch audit/2026-11-16-section-a)
+- What changed: virtual_work_check (analysis/virtual_work.rs) looks for the driver body pair first and returns the new LinkageError::NoDriver ("Mechanism has no driver; add a revolute driver before this analysis.") instead of MechanismNotBuilt. The two unknown-body lookups below it still report MechanismNotBuilt. Readers checked: no match on LinkageError is exhaustive, so no other arm was needed.
+- Tests: virtual_work_on_built_mechanism_without_driver_reports_no_driver (red first: got MechanismNotBuilt). Commit bd0ba5f.
+
+## 2026-11-16 - Two samples refuse a driver joint they cannot honour and the Custom 6-bar errors when no start solves (audit LGE-14; branch audit/2026-11-16-section-a)
+- What changed: build_chebyshev_lambda_actuator (samples/fourbar.rs) and build_custom_6bar (samples/special.rs) return an error for Some(joint) other than "J1" (None and "J1" build as before; both samples drive on J1). The Custom 6-bar's start search moved into custom_6bar_from_json and ends in an error when no start angle converged, instead of a log line and a zero q0. Readers checked: the only caller with a joint is AppState::reassign_driver (state/driver_ops.rs), which already logs an Err and falls back to the blueprint path; build_sample (None) is unchanged, and the Custom 6-bar test shows its embedded blueprint still solves.
+- Tests: samples_with_a_fixed_driver_joint_reject_another_joint and custom_6bar_that_does_not_assemble_is_an_error (red first: both failed, the second needed the new custom_6bar_from_json seam, added before the fix). Commit 181acc5.
+
+## 2026-11-16 - The browser build's shortcut help no longer lists Ctrl+S and Ctrl+Shift+S (audit LGS-03; branch audit/2026-11-16-section-a)
+- What changed: gui/mod.rs builds the shortcut help rows in shortcut_rows(browser); the window passes cfg!(target_arch = "wasm32") and the two save rows are dropped in the browser build, where handle_keyboard_shortcuts has no handler for them (it is feature = "native"). Not changed: the File menu button labels in gui/menu_bar.rs still say Ctrl+S (outside the finding; the menu's Save is a different path in the browser).
+- Tests: shortcut_help_lists_save_rows_only_outside_the_browser (red first: did not compile, no builder). The wasm32 branch itself is not run natively; the test passes browser = true. Commit d5776d7.
+
+## 2026-11-16 - Renaming a link is one undo step and marks the file changed (audit LGC-12; branch audit/2026-11-16-section-a)
+- What changed: property_panel/pending_edits.rs UpdateLabel calls push_undo before it edits the blueprint and mechanism (undo step, dirty = true); the sweep recompute stays (the weight breakdown shows the names). property_panel/mod.rs keeps the text being typed in egui memory and sends one UpdateLabel when the field loses focus with changed text (Esc drops it), as the weight name field does, so a rename is one undo step, not one per keystroke. Readers checked: UpdateLabel has one producer (the link editor label field).
+- Tests: rename_link_is_one_undo_step_and_marks_dirty (red first: undo depth did not grow). Commit 54c6c43.
+
+## 2026-11-16 - A cosine-stroke linear driver saves and loads as a cosine driver (audit LFA-01; branch audit/2026-11-16-section-a)
+- What changed: LinearDriverJson (io/schema.rs) has an optional cosine_stroke [min, max] field (serde default, skipped when absent). to_json writes it for DriverMeta::CosineStroke (length_0 = initial length, velocity kept for old readers); from_json builds cosine_linear_driver when it is present and constant_velocity_linear_driver otherwise, so old files load as before. Owner decision (controller): finish the feature, not delete it. Readers checked: the only other LinearDriverJson builder is gui/state/driver_ops.rs (sets None).
+- Tests: cosine_linear_driver_round_trips_through_json (red first: loaded back as LinearLength). Commit c855eb5.
+
+## 2026-11-16 - A compound force that cannot be expanded leaves no orphan bodies (audit LFA-07; branch audit/2026-11-16-section-a)
+- What changed: forces/compound.rs expand_compound_force resolves both end references and checks the body and attachment point exist before it adds the cylinder and rod, and returns an error otherwise. from_json already logs the error and adds the original force, now with no jointless bodies left behind. Readers checked: from_json is the only caller outside tests.
+- Tests: failed_expansion_leaves_no_orphan_bodies (red first: force_0_cyl was left in the mechanism). Commit 7fbeb5e.
+
+## 2026-11-16 - The Health panel shows toggle and over-80% positions the way the plots do (audit LGC-16; branch audit/2026-11-16-section-a)
+- What changed: new plot_panel::format_sweep_x (reuses sweep_x_to_display) shifts a body-frame sweep x by the driver display offset in angle mode, converts to the display angle unit and labels it deg, rad or mm (stroke mode: metres to mm, no offset). Health toggle points and the Exceeding 80% range (gui/property_panel/health.rs) call it instead of printing raw values with a degree sign. Readers checked: has_toggles_in_range still compares in body frame; the plots and SweepData are unchanged.
+- Tests: health_x_text_shifts_by_display_offset_and_labels_units (red first: format_sweep_x stubbed to the old format, left 120 deg, right 150 deg). Commit 5d81637.
+
 ## 2026-11-16 - The deploy runs the tests before it builds or deploys (audit INF-05; branch audit/2026-11-16-section-a)
 - What changed: .github/workflows/deploy-web.yml has three new steps before the wasm-bindgen install and build: cargo test --all (linkage-sim-rs), cargo test and cargo test --features app (magcoupling-rs), gate.sh gates 1, 4 and 7 on the pinned 1.89.0 toolchain and the existing cache. Clippy, the Python oracle and the wasm-bindgen parity gates stay local. docs/guides/WASM_DEPLOYMENT.md said the deploy installs the stable toolchain; it now says 1.89.0 and lists the test step.
 - Tests: none possible for CI YAML. The YAML parses (python yaml.safe_load, step order checked) and each added command exits 0 locally.

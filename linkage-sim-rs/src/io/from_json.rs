@@ -7,7 +7,7 @@ use nalgebra::Vector2;
 use crate::analysis::validation::validate_force_elements;
 use crate::core::body::{Body, BodyError};
 use crate::core::driver::clamp_driver_omega;
-use crate::core::linear_driver::constant_velocity_linear_driver;
+use crate::core::linear_driver::{constant_velocity_linear_driver, cosine_linear_driver};
 use crate::core::mechanism::Mechanism;
 use crate::core::state::GROUND_ID;
 use crate::forces::compound::{analyze_force, expand_compound_force, CompoundAnalysis};
@@ -300,15 +300,27 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
 
     // Rebuild linear drivers
     for ld_json in &json_struct.linear_drivers {
-        let driver = constant_velocity_linear_driver(
-            &ld_json.id,
-            &ld_json.body_a,
-            ld_json.point_a,
-            &ld_json.body_b,
-            ld_json.point_b,
-            ld_json.velocity,
-            ld_json.length_0,
-        );
+        let driver = match ld_json.cosine_stroke {
+            Some([stroke_min, stroke_max]) => cosine_linear_driver(
+                &ld_json.id,
+                &ld_json.body_a,
+                ld_json.point_a,
+                &ld_json.body_b,
+                ld_json.point_b,
+                stroke_min,
+                stroke_max,
+                ld_json.length_0,
+            ),
+            None => constant_velocity_linear_driver(
+                &ld_json.id,
+                &ld_json.body_a,
+                ld_json.point_a,
+                &ld_json.body_b,
+                ld_json.point_b,
+                ld_json.velocity,
+                ld_json.length_0,
+            ),
+        };
         mech.add_linear_driver(driver)
             .map_err(|e| SerializationError::Build(e.to_string()))?;
     }

@@ -210,12 +210,11 @@ pub fn mechanism_to_json(mech: &Mechanism) -> Result<MechanismJson, Serializatio
                     point_b: ld.point_b(),
                     velocity: *velocity,
                     length_0: *length_0,
+                    cosine_stroke: None,
                 });
             }
             Some(DriverMeta::CosineStroke { stroke_min, stroke_max, initial_length }) => {
-                // Serialize CosineStroke as a LinearLength with velocity derived
-                // from the stroke range (for backward compat with JSON schema).
-                // On deserialization, the sample builder will recreate the cosine form.
+                // `velocity` is only filled for readers that ignore `cosine_stroke`.
                 let velocity = stroke_max - stroke_min;
                 linear_drivers.push(LinearDriverJson {
                     id: ld.id().to_string(),
@@ -225,6 +224,7 @@ pub fn mechanism_to_json(mech: &Mechanism) -> Result<MechanismJson, Serializatio
                     point_b: ld.point_b(),
                     velocity,
                     length_0: *initial_length,
+                    cosine_stroke: Some([*stroke_min, *stroke_max]),
                 });
             }
             _ => {
