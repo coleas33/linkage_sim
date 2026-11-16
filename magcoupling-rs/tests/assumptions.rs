@@ -390,3 +390,14 @@ fn only_the_clamp_assumptions_are_hidden_and_only_while_the_clamp_section_is_pau
     assert_eq!(hidden, ["clamp_friction", "preload_fraction"]);
     assert!(ASSUMPTIONS.iter().all(|a| a.shown(false)));
 }
+
+#[test]
+fn the_cached_defaults_and_schema_equal_a_fresh_build() {
+    use magcoupling::engine::api::{input_meta as cached_meta, workbook_defaults};
+    assert_eq!(workbook_defaults(), &DesignInputs::default());
+    for row in input_rows(&DesignInputs::default()) {
+        let meta = cached_meta(&row.path).expect("every input path has cached metadata");
+        assert!(std::ptr::eq(meta, row.meta), "{}", row.path);
+    }
+    assert!(cached_meta("no.such.input").is_none());
+}

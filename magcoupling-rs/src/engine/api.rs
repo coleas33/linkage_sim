@@ -23,6 +23,8 @@
 //! bypass `set`. `to_dict` is not ported: the design file is written by
 //! `gui::session::design_to_json`.
 
+use std::sync::OnceLock;
+
 use super::calibration::{self, CalibrationInputs, CalibrationResults};
 use super::clamps::{self, ClampInputs, ClampResults};
 use super::deviations::Deviations;
@@ -33,7 +35,10 @@ use super::grades;
 use super::housing::{self, HousingResults};
 use super::material_library::{self, HubMaterial, PartProperties};
 use super::materials::{self, MaterialsInputs, MaterialsResults};
-use super::meta::{ResultSet, SetError, TableLayout, Value, inputs, results, validate};
+use super::meta::{
+    InputMeta, InputRow, ResultSet, SetError, TableLayout, Value, input_rows, inputs, results,
+    validate,
+};
 use super::metal_design::{self, MetalDesignInputs, MetalDesignResults, RetainerResults};
 use super::model::{self, CouplingInputs, MassResults, ModelResults};
 use super::shaft_joint::{self, ShaftJointInputs, ShaftJointLinks, ShaftJointResults};
@@ -80,6 +85,22 @@ results! {
             pole_sweep: SweepRow => TableLayout::RowsDown { sheet: "Pole sweep", first_row: 6 },
         }
     }
+}
+
+/// The workbook defaults, built once (the GUI asks for them every frame).
+pub fn workbook_defaults() -> &'static DesignInputs {
+    static DEFAULTS: OnceLock<DesignInputs> = OnceLock::new();
+    DEFAULTS.get_or_init(DesignInputs::default)
+}
+
+/// The metadata of the input at `path`, from a schema built once. Metadata is static per
+/// path, so it does not depend on the design values.
+pub fn input_meta(path: &str) -> Option<&'static InputMeta> {
+    static ROWS: OnceLock<Vec<InputRow>> = OnceLock::new();
+    ROWS.get_or_init(|| input_rows(workbook_defaults()))
+        .iter()
+        .find(|row| row.path == path)
+        .map(|row| row.meta)
 }
 
 /// Computes every result from the inputs, with all approved corrections (E25 and E26,
