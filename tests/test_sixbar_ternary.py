@@ -411,9 +411,8 @@ class TestSixbarSweep:
 
         pt_local = mech.bodies["ternary"].coupler_points["CP"]
         prev_pos = None
-        for q in sweep.solutions:
-            if q is None:
-                continue
+        for i, q in enumerate(sweep.solutions):
+            assert q is not None, f"Step {i} failed"
             pos = mech.state.body_point_global("ternary", pt_local, q)
             if prev_pos is not None:
                 jump = float(np.linalg.norm(pos - prev_pos))

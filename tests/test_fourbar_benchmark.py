@@ -351,9 +351,8 @@ class TestFourbarSweep:
 
         pt_local = mech.bodies["coupler"].coupler_points["P"]
         prev_pos = None
-        for q in sweep.solutions:
-            if q is None:
-                continue
+        for i, q in enumerate(sweep.solutions):
+            assert q is not None, f"Step {i} failed"
             pos = mech.state.body_point_global("coupler", pt_local, q)
             if prev_pos is not None:
                 jump = np.linalg.norm(pos - prev_pos)

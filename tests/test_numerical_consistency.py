@@ -312,13 +312,15 @@ class TestFDVelocitySixbar:
             idx_minus = angle_to_idx.get(minus_key)
             idx_plus = angle_to_idx.get(plus_key)
 
-            if idx_center is None or idx_minus is None or idx_plus is None:
-                continue
+            assert idx_center is not None and idx_minus is not None and idx_plus is not None, (
+                f"sweep grid has no point for {np.degrees(angle_test):.0f} deg +/- h"
+            )
             q_center = sweep.solutions[idx_center]
             q_minus = sweep.solutions[idx_minus]
             q_plus = sweep.solutions[idx_plus]
-            if q_center is None or q_minus is None or q_plus is None:
-                continue
+            assert q_center is not None and q_minus is not None and q_plus is not None, (
+                f"sweep did not converge near {np.degrees(angle_test):.0f} deg"
+            )
 
             q_dot_solver = solve_velocity(mech, q_center, t=float(angle_test))
             q_dot_fd = (q_plus - q_minus) / (2.0 * h)
@@ -403,13 +405,15 @@ class TestFDAccelerationSixbar:
             idx_minus = angle_to_idx.get(minus_key)
             idx_plus = angle_to_idx.get(plus_key)
 
-            if idx_center is None or idx_minus is None or idx_plus is None:
-                continue
+            assert idx_center is not None and idx_minus is not None and idx_plus is not None, (
+                f"sweep grid has no point for {np.degrees(angle_test):.0f} deg +/- h"
+            )
             q_center = sweep.solutions[idx_center]
             q_minus = sweep.solutions[idx_minus]
             q_plus = sweep.solutions[idx_plus]
-            if q_center is None or q_minus is None or q_plus is None:
-                continue
+            assert q_center is not None and q_minus is not None and q_plus is not None, (
+                f"sweep did not converge near {np.degrees(angle_test):.0f} deg"
+            )
 
             q_dot_center = solve_velocity(mech, q_center, t=float(angle_test))
             q_dot_minus = solve_velocity(mech, q_minus, t=float(angle_test - h))
@@ -443,8 +447,7 @@ class TestDistanceInvariantFourbar:
         assert result.converged
         sweep = position_sweep(mech, result.q, angles)
         for i, q in enumerate(sweep.solutions):
-            if q is None:
-                continue
+            assert q is not None, f"Sweep step {i} did not converge"
             b = mech.state.body_point_global("coupler", np.array([0.0, 0.0]), q)
             c = mech.state.body_point_global("coupler", np.array([3.0, 0.0]), q)
             dist = float(np.linalg.norm(c - b))
@@ -473,8 +476,7 @@ class TestDistanceInvariantSixbar:
         d23_expected = float(np.linalg.norm(p3_loc - p2_loc))
 
         for i, q in enumerate(sweep.solutions):
-            if q is None:
-                continue
+            assert q is not None, f"Sweep step {i} did not converge"
             p1 = mech.state.body_point_global("ternary", p1_loc, q)
             p2 = mech.state.body_point_global("ternary", p2_loc, q)
             p3 = mech.state.body_point_global("ternary", p3_loc, q)
@@ -503,8 +505,7 @@ class TestConstraintResidualFourbar:
         assert result.converged
         sweep = position_sweep(mech, result.q, angles)
         for i, q in enumerate(sweep.solutions):
-            if q is None:
-                continue
+            assert q is not None, f"Sweep step {i} did not converge"
             phi = assemble_constraints(mech, q, float(angles[i]))
             assert float(np.linalg.norm(phi)) < RESIDUAL_TOL, (
                 f"Residual {float(np.linalg.norm(phi)):.2e} at step {i}"
@@ -529,8 +530,7 @@ class TestConstraintResidualSliderCrank:
         assert result.converged
         sweep = position_sweep(mech, result.q, angles)
         for i, q in enumerate(sweep.solutions):
-            if q is None:
-                continue
+            assert q is not None, f"Sweep step {i} did not converge"
             phi = assemble_constraints(mech, q, float(angles[i]))
             assert float(np.linalg.norm(phi)) < RESIDUAL_TOL, (
                 f"Residual {float(np.linalg.norm(phi)):.2e} at step {i}"
@@ -548,8 +548,7 @@ class TestConstraintResidualSixbar:
         assert result.converged
         sweep = position_sweep(mech, result.q, angles)
         for i, q in enumerate(sweep.solutions):
-            if q is None:
-                continue
+            assert q is not None, f"Sweep step {i} did not converge"
             phi = assemble_constraints(mech, q, float(angles[i]))
             assert float(np.linalg.norm(phi)) < RESIDUAL_TOL, (
                 f"Residual {float(np.linalg.norm(phi)):.2e} at step {i}"
@@ -753,13 +752,15 @@ class TestCouplerFDSixbar:
             idx_minus = angle_to_idx.get(minus_key)
             idx_plus = angle_to_idx.get(plus_key)
 
-            if idx_center is None or idx_minus is None or idx_plus is None:
-                continue
+            assert idx_center is not None and idx_minus is not None and idx_plus is not None, (
+                f"sweep grid has no point for {np.degrees(angle_test):.0f} deg +/- h"
+            )
             q_center = sweep.solutions[idx_center]
             q_minus = sweep.solutions[idx_minus]
             q_plus = sweep.solutions[idx_plus]
-            if q_center is None or q_minus is None or q_plus is None:
-                continue
+            assert q_center is not None and q_minus is not None and q_plus is not None, (
+                f"sweep did not converge near {np.degrees(angle_test):.0f} deg"
+            )
 
             q_dot_center = solve_velocity(mech, q_center, t=float(angle_test))
             q_ddot_center = solve_acceleration(

@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - Python sweep tests fail on an unsolved or missing sample instead of skipping it (audit PY-08; branch audit/2026-11-16-section-c)
+- What changed: in test_numerical_consistency.py (the 3 six-bar FD tests and 5 sweep invariant/residual tests), test_sixbar_ternary.py, test_fourbar_benchmark.py and test_textbook_benchmarks.py, every `if sample is None: continue` is now an assert, so a sweep that stops converging, or a float-key lookup that stops matching, turns the test red instead of a green no-op. All samples converge today, so nothing else changed. Left alone on purpose: test_regression_baselines.py:501,503 (deliberate near-toggle exclusions) and test_failure_modes.py:498 (already follows assert n_converged == len(angles)). The three pasted angle-to-index loops are not merged (leads.md).
+- Tests: shown to bite: making position_sweep return None for step 7 fails 13 tests. Reverted.
+
 ## 2026-11-16 - The assertion-free ground-input MA test now asserts (audit PY-03; branch audit/2026-11-16-section-c)
 - What changed: tests/test_mechanical_advantage.py test_ground_input_returns_zero now passes "ground" as the input body and asserts input velocity 0.0, a nonzero output velocity and MA == inf. A new test, test_same_body_input_and_output_gives_unit_ma, covers the rocker-to-rocker case the old comment promised (MA == 1).
 - Tests: shown to bite: making _get_velocity return 1.0 for ground fails the ground test. Reverted. Run with PYTHONPATH set to this worktree's src: the editable install points at the main checkout.

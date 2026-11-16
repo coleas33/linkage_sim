@@ -347,8 +347,7 @@ class TestRobertsCognate:
         sweep = position_sweep(mech, result.q, angles)
         original_coupler_pos = []
         for i, q in enumerate(sweep.solutions):
-            if q is None:
-                continue
+            assert q is not None, f"Step {i} failed"
             q_dot = solve_velocity(mech, q, t=float(angles[i]))
             q_ddot = solve_acceleration(mech, q, q_dot, t=float(angles[i]))
             pos, _, _ = eval_coupler_point(
