@@ -233,9 +233,9 @@ The sure line fixes are in the fixed table. What is left needs new wording or a 
 - **LFA-09** Actuator stroke limits need both ends set, which the field docs and one test do not say.
 - **LGS-18** The expression-driver editor applies on every keystroke and again on focus loss.
 - **MGP-06** A part or grade row says the same thing twice, in two different wordings.
-- **MGP-10** `minimum_diameter_mm` is cleared in three overlapping places.
+- **MGP-10** `minimum_diameter_mm` is cleared in three overlapping places. FIXED e68ae6a: a private replace_design clears it once for open, load and reset.
 - **MGV-01** The results table and the clamp tab draw the catalogue label; every other view draws the display label.
-- **MGV-04** The Equation panel reads `clamps::PAUSED` while the panel passes `clamps_paused` everywhere else.
+- **MGV-04** The Equation panel reads `clamps::PAUSED` while the panel passes `clamps_paused` everywhere else. FIXED 0969e9f: explorer_ui takes clamps_paused for its hover and Used by links.
 - **PY-09** scripts/export_gifs.py behaves differently from the other scripts and hides failures.
 
 ### H. Speed (14)
@@ -285,11 +285,11 @@ You asked for repetition to be flagged hard. None of these was merged: each merg
 - **PY-06** The same four-bar and slider-crank builders are rewritten in about 20 test files and 10 scripts.
 - **PY-04** The four golden mechanism builders are copied between export_golden.py and test_golden_fixtures.py.
 - **PY-05** The ternary-plate constructor and the six-bar initial-guess solver are pasted 7 and 4 times. The check confirmed this only in part.
-- **MGV-05** plots.rs matches the sweep status by literal strings the engine owns. Ready to apply on your word: shared constants (the check's exact change) or a status enum. The strings are also the Python oracle's.
+- **MGV-05** plots.rs matches the sweep status by literal strings the engine owns. Ready to apply on your word: shared constants (the check's exact change) or a status enum. The strings are also the Python oracle's. FIXED 3acf7c5: STATUS_NOMINAL and STATUS_BELOW_MINIMUM in engine/sweeps.rs, read by plots.rs.
 - **MEX-10** The 23 shaft joint paths are typed in three places (SCOPE chain, note `equations`, and the records file).
 - **MEC-01** "quote the failing value one last digit past the limit" written three times. The check confirmed this only in part.
 - **MGG-03** (the part not fixed) `gui/guidance.rs:199` and `:1815`, whose constants live in another module or function.
-- **MGG-04** the unit of a result is looked up with the same one-liner in seven places.
+- **MGG-04** the unit of a result is looked up with the same one-liner in seven places. FIXED f28a61d: guidance::result_unit.
 - **MGG-05** Value to f64 conversion is written out in several modules.
 - **MGG-09** the typesetter spells its stroke width and small-script size inline in several places.
 - **MGG-10** two guidance tests share a 25-line skeleton.

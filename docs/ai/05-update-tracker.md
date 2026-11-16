@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - magcoupling GUI: status constants, unit helper, clamps_paused, one Minimum OD clear (audit MGV-05, MGG-04, MGV-04, MGP-10; branch audit/2026-11-16-dry)
+- What changed: MGV-05 (3acf7c5): `STATUS_NOMINAL` and `STATUS_BELOW_MINIMUM` in engine/sweeps.rs, used by the status code there and by gui/plots.rs (strings unchanged; the Python oracle's). MGG-04 (f28a61d): `guidance::result_unit(path)` replaces the unit one-liner at seven sites (guidance.rs x5, torque_card.rs, explorer.rs). MGV-04 (0969e9f): `explorer_ui` takes `clamps_paused` for the Start here hover and the Used by links; `START_HERE_HOVER` is removed (use `start_here_hover(clamps_paused)`); the Start here walk (`notes::START_HERE`) still reads `clamps::PAUSED`; the clamp section stays paused and hidden. MGP-10 (e68ae6a): private `MagcouplingPanel::replace_design` clears `minimum_diameter_mm` for open, load and reset (undo and redo still do not clear); a load now clears before `set_design`, not after, like open and reset.
+- Tests: new `result_unit_is_the_results_own_unit_and_empty_for_a_non_result`, `the_panel_s_pause_decides_the_drawn_used_by_links` and `a_new_design_clears_the_lowered_minimum_od_but_undo_and_redo_keep_it`; the start-here hover tests check both forms. cargo test, cargo test --features app, clippy with and without --features app and cargo fmt --check pass.
+
 ## 2026-11-16 - sweep CSV column list (audit LGE-13; branch audit/2026-11-16-dry)
 - What changed: LGE-13 (034ffc3): `write_sweep_csv` in gui/export/csv.rs builds one list of columns (header, decimals, series) and writes the header and every row from it; the toggle column stays sparse (blank on NaN). Output is byte-identical.
 - Tests: new `sweep_csv_all_columns_pinned` pins header and rows with every optional column, a short series and a toggle; it passed on the old code first. cargo test --all and cargo clippy --all-targets -- -D warnings pass.
