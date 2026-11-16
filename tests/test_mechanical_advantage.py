@@ -93,15 +93,26 @@ class TestMechanicalAdvantage:
         assert np.isfinite(result.ma)
 
     def test_ground_input_returns_zero(self) -> None:
-        """Ground body has zero velocity."""
+        """Ground body has zero velocity: MA with ground input is infinite."""
         mech = build_fourbar()
         q, q_dot = solve_at(mech, np.pi / 4)
         result = mechanical_advantage(
-            mech.state, q_dot, "crank", "rocker",
+            mech.state, q_dot, "ground", "rocker",
             output_coord="theta",
         )
-        # Asking for ground input would give 0 velocity
-        # Test with rocker→rocker (same body, should give MA=1 trivially)
+        assert result.input_velocity == 0.0
+        assert abs(result.output_velocity) > 1e-6
+        assert result.ma == float("inf")
+
+    def test_same_body_input_and_output_gives_unit_ma(self) -> None:
+        """Rocker as both input and output: MA is exactly 1."""
+        mech = build_fourbar()
+        q, q_dot = solve_at(mech, np.pi / 4)
+        result = mechanical_advantage(
+            mech.state, q_dot, "rocker", "rocker",
+        )
+        assert abs(result.input_velocity) > 1e-6
+        assert result.ma == pytest.approx(1.0)
 
     def test_invalid_coord_raises(self) -> None:
         """Invalid coordinate name raises ValueError."""

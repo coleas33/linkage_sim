@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - The assertion-free ground-input MA test now asserts (audit PY-03; branch audit/2026-11-16-section-c)
+- What changed: tests/test_mechanical_advantage.py test_ground_input_returns_zero now passes "ground" as the input body and asserts input velocity 0.0, a nonzero output velocity and MA == inf. A new test, test_same_body_input_and_output_gives_unit_ma, covers the rocker-to-rocker case the old comment promised (MA == 1).
+- Tests: shown to bite: making _get_velocity return 1.0 for ground fails the ground test. Reverted. Run with PYTHONPATH set to this worktree's src: the editable install points at the main checkout.
+
 ## 2026-11-16 - Template tests stop writing to the real ~/.linkage-sim (audit LGS-14; branch audit/2026-11-16-section-c)
 - What changed: gui/state/templates.rs gets storage_root(): ~/.linkage-sim normally, a per-process temp dir in unit tests. New test tests_persist_under_temp_dir_not_home. The developer's existing files ("test", "roundtrip", "a", "b", "only") were left in place.
 - Tests: shown to bite: pointing storage_root() back at the home dir in test builds fails the new test. Reverted. Commit d8d3c57.
