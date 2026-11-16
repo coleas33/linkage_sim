@@ -1,0 +1,49 @@
+# Open questions answered conservatively (register)
+
+Started 2026-11-10. Kept by the controller session; committed 2026-11-16.
+
+## The owner's ruling
+
+2026-11-10, verbatim: "Any open questions choose the conservative answer for now and make those assumptions known somewhwre".
+
+## How "conservative" is read here
+
+1. The side that is safe for the design verdict: more load, more heat, less strength, a larger envelope, a stricter check.
+2. Where options are equally safe: the one that changes less and can be undone.
+3. The workbook-default example is never moved on an assumption (the owner's ruling of 2026-10-01 kept the A-4 corrections to designs that are not sintered NdFeB).
+4. The ruling answers questions. It is not an approval: merging, pushing, the owner's review of a `risk: physics` diff, and approval of a design document still need the owner's yes.
+
+Every row below was an assumption, not a decision, until 2026-11-16. Each one names what would change if the owner ruled the other way.
+
+## The owner's approval
+
+2026-11-16, verbatim, in answer to the list of items waiting on the owner (the design document, the diffs of the fix branch, these answers, merging and pushing): "Approve and yes. Stop asking for my direction and do what you think is best". The answers below are approved as built; BL-067 (A-10), built after that date under the same go-ahead, is the controller's call under it.
+
+## Assumptions
+
+| # | Question | Answer taken for now | Why this is the conservative side | If the owner rules otherwise | Where it lives |
+|---|---|---|---|---|---|
+| A-1 | Is the magcoupler UX design document approved? | Not yet. No plan for slice A is written and nothing of the overhaul is built. | Approval is a gate, not a question with a safe side to guess. | A yes starts the slice A plan. | `docs/superpowers/specs/2026-11-09-magcoupler-ux-overhaul-design.md` (status line) |
+| A-2 | Q-1: the calculator gets its own theme, reversing M41-3 ("Theme matches the linkage app")? | Yes, as the document says. | It follows from the look the owner picked ("Charcoal and crimson"); the other answer would undo that pick. | The theme work in slice C changes; nothing is built yet. | Design document, row Q-1 |
+| A-3 | Q-3: is slip heating optional, like the gearbox and shaft-joint sections? | No. Slip heating is always judged (C-15). | The stricter check: slip heat decides whether the magnets survive. | Slice D gains a third switch. | Design document, rows Q-3 and C-15 |
+| A-4 | Q-4: release slices A and B together or apart? | Apart, each on the owner's OK. | Smaller releases; each is reviewed before it ships. | A waits for B. | Design document, row Q-4 |
+| A-5 | Q-5: keep the long share link (about 2,700 characters)? | Keep it for slice A; the short form stays a backlog idea. | No change to what Share does today. | A short link form is designed. | Design document, row Q-5 |
+| A-6 | Can the starting design's 0.55 mm cap skirt be made? | Unknown. The document keeps saying no check judges that wall. | Nothing is claimed about it. | The starting design's cap thread or cap diameter changes. | Design document, sections 7.1 and 12 |
+| A-7 | BL-061: does the shaft boss count toward the rotating diameter claim? | Yes. The claim judges the largest of the cup, the cap and the boss. | The larger envelope: a boss past the claim can no longer pass it. The defaults do not move (boss 22 mm, cap 42.8 mm). | The boss is named apart from the claim, or left out as in the workbook. | BL-061. Built as `4737962` on the fix branch on 2026-11-11: correction E25, held in the registry as an assumption that is not approved and marked so on screen. Reviewed (general-purpose agents on fable; the physics review approved in round 2 after one test gap was closed; the text review passed), gate passed, not merged. The owner's review of the diff is owed; the text review's three should-fix items are left for the owner. E25 does not reach the sweep tables (they judge the cup alone) or the large-diameter length of the space claim. |
+| A-8 | BL-062: which magnet conductivity per grade family? | Sintered NdFeB keeps 6.7e5 S/m (option 1B). Sm2Co17 1.54e6 (2C), SmCo5 2.5e6 (3B), ferrite 1.0e2 (4B), bonded NdFeB 2.5e4 (5B). | Higher conductivity is more heat in every family here, so each non-NdFeB family takes the highest value printed with a clear unit. NdFeB is not moved because that would move the default example (rule 3); its 13 % shortfall against the perpendicular value sits inside the formula's own margin (audit row M12, +46 %). | Options 1A or 1C move the default example's magnet heat by +15 % or +24 % and need their own registered deviation. Options 2A, 3A, 4A, 5A lower the non-NdFeB heat. | BL-062; research: `docs/analyses/2026-11-09-magcoupling-bl062-conductivity-research.md` section 5 and S4. Built as `5c3efe2` on the fix branch (committed 2026-11-16): correction E26, held in the registry as an assumption that is not approved and marked so on screen; the default example does not move. Reviewed (general-purpose agents on fable; the physics review approved in round 2 after a stale count and one wording were fixed; the text review passed in round 2), gate passed, not merged. The owner's review of the diff is owed; the text review's three should-fix items are left for the owner. |
+| A-9 | BL-063: should the daily-cycle bond screen judge the entered bondline, or report both? | Report both. The workbook's screen at the recommended bondline stays cell for cell; a second screen judges the entered bondline. | Nothing existing changes, and the design as entered is judged. At the defaults the new screen reads above the fatigue endurance (4.93 against 3.0 MPa), a caution. | One screen only, at the entered bondline, as a registered deviation of C201 and C202. | BL-063. Built as `7596f47` on the fix branch (2026-11-11, committed 2026-11-16): two Rust-only results after the workbook's screen, no correction registered, so nothing on screen marks the second screen as an assumption. The default design gains one amber check (4.932 against 3.0 MPa). Reviewed (general-purpose agents on fable; the physics review approved in round 1; the text review passed), gate passed, not merged. The owner's review of the diff is owed; the text review's four should-fix items are left for the owner. |
+| A-10 | BL-067: a caution, or the checks compare the larger torque, when the operating temperature is below the minimum? | (b) The gearbox check and the shaft-joint check compare the larger of cold-high and the operating pull-out with its allowance. | The stricter check: neither can pass while the operating pull-out is above what it compares. The defaults do not move. | (a) A caution only, the checks unchanged. | BL-067 |
+| A-11 | BL-074: is the first-move jump of the Overall length slider intended? | Treated as intended for now. It is documented and pinned by tests; the mapping is not changed. | No behaviour changes, and the jump stops being unannounced. A mapping change is the owner's to choose. | A mapping change in `engine/size_controls.rs`, chosen with the owner. | BL-074. Built as `0a5add4` on the fix branch on 2026-11-11: the hover text and four pin tests, no engine line changed. Reviewed twice (general-purpose agents on fable), gate passed, not merged. The owner's review of the diff is owed; the text review's should-fix SF-1 is left for the owner. |
+| A-12 | BL-068 SF-1: reword the hot-minimum Problem at a decade edge only a file's values reach? | Leave it (option A). | The sentence is true as it stands ("0.9990 N·m is below the required 1.000 N·m"); no text changes. | Options B or C reword it, with a text re-review. | `docs/analyses/2026-10-14-magcoupler-help-review.md`, "Re-review after BL-068" |
+| A-13 | BL-058 (E22): is it fixed? | No: `in_progress`. It is committed on the fix branch, reviewed, not merged. | AGENTS.md: a `risk: physics` item is not fixed until the owner has reviewed its diff. | Nothing; the owner's review closes it. | BL-058 |
+| A-14 | The A-4 data file still says its engine literals are "pending the user's approval", while `deviations.rs` and `docs/ai/04-memory.yaml` record the approval of 2026-10-01. Which holds? | The recorded approval is taken as given for writing E22 on a branch; the data file's strings are left as found. | Nothing is merged on the strength of it, and no record is rewritten. | The data file's status strings are updated, or E22 is held. | Tracker entry for BL-058 |
+| A-15 | In which order do the queued jobs run? | BL-058 is closed out, then the whole-project audit (the owner's named next task), then the five fixes A-7 to A-11. | The audit is the only job the owner named as next; the five fixes rest on assumptions, so they wait behind it. | The five fixes run first. | This file |
+| A-16 | How far may the audit fix things on its own? | Only what is certain and mechanical, on its own branch, one commit per item, nothing merged. Physics changes, deletions of anything that might be wanted, and the four files with the owner's uncommitted edits (CLAUDE.md, AGENTS.md, the two campaign workflows) are listed, not touched. | "Fix what you're sure about and list the rest". | More is fixed in place. | The audit report |
+
+## Log
+
+- 2026-11-10: register opened with A-1 to A-16.
+- 2026-11-11: A-11 (BL-074) built as `0a5add4` and A-7 (BL-061) built as `4737962` on the fix branch. Each was reviewed and passed the gate; neither is merged, and each waits for the owner's review of its diff.
+- 2026-11-16: A-9 (BL-063) built as `7596f47` on the fix branch, reviewed and gate passed; not merged, and it waits for the owner's review of its diff.
+- 2026-11-16: A-8 (BL-062) built as `5c3efe2` on the fix branch, reviewed and gate passed; not merged, and it waits for the owner's review of its diff.
+- 2026-11-16: the owner approved the list (see "The owner's approval" above).
