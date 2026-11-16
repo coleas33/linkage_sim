@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - Two samples refuse a driver joint they cannot honour and the Custom 6-bar errors when no start solves (audit LGE-14; branch audit/2026-11-16-section-a)
+- What changed: build_chebyshev_lambda_actuator (samples/fourbar.rs) and build_custom_6bar (samples/special.rs) return an error for Some(joint) other than "J1" (None and "J1" build as before; both samples drive on J1). The Custom 6-bar's start search moved into custom_6bar_from_json and ends in an error when no start angle converged, instead of a log line and a zero q0. Readers checked: the only caller with a joint is AppState::reassign_driver (state/driver_ops.rs), which already logs an Err and falls back to the blueprint path; build_sample (None) is unchanged, and the Custom 6-bar test shows its embedded blueprint still solves.
+- Tests: samples_with_a_fixed_driver_joint_reject_another_joint and custom_6bar_that_does_not_assemble_is_an_error (red first: both failed, the second needed the new custom_6bar_from_json seam, added before the fix).
+
 ## 2026-11-16 - The browser build's shortcut help no longer lists Ctrl+S and Ctrl+Shift+S (audit LGS-03; branch audit/2026-11-16-section-a)
 - What changed: gui/mod.rs builds the shortcut help rows in shortcut_rows(browser); the window passes cfg!(target_arch = "wasm32") and the two save rows are dropped in the browser build, where handle_keyboard_shortcuts has no handler for them (it is feature = "native"). Not changed: the File menu button labels in gui/menu_bar.rs still say Ctrl+S (outside the finding; the menu's Save is a different path in the browser).
 - Tests: shortcut_help_lists_save_rows_only_outside_the_browser (red first: did not compile, no builder). The wasm32 branch itself is not run natively; the test passes browser = true.

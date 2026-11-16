@@ -1031,11 +1031,18 @@ struct JansenConfig {
 /// The mechanism is a 6-bar linkage with 8 revolute joints, a linear actuator
 /// force element, and a force zone on the output link.
 pub(super) fn build_custom_6bar(
-    _driver_joint_id: Option<&str>,
+    driver_joint_id: Option<&str>,
 ) -> Result<(Mechanism, DVector<f64>), String> {
-    use crate::io::load_mechanism_unbuilt;
+    // The embedded blueprint's driver D1 sits on J1 (link_1 to link_2); no other joint can take it.
+    if let Some(id) = driver_joint_id.filter(|id| *id != "J1") {
+        return Err(format!("Custom 6-bar is driven on J1; cannot drive '{id}'"));
+    }
+    custom_6bar_from_json(include_str!("custom_6bar.json"))
+}
 
-    let json = include_str!("custom_6bar.json");
+/// Build the custom 6-bar from `json` and find a starting position that solves.
+pub(super) fn custom_6bar_from_json(json: &str) -> Result<(Mechanism, DVector<f64>), String> {
+    use crate::io::load_mechanism_unbuilt;
 
     let mut mech = load_mechanism_unbuilt(json).map_err(|e| e.to_string())?;
     mech.build().map_err(|e| e.to_string())?;
@@ -1080,6 +1087,5 @@ pub(super) fn build_custom_6bar(
         }
     }
 
-    log::warn!("Custom 6-bar: no starting angle converged, using zero q0");
-    Ok((mech, q0))
+    Err("Custom 6-bar: no starting angle converged".to_string())
 }

@@ -942,6 +942,24 @@ mod tests {
     }
 
     #[test]
+    fn samples_with_a_fixed_driver_joint_reject_another_joint() {
+        for sample in [SampleMechanism::ChebyshevLambdaActuator, SampleMechanism::Custom6Bar] {
+            assert!(
+                build_sample_with_driver(sample, Some("NOPE")).is_err(),
+                "{sample:?} cannot honour another driver joint"
+            );
+            assert!(build_sample_with_driver(sample, Some("J1")).is_ok(), "{sample:?} J1 is its driver");
+        }
+    }
+
+    #[test]
+    fn custom_6bar_that_does_not_assemble_is_an_error() {
+        // Move ground point P3 far away so no start angle assembles.
+        let json = include_str!("custom_6bar.json").replacen("-0.3452831373854", "5.0", 1);
+        assert!(special::custom_6bar_from_json(&json).is_err());
+    }
+
+    #[test]
     fn custom_6bar_sample_builds_and_solves() {
         let (mech, q0) = build_sample(SampleMechanism::Custom6Bar);
         assert!(mech.is_built());
