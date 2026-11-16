@@ -1170,6 +1170,37 @@
     }
 
     #[test]
+    fn remove_body_cascades_to_linear_drivers() {
+        // LGS-17: a linear driver on a removed body must go too, or the
+        // rebuild fails on the missing body.
+        use crate::forces::elements::ForceElement;
+
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::ParallelogramActuator);
+        let act_index = state
+            .mechanism
+            .as_ref()
+            .unwrap()
+            .forces()
+            .iter()
+            .position(|f| matches!(f, ForceElement::LinearActuator(_)))
+            .expect("sample should have a linear actuator");
+        state.convert_actuator_to_linear_driver(act_index);
+        let ld = state.blueprint.as_ref().unwrap().linear_drivers[0].clone();
+        let victim = if ld.body_a == "ground" { ld.body_b } else { ld.body_a };
+
+        state.remove_body(&victim);
+
+        let bp = state.blueprint.as_ref().unwrap();
+        assert!(
+            bp.linear_drivers
+                .iter()
+                .all(|d| d.body_a != victim && d.body_b != victim),
+            "linear driver still references deleted body {victim}"
+        );
+        assert!(state.mechanism.is_some(), "rebuild must succeed after removal");
+    }
+    #[test]
     fn remove_body_cascades_to_force_elements() {
         // ParallelogramActuator has a LinearActuator force element
         // attached to `crank`. Removing `crank` must also strip the

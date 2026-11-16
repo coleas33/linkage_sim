@@ -292,6 +292,11 @@ impl AppState {
                 bi != body_id && bj != body_id
             });
 
+            // Remove linear drivers that reference this body (rebuild would
+            // fail on the missing body).
+            bp.linear_drivers
+                .retain(|ld| ld.body_a != body_id && ld.body_b != body_id);
+
             // Remove force elements (LinearActuator, spring, damper,
             // ExternalForce, etc.) that reference this body. Leaving them
             // behind would dangle on a missing body id and freeze the
