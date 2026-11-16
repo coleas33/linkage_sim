@@ -1,4 +1,7 @@
-# Upda## 2026-11-16 - Undo and redo refresh the driver display offset and the stroke range (audit LGS-16; branch audit/2026-11-16-section-a)
+# Upda## 2026-11-16 - GIF export fails when no frame is written or the driver speed is zero (audit LGE-04; branch audit/2026-11-16-section-a)
+- What changed: generate_mechanism_gif_bytes (gui/export/raster.rs) now returns Err when omega is zero or not finite (it divided by omega with no guard) and when no frame was written (frames that failed to solve or rasterize were skipped and an empty GIF came back as Ok). Readers checked: export_mechanism_gif (passes the error on) and the menu_bar.rs GIF export call (already shows an Err); no other callers.
+- Tests: export_gif_zero_omega_returns_error, export_gif_no_frames_rendered_returns_error (red first: both guards removed, the no-frames test failed and the zero-omega run did not return).
+## 2026-11-16 - Undo and redo refresh the driver display offset and the stroke range (audit LGS-16; branch audit/2026-11-16-section-a)
 - What changed: AppState::restore_snapshot (gui/state/undo_ops.rs) now calls recompute_driver_display_offset() and the new shared AppState::refresh_sweep_stroke_range(&Mechanism) (gui/state/mod.rs), as rebuild and load do. Before, undo/redo kept the offset and sweep stroke range of the mechanism that was edited. The inline stroke-range loops in rebuild() (blueprint_ops.rs) and load (file_io.rs) are replaced by the same function. Readers checked: sweep_stroke_min/max and driver_display_offset readers (sweep, animation, input panel) only read; load_sample/rebuild behaviour is unchanged.
 - Tests: undo_restores_driver_display_offset, undo_restores_sweep_stroke_range (red first: both failed after undo with the old values).
 te Tracker
