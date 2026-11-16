@@ -183,10 +183,6 @@ pub fn expand_compound_force(
     let initial_length = (dx * dx + dy * dy).sqrt();
     let half_len = initial_length / 2.0;
 
-    // Create and register compound bodies.
-    mech.add_body(create_compound_cylinder(force_index, half_len))?;
-    mech.add_body(create_compound_rod(force_index, half_len))?;
-
     let cyl_id = format!("force_{}_cyl", force_index);
     let rod_id = format!("force_{}_rod", force_index);
 
@@ -227,6 +223,31 @@ pub fn expand_compound_force(
     } else {
         point_a_name.unwrap_or_default()
     };
+    let pt_b_ref = if mount_b {
+        format!("_force_{}_mount_b", force_index)
+    } else {
+        point_b_name.unwrap_or_default()
+    };
+
+    // Check both attachment references before adding anything, so a failure
+    // leaves no orphan compound bodies in the mechanism.
+    for (body_id, pt_ref) in [(&body_a_id, &pt_a_ref), (&body_b_id, &pt_b_ref)] {
+        let found = mech
+            .bodies()
+            .get(body_id)
+            .map_or(false, |b| b.attachment_points.contains_key(pt_ref));
+        if !found {
+            return Err(format!(
+                "Cannot expand force {force_index}: no attachment point '{pt_ref}' on body '{body_id}'"
+            )
+            .into());
+        }
+    }
+
+    // Create and register compound bodies.
+    mech.add_body(create_compound_cylinder(force_index, half_len))?;
+    mech.add_body(create_compound_rod(force_index, half_len))?;
+
     mech.add_revolute_joint(
         &format!("force_{}_base", force_index),
         &body_a_id,
@@ -236,11 +257,6 @@ pub fn expand_compound_force(
     )?;
 
     // Revolute joint at end B: body_b ↔ rod "tip".
-    let pt_b_ref = if mount_b {
-        format!("_force_{}_mount_b", force_index)
-    } else {
-        point_b_name.unwrap_or_default()
-    };
     mech.add_revolute_joint(
         &format!("force_{}_tip", force_index),
         &body_b_id,
@@ -626,5 +642,31 @@ mod tests {
             assert_eq!(pb, [tip.x, tip.y], "point_b must be the rod tip pin");
             assert!(na.is_none() && nb.is_none());
         }
+    }
+
+    // ── A failed expansion leaves no orphan compound bodies ──────────────────
+
+    #[test]
+    fn failed_expansion_leaves_no_orphan_bodies() {
+        use crate::core::body::{make_bar, make_ground};
+
+        let mut mech = Mechanism::new();
+        mech.add_body(make_ground(&[("O", 0.0, 0.0)])).unwrap();
+        mech.add_body(make_bar("bar", "A", "B", 1.0, 1.0, 0.01)).unwrap();
+        // Mount on end A only: end B has no name and no mount, so its
+        // reference is "" and the tip joint cannot be added.
+        mech.bodies_mut()
+            .get_mut("ground")
+            .unwrap()
+            .add_attachment_point("_force_0_mount_a", 0.0, 0.0)
+            .unwrap();
+        let force = make_spring("ground", None, "bar", None);
+
+        let res = expand_compound_force(&mut mech, &force, 0, true, false, [0.0, 0.0], [1.0, 0.0]);
+
+        assert!(res.is_err());
+        assert!(!mech.bodies().contains_key("force_0_cyl"));
+        assert!(!mech.bodies().contains_key("force_0_rod"));
+        assert_eq!(mech.bodies().len(), 2);
     }
 }
