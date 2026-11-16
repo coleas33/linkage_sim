@@ -4574,8 +4574,9 @@ mod tests {
         // The list is a deliberate hook, empty by ruling 11: a text that names the clamp while
         // the section is paused needs the owner's say, so a new entry fails here until that
         // is recorded (change this assertion with the ruling, not around it).
-        assert!(
-            ALLOWED.is_empty(),
+        assert_eq!(
+            ALLOWED.len(),
+            0,
             "ALLOWED holds a text that may name the paused clamp: ruling 11 allows none; record the owner's say first"
         );
         let names_the_clamp = |text: &str| {
