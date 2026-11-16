@@ -57,18 +57,6 @@ impl EqKind {
     pub fn is_driver(self) -> bool {
         matches!(self, EqKind::RevoluteDriver | EqKind::LinearDriver)
     }
-
-    /// Units string for the Lagrange multiplier λ associated with this kind.
-    /// Drivers carry torque (rotational) or force (linear); joints carry
-    /// constraint-row reactions and are rendered as "N" / "N·m" by row index
-    /// (see `lambda_units_at_row`).
-    pub fn driver_lambda_units(self) -> &'static str {
-        match self {
-            EqKind::RevoluteDriver => "N\u{00b7}m",
-            EqKind::LinearDriver => "N",
-            _ => "",
-        }
-    }
 }
 
 /// Identify the kind of the constraint at logical index `idx` in

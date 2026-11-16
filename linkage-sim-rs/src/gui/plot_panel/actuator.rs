@@ -1,7 +1,7 @@
 //! Actuator plots: force, speed, power.
 
 use eframe::egui;
-use egui_plot::{HLine, Line, Plot, PlotPoint, PlotPoints, Points, Text as PlotText, VLine};
+use egui_plot::{HLine, Line, Plot, PlotPoints, Points, VLine};
 
 use crate::gui::state::{AngleUnit, DisplayUnits};
 use crate::gui::sweep::SweepData;
@@ -181,56 +181,6 @@ pub(super) fn draw_actuator_force(
     });
 
     clicked_x
-}
-
-/// Draw a text annotation on the actuator force plot with peak/RMS force info.
-///
-/// Shows peak and RMS actuator forces from both statics and inverse dynamics.
-/// Placed in the top-left corner of the plot.
-
-pub(super) fn draw_actuator_stroke_annotation(
-    plot_ui: &mut egui_plot::PlotUi,
-    sweep: &SweepData,
-    _units: &DisplayUnits,
-) {
-    use crate::analysis::envelopes::compute_envelope;
-
-    let env_statics = sweep.actuator_forces.as_ref().and_then(|f| compute_envelope(f));
-    let env_id = sweep.actuator_forces_id.as_ref().and_then(|f| compute_envelope(f));
-
-    let mut lines: Vec<String> = Vec::new();
-    if let Some(ref es) = env_statics {
-        let peak = es.max_value.abs().max(es.min_value.abs());
-        let peak_label = match &env_id {
-            Some(ei) => {
-                let peak_id = ei.max_value.abs().max(ei.min_value.abs());
-                format!("Peak: {:.0} N (statics) / {:.0} N (inertia)", peak, peak_id)
-            }
-            None => format!("Peak: {:.0} N", peak),
-        };
-        lines.push(peak_label);
-
-        let rms_label = match &env_id {
-            Some(ei) => format!("RMS: {:.0} N (statics) / {:.0} N (inertia)", es.rms, ei.rms),
-            None => format!("RMS: {:.0} N", es.rms),
-        };
-        lines.push(rms_label);
-    }
-
-    if lines.is_empty() {
-        return;
-    }
-
-    let text = lines.join("\n");
-    // Place at top-left of plot using the first data point as anchor.
-    let bounds = plot_ui.plot_bounds();
-    let x_pos = bounds.min()[0] + (bounds.max()[0] - bounds.min()[0]) * 0.02;
-    let y_pos = bounds.max()[1] - (bounds.max()[1] - bounds.min()[1]) * 0.02;
-    plot_ui.text(
-        PlotText::new("actuator_annotation", PlotPoint::new(x_pos, y_pos), text)
-            .anchor(egui::Align2::LEFT_TOP)
-            .color(egui::Color32::from_rgba_premultiplied(200, 200, 200, 180)),
-    );
 }
 
 /// Plot actuator extension rate (mm/s) vs driver angle.
