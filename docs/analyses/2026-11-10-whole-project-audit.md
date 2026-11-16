@@ -133,7 +133,7 @@ The repository's rule is more tests, not fewer, so none of these was changed. Ma
 
 ### D. Build, deploy, gate and local tooling (15)
 
-- **INF-05** Docs say the deploy uses "stable" Rust, the workflow pins 1.89.0, and nothing else pins a toolchain. The larger point sits in the same finding: the deploy job runs no test and no gate before `vercel deploy --prod`, so a push to main publishes whatever compiles. Pinning a toolchain changes every local build. Both are yours.
+- **INF-05** Docs say the deploy uses "stable" Rust, the workflow pins 1.89.0, and nothing else pins a toolchain. The larger point sits in the same finding: the deploy job runs no test and no gate before `vercel deploy --prod`, so a push to main publishes whatever compiles. Pinning a toolchain changes every local build. Both are yours. FIXED 9811969: the deploy runs cargo test --all (linkage-sim-rs) and cargo test, cargo test --features app (magcoupling-rs) before it builds; the doc now says 1.89.0.
 - **INF-06** audit-campaign.js and fix-campaign.js hard-code the main checkout's absolute path as ROOT. This is why the audit could not run as the repository's own campaign in a worktree. Both files hold your uncommitted edits, so they were not touched.
 - **INF-04** deploy-web.yml compiles wasm-bindgen-cli from source on every run, so its cache entry buys nothing. The check confirmed this only in part.
 - **INF-01** Gate 7 re-runs every test gate 4 already ran.
