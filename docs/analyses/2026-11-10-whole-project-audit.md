@@ -217,12 +217,12 @@ The sure line fixes are in the fixed table. What is left needs new wording or a 
 
 ### G. Things that behave or read differently in two places (19)
 
-- **LGC-07** Two tabs both labelled "Actuator Force" in stroke mode.
+- **LGC-07** Two tabs both labelled "Actuator Force" in stroke mode. FIXED af964ed: the stroke-mode driver tab is now "Stroke Force (Static)".
 - **LGC-17** Force toolbar "Joint Torques" pairs the selected link with an arbitrary neighbour.
 - **LGC-11** Length units: three different conventions inside one property panel.
 - **LGC-20** Grid labels and hover tooltips ignore display units; Y grid labels lose sub-mm precision.
 - **LGC-14** Health and Diagnostics sections show the same facts twice with different thresholds, colours and wording.
-- **LGC-08** Reference lines span a hard-coded 0..360 x range.
+- **LGC-08** Reference lines span a hard-coded 0..360 x range. FIXED 4f670f8: reference lines span the sweep's own x range (reference_line_x_span).
 - **LGC-13** Parametric panel: five LinearActuator fields have no current-value lookup, and a dead comment. The check confirmed this only in part.
 - **LGE-10** Two four-bar detectors with different rules. FIXED 1d11528: one detector (sweep/fourbar.rs, the report's rule) serves the sweep and the report.
 - **LGE-16** DXF overlay drops lines that cross the view, and import silently skips unsupported entities.
@@ -231,7 +231,7 @@ The sure line fixes are in the fixed table. What is left needs new wording or a 
 - **LCS-07** (the part not fixed) the cam profile named "Spline" is piecewise linear; its guards and an `if let Ok` disagree with that.
 - **LCS-15** Small inconsistencies between sibling APIs in body.rs and mechanism.rs.
 - **LFA-09** Actuator stroke limits need both ends set, which the field docs and one test do not say.
-- **LGS-18** The expression-driver editor applies on every keystroke and again on focus loss.
+- **LGS-18** The expression-driver editor applies on every keystroke and again on focus loss. FIXED 6634710: applies once when a box loses focus; Esc cancels; an unchanged edit pushes no undo step.
 - **MGP-06** A part or grade row says the same thing twice, in two different wordings.
 - **MGP-10** `minimum_diameter_mm` is cleared in three overlapping places. FIXED e68ae6a: a private replace_design clears it once for open, load and reset.
 - **MGV-01** The results table and the clamp tab draw the catalogue label; every other view draws the display label.

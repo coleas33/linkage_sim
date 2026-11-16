@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - GUI consistency: plot tab label, reference-line span, expression editor commit (audit LGC-07, LGC-08, LGS-18; branch audit/2026-11-16-consistency)
+- What changed: LGC-07 (af964ed): in stroke mode the driver-effort tab is "Stroke Force (Static)" (`driver_tab_label`); the separate "Actuator Force" tab keeps its name. LGC-08 (4f670f8): `reference_line_x_span` in plot_panel/mod.rs gives the transmission-angle thresholds and the MA = 1 line the sweep's own display x range (custom angle range, radians, stroke in mm); empty sweep falls back to a full turn. LGS-18 (6634710): the expression-driver boxes apply once when a box loses focus (`expression_edit_action`); Esc restores the blueprint's texts; an edit equal to the applied driver pushes no undo step.
+- Tests: new `stroke_mode_driver_tab_label_differs_from_actuator_force_tab`, `reference_line_x_span_follows_the_sweep_x_range`, `expression_edit_applies_once_when_the_edit_ends`, `expression_driver_texts_reads_only_expression_drivers`. Each targets a new helper, so none can fail on the old code; the egui focus, Esc and drawing paths are untested. cargo test --all and clippy pass.
+
 ## 2026-11-16 - LGE-18: index_at_driver and angles_deg docs say what trajectory sweeps hold (audit; branch audit/2026-11-16-consistency)
 - What changed: LGE-18 (65fa63f): doc comments only. A computed trajectory sweep fills `angles_deg` with sample times in seconds (only `empty_trajectory_sweep_data` leaves it empty); `index_at_driver` compares degrees, so it must not be called on a trajectory sweep. No guard was added: whether `current_sweep_index` callers can reach a trajectory sweep is a behaviour question left to the owner.
 - Tests: none (comments only). clippy passes.
