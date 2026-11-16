@@ -193,6 +193,7 @@ impl Cell {
     }
 
     /// The cell's text; empty for a cell that holds no text.
+    #[cfg(test)]
     pub fn as_text(&self) -> &str {
         match &self.value {
             CellValue::Text(text) => text,
