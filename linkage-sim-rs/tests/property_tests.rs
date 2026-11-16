@@ -90,6 +90,117 @@ fn fourbar_lengths() -> impl Strategy<Value = (f64, f64, f64, f64)> {
 }
 
 // ---------------------------------------------------------------------------
+// Case checks shared by the proptest! tests and the reach-count tests below.
+// Each returns Ok(true) when the case reached its assertions, Ok(false) when
+// it was skipped (geometry does not close, or the solve did not converge).
+// ---------------------------------------------------------------------------
+
+fn check_residual_after_solve(
+    ground: f64,
+    crank: f64,
+    coupler: f64,
+    rocker: f64,
+    angle: f64,
+) -> Result<bool, TestCaseError> {
+    let mech = build_random_fourbar(ground, crank, coupler, rocker);
+    let Some(q0) = fourbar_initial_guess(&mech, ground, crank, coupler, rocker, angle) else {
+        return Ok(false); // geometry does not close at this angle
+    };
+    let Ok(result) = solve_position(&mech, &q0, angle / (2.0 * PI), 1e-10, 50) else {
+        return Ok(false);
+    };
+    if !result.converged {
+        return Ok(false);
+    }
+    prop_assert!(
+        result.residual_norm < 1e-8,
+        "converged solution should have residual < 1e-8, got {}",
+        result.residual_norm
+    );
+    // Double-check by independently evaluating the constraints
+    let phi = assemble_constraints(&mech, &result.q, angle / (2.0 * PI));
+    prop_assert!(
+        phi.norm() < 1e-8,
+        "independently assembled constraint norm should be < 1e-8, got {}",
+        phi.norm()
+    );
+    Ok(true)
+}
+
+fn check_velocity_constraint(
+    ground: f64,
+    crank: f64,
+    coupler: f64,
+    rocker: f64,
+    angle: f64,
+) -> Result<bool, TestCaseError> {
+    let mech = build_random_fourbar(ground, crank, coupler, rocker);
+    let Some(q0) = fourbar_initial_guess(&mech, ground, crank, coupler, rocker, angle) else {
+        return Ok(false);
+    };
+    let t = angle / (2.0 * PI);
+    let Ok(pos_result) = solve_position(&mech, &q0, t, 1e-10, 50) else {
+        return Ok(false);
+    };
+    if !pos_result.converged {
+        return Ok(false);
+    }
+    // A converged position must also give a velocity solution.
+    let q_dot = solve_velocity(&mech, &pos_result.q, t)
+        .map_err(|e| TestCaseError::fail(format!("solve_velocity failed: {e:?}")))?;
+    // Verify: Phi_q * q_dot + Phi_t should be approximately zero
+    let phi_q = assemble_jacobian(&mech, &pos_result.q, t);
+    let phi_t = assemble_phi_t(&mech, &pos_result.q, t);
+    let residual = &phi_q * &q_dot + &phi_t;
+    prop_assert!(
+        residual.norm() < 1e-8,
+        "velocity constraint residual Phi_q*q_dot + Phi_t should be near zero, got {}",
+        residual.norm()
+    );
+    // q_dot should be finite (no NaN or Inf)
+    for i in 0..q_dot.len() {
+        prop_assert!(q_dot[i].is_finite(), "q_dot[{}] = {} is not finite", i, q_dot[i]);
+    }
+    Ok(true)
+}
+
+/// Run `check` over the same strategy the proptest! tests use and return how
+/// many of the cases reached their assertions.
+fn count_reached(
+    check: fn(f64, f64, f64, f64, f64) -> Result<bool, TestCaseError>,
+) -> (u32, u32) {
+    use std::cell::Cell;
+    let reached = Cell::new(0u32);
+    let total = Cell::new(0u32);
+    let mut runner = proptest::test_runner::TestRunner::default();
+    runner
+        .run(
+            &(fourbar_lengths(), 0.1_f64..6.0),
+            |((g, c, p, r), angle)| {
+                total.set(total.get() + 1);
+                if check(g, c, p, r, angle)? {
+                    reached.set(reached.get() + 1);
+                }
+                Ok(())
+            },
+        )
+        .unwrap();
+    (reached.get(), total.get())
+}
+
+#[test]
+fn residual_property_reaches_its_assertions_for_a_fair_share_of_cases() {
+    let (reached, total) = count_reached(check_residual_after_solve);
+    assert!(reached * 5 >= total * 2, "only {reached} of {total} cases reached an assertion");
+}
+
+#[test]
+fn velocity_property_reaches_its_assertions_for_a_fair_share_of_cases() {
+    let (reached, total) = count_reached(check_velocity_constraint);
+    assert!(reached * 5 >= total * 2, "only {reached} of {total} cases reached an assertion");
+}
+
+// ---------------------------------------------------------------------------
 // Property-based tests
 // ---------------------------------------------------------------------------
 
@@ -128,31 +239,7 @@ proptest! {
         (ground, crank, coupler, rocker) in fourbar_lengths(),
         angle in 0.1_f64..6.0,
     ) {
-        let mech = build_random_fourbar(ground, crank, coupler, rocker);
-
-        // Try to get a valid initial guess at this angle
-        let q0 = match fourbar_initial_guess(&mech, ground, crank, coupler, rocker, angle) {
-            Some(q) => q,
-            None => return Ok(()),  // Geometry doesn't close at this angle — skip
-        };
-
-        if let Ok(result) = solve_position(&mech, &q0, angle / (2.0 * PI), 1e-10, 50) {
-            if result.converged {
-                prop_assert!(
-                    result.residual_norm < 1e-8,
-                    "converged solution should have residual < 1e-8, got {}",
-                    result.residual_norm
-                );
-
-                // Double-check by independently evaluating the constraints
-                let phi = assemble_constraints(&mech, &result.q, angle / (2.0 * PI));
-                prop_assert!(
-                    phi.norm() < 1e-8,
-                    "independently assembled constraint norm should be < 1e-8, got {}",
-                    phi.norm()
-                );
-            }
-        }
+        check_residual_after_solve(ground, crank, coupler, rocker, angle)?;
     }
 
     /// After position + velocity solve, the velocity-level constraint equation
@@ -162,42 +249,7 @@ proptest! {
         (ground, crank, coupler, rocker) in fourbar_lengths(),
         angle in 0.1_f64..6.0,
     ) {
-        let mech = build_random_fourbar(ground, crank, coupler, rocker);
-
-        let q0 = match fourbar_initial_guess(&mech, ground, crank, coupler, rocker, angle) {
-            Some(q) => q,
-            None => return Ok(()),
-        };
-
-        let t = angle / (2.0 * PI);
-        if let Ok(pos_result) = solve_position(&mech, &q0, t, 1e-10, 50) {
-            if !pos_result.converged {
-                return Ok(());
-            }
-
-            if let Ok(q_dot) = solve_velocity(&mech, &pos_result.q, t) {
-                // Verify: Phi_q * q_dot + Phi_t should be approximately zero
-                let phi_q = assemble_jacobian(&mech, &pos_result.q, t);
-                let phi_t = assemble_phi_t(&mech, &pos_result.q, t);
-                let residual = &phi_q * &q_dot + &phi_t;
-
-                prop_assert!(
-                    residual.norm() < 1e-8,
-                    "velocity constraint residual Phi_q*q_dot + Phi_t should be near zero, got {}",
-                    residual.norm()
-                );
-
-                // q_dot should be finite (no NaN or Inf)
-                for i in 0..q_dot.len() {
-                    prop_assert!(
-                        q_dot[i].is_finite(),
-                        "q_dot[{}] = {} is not finite",
-                        i,
-                        q_dot[i]
-                    );
-                }
-            }
-        }
+        check_velocity_constraint(ground, crank, coupler, rocker, angle)?;
     }
 
     /// Grashof classification must be deterministic: same inputs always give
