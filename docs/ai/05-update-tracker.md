@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - serialization error helper, joint body lookup and two-point force view (audit LFA-14, LFA-04, LFA-06; branch audit/2026-11-16-dry)
+- What changed: LFA-14 (2cf46d2): `SerializationError::build(cause)` replaces the `|e| SerializationError::Build(e.to_string())` closure at ten sites in io/from_json.rs. LFA-04 (b1c80a1): `joint_bodies` in io/to_json.rs does the two body lookups of the four `joint_to_json` arms (this also covers the four to_json lookups LFA-14 listed; message unchanged). LFA-06 (3f5635f): `ForceElement::two_point_ends` and `two_point_ends_mut` name the spring, damper, gas spring and actuator once; compound.rs (three functions and a test), `resolve_named_points` and from_json.rs (two helpers) use them. `attached_body_ids` keeps its full variant list (the compiler checks it). No behaviour change; no copy differed.
+- Tests: new `joint_bodies_tests` (exact messages) and a `two_point_ends` test; cargo test --all and cargo clippy --all-targets -- -D warnings pass.
+
 ## 2026-11-16 - driver angle-to-time helper and one copy of the time-modulation maths (audit LGS-04, LFA-15; branch audit/2026-11-16-dry)
 - What changed: LGS-04 (f1a73d3): the driver-angle to time mapping, written out eight times under gui/state, is one driver_angle_to_time(angle, theta_0, omega) in state/solver_helpers.rs with the zero-omega guard (returns 0.0). flip_assembly_branch and the two load-time solves in file_io.rs had no guard and gave inf/NaN at omega = 0; they now match the other copies. Copies outside gui/state (sweep, export, samples, property_panel) were not touched. LFA-15 (fa5352d): TimeModulation::factor calls compile, so the modulation maths exists once; expression warnings from actor now carry the compile prefix.
 - Tests: new helper tests (omega = 0, sub-epsilon, 0/0) and time_modulation tests for every variant and the bad-expression cases; cargo test --all and cargo clippy --all-targets -- -D warnings pass.

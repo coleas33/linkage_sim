@@ -270,9 +270,9 @@ You asked for repetition to be flagged hard. None of these was merged: each merg
 - **LGE-15** The four-bar skeleton is hand-copied into eleven sample builders although build_standard_fourbar exists.
 - **LGE-12** compute_sweep_data_with_weights and compute_trajectory repeat the same setup; SweepData is built long-hand three times.
 - **LGE-13** write_sweep_csv codes each of eleven optional columns twice.
-- **LFA-06** The "four two-point forces" match is written out in eight places.
-- **LFA-04** Four identical copies of the body-lookup block in `joint_to_json`.
-- **LFA-14** `.map_err(|e| SerializationError::Build(e.to_string()))` repeated nine times in from_json and four more lookups in to_json.
+- **LFA-06** The "four two-point forces" match is written out in eight places. FIXED 3f5635f: `ForceElement::two_point_ends` (and `_mut`) used by seven sites; `attached_body_ids` left, the compiler checks it.
+- **LFA-04** Four identical copies of the body-lookup block in `joint_to_json`. FIXED b1c80a1: `joint_bodies` helper.
+- **LFA-14** `.map_err(|e| SerializationError::Build(e.to_string()))` repeated nine times in from_json and four more lookups in to_json. FIXED 2cf46d2 (from_json, `SerializationError::build`) and b1c80a1 (to_json lookups).
 - **LFA-15** The time-modulation maths is written twice. FIXED fa5352d: `factor` now calls `compile`, one copy of the maths.
 - **LFA-13** The same 4-bar test fixture is typed out again and again in this part.
 - **LCS-05** pass-1-only result is built twice, and the transposed Jacobian SVD solve is written three times.
