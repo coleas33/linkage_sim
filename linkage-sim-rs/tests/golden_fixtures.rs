@@ -1001,6 +1001,7 @@ fn spring_affects_statics_driver_torque() {
     mech_spring.build().unwrap();
 
     let mut any_torque_different = false;
+    let mut checked = 0usize;
 
     for &angle in &test_angles {
         // Solve position for both mechanisms.
@@ -1009,9 +1010,10 @@ fn spring_affects_statics_driver_torque() {
         let pos_ns = solve_position(&mech_no_spring, &q0, angle, 1e-10, 50).unwrap();
         let pos_s = solve_position(&mech_spring, &q0, angle, 1e-10, 50).unwrap();
 
-        if !pos_ns.converged || !pos_s.converged {
-            continue;
-        }
+        assert!(
+            pos_ns.converged && pos_s.converged,
+            "position solve must converge at angle={angle}"
+        );
 
         // Solve statics for both.
         let stat_ns = solve_statics(&mech_no_spring, &pos_ns.q, angle).unwrap();
@@ -1035,15 +1037,18 @@ fn spring_affects_statics_driver_torque() {
 
         // Virtual work cross-check for the spring mechanism.
         use linkage_sim_rs::analysis::virtual_work::virtual_work_check;
-        let vw = virtual_work_check(&mech_spring, &pos_s.q, angle, torque_s, 0.05);
-        if let Ok(result) = vw {
-            assert!(
-                result.agrees,
-                "Virtual work disagreed at angle={:.2}: rel_err={:.4}",
-                angle, result.relative_error,
-            );
-        }
+        let result = virtual_work_check(&mech_spring, &pos_s.q, angle, torque_s, 0.05)
+            .unwrap_or_else(|e| panic!("virtual_work_check failed at angle={angle}: {e:?}"));
+        assert!(
+            result.agrees,
+            "Virtual work disagreed at angle={:.2}: rel_err={:.4}",
+            angle, result.relative_error,
+        );
+        checked += 1;
     }
+
+    // Every angle must have reached the virtual-work assertion.
+    assert_eq!(checked, test_angles.len());
 
     assert!(
         any_torque_different,

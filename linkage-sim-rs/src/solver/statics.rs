@@ -280,10 +280,15 @@ mod tests {
         let joints = get_joint_reactions(&reactions);
         assert_eq!(joints.len(), 4);
         for jr in &joints {
-            assert!(jr.resultant >= 0.0);
+            let hypot = jr.force_global[0].hypot(jr.force_global[1]);
+            assert_abs_diff_eq!(jr.resultant, hypot, epsilon = 1e-9);
             assert!(jr.force_global[0].is_finite());
             assert!(jr.force_global[1].is_finite());
         }
+        assert!(
+            joints.iter().any(|jr| jr.resultant > 1e-6),
+            "gravity loading should give at least one joint a nonzero reaction"
+        );
     }
 
     #[test]

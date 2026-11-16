@@ -5,6 +5,46 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - The panel's clamp-text allowlist is asserted empty with its reason (audit MGP-11; branch audit/2026-11-16-section-c)
+- What changed: in magcoupling-rs/src/gui/panel.rs the test `every_text_the_panel_shows_has_glyphs_and_none_names_the_paused_clamp` keeps its `ALLOWED` hook (ruling 11: no text may name the paused clamp) and now asserts it is empty, with a message that an entry needs the owner's say and the assertion changes with that ruling.
+- Tests: shown to bite: one entry in ALLOWED fails the test with "ALLOWED holds a text that may name the paused clamp". Reverted.
+
+## 2026-11-16 - The ignore guard's name and doc say the six files it checks (audit MT-06; branch audit/2026-11-16-section-c)
+- What changed: magcoupling-rs/tests/explain.rs `only_the_review_tools_are_ignored` is now `in_the_six_files_that_hold_them_only_the_review_tools_are_ignored`, and its doc says it reads exactly the six listed sources. Scope is not widened (a directory walk would give up the compile-time `include_str!` list). The README, 03-structure.yaml and 04-memory.yaml follow the rename.
+- Tests: shown to bite: a test with an ignore attribute appended to tests/explain.rs fails the guard ("ignored checks: [tests/explain.rs: zz_extra]"). Removed.
+
+## 2026-11-16 - notes_before_snapshot is a documented write-once generator that cannot fail (audit MEX-06; branch audit/2026-11-16-section-c)
+- What changed: in magcoupling-rs/src/engine/explain/notes.rs the ignored `notes_before_snapshot` asserted its output file did not exist, but the file is committed, so a hand run with `--ignored` could only fail. It now has a doc comment with the command (`cargo test --lib notes_before_snapshot -- --ignored`), the command in its ignore reason, and returns with a printed note when the file exists. It stays ignored and stays in the ignore guard's allow-list.
+- Tests: shown by the hand run: `--ignored` now passes where the old body panicked on the existing file.
+
+## 2026-11-16 - Python sweep tests fail on an unsolved or missing sample instead of skipping it (audit PY-08; branch audit/2026-11-16-section-c)
+- What changed: in test_numerical_consistency.py (the 3 six-bar FD tests and 5 sweep invariant/residual tests), test_sixbar_ternary.py, test_fourbar_benchmark.py and test_textbook_benchmarks.py, every `if sample is None: continue` is now an assert, so a sweep that stops converging, or a float-key lookup that stops matching, turns the test red instead of a green no-op. All samples converge today, so nothing else changed. Left alone on purpose: test_regression_baselines.py:501,503 (deliberate near-toggle exclusions) and test_failure_modes.py:498 (already follows assert n_converged == len(angles)). The three pasted angle-to-index loops are not merged (leads.md).
+- Tests: shown to bite: making position_sweep return None for step 7 fails 13 tests. Reverted.
+
+## 2026-11-16 - The assertion-free ground-input MA test now asserts (audit PY-03; branch audit/2026-11-16-section-c)
+- What changed: tests/test_mechanical_advantage.py test_ground_input_returns_zero now passes "ground" as the input body and asserts input velocity 0.0, a nonzero output velocity and MA == inf. A new test, test_same_body_input_and_output_gives_unit_ma, covers the rocker-to-rocker case the old comment promised (MA == 1).
+- Tests: shown to bite: making _get_velocity return 1.0 for ground fails the ground test. Reverted. Run with PYTHONPATH set to this worktree's src: the editable install points at the main checkout.
+
+## 2026-11-16 - Template tests stop writing to the real ~/.linkage-sim (audit LGS-14; branch audit/2026-11-16-section-c)
+- What changed: gui/state/templates.rs gets storage_root(): ~/.linkage-sim normally, a per-process temp dir in unit tests. New test tests_persist_under_temp_dir_not_home. The developer's existing files ("test", "roundtrip", "a", "b", "only") were left in place.
+- Tests: shown to bite: pointing storage_root() back at the home dir in test builds fails the new test. Reverted. Commit d8d3c57.
+
+## 2026-11-16 - braindump_repro.rs header says what the file is (audit INF-11; branch audit/2026-11-16-section-c)
+- What changed: the "TEMPORARY ... Not for commit" header is now "tracked repro for BL-017; keep it". Comment only. The backlog note "(untracked)" in BL-017 is still stale; left for the owner.
+- Tests: none needed (comment only). Commit e700cd4.
+
+## 2026-11-16 - Duplicate sample-count test removed; PeaucellierLipkin documented (audit LGE-20; branch audit/2026-11-16-section-c)
+- What changed: samples/mod.rs sample_count_is_30 (exact copy of all_samples_listed) deleted. The PeaucellierLipkin variant builds a change-point 4-bar; it is public API so it is not renamed, a doc comment says so (the label already reads "Coupler Curve (figure-8)"). Renaming is an owner call.
+- Tests: all_samples_listed still asserts 30. Commit d4d9f4e.
+
+## 2026-11-16 - The two weak solver tests assert something that can fail (audit LCS-16; branch audit/2026-11-16-section-c)
+- What changed: inverse_solve_status_constructs_all_variants (severity.rs) matches every variant and its fields; fourbar_reactions_extract (statics.rs) requires resultant == hypot(force_global) per joint and one nonzero joint reaction. The duplicated 4-bar fixture is left: no crate-wide test-support module exists (the helper is pub(crate) inside inverse_kinematics only), so sharing it is a refactor for the owner to decide.
+- Tests: shown to bite: a changed Singularity field fails the severity test; resultant forced to 0.0 fails the statics test. Both reverted. Commit 5e344f9.
+
+## 2026-11-16 - The solver property tests and the spring fixture count the cases that reach an assertion (audit INF-14; branch audit/2026-11-16-section-c)
+- What changed: tests/property_tests.rs: the residual and velocity properties moved into check_residual_after_solve and check_velocity_constraint (return whether the case reached its assertions); two new tests require at least 40% of cases to reach one (63% do today); a converged position with no velocity solution now fails. tests/golden_fixtures.rs spring_affects_statics_driver_torque asserts convergence and a virtual_work_check Ok at every angle and counts them.
+- Tests: shown to bite: solve_position forced to converged false fails both reach-count tests; virtual_work_check forced to Err fails the spring fixture. Both reverted. Commit 33bfce8.
+
 ## 2026-11-16 - A control target with a zero direction is an error, not a panic (audit LCS-13; branch audit/2026-11-16-section-a)
 - What changed: new ControlTarget::validate (inverse_kinematics/control_target.rs) returns the new LinkageError::InvalidControlTarget for a Projection whose axis_dir is zero or NaN; workspace_probe calls it first, so solve_for_target and the trajectory sweep return an Err (Strict and Analysis alike) instead of stopping at the assert. The asserts in evaluate/gradient/hessian and the projection() constructor stay. Readers checked: evaluate/gradient/hessian are reached only after a probe (solve_for_target, sweep, trajectory_ops); no match on LinkageError is exhaustive.
 - Tests: zero_direction_projection_target_is_an_error_not_a_panic (red first: panicked "Projection axis_dir is zero"). Commit 134b45d.
