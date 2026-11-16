@@ -59,6 +59,7 @@ impl AppState {
         // Restore the blueprint from the snapshot JSON so it stays in sync.
         self.blueprint = serde_json::from_str(&snapshot.mechanism_json).ok();
 
+        self.refresh_sweep_stroke_range(&mech);
         self.mechanism = Some(mech);
         self.driver_angle = snapshot.driver_angle;
         // Reconstruct driver_kind from the restored blueprint, then
@@ -88,6 +89,7 @@ impl AppState {
         self.compute_forces(self.driver_angle);
         self.update_grashof();
         self.compute_validation();
+        self.recompute_driver_display_offset();
         self.mark_sweep_dirty();
     }
 

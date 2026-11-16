@@ -1115,6 +1115,23 @@ impl AppState {
         self.pending_fit_to_view = true;
     }
 
+    /// Set the sweep stroke range from the first LinearActuator force
+    /// element of `mech` (0..0 when it has none). Shared by rebuild, load
+    /// and undo/redo so the sweep UI tracks the mechanism it is shown with.
+    pub(crate) fn refresh_sweep_stroke_range(&mut self, mech: &crate::core::mechanism::Mechanism) {
+        use crate::forces::elements::ForceElement;
+        (self.sweep_stroke_min, self.sweep_stroke_max) = mech
+            .forces()
+            .iter()
+            .find_map(|f| match f {
+                ForceElement::LinearActuator(a) if a.stroke_min > 0.0 || a.stroke_max > 0.0 => {
+                    Some((a.stroke_min, a.stroke_max))
+                }
+                _ => None,
+            })
+            .unwrap_or((0.0, 0.0));
+    }
+
     /// Recompute `driver_display_offset` from the current mechanism.
     ///
     /// Finds the driver body, locates its grounded revolute pivot, and

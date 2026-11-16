@@ -1,5 +1,6 @@
 //! SVG generation and file export for mechanism diagrams.
 
+use super::escape::html_escape;
 use crate::core::mechanism::Mechanism;
 
 /// Generate the SVG string for a mechanism at its current pose.
@@ -144,7 +145,7 @@ pub fn generate_svg_string(
 "#,
                 centroid_x,
                 centroid_y - 14.0,
-                body_id
+                html_escape(body_id)
             ));
         }
     }
@@ -218,7 +219,7 @@ pub fn generate_svg_string(
 "#,
             sx + 6.0,
             sy - 4.0,
-            joint.id()
+            html_escape(joint.id())
         ));
     }
 
@@ -312,5 +313,17 @@ mod tests {
 
         let result = generate_svg_string(&mech, &q);
         assert!(result.is_err(), "empty mechanism should return an error");
+    }
+
+    /// LGE-07: body and joint names are escaped in the SVG text labels.
+    #[test]
+    fn svg_escapes_hostile_names() {
+        use super::super::escape::test_support::*;
+        let (mech, q) = hostile_fourbar();
+        let svg = generate_svg_string(&mech, &q).expect("svg");
+        assert!(!svg.contains("<script>alert(1)"), "a body name opened a script");
+        assert!(!svg.contains("<img src=x"), "a joint name opened a tag");
+        assert!(svg.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
+        assert!(svg.contains("x&quot;&lt;/script&gt;"), "double quote and </script> escaped");
     }
 }

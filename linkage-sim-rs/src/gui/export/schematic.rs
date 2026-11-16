@@ -25,6 +25,7 @@ use crate::core::constraint::JointConstraint;
 use crate::core::mechanism::Mechanism;
 use crate::core::state::GROUND_ID;
 use crate::gui::eq_rendering;
+use super::escape::html_escape;
 
 /// SVG canvas size — drawing area (top) + legend area (bottom).
 ///
@@ -343,7 +344,7 @@ pub fn generate_schematic_svg(
 "#,
             lx,
             ly,
-            xml_escape(&combined)
+            html_escape(&combined)
         ));
     }
 
@@ -374,7 +375,7 @@ pub fn generate_schematic_svg(
 "##,
             cx,
             cy - 10.0,
-            xml_escape(body_id)
+            html_escape(body_id)
         ));
     }
     // Ground label (only if we have a ground body with attachment points).
@@ -428,7 +429,7 @@ pub fn generate_schematic_svg(
 "##,
                 dx + r,
                 dy - r - 4.0,
-                xml_escape(&label)
+                html_escape(&label)
             ));
         }
     } else if let Some(drv) = mech.linear_drivers().first() {
@@ -476,7 +477,7 @@ pub fn generate_schematic_svg(
 "##,
             label_x,
             label_y,
-            xml_escape(&label)
+            html_escape(&label)
         ));
     }
 
@@ -523,7 +524,7 @@ pub fn generate_schematic_svg(
 "##,
                 label_x,
                 label_y,
-                xml_escape(&label)
+                html_escape(&label)
             ));
         }
     }
@@ -700,7 +701,7 @@ pub fn generate_schematic_svg(
 "#,
             legend_x,
             y,
-            xml_escape(&line)
+            html_escape(&line)
         ));
         y += 18.0;
     }
@@ -722,7 +723,7 @@ pub fn generate_schematic_svg(
 "##,
             legend_x,
             y,
-            xml_escape(&line)
+            html_escape(&line)
         ));
         y += 18.0;
     }
@@ -739,7 +740,7 @@ pub fn generate_schematic_svg(
 "##,
             legend_x,
             y,
-            xml_escape(&line)
+            html_escape(&line)
         ));
         y += 18.0;
     }
@@ -783,23 +784,6 @@ fn short_driver_form(symbolic: &str, is_revolute: bool) -> String {
     }
 }
 
-/// Minimal XML-escape for text node contents. Body and joint IDs in this
-/// codebase are typically alphanumeric, but escape defensively in case a user
-/// chooses an ID with `<`, `>`, `&`, etc.
-fn xml_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '&' => out.push_str("&amp;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&apos;"),
-            _ => out.push(c),
-        }
-    }
-    out
-}
 
 #[cfg(test)]
 mod tests {

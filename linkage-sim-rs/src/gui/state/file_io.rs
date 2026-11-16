@@ -3,7 +3,6 @@
 use std::path::Path;
 
 use crate::core::driver::DriverMeta;
-use crate::forces::elements::ForceElement;
 use crate::io::{load_mechanism_unbuilt, mechanism_to_json};
 use super::{AppState, LoadCaseManager};
 use super::blueprint_ops::detect_driver_joint_id;
@@ -92,6 +91,15 @@ impl AppState {
         self.status_message = Some(format!("Saved: {}", path.display()));
         self.status_message_time = 3.0;
         Ok(())
+    }
+
+    /// Log a failed open/save/load and show it in the status line, where the success
+    /// message goes, so a failure is not mistaken for success. (what reads like
+    /// "Save failed".)
+    pub fn report_failure(&mut self, what: &str, err: &str) {
+        log::error!("{}: {}", what, err);
+        self.status_message = Some(format!("{}: {}", what, err));
+        self.status_message_time = 5.0;
     }
 
     /// Perform periodic autosave to a temp file alongside the last save path.
@@ -479,19 +487,7 @@ impl AppState {
         } else {
             super::DriverKind::None
         };
-        // Initialize stroke range from the first LinearActuator force element
-        // (if any) so the stroke sweep UI has sensible defaults.
-        self.sweep_stroke_min = 0.0;
-        self.sweep_stroke_max = 0.0;
-        for force in mech.forces() {
-            if let ForceElement::LinearActuator(act) = force {
-                if act.stroke_min > 0.0 || act.stroke_max > 0.0 {
-                    self.sweep_stroke_min = act.stroke_min;
-                    self.sweep_stroke_max = act.stroke_max;
-                    break;
-                }
-            }
-        }
+        self.refresh_sweep_stroke_range(&mech);
 
         self.mechanism = Some(mech);
         self.current_sample = None;
@@ -736,6 +732,18 @@ fn wasm_now_secs() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failed_save_is_shown_in_the_status_line() {
+        let mut state = AppState::default();
+        let dir = std::env::temp_dir().join("lsim_lgs10_no_such_dir");
+        let err = state.save_to_file(&dir.join("x.json")).unwrap_err();
+        state.report_failure("Save failed", &err);
+        let msg = state.status_message.clone().expect("a failed save must set the status line");
+        assert!(msg.starts_with("Save failed: "), "{msg}");
+        assert!(msg.contains(&err), "{msg}");
+        assert!(state.status_message_time > 0.0);
+    }
 
     #[test]
     fn share_url_encode_decode_roundtrip() {

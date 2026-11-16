@@ -80,14 +80,15 @@ Then open `http://localhost:8080/tools/` in your browser.
 Production deployments are automated via the GitHub Actions workflow at `.github/workflows/deploy-web.yml`. A push to `main` triggers the full pipeline:
 
 1. Check out the repo.
-2. Install the stable Rust toolchain with the `wasm32-unknown-unknown` target.
+2. Install Rust 1.89.0 (the version the workflow pins) with the `wasm32-unknown-unknown` target.
 3. Restore the Cargo cache (keyed on both `Cargo.lock` files, `linkage-sim-rs` and `magcoupling-rs`).
-4. Install `wasm-bindgen-cli@0.2.114`.
-5. Run `scripts/build_web.sh`: both bundles, the calculator's piped through the workbook-parity guard.
-6. Install the Vercel CLI.
-7. Pull the Vercel environment configuration.
-8. Build the Vercel output (`vercel build --prod`).
-9. Deploy to Vercel (`vercel deploy --prebuilt --prod`).
+4. Run the tests, which fail the job before anything is built or deployed: `cargo test --all` in `linkage-sim-rs`, `cargo test` and `cargo test --features app` in `magcoupling-rs` (gate.sh gates 1, 4 and 7; the local gate alone keeps clippy, the Python oracle and the wasm-bindgen parity checks).
+5. Install `wasm-bindgen-cli@0.2.114`.
+6. Run `scripts/build_web.sh`: both bundles, the calculator's piped through the workbook-parity guard.
+7. Install the Vercel CLI.
+8. Pull the Vercel environment configuration.
+9. Build the Vercel output (`vercel build --prod`).
+10. Deploy to Vercel (`vercel deploy --prebuilt --prod`).
 
 ### Required GitHub Secrets
 

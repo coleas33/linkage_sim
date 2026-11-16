@@ -33,6 +33,20 @@ jobs:
           key: wasm-cargo-${{ hashFiles('linkage-sim-rs/Cargo.lock', 'magcoupling-rs/Cargo.lock') }}
           restore-keys: wasm-cargo-
 
+      # The local gate keeps clippy, the Python oracle and the wasm-bindgen
+      # parity checks; these are gate.sh gates 1, 4 and 7, so a push to main
+      # cannot publish a build whose tests fail.
+      - name: Test linkage-sim-rs
+        working-directory: linkage-sim-rs
+        run: cargo test --all
+
+      - name: Test magcoupling-rs
+        working-directory: magcoupling-rs
+        run: cargo test
+
+      - name: Test magcoupling-rs (app feature)
+        working-directory: magcoupling-rs
+        run: cargo test --features app
       - name: Install wasm-bindgen-cli
         run: cargo install wasm-bindgen-cli@0.2.114 --force
 

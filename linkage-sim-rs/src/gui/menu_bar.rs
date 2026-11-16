@@ -137,7 +137,7 @@ pub(crate) fn draw_menu_bar(
                                 .pick_file()
                             {
                                 if let Err(e) = state.load_from_file(&path) {
-                                    log::error!("Failed to load mechanism: {}", e);
+                                    state.report_failure("Open failed", &e);
                                 }
                             }
                             ui.close();
@@ -189,7 +189,7 @@ pub(crate) fn draw_menu_bar(
                                 }
                                 if let Some(path) = load_path {
                                     if let Err(e) = state.load_from_file(&path) {
-                                        log::error!("Failed to load recent file: {}", e);
+                                        state.report_failure("Open failed", &e);
                                     }
                                 }
                             });
@@ -201,7 +201,7 @@ pub(crate) fn draw_menu_bar(
                         {
                             if let Some(path) = state.last_save_path.clone() {
                                 if let Err(e) = state.save_to_file(&path) {
-                                    log::error!("Save failed: {}", e);
+                                    state.report_failure("Save failed", &e);
                                 }
                             } else if let Some(path) = rfd::FileDialog::new()
                                 .add_filter("JSON", &["json"])
@@ -209,7 +209,7 @@ pub(crate) fn draw_menu_bar(
                                 .save_file()
                             {
                                 if let Err(e) = state.save_to_file(&path) {
-                                    log::error!("Save failed: {}", e);
+                                    state.report_failure("Save failed", &e);
                                 }
                             }
                             ui.close();
@@ -224,7 +224,7 @@ pub(crate) fn draw_menu_bar(
                                 .save_file()
                             {
                                 if let Err(e) = state.save_to_file(&path) {
-                                    log::error!("Failed to save mechanism: {}", e);
+                                    state.report_failure("Save failed", &e);
                                 }
                             }
                             ui.close();
