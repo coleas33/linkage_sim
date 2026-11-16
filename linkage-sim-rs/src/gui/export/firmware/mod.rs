@@ -33,9 +33,11 @@ pub trait FirmwareAdapter {
     ) -> Result<String, String>;
 
     /// File extension WITHOUT the leading dot (e.g. "json", "gcode", "nc").
+    #[allow(dead_code)] // trait contract; no caller yet
     fn file_extension(&self) -> &'static str;
 
     /// Human-readable name shown in the export menu.
+    #[allow(dead_code)] // trait contract; no caller yet
     fn display_name(&self) -> &'static str;
 }
 

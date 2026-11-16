@@ -13,6 +13,7 @@ pub(crate) const MAGCOUPLER_ITEM: &str = "Magnetic coupling calculator";
 
 /// The calculator's own site (magcoupling-rs, `web/tools/magcoupler/`): its
 /// path on this site, and its public address.
+#[allow(dead_code)] // documents the site path; the menu uses the public URL
 pub(crate) const MAGCOUPLER_PATH: &str = "/tools/magcoupler/";
 pub(crate) const MAGCOUPLER_PUBLIC_URL: &str = "https://colesorkness.com/tools/magcoupler/";
 

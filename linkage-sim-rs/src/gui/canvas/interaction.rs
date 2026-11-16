@@ -46,6 +46,7 @@ fn find_nearest_attachment_radius(
 /// Handle all canvas interaction: drag, pan, zoom, keyboard shortcuts, tool modes,
 /// and click-to-select. Returns whether a right-drag just ended (used to suppress
 /// context menu).
+#[allow(clippy::too_many_arguments)] // flat parameter list; a params struct would be a refactor
 pub fn handle_interaction(
     ui: &mut egui::Ui,
     painter: &egui::Painter,
@@ -1511,14 +1512,15 @@ fn apply_canvas_pick(
             //    on state.sweep_mode (we'll need state.world_to_body_local
             //    below, which takes &self on AppState).
             let target_body: String = match &state.sweep_mode {
-                SweepMode::Trajectory { target, .. } => match target {
-                    ControlTarget::WorldX { body_id, .. }
-                    | ControlTarget::WorldY { body_id, .. }
-                    | ControlTarget::Projection { body_id, .. }
-                    | ControlTarget::Distance { body_id, .. } => body_id.clone(),
-                    _ => return, // Angle target has no local_pt
-                },
-                _ => return,
+                SweepMode::Trajectory {
+                    target:
+                        ControlTarget::WorldX { body_id, .. }
+                        | ControlTarget::WorldY { body_id, .. }
+                        | ControlTarget::Projection { body_id, .. }
+                        | ControlTarget::Distance { body_id, .. },
+                    ..
+                } => body_id.clone(),
+                _ => return, // Angle target has no local_pt
             };
 
             // 2. Find which body the click landed on (attachment first, then segment).
@@ -1549,14 +1551,16 @@ fn apply_canvas_pick(
             // 3. Convert world → body-local using the existing helper, then
             //    write into the target's local_pt field.
             let local = state.world_to_body_local(&target_body, world_pos[0], world_pos[1]);
-            if let SweepMode::Trajectory { target, .. } = &mut state.sweep_mode {
-                match target {
+            if let SweepMode::Trajectory {
+                target:
                     ControlTarget::WorldX { local_pt, .. }
                     | ControlTarget::WorldY { local_pt, .. }
                     | ControlTarget::Projection { local_pt, .. }
-                    | ControlTarget::Distance { local_pt, .. } => *local_pt = local,
-                    _ => {}
-                }
+                    | ControlTarget::Distance { local_pt, .. },
+                ..
+            } = &mut state.sweep_mode
+            {
+                *local_pt = local;
             }
         }
         PendingCanvasPickKind::AxisOrigin => {

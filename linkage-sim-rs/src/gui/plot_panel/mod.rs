@@ -560,7 +560,6 @@ fn detect_plot_click(plot_ui: &egui_plot::PlotUi) -> Option<f64> {
 ///
 /// When `sweep.active_range` is set, the full curve is drawn faded/dashed for
 /// context and the active sub-range is overdrawn solid.
-
 fn draw_toggle_markers(
     plot_ui: &mut egui_plot::PlotUi,
     sweep: &SweepData,
@@ -629,6 +628,7 @@ fn faded_color(color: egui::Color32) -> egui::Color32 {
 ///
 /// In angle mode, x values are in degrees and are converted to the display
 /// angle unit. In stroke mode, x values are in meters and are converted to mm.
+#[allow(clippy::too_many_arguments)] // flat parameter list; a params struct would be a refactor
 fn draw_angle_series_with_range(
     plot_ui: &mut egui_plot::PlotUi,
     name: &str,
@@ -1007,12 +1007,11 @@ mod tests {
         let crank_len = 2.0_f64;
         let new_bx = crank_len * 43f64.to_radians().cos();
         let new_by = crank_len * 43f64.to_radians().sin();
-        if let Some(bp) = state.blueprint.as_mut() {
-            if let Some(crank) = bp.bodies.get_mut("crank") {
+        if let Some(bp) = state.blueprint.as_mut()
+            && let Some(crank) = bp.bodies.get_mut("crank") {
                 crank.attachment_points
                     .insert("B".to_string(), [new_bx, new_by]);
             }
-        }
         state.rebuild();
         assert!(
             (state.driver_display_offset - 43f64.to_radians()).abs() < 1e-3,

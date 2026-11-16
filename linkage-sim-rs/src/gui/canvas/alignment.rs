@@ -221,9 +221,11 @@ mod tests {
 
     #[test]
     fn no_mechanism_returns_unsnapped() {
-        let mut state = AppState::default();
         // Default state has a mechanism (empty), so explicitly clear it.
-        state.mechanism = None;
+        let state = AppState {
+            mechanism: None,
+            ..AppState::default()
+        };
         let mut guides = Vec::new();
         let (sx, sy) = compute_alignment_guides(&state, 1.0, 2.0, None, 0.01, &mut guides);
         assert!(guides.is_empty());

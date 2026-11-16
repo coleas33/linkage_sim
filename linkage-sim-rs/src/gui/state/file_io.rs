@@ -1052,10 +1052,12 @@ mod tests {
             "mounting_angle": 0.0,
             "linear_drivers": []
         }"#;
-        let mut state = AppState::default();
         // Set non-default in-memory values; load shouldn't wipe them.
-        state.actuator_rated_force = 999.0;
-        state.simulation_duration = 12.0;
+        let mut state = AppState {
+            actuator_rated_force: 999.0,
+            simulation_duration: 12.0,
+            ..AppState::default()
+        };
         state
             .load_from_json_str(pre_config_json)
             .expect("old JSON should load");
@@ -1130,9 +1132,11 @@ mod tests {
             "simulation_duration": 33.0,
             "sensor_config": {"encoder_joint": "J1", "encoder_noise_std": 0.0, "actuator_position_enabled": true, "actuator_noise_std": 0.0}
         }"#;
-        let mut state = AppState::default();
-        state.actuator_rated_force = 999.0;
-        state.simulation_duration = 12.0;
+        let mut state = AppState {
+            actuator_rated_force: 999.0,
+            simulation_duration: 12.0,
+            ..AppState::default()
+        };
         let blueprint_before = state.blueprint.is_some();
         assert!(state.load_from_json_str(bad_json).is_err());
         assert!((state.actuator_rated_force - 999.0).abs() < 1e-9);

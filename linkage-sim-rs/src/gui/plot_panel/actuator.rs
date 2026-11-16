@@ -188,7 +188,6 @@ pub(super) fn draw_actuator_force(
 /// Only available when a LinearActuator force element is present.
 ///
 /// Returns the clicked X coordinate (display angle units) if the user clicked.
-
 pub(super) fn draw_actuator_speed(
     ui: &mut egui::Ui,
     sweep: &SweepData,
@@ -253,7 +252,6 @@ pub(super) fn draw_actuator_speed(
 /// Only available when a LinearActuator force element is present.
 ///
 /// Returns the clicked X coordinate (display angle units) if the user clicked.
-
 pub(super) fn draw_actuator_power(
     ui: &mut egui::Ui,
     sweep: &SweepData,

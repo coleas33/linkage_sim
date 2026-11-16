@@ -963,8 +963,10 @@ mod tests {
         use crate::gui::samples::{build_sample, SampleMechanism};
         let (mech, q0) = build_sample(SampleMechanism::FourBar);
         let res = solve_position(&mech, &q0, 0.0, 1e-10, 50).expect("solver ok");
-        let mut sensors = crate::gui::state::SensorConfig::default();
-        sensors.encoder_joint = Some("D1".to_string());
+        let sensors = crate::gui::state::SensorConfig {
+            encoder_joint: Some("D1".to_string()),
+            ..crate::gui::state::SensorConfig::default()
+        };
         let svg = generate_schematic_svg(&mech, &res.q, &sensors).expect("svg ok");
         // Default config (no sensors) emits a clean diagram — proving
         // negative case so the positive case below has meaning.
@@ -996,8 +998,10 @@ mod tests {
         use crate::gui::samples::{build_sample, SampleMechanism};
         let (mech, q0) = build_sample(SampleMechanism::ParallelogramActuator);
         let res = solve_position(&mech, &q0, 0.0, 1e-10, 50).expect("solver ok");
-        let mut sensors = crate::gui::state::SensorConfig::default();
-        sensors.actuator_position_enabled = true;
+        let sensors = crate::gui::state::SensorConfig {
+            actuator_position_enabled: true,
+            ..crate::gui::state::SensorConfig::default()
+        };
         let svg = generate_schematic_svg(&mech, &res.q, &sensors).expect("svg ok");
         assert!(
             svg.contains(">pos sensor</text>"),

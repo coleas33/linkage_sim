@@ -35,12 +35,11 @@ pub(super) fn draw_body_angles(
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
         let colors = series_colors(nathan_mode);
-        let mut color_idx = 0;
 
         let mut body_ids: Vec<&String> = sweep.body_angles.keys().collect();
         body_ids.sort();
 
-        for body_id in body_ids {
+        for (color_idx, body_id) in body_ids.into_iter().enumerate() {
             let angles = &sweep.body_angles[body_id];
             // Body angles use y in display angle units, so we pass the
             // converted y through the helper's (deg, y) pairs.
@@ -62,7 +61,6 @@ pub(super) fn draw_body_angles(
                 units,
                 nathan_mode,
             );
-            color_idx += 1;
         }
 
         // Vertical marker at current driver angle (already in display units).
@@ -85,7 +83,6 @@ pub(super) fn draw_body_angles(
 /// shown in the current display unit.
 ///
 /// Returns the clicked X coordinate (display angle units) if the user clicked.
-
 pub(super) fn draw_transmission_angle(
     ui: &mut egui::Ui,
     sweep: &SweepData,
@@ -185,7 +182,6 @@ pub(super) fn draw_transmission_angle(
 /// Plot driver torque (N*m) vs driver angle.
 ///
 /// Returns the clicked X coordinate (display angle units) if the user clicked.
-
 pub(super) fn draw_mechanical_advantage(
     ui: &mut egui::Ui,
     sweep: &SweepData,
@@ -259,7 +255,6 @@ pub(super) fn draw_mechanical_advantage(
 /// is silently skipped).
 ///
 /// Returns the clicked X coordinate (display angle units) if the user clicked.
-
 pub(super) fn draw_joint_reactions(
     ui: &mut egui::Ui,
     sweep: &SweepData,
@@ -284,12 +279,11 @@ pub(super) fn draw_joint_reactions(
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
         let colors = series_colors(nathan_mode);
-        let mut color_idx = 0;
 
         let mut joint_ids: Vec<&String> = sweep.joint_reaction_magnitudes.keys().collect();
         joint_ids.sort();
 
-        for joint_id in joint_ids {
+        for (color_idx, joint_id) in joint_ids.into_iter().enumerate() {
             let magnitudes = &sweep.joint_reaction_magnitudes[joint_id];
             let pairs: Vec<(f64, f64)> = sweep
                 .angles_deg
@@ -310,7 +304,6 @@ pub(super) fn draw_joint_reactions(
                 units,
                 nathan_mode,
             );
-            color_idx += 1;
         }
 
         // Vertical marker at current driver angle.

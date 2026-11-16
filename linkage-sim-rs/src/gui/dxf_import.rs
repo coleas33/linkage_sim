@@ -694,7 +694,7 @@ fn rescale_overlay(overlay: &mut DxfOverlay, new_scale: f64) {
 
 // ── Build mechanism from assignments ────────────────────────────────────────
 
-/// Convert body assignments into a MechanismJson and load it.
+// Convert body assignments into a MechanismJson and load it.
 // ── Conversion helpers ──────────────────────────────────────────────────────
 
 const JOINT_TOL: f64 = 0.002; // 2mm tolerance for "same point"

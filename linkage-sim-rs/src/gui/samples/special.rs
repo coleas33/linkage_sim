@@ -825,6 +825,7 @@ pub(super) fn build_strandbeest(
 /// Tries several starting crank angles. For each, uses circle-circle
 /// intersection to compute exact sub-loop closure points, sets all body
 /// poses accordingly, solves at that angle, then continues to t=0.
+#[allow(clippy::too_many_arguments)] // flat parameter list; a params struct would be a refactor
 fn strandbeest_find_initial(
     state: &crate::core::state::State,
     mech: &Mechanism,

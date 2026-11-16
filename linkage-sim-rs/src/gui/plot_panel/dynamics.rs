@@ -71,7 +71,6 @@ pub(super) fn draw_driver_torque(
 /// with optional statics torque overlay for comparison.
 ///
 /// Returns the clicked X coordinate (display angle units) if the user clicked.
-
 pub(super) fn draw_inverse_dynamics(
     ui: &mut egui::Ui,
     sweep: &SweepData,
@@ -178,7 +177,6 @@ pub(super) fn draw_inverse_dynamics(
 /// Plot energy (KE, PE, total) vs driver angle.
 ///
 /// Returns the clicked X coordinate (display angle units) if the user clicked.
-
 pub(super) fn draw_energy(
     ui: &mut egui::Ui,
     sweep: &SweepData,

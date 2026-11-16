@@ -96,6 +96,7 @@ pub fn generate_dxf_string(
 
 /// Export mechanism geometry as a DXF file.
 #[cfg(feature = "native")]
+#[allow(dead_code)] // native file entry point with no menu caller yet
 pub fn export_mechanism_dxf(
     path: &std::path::Path,
     mechanism: &Mechanism,

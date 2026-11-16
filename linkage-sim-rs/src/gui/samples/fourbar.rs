@@ -164,6 +164,7 @@ pub(super) fn build_slider_crank_with_driver(
 /// crank tip), so pass a valid starting angle (e.g. PI/2).
 ///
 /// The driver defaults to J1 (grounded revolute at O2, drives the crank).
+#[allow(clippy::too_many_arguments)] // flat parameter list; a params struct would be a refactor
 fn build_standard_fourbar(
     crank_id: &str,
     coupler_id: &str,

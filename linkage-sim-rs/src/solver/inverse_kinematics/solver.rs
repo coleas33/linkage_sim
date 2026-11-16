@@ -38,6 +38,7 @@ pub struct WorkspaceProbe {
 /// skipped — they appear as gaps in `u_samples`/`g_samples`. If *every* sample
 /// fails to converge, `g_samples` is empty and `g_min`/`g_max` will be
 /// `+∞`/`-∞` sentinels; callers should detect this case explicitly.
+#[allow(clippy::too_many_arguments)] // flat parameter list; a params struct would be a refactor
 pub fn workspace_probe(
     mech: &Mechanism,
     q_seed: &DVector<f64>,

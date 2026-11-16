@@ -495,6 +495,7 @@ fn pass1_eff_actuator_force(mech: &Mechanism) -> Option<f64> {
 /// Compute the trustworthiness verdict from the independent per-body
 /// equilibrium check, the condition-number gate, and (for pass-2) the
 /// driver-collapse expectation.
+#[allow(clippy::too_many_arguments)] // flat parameter list; a params struct would be a refactor
 fn compute_validation(
     mech: &Mechanism,
     q: &DVector<f64>,
@@ -1957,7 +1958,7 @@ mod tests {
         bad.iter_mut().find(|x| x.n_equations > 1).unwrap().force_global[0] = f64::NAN;
         let resid = body_equilibrium_residual(&mech, &q, angle, &bad, r.actuator_force)
             .expect("modeled");
-        assert!(!(resid < EQUILIBRIUM_REL_TOL), "NaN reaction must not pass; got {resid}");
+        assert!(resid >= EQUILIBRIUM_REL_TOL || resid.is_nan(), "NaN reaction must not pass; got {resid}");
         let v = compute_validation(
             &mech, &q, angle, &bad, r.actuator_force,
             r.condition_number, true, r.driver_torque,

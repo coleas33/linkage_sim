@@ -927,6 +927,7 @@ fn push_reaction(reaction_data: &mut HashMap<String, Vec<f64>>, joint_id: &str, 
 /// Used when the position solver fails at an angle (e.g. non-Grashof mechanisms
 /// outside their reachable range). Keeps all data vectors aligned so plots show
 /// gaps rather than crashing on mismatched lengths.
+#[allow(clippy::too_many_arguments)] // flat parameter list; a params struct would be a refactor
 fn push_nan_row(
     data: &mut SweepData,
     angle_deg: f64,
@@ -1503,18 +1504,16 @@ mod tests {
 
             // Simulate user moving driver angle slider between toggles
             state.driver_angle = (90.0 + cycle as f64 * 45.0).to_radians();
-            if let Some(mech) = &state.mechanism {
-                if let Ok(result) = crate::solver::kinematics::solve_position(
+            if let Some(mech) = &state.mechanism
+                && let Ok(result) = crate::solver::kinematics::solve_position(
                     mech, &state.last_good_q,
                     (state.driver_angle - state.driver_theta_0()) / state.driver_omega(),
                     1e-10, 50,
-                ) {
-                    if result.converged {
+                )
+                    && result.converged {
                         state.q = result.q.clone();
                         state.last_good_q = result.q;
                     }
-                }
-            }
 
             // Toggle OFF
             state.sweep_range_enabled = false;

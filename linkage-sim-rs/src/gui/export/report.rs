@@ -318,10 +318,10 @@ pub fn generate_html_report(
                 env.max_value
             ));
             html.push_str("</div>\n");
-            html.push_str(&"<p>Computed as <code>P = F·(dL/dt)</code> where F is the \
+            html.push_str("<p>Computed as <code>P = F·(dL/dt)</code> where F is the \
                  statics-derived actuator force. Inverse-dynamics-corrected \
                  power (which includes inertial loads) is shown separately if \
-                 a non-zero motion profile was used.</p>\n".to_string());
+                 a non-zero motion profile was used.</p>\n");
         }
         let angles_json = float_vec_to_json(&sweep.angles_deg);
         let power_json = float_vec_to_json(act_power);
@@ -528,6 +528,7 @@ pub fn generate_html_report(
 /// `float_vec_to_json`). `extra_shapes` is an optional JSON array of shape
 /// objects for reference lines (e.g. the 40°/90° markers on the transmission
 /// angle plot).
+#[allow(clippy::too_many_arguments)] // flat parameter list; a params struct would be a refactor
 fn add_plotly_line_chart(
     html: &mut String,
     plot_id: &str,
@@ -708,7 +709,6 @@ fn write_loop_equations_section(
     mechanism: &Mechanism,
     q: &nalgebra::DVector<f64>,
 ) {
-    use crate::core::constraint::Constraint;
     use crate::gui::eq_rendering::{
         kind_at, lambda_string, n_constraints, residual_norm_string, symbolic_form,
     };
@@ -1704,11 +1704,9 @@ fn write_state_estimation_section(
         let touches_ground_and_crank = mechanism
             .joints()
             .iter()
-            .chain(mechanism.drivers().iter().map(|_| {
-                // Drivers can also be encoder hosts — but we look them up below.
-                // Placeholder: not all drivers are JointConstraint.
-                None
-            }).flatten())
+            // Drivers can also be encoder hosts, but we look them up below;
+            // not all drivers are JointConstraint, so they add no joints here.
+            .chain(mechanism.drivers().iter().filter_map(|_| None))
             .any(|j| {
                 j.id() == joint_id
                     && (j.body_i_id() == "ground" || j.body_j_id() == "ground")
@@ -1822,8 +1820,8 @@ fn write_state_estimation_section(
         code.push_str("// State and covariance (EKF)\n");
         code.push_str("float x[2] = { theta2_init, 0.0f };\n");
         code.push_str("float P[2][2] = { { sigma_init², 0 }, { 0, sigma_init² } };\n");
-        code.push_str(&"const float SIGMA_PROC_THETA = ...;     // tune empirically\n".to_string());
-        code.push_str(&"const float SIGMA_PROC_OMEGA = ...;     // tune empirically\n".to_string());
+        code.push_str("const float SIGMA_PROC_THETA = ...;     // tune empirically\n");
+        code.push_str("const float SIGMA_PROC_OMEGA = ...;     // tune empirically\n");
         if encoder_joint.is_some() {
             code.push_str(&format!(
                 "const float SIGMA_ENC = {:.6}f;            // [rad]\n",
@@ -4375,8 +4373,10 @@ mod tests {
         let units = DisplayUnits::default();
 
         // Encoder only.
-        let mut sensors = SensorConfig::default();
-        sensors.encoder_joint = Some("D1".to_string());
+        let sensors = SensorConfig {
+            encoder_joint: Some("D1".to_string()),
+            ..SensorConfig::default()
+        };
         let html = generate_html_report(&mech, &q, &sweep, None, &units, &sensors).unwrap();
         assert!(
             html.contains("State estimation and sensor fusion"),
@@ -4410,9 +4410,11 @@ mod tests {
             9.81,
             None,
         );
-        let mut sensors2 = SensorConfig::default();
-        sensors2.encoder_joint = Some("D1".to_string());
-        sensors2.actuator_position_enabled = true;
+        let sensors2 = SensorConfig {
+            encoder_joint: Some("D1".to_string()),
+            actuator_position_enabled: true,
+            ..SensorConfig::default()
+        };
         let html2 =
             generate_html_report(&mech2, &q2, &sweep2, None, &units, &sensors2).unwrap();
         assert!(

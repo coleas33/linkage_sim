@@ -14,7 +14,6 @@
 
 use eframe::egui;
 
-use crate::core::constraint::Constraint;
 use crate::gui::eq_rendering::{
     kind_at, lambda_string, n_constraints, residual_norm_string, symbolic_form, EqKind,
 };

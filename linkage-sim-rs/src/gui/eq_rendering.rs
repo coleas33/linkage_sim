@@ -20,7 +20,7 @@
 //! No tests for the panel/overlay sites themselves (UI-only); the small
 //! string helpers below have unit tests at the bottom of this file.
 
-use crate::core::constraint::{Constraint, JointConstraint};
+use crate::core::constraint::JointConstraint;
 use crate::core::driver::DriverMeta;
 use crate::core::mechanism::Mechanism;
 
@@ -94,6 +94,7 @@ pub fn n_constraints(mech: &Mechanism) -> usize {
 /// Map a row index in Φ to the constraint index (the index used by `kind_at`).
 ///
 /// Each constraint contributes `n_equations` rows; this scans those blocks.
+#[allow(dead_code)] // unused by the shipped app; kept for its tests
 pub fn constraint_index_for_row(mech: &Mechanism, row: usize) -> Option<usize> {
     let mut accum = 0usize;
     for (i, c) in mech.all_constraints().enumerate() {

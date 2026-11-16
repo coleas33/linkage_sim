@@ -333,6 +333,56 @@ fn format_failure_tooltip(status: &InverseSolveStatus) -> String {
     }
 }
 
+/// Draw faint red vertical lines at sample times whose `InverseSolveStatus`
+/// is anything other than `Converged`, plus a single-character severity
+/// glyph (R/S/B/N) at the top of each band so the failure type is visible
+/// at a glance from the plot.
+///
+/// The collapsing failure-summary list below the plot remains the place
+/// for full-text payloads — egui_plot 0.33's `Text` item has
+/// `PlotGeometry::None` and so does not surface per-shape hover tooltips,
+/// which is why the glyph + collapsing-list pairing is the workaround.
+fn draw_failure_bands(
+    plot_ui: &mut egui_plot::PlotUi,
+    times: &[f64],
+    statuses: &[InverseSolveStatus],
+) {
+    let band_color = egui::Color32::from_rgba_unmultiplied(220, 50, 50, 80);
+    let glyph_color = egui::Color32::from_rgb(220, 60, 60);
+    // Glyphs anchor at a fixed offset below the plot's current upper
+    // bound. Reading bounds inside the closure is the same pattern used in
+    // gui::plot_panel::actuator for its annotation overlay.
+    let bounds = plot_ui.plot_bounds();
+    let y_top = bounds.max()[1];
+    let y_range = (bounds.max()[1] - bounds.min()[1]).max(1e-9);
+    let glyph_y = y_top - 0.02 * y_range;
+
+    for (i, status) in statuses.iter().enumerate() {
+        let glyph = match status {
+            InverseSolveStatus::Converged => continue,
+            InverseSolveStatus::Reachability { .. } => "R",
+            InverseSolveStatus::Singularity { .. } => "S",
+            InverseSolveStatus::BranchJump { .. } => "B",
+            InverseSolveStatus::NonConvergent { .. } => "N",
+        };
+        let Some(&t) = times.get(i) else { continue };
+        plot_ui.vline(
+            VLine::new(format!("failure_{}", i), t)
+                .color(band_color)
+                .width(1.0),
+        );
+        plot_ui.text(
+            PlotText::new(
+                format!("failure_glyph_{}", i),
+                PlotPoint::new(t, glyph_y),
+                glyph,
+            )
+            .anchor(egui::Align2::CENTER_BOTTOM)
+            .color(glyph_color),
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -394,55 +444,5 @@ mod tests {
     fn comparison_traces_returns_none_for_too_few_samples() {
         let snap = fixture(1, 1.0);
         assert!(comparison_traces_from(&snap).is_none());
-    }
-}
-
-/// Draw faint red vertical lines at sample times whose `InverseSolveStatus`
-/// is anything other than `Converged`, plus a single-character severity
-/// glyph (R/S/B/N) at the top of each band so the failure type is visible
-/// at a glance from the plot.
-///
-/// The collapsing failure-summary list below the plot remains the place
-/// for full-text payloads — egui_plot 0.33's `Text` item has
-/// `PlotGeometry::None` and so does not surface per-shape hover tooltips,
-/// which is why the glyph + collapsing-list pairing is the workaround.
-fn draw_failure_bands(
-    plot_ui: &mut egui_plot::PlotUi,
-    times: &[f64],
-    statuses: &[InverseSolveStatus],
-) {
-    let band_color = egui::Color32::from_rgba_unmultiplied(220, 50, 50, 80);
-    let glyph_color = egui::Color32::from_rgb(220, 60, 60);
-    // Glyphs anchor at a fixed offset below the plot's current upper
-    // bound. Reading bounds inside the closure is the same pattern used in
-    // gui::plot_panel::actuator for its annotation overlay.
-    let bounds = plot_ui.plot_bounds();
-    let y_top = bounds.max()[1];
-    let y_range = (bounds.max()[1] - bounds.min()[1]).max(1e-9);
-    let glyph_y = y_top - 0.02 * y_range;
-
-    for (i, status) in statuses.iter().enumerate() {
-        let glyph = match status {
-            InverseSolveStatus::Converged => continue,
-            InverseSolveStatus::Reachability { .. } => "R",
-            InverseSolveStatus::Singularity { .. } => "S",
-            InverseSolveStatus::BranchJump { .. } => "B",
-            InverseSolveStatus::NonConvergent { .. } => "N",
-        };
-        let Some(&t) = times.get(i) else { continue };
-        plot_ui.vline(
-            VLine::new(format!("failure_{}", i), t)
-                .color(band_color)
-                .width(1.0),
-        );
-        plot_ui.text(
-            PlotText::new(
-                format!("failure_glyph_{}", i),
-                PlotPoint::new(t, glyph_y),
-                glyph,
-            )
-            .anchor(egui::Align2::CENTER_BOTTOM)
-            .color(glyph_color),
-        );
     }
 }

@@ -9,6 +9,7 @@ use crate::gui::sweep::{SweepData, SweepMode};
 /// are produced by the cross-platform writer so the web download path
 /// (`generate_sweep_csv_string`) emits identical bytes.
 #[cfg(feature = "native")]
+#[allow(dead_code)] // native file entry point with no menu caller yet
 pub fn export_sweep_csv(path: &std::path::Path, sweep: &SweepData) -> Result<(), String> {
     let mut file = std::fs::File::create(path).map_err(|e| e.to_string())?;
     write_sweep_csv(&mut file, sweep).map_err(|e| e.to_string())
@@ -349,6 +350,7 @@ fn format_status(s: &crate::solver::inverse_kinematics::InverseSolveStatus) -> S
 
 /// (Native only) Write coupler trace CSV to a file path.
 #[cfg(feature = "native")]
+#[allow(dead_code)] // native file entry point with no menu caller yet
 pub fn export_coupler_csv(path: &std::path::Path, sweep: &SweepData) -> Result<(), String> {
     if sweep.coupler_traces.is_empty() {
         return Err("No coupler traces available".to_string());

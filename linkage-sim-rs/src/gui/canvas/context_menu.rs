@@ -13,6 +13,7 @@ use super::colors::HIT_RADIUS;
 use super::hit_testing::{find_nearest_body_segment, AttachmentHit, BodySegment};
 
 /// Capture the right-click target and show the context menu popup.
+#[allow(clippy::too_many_arguments)] // flat parameter list; a params struct would be a refactor
 pub fn handle_context_menu(
     response: &egui::Response,
     state: &mut AppState,

@@ -230,6 +230,7 @@ pub fn generate_svg_string(
 
 /// Export the mechanism at its current pose as an SVG file.
 #[cfg(feature = "native")]
+#[allow(dead_code)] // native file entry point with no menu caller yet
 pub fn export_mechanism_svg(
     path: &std::path::Path,
     mechanism: &Mechanism,

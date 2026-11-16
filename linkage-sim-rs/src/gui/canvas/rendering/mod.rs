@@ -580,6 +580,7 @@ pub fn render_mechanism(
 ///
 /// This is called after the immutable borrow scope ends, because it needs
 /// mutable access to state for tool previews.
+#[allow(clippy::too_many_arguments)] // flat parameter list; a params struct would be a refactor
 pub fn render_overlays(
     ui: &mut egui::Ui,
     painter: &egui::Painter,

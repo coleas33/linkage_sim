@@ -236,6 +236,7 @@ pub fn constant_velocity_linear_driver(
 /// This smoothly sweeps the actuator through its full range (extend + retract)
 /// in one period. The function is C-infinity, so the solver tracks continuously
 /// without branch jumps at turnaround points.
+#[allow(clippy::too_many_arguments)] // flat parameter list; a params struct would be a refactor
 pub fn cosine_linear_driver(
     id: &str,
     body_a: &str,
