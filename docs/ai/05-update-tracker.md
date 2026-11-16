@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - A failed load leaves the app unchanged (audit LGS-12; branch audit/2026-11-16-section-a)
+- What changed: in linkage-sim-rs/src/gui/state/file_io.rs, load_from_json_str assigned the sweep mode, sensors, motion profile, rated force, duration, parametric settings and blueprint before the mechanism build, so a file that failed to build left the app half old and half new. The build now runs first (after parsing); the fields are assigned only when it built. Readers checked: the callers of load_from_json_str (file load, autosave recovery, templates, share URL) only act on the Err/Ok; the build reads no AppState field.
+- Tests: ailed_build_leaves_settings_unchanged (file_io.rs; red first: the rated force was overwritten by the failed file).
+
 ## 2026-11-16 — A failed autosave recovery keeps the autosave and shows the error (audit LGS-02; branch audit/2026-11-16-section-a)
 - What changed: in `linkage-sim-rs/src/gui/mod.rs` the Recover button deleted the autosave (desktop file, browser localStorage) even when loading it failed, with only a log line. The desktop path now calls `AppState::recover_autosave_file` and the browser path `recover_wasm_autosave` (both in `gui/state/file_io.rs`): the autosave is deleted only after a load that succeeded; on failure it stays and `status_message` says so. Discard is unchanged. A kept desktop autosave is offered again at the next start. Readers checked: `check_autosave_recovery` and `check_wasm_autosave_recovery` only test that the autosave exists; nothing else reads `recovery_path` after the prompt.
 - Tests: `recover_autosave_keeps_file_and_reports_when_load_fails` (red first: with the delete on the error path it failed) and `recover_autosave_deletes_file_after_successful_load` (gui/state/tests.rs). The browser path is wasm-only and has no native test.
