@@ -47,6 +47,7 @@ pub const TABLE_FIELDS: &[TableField] = &[
     TableField { table: "grades", field: "beta_hcj_per_C", symbol: "β_{grade}", unit: "1/°C", label: "Grade Hcj temperature coefficient (positive for hard ferrite)" },
     TableField { table: "grades", field: "tmax_C", symbol: "ϑ_{max,grade}", unit: "°C", label: "Grade maximum operating temperature" },
     TableField { table: "grades", field: "density_g_mm3", symbol: "ρ_{grade}", unit: "g/mm³", label: "Grade density" },
+    TableField { table: "grades", field: "magnet_sigma_S_m", symbol: "σ_{grade}", unit: "S/m", label: "Magnet conductivity of the grade's family (E26; none for sintered NdFeB)" },
     TableField { table: "back_iron", field: "ferromagnetic", symbol: "ferro", unit: "-", label: "Back-iron material is ferromagnetic (1) or not (0)" },
     TableField { table: "back_iron", field: "sigma_S_m", symbol: "σ_{BI}", unit: "S/m", label: "Back-iron material conductivity (library)" },
     TableField { table: "back_iron", field: "density_g_mm3", symbol: "ρ_{BI}", unit: "g/mm³", label: "Back-iron material density (library)" },
@@ -122,6 +123,7 @@ pub fn lookup(table: &str, key: &Value, field_name: &str) -> Result<Option<Value
             "beta_hcj_per_C" => num(g.beta_hcj_per_C),
             "tmax_C" => num(g.tmax_C),
             "density_g_mm3" => num(g.density_g_mm3),
+            "magnet_sigma_S_m" => g.family.magnet_sigma_S_m().map_or(Value::None, num),
             _ => unreachable!("checked against TABLE_FIELDS"),
         }),
         "back_iron" | "sleeve_liner" | "cap_housing" => {
@@ -286,6 +288,12 @@ mod tests {
             g("beta_hcj_per_C"),
             Some(Value::Num(0.0035)),
             "ferrite: positive beta"
+        );
+        // E26: a family's own magnet conductivity; sintered NdFeB has none (it keeps the input).
+        assert_eq!(g("magnet_sigma_S_m"), Some(Value::Num(1.0e2)));
+        assert_eq!(
+            lookup("grades", &Value::Text("N42SH".into()), "magnet_sigma_S_m").unwrap(),
+            Some(Value::None)
         );
         assert_eq!(
             lookup("screw_sizes", &Value::Num(2.0), "name").unwrap(),

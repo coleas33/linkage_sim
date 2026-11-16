@@ -2,7 +2,8 @@
 //!
 //! Each explained result has an equation record ([`record::Record`]): its target path, a
 //! display symbol, a formula in a small markup ([`markup`]) whose terms ARE input or result
-//! paths, and the approved corrections it embodies. Unit, label and workbook cell come from
+//! paths, and the approved corrections it embodies (and E25 or E26, assumptions that are not
+//! approved, where it does). Unit, label and workbook cell come from
 //! the result's metadata. The formula is both what the panel typesets and what the drift
 //! guard evaluates ([`eval`]), so the equation shown is provably the one that produced the
 //! number: `tests/explain.rs` evaluates every record over the engine's own term values at

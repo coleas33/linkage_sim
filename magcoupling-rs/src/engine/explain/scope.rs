@@ -174,6 +174,8 @@ pub const SCOPE: &[Chain] = &[
             "temperature.slip_loss.steel_sigma_S_m",
             "temperature.slip_loss.steel_mu_r",
             "temperature.slip_loss.cap_sigma_S_m",
+            "temperature.slip_loss.inner_magnet_sigma_S_m",
+            "temperature.slip_loss.outer_magnet_sigma_S_m",
             "temperature.slip_loss.skin_depth_mm",
             "temperature.slip_loss.hub_W",
             "temperature.slip_loss.cup_W",

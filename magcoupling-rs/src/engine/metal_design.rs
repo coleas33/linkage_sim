@@ -9,7 +9,9 @@
 //! Deviations touching this sheet (see
 //! [`crate::engine::deviations::REGISTRY`]): applied E8 (Metal design!C175)
 //! and E16 (C189: the disc bored out of the web for the adapter pilot is priced
-//! at the cup's density, aluminium with no back iron under E9).
+//! at the cup's density, aluminium with no back iron under E9); and E25 (C135,
+//! C136: the rotating diameter is the largest of the cup, the cap and the shaft
+//! boss), approved by the owner on 2026-11-16 (docs/ai/backlog.yaml BL-061).
 
 use std::f64::consts::PI;
 
@@ -429,7 +431,13 @@ pub fn compute(
         None => (NumOrText::Text(NOT_MEASURED), NumOrText::Text(NOT_MEASURED)),
     };
     let stack = md.cap_axial_mm + md.cup_depth_mm + md.web_mm + md.boss_length_mm;
-    let rot_od = py_max(cup_od_mm, md.cap_od_mm);
+    // E25: the shaft boss turns with the cup, so the space claim's diameter judges it too;
+    // the workbook takes the cup and the cap only.
+    let rot_od = if dev.is_on(DeviationId::E25) {
+        py_max(py_max(cup_od_mm, md.cap_od_mm), md.boss_od_mm)
+    } else {
+        py_max(cup_od_mm, md.cap_od_mm)
+    };
     let large = md.cap_axial_mm + md.cup_depth_mm + md.web_mm;
     let adapter = PI / 4.0
         * ((md.adapter_flange_dia_mm.powi(2) - bore_mm.powi(2)) * md.adapter_flange_mm

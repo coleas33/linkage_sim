@@ -1,7 +1,8 @@
 //! The "corrected vs workbook" markers (spec M4 "Layout": "corrected values carry a
 //! 'corrected vs workbook' marker with the deviation in its tooltip").
 //!
-//! The panel always computes with every approved correction on, and the test-only switch that
+//! The panel always computes with every approved correction on (E25 and E26, approved by the
+//! owner on 2026-11-16, included), and the test-only switch that
 //! turns them off never ships, so a marker cannot come from comparing the two. It comes from
 //! the deviation registry instead (decision M41-10): a workbook cell carries a correction's
 //! marker when the registry ties the cell to it, in any of three ways:
@@ -312,6 +313,25 @@ mod tests {
             correction_title(DeviationId::E7),
             format!("E7: {}", REGISTRY[DeviationId::E7.index()].title)
         );
+    }
+
+    #[test]
+    fn no_correction_s_title_says_it_is_not_approved() {
+        for deviation in REGISTRY {
+            let title = correction_title(deviation.id);
+            assert!(!title.contains("not approved"), "{title}");
+        }
+        // E25 marks the rotating diameter the space claim judges, E26 the magnets' eddy heat;
+        // both are owner-approved and show their plain titles.
+        for (id, cell) in [
+            (DeviationId::E25, "Metal design!C135"),
+            (DeviationId::E26, "Temperature design!C129"),
+        ] {
+            let title = correction_title(id);
+            assert!(title.ends_with(REGISTRY[id.index()].title), "{title}");
+            let marks = CorrectionIndex::get().marks(Some(cell));
+            assert!(marker_tooltip(marks).contains(&title), "{cell}");
+        }
     }
 
     #[test]

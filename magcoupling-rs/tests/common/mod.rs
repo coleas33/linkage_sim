@@ -157,6 +157,8 @@ pub fn repo_path(relative: &str) -> PathBuf {
 
 /// The Addendum A data file (evidence: never edited), relative to the repository root.
 pub const ADDENDUM_DATA: &str = "docs/analyses/2026-09-30-magcoupling-addendum-a-data.json";
+/// The Addendum A-4 data file (the magnet thermal properties), relative to the repository root.
+pub const A4_DATA: &str = "docs/analyses/2026-10-01-magcoupling-addendum-a4-data.json";
 
 /// Reads a text file with its line endings normalized to `\n` (the checkout may
 /// have converted them to CRLF).

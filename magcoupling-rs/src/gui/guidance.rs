@@ -480,12 +480,14 @@ const SPACE_CLAIM_GUIDE: CheckGuide = CheckGuide {
 };
 
 /// The inputs that shrink each space-claim axis, in the claim's order (diameter, overall
-/// length, large-diameter bay): the larger of the cap and the cup sets the diameter, and the
-/// Outside diameter's slider moves both; the magnets lengthen both stacks.
+/// length, large-diameter bay): the largest of the cap, the cup and the shaft boss sets the
+/// diameter (E25, approved by the owner on 2026-11-16: BL-061), and the Outside diameter's
+/// slider moves the cap and the cup; the magnets lengthen both stacks.
 const SPACE_CLAIM_AXES: [&[(&str, Direction)]; 3] = [
     &[
         ("metal.cap_od_mm", Direction::Lower),
         (RING, Direction::Lower),
+        ("metal.boss_od_mm", Direction::Lower),
     ],
     &[(MAGNET_LENGTH, Direction::Lower)],
     &[(MAGNET_LENGTH, Direction::Lower)],
@@ -2154,9 +2156,16 @@ fn joined_or(sentences: Vec<String>, fallback: &str) -> String {
 
 fn hot_min_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<String> {
     failing(HOT_MIN, inputs, results).then(|| {
+        // Where both read the same at four significant digits, hot-low is quoted rounded down at
+        // its last shown digit, one digit below the requirement as that is quoted (BL-068).
+        let hot_low_text = apart_from(
+            results,
+            "metal.torque_hot_low_Nm",
+            inputs.metal.required_min_Nm,
+            false,
+        );
         format!(
-            "Hot-low torque {} is below the required {}: the pull-out of {} at {}, less the {} variation allowance.",
-            result_text(results, "metal.torque_hot_low_Nm"),
+            "Hot-low torque {hot_low_text} is below the required {}: the pull-out of {} at {}, less the {} variation allowance.",
             input_text(inputs, "metal.required_min_Nm"),
             result_text(results, "model.pullout_Nm"),
             input_text(inputs, "coupling.op_temp_C"),
@@ -3414,6 +3423,12 @@ mod tests {
         i.coupling.inner_back_apothem_mm = 12.0;
     }
 
+    /// A 46 mm shaft boss (typed past its slider's top): past the diameter claim, the boss
+    /// setting the diameter (E25).
+    fn large_boss(i: &mut DesignInputs) {
+        i.metal.boss_od_mm = 46.0;
+    }
+
     /// A diameter claim that is not a number: the space claim asks for a look.
     fn unknown_claim(i: &mut DesignInputs) {
         i.metal.max_diameter_mm = f64::NAN;
@@ -3499,6 +3514,7 @@ mod tests {
             ("long_magnets", breaking(long_magnets)),
             ("large_cap", breaking(large_cap)),
             ("large_ring", breaking(large_ring)),
+            ("large_boss", breaking(large_boss)),
             ("unknown_claim", breaking(unknown_claim)),
             ("short_magnets", short_magnets()),
             ("twelve_poles", with_poles(12)),
@@ -4596,8 +4612,9 @@ mod tests {
 
         // SPACE_CLAIM_AXES, axis_reserves and SPACE_CLAIM_AXIS_SIZES name the three axes in one
         // order: each reserve is its claim less the size SPACE_CLAIM_AXIS_SIZES names, bit for
-        // bit, at every test design; and one step of each fix of an axis, from the defaults,
-        // shrinks that size and raises that reserve.
+        // bit, at every test design; and one step of each fix of an axis, from the defaults
+        // (the shaft boss from a boss that sets the diameter, E25), shrinks that size and
+        // raises that reserve.
         let claims = [
             "metal.max_diameter_mm",
             "metal.max_overall_axial_mm",
@@ -4617,8 +4634,13 @@ mod tests {
         for (index, axis_fixes) in SPACE_CLAIM_AXES.iter().enumerate() {
             let size = SPACE_CLAIM_AXIS_SIZES[index].1;
             for &(path, direction) in *axis_fixes {
-                let moved = moves(&defaults, &before, path, direction);
-                assert!(!moved.is_empty(), "{path} moves from the defaults");
+                let base = match path {
+                    "metal.boss_od_mm" => design(large_boss),
+                    _ => defaults.clone(),
+                };
+                let before = compute_all(&base);
+                let moved = moves(&base, &before, path, direction);
+                assert!(!moved.is_empty(), "{path} moves from its base");
                 for design in moved {
                     let after = compute_all(&design);
                     assert!(
@@ -4929,6 +4951,13 @@ mod tests {
                 "diameter",
             ),
             (
+                SPACE_CLAIM,
+                breaking(large_boss),
+                "metal.boss_od_mm",
+                Direction::Lower,
+                "diameter",
+            ),
+            (
                 END_EFFECT,
                 short_magnets(),
                 MAGNET_LENGTH,
@@ -5233,14 +5262,15 @@ mod tests {
     #[test]
     fn the_space_claim_fixes_follow_the_axis_over_its_claim() {
         // Review I-3: each axis over its claim brings the inputs that shrink it, each shown
-        // where one step does: the magnets for the two lengths; for the diameter the cap, and
-        // the Outside diameter, whose slider moves the cap with the cup. An axis whose claim is
-        // not a number has no fix: its Problem asks for the number.
+        // where one step does: the magnets for the two lengths; for the diameter the cap, the
+        // Outside diameter, whose slider moves the cap with the cup, and the shaft boss (E25).
+        // An axis whose claim is not a number has no fix: its Problem asks for the number.
         let space = guide(SPACE_CLAIM).unwrap();
         let shown = |inputs: DesignInputs| fixes(space, &inputs, &compute_all(&inputs), false);
         let magnets = (MAGNET_LENGTH, Direction::Lower);
         let cap = ("metal.cap_od_mm", Direction::Lower);
         let diameter = (RING, Direction::Lower);
+        let boss = ("metal.boss_od_mm", Direction::Lower);
         // Over the overall length and the bay: the magnets only.
         assert_eq!(shown(breaking(long_magnets)), [magnets]);
         // The cap sets the diameter: the cap, or the Outside diameter with the cap following.
@@ -5250,6 +5280,8 @@ mod tests {
         let results = compute_all(&ring);
         assert!(results.model.cup_od_mm > ring.metal.cap_od_mm);
         assert_eq!(shown(ring), [diameter]);
+        // The boss sets the diameter: a smaller cap or cup leaves it as it is.
+        assert_eq!(shown(breaking(large_boss)), [boss]);
         assert_eq!(shown(breaking(unknown_claim)), []);
         assert_eq!(shown(passing_design()), []);
     }
@@ -6721,6 +6753,116 @@ mod tests {
         assert!(readme.contains(claim), "README.md should say {claim:?}");
     }
 
+    /// The two numbers the hot-minimum Problem quotes, as they read: hot-low torque and the
+    /// required minimum.
+    fn hot_min_numbers(problem: &str) -> (f64, f64) {
+        let between = |start: &str, end: &str| -> f64 {
+            let from = problem
+                .find(start)
+                .unwrap_or_else(|| panic!("{start:?} in {problem}"))
+                + start.len();
+            let to = from
+                + problem[from..]
+                    .find(end)
+                    .unwrap_or_else(|| panic!("{end:?} after {start:?} in {problem}"));
+            problem[from..to]
+                .parse()
+                .unwrap_or_else(|_| panic!("a number between {start:?} and {end:?} in {problem}"))
+        };
+        (
+            between("Hot-low torque ", " N·m is below"),
+            between("is below the required ", " N·m:"),
+        )
+    }
+
+    #[test]
+    fn the_hot_minimum_problem_never_reads_two_equal_numbers() {
+        // BL-068. The Problem quoted hot-low and the requirement at four significant digits, so
+        // a failing design could read "0.9300 N·m is below the required 0.9300 N·m". Where the
+        // two read the same, hot-low is quoted rounded down at its last shown digit. On the
+        // sliders, a 4.74 mm magnet length, a 0.50 mm face gap and a 0.93 N·m requirement give
+        // a hot-low of about 0.929956 N·m.
+        let mut close = DesignInputs::default();
+        for (path, x) in [
+            ("coupling.magnets.axial_length_mm", 4.74),
+            ("metal.face_gap_mm", 0.5),
+            ("metal.required_min_Nm", 0.93),
+        ] {
+            assert!(
+                slider_values(path).contains(&x),
+                "{path}: {x} on a step of its slider"
+            );
+            close = with_number(&close, path, x).unwrap_or_else(|| panic!("{path}: {x}"));
+        }
+        let results = compute_all(&close);
+        assert_eq!(level_of(HOT_MIN, &close, &results), Level::Bad);
+        // The readouts show the two the same.
+        assert_eq!(
+            result_text(&results, "metal.torque_hot_low_Nm"),
+            input_text(&close, "metal.required_min_Nm")
+        );
+        let text = problem(HOT_MIN, &close).unwrap();
+        assert!(
+            text.starts_with("Hot-low torque 0.9299 N·m is below the required 0.9300 N·m:"),
+            "{text}"
+        );
+        // Where the two read apart, hot-low reads as its readout, not rounded down: the same
+        // design one requirement step up reads 0.9300, where rounding down would give 0.9299.
+        assert!(slider_values("metal.required_min_Nm").contains(&0.94));
+        let apart = with_number(&close, "metal.required_min_Nm", 0.94).unwrap();
+        let text = problem(HOT_MIN, &apart).unwrap();
+        assert!(
+            text.starts_with("Hot-low torque 0.9300 N·m is below the required 0.9400 N·m:"),
+            "{text}"
+        );
+        // The defaults are unchanged.
+        let text = problem(HOT_MIN, &DesignInputs::default()).unwrap();
+        assert!(
+            text.starts_with("Hot-low torque 2.285 N·m is below the required 2.500 N·m:"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn on_the_sliders_the_hot_minimum_problem_quotes_hot_low_below_the_requirement() {
+        // BL-068: every failing design on a sweep of slider steps (every magnet length, face
+        // gaps 0.5 to 2.0 mm, every requirement) quotes the two numbers with hot-low below.
+        let requirements = slider_values("metal.required_min_Nm");
+        let mut failing_designs = 0;
+        for length in slider_values("coupling.magnets.axial_length_mm") {
+            for gap in [0.5, 1.0, 1.5, 2.0] {
+                let base = with_number(
+                    &DesignInputs::default(),
+                    "coupling.magnets.axial_length_mm",
+                    length,
+                )
+                .and_then(|d| with_number(&d, "metal.face_gap_mm", gap))
+                .unwrap();
+                // Hot-low does not depend on the requirement; only requirements just above it can
+                // read the same, so only those are worked out in full.
+                let hot_low = compute_all(&base).metal.torque_hot_low_Nm;
+                for &required in &requirements {
+                    if required <= hot_low || required > hot_low * 1.01 {
+                        continue;
+                    }
+                    let inputs = with_number(&base, "metal.required_min_Nm", required).unwrap();
+                    let results = compute_all(&inputs);
+                    if level_of(HOT_MIN, &inputs, &results) != Level::Bad {
+                        continue;
+                    }
+                    failing_designs += 1;
+                    let text = hot_min_problem(&inputs, &results).unwrap();
+                    let (low, wanted) = hot_min_numbers(&text);
+                    assert!(
+                        low < wanted,
+                        "length {length}, gap {gap}, required {required}: {text}"
+                    );
+                }
+            }
+        }
+        assert!(failing_designs > 0);
+    }
+
     // ------------------------------------------------------------------ the gearbox conflict
 
     /// Problem sentence 2's numbers (owner decision 4A), worked out here from a design's
@@ -7999,6 +8141,11 @@ mod tests {
         assert_eq!(
             problem(SPACE_CLAIM, &design(large_cap)).unwrap(),
             "Rotating diameter 44.00 mm is 1.000 mm over the 43.00 mm claim."
+        );
+        // E25: the shaft boss counts where it is the largest.
+        assert_eq!(
+            problem(SPACE_CLAIM, &design(large_boss)).unwrap(),
+            "Rotating diameter 46.00 mm is 3.000 mm over the 43.00 mm claim."
         );
         assert_eq!(
             problem(SPACE_CLAIM, &design(unknown_claim)).unwrap(),

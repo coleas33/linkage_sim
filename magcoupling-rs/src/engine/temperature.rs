@@ -33,11 +33,15 @@
 //! (the mismatch screen C104-C106, C201, C202 bonds to an aluminium hub when C6
 //! is not 1) and E20 (the demagnetization block checks each ring against its
 //! own grade, Br and rating, and shows the ring with the lower limit; a positive
-//! beta is limited on the cold side, [`cold_onset_C`]) and E21 (on top of E20:
+//! beta is limited on the cold side, [`cold_onset_C`]), E21 (on top of E20:
 //! each ring's rating-calibration offset C50 is held at 0 or more, so a rating
-//! never raises the onsets above the model's own) and E24 (on top of E20: the
+//! never raises the onsets above the model's own), E24 (on top of E20: the
 //! cure margin C24 is the lower of both rings' single-ring onsets less the cure
-//! temperature).
+//! temperature) and E22 (the mismatch screen and warning rule 6 read the inner
+//! ring's grade expansion, [`bond_plane_cte_per_C`], and the screens C106 and
+//! C202 compare the size of the shear). E26 is approved by the owner (2026-11-16)
+//! (backlog BL-062): the magnets' eddy heat C129 reads each ring's conductivity by
+//! its grade's family, [`magnet_sigma_S_m`], where the workbook reads C113 for both.
 
 use std::f64::consts::PI;
 
@@ -211,7 +215,8 @@ inputs! {
     pub struct MismatchInputs {
         fields {
             ndfeb_cte_per_C: f64 = -0.8e-6 => param("1/°C", "NdFeB expansion in the bond plane",
-                "Across the magnetization.", "Temperature design!C95")
+                "Across the magnetization. Sintered NdFeB's value, used by every library part, every NdFeB grade (sintered or bonded) and a manual magnet without a grade. Correction E22: a ferrite or SmCo inner ring uses its grade's value instead (temperature.mismatch.magnet_cte_per_C shows the value in effect).",
+                "Temperature design!C95")
                 .range(-3e-6, 6e-6, 1e-8),
             adhesive_shear_modulus_GPa: f64 = 0.107 => param("GPa", "Adhesive shear modulus",
                 "Loctite AA 326 + SF 7649 (Henkel TDS, Aug-2020): tensile modulus 0.300 GPa, so G = E/(2(1+ν)) ≈ 0.107 GPa at ν = 0.4. Correction E1: the workbook's 0.55 GPa is the modulus of EA 9514.",
@@ -573,6 +578,8 @@ results! {
             peak_shear_current_MPa: f64 => out("MPa", "Peak end shear, current bondline", "", "Temperature design!C104"),
             peak_shear_recommended_MPa: f64 => out("MPa", "Peak end shear, recommended bondline", "", "Temperature design!C105"),
             reading: String => out("", "Reading", "", "Temperature design!C106"),
+            magnet_cte_per_C: f64 => out_rust_only("1/°C", "Magnet expansion in the bond plane used",
+                "The magnet expansion the bond screen and the expansion caution use: a ferrite or SmCo inner ring's value, else the NdFeB expansion input. That ring is bonded to the hub."),
         }
     }
 }
@@ -584,6 +591,10 @@ results! {
             steel_sigma_S_m: f64 => out("S/m", "Steel conductivity (4140)", "", "Temperature design!C109"),
             steel_mu_r: f64 => out("-", "Steel incremental relative permeability (4140)", "", "Temperature design!C110"),
             cap_sigma_S_m: f64 => out("S/m", "Aluminium cap conductivity (6061-T6)", "", "Temperature design!C112"),
+            inner_magnet_sigma_S_m: f64 => out_rust_only("S/m", "Inner ring magnet conductivity used",
+                "The conductivity the eddy-current heat inside the inner ring's magnets uses: the NdFeB conductivity input for sintered NdFeB or no grade, else the value taken for the grade's family."),
+            outer_magnet_sigma_S_m: f64 => out_rust_only("S/m", "Outer ring magnet conductivity used",
+                "The conductivity the eddy-current heat inside the outer ring's magnets uses: the NdFeB conductivity input for sintered NdFeB or no grade, else the value taken for the grade's family."),
             skin_depth_mm: f64 => out("mm", "Steel skin depth at the field frequency", "", "Temperature design!C115"),
             hub_W: f64 => out("W", "Hub surface (solid steel)",
                 "Eddy heating of the solid steel hub, limited by skin depth. With no back iron the hub is aluminium or the picked non-magnetic metal, in the free-space field.",
@@ -685,6 +696,10 @@ results! {
             daily_cycles: f64 => out("cycles", "Daily thermal cycles over life", "", "Temperature design!C200"),
             daily_peak_shear_MPa: f64 => out("MPa", "Peak end shear per daily cycle, recommended bondline", "", "Temperature design!C201"),
             daily_screen: String => out("", "Daily-cycle screen", "", "Temperature design!C202"),
+            daily_entered_peak_shear_MPa: f64 => out_rust_only("MPa", "Peak end shear per daily cycle, entered bondline",
+                "The daily-cycle shear at the bondline entered as the adhesive thickness under the inner magnets, not at the recommended one."),
+            daily_entered_screen: String => out_rust_only("", "Daily-cycle screen, entered bondline",
+                "The daily-cycle screen's comparison, on the shear at the entered bondline."),
         }
     }
 }
@@ -914,6 +929,32 @@ fn higher_cold_limit(a: NumOrText, b: NumOrText) -> bool {
     }
 }
 
+/// E22 (Addendum A-4 decisions 5 to 7): the magnet expansion in the bond plane, across the
+/// magnetization, that the mismatch screen and warning rule 6 read: the inner ring's grade
+/// value where the grade has one (ferrite, SmCo), else `input_per_C` (Temperature design C95:
+/// sintered NdFeB, every library part, a manual magnet without a grade, bonded NdFeB). Only
+/// the inner ring: the hub bonds it, and the cup bond is not screened.
+#[allow(non_snake_case)] // unit suffix, as the engine's names
+pub fn bond_plane_cte_per_C(input_per_C: f64, inner: Option<&Grade>, dev: Deviations) -> f64 {
+    match inner.and_then(|g| g.bond_plane_cte_per_C) {
+        Some(cte) if dev.is_on(DeviationId::E22) => cte,
+        _ => input_per_C,
+    }
+}
+
+/// E26 (backlog BL-062; approved by the owner on 2026-11-16): the conductivity the eddy heat inside one
+/// ring's magnets reads: the value of the ring's grade family where it has one (SmCo, ferrite,
+/// bonded NdFeB: [`crate::engine::grades::GradeFamily::magnet_sigma_S_m`]), else `input_S_m`
+/// (Temperature design C113: sintered NdFeB, so every library part, and a manual magnet
+/// without a grade).
+#[allow(non_snake_case)] // unit suffix, as the engine's names
+pub fn magnet_sigma_S_m(input_S_m: f64, ring: Option<&Grade>, dev: Deviations) -> f64 {
+    match ring.and_then(|g| g.family.magnet_sigma_S_m()) {
+        Some(sigma) if dev.is_on(DeviationId::E26) => sigma,
+        _ => input_S_m,
+    }
+}
+
 /// Linear-elastic shear-lag peak shear at the ends of a bonded block from thermal mismatch.
 #[allow(non_snake_case, clippy::too_many_arguments)] // Python names and signature
 pub fn volkersen_peak_shear_MPa(
@@ -1114,7 +1155,21 @@ pub fn compute(
     } else {
         (k.steel_cte, k.steel_E_GPa)
     };
-    let d_alpha = hub_cte - mm.ndfeb_cte_per_C;
+    let magnet_cte = bond_plane_cte_per_C(mm.ndfeb_cte_per_C, k.inner_grade, dev);
+    let d_alpha = hub_cte - magnet_cte;
+    // E22 (decision 9): a grade that expands more than the hub makes the mismatch, and the
+    // shear, negative; the screens compare its size and the signed values stay on display.
+    // Without E22 the workbook compares the signed value. Without a grade, a negative mismatch
+    // needs the default back iron's C17 set below C95 (a slider corner: every library hub
+    // material is at 9.0e-6 /C or more, C95 at most 6e-6); the size comparison then reads
+    // sintered NdFeB too (plan decision A4-4).
+    let size = |shear: f64| {
+        if dev.is_on(DeviationId::E22) {
+            shear.abs()
+        } else {
+            shear
+        }
+    };
     let s1 = volkersen_peak_shear_MPa(
         mm.adhesive_shear_modulus_GPa,
         d_alpha,
@@ -1146,12 +1201,13 @@ pub fn compute(
         current_bondline_mm: k.bond_inner_mm,
         peak_shear_current_MPa: s1,
         peak_shear_recommended_MPa: s2,
-        reading: if s1 > sel.lap_shear_MPa {
+        reading: if size(s1) > sel.lap_shear_MPa {
             "Above the lap-shear strength at the block ends"
         } else {
             "Below the lap-shear strength"
         }
         .to_owned(),
+        magnet_cte_per_C: magnet_cte,
     };
 
     // ---- slip losses (estimates)
@@ -1227,7 +1283,12 @@ pub fn compute(
         * (k.cap_face_mm / 1000.0)
         * omega.powi(2)
         * sl.cap_integral_T2m4;
-    let p_mag = sl.sigma_ndfeb_S_m
+    // E26: each ring's half of the magnets' heat reads its own ring's conductivity. Both
+    // rings are taken as the inner block (the factor 2.0 below), so that is the mean of the two
+    // in place of C113. Where both read C113, (s + s) / 2.0 is s exactly: the workbook's line.
+    let sigma_inner = magnet_sigma_S_m(sl.sigma_ndfeb_S_m, k.inner_grade, dev);
+    let sigma_outer = magnet_sigma_S_m(sl.sigma_ndfeb_S_m, k.outer_grade, dev);
+    let p_mag = (sigma_inner + sigma_outer) / 2.0
         * we.powi(2)
         * sl.b_magnet_T.powi(2)
         * (k.inner_width_mm / 1000.0).powi(2)
@@ -1246,6 +1307,8 @@ pub fn compute(
         steel_sigma_S_m: k.steel_sigma_S_m,
         steel_mu_r: k.steel_mu_r,
         cap_sigma_S_m: k.cap_sigma_S_m,
+        inner_magnet_sigma_S_m: sigma_inner,
+        outer_magnet_sigma_S_m: sigma_outer,
         skin_depth_mm: delta,
         hub_W: p_hub,
         cup_W: p_cup,
@@ -1397,6 +1460,17 @@ pub fn compute(
     let amp = tq_var / (npole * r_mid / 1000.0) / area;
     let hot_fm = sel.lap_shear_MPa * al.hot_strength_retained * al.fatigue_endurance / amp;
     let daily = s2 * al.daily_swing_C / dT;
+    // BL-063: the workbook's screen reads the recommended bondline's shear (s2), so a thinner
+    // entered bondline passes it unseen. The second screen reads the entered bondline's (s1).
+    let daily_entered = s1 * al.daily_swing_C / dT;
+    let daily_screen = |shear: f64| {
+        if size(shear) < sel.lap_shear_MPa * al.fatigue_endurance {
+            "Below the fatigue endurance"
+        } else {
+            "Above the fatigue endurance: qualify by thermal cycling"
+        }
+        .to_owned()
+    };
     let alife = AdhesiveLifeResults {
         peak_C: peak,
         margin_C: sel.design_limit_C - peak,
@@ -1412,12 +1486,9 @@ pub fn compute(
         .to_owned(),
         daily_cycles: al.service_years * 365.0,
         daily_peak_shear_MPa: daily,
-        daily_screen: if daily < sel.lap_shear_MPa * al.fatigue_endurance {
-            "Below the fatigue endurance"
-        } else {
-            "Above the fatigue endurance: qualify by thermal cycling"
-        }
-        .to_owned(),
+        daily_screen: daily_screen(daily),
+        daily_entered_peak_shear_MPa: daily_entered,
+        daily_entered_screen: daily_screen(daily_entered),
     };
 
     // ---- summary
@@ -1796,6 +1867,62 @@ mod tests {
             run(&ti, &k).adhesive_life.daily_screen,
             "Below the fatigue endurance"
         );
+    }
+
+    #[test]
+    fn daily_entered_screen_is_above_at_equal_shear() {
+        // BL-063: the same strict comparison on `s1 * swing / dT`, the entered bondline's shear
+        // (0.05 mm here, the recommended one 0.1 mm), set up as in the test above. The swing
+        // that puts the entered bondline's shear exactly on the limit leaves the recommended
+        // bondline's shear under it, so the two screens read differently.
+        let mut k = links();
+        k.inner_length_mm = 1000.0;
+        let mut ti = TemperatureInputs::default();
+        ti.adhesive.selected = 1;
+        ti.mismatch.adhesive_shear_modulus_GPa = 0.55; // explicit: correction E1 changes the default
+        ti.adhesive_life.fatigue_endurance = 0.2;
+        let limit = ADHESIVES[0].lap_shear_MPa * 0.2;
+        let base = run(&ti, &k);
+        ti.adhesive_life.daily_swing_C =
+            limit * base.mismatch.worst_swing_C / base.mismatch.peak_shear_current_MPa;
+        let r = run(&ti, &k);
+        assert_eq!(r.adhesive_life.daily_entered_peak_shear_MPa, limit);
+        assert_eq!(
+            r.adhesive_life.daily_entered_screen,
+            "Above the fatigue endurance: qualify by thermal cycling"
+        );
+        assert!(r.adhesive_life.daily_peak_shear_MPa < limit);
+        assert_eq!(r.adhesive_life.daily_screen, "Below the fatigue endurance");
+        ti.adhesive_life.daily_swing_C *= 0.99; // just below the limit
+        assert_eq!(
+            run(&ti, &k).adhesive_life.daily_entered_screen,
+            "Below the fatigue endurance"
+        );
+    }
+
+    #[test]
+    fn both_daily_screens_read_above_when_the_worst_swing_is_zero() {
+        // EA 9514 cures at 120 °C, above its 113 °C design limit, so with the cold limit at the
+        // cure temperature the worst swing is 0. Both shears are then 0 * swing / 0, a NaN, and
+        // the strict comparison is false: the second screen reads as the workbook's does.
+        let mut k = links();
+        k.min_temp_C = 120.0;
+        let mut ti = TemperatureInputs::default();
+        ti.adhesive.selected = 2;
+        for dev in [Deviations::NONE, Deviations::ALL] {
+            let r = compute(&ti, &k, dev);
+            assert_eq!(r.mismatch.worst_swing_C, 0.0);
+            let life = &r.adhesive_life;
+            assert!(
+                life.daily_peak_shear_MPa.is_nan() && life.daily_entered_peak_shear_MPa.is_nan()
+            );
+            for screen in [&life.daily_screen, &life.daily_entered_screen] {
+                assert_eq!(
+                    screen,
+                    "Above the fatigue endurance: qualify by thermal cycling"
+                );
+            }
+        }
     }
 
     #[test]
@@ -2315,6 +2442,49 @@ mod tests {
             assert!(r.summary.cure_margin_C.is_nan(), "{ring}");
             assert_eq!(r.summary.verdict, VERDICT_CHECK, "{ring}");
         }
+    }
+
+    #[test]
+    fn e22_reads_the_inner_ring_s_grade_cte_and_compares_the_shear_s_size() {
+        // Addendum A-4 decisions 5 to 7 and 9. A SmCo inner ring (13e-6 /C) on a steel hub
+        // (12.3e-6) turns the mismatch, and the shear, negative; a ferrite or SmCo outer ring,
+        // a bonded NdFeB inner ring (no grade CTE, decision 7) and E22 off keep C95.
+        let e22 = Deviations::only(DeviationId::E22);
+        let ti = TemperatureInputs::default();
+        let c95 = ti.mismatch.ndfeb_cte_per_C;
+        let smco = crate::engine::grades::grade("SmCo_2_17_26");
+        let mut k = links();
+        k.inner_grade = smco;
+        let r = compute(&ti, &k, e22);
+        assert_eq!(r.mismatch.magnet_cte_per_C, 13.0e-6);
+        assert!(r.mismatch.peak_shear_current_MPa < 0.0);
+        assert_eq!(run(&ti, &k).mismatch.magnet_cte_per_C, c95, "E22 off");
+        let mut outer = links();
+        outer.outer_grade = smco;
+        assert_eq!(compute(&ti, &outer, e22), run(&ti, &outer), "outer ring");
+        let mut bonded = links();
+        bonded.inner_grade = crate::engine::grades::grade("Bonded_NdFeB_BCN19");
+        assert_eq!(
+            compute(&ti, &bonded, e22),
+            run(&ti, &bonded),
+            "bonded NdFeB"
+        );
+        // The size is compared: with the workbook's stiffer adhesive (0.55 GPa) and a
+        // hypothetical low-expansion hub (2e-6 /C), the negative shear exceeds AA 326's 15 MPa
+        // lap shear, and the reading says so.
+        let mut stiff = TemperatureInputs::default();
+        stiff.mismatch.adhesive_shear_modulus_GPa = 0.55;
+        k.steel_cte = 2.0e-6;
+        let r = compute(&stiff, &k, e22);
+        assert!(
+            r.mismatch.peak_shear_current_MPa < -15.0,
+            "{}",
+            r.mismatch.peak_shear_current_MPa
+        );
+        assert_eq!(
+            r.mismatch.reading,
+            "Above the lap-shear strength at the block ends"
+        );
     }
 
     #[test]

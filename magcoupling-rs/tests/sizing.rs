@@ -13,6 +13,7 @@ use magcoupling::engine::model::{
     END_EFFECT_OUT_OF_RANGE, RingFit, blocks_fit, pitch_share, ring_fits,
 };
 use magcoupling::engine::shaft_joint::SHAFT_JOINTS_PASS;
+use magcoupling::engine::size_controls::{dimensions, with_ring_radius};
 use magcoupling::engine::sizing::{
     FreeVariable, SCAN_CELLS, SizingError, SizingOutcome, SizingPoint, VALUE_TOLERANCE_MM,
     is_valid, solve, solve_in,
@@ -990,6 +991,51 @@ fn a_sized_design_shows_its_overshoot() {
         "{}",
         r.housing.space_claim_check
     );
+}
+
+/// The BL-061 evidence design: the defaults at a 7 mm ring radius (the Size tab's move: the cap
+/// follows the cup), the shaft boss at `boss_mm` and a 38 mm diameter claim.
+fn small_ring_with_boss(boss_mm: f64) -> DesignInputs {
+    let mut inputs = with_ring_radius(&DesignInputs::default(), 7.0).expect("a 7 mm ring radius");
+    inputs.metal.boss_od_mm = boss_mm;
+    inputs.metal.max_diameter_mm = 38.0;
+    inputs
+}
+
+#[test]
+fn a_boss_larger_than_the_cup_and_cap_and_past_the_claim_fails_the_diameter_axis() {
+    // BL-061, correction E25 (first an assumption under the owner's ruling of 2026-11-10;
+    // approved by the owner on 2026-11-16): the claim's diameter judges the largest of the cup, the cap and the shaft boss.
+    // On the evidence design the cup and the cap are inside the 38 mm claim and the 40 mm boss
+    // is 2 mm past it. The workbook's C135 leaves the boss out and read inside.
+    let inputs = small_ring_with_boss(40.0);
+    let r = compute_all(&inputs);
+    assert!(r.model.cup_od_mm < 38.0, "{}", r.model.cup_od_mm);
+    assert!(inputs.metal.cap_od_mm < 38.0, "{}", inputs.metal.cap_od_mm);
+    assert_eq!(r.metal.rotating_od_mm, 40.0);
+    assert_eq!(r.metal.diameter_reserve_mm, -2.0);
+    assert_eq!(r.housing.diameter_overshoot_mm, 2.0);
+    assert_eq!(
+        r.housing.space_claim_check,
+        "Exceeds the space claim: diameter 2.00 mm over"
+    );
+}
+
+#[test]
+fn the_size_tab_s_outside_diameter_is_the_diameter_the_space_claim_judges() {
+    // E25 (BL-061): one value in two places, for a boss below, equal to and above the larger
+    // of the cup and the cap (the cap on this design).
+    let cap = small_ring_with_boss(22.0).metal.cap_od_mm;
+    for boss in [22.0, cap, 40.0] {
+        let inputs = small_ring_with_boss(boss);
+        let judged = compute_all(&inputs).metal.rotating_od_mm;
+        assert_eq!(judged, boss.max(cap), "boss {boss}");
+        assert_eq!(
+            dimensions(&inputs).expect("a size").diameter_mm,
+            judged,
+            "boss {boss}"
+        );
+    }
 }
 
 #[test]

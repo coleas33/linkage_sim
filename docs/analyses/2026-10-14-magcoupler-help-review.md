@@ -2719,6 +2719,205 @@ No other doc in `docs/ai` or the README quotes the bracket.
 - **Historical quotes of the old forms in the help-review record.** These are :2162 and :2211 (the earlier rounds' as-returned reports) and :2517 (round 1's probe table, which marks the row as M-1). They record what was on screen at the time. No change.
 - **Commit 80d4d60's type.** It is typed `docs(magcoupler)` but carries the on-screen fix and a new test. It is history, so it needs no change.
 
+### Re-review after BL-068 (2026-11-09)
+
+BL-068 (`docs/ai/backlog.yaml`; filed at the owner's decision 2A of 2026-10-17 from SF-1 of this section's re-review
+after the whole-branch review's fix wave 1) changed the hot-minimum Problem (`hot_min_problem`, `gui/guidance.rs`).
+Where hot-low torque and the required minimum would read the same to 4 significant digits while the check fails,
+hot-low is now quoted rounded down at its last shown digit (`quoted_limit`, the mirror of `quoted_load`), so on the
+sliders a failing check never reads two equal numbers: "Hot-low torque 0.9299 N·m is below the required 0.9300 N·m",
+where it read "0.9300 ... 0.9300". Everywhere else it reads as before, the template is unchanged, and a hot-low at or
+below zero, or not finite, is quoted as it is.
+The changed sentence had its G-3 re-review in a fresh context on the uncommitted change in the worktree (branch
+`magcoupling/off-default-fixes`, base 1048962). The record stands in this section because BL-068 came from this
+section's SF-1 and the fix uses the helper reviewed here (`quoted_limit`, review I-2). The reviewer's report for the
+record follows.
+
+- Reviewer: fresh context, session model, 2026-11-09; G-3 re-review of the hot-minimum Problem as changed by BL-068
+  (round 1).
+- Verdict: PASS, no must-fix. The sentence is true at the defaults, at the slider design that read "0.9300 ... 0.9300"
+  (now "0.9299 ... 0.9300"), at every failing design of the slider sweeps (825 of them in the window that read two
+  equal numbers before), at every design Auto shows and at the rounding edges reached on real designs. It breaks none
+  of the physics traps (section 8 of the two guidance specs, section 6 of the BL-059 spec), it passes the plain-words
+  guard, and it says neither "clamp" nor that the coupling protects the gearbox.
+- Should-fix offered, none of them for the text as drawn on the sliders:
+  - SF-1 (a decade edge that only a file's values reach; the owner's choice): with hot-low within about 1e-13
+    (relative) below a requirement that sits on a power of ten (0.1000, 1.000 or 10.00 N·m), or with a file's
+    requirement a hair above a power of ten and hot-low between the two, the quoted hot-low steps down by the upper
+    decade's last digit. A hot-low of 0.9999999999999987 N·m (axial length 5.000687721091 mm) reads "Hot-low torque
+    0.9990 N·m is below the required 1.000 N·m", and 9.999999999999 N·m reads "9.990 ... 10.00". That is ten of the
+    quote's own last digits and 0.1 % under the true value: true in its direction and on the cautious side, but more
+    than the README's "rounded down at its last shown digit". No slider-step design in the sweeps reaches it. It is
+    `quoted_limit`'s behaviour, which gearbox sentence 2 shares and
+    `sentence_2_rounds_its_limits_toward_passing_and_past_what_they_limit` pins (1.00001 against 1.00004 gives
+    "0.9990"). Three ways to settle it:
+    - A (recommended): leave the text and the README as they are, with this record. It takes a file's value inside a
+      window of 1e-13, the reading is on the cautious side, and any change to the helper changes gearbox sentence 2,
+      which has passed its own reviews.
+    - B: make `quoted_limit` step by the last digit of the decade below ("0.9999 ... 1.000", "9.999 ... 10.00"). It
+      reads best, but it changes the pinned "0.9990" of gearbox sentence 2 and needs its own text round.
+    - C: one README clause after "(0.9299 against 0.9300 N·m)": "with a file's values at a power of ten it can step
+      by one digit of the requirement's reading (0.9990 against 1.000 N·m)".
+  - SF-2 (a test gap, for the code side): no test pins "where the two read apart, hot-low reads as its readout" on a
+    design that can tell. On a scratch copy of the crate, with hot-low always sent through `quoted_limit` (rounded down
+    even where the two read apart), all 744 `gui::` unit tests pass, though the design of the new test with the
+    requirement at 0.94 N·m then reads "Hot-low torque 0.9299 N·m is below the required 0.9400 N·m" (it draws "0.9300
+    ... 0.9400", its readout). The test's own check of that rule uses the defaults, where rounding down and rounding
+    to the nearest both give 2.285. Offered, and seen failing under that change and passing on the real code: in
+    `the_hot_minimum_problem_never_reads_two_equal_numbers`, the same design with the requirement at 0.94 (a slider
+    step) asserts `text.starts_with("Hot-low torque 0.9300 N·m is below the required 0.9400 N·m:")`.
+  - SF-3 (repetition, for the code side): the new branch in `hot_min_problem` is what `apart_from` (`gui/guidance.rs`,
+    BL-059 MF-1, used by the shaft-joint Problems and gearbox sentence 1) already does. `let hot_low_text =
+    apart_from(results, "metal.torque_hot_low_Nm", required, false);` draws the same texts (on the scratch copy all
+    `gui::` unit tests pass with it, the two new ones and SF-2's assertion among them).
+- For the step that commits: the tracker entry of 2026-11-09 and BL-068's note both say the changed sentence "still
+  needs" its G-3 text re-review. This record is that review; the reviewer may edit only this document, so those two
+  lines are left for that step.
+
+**Report for the record (as returned).**
+
+#### The changed text, as drawn (probe output on the worktree's change)
+
+Every design in this table sits on slider steps. "..." stands for the unchanged words of the sentence.
+
+| Design | hot-low (unrounded) | Hot-low readout | Problem | Size tab |
+|---|---|---|---|---|
+| defaults | 2.285204851 | 2.285 N·m | "Hot-low torque 2.285 N·m is below the required 2.500 N·m: the pull-out of 2.688 N·m at 50.00 °C, less the 15 % variation allowance." (unchanged) | short 0.21 N·m (-8.6 %) |
+| P1: axial length 4.74 mm, face gap 0.50 mm, required 0.93 N·m | 0.929955519 | 0.9300 N·m | "Hot-low torque 0.9299 N·m is below the required 0.9300 N·m: the pull-out of 1.094 N·m at 50.00 °C, less the 15 % variation allowance." (was "0.9300 ... 0.9300") | short 0.00 N·m (-0.0 %) |
+| P1 with required 0.94 N·m | 0.929955519 | 0.9300 N·m | "Hot-low torque 0.9300 N·m is below the required 0.9400 N·m: ..." (unchanged: the two read apart) | short 0.01 N·m (-1.1 %) |
+| P1 with required 0.92 N·m | 0.929955519 | 0.9300 N·m | none: the check passes ("Estimate covers hot min") | margin +0.01 N·m (+1.1 %) |
+| axial length 2.2 mm, face gap 1.5 mm, required 0.17 N·m | 0.169956557 | 0.1700 N·m | "Hot-low torque 0.1699 N·m is below the required 0.1700 N·m: the pull-out of 0.1999 N·m at 50.00 °C, ..." | short 0.00 N·m (-0.0 %) |
+| face gap 0.31 mm, axial length 15 mm, required 3.92 N·m | 3.919559929 | 3.920 N·m | "Hot-low torque 3.919 N·m is below the required 3.920 N·m: the pull-out of 4.611 N·m at 50.00 °C, ..." | short 0.0004 N·m (-0.0 %) |
+| `coupling.inner_back_apothem_mm` 9.14 mm, face gap 0.8 mm, required 2.54 N·m | 2.539628735 | 2.540 N·m | "Hot-low torque 2.539 N·m is below the required 2.540 N·m: the pull-out of 2.988 N·m at 50.00 °C, ..." | short 0.0004 N·m (-0.0 %) |
+| variation 10.5 %, axial length 20 mm, required 3.95 N·m | 3.949881349 | 3.950 N·m | "Hot-low torque 3.949 N·m is below the required 3.950 N·m: the pull-out of 4.413 N·m at 50.00 °C, less the 10.5 % variation allowance." | short 0.0001 N·m (-0.0 %) |
+| operating temperature -37.5 °C, axial length 9.5 mm, required 2.02 N·m | 2.019841571 | 2.020 N·m | "Hot-low torque 2.019 N·m is below the required 2.020 N·m: the pull-out of 2.376 N·m at -37.50 °C, less the 15 % variation allowance." | short 0.0002 N·m (-0.0 %) |
+| 20 poles (`coupling.npole`), axial length 20 mm, required 3.47 N·m | 3.469598410 | 3.470 N·m | "Hot-low torque 3.469 N·m is below the required 3.470 N·m: the pull-out of 4.082 N·m at 50.00 °C, ..." | short 0.0004 N·m (-0.0 %) |
+| axial length 45.05 mm, face gap 1.0 mm, required 10 N·m (the one slider design found across a decade) | 9.999958748 | 10.00 N·m | "Hot-low torque 9.999 N·m is below the required 10.00 N·m: the pull-out of 11.76 N·m at 50.00 °C, ..." | short 0.00 N·m (-0.0 %) |
+
+On every failing row the Hot-low row and the check's row carry the red badge, and the check's row reads "Below hot
+minimum".
+
+#### Sweeps
+
+A scratch crate on the public API (`compute_all`, `CHECK_GUIDES`, `check_level`, `dashboard_lines`,
+`greyed_by_end_effect`, `plain_text_violations`, `torque_gap_text`) checked each design for all of these:
+- the Problem shows exactly under a red badge, and the badge is red exactly where hot-low is below the requirement (the engine's strict rule), the greyed rows apart;
+- the requirement is quoted as its own readout;
+- the words after the two numbers are the old template's, character for character;
+- where the two readouts differ, the whole text is the old one, with hot-low as its readout;
+- where the two readouts are equal (the window), the quoted hot-low is never above the true value, is within one last digit of it, and reads below the requirement;
+- hot-low equals the pull-out times (1 - variation) (largest relative difference: 0);
+- the Size tab says "short";
+- `plain_text_violations` is empty; no "clamp", "protect", "gearbox", "guarantee" or "hot-day"; only ASCII, "·" and "°".
+
+The main sweep covered the axial length at every slider step (4881, 2 to 50.8 mm) × face gap 0.5, 1.0, 1.5 and 2.0 mm (19,524 geometries, each with hot-low above 0 and not greyed) × every requirement step (991, 0.10 to 10.00 N·m): 19,348,284 designs.
+- Failing: 9,271,394. In the window: 825, the count the 2026-10-17 SF-1 gave.
+- The 169,192 designs with the requirement within 1 % of hot-low were each worked out in full by `compute_all` (84,186 fail). The other 19,179,092 used the geometry's results with the verdict the engine's rule gives for the requirement, since hot-low does not depend on it (9,187,208 fail, none in the window).
+- In the window the quoted hot-low is 0.5000 to 0.9999 of its last digit below the true value. The least is axial length 30.53 mm, gap 0.5 mm, required 7.86 N·m (7.859500010, "7.859 ... 7.860"); the most is axial length 20.1 mm, gap 2.0 mm, required 3.11 N·m (3.109999879, "3.109 ... 3.110").
+- In 824 of the 825 the quote is exactly one last digit below the requirement as read. The other is the last row of the table: across a decade the quote's last digit (0.001) is a tenth of the requirement's (0.01), so "9.999 ... 10.00" is as close as four digits allow.
+- By the requirement's reading, the 825 are 816 with three decimals, 8 with four (requirements below 1 N·m) and 1 with two (10.00).
+- Outside the window every failing text is the old one. No rule above is broken anywhere.
+
+Other inputs, each at every slider step, with every requirement step within 1 % of hot-low worked out in full:
+
+| Swept | Geometries | Designs | Failing | In the window | Rules broken |
+|---|---|---|---|---|---|
+| face gap (0.30 to 5.00 mm) × axial lengths 4, 6, 9.5, 15, 25 and 40 mm | 2826 | 12,207 | 6074 | 88 | 0 |
+| `coupling.inner_back_apothem_mm` × face gaps 1.4 and 0.8 mm | 4202 | 21,760 | 10,845 | 206 | 0 |
+| `metal.variation` × axial lengths 9.5, 4.74 and 20 mm | 303 | 1093 | 543 | 9 | 0 |
+| `coupling.op_temp_C` × the same lengths | 1143 | 4611 | 2312 | 43 | 0 |
+| `coupling.npole`, every integer from 4 to 40, × the same lengths | 111 | 324 | 159 | 5 | 0 |
+
+In each of these the window quote is exactly one last digit below the requirement and 0.50 to 1.00 of a last digit
+below the true value.
+
+#### Auto
+
+`engine::sizing::solve` at every requirement step, for each free variable, at face gaps 0.5 and 1.4 mm; the design
+checked is the one the panel shows (`gui::sizing::sized`).
+
+| Free variable | Solved (gap 0.5 / 1.4) | Not reachable, best value shown (gap 0.5 / 1.4) |
+|---|---|---|
+| axial length | 991 / 984 | 0 / 7 |
+| magnets per ring | 297 / 219 | 694 / 772 |
+| ring radius | 338 / 250 | 653 / 741 |
+
+- Every solved design passes the check and shows no Problem. The smallest margin is 1.2e-14 (relative): Auto's own rule is "at or above" (`Sample::meets`), so a solve never lands in the window.
+- Where the requirement is not reachable, the best value shows a Problem whose two numbers read apart (none in the window), so its text is the old one.
+- No rule is broken on any of the 5946 designs.
+
+#### Rounding edges and edge pairs
+
+On real designs (the requirement on its slider, face gap 0.5 mm, the axial length bisected to put hot-low where wanted, so a file's value):
+- Required 0.93, 2.5 and 9.99 N·m, with hot-low from one float step to 0.49 of a last digit under: "0.9299 ... 0.9300", "2.499 ... 2.500", "9.989 ... 9.990".
+- The same requirements with hot-low 0.51 and 1.2 last digits under: the readout already reads apart, and the text is the old one.
+- Required 1.0 N·m: hot-low 1e-13 and 1e-9 (relative) under reads "0.9999 ... 1.000"; one float step under reads "0.9990 ... 1.000" (SF-1).
+- Required 10 N·m: hot-low 1e-9 under reads "9.999 ... 10.00"; one float step and 1e-13 under read "9.990 ... 10.00" (SF-1).
+
+Pairs set by hand (the text function alone, hot-low against the requirement):
+- Decades: 0.99996 against 1.0 gives "0.9999 ... 1.000"; 9.99996 against 10 gives "9.999 ... 10.00"; 0.099996 against 0.1 gives "0.09999 ... 0.1000".
+- Off-grid requirements: 0.93004 against 0.930045 gives "0.9299 ... 0.9300"; 2.50004 against 2.500049 gives "2.499 ... 2.500"; 9.9996 against 9.99961 gives "9.999 ... 10.00".
+- Off-grid at a decade: 1.00004 against 1.000045 gives "0.9990 ... 1.000" (SF-1).
+- Scientific range: 0.00099996 against 0.001 gives "9.999e-4 ... 0.001000"; 999999.6 against 1e6 gives "999900 ... 1.000e6".
+- Equal or above (2.5 against 2.5, 2.6 against 2.5): the check passes, and there is no Problem.
+
+Why the decade edge reads as it does: within 1e-9 of a last digit below a power of ten, the float-noise guard
+(`LAST_DIGIT_NOISE`) rounds "down" onto the power of ten itself. That still reads equal to the requirement, so
+`quoted_limit` takes one more digit off, and the digit it takes is the upper decade's (1.000 less 0.001).
+
+#### Values only a design file can hold
+
+- Variation 1.0: "Hot-low torque 0 N·m is below the required 2.500 N·m: the pull-out of 2.688 N·m at 50.00 °C, less the 100 % variation allowance."
+- Variation 1.5: "Hot-low torque -1.344 N·m is below the required 2.500 N·m: ... less the 150 % variation allowance."
+- Variation 1e308: "Hot-low torque -inf N·m is below the required 2.500 N·m: ... less the +inf % variation allowance."
+- Variation 1.5 with a requirement of hot-low + 1e-6 (a negative requirement): "-1.344 ... -1.344". By hand, -0.10001 against -0.1 gives "-0.1000 ... -0.1000". Two equal numbers, off the sliders only (see Recorded).
+- A hot-low that is not a number, or +inf: the check is not red, and there is no Problem.
+- Axial length 0.5 mm (the end-effect model out of range) and a face gap of 1e308 mm: the row is greyed, with no badge and no Problem.
+- Required 1e308: "2.285 ... 1.000e308". Required -1, 0 and 1e-300: the check passes.
+
+Each of these is what BL-068's acceptance asks for ("quoted as it is") or is unchanged by it.
+
+#### Traps and rules
+
+The template is unchanged; only the hot-low number differs, and only in the window. Against each rule:
+- "Is below" is true wherever the Problem shows, because the Problem shows only under the red badge and the engine's rule is strict (hot-low below the requirement).
+- The quoted hot-low is rounded down, never above the true value. That is the cautious side for a torque the coupling must at least hold, as rounding up is for a torque on the gearbox input (`quoted_load`, review I-2). Nothing overstates what the coupling holds.
+- Hot-low is the pull-out at the operating temperature less the variation allowance, exactly, on every design probed; the temperature quoted is the operating temperature (`coupling.op_temp_C`), not a "hot-day" figure.
+- No guarantee: the sentence gives the estimate and its allowance and claims nothing past them.
+- No gearbox, no "protects", no "clamp" (the shaft-clamp section stays paused), no id and no path.
+- The numbers read at 4 significant digits through `number_text` and `result_text` with the result's own unit, "N·m".
+- `plain_text_violations` is empty on every failing text of the sweeps.
+
+The trap lists read were section 8 of the slice-1 and slice-2 guidance specs
+(`docs/superpowers/specs/2026-10-13-magcoupler-guidance-design.md` and `2026-10-14-magcoupler-guidance-2-design.md`;
+section 6 of the second is "Tests") and section 6 of the BL-059 spec
+(`docs/superpowers/specs/2026-10-16-bl059-gearbox-check-design.md`).
+
+#### Tests and docs
+
+- On the worktree's change (built into a scratch target directory, nothing written in the worktree): `the_hot_minimum_problem_never_reads_two_equal_numbers`, `on_the_sliders_the_hot_minimum_problem_quotes_hot_low_below_the_requirement`, `sentence_2_rounds_its_limits_toward_passing_and_past_what_they_limit` and `no_guide_text_says_the_coupling_protects_the_gearbox` pass.
+- On a scratch copy of the crate with the old text put back, both new tests fail: at P1 on "0.9300 ... 0.9300", and in the sweep at axial length 2.2 mm, gap 1.5 mm, required 0.17 N·m on "0.1700 ... 0.1700". They were red before the fix, as the tracker says.
+- A second change on the scratch copy (hot-low always rounded down) passes all 744 `gui::` unit tests: SF-2.
+- The code comment at `hot_min_problem`, the tracker entry, BL-068's note and the README's Check guides sentence match what the code draws on the sliders: 0.9299 against 0.9300 N·m, the defaults' 2.285 against 2.500 N·m, and a hot-low at or below zero quoted as it is. The README's "or not a number" never shows: with a hot-low that is not a number the check is not red.
+
+#### Recorded, no change asked
+
+- **One last digit under the readout.** In the window the Problem's hot-low reads one last digit below the Hot-low row's own readout (0.9299 in the Problem, 0.9300 on the dashboard). This is the price of "never two equal numbers", the one accepted for gearbox sentence 1 (0.5401 beside a 0.5400 readout). Nothing reads false: the quoted figure is hot-low rounded down, and "below" is true.
+- **The reader's own product.** The quoted pull-out times (1 - variation) agrees with the quoted hot-low within the pull-out's rounding, as before: 1.094 × 0.85 = 0.9299 at P1, 2.688 × 0.85 = 2.285 at the defaults, 2.988 × 0.85 = 2.540 beside "2.539" at the apothem row.
+- **The Size tab at such a design.** It reads "short 0.00 N·m (-0.0 %)" or "short 0.0004 N·m (-0.0 %)". Its word is right and its numbers round to zero. It is not BL-068's text and is unchanged.
+- **Negative pairs from a file.** A hot-low below zero beside a negative requirement can still read two equal numbers. BL-068 quotes a hot-low at or below zero as it is, and the tracker's title says "on the sliders". This is the mirror of the 2026-10-17 SF-2.
+- **Requirements of 0.10 and 0.11 N·m.** No real design could be put at their rounding edge (hot-low is 0.462 N·m at an axial length of 3 mm with the 0.5 mm gap). The text function alone was probed there with pairs set by hand.
+- **Not done in this round.** The panel was not run on screen: the texts were read through the guide's Problem function and the dashboard lines. Whether the panel always hands the guide matching inputs and results was not probed; BL-068 does not change it. The tracker entry's audit of the clearance and cup wall Problems was not repeated.
+
+- No must-fix, and no text changed in this round. SF-1, SF-2 and SF-3 stay open for the controller.
+
+**Fold-in (2026-11-10, the controller's review of 1065264).** SF-2 and SF-3 are taken. The first test also asserts
+"Hot-low torque 0.9300 N·m is below the required 0.9400 N·m:" on the same design at a requirement of 0.94 N·m, and
+`hot_min_problem` calls `apart_from(results, "metal.torque_hot_low_Nm", required, false)` in place of a copy of its
+branch. The 121 `gui::guidance` tests pass, and the text drawn is the one reviewed above. SF-1 is the owner's choice
+and stays at option A (no change) until the owner rules. The README's "or not a number" is dropped, and the tracker
+entry and BL-068's note now name this record.
+
 ## BL-064 shaft joints
 
 BL-064's G-3 review of every new on-screen text (plan Task 8) is recorded first in this section, with each round's
@@ -6675,3 +6874,1713 @@ Round 2 (as returned).
   the results, and the steps from `Control::step`.
 
 7. Verdict: PASS. Nothing for the owner. One should-fix is offered, for docs (SF-1, WP-I's item [70]).
+
+## BL-058 E22 help texts
+
+BL-058 (`docs/ai/backlog.yaml`; correction E22) makes the bond's expansion screen and the expansion caution read a
+ferrite or SmCo inner ring's own expansion in the bond plane (the grade table's value: Y30 10.0e-6 /°C, Recoma 26 and
+Recoma 30 13.0e-6 /°C, Recoma 20 14.0e-6 /°C) where they read the NdFeB expansion input before, and makes the reading
+and the daily-cycle screen compare the shear's size. Four texts changed with it. They had their G-3 review on
+2026-11-10 in a fresh context on the uncommitted change in the worktree (branch `magcoupling/off-default-fixes`, HEAD
+6e15e4f, 20 changed files), together with the six unchanged help rows that speak of the same shear. The reviewer's
+report for the record follows.
+
+- Scope:
+  - changed: the overlay help of `temperature.mismatch.ndfeb_cte_per_C` (`gui/plain_text.rs`, line 736); the engine
+    help of the same input (`engine/temperature.rs`, line 216; exported to `tests/data/input_schema.json`, not drawn in
+    the GUI); the label and the help of the new result `temperature.mismatch.magnet_cte_per_C`
+    (`engine/temperature.rs`, lines 579 and 580); the help of warning rule 6 (`engine/warnings.rs`, line 110);
+  - unchanged, read again under E22 (`gui/plain_text.rs`): `materials.steel.cte_per_C` (line 391),
+    `materials.steel.modulus_GPa` (395), `temperature.mismatch.ndfeb_modulus_GPa` (399), `metal.bond_inner_mm` (411),
+    `temperature.mismatch.recommended_bondline_mm` (419) and `temperature.mismatch.adhesive_shear_modulus_GPa` (720).
+- Reviewer: fresh context, fable (the decider, physics review), 2026-11-10; round 1. Every number below is from the
+  reviewer's own probes on the GUI's basis (`compute_all`, every correction on).
+- Verdict: MUST_FIX, one. The four changed texts are true as read at the defaults, on every grade and hub probed and at
+  the slider ends. One unchanged row is not true any more on a state E22 makes ordinary (MF-1). Three should-fix are
+  offered. No text breaks a physics trap, says "clamp", says the coupling protects the gearbox or says a wall seals
+  the rings.
+- Must-fix:
+  - MF-1, `materials.steel.cte_per_C`, `magcoupling-rs/src/gui/plain_text.rs` line 391 (an unchanged row). "so higher
+    raises it" is false of the shear's size on a SmCo inner grade over a steel hub, and on a ferrite inner grade with
+    the steel expansion typed below 10.0e-6 /°C.
+    - Old: "Thermal expansion of the steel hub; its difference from the magnets' expansion sets the bond shear from
+      temperature swings, so higher raises it. Picking another back-iron material replaces it."
+    - New: "Thermal expansion of the steel hub; the further from the magnets' expansion, the higher the bond shear from
+      temperature swings. Picking another back-iron material replaces it." (26 words, 2 sentences, guard clean.)
+    - Design and numbers: Recoma 26 on both rings (custom dimensions), the default 4140 hub (its row is live, 12.3e-6
+      /°C). "Peak end shear, current bondline" reads -0.7004 MPa. One slider step up (12.4e-6) gives -0.6004 and one
+      down (12.2e-6) gives -0.8005: the size falls as the hub's expansion rises, to 0.0000 at 13.0e-6, and grows again
+      above it (14.0e-6 gives 1.0006). Recoma 20: -1.7012, up -1.6011, down -1.8013, zero at 14.0e-6. Y30 with the
+      steel expansion typed at 9.9e-6, 8.0e-6 and 5.0e-6: -0.1230, -2.4597 and -6.1492. Read across the picks the old
+      rule misleads the same way: on Recoma 26, going from 4140 (12.3e-6) to the lower-expansion 416 (10.08e-6) takes
+      the shear from -0.7004 to -2.9200 MPa, 4.2 times the size, where on the default NdFeB part it falls from 11.6814
+      to 9.6958.
+    - Why the size is the reading: the reading and the daily-cycle screen compare the size (Recoma 20 on 416 with the
+      adhesive shear modulus at 0.55 GPa: -15.5672 MPa reads Above, and the daily -3.3964 reads Above). The old words
+      are true of the signed number everywhere (it does rise with the hub's expansion), but no single reading makes the
+      six rows true on a SmCo inner ring over steel. Read by the signed number, the other five are false there (a
+      stiffer adhesive takes -1.7012 to -1.7159, "raises"; a thicker bondline takes -1.7012 to -1.5572, "lowers"). Read
+      by size, only this row is. The changed NdFeB expansion row already reads by size ("the further from the hub's,
+      the higher"), and the New text is its mirror.
+    - Why now: before E22 the negative shear needed both sliders in one corner (steel 5.0e-6 with the NdFeB expansion
+      at 6.0e-6 gives -0.8917 MPa). E22 puts it on every SmCo grade over every steel of the back-iron list (10.08e-6
+      to 12.3e-6, all below 13.0e-6).
+- Should-fix offered (the owner's choice; none is false as it stands):
+  - SF-1, the overlay help of `temperature.mismatch.ndfeb_cte_per_C` (`gui/plain_text.rs` line 736). The change
+    dropped "from temperature swings". The other five rows of the family all name "the bond shear from temperature
+    swings", and the same tab shows "Bond shear stress from magnetic torque", which this input does not move (0.403998
+    MPa with the input at -3e-6, -0.8e-6 and 6e-6, while the peak end shear reads 13.6432, 11.6814 and 5.6178).
+    - Old: "Thermal expansion of the magnets in the bonded face; the further from the hub's, the higher the bond shear.
+      A ferrite or SmCo inner ring uses its grade's own value."
+    - New: "Magnet thermal expansion in the bonded face; the further from the hub's, the higher the bond shear from
+      temperature swings. A ferrite or SmCo inner ring uses its grade's value." (30 words, 2 sentences, guard clean.)
+  - SF-2, the engine help of the same input (`engine/temperature.rs` line 216; ported help, outside the cap and the
+    guard, as "Correction E1:" is in the adhesive shear modulus help). Sentence 2 can be read as calling bonded NdFeB
+    sintered, and its list leaves out a sintered NdFeB grade on custom dimensions, which uses the input too (N42 on
+    both rings reads -0.8e-6 and 10.1927 MPa, the same as bonded NdFeB on both).
+    - Old: "Across the magnetization. Sintered NdFeB: every library part, a manual magnet without a grade, and bonded
+      NdFeB. Correction E22: a ferrite or SmCo inner ring uses its grade's value instead
+      (temperature.mismatch.magnet_cte_per_C shows the value in effect)."
+    - New: "Across the magnetization. Sintered NdFeB's value, used by every library part, every NdFeB grade (sintered
+      or bonded) and a manual magnet without a grade. Correction E22: a ferrite or SmCo inner ring uses its grade's
+      value instead (temperature.mismatch.magnet_cte_per_C shows the value in effect)." (43 words, 3 sentences. A
+      change here needs `tests/data/input_schema.json` blessed again.)
+  - SF-3, the help of the result `temperature.mismatch.magnet_cte_per_C` (`engine/temperature.rs` line 580). "The hub
+    bonds the inner ring." reads oddly: a hub does not bond.
+    - Old: "The magnet expansion the bond screen and the expansion caution use: a ferrite or SmCo inner ring's own
+      value, else the NdFeB expansion input. The hub bonds the inner ring."
+    - New: "The magnet expansion the bond screen and the expansion caution use: a ferrite or SmCo inner ring's value,
+      else the NdFeB expansion input. That ring is bonded to the hub." (30 words, 2 sentences, guard clean.)
+- The four changed texts, each as read:
+  - Overlay help of the NdFeB expansion: true. The further the input is from the hub's expansion, the larger the shear
+    on every hub (4140: 13.6432 at -3e-6, 5.6178 at 6e-6; with the steel at 5.0e-6 the shear is 0.0089 at 4.99e-6,
+    0.0000 at 5.00e-6 and -0.0089 at 5.01e-6). On a Y30 inner grade the input moves nothing (2.8286 MPa at -3e-6,
+    -0.8e-6 and 6e-6). See SF-1.
+  - Engine help of the same input: true to the code. See SF-2.
+  - Result label and help: true. The result reads 10.0e-6 on Y30, 13.0e-6 on Recoma 26 and Recoma 30, 14.0e-6 on
+    Recoma 20, and the input otherwise (a library part, no grade, N42, bonded NdFeB; a library part on the inner ring
+    with Y30 typed as its grade). See SF-3.
+  - Rule 6 help: true, no change asked. "More than" is strict and "the inner ring magnets'" is exact (the edges are in
+    the report).
+- The six unchanged rows, each as read under E22:
+  - `materials.steel.cte_per_C`: not true (MF-1).
+  - `materials.steel.modulus_GPa`: true. Default part, one step each way: 11.6800, 11.6814, 11.6828 MPa; the whole
+    slider moves it 7.42 % ("slightly"). Recoma 20 on 4140: the size rises (-1.70098, -1.70119, -1.70139). On 416 the
+    row moves nothing (9.6958 at both ends), as "Picking another back-iron material replaces it" says.
+  - `temperature.mismatch.ndfeb_modulus_GPa`: true. 11.6777, 11.6814, 11.6851 MPa; the whole slider moves it 3.96 %.
+    "Used whatever the magnet grade" holds under E22: on Y30 it still moves the shear (2.8277, 2.8286, 2.8295), and on
+    Recoma 20 the size rises (-1.70065, -1.70119, -1.70172).
+  - `metal.bond_inner_mm`: true. One step thicker takes 12.8722 to 11.6814 to 10.6925 MPa; the slider ends read
+    45.5489 and 3.0967. Recoma 20 on 4140: the size falls (-1.8746, -1.7012, -1.5572).
+  - `temperature.mismatch.recommended_bondline_mm`: true. The current-bondline shear stays (11.6814 at both ends); the
+    recommended-bondline shear reads 6.3772, 6.0710, 5.7929 and the daily-cycle shear 2.6925, 2.5632, 2.4458. Recoma
+    20 on 4140: the size falls (-0.9287, -0.8841, -0.8436).
+  - `temperature.mismatch.adhesive_shear_modulus_GPa`: true. 11.5804, 11.6814, 11.7823 MPa; the slider ends read
+    1.1729 and 131.9524. Recoma 20 on 4140: the size rises (-1.6865, -1.7012, -1.7159). Its second sentence was not
+    probed again; E22 does not touch it.
+- For the step that commits: the tracker entry of 2026-11-09 says the branch waits on this round. This is round 1 with
+  one must-fix, so the changed row, and any offered text that is taken, needs its re-read. The reviewer may edit only
+  this document; no help text, code, test or other doc was changed.
+
+**Report for the record (as returned).**
+
+#### Basis
+
+A throwaway test file in `magcoupling-rs/tests` (removed before the report), six tests run with `-- --nocapture`. Each
+design is `DesignInputs::default()` with inputs set by path and run through `compute_all`. Hubs: the back-iron codes 1
+to 8 (4140, 1018, 12L14, 416, 17-4PH H1150, 17-4PH H900, 304, 6061) and no back iron. Results read:
+`temperature.mismatch.magnet_cte_per_C`, `shaft_joint.part_cte_per_C` (the hub), `temperature.mismatch.worst_swing_C`,
+`temperature.mismatch.peak_shear_current_MPa`, `temperature.mismatch.peak_shear_recommended_MPa`,
+`temperature.adhesive_life.daily_peak_shear_MPa`, `temperature.mismatch.reading`,
+`temperature.adhesive_life.daily_screen`, `warnings.cte_mismatch_with_magnets` and
+`temperature.adhesive.bond_shear_MPa`.
+
+#### Magnet state against hub
+
+Peak end shear at the current bondline, MPa. "A" marks a reading of Above, "c" a design on which the expansion caution
+fires. "Used" is the result `temperature.mismatch.magnet_cte_per_C`.
+
+| Inner ring | Used, 1/°C | Swing, °C | 4140 | 1018 | 12L14 | 416 | H1150 | H900 | 304 | 6061 or no back iron |
+|---|---|---|---|---|---|---|---|---|---|---|
+| default part (B842SH) | -0.8e-6 | 71.06 | 11.6814 | 11.4139 | 10.9613 | 9.6958 | 11.3176 | 10.3373 | 15.7592 A c | 20.7601 A c |
+| N42 grade, and bonded NdFeB grade | -0.8e-6 | 62.00 | 10.1927 | 9.9592 | 9.5643 | 8.4602 | 9.8752 | 9.0199 | 13.7508 c | 18.1143 A c |
+| no grade (manual) | -0.8e-6 | 80.98 | 13.3124 | 13.0076 | 12.4918 | 11.0496 | 12.8979 | 11.7807 | 17.9596 A c | 23.6588 A c |
+| Y30 | 10.0e-6 | 98.00 | 2.8286 | 2.4597 | 1.8436 | 0.0983 | 2.3352 | 0.9833 | 8.4730 | 15.9590 A |
+| Recoma 20 | 14.0e-6 | 79.74 | -1.7012 | -2.0014 | -2.5002 | -3.9203 | -2.1001 | -3.2002 | 2.8976 | 9.1662 |
+| Recoma 26 | 13.0e-6 | 79.73 | -0.7004 | -1.0006 | -1.5000 | -2.9200 | -1.1000 | -2.2000 | 3.8964 | 10.1201 |
+| Recoma 30 | 13.0e-6 | 62.00 | -0.5446 | -0.7781 | -1.1664 | -2.2706 | -0.8553 | -1.7107 | 3.0298 | 7.8693 |
+
+- The hub's expansion read back (`shaft_joint.part_cte_per_C`): 12.3e-6, 12.0e-6, 11.5e-6, 10.08e-6, 11.9e-6, 10.8e-6,
+  16.9e-6 and 23.6e-6 /°C in the columns' order. With no back iron the 304 pick keeps its own column (16.9e-6); every
+  other pick reads the last column.
+- The caution fires on no Y30 or SmCo design of the table: the largest difference is 13.6e-6 (Y30 on aluminium).
+- Inner ring only: Y30 2.0509 MPa (10.0e-6 used), Recoma 26 -0.6242 MPa. Outer ring only, Y30 or Recoma 26: -0.8e-6
+  used and 11.6814 MPa, the default part's numbers. A library part on the inner ring with Y30 typed as its grade:
+  -0.8e-6 and 11.6814 MPa (the part wins).
+
+#### The steel expansion swept on the 4140 row
+
+Peak end shear at the current bondline, MPa, with `materials.steel.cte_per_C` typed (19 values each; these are the
+ones that carry the finding).
+
+| Steel, 1/°C | default part | Y30 | Recoma 20 | Recoma 26 |
+|---|---|---|---|---|
+| 5.0e-6 | 5.1719 | -6.1492 | -9.0063 | -8.0049 |
+| 8.0e-6 | 7.8470 | -2.4597 | -6.0042 | -5.0031 |
+| 9.9e-6 | 9.5413 | -0.1230 | -4.1029 | -3.1019 |
+| 10.0e-6 | 9.6305 | -0.0000 | -4.0028 | -3.0018 |
+| 10.1e-6 | 9.7196 | 0.1230 | -3.9027 | -2.9018 |
+| 12.3e-6 (default) | 11.6814 | 2.8286 | -1.7012 | -0.7004 |
+| 12.9e-6 | 12.2164 | 3.5666 | -1.1008 | -0.1001 |
+| 13.0e-6 | 12.3056 | 3.6895 | -1.0007 | 0.0000 |
+| 13.1e-6 | 12.3948 | 3.8125 | -0.9006 | 0.1001 |
+| 13.9e-6 | 13.1081 | 4.7964 | -0.1001 | 0.9005 |
+| 14.0e-6 | 13.1973 | 4.9194 | 0.0000 | 1.0006 |
+| 14.1e-6 | 13.2865 | 5.0424 | 0.1001 | 1.1007 |
+| 25.0e-6 | 23.0061 A c | 18.4477 A | 11.0077 | 12.0073 |
+
+- The size is the reading. The corner steel 5.0e-6, NdFeB expansion 6.0e-6, adhesive shear modulus 3.0 GPa, both
+  bondlines 0.01 mm: -22.7727 MPa, reading Above, daily screen Above. Recoma 20 on 416 with the adhesive shear modulus
+  at 0.107, 0.55, 1 and 3 GPa: -3.9203 (below), -15.5672 (Above), -23.4805 (Above), -44.1404 (Above).
+- The default part on the 4140 row: the caution is silent at 14.2e-6 and fires at 14.3e-6; the daily screen reads
+  Above at 15.0e-6 (daily 3.0915 MPa; below at 14.3e-6, 2.9545) and the reading Above at 20.0e-6 (18.5476 MPa; below
+  at 15.0e-6, 14.0890).
+
+#### One slider step each way
+
+20 designs (default part, N42, Y30, Recoma 20 and Recoma 26, each on 4140, 416, 304 and no back iron), seven sliders,
+three results: 420 rows, each with one step down, the base, one step up and both slider ends. Peak end shear at the
+current bondline unless said, MPa.
+
+| Slider (step) | default part on 4140: down, base, up | ends | Recoma 20 on 4140: down, base, up |
+|---|---|---|---|
+| `materials.steel.cte_per_C` (1e-7) | 11.5922, 11.6814, 11.7706 | 5.1719, 23.0061 | -1.8013, -1.7012, -1.6011 (size falls) |
+| `materials.steel.modulus_GPa` (1) | 11.6800, 11.6814, 11.6828 | 10.8666, 11.7334 | -1.70098, -1.70119, -1.70139 |
+| `temperature.mismatch.ndfeb_cte_per_C` (1e-8) | 11.6903, 11.6814, 11.6725 | 13.6432, 5.6178 | stays (the grade's value) |
+| `temperature.mismatch.ndfeb_modulus_GPa` (1) | 11.6777, 11.6814, 11.6851 | 11.3389, 11.8012 | -1.70065, -1.70119, -1.70172 |
+| `metal.bond_inner_mm` (0.005) | 12.8722, 11.6814, 10.6925 | 45.5489, 3.0967 | -1.8746, -1.7012, -1.5572 |
+| `temperature.mismatch.recommended_bondline_mm` (0.005), recommended-bondline shear | 6.3772, 6.0710, 5.7929 | 45.5188, 1.2544 | -0.9287, -0.8841, -0.8436 |
+| `temperature.mismatch.adhesive_shear_modulus_GPa` (0.001) | 11.5804, 11.6814, 11.7823 | 1.1729, 131.9524 | -1.6865, -1.7012, -1.7159 |
+
+- Of the 420 rows, the only ones where the size moves against a row's words are the three of
+  `materials.steel.cte_per_C` on Recoma 20 on 4140 and the three on Recoma 26 on 4140 (current bondline -0.8005,
+  -0.7004, -0.6004; recommended -0.4160, -0.3640, -0.3120; daily -0.1565, -0.1370, -0.1174).
+- The two steel rows move nothing on 416, 304 and no back iron (default part: 9.6958, 15.7592 and 20.7601 MPa at both
+  ends of both sliders).
+- "Slightly": the steel modulus slider end to end moves the current-bondline shear 7.42 % of its base and the
+  recommended-bondline and daily shears 4.07 %; the magnet modulus slider 3.96 % and 2.11 %.
+- The bond shear from magnetic torque reads 0.403998 MPa at the defaults, with the NdFeB expansion at -3e-6 and 6e-6,
+  with the steel expansion at 5e-6 and 25e-6, and on N42 grades: it follows neither expansion input.
+
+#### Rule 6 at its edges
+
+The rule is `(hub - magnet).abs() > 15e-6` (`engine/warnings.rs`, line 156). The hub's value is the steel expansion
+with a steel back iron (the input on the 4140 row, the pick's value on the other steel rows) and the body material's
+otherwise (6061, or the 304 pick). The differences below are the engine's own, printed to 18 digits.
+
+| Design | Difference, 1/°C | Caution |
+|---|---|---|
+| default part, steel 14.1e-6 | 1.48999999999999996e-5 | silent |
+| default part, steel 14.2e-6 (15.0e-6 on paper) | 1.49999999999999987e-5 | silent |
+| default part, steel 14.3e-6 | 1.51000000000000011e-5 | fires |
+| default hub, NdFeB expansion -2.69e-6 | 1.49900000000000005e-5 | silent |
+| default hub, NdFeB expansion -2.70e-6 (15.0e-6 on paper) | 1.50000000000000004e-5 | silent |
+| default hub, NdFeB expansion -2.71e-6 | 1.50100000000000003e-5 | fires |
+| Y30, steel 25e-6, the slider top (15.0e-6 on paper) | 1.50000000000000004e-5 | silent |
+| Recoma 20, steel 5e-6 (the largest negative difference on the sliders) | -9.0e-6 | silent |
+
+- At 15.0e-6 on paper the caution is silent in all three places, so "more than" is true as drawn. The default part on
+  304 (a difference of 17.7e-6) and on aluminium (24.4e-6) fires; its text there is "Large expansion mismatch between
+  the magnets and the hub they are bonded to: higher bond stress over temperature swings." (unchanged).
+
+#### Words
+
+Counted with the crate's `word_count` and `sentence_count`; the guard is the test helper `plain_problems`.
+
+| Text | Words | Sentences | Guard |
+|---|---|---|---|
+| overlay help of the NdFeB expansion (current) | 30 | 2 | clean |
+| engine help of the NdFeB expansion (current) | 36 | 3 | "Correction E22" and the dotted path (ported help: outside the guard) |
+| result help (current) | 30 | 2 | clean |
+| result label (current) | 7 | | clean |
+| rule 6 help (current) | 17 | 1 | clean |
+| the six unchanged rows | 29, 24, 22, 25, 24, 25 | 2 each | clean |
+| MF-1 New | 26 | 2 | clean |
+| SF-1 New | 30 | 2 | clean |
+| SF-2 New | 43 | 3 | as the current text |
+| SF-3 New | 30 | 2 | clean |
+
+No current or New text holds "clamp" or "gearbox".
+
+#### Traps and rules
+
+- Slice-2 spec 3.5 (one or two sentences, at most 30 words, which result moves and which way, say when a pick
+  overrides, no default numbers): the three capped texts keep it. The overlay help names the pick that overrides it;
+  `picks::set_by_pick` holds the input on a ferrite or SmCo inner grade on custom dimensions.
+- "The expansion caution counts the temperature swing" (slice-2 spec 8): not written. Rule 6 compares the two
+  coefficients only: Y30 on aluminium has the largest swing of the table (98.00 °C) and a reading of Above (15.9590
+  MPa), and the caution is silent at 13.6e-6.
+- "Each ring uses its own α" (slice-2 spec 8) is about the Br coefficient; no text here touches it.
+- "The expansion screen uses each grade's own expansion" (the trap list in the slice-2 plan): true now for a ferrite or
+  SmCo inner grade and for no other, which is what the three texts say.
+- BL-059 spec 6 (nothing false at the default, the probe designs or any reachable input): MF-1 is the one text that
+  fails it.
+- Standing rules: no text says the coupling protects the gearbox, says a wall seals the rings or holds "clamp"; the
+  overlay's words hold no cell name, correction id, file or code name.
+
+#### Tests
+
+On the worktree as found: `cargo test --test schema` 11 passed; `cargo test --test deviations e22` 6 passed;
+`cargo test --features gui --lib plain_text` 27 passed, 2 ignored. The direction table of `gui/plain_text.rs` checks
+the signed number on the example (`materials.steel.cte_per_C` Up), so MF-1's New text leaves it as it is. The eight
+tests that are red on purpose were not run and are not a finding.
+
+#### Not checked
+
+- The GUI was not run: the texts were read from the source, and the "set by the ... pick" line from the code.
+- The grade table's expansion values against their datasheets, the three teaching notes, the README and the Python
+  reference: other rounds' scope.
+- A worst swing below zero or of another sign convention: every probed swing is positive (62.00 to 98.00 °C). The New
+  texts speak of distance and do not lean on the sign.
+- Whether any on-screen text says what a negative peak end shear means: the two results' engine help is empty, and the
+  spreadsheet help was not read.
+
+#### Recorded, no change asked
+
+- A SmCo inner grade on any steel hub draws a negative peak end shear (-0.7004 MPa on the default hub). The screens
+  compare its size, and the five rows that stand are true of its size.
+- The magnet stiffness stays the NdFeB input on a ferrite or SmCo grade, as its row says; the whole slider is worth
+  3.96 % of the shear.
+- Bonded NdFeB keeps the NdFeB expansion input (the grade table's decision 7 of Addendum A-4); the engine help says so.
+- Only the inner ring's bond on the hub is screened: a ferrite or SmCo grade on the outer ring alone moves nothing
+  (11.6814 MPa, the default's number), though the outer ring is bonded to the cup.
+- With no back iron or a 304 hub the two steel rows speak of "the steel hub" and move nothing (as found before this
+  change), and the result `temperature.mismatch.steel_cte` ("Steel expansion coefficient (4140)") echoes the steel
+  input whatever the hub is (read in the code, `engine/temperature.rs` line 1173).
+- The trap list of the slice-2 plan still carries "the expansion screen uses each grade's own expansion" as false; after
+  E22 it is half true (docs, for the step that commits).
+
+Verdict: MUST_FIX (MF-1). Three should-fix offered (SF-1 to SF-3).
+
+### Re-review after the round-1 texts were applied (2026-11-10)
+
+Round 1 above returned MUST_FIX (MF-1) and offered three should-fix. All four New texts were then applied as written:
+MF-1 and SF-1 in the overlay (`gui/plain_text.rs`), SF-2 in the engine metadata (`engine/temperature.rs`) and in
+`tests/data/input_schema.json`, SF-3 in the engine metadata. Round 1 asked for a re-read of the changed row and of any
+offered text taken. This is that re-read, on the uncommitted change in the worktree (branch
+`magcoupling/off-default-fixes`, on 6e15e4f).
+
+- Reviewer: fresh context, session model (fable), 2026-11-10; G-3 re-review, round 2. The reviewer did not write the
+  four texts (they are round 1's New texts) and took no part in round 1.
+- Basis: each text was read in the source and compared with round 1's New text, character for character. Each was then
+  tried against `compute_all` in a throwaway integration test (`DesignInputs::default()`, `inputs.set`, every
+  correction on), deleted after its run. Probes A to G below are that test's output.
+- Verdict: PASS, no must-fix and no should-fix. No design that was tried makes any of the four texts false. Texts 1, 2
+  and 4 keep the 30-word cap, the two-sentence cap and the plain-words guard; text 3 is ported engine help, outside
+  the caps and the guard.
+- For the step that commits: the tracker's "Still owed before the branch merges" entry (`docs/ai/05-update-tracker.md`)
+  and BL-058's note (`docs/ai/backlog.yaml`) both still list the G-3 text re-review of the changed help. Round 1 and
+  this record are that review; the reviewer may edit only this document, so those two lines are left for that step.
+
+#### The four texts, as found in the source
+
+Each equals round 1's New text character for character.
+
+1. Overlay help of `materials.steel.cte_per_C`, `gui/plain_text.rs` line 391 (MF-1 New): "Thermal expansion of the
+   steel hub; the further from the magnets' expansion, the higher the bond shear from temperature swings. Picking
+   another back-iron material replaces it."
+2. Overlay help of `temperature.mismatch.ndfeb_cte_per_C`, `gui/plain_text.rs` line 736 (SF-1 New): "Magnet thermal
+   expansion in the bonded face; the further from the hub's, the higher the bond shear from temperature swings. A
+   ferrite or SmCo inner ring uses its grade's value."
+3. Engine help of the same input (cell C95), `engine/temperature.rs` line 216, and the same string in
+   `tests/data/input_schema.json` line 2263 (SF-2 New): "Across the magnetization. Sintered NdFeB's value, used by
+   every library part, every NdFeB grade (sintered or bonded) and a manual magnet without a grade. Correction E22: a
+   ferrite or SmCo inner ring uses its grade's value instead (temperature.mismatch.magnet_cte_per_C shows the value in
+   effect)."
+4. Help of the result `temperature.mismatch.magnet_cte_per_C`, `engine/temperature.rs` line 580 (SF-3 New): "The magnet
+   expansion the bond screen and the expansion caution use: a ferrite or SmCo inner ring's value, else the NdFeB
+   expansion input. That ring is bonded to the hub."
+
+#### Text 1, the steel expansion's overlay help (PASS)
+
+Probe A, the first sentence. The row is live in one state, the 4140 pick with the steel circuit. There, 19 magnet
+states (the default part, a manual magnet with no grade, and each of the 17 grades on both rings) by 10 steel values
+(5, 7.5, 10, 12.3, 13, 13.5, 14, 16, 20 and 25e-6 1/°C; the slider runs from 5e-6 to 25e-6) by 3 shears (current
+bondline, recommended bondline, daily) were run. In no pair of steel values does the one further from the magnet value
+in effect give the smaller size of shear: 0 breaks in all 19 states. The shear over (steel value less the magnet value
+in effect) is constant to about 4e-16 (relative) within each state, so the shear is a straight line through zero where
+the two expansions meet, and its size rises with the distance on both sides.
+
+Peak end shear at the current bondline, MPa, by steel value:
+
+| Magnets (value in effect, 1/°C) | Swing, °C | 5e-6 | 10e-6 | 12.3e-6 | 14e-6 | 20e-6 | 25e-6 |
+|---|---|---|---|---|---|---|---|
+| default part (-0.8e-6, the input) | 71.06 | 5.1719 | 9.6305 | 11.6814 | 13.1973 | 18.5476 | 23.0061 |
+| Y30 (10.0e-6) | 98.00 | -6.1492 | -0.0000 | 2.8286 | 4.9194 | 12.2985 | 18.4477 |
+| SmCo_2_17_26 (13.0e-6) | 79.73 | -8.0049 | -3.0018 | -0.7004 | 1.0006 | 7.0043 | 12.0073 |
+| SmCo_1_5_20 (14.0e-6) | 79.74 | -9.0063 | -4.0028 | -1.7012 | 0.0000 | 6.0042 | 11.0077 |
+
+- Round 1's MF-1 case now reads true: on SmCo_1_5_20 the steel values 12.3e-6, 13e-6 and 14e-6 give sizes of 1.7012,
+  1.0007 and 0.0000 MPa, the further the higher, where the old "so higher raises it" was false of the size.
+- The readings follow the size. The default part reads "Above the lap-shear strength at the block ends" at 20e-6 and
+  25e-6 (18.5476 and 23.0061 MPa), and Y30 at 25e-6 (18.4477 MPa); every other cell of the table reads Below.
+- At the default steel value the other states give 10.1927 MPa (N35 to N42H and the bonded NdFeB grade), 13.3124 (no
+  grade), 16.1110 (N38UH, N35EH, N33AH) and -0.5446 (SmCo_2_17_30); each rises in size with the distance as above.
+
+Probe B, the second sentence. The steel value was typed at 5e-6 and at 25e-6 on every back-iron pick with the steel
+circuit and the default part, and the result rows that moved were counted. The hub's expansion was backed out of the
+shear's straight line in the NdFeB input.
+
+| Back-iron pick | Hub expansion, 1/°C | Result rows that move | Shear at 5e-6 and at 25e-6, MPa |
+|---|---|---|---|
+| 1 (4140) | 12.3e-6, the row's own default | 21 | 5.1719 and 23.0061 |
+| 2 | 12.0e-6 | 0 | 11.4139 at both |
+| 3 | 11.5e-6 | 0 | 10.9613 at both |
+| 4 | 10.08e-6 | 0 | 9.6958 at both |
+| 5 | 11.9e-6 | 0 | 11.3176 at both |
+| 6 | 10.8e-6 | 0 | 10.3373 at both |
+| 7 (304) | 16.9e-6 | 1, the echo `temperature.mismatch.steel_cte` | 15.7592 at both |
+| 8 (6061) | 23.6e-6 | 1, the echo | 20.7601 at both |
+
+- "Picking another back-iron material replaces it" holds on all seven other picks: the hub's expansion is the pick's,
+  the row moves no result on picks 2 to 6 and only its echo on picks 7 and 8.
+- 26 words, 2 sentences, guard clean; no "clamp", no gearbox claim, nothing about a wall or a seal.
+- Recorded, outside this round's change: with no back iron (`coupling.backiron` 0) the row moves only its echo on
+  picks 1, 7 and 8 and nothing on picks 2 to 6. On pick 1 the shear is 20.7601 MPa at 5e-6 and at 25e-6 (the hub is
+  the aluminium, 23.6e-6), so the first sentence is then about a hub that is not there. The row read the same way
+  before this change, round 1 listed it under "no change asked", and the direction table pins it
+  (`materials.steel.cte_per_C`, "no back iron", Stays). More under "Recorded, no change asked" below.
+
+#### Text 2, the NdFeB expansion's overlay help (PASS)
+
+Probe C, the first sentence. The input was swept over its slider (-3, -0.8, 0, 2, 4, 4.5, 5, 5.5 and 6e-6 1/°C) with
+the default part on 12 hub states: the eight back-iron picks with the steel circuit, picks 1 and 7 with no back iron,
+and the 4140 pick with the steel value typed at 5.0e-6 and at 5.2e-6, which puts the crossing inside the slider. Over
+3 shears, in no pair of inputs does the one further from the hub's expansion give the smaller size: 0 breaks. The
+result `temperature.mismatch.magnet_cte_per_C` equals the input in every case.
+
+Peak end shear at the current bondline, MPa, by the input:
+
+| Hub (expansion, 1/°C) | -3e-6 | -0.8e-6 | 0 | 2e-6 | 4e-6 | 5e-6 | 6e-6 |
+|---|---|---|---|---|---|---|---|
+| 4140 (12.3e-6) | 13.6432 | 11.6814 | 10.9680 | 9.1846 | 7.4012 | 6.5095 | 5.6178 |
+| pick 4 (10.08e-6), the lowest of the picks | 11.6564 | 9.6958 | 8.9829 | 7.2006 | 5.4183 | 4.5271 | 3.6359 |
+| 304 (16.9e-6) | 17.7179 | 15.7592 | 15.0469 | 13.2662 | 11.4855 | 10.5952 | 9.7048 |
+| 6061 (23.6e-6), and pick 1 with no back iron | 22.6319 | 20.7601 | 20.0794 | 18.3778 | 16.6761 | 15.8253 | 14.9745 |
+| 4140, steel value typed at 5.0e-6 | 7.1337 | 5.1719 | 4.4585 | 2.6751 | 0.8917 | 0.0000 | -0.8917 |
+| 4140, steel value typed at 5.2e-6 | 7.3120 | 5.3503 | 4.6369 | 2.8535 | 1.0701 | 0.1783 | -0.7134 |
+
+- On every pick the input sits below the hub's expansion over its whole slider, so raising it brings it nearer and
+  lowers the shear, which is what the direction table checks on the example (Down). Past the crossing, which only a
+  steel value typed below 6e-6 reaches, the size rises again: with the steel at 5.0e-6 it is 0.4459 MPa at 4.5e-6,
+  0.0000 at 5e-6 and 0.4459 at 5.5e-6. "The further from the hub's, the higher" holds on both sides.
+
+Probe C2, the second sentence. With Y30, SmCo_1_5_20, SmCo_2_17_26 or SmCo_2_17_30 on both rings or on the inner ring
+only, the input was typed at -3e-6 and at 6e-6, on the default hub and on 6061 (pick 8) with no back iron. No result
+row moves in any of the 16 cases, and the value in effect is the grade's. With the grade on both rings:
+
+| Inner-ring grade | Value in effect, 1/°C | Shear on the default hub, MPa | Shear on 6061 with no back iron, MPa |
+|---|---|---|---|
+| Y30 | 10.0e-6 | 2.8286 | 15.9590 |
+| SmCo_1_5_20 | 14.0e-6 | -1.7012 | 9.1662 |
+| SmCo_2_17_26 | 13.0e-6 | -0.7004 | 10.1201 |
+| SmCo_2_17_30 | 13.0e-6 | -0.5446 | 7.8693 |
+
+- With the grade on the outer ring only, the input is the value in effect and 5 result rows move (13.6432 against
+  5.6178 MPa on the default hub with Y30 outside): "inner ring" is the right word.
+- 30 words, 2 sentences, guard clean; no "clamp", no gearbox claim, nothing about a wall or a seal.
+
+#### Text 3, the NdFeB expansion's engine help, cell C95 (PASS)
+
+- Ported engine help: it is outside the overlay's caps and the plain-words guard, as round 1's table said of SF-2 New.
+  It has 43 words in 3 sentences, and the guard would name "E22", "Correction E22" and the dotted path.
+- As the code reads, it is not drawn in the GUI: `help_for` (`gui/plain_text.rs`) returns the overlay row (text 2)
+  first, and `original_help` returns the deviation registry's `workbook_help` for this input, "Across the
+  magnetization." Text 3 is what the engine metadata and `tests/data/input_schema.json` carry (line 2263, the same
+  string; `cargo test --test schema` passes).
+- Probe D, with the input at 3e-6 so that it differs from every grade's value. All 15 library parts are NdFeB (grades
+  N42SH, N42, N52, N50 and N50M). 45 part cases read 3e-6: each part on both rings, the same with "Y30" typed as the
+  grade beside the part, and the part inside with SmCo_1_5_20 typed beside it and a manual Y30 ring outside. A grade
+  typed beside a library part changes nothing, as "every library part" says.
+- Probe D, the grades: 17 grades by 4 placements (both rings; the inner ring with the default part outside; the outer
+  ring with the default part inside; the outer ring with a manual magnet without a grade inside) give 68 cases. The 8
+  with Y30, SmCo_1_5_20, SmCo_2_17_26 or SmCo_2_17_30 on the inner ring read 10.0e-6, 14.0e-6, 13.0e-6 and 13.0e-6.
+  The other 60 read 3e-6, the 12 sintered NdFeB grades and the bonded one among them. A manual magnet without a grade
+  reads 3e-6. Wrong: 0.
+- "(temperature.mismatch.magnet_cte_per_C shows the value in effect)": that result is the number the shear's straight
+  line and the caution follow in probes A, C and E.
+
+#### Text 4, the help of the result `temperature.mismatch.magnet_cte_per_C` (PASS)
+
+- It has no overlay help or label row in `gui/plain_text.rs`, so it is drawn as the engine metadata holds it (label
+  "Magnet expansion in the bond plane used"; a Rust-only result with no cell). 30 words, 2 sentences, guard clean; no
+  "clamp", no gearbox claim, nothing about a wall or a seal.
+- "The bond screen ... use": in probes A and C the shear is a straight line in (hub expansion less this result), to
+  about 4e-16 (relative) in probe A.
+- "and the expansion caution use", probe E: 12 hub states by 6 magnet states (the default part, N42, the bonded grade,
+  Y30, SmCo_1_5_20, SmCo_2_17_30) by 5 inputs (-3, -0.8, 1.8, 2 and 6e-6) give 360 cases. The caution "Expansion
+  mismatch with the magnets" fires exactly where the hub's expansion and this result are more than 15e-6 apart: 0
+  cases off. The knife edge at 15.0e-6 was left to round 1's table.
+
+| Hub | Magnets | Input, 1/°C | Value in effect, 1/°C | Apart by, 1/°C | Caution | Shear, MPa |
+|---|---|---|---|---|---|---|
+| 304 | default part | 1.8e-6 | 1.8e-6 | 15.10e-6 | fires | 13.4443 |
+| 304 | default part | 2.0e-6 | 2.0e-6 | 14.90e-6 | silent | 13.2662 |
+| 304 | Y30 | each of the five | 10.0e-6 | 6.90e-6 | silent | 8.4730 |
+| 304 | SmCo_1_5_20 | each of the five | 14.0e-6 | 2.90e-6 | silent | 2.8976 |
+| 6061 | default part | -0.8e-6 | -0.8e-6 | 24.40e-6 | fires | 20.7601 |
+| 6061 | default part | 6e-6 | 6e-6 | 17.60e-6 | fires | 14.9745 |
+| 6061 | Y30 | each of the five | 10.0e-6 | 13.60e-6 | silent | 15.9590 (reads Above) |
+| 6061 | SmCo_1_5_20 | each of the five | 14.0e-6 | 9.60e-6 | silent | 9.1662 |
+
+- "else the NdFeB expansion input": probe D (all 45 part cases and 60 of the 68 grade cases read the input).
+- "That ring is bonded to the hub": a ferrite or SmCo grade on the outer ring alone leaves the value at the input
+  (probe C2), so the inner ring is the one that counts.
+- Readability, no change asked: with an NdFeB inner ring, "That ring" reads back to "a ferrite or SmCo inner ring".
+  The sentence is about the inner ring either way and stays true, and the text is at its 30-word cap.
+
+#### Words and guard
+
+Counted with the crate's `word_count` and `sentence_count`; the guard is `plain_text_violations`,
+`mentions_gearbox_protection` and the test helper `plain_problems`.
+
+| Text | Words | Sentences | Guard | "clamp", gearbox, wall or seal |
+|---|---|---|---|---|
+| 1 | 26 | 2 | clean | none |
+| 2 | 30 | 2 | clean | none |
+| 3 | 43 | 3 | `E\d{1,2}`, `correction E\d` and code names (ported engine help: outside the caps and the guard) | none |
+| 4 | 30 | 2 | clean | none |
+
+#### The swing (probe G)
+
+Texts 1 and 2 lean on a temperature swing that is not zero. The sliders `metal.min_temp_C` (-60 to 20 °C) and
+`coupling.op_temp_C` (-40 to 150 °C) were set to the corner that shrinks it, on the default part, for the four
+adhesives.
+
+| Adhesive (cure, °C) | Swing at the defaults, °C | Swing with the coldest temperature at 20 °C, °C |
+|---|---|---|
+| 1 (22) | 71.06 | 71.06 |
+| 2 (120) | 160.00 | 100.00 |
+| 3 (121) | 161.00 | 101.00 |
+| 4 (23) | 63.00 | 37.00 |
+
+The second column is the same with the operating temperature at -40 °C and at 20 °C. The smallest swing found is
+37.00 °C, where the steel values 5e-6, 12.3e-6 and 25e-6 still give 2.6931, 6.0827 and 11.9797 MPa in that order. No
+zero or negative swing was found.
+
+#### Tests
+
+On the worktree as found, after the throwaway test was deleted: `cargo test --test schema` 11 passed, 0 failed;
+`cargo test --test explain` 63 passed, 0 failed, 1 ignored; `cargo test --features gui --lib plain_text` 27 passed, 0
+failed, 2 ignored (`help_tests::help_for_review` and `tests::overlay_strings_for_review`), 963 filtered out. Only
+these three commands were run; the full gate was not, as instructed.
+
+#### Not checked
+
+- The GUI was not run. The texts were read from the source, and which text is drawn was read from `help_for` and
+  `original_help`.
+- The grade table's expansion values against their datasheets, the teaching notes, the README and the Python
+  reference: other rounds' scope.
+- The swing beyond the corners of probe G: not every adhesive, temperature and grade together.
+- Rule 6 at exactly 15.0e-6 apart: round 1's table has it.
+- The rows round 1 passed and this change left alone (the six unchanged overlay rows, rule 6's help, the result's
+  label) were not re-read.
+- Whether any on-screen text says what a negative peak end shear means: none was found (`peak_shear_current_MPa`,
+  `peak_shear_recommended_MPa` and `reading` have empty engine help and no overlay help row); the spreadsheet help was
+  not read.
+- How the GUI offers the grade (a list or typed text). In the engine a grade text the table does not hold ("y30",
+  "Y30 ", " Y30", "Ferrite", "SmCo", "N 42") reads as no grade and the input is used (3e-6 in probe D).
+
+#### Recorded, no change asked
+
+- With no back iron the steel expansion row says "the steel hub" and moves no shear (text 1 above; 20.7601 MPa at both
+  ends of the slider on pick 1). It was so before this change and round 1 recorded it, with the steel stiffness row.
+  The steel density row of the same table says "Unused with no back iron"; these two rows do not, and the expansion
+  row has 4 words of room where that clause takes 5. Not a finding on this branch. If the owner wants the two rows to
+  say it, it is its own backlog item and its own text round.
+- The signed number on display goes more negative as the steel value moves down from the magnets' on a ferrite or SmCo
+  inner ring (SmCo_1_5_20: -1.7012 MPa at 12.3e-6, -9.0063 at 5e-6). Its size rises, which is what texts 1 and 2 say
+  and what the screens compare (round 1's record).
+- A test gap, for the code side: the direction table checks the signed number on the example
+  (`materials.steel.cte_per_C` Up), and no row pins "the further, the higher" on the far side of the crossing, where
+  text 1 differs from the old one. The engine side of it is pinned
+  (`e22_compares_the_size_of_a_negative_shear_on_sintered_ndfeb_too`, `tests/deviations.rs`).
+- A ferrite or SmCo grade on the outer ring alone moves nothing in the bond screen, though that ring is bonded to the
+  cup (round 1's record); texts 2, 3 and 4 say "inner ring".
+
+Verdict: PASS. No must-fix, no should-fix.
+
+## BL-074 Overall length hover (2026-11-10)
+
+BL-074 (`docs/ai/backlog.yaml`) asks whether the first-move jump of the Overall length slider is intended. While the
+axial magnet length override is blank, the slider's first move sets both rings to one length, counted from the outer
+ring the cup cavity holds (`engine::size_controls::resize_length`), so on some designs that move is no step of the
+magnets. The owner has not answered. Under the owner's ruling of 2026-11-10 (an open question takes the conservative
+answer, and the assumption is made known) the jump is treated as intended for now: the mapping is not changed, four
+engine tests pin it (`tests/size_controls.rs`), and the control's hover says it (row A-11 of
+`docs/analyses/2026-11-10-conservative-assumptions.md`). That is an assumption, not the owner's answer, and the
+owner's review of the diff is still owed before a merge. One on-screen text changed: `LENGTH_HOVER` gained two
+sentences. It had its G-3 review on 2026-11-10 in a fresh context on the uncommitted change in the worktree (branch
+`magcoupling/off-default-fixes`, HEAD b46e073, 8 changed files). The reviewer's report for the record follows.
+
+- Scope: `LENGTH_HOVER` (`magcoupling-rs/src/gui/size_controls.rs`, line 55), whole: the two sentences it had and the
+  two it gained. `controls_ui` draws it on the Overall length label of the Size tab whenever the design has
+  dimensions, under Auto too. Read beside it: the length line under the slider (`consequences.length_line()`,
+  `gui/guidance.rs`), the torque card's jump rule (`gui/torque_card.rs`), the README's Size-tab paragraph and
+  `docs/ai/02-system.yaml`.
+- Reviewer: fresh context, general-purpose agent on fable (the decider, physics review), 2026-11-10; round 1. Every
+  number below is from the reviewer's own probe: a scratch crate outside the worktree that calls the engine
+  (`compute_all`, `SizeControls`) and reads the hover from the source file.
+- The text as found (75 words, 4 sentences, guard clean): "The axial length of the coupling: the magnets and the
+  housing around them. Moving it sets both rings' magnet length, and the housing follows. While the axial magnet
+  length is blank, the first move sets both rings to one length. With rings of unequal length, or a cup cavity shorter
+  than the outer ring, that move can change the magnet length by more than the step, or the other way, and the torque
+  with it."
+- Verdict: PASS. No must-fix. Every sentence is true in every state probed (38818 first moves on 231 designs and 15
+  cup cavities). The two conditions of sentence 4 are exactly the designs where a first move is not a plain step. The
+  text agrees with the length line beside it and with the torque card's rule. One should-fix is offered (SF-1). The
+  text breaks no physics trap, does not say "clamp", does not say the coupling protects the gearbox and does not say
+  a wall seals the rings.
+- Should-fix offered (the owner's choice; the text is not false as it stands):
+  - SF-1, sentence 4. It names two ways the first move departs from the step (more, the other way). Under the same two
+    conditions the magnet length also changes by less than the move in the same direction, or not at all: a 12.2 mm
+    cavity on 12.7 mm rings, +1 mm, gives +0.5 mm (hot-low +4.39 %); an 11.0 mm cavity, +5 mm, gives +3.3 mm; the
+    mixed pair, -8 mm, gives -1.65 mm; an 11.7 mm cavity, +1 mm, leaves 12.7 mm (0.00 %). In the scan the overlap
+    changed by less in 5088 moves and not at all in 679, against 11907 by more and 8099 the other way. The card's rule
+    speaks of "the step's amount and direction"; "more or less" covers the amount both ways.
+    - Old: "With rings of unequal length, or a cup cavity shorter than the outer ring, that move can change the magnet
+      length by more than the step, or the other way, and the torque with it."
+    - New: "With rings of unequal length, or a cup cavity shorter than the outer ring, that move can change the magnet
+      length by more or less than the step, or the other way, and the torque with it." (The whole hover: 77 words, 4
+      sentences, guard clean, inside its 80-word cap.)
+    - What changes with it: the tail the unit test pins (`gui/size_controls.rs` line 781) and its comment (lines 777
+      and 778), the hover's words as given in BL-074's entry of `docs/ai/backlog.yaml` and in
+      `docs/ai/05-update-tracker.md`, and the tracker's count (75 words to 77).
+- Each sentence as read:
+  - 1, "The axial length of the coupling: the magnets and the housing around them." Unchanged. True: the length line
+    under the slider splits the same number the same way ("Magnets 12.7 mm + housing 19.1 mm" on the default, overall
+    31.8 mm).
+  - 2, "Moving it sets both rings' magnet length, and the housing follows." Unchanged. True: every move taken left
+    both rings at the override's length, and the hub and the cup cavity followed (default, +1 mm: hub 13.0 to 14.0 mm,
+    cup cavity 15.5 to 16.5 mm).
+  - 3, "While the axial magnet length is blank, the first move sets both rings to one length." True in each of the
+    38818 first moves taken. "The axial magnet length" is the input row's name ("Axial magnet length, both rings"; the
+    test builds the sentence from `variable_label(FreeVariable::AxialLength)`), and "blank" is what that row reads
+    (`BLANK_TEXT`).
+  - 4, the two conditions. They are exact. Outside them (rings of equal length in a cavity at least as long as the
+    outer ring) all 6457 first moves were the step for both rings and for the overlap. "Shorter than" is strict: a
+    12.7 mm cavity on 12.7 mm rings gives the step, a 12.6 mm cavity does not (-0.1 mm gives -0.2 mm). Under either
+    condition no first move was a step of both rings (0 of 32361).
+  - 4, "can change the magnet length by more than the step, or the other way". Each happens under each condition.
+    More: the mixed pair, +1 mm, overlap +7.35 mm; the 11.0 mm cavity, -1 mm, -2.7 mm. The other way: the mixed pair,
+    -1 mm, overlap +5.35 mm; the 11.0 mm cavity, +1 mm, -0.7 mm. "Can" is right where "does" would not be: on the
+    reverse pair the overlap moves by the step and only the inner ring is trimmed by more (12.7 to 5.35 mm on -1 mm).
+  - 4, "and the torque with it". Hot-low moved the way the overlap moved in every move where the overlap changed
+    (38139) and stood still where it did not (679); it never moved against it. The mixed pair, -1 mm: 1.0099 to 2.0844
+    N·m (+106.39 %). The 11.0 mm cavity, +1 mm: 2.2852 to 2.1446 N·m (-6.15 %). Pull-out and cold-high moved by the
+    same percent in the cases printed.
+- Beside the hover:
+  - The length line shows the outer ring's length. On the 11.0 mm cavity it reads "Magnets 12.7 mm" before and
+    "Magnets 10.9 mm" after one 0.1 mm step down, the jump the hover names. On the mixed pair the line moves by the
+    step (12.7 to 11.7 mm on -1 mm) while the inner ring grows 5.35 mm and the torque doubles; "rings of unequal
+    length" and "both rings to one length" are the words that explain it. No number or badge beside the control says
+    otherwise.
+  - The torque card reads "not a step: the overlapping magnet length does not change by the step's amount and
+    direction" where the overlap does not change by the signed step (`STEP_SLACK_MM`, 1e-6 mm). The probe applied that
+    rule to the same moves (it did not call the card's code): "not a step" on every move where the hover's outcomes
+    happened to the overlap, a number where the overlap moved by the step (the default, the reverse pair).
+  - The README's Size-tab paragraph and `docs/ai/02-system.yaml` give the same account and the probe's numbers
+    (1.01 to 2.08 N·m, +106 %; 12.7 to 5.35 mm; 10.0 and 12.0 mm in the 11 mm cavity, -6.15 %).
+- For the step that commits: nothing must change. If SF-1 is taken, the changed sentence needs its re-read. The
+  reviewer edited only this document; no help text, code, test or other doc was changed.
+
+**Report for the record (as returned).**
+
+#### Basis
+
+A scratch crate outside the worktree (a path dependency on the worktree's `magcoupling-rs`, engine only), run once in
+release. Each design is `DesignInputs::default()` with the magnet parts or manual lengths and the cup cavity depth
+set, the axial magnet length left blank, and one move of the Overall length made through `SizeControls`, as the
+slider makes it. Moves: the slider's 0.1 mm step, the card's 1 mm step and longer drags. "Overlap" is
+`model.active_length_mm`, the length both rings share. Blank, the default reads hot-low 2.2852, pull-out 2.6885 and
+cold-high 3.8233 N·m; the mixed and the reverse pair read hot-low 1.0099 N·m.
+
+Lengths in the table are in mm.
+
+| Design, blank | First move | Both rings after | Overlap change | Hot-low after, N·m | Card's rule |
+|---|---|---|---|---|---|
+| Default: B842SH on both rings (12.7), cavity 15.5, overall 31.8 | -0.1 | 12.6 | -0.1 | 2.2651 (-0.88 %) | number |
+| | +1 | 13.7 | +1.0 | 2.4860 (+8.79 %) | number |
+| | -1 | 11.7 | -1.0 | 2.0844 (-8.79 %) | number |
+| Mixed pair: B442 inner (6.35), B842SH outer (12.7) | -0.1 | 12.6 | +6.25 | 2.2651 (+124.29 %) | not a step |
+| | +0.1 | 12.8 | +6.45 | 2.3053 (+128.27 %) | not a step |
+| | -1 | 11.7 | +5.35 | 2.0844 (+106.39 %) | not a step |
+| | +1 | 13.7 | +7.35 | 2.4860 (+146.16 %) | not a step |
+| | -8 | 4.7 | -1.65 | 0.6785 (-32.81 %) | not a step |
+| Reverse pair: B842SH inner, B442 outer | -1 | 5.35 | -1.0 (inner ring -7.35) | 0.8091 (-19.89 %) | number |
+| | +1 | 7.35 | +1.0 (inner ring -5.35) | 1.2107 (+19.89 %) | number |
+| | -8 | refused, below the range (27.45 to 76.25) | | | |
+| Matched parts, cavity 11.0, overall 27.3 | -0.1 | 10.9 | -1.8 | 1.9237 (-15.82 %) | not a step |
+| | +0.1 | 11.1 | -1.6 | 1.9639 (-14.06 %) | not a step |
+| | -1 | 10.0 | -2.7 | 1.7430 (-23.73 %) | not a step |
+| | +1 | 12.0 | -0.7 | 2.1446 (-6.15 %) | not a step |
+| | +5 | 16.0 | +3.3 | 2.9480 (+29.00 %) | not a step |
+| Matched parts, cavity 3.0 | -0.1 | 2.9 | -9.8 | 0.3170 (-86.13 %) | not a step |
+| Matched parts, cavity 10.7 | +1 | 11.7 | -1.0 | 2.0844 (-8.79 %) | not a step |
+| Matched parts, cavity 11.7 | +1 | 12.7 | 0.0 | 2.2852 (0.00 %) | not a step |
+| Matched parts, cavity 12.2 | +1 | 13.2 | +0.5 | 2.3856 (+4.39 %) | not a step |
+| | +0.1 | 12.3 | -0.4 | 2.2049 (-3.52 %) | not a step |
+| Matched parts, cavity 12.6 | -0.1 | 12.5 | -0.2 | 2.2450 (-1.76 %) | not a step |
+| | +0.1 | 12.7 | 0.0 | 2.2852 (0.00 %) | not a step |
+| Matched parts, cavity 12.7, 12.8, 20 and 40 | -1, -0.1, +0.1, +1 | the step | the step | as the default | number |
+| Manual lengths 12.5 inner, 12.7 outer (hot-low 2.2450) | -0.1 | 12.6 | +0.1 | 2.2651 (+0.89 %) | not a step |
+| | -1 | 11.7 | -0.8 | 2.0844 (-7.16 %) | not a step |
+| | +1 | 13.7 | +1.2 | 2.4860 (+10.73 %) | not a step |
+| Manual lengths 12.7 inner, 12.5 outer | -1 | 11.5 | -1.0 (inner ring -1.2) | 2.0442 (-8.95 %) | number |
+| Manual lengths 12.7 on both rings | -1, -0.1, +0.1, +1 | the step | the step | as the default | number |
+| Mixed pair in an 11.0 cavity | -1 | 10.0 | +3.65 | 1.7430 (+72.58 %) | not a step |
+| | +1 | 12.0 | +5.65 | 2.1446 (+112.36 %) | not a step |
+
+A second move, with the override set, was the step in every case printed.
+
+#### Scan
+
+231 designs (every pair of the 15 library parts and 6 manual pairs), 15 cup cavity depths from 3 to 40 mm and 12 first
+moves (0.1 to 8 mm, up and down): 38818 moves taken and 2762 refused as out of range. Both rings were at one length
+after every move taken. The overlap's change against the move, by the hover's two conditions:
+
+| Condition | The step | More | The other way | Less, same way | None |
+|---|---|---|---|---|---|
+| Neither (equal rings, the cavity holds the ring) | 6457 | 0 | 0 | 0 | 0 |
+| Rings of unequal length only | 6156 | 1632 | 1167 | 439 | 4 |
+| Cavity shorter than the outer ring only | 0 | 4121 | 2889 | 1718 | 331 |
+| Both | 432 | 6154 | 4043 | 2931 | 344 |
+
+The 6156 moves with unequal rings only where the overlap still moved by the step are the reverse pair's kind: the
+shorter ring is the outer one, so the overlap follows the slider and the longer inner ring is trimmed. The 432 under
+both conditions follow from the mapping the same way: the cavity there is exactly as deep as the shorter inner ring is
+long. Counted by a ring's own length, no move under a condition was the step (0 of 32361). Hot-low moved the way the
+overlap moved in 38139 moves, stood still with it in 679 and was a number every time.
+
+#### Words
+
+Counted with the crate's `word_count` and `sentence_count`; the guard is `plain_text_violations` and
+`mentions_gearbox_protection`.
+
+| Text | Words | Sentences (words in each) | Guard | "clamp", gearbox, wall or seal |
+|---|---|---|---|---|
+| the hover as found | 75 | 4 (13, 11, 16, 35) | clean | none |
+| the hover with SF-1 New | 77 | 4 (13, 11, 16, 37) | clean | none |
+
+#### Traps and rules
+
+- Slice-2 spec section 8 (the 17 physics traps): none is written or touched. The hover says the torque changes "with"
+  the magnet length and gives no law for it. The probe bears out the direction only (the default's 1 mm, 7.87 % of
+  12.7 mm, moves hot-low 8.79 %), which is all the text claims; it says nothing of the end factor.
+- Slice-2 spec 3.5 (help: one or two sentences, at most 30 words): the hover is over it at 4 sentences and 75 words
+  (the old text was 2 sentences and 24 words). The change gives it its own cap in the test (4 sentences, 80 words) and
+  says so in the test's comment and in the tracker. That is the implementer's departure, made so the jump is not
+  unannounced; it is the owner's to rule on with BL-074 (see Recorded).
+- The torque card's jump rule: agreed with, as read above.
+- Standing rules: the text does not say the coupling protects the gearbox, does not say a wall seals the rings and
+  does not hold "clamp"; it holds no cell name, correction id, file or code name.
+
+#### Tests
+
+On the worktree as found: `cargo test --features app --lib size_controls` 20 passed, 0 failed, 982 filtered out;
+`cargo test --test size_controls` 42 passed, 0 failed. A mutation check of the hover's unit test
+(`the_length_hover_says_the_first_move_from_a_blank_length_sets_both_rings_to_one_length`), three changes of the
+hover, one at a time: "by less than the step" failed it at line 779 (the tail), "to the same length" at line 763
+(sentence 3) and "a cup cavity longer than" at line 775 (the condition). The source file was put back byte for byte
+(the same SHA-256 before and after) and the 20 tests passed again. clippy, fmt and the full gate were not run; the
+reviewer changed no code.
+
+#### Not checked
+
+- The GUI was not run. The hover was read from the source and where it is drawn from `controls_ui`; how a 75-word
+  hover wraps on screen was not seen.
+- The card's own code was not called; the probe applied its rule to the engine's numbers.
+- That the input row reads "Axial magnet length, both rings" (no display overlay for it) was checked by grep only.
+- Inputs the mapping does not read (poles, gap, grades, temperatures) were held at the defaults in the scan.
+- Second and later moves: the cases printed, not the scan.
+
+#### Recorded, no change asked
+
+- "The magnet length" in sentence 4 can be read as the overlap (the card's "the overlapping magnet length") or as a
+  ring's own length. The sentence is true read either way, so no word is asked for.
+- The length line shows the outer ring only. On the mixed pair it moves by the step while the torque doubles, and the
+  hover is the one place on the Size tab that says why. A matter for the owner's review of BL-074, not for this text.
+- "The step" is the card's word for one move of the control. The hover does not introduce it; a drag is many steps and
+  the jump is on the first.
+- The cap departure (spec 3.5) is the owner's call. To bring the hover back inside 2 sentences and 30 words the
+  first-move words need another place; that is a design change with its own text round.
+- The length line shows 6.35 mm as "6.3" and 25.45 mm as "25.5" or "25.4" on the reverse pair. It was so before this
+  change and is not this item's.
+
+Verdict: PASS. No must-fix. One should-fix offered (SF-1).
+
+## BL-061 the shaft boss in the space claim's diameter (2026-11-11)
+
+BL-061 (`docs/ai/backlog.yaml`) asks whether the shaft boss counts toward the diameter the space claim judges. The
+workbook judges the larger of the cup and the cap (Metal design C135), though the boss turns with them and can be
+larger. The owner has not answered. Under the owner's ruling of 2026-11-10 (an open question takes the conservative
+answer, and the assumption is made known) the boss counts for now: correction E25 makes the rotating diameter the
+largest of the cup, the cap and the shaft boss (`magcoupling-rs/src/engine/metal_design.rs`), and row A-7 of
+`docs/analyses/2026-11-10-conservative-assumptions.md` (kept in the owner's main checkout) records it. That is an
+assumption, not the owner's approval, and the owner's review of the diff is still owed before a merge. On screen,
+three help texts changed and a correction held on an assumption now says so wherever its title is listed. These
+texts had their G-3 review on 2026-11-11 in a fresh context on the uncommitted change in the worktree (branch
+`magcoupling/off-default-fixes`, HEAD 0a5add4, 23 changed files). The reviewer's report for the record follows.
+
+- Scope: three help texts and one mark, each whole.
+  - The help of the input `metal.max_diameter_mm`, "Maximum rotating coupling diameter"
+    (`magcoupling-rs/src/gui/plain_text.rs`, line 129).
+  - The help of the input `metal.boss_od_mm`, "Shaft boss outside diameter" (the same file, line 480).
+  - The help of the result `housing.diameter_overshoot_mm`, "Diameter beyond the space claim"
+    (`magcoupling-rs/src/engine/housing.rs`, line 53).
+  - The words "(an assumption, not approved)" (`ASSUMED`, `magcoupling-rs/src/gui/corrections.rs`, line 183).
+    `listed_title` puts them after the title of a correction whose approval is assumed, and every place that shows a
+    correction's title takes it from there: the hover of a marked cell, the explorer's list of corrections and the
+    Summary sheet's "Corrections applied" list. E25 is the only such correction.
+  - Read beside them, for the same design each time: the space claim check and its badge, the results rows, the Size
+    tab's Outside diameter with its "Set by" line and hover, the drawing's diameter dimension, the check's guide
+    (Problem and Fix) and the cap's help.
+- Reviewer: fresh context, general-purpose agent on fable, 2026-11-11; round 2 of the item's reviews. What round 1
+  asked for (the boss edge points at 46 and 44 mm in `edge_points()` of `magcoupling-rs/tests/explain.rs`, the
+  README's line and the tracker's entry of 2026-11-11) was found applied before the texts were read. Every number
+  below is from the reviewer's own probe: a scratch crate outside the worktree that calls the engine (`compute_all`)
+  and the crate's own text, guide, Size-tab, drawing and spreadsheet functions.
+- The texts as found (each guard clean):
+  - `metal.max_diameter_mm` (26 words, 2 sentences): "Largest diameter the coupling may take, over the cup, the front
+    cap or the shaft boss, whichever is largest. Past it, the space claim check fails." Before the change: "Largest
+    diameter the coupling may take, over the cup or the front cap, whichever is larger. Past it, the space claim
+    check fails."
+  - `metal.boss_od_mm` (27 words, 1 sentence): "Outside diameter of the drawn shaft boss: it sets the boss mass and,
+    when larger than the cup and cap, the outside diameter the space claim checks." Before the change: "Outside
+    diameter of the drawn shaft boss: it sets the boss mass and the outside diameter when larger than the cup and
+    cap."
+  - `housing.diameter_overshoot_mm` (26 words, 1 sentence): "How far the largest of the cup, cap and shaft boss
+    diameters exceeds the maximum diameter of the space claim; 0 inside or at the claim." Before the change: "How far
+    the larger of the cup and cap diameters exceeds the maximum diameter of the space claim; 0 inside or at the
+    claim."
+  - E25 as listed: "E25: The rotating diameter the space claim judges is the larger of the cup and the cap, though
+    the shaft boss turns with them and can be larger (an assumption, not approved)". The words in brackets are the
+    new ones. The title before them states what the workbook does, as every title of the registry does.
+- Verdict: PASS. No must-fix. Every sentence of the three helps is true in each of the 22 designs probed, and each
+  agrees with the check, its badge, the Size tab's Outside diameter and the drawing's dimension for the same design.
+  The boss's help says in plain words that the boss counts toward the diameter the space claim checks. No text says
+  or implies that the owner approved E25: every place that lists it says "not approved", and the three helps do not
+  name the correction. Three should-fix items are offered: two on unchanged neighbours (SF-1, SF-2) and one on the
+  tests (SF-3). The texts break no physics trap, do not say "clamp", do not say the coupling protects the gearbox and
+  do not say a wall seals the rings.
+- Should-fix offered (the owner's choice; no text of the item is false as it stands):
+  - SF-1, the heading over the Summary sheet's list of corrections (`CORRECTIONS_HEADING`, `gui/spreadsheet.rs`,
+    line 106; the item does not change it). The list under it now holds E25, which is on and is not approved. The
+    heading stays true (every approved correction is on) and E25's own row says "not approved", so nothing on the
+    sheet claims an approval. A reader who takes the heading as an account of the whole list still meets one row it
+    does not cover.
+    - Old: "Corrections applied (every approved correction is on)"
+    - New: "Corrections applied (every approved correction is on, and each assumption is marked)" (12 words, guard
+      clean.)
+    - What changes with it: the constant; the unit test finds the heading by the constant. The old words are quoted
+      in `docs/superpowers/plans/2026-10-03-magcoupling-xlsx-export.md` (line 1709) and in
+      `docs/superpowers/specs/2026-10-14-magcoupler-guidance-2-research/map-jargon.md` (line 167), both records of
+      their day.
+  - SF-2, the guide's no-fix line (`NO_FIX`, `gui/guidance.rs`, line 913; the item does not change it, and every
+    guide shares it). With E25 the space claim's guide reaches it one new way: the boss and the cap equal and both
+    past the claim (boss 42.8 on the default cap with a 42 mm claim; cap 38.0 and boss 38.0 on a 7 mm ring radius
+    with a 37 mm claim). Lowering either one alone leaves the other holding the diameter, so no single listed change
+    helps and the line's first words are true. Its list of reasons does not name what stops the two: each fails to
+    help only because the other still holds the diameter. Before E25 the cap alone held that diameter. The same gap
+    is there with no boss in it, by a rule the item does not change (a fix is shown only where one step raises the
+    reserve): with the cup the largest at the low end of the Outside diameter slider and a 38 mm claim, lowering the
+    smaller cap does nothing, and the line is shown. Because the line is shared and the gap is older than the item,
+    this is offered as its own backlog item, not as a change to BL-061.
+    - Old: "No listed change helps from here: each is at its slider's end, has no better choice or would fail another
+      check, or a value the check needs is not a number or is outside what it can be."
+    - New: "No listed change helps from here: each is at its slider's end, has no better choice, would fail another
+      check or does not help alone, or a value the check needs is not a number or is outside what it can be." (42
+      words, 1 sentence, guard clean; the line as found has 38.)
+    - What changes with it: the constant and its doc comment (lines 909 to 912). The two unit tests that read it
+      (`gui/guidance.rs`, lines 7986 and 8009) look for "not a number" and "outside what it can be", which stay. This
+      document quotes the old line three times in earlier records, which stand as records.
+  - SF-3, tests. No test pins that the three helps name the boss; only the Size tab's hover is pinned to hold "shaft
+    boss" (`gui/size_controls.rs`, line 740). A later edit could drop the boss from a help with every test green.
+    Offered: one unit test beside the helps that each of the three holds "shaft boss".
+- Each text as read:
+  - `metal.max_diameter_mm`, sentence 1, "Largest diameter the coupling may take, over the cup, the front cap or the
+    shaft boss, whichever is largest." True: the claim is compared with `metal.rotating_od_mm`, which was the largest
+    of the three in every design with numbers: the cap on the defaults (42.8), the cup with the cap made small
+    (41.33), the boss wherever it was the largest (42.9 to 300).
+  - `metal.max_diameter_mm`, sentence 2, "Past it, the space claim check fails." Unchanged words. True from one
+    float step past the claim (reserve -7.105e-15 mm: "Exceeds the space claim: diameter 0.01 mm over", badge Bad) to
+    257 mm past it. "Past" is strict and so is the engine: a boss of 43.0 mm on the 43 mm claim reads "Inside the
+    space claim", badge Good, reserve 0.
+  - `metal.boss_od_mm`, "it sets the boss mass". Unchanged words. True: the boss mass row reads 30.78 g at 22 mm,
+    34.38 g at 23 mm, 64.12 g at 30 mm and 161.58 g at 46 mm.
+  - `metal.boss_od_mm`, "and, when larger than the cup and cap, the outside diameter the space claim checks". True
+    both ways. Larger: a boss of 42.9 mm over the 42.8 mm cap gives Outside diameter 42.9 and rotating diameter 42.90
+    mm; with the cap at 30 mm, a boss 0.5 mm over the cup gives 41.83 mm. Not larger: at 22 mm and at 40 mm (the top
+    of the boss's slider) the defaults stay at 42.8 mm. Equal to the cap (42.8 mm) the diameter is 42.8 mm either
+    way. "The outside diameter" is the Size tab's name for the number, and it equalled the diameter the check uses
+    bit for bit in every design that has dimensions.
+  - `housing.diameter_overshoot_mm`. True: the row reads 0 inside the claim and at it, and the amount past it
+    otherwise (3.000 mm with the boss at 46 mm, 2.000 mm on the backlog's evidence design). Where the claim is not a
+    number the row reads NaN and the check reads "Space claim unknown: a dimension or a claim is not a number", which
+    is neither inside nor at the claim.
+  - "(an assumption, not approved)". True: the registry holds E25 as `Approval::Assumed` for BL-061, and the backlog
+    and the register say the owner has not approved it. The words stand in the hover of the two marked rows
+    (rotating diameter and diameter reserve, under "Differs from the original spreadsheet:"), in the explorer's list
+    for those two rows and for the diameter beyond the claim, and in the Summary sheet's row for E25.
+- Beside the texts:
+  - The check, the results rows, the Size tab, the drawing and the guide's Problem showed one diameter in every
+    design. On the evidence design (ring radius 7 mm, boss 40 mm, claim 38 mm): check "Exceeds the space claim:
+    diameter 2.00 mm over", badge Bad, as the backlog expects; rotating diameter 40.00 mm; reserve -2.000 mm; Size
+    tab "Set by: cap 36.2, cup 34.7, boss 40.0 mm"; drawing "Diameter: rotating OD 40.00 mm is 2.000 mm over the
+    38.00 mm claim"; Problem "Rotating diameter 40.00 mm is 2.000 mm over the 38.00 mm claim."; Fix "Lower Shaft
+    boss outside diameter".
+  - The guide offers "Lower Shaft boss outside diameter" wherever the boss alone holds the diameter past the claim,
+    and does not offer it where the boss is not the largest (cap 44 mm, boss 22 mm: "Lower Threaded cap OD" and
+    "Lower Outside diameter"). That matches the boss's help.
+  - The cap's help (unchanged: "Front cap diameter; when larger than the cup and boss, it sets the outside
+    diameter. ...") and the Size tab's hover and hint (unchanged: "The largest of the cup, cap and shaft boss
+    diameters. ..."; "Largest of cup, cap and boss; it moves the magnet rings.") say the same of the three parts as
+    the changed helps.
+  - The README and the `docs/ai` lines that name E25 call it an assumption that is not approved.
+- For the step that commits: nothing must change. If SF-1 or SF-2 is taken, the changed line needs its re-read. The
+  reviewer edited only this document; no help text, code, test or other doc was changed.
+
+**Report for the record (as returned).**
+
+#### Basis
+
+A scratch crate outside the worktree (a path dependency on the worktree's `magcoupling-rs` with its `gui` feature),
+run in debug. Each design is `DesignInputs::default()` with the boss, the cap, the claim or the ring radius set
+(`with_ring_radius` for the 7 mm ring). For each design the probe printed the engine's rotating diameter, reserve,
+overshoot and check; the results rows as the table shows them; the dashboard's row and badge; the Size tab's Outside
+diameter, range and "Set by" line; the drawing's dimensions and notes; the guide's Problem and Fix lines, with the
+shaft-joint section paused and shown; and the three records' derivations beside the engine's numbers. Defaults: cup
+41.326 mm, cap 42.8 mm, boss 22 mm, claim 43 mm.
+
+#### Cases
+
+Lengths are in mm. "Rotating" is the results row; the Size tab's Outside diameter was the same number bit for bit in
+every case with dimensions, and the drawing and the guide's Problem showed it too. "Lower boss" stands for the fix
+line "Lower Shaft boss outside diameter".
+
+| Case | Cup, cap, boss; claim | Rotating | Reserve | Check, badge | Fix line |
+|---|---|---|---|---|---|
+| Defaults | 41.33, 42.8, 22; 43 | 42.80 | 0.2000 | Inside, Good | none |
+| Boss just above the cap | 41.33, 42.8, 42.9; 43 | 42.90 | 0.1000 | Inside, Good | none |
+| Boss at the claim | 41.33, 42.8, 43.0; 43 | 43.00 | 0 | Inside, Good | none |
+| Boss one float step past it | 41.33, 42.8, 43.0 and a step; 43 | 43.00 | -7.105e-15 | 0.01 over, Bad | Lower boss |
+| Boss 0.004 past the claim | 41.33, 42.8, 43.004; 43 | 43.00 | -0.004000 | 0.01 over, Bad | Lower boss |
+| Boss just past the claim | 41.33, 42.8, 43.1; 43 | 43.10 | -0.1000 | 0.10 over, Bad | Lower boss |
+| Boss past the claim, cup and cap inside | 41.33, 42.8, 46; 43 | 46.00 | -3.000 | 3.00 over, Bad | Lower boss |
+| Backlog evidence, ring radius 7 | 34.70, 36.18, 40; 38 | 40.00 | -2.000 | 2.00 over, Bad | Lower boss |
+| Cap below the cup (thread 28) | 41.33, 30, 22; 43 | 41.33 | 1.674 | Inside, Good | none |
+| Cap below the cup, boss just above the cup | 41.33, 30, 41.83; 43 | 41.83 | 1.174 | Inside, Good | none |
+| Cap below the cup, boss past the claim | 41.33, 30, 50; 43 | 50.00 | -7.000 | 7.00 over, Bad | Lower boss |
+| Boss and cap both past the claim | 41.33, 42.8, 46; 40 | 46.00 | -6.000 | 6.00 over, Bad | Lower boss only |
+| Tie: boss equal to the cap | 41.33, 42.8, 42.8; 42 | 42.80 | -0.8000 | 0.80 over, Bad | the no-fix line |
+| Cap alone past the claim | 41.33, 44, 22; 43 | 44.00 | -1.000 | 1.00 over, Bad | Lower cap; Lower Outside diameter |
+| Claim not a number | 41.33, 42.8, 46; NaN | 46.00 | NaN | unknown, Caution | the no-fix line |
+| Boss not a number | 41.33, 42.8, NaN; 43 | 42.80 | 0.2000 | Inside, Good | none |
+| Boss far past the claim | 41.33, 42.8, 300; 43 | 300.0 | -257.0 | 257.00 over, Bad | Lower boss |
+| Cup alone past the claim | 41.33, 30, 22; 41 | 41.33 | -0.3265 | 0.33 over, Bad | Lower Outside diameter |
+| Tie on ring radius 7 | 34.70, 38.0, 38.0; 37 | 38.00 | -1.000 | 1.00 over, Bad | the no-fix line |
+| Boss 0.05 above the cap, both past | 41.33, 42.8, 42.85; 42 | 42.85 | -0.8500 | 0.85 over, Bad | Lower boss |
+| Boss at its slider's top | 41.33, 42.8, 40; 43 | 42.80 | 0.2000 | Inside, Good | none |
+| Cup at the diameter slider's low end | 38.91, 27.58, 22; 38 | 38.91 | -0.9081 | 0.91 over, Bad | the no-fix line |
+
+"Inside" is "Inside the space claim"; "x over" is "Exceeds the space claim: diameter x mm over"; "unknown" is "Space
+claim unknown: a dimension or a claim is not a number". Where the claim is not a number the Problem reads "Rotating
+diameter cannot be checked: it or its claim is not a number." The two designs with a value that is not a number are
+refused by `validate` (`NotFinite`) and have no Size-tab dimensions. The three records (`metal.rotating_od_mm`,
+`metal.diameter_reserve_mm`, `housing.diameter_overshoot_mm`) evaluated to the engine's numbers in every case; the
+record of the rotating diameter reads "D_{rot} = max(D_{cup}, D_{cap}, D_{boss})" and carries E25.
+
+#### Words
+
+Counted with the crate's `word_count` and `sentence_count`; the guard is `plain_text_violations` and
+`mentions_gearbox_protection`.
+
+| Text | Words | Sentences (words in each) | Guard | "clamp", gearbox, wall or seal |
+|---|---|---|---|---|
+| `metal.max_diameter_mm` help | 26 | 2 (19, 7) | clean | none |
+| `metal.boss_od_mm` help | 27 | 1 | clean | none |
+| `housing.diameter_overshoot_mm` help | 26 | 1 | clean | none |
+| "an assumption, not approved" | 4 | not a sentence | clean | none |
+| E25 as listed, with its id | 32 | not a sentence | the id "E25" only | none |
+| `metal.cap_od_mm` help (unchanged neighbour) | 29 | 2 | clean | none |
+| the Summary heading as found | 7 | not a sentence | clean | none |
+| the Summary heading with SF-1 New | 12 | not a sentence | clean | none |
+| the no-fix line as found | 38 | 1 | clean | none |
+| the no-fix line with SF-2 New | 42 | 1 | clean | none |
+
+The guard's hit on E25 as listed is the id that `correction_title` puts before every correction's title in the hover
+and the explorer; it was so before the item, for every correction. The Summary sheet lists the id in its own column.
+
+#### Traps and rules
+
+- Slice-2 spec section 8 (the 17 physics traps): none is written or touched. The texts say which diameters the claim
+  counts and what the check does past it; they give no law of torque, heat or strength.
+- Slice-2 spec 3.5 (help: one or two sentences, at most 30 words): the three helps are inside it.
+- E25 is an assumption that is not approved: no text says or implies an approval. The three helps state what the
+  calculator checks and do not name the correction; each listing of E25 ends "(an assumption, not approved)"; the
+  hover's heading says only "Differs from the original spreadsheet". SF-1 is about the one heading that speaks of
+  approval.
+- Standing rules: no text says the coupling protects the gearbox, says a wall seals the rings or holds "clamp". The
+  three helps hold no cell name, correction id, file or code name.
+
+#### Tests
+
+On the worktree as found, all green: `cargo test` (lib 242 passed, 1 ignored; `tests/explain.rs` 63 passed, 1
+ignored) and `cargo test --features app` (lib 997 passed, 6 ignored; `tests/explain.rs` 64 passed, 1 ignored);
+`cargo clippy` both ways and `cargo fmt --check` clean. One mutation check: with the boss term taken out of the
+record of `metal.rotating_od_mm` (`src/engine/explain/records/geometry.rs`, line 18),
+`every_record_reproduces_the_engine_everywhere` failed ("record Num(42.8), engine Num(46.0)"). The line was put back
+by hand, and before this record was added a fresh `git diff` and `git status` of the worktree matched the ones saved
+at the start line for line. The full gate was not run; the reviewer changed no code.
+
+#### Not checked
+
+- The GUI was not run. The texts were read from the crate's own functions and from where they are drawn; how a hover
+  wraps on screen was not seen.
+- The exported workbook file was not opened; the Summary sheet was read from the rows the crate builds for it.
+- No mutation check was made of a test of the three helps' words, because no test pins them (SF-3).
+- Inputs the diameter does not read (poles, gap, grades, temperatures) were held at the defaults.
+- `docs/ai/05-update-tracker.md` and the long lines of the README were read in part only.
+
+#### Recorded, no change asked
+
+- The check's sentence gives the overshoot to 0.01 mm and never less ("0.01 mm over" for 7.105e-15 mm and for 0.004
+  mm), while the reserve row, the drawing and the Problem give four digits ("0.004000 mm"). They agree that the
+  design is over. The formatting is not the item's, and a cap 0.004 mm past the claim read the same before.
+- At the claim exactly, the record of the overshoot evaluates to -0.0 where the engine holds 0.0. The record is not
+  the item's; how the explorer shows it was not looked at.
+- A boss that is not a number is left out of the largest (`py_max`), so the check reads "Inside the space claim"
+  while the boss mass reads NaN and the drawing says a part is not drawn. `validate` refuses such a design and no
+  slider reaches it; the cap is treated the same way.
+- The Space claim row has no correction mark and the explorer lists no correction for it: the check has no workbook
+  cell. The rotating diameter and the reserve carry the mark, and the explorer lists E25 for the diameter beyond the
+  claim.
+- The boss's slider ends at 40 mm. On the example design (cup 41.33 mm, cap 42.8 mm) the boss counts only when typed
+  past its slider, or on a smaller ring.
+- With the boss the largest, the Size tab's range starts at the boss and its card reads "-1 mm -> outside the
+  slider's range; +1 mm -> not a step: the cup diameter does not change by the step's amount and direction". The
+  Size tab counted the boss before the item; nothing there changed but a test's comment.
+- On the evidence design the Size tab shows 40.0 mm below its slider's range (40.38 to 80 mm): the 7 mm ring radius
+  is off that slider. That is the design's, not the item's.
+- E25's title states the workbook's behaviour ("is the larger of the cup and the cap"), by the registry's convention.
+  Under the hover's heading and among the Summary's other rows it reads as the defect corrected, and the help beside
+  the rows says what the calculator does.
+- The task text cites section 6 of the slice-2 spec for the traps; they are in section 8.
+
+Verdict: PASS. No must-fix. Three should-fix offered (SF-1, SF-2, SF-3).
+
+## BL-063 the daily-cycle screen at the entered bondline (2026-11-11)
+
+BL-063 (`docs/ai/backlog.yaml`) asks whether the daily-cycle bond screen should judge the entered bondline or report
+both. The workbook's screen (Temperature design C201 and C202) reads the bond shear at the recommended bondline (0.1
+mm by default), so a thinner entered bondline (0.05 mm by default) passed it unseen. The owner has not answered. Under
+the owner's ruling of 2026-11-10 (an open question takes the conservative answer, and the assumption is made known)
+the answer taken for now is "report both": the workbook's screen stays cell for cell, and two Rust-only results right
+after it give the daily-cycle shear and the same screen at the entered bondline
+(`magcoupling-rs/src/engine/temperature.rs`). Row A-9 of `docs/analyses/2026-11-10-conservative-assumptions.md` (kept
+in the owner's main checkout) records it. That is an assumption, not the owner's answer, and the owner's review of the
+diff is still owed before a merge. On screen, one help text changed and two result rows are new, each with a label and
+a help. These texts had their G-3 review in a fresh context on the uncommitted change in the worktree (branch
+`magcoupling/off-default-fixes`, HEAD 4737962, 14 changed files). The reviewer's report for the record follows.
+
+- Scope: one changed help, two new labels and two new helps, each whole.
+  - The overlay help of the input `temperature.mismatch.recommended_bondline_mm`, "Recommended bondline"
+    (`magcoupling-rs/src/gui/plain_text.rs`, line 419).
+  - The label and the help of the new result `temperature.adhesive_life.daily_entered_peak_shear_MPa`
+    (`magcoupling-rs/src/engine/temperature.rs`, lines 693 and 694).
+  - The label and the help of the new result `temperature.adhesive_life.daily_entered_screen` (the same file, lines
+    695 and 696), and the two verdict texts it shows (the workbook screen's own, not changed).
+  - Read beside them, for the same design each time: the workbook's two rows ("Peak end shear per daily cycle,
+    recommended bondline", C201; "Daily-cycle screen", C202), the two shears, the two screens and their badges, the
+    rows "Current bondline", "Peak end shear, current bondline", "Peak end shear, recommended bondline" and "Reading",
+    the failing filter, the Adhesive group's heading badge, the status line, and the unchanged helps of
+    `metal.bond_inner_mm` (`gui/plain_text.rs`, line 411; the diff does not change it),
+    `temperature.adhesive_life.daily_swing_C` (line 169) and `temperature.adhesive_life.fatigue_endurance` (line 423).
+  - The diff changes no other text a user sees: no derivation record, guide, Problem, note, warning or hint. Neither
+    new row is a dashboard row or has a guide.
+- Reviewer: fresh context, general-purpose agent on fable, 2026-11-11; round 1 of the item's text reviews. The step
+  was resumed on 2026-11-16, and every probe and test run below is of that day. The worktree's diff was then the one
+  the item's code review left on 2026-11-11 (the two saved diffs are the same but for how the files hold the
+  characters outside ASCII, and the two saved statuses are the same). Every number below is from the reviewer's own
+  probes: a scratch crate outside the worktree that calls the engine (`compute_all`, every correction on, the GUI's
+  basis) and the crate's own text, hover, table and status functions.
+- The texts as found (each guard clean):
+  - `temperature.mismatch.recommended_bondline_mm` help (29 words, 2 sentences): "A second adhesive thickness for the
+    bond shear from temperature swings; thicker lowers that shear. The daily-cycle screen reads it, the
+    entered-bondline screen the thickness under the inner magnets." Before the change: "A second adhesive thickness at
+    which the bond shear from temperature swings is also computed; the daily-cycle screen uses it. Thicker lowers that
+    shear."
+  - The new shear. Label: "Peak end shear per daily cycle, entered bondline". Help (20 words, 1 sentence): "The
+    daily-cycle shear at the bondline entered as the adhesive thickness under the inner magnets, not at the
+    recommended one."
+  - The new screen. Label: "Daily-cycle screen, entered bondline". Help (11 words, 1 sentence): "The daily-cycle
+    screen's comparison, on the shear at the entered bondline."
+  - Its verdicts: "Below the fatigue endurance" (badge OK) and "Above the fatigue endurance: qualify by thermal
+    cycling" (badge Check), the workbook screen's two texts and badges.
+- Verdict: PASS. No must-fix. Every sentence of the changed help and of the two new helps is true in each of the 39
+  designs probed. Each screen read Below exactly where the size of its own shear was under the limit, and Above
+  elsewhere; each badge followed its text; with equal bondlines the two shears were equal bit for bit and the two
+  screens read the same. The new rows name their bondline in their labels, the workbook's shear row names its own, and
+  the changed help says which screen reads which thickness, so a reader can tell from the screen which bondline each
+  screen judges. The workbook's screen row is the weak one of the four (SF-1). No text says or implies that the owner
+  approved the second screen. Four should-fix items are offered: one on the changed help (SF-2), one on a new help
+  (SF-3) and two on unchanged neighbours (SF-1, SF-4). The texts break no physics trap, do not say "clamp", do not say
+  the coupling protects the gearbox and do not say a wall seals the rings.
+- Should-fix offered (the owner's choice; no text of the item is false as it stands):
+  - SF-1, the workbook's screen row (`temperature.adhesive_life.daily_screen`, "Daily-cycle screen"; the item does not
+    change it). Its label names no bondline and it has no help, so its hover is the label alone. Beside the second
+    screen it is the one row of the four that does not say which bondline it judges. A reader can still tell: its
+    shear row, right above it, says "recommended bondline", and the Recommended bondline's hover says "The daily-cycle
+    screen reads it". The failing filter lists no shear row, though. With the entered bondline at 0.2 mm and a daily
+    swing from 35.5 to 68.5 °C on the example design it lists, of the two screens, "Daily-cycle screen" alone (3.032
+    to 5.850 MPa at the recommended bondline, 1.547 to 2.985 MPa at the entered one), and with both above it lists the
+    two with only the second named. The label is the workbook's, and the engine's help of a ported result is held to
+    the Python engine's (`tests/python_schema.rs`), so the place is a row in the GUI overlay
+    (`gui::plain_text::HELP`). The overlay takes a result's path (`every_overlay_row_names_a_real_path_once`); no
+    result has a row there today.
+    - Old: no help.
+    - New: "Compares the daily-cycle shear at the recommended bondline, not at the entered one, with the adhesive's
+      fatigue endurance." (18 words, 1 sentence, guard clean.)
+    - Tried: with the row added after the recommended bondline's, the 746 GUI unit tests passed
+      (`cargo test --features app --lib gui::`). The row was then taken out by hand and the file's hash matched.
+  - SF-2, the changed help, sentence 2. "The daily-cycle screen reads it, the entered-bondline screen the thickness
+    under the inner magnets." leaves its second verb out. It is true and reads one way only, but the reader has to
+    supply "reads".
+    - Old: the help as found (above).
+    - New: "A second adhesive thickness for the bond shear from temperature swings; thicker lowers that shear. The
+      daily-cycle screen reads it; the entered-bondline screen reads the thickness under the inner magnets." (30
+      words, 2 sentences, guard clean; at the cap.)
+  - SF-3, the new shear's help: three names for one thickness. The input is "Inner magnet back bondline". The
+    workbook's rows of the same group call it "Current bondline" (C102) and "Peak end shear, current bondline" (C104).
+    The new rows call it the "entered bondline". The help ties the new name to the input, but not to the "Current
+    bondline" rows, whose shear the new row scales (11.68 MPa times 30 over 71.06 is 4.932 MPa at the defaults). The
+    table's search finds the new rows by "entered bondline" and not by "current bondline".
+    - Old: "The daily-cycle shear at the bondline entered as the adhesive thickness under the inner magnets, not at
+      the recommended one."
+    - New: "The daily-cycle shear at the adhesive thickness entered under the inner magnets, shown as Current
+      bondline, not at the recommended one." (21 words, 1 sentence, guard clean; not run through `tests/schema.rs`.)
+    - The other way, not offered: name the two new rows "..., current bondline". That matches the workbook's rows, but
+      the backlog, the register, the tests and the changed help all say "entered", and "current" says less to a
+      reader who has not seen the original spreadsheet.
+  - SF-4, the daily swing's help (`temperature.adhesive_life.daily_swing_C`, `gui/plain_text.rs` line 169; the item
+    does not change it). It says "the screen asks for thermal-cycling tests". There are two screens now, and at the
+    defaults one asks and the other does not. The sentence stays true of each screen by its own shear.
+    - Old: "How far the coupling's temperature swings each day. A larger swing raises the daily bond shear; above the
+      adhesive's fatigue endurance, the screen asks for thermal-cycling tests."
+    - New: "How far the coupling's temperature swings each day. A larger swing raises the daily bond shear; above the
+      adhesive's fatigue endurance, a daily-cycle screen asks for thermal-cycling tests." (28 words, 2 sentences,
+      guard clean.)
+- Each text as read:
+  - The changed help, sentence 1, "A second adhesive thickness for the bond shear from temperature swings; thicker
+    lowers that shear." True. One slider step (0.005 mm) down, as found and up on the example design, the shear at the
+    recommended bondline reads 6.377, 6.071 and 5.793 MPa and its daily-cycle shear 2.692, 2.563 and 2.446 MPa; the
+    slider's ends (0.01 and 0.5 mm) read 45.52 and 1.254 MPa (daily 19.22 and 0.5296 MPa). A negative shear falls in
+    size the same way: the daily-cycle shear reads -0.1439, -0.1370, -0.1307 MPa with a Recoma 26 inner ring on the
+    4140 hub, and -3.544, -3.396, -3.261 MPa with Recoma 20 on a 416 hub. "That shear" is the shear at this second
+    thickness; the shear at the entered bondline does not move with it (sentence 2).
+  - The changed help, sentence 2, "The daily-cycle screen reads it, the entered-bondline screen the thickness under
+    the inner magnets." True in both halves. Along the recommended bondline's whole slider the workbook's screen turns
+    (Above up to 0.08 mm, Below from 0.085 mm at 2.995 MPa), while the shear at the entered bondline stays bit for bit
+    (4.931933474274863 MPa at 0.01, 0.095, 0.1, 0.105 and 0.5 mm; -0.26353842992308363 MPa on Recoma 26;
+    -5.856713930337416 MPa on Recoma 20) and its screen never turns. The entered bondline moves the second screen's
+    shear (5.435, 4.932, 4.514 MPa a step down, as found and a step up) and turns that screen (Above up to 0.08 mm,
+    Below from 0.085 mm at 2.994 MPa). "The daily-cycle screen" is the row of that exact name, "the entered-bondline
+    screen" the row "Daily-cycle screen, entered bondline", and "the thickness under the inner magnets" the first
+    words of the entered bondline's own help. See SF-2.
+  - The new shear's label and help. True. The value was the "Peak end shear, current bondline" row times the daily
+    swing over the worst swing, bit for bit, and the "Current bondline" row was the entered input bit for bit, in each
+    of the 24 runs that compared them. "Not at the recommended one" holds with equal bondlines too: the two shears are
+    then one number (seven designs: 0.01, 0.05, 0.1 and 0.2 mm on the example; 0.01, 0.1 and 0.2 mm on Recoma 20), and
+    the help says which input is read, not that the numbers differ. See SF-3.
+  - The new screen's label and help. True. It is the workbook screen's comparison on the second shear: it read Below
+    exactly where that shear's size was under the lap shear times the endurance share (3.0 MPa on the example; 0.3
+    and 9.0 MPa at the share's slider ends; 9.0, 3.4 and 3.8 MPa on the other three adhesives), and Above elsewhere.
+    The workbook's screen did the same on its own shear in every design.
+  - The verdicts and badges. "Below the fatigue endurance" came with the OK badge and "Above the fatigue endurance:
+    qualify by thermal cycling" with the Check badge on both rows in every design, positive and negative shears
+    alike.
+- Beside the texts:
+  - The four rows end the Adhesive group in this order, in the grouped and in the original-sheet order: the shear at
+    the recommended bondline, "Daily-cycle screen", the shear at the entered bondline, "Daily-cycle screen, entered
+    bondline". Each screen sits right under its shear.
+  - At the defaults: "Peak end shear per daily cycle, recommended bondline 2.563 MPa", "Daily-cycle screen" OK "Below
+    the fatigue endurance", "Peak end shear per daily cycle, entered bondline 4.932 MPa", "Daily-cycle screen, entered
+    bondline" Check "Above the fatigue endurance: qualify by thermal cycling". The failing filter lists six rows, the
+    new screen the only amber one, and the Adhesive group's heading badge reads Check: no other check of the group
+    reads Check or Fails there.
+  - The hovers. The Recommended bondline's: the help, "Slider 0.01 to 0.5 mm, step 0.005", "Default: 0.1000". The new
+    shear's: its label, its help, "Exact value: 4.931933474274863". The new screen's: its label and its help. The
+    workbook screen's: its label alone (SF-1). With the spreadsheet details on, the two new rows add their path and
+    "Not in the original spreadsheet", their cell column reads "Rust-only" and they carry no correction mark.
+  - Nothing on the screen speaks of approval: no label, help or hover of the two new rows, and no word of the changed
+    help, holds "approved", "assumption", the owner or a correction. See the first item under "Recorded, no change
+    asked".
+  - `metal.bond_inner_mm` (unchanged): "Adhesive thickness under the inner magnets. The ring radius includes it, so
+    thicker thins the hub; it also lowers the bond shear from temperature swings." True beside the new rows: a step
+    down, as found and a step up the hub wall reads 5.105, 5.100, 5.095 mm, the shear at the current bondline 12.87,
+    11.68, 10.69 MPa and the new daily-cycle shear 5.435, 4.932, 4.514 MPa (-0.2904, -0.2635, -0.2412 MPa on Recoma
+    26; -6.323, -5.857, -5.456 MPa on Recoma 20).
+  - `temperature.adhesive_life.fatigue_endurance` (unchanged): "... the bond fatigue screens pass more easily when it
+    is higher." True of both screens: at 0.02 both read Above, at 0.6 both read Below, and the shears do not move.
+  - `temperature.adhesive_life.daily_swing_C` (unchanged): both daily-cycle shears rise with it (2.520, 2.563, 2.606
+    and 4.850, 4.932, 5.014 MPa). On the example design both screens read Below up to 18 °C, the second reads Above
+    from 18.5 °C (3.041 MPa) and the workbook's from 35.5 °C (3.033 MPa). See SF-4.
+  - The README and the `docs/ai` lines that name the second screen call it an assumption that is not approved.
+- For the step that commits: nothing must change. If a should-fix text is taken, the changed line needs its re-read.
+  The reviewer edited only this document; no help text, code, test or other doc was changed.
+
+**Report for the record (as returned).**
+
+#### Basis
+
+A scratch crate outside the worktree (a path dependency on the worktree's `magcoupling-rs` with its `gui` feature),
+run in debug, four programs. The first was left in the scratch folder by an earlier run of this step, which ended
+before any record; it was read line by line before it was used. The other three were written in this run. Each design
+is `DesignInputs::default()` with inputs set by field or by path and run through `compute_all`. For each design the
+probes printed the nine rows as the results table draws them (label, badge, value with its unit, cell column), the two
+daily-cycle shears exactly, whether each screen's text agrees with the size of its shear against the limit, the
+failing filter's rows, the Adhesive group's worst level and the status line. They also printed each text with its
+word count and the guard's result, the hovers of five inputs and of the nine rows with the spreadsheet details off and
+on, what the Equation panel has for each row, the table's search results and the table's column widths. Defaults:
+entered bondline 0.05 mm, recommended bondline 0.1 mm, daily swing 30 °C, AA 326 (lap shear 15 MPa), endurance share
+0.2 (limit 3.0 MPa), worst swing 71.06 °C.
+
+#### Cases
+
+"Recommended" and "Entered" are the two daily-cycle shears in MPa as the rows show them, each followed by its screen.
+"Below" is "Below the fatigue endurance" with the OK badge, "Above" is "Above the fatigue endurance: qualify by
+thermal cycling" with the Check badge. The last column is which of the two screens the failing filter lists. Bondlines
+are in mm, the swing in °C.
+
+| Case | Entered, recommended; swing | Recommended | Entered | Filter lists |
+|---|---|---|---|---|
+| Defaults | 0.05, 0.1; 30 | 2.563 Below | 4.932 Above | the second |
+| Entered equal to recommended | 0.1, 0.1; 30 | 2.563 Below | 2.563 Below | neither |
+| Equal at 0.05 | 0.05, 0.05; 30 | 4.932 Above | 4.932 Above | both |
+| Equal at 0.2 | 0.2, 0.2; 30 | 1.307 Below | 1.307 Below | neither |
+| Equal at 0.01 | 0.01, 0.01; 30 | 19.23 Above | 19.23 Above | both |
+| Entered one step under | 0.095, 0.1; 30 | 2.563 Below | 2.692 Below | neither |
+| Entered one step over | 0.105, 0.1; 30 | 2.563 Below | 2.445 Below | neither |
+| Entered thicker | 0.2, 0.1; 30 | 2.562 Below | 1.307 Below | neither |
+| Entered thicker, swing 35 | 0.2, 0.1; 35 | 2.989 Below | 1.525 Below | neither |
+| Entered thicker, swing 35.5 | 0.2, 0.1; 35.5 | 3.032 Above | 1.547 Below | the workbook's |
+| Entered thicker, swing 40 | 0.2, 0.1; 40 | 3.416 Above | 1.743 Below | the workbook's |
+| Entered thicker, swing 60 | 0.2, 0.1; 60 | 5.124 Above | 2.615 Below | the workbook's |
+| Entered thicker, swing 68.5 | 0.2, 0.1; 68.5 | 5.850 Above | 2.985 Below | the workbook's |
+| Entered thicker, swing 69 | 0.2, 0.1; 69 | 5.893 Above | 3.007 Above | both |
+| Entered thicker, swing 100 | 0.2, 0.1; 100 | 8.541 Above | 4.358 Above | both |
+| Large swing | 0.05, 0.1; 100 | 8.544 Above | 16.44 Above | both |
+| Small swing | 0.05, 0.1; 10 | 0.8544 Below | 1.644 Below | neither |
+| No swing | 0.05, 0.1; 0 | 0 Below | 0 Below | neither |
+| Entered at its slider's low end | 0.01, 0.1; 30 | 2.563 Below | 19.23 Above | the second |
+| Recommended at its slider's low end | 0.05, 0.01; 30 | 19.22 Above | 4.932 Above | both |
+| Recommended at its slider's high end | 0.05, 0.5; 30 | 0.5296 Below | 4.932 Above | the second |
+| Both thick | 0.2, 0.5; 30 | 0.5296 Below | 1.307 Below | neither |
+| Endurance share 0.02 (limit 0.3 MPa) | 0.05, 0.1; 30 | 2.563 Above | 4.932 Above | both |
+| Endurance share 0.6 (limit 9.0 MPa) | 0.05, 0.1; 30 | 2.563 Below | 4.932 Below | neither |
+| EA 9514 (limit 9.0 MPa) | 0.05, 0.1; 30 | 2.563 Below | 4.932 Below | neither |
+| 2214 Hi-Temp (limit 3.4 MPa) | 0.05, 0.1; 30 | 2.563 Below | 4.932 Above | the second |
+| DP460 (limit 3.8 MPa) | 0.05, 0.1; 30 | 2.563 Below | 4.932 Above | the second |
+| Recoma 26 inner, N42SH outer, 4140 hub | 0.05, 0.1; 30 | -0.1370 Below | -0.2635 Below | neither |
+| Recoma 26 on both rings, 4140 hub | 0.05, 0.1; 30 | -0.1370 Below | -0.2635 Below | neither |
+| The same, entered 0.01 | 0.01, 0.1; 30 | -0.1370 Below | -1.028 Below | neither |
+| The same, adhesive shear modulus 3 GPa | 0.01, 0.1; 30 | -2.031 Below | -6.730 Above | the second |
+| The same, swing 100 | 0.01, 0.1; 100 | -6.771 Above | -22.43 Above | both |
+| Recoma 20 on both rings, 416 hub, 0.55 GPa | 0.05, 0.1; 30 | -3.396 Above | -5.857 Above | both |
+| The same, entered equal to recommended | 0.1, 0.1; 30 | -3.395 Above | -3.395 Above | both |
+| The same, entered thicker | 0.2, 0.1; 30 | -3.391 Above | -1.854 Below | the workbook's |
+| The same, equal at 0.2 | 0.2, 0.2; 30 | -1.854 Below | -1.854 Below | neither |
+| The same, equal at 0.01 | 0.01, 0.01; 30 | -15.88 Above | -15.88 Above | both |
+| Y30 on both rings, 4140 hub | 0.05, 0.1; 30 | 0.4500 Below | 0.8659 Below | neither |
+| EA 9514, minimum temperature typed at 120 °C | 0.05, 0.1; 30 | NaN Above | NaN Above | both |
+
+The grade designs use custom magnet dimensions (no library part). The shears at the current and at the recommended
+bondline read -0.6242 and -0.3244 MPa on the Recoma 26 inner ring with an N42SH outer ring, -0.7004 and -0.3640 MPa on
+Recoma 26 on both rings, and -15.57 and -9.028 MPa on Recoma 20 over 416 at 0.55 GPa, where the "Reading" row fails
+too ("Above the lap-shear strength at the block ends"). In the last row the worst swing is 0 and both shears are 0
+times the swing over 0. `validate` accepted every design of the table. The status line read "Example design: fails 4
+of 9 checks" at the defaults and "Your design: fails 4 of 9 checks" in each of the 14 other runs that change only a
+bondline, the swing or the endurance share, whatever the two screens read (the shaft-clamp section paused): it counts
+neither screen.
+
+#### One slider step each way
+
+Daily-cycle shears in MPa, one step down, as found, one step up.
+
+| Design | Input stepped | At the recommended bondline | At the entered bondline |
+|---|---|---|---|
+| Example | entered bondline (0.005 mm) | 2.56323, 2.56320, 2.56317 | 5.435, 4.932, 4.514 |
+| Example | recommended bondline (0.005 mm) | 2.692, 2.563, 2.446 | 4.932 each, bit for bit |
+| Example | daily swing (0.5 °C) | 2.520, 2.563, 2.606 | 4.850, 4.932, 5.014 |
+| Example | endurance share (0.005) | 2.563 each | 4.932 each |
+| Recoma 26 inner on 4140 | entered bondline | -0.136967, -0.136965, -0.136963 | -0.2904, -0.2635, -0.2412 |
+| Recoma 26 inner on 4140 | recommended bondline | -0.1439, -0.1370, -0.1307 | -0.2635 each, bit for bit |
+| Recoma 20 on 416, 0.55 GPa | entered bondline | -3.39663, -3.39645, -3.39626 | -6.323, -5.857, -5.456 |
+| Recoma 20 on 416, 0.55 GPa | recommended bondline | -3.544, -3.396, -3.261 | -5.857 each, bit for bit |
+
+At the recommended bondline's slider ends on Recoma 20 the workbook's shear reads -15.86 MPa (0.01 mm, Above) and
+-0.7874 MPa (0.5 mm, Below) while the second stays -5.857 MPa, Above. A service life of 1 and of 50 years moves
+neither shear.
+
+#### Words
+
+Counted with the crate's `word_count` and `sentence_count`; the guard is `plain_text_violations` and
+`mentions_gearbox_protection`.
+
+| Text | Words | Sentences (words in each) | Guard | "clamp", gearbox, wall or seal |
+|---|---|---|---|---|
+| `temperature.mismatch.recommended_bondline_mm` help | 29 | 2 (15, 14) | clean | none |
+| the same help before the change | 24 | 2 (20, 4) | clean | none |
+| the new shear's label | 8 | not a sentence | clean | none |
+| the new shear's help | 20 | 1 | clean | none |
+| the new screen's label | 4 | not a sentence | clean | none |
+| the new screen's help | 11 | 1 | clean | none |
+| "Below the fatigue endurance" | 4 | not a sentence | clean | none |
+| "Above the fatigue endurance: qualify by thermal cycling" | 8 | not a sentence | clean | none |
+| `metal.bond_inner_mm` help (unchanged neighbour) | 25 | 2 (6, 19) | clean | none |
+| `temperature.adhesive_life.daily_swing_C` help (unchanged neighbour) | 27 | 2 (8, 19) | clean | none |
+| `temperature.adhesive_life.fatigue_endurance` help (unchanged neighbour) | 26 | 1 | clean | none |
+| SF-1 New | 18 | 1 | clean | none |
+| SF-2 New | 30 | 2 (15, 15) | clean | none |
+| SF-3 New | 21 | 1 | clean | none |
+| SF-4 New | 28 | 2 (8, 20) | clean | none |
+
+#### Traps and rules
+
+- Slice-2 spec section 8 (the 17 physics traps) and slice-1 spec section 8: none is written or touched. The nearest is
+  "The expansion caution counts the temperature swing"; the texts speak of the bond shear and its two screens, not of
+  that caution.
+- Slice-2 spec 3.5 (help: one or two sentences, at most 30 words, no default number, no spreadsheet or audit id): the
+  changed help and the two new helps are inside it.
+- The second screen is an assumption that is not approved: no text says or implies an approval. The helps state what
+  each row reads, and none names the owner, a ruling, a correction or an approval.
+- Standing rules: no text says the coupling protects the gearbox, says a wall seals the rings or holds "clamp". The
+  helps hold no cell name, correction id, file or code name.
+
+#### Tests
+
+On the worktree as found, all green: `cargo test` (lib 244 passed, 1 ignored; `tests/daily_screen.rs` 2 passed;
+`tests/deviations.rs` 81 passed) and `cargo test --features app` (lib 999 passed, 6 ignored); `cargo clippy` both ways
+and `cargo fmt --check` clean. One mutation check: with the second shear fed from the recommended bondline (`s2` for
+`s1` in `src/engine/temperature.rs`, line 1439), `every_direction_a_batch_b_help_states_holds_one_slider_step_up`
+failed ("temperature.mismatch.recommended_bondline_mm one step up on the example design:
+temperature.adhesive_life.daily_entered_peak_shear_MPa 2.5631982594525895 -> 2.445772985576681", Down where the help's
+claim row says Stays). So the changed help's second sentence is held by its claim rows. The line was put back by hand,
+the file's hash matched and the test passed again. One trial, for SF-1 (above), also put back by hand with the file's
+hash matched. Before this record was added, a fresh `git diff` and `git status` of the worktree matched the ones saved
+at the start byte for byte. The full gate was not run; the reviewer changed no code.
+
+#### Not checked
+
+- The GUI was not run. The texts were read from the crate's own functions and from where they are drawn; how a hover
+  wraps on screen was not seen. The column widths below are computed from egui's default body font, not seen.
+- The exported files (CSV, JSON, XLSX) were not opened.
+- No mutation check was made of the helps' words: no test pins them (the two labels are pinned by
+  `tests/daily_screen.rs`, and the changed help's directions by its claim rows).
+- Hubs: 4140 and 416 only; no design without back iron. Poles, gap, ring radius and lengths were held at the defaults.
+- The corrections were on in every probe, as the app shows them.
+- `docs/ai/05-update-tracker.md` and the long lines of the README and of `docs/ai` were read in part only.
+
+#### Recorded, no change asked
+
+- Nothing on the screen says the second screen rests on an assumption. E25 (BL-061) says "(an assumption, not
+  approved)" wherever its title is listed; these two rows have no correction, so no list names them, and they read as
+  any other Rust-only result. The register (row A-9), the backlog, the README and `docs/ai` say it. At the example
+  design the assumption shows as one more amber row in the failing filter (six rows) and as the amber badge on the
+  Adhesive group's heading. Whether the screen should carry a mark is the owner's to rule on with the answer itself.
+- Where the worst swing is 0 (EA 9514 with the minimum temperature typed at 120 °C, 100 °C past its slider) both
+  shears read "NaN MPa" and both screens read Above with the Check badge. The workbook's screen did so before the item
+  and the second copies it (`both_daily_screens_read_above_when_the_worst_swing_is_zero`). The reading is on the safe
+  side.
+- The comparison is strict, so a shear equal to the limit reads Above (the two unit tests at equal shear). No slider
+  step probed lands on it.
+- With a SmCo inner grade the shears are negative and the screens compare their size (E22, reviewed under BL-058): a
+  row reading "-6.730 MPa" sits over "Above the fatigue endurance". No help says the size is compared. The workbook's
+  row reads the same way and has no help.
+- The table cuts long texts. Its value column is 130 points wide and both verdicts are wider (161.8 and 309.2 points),
+  as on the workbook's row; the first word and the badge still tell them apart. At the default 1280 x 800 window with
+  the spreadsheet details on the label column is 300 points: both new labels fit (265.8 and 200.8 points), and the
+  workbook's shear label (302.8 points) is 3 points over. In a narrow window the label column falls to 120 points and
+  both new labels are cut before "entered bondline" (the words up to the comma are 167.1 and 102.1 points wide); the
+  hover gives the label whole. The cutting is the table's, not the item's.
+- None of the four rows has an equation record or a teaching note of its own, so the Equation panel has only its
+  texts for such a row ("This value has no equation to show; its name and value are above." and "No teaching note is
+  shown here for this value."). The workbook's two were so before the item. The traces of the two bondlines, the daily
+  swing and the endurance share mark none of the four.
+- The status line counts neither screen, while the failing filter lists each one that reads Above. It was so for the
+  workbook's screen before the item.
+- The entered bondline moves the workbook's shear in its fifth digit (2.56323, 2.56320, 2.56317 MPa): the ring radius
+  includes the bondline, so the hub under the magnets thins by the step. No text says the workbook's screen reads the
+  recommended bondline alone.
+- The task text cites section 6 of the slice-2 spec for the traps; they are in section 8.
+
+Verdict: PASS. No must-fix. Four should-fix offered (SF-1, SF-2, SF-3, SF-4).
+
+## BL-062 the magnets' conductivity by grade family (2026-11-11)
+
+BL-062 (`docs/ai/backlog.yaml`) asks which electrical conductivity the magnets of each grade family take in the eddy
+heat inside the blocks. The workbook gives both rings the one input, sintered NdFeB's 6.7e5 S/m (Temperature design
+C113), whatever their grade, though SmCo conducts more and ferrite and bonded NdFeB far less. The research of
+2026-11-09 lists the printed values and leaves the choice to the owner, who has not answered. Under the owner's ruling
+of 2026-11-10 (an open question takes the conservative answer, and the assumption is made known) the answer taken for
+now is the research's options 1B, 2C, 3B, 4B and 5B: sintered NdFeB keeps the input, Sm2Co17 takes 1.54e6 S/m, SmCo5
+2.5e6 S/m, sintered ferrite 1.0e2 S/m (a maker's upper bound, not a measurement) and bonded NdFeB 2.5e4 S/m.
+Correction E26 makes each ring's half of the magnets' eddy heat (C129) read its own ring's conductivity, by the family
+of the ring's grade (`magcoupling-rs/src/engine/temperature.rs`, `magcoupling-rs/src/engine/grades.rs`), and row A-8 of
+`docs/analyses/2026-11-10-conservative-assumptions.md` (kept in the owner's main checkout) records it. That is an
+assumption, not the owner's answer, and the owner's review of the diff is still owed before a merge. On screen, one
+help text changed, two result rows are new (each with a label and a help), one derivation record changed and two are
+new, and E26's title is listed with the words "(an assumption, not approved)". These texts had their G-3 review in a
+fresh context on the uncommitted change in the worktree (branch `magcoupling/off-default-fixes`, HEAD 7596f47, 24
+changed files and one new test file). The reviewer's report for the record follows.
+
+- Scope: one changed help, two new labels and two new helps, three derivation records and one listed title, each
+  whole.
+  - The overlay help of the input `temperature.slip_loss.sigma_ndfeb_S_m`, "NdFeB conductivity"
+    (`magcoupling-rs/src/gui/plain_text.rs`, line 403).
+  - The label and the help of the new results `temperature.slip_loss.inner_magnet_sigma_S_m` and
+    `temperature.slip_loss.outer_magnet_sigma_S_m` (`magcoupling-rs/src/engine/temperature.rs`, lines 594 to 597).
+  - The derivation records of the two new results and of `temperature.slip_loss.magnets_W`
+    (`magcoupling-rs/src/engine/explain/records/slip_heating.rs`, lines 137 to 149).
+  - E26's title (`magcoupling-rs/src/engine/deviations.rs`, line 1876) as `listed_title` shows it: in the hover of a
+    marked value, in the hover of the Equation panel's "Embodies corrections" line and in the spreadsheet Summary's
+    list of corrections.
+  - Read beside them, for the same design each time: the two conductivity rows, "Magnet eddy currents (both rings)",
+    "Total estimated slip loss", "Equivalent mean drag torque", "Loss used below" and the steady temperatures, the
+    input's value and what moving it does, the Equation panel's terms, the unchanged helps of the stored field and of
+    the two other magnet properties, and the `slip_heating` note (the diff does not change it; it was read only for
+    agreement with the texts above).
+  - The diff changes no other text a user sees. The grades table's new field label (`engine/explain/tables.rs`) names
+    E26, but no label of that table is drawn: the panel draws the field's symbol alone. `picks::set_by_pick` now names
+    the conductivity input as set where both rings' grades are of another family; see "Recorded, no change asked".
+- Reviewer: fresh context, general-purpose agent on fable, 2026-11-11; round 2 of the item's text reviews. The step
+  was run on 2026-11-16, and every probe and test run below is of that day. What round 1 asked for was found applied
+  before the texts were read. (1) The README's `src/engine/explain/` row reads "..., E24's outer-ring single-ring
+  onset and E26's two magnet conductivities, one per ring: 196 paths", and the README holds no "194" any more. (2) The
+  words "of the values the research kept" stand in the four places (the doc comment of
+  `GradeFamily::magnet_sigma_S_m`, E26's `corrected_formula`, the README's E26 paragraph and its table row), and the
+  doc comment names the two prints set aside: Eclipse's "16.6-20" in 10^6 S/m for SmCo5 and the Alliance overview
+  table's "10 - 30" µΩ·m for bonded NdFeB, as the research file's section 4.3 and its skeptic check (S3, and S4
+  point 1) record them. Every number below is from the reviewer's own probes: a scratch crate outside the worktree
+  that calls the engine (`compute_all`, every correction on, the GUI's basis) and the crate's own text, hover, table,
+  explorer and spreadsheet functions.
+- The texts as found (each guard clean):
+  - `temperature.slip_loss.sigma_ndfeb_S_m` help (30 words, 2 sentences; at the cap): "Electrical conductivity of
+    sintered NdFeB magnets: their eddy-current slip heat rises with it. A ring with no grade uses it; SmCo, ferrite
+    and bonded NdFeB rings use their family's value." Before the change: "Electrical conductivity of the magnets:
+    eddy-current heat inside the blocks during slip rises with it. Used whatever the magnet grade, which overstates
+    the heat in ferrite."
+  - The new rows. Labels: "Inner ring magnet conductivity used" and "Outer ring magnet conductivity used". Help of the
+    inner row (29 words, 1 sentence): "The conductivity the eddy-current heat inside the inner ring's magnets uses:
+    the NdFeB conductivity input for sintered NdFeB or no grade, else the value taken for the grade's family." The
+    outer row's help is the same with "outer".
+  - The records, as the crate's plain renderer writes them (the Equation panel typesets the same parsed formula, and
+    the spreadsheet's Results sheet holds these lines):
+    - `σ_{mag,i} = { σ_{grade} if σ_{grade} ≠ none; σ_{NdFeB} otherwise }, where σ_{grade} = σ_{grade}(grade_{i,used})`
+    - `σ_{mag,o} = { σ_{grade} if σ_{grade} ≠ none; σ_{NdFeB} otherwise }, where σ_{grade} = σ_{grade}(grade_{o,used})`
+    - `P_{mag} = ((((σ_{mag,i} + σ_{mag,o})/2) ω_e^2 B_{mag}^2 w_i^2)/24) (L_i w_i t_i) 2 N`
+  - E26 as listed: "E26: The magnets' eddy heat gives every ring sintered NdFeB's conductivity, though SmCo conducts
+    more and ferrite and bonded NdFeB far less (an assumption, not approved)". The title before the brackets states
+    what the workbook does, as every title of the registry does.
+- Verdict: PASS. No must-fix. Every sentence of the changed help and of the two new helps is true in each of the 22
+  designs probed and with each of the 17 grades on both rings. In every design each conductivity row read the input
+  bit for bit where its ring was sintered NdFeB (a library part or a grade) or had no grade, and its family's value
+  elsewhere; the magnets' heat was the same design's heat with no grades times the mean of the two rows over the
+  input; and the input moved the heat exactly where a row read it. Each of the three records gave the engine's number
+  in every design (66 of 66). A reader can tell from the screen alone which conductivity each ring's magnets read: the
+  two rows name their ring and sit in the Slip heating group above the losses, the input's help says which rings read
+  it, and the record of the magnets' heat shows the mean of the two. No text calls the ferrite value a measurement.
+  No text says the magnets' heat is now right for a grade: the stored field's help and the note still say the field
+  does not follow the design. No text says or implies that the owner approved E26: every place that lists it says
+  "not approved", and the helps name no correction. Three should-fix items are offered: one on the changed help
+  (SF-1), one on an unchanged neighbour (SF-2) and one on the tracker (SF-3). The texts break no physics trap, do not
+  say "clamp", do not say the coupling protects the gearbox and do not say a wall seals the rings.
+- Should-fix offered (the owner's choice; no text of the item is false as it stands):
+  - SF-1, the changed help, sentence 2. Sentence 1 says whose conductivity the input is and that "their" heat rises
+    with it. Sentence 2 then names the ring with no grade as one that uses it. A reader can take that ring as the only
+    one that reads the input, though every library part and every sintered NdFeB grade reads it too (670000 S/m on
+    both rows with N42 on both rings). One word ties the two sentences.
+    - Old: the help as found (above).
+    - New: "Electrical conductivity of sintered NdFeB magnets: their eddy-current slip heat rises with it. Rings with
+      no grade use it too; SmCo, ferrite and bonded NdFeB rings use their family's value." (30 words, 2 sentences,
+      guard clean; at the cap.)
+  - SF-2, the heading over the Summary sheet's list of corrections (`CORRECTIONS_HEADING`, `gui/spreadsheet.rs`, line
+    106; the item does not change it). It is SF-1 of the BL-061 record above, still open. The list under it now holds
+    two rows that are on and not approved, E25 and E26. The heading stays true and each of the two rows says "not
+    approved", so nothing on the sheet claims an approval.
+    - Old: "Corrections applied (every approved correction is on)"
+    - New: "Corrections applied (every approved correction is on, and each assumption is marked)" (12 words, guard
+      clean.)
+  - SF-3, the tracker's entry of 2026-11-11 for E26 (`docs/ai/05-update-tracker.md`, its "Noted, not changed" line).
+    It leaves out one place that shows E26's listed title. With the spreadsheet details on, the Equation panel's line
+    "Embodies corrections: E26, E19" stands under the two new rows' equations (and E26 under 22 more results'), and
+    its hover gives the title with "(an assumption, not approved)".
+    - Old: "Outside the hover of a marked value (with the spreadsheet details on) and the spreadsheet Summary, nothing
+      on screen says the family values are an assumption: the two new rows have no cell and so no mark."
+    - New: "Outside the hover of a marked value and of the Equation panel's "Embodies corrections" line (both with the
+      spreadsheet details on) and the spreadsheet Summary, nothing on screen says the family values are an
+      assumption: the two new rows have no cell and so no mark in the results table."
+- Each text as read:
+  - The changed help, sentence 1, "Electrical conductivity of sintered NdFeB magnets: their eddy-current slip heat
+    rises with it." True. One slider step (1000 S/m) down, as found and up on the example design the magnets' heat
+    reads 0.22751, 0.22785 and 0.22819 W, and the slider's ends (1e5 and 2e6 S/m) read 0.03401 and 0.6801 W. The same
+    numbers, bit for bit, come from manual dimensions with N42 on both rings, with no grade, with a grade the table
+    does not have and from library parts with another family's grade typed.
+  - The changed help, sentence 2, "A ring with no grade uses it; SmCo, ferrite and bonded NdFeB rings use their
+    family's value." True in both halves, ring by ring. A ring with no grade read the input in each of the four
+    designs that have one (the grade the table does not have among them). A Y30 ring read 100.0 S/m, a Recoma 26 or
+    Recoma 30 ring 1.540e6 S/m, a Recoma 20 ring 2.500e6 S/m and a BCN-19 ring 25000 S/m, whichever ring it was and
+    wherever the input stood (as found, one step either side and at the slider's two ends). With both rings of those
+    families the input moved nothing (the Y30 pair reads 3.4006924001941014e-5 W at each of the five). With one such
+    ring it moved its half: Y30 inside N42 reads 0.11377, 0.11394 and 0.11411 W one step down, as found and up, half
+    the step of the NdFeB pair. See SF-1.
+  - The new rows' labels and helps. True. "The NdFeB conductivity input" is the input's own label. "Sintered NdFeB or
+    no grade" covers every case that read the input: the library part (its grade is the ring's, whatever is typed in
+    the grade field; `a_library_part_and_a_ring_with_no_grade_read_the_input` in `tests/magnet_conductivity.rs` holds
+    the other parts), each of the 12 sintered NdFeB grades, a blank grade and a grade the table does not have.
+    Bonded NdFeB is not sintered and takes "the value taken for the grade's family", 25000 S/m. With a measured drag
+    entered the rows and the magnets' heat do not move (2.500e6 S/m and 0.8502 W on Recoma 20 rings) and "Loss used
+    below" reads the bench value, 2.094 W, as its own help says.
+  - The three records. True. Each evaluated to the engine's result in all 22 designs. The terms listed under a
+    conductivity row's equation are "NdFeB conductivity" (670000 S/m) and "Inner magnet grade used" or "Outer magnet
+    grade used" (N42SH on the example, blank with no grade, Y30, N42, SmCo_1_5_20). The terms under the magnets' heat
+    are the two conductivity rows by their labels, the field angular frequency (1047 rad/s), the stored field (0.1900
+    T), the inner block's width, length and thickness (0.006350, 0.01270 and 0.003170 m) and the magnets per ring
+    (10). A click on either conductivity term opens its own record. The record shows what the label "(both rings)"
+    means: the inner block's heat, twice, at the mean of the two conductivities.
+  - E26 as listed. True, and marked. The title's facts hold against every value the research kept (Sm2Co17 1.05e6 to
+    1.54e6 S/m and SmCo5 1.43e6 to 2.5e6 S/m against 6.7e5 S/m; ferrite below 1.0e2 S/m; bonded NdFeB 4.0e3 to 2.5e4
+    S/m). All three places take the words in brackets from `listed_title`. The Summary's rows read "E25 | ... (an
+    assumption, not approved)" and "E26 | ... (an assumption, not approved)".
+- Beside the texts:
+  - The Slip heating group draws, in the grouped and in the original-sheet order: "Steel conductivity (4140)", "Steel
+    incremental relative permeability (4140)", "Aluminium cap conductivity (6061-T6)", "Inner ring magnet
+    conductivity used", "Outer ring magnet conductivity used", "Steel skin depth at the field frequency", the six
+    part losses, "Magnet eddy currents (both rings)", "Total estimated slip loss". At the defaults the two rows read
+    "670000 S/m" and the heat "0.2278 W".
+  - The hovers. The input's: the help, "Slider 100000 to 2000000 S/m, step 1000, logarithmic", "Default: 670000";
+    with the spreadsheet details its path and "Temperature design!C113". A conductivity row's: its label, its help,
+    "Exact value: 670000.0"; with the details its path and "Not in the original spreadsheet". The heat row's with the
+    details: its label, its path, "Temperature design!C129", "Differs from the original spreadsheet:", E26's line and
+    the exact value.
+  - The marks, with the spreadsheet details on. 40 results carry E26 beside their value: the magnets' heat ("E26"),
+    the total, its drag, the loss used and the high case ("E5 E17 E26") and the thermal and summary rows that read
+    them. The two new
+    rows have no cell, so their cell column reads "Rust-only" and they carry no mark; their Equation panel line reads
+    "Embodies corrections: E26, E19". No dashboard row carries E26.
+  - The table's search finds the two rows by "magnet conductivity" (those two alone) and by "conductivity" (seven
+    rows).
+  - The stored field's help (unchanged): "Alternating field inside the magnet blocks during slip; their eddy-current
+    heat grows with its square. Stored 3D value for the example design; it does not follow yours." True beside E26:
+    with Y30 on both rings and the field doubled the heat is four times (3.401e-5 to 1.360e-4 W) and both rows stay
+    100.0 S/m. The field is 0.1900 T on every grade.
+  - The `slip_heating` note (not changed). Its sentence on the magnets ("... and the magnets, heat through their
+    whole thickness, so their loss grows as the square of the speed") and its first watch-out ("... those fields do
+    not follow your magnet count, ring radius, gap, magnet size or grade") agree with the texts above. Its live
+    values follow E26: "an estimated 2.751 W, a drag of 0.01314 N·m" at the defaults, 2.523 W and 0.01205 N·m on Y30
+    rings, 3.374 W and 0.01611 N·m on Recoma 20 rings.
+  - The helps of the magnets' specific heat and modulus (unchanged) end "Used whatever the magnet grade." E26 does not
+    touch either, so both stay true.
+  - The README and the `docs/ai` lines that name E26 call it an assumption that is not approved, and call the ferrite
+    value a maker's upper bound, not a measurement.
+- For the step that commits: nothing must change. The tracker's entry and the backlog's notes still list the text
+  review as owed. If a should-fix text is taken, the changed line needs its re-read. The reviewer edited only this
+  document; no help text, code, test or other doc was changed.
+
+**Report for the record (as returned).**
+
+#### Basis
+
+A scratch crate outside the worktree (a path dependency on the worktree's `magcoupling-rs` with its `gui` feature),
+run in debug, two programs, both written in this run. Each design is `DesignInputs::default()` with inputs set by
+field or by path and run through `compute_all`. For each design the first program printed the input's row, the five
+rows as the results table draws them (label, value with its unit, cell column, mark), the two conductivities and the
+heat exactly, whether each row is the input bit for bit, the heat over the same design's heat with both grades blank
+beside the mean of the two rows over the input, the heat with the input one slider step down, one step up and at the
+slider's two ends, what each of the three records evaluates to beside the engine's result, and the pick that
+`set_by_pick` names for the input. It also printed each text with its word count and the guard's result, the hovers of
+the input and of five rows with the spreadsheet details off and on, each row's mark and its "Embodies corrections"
+line with its hover, the equations as the plain renderer writes them with their term rows, the rows of the Slip
+heating group in the order drawn, the table's search results, the `slip_heating` note rendered at three designs, the
+Summary sheet's list of corrections and the Results sheet's rows of the three results. The second program printed the
+dashboard's rows with their marks and the temperature rows of seven designs. Defaults: library part B842SH on both
+rings (grade N42SH), the input at 670000 S/m, the stored field 0.19 T, 10 magnets per ring, 4140 back iron.
+
+#### Cases
+
+"Inner" and "Outer" are the two conductivity rows as drawn, in S/m. "Heat" is "Magnet eddy currents (both rings)" and
+"Total" is "Total estimated slip loss", both in W as drawn. The last column is what one slider step up of the input
+(1000 S/m) does to the heat. Manual means no library part on that ring.
+
+| Case | Inner | Outer | Heat | Total | Input one step up |
+|---|---|---|---|---|---|
+| Defaults (library parts, N42SH) | 670000 | 670000 | 0.2278 | 2.751 | up |
+| Manual, no grade | 670000 | 670000 | 0.2278 | 2.751 | up |
+| Manual, Y30 on both rings | 100.0 | 100.0 | 3.401e-5 | 2.523 | stays |
+| Manual, Recoma 26 (Sm2Co17) on both rings | 1.540e6 | 1.540e6 | 0.5237 | 3.047 | stays |
+| Manual, Recoma 30 (Sm2Co17) on both rings | 1.540e6 | 1.540e6 | 0.5237 | 3.047 | stays |
+| Manual, Recoma 20 (SmCo5) on both rings | 2.500e6 | 2.500e6 | 0.8502 | 3.374 | stays |
+| Manual, bonded NdFeB BCN-19 on both rings | 25000 | 25000 | 0.008502 | 2.532 | stays |
+| Manual, Y30 inner, N42 outer | 100.0 | 670000 | 0.1139 | 2.637 | up, by half |
+| Manual, N42 inner, Y30 outer | 670000 | 100.0 | 0.1139 | 2.637 | up, by half |
+| Manual, Y30 inner, no grade outer | 100.0 | 670000 | 0.1139 | 2.637 | up, by half |
+| Manual, no grade inner, Recoma 20 outer | 670000 | 2.500e6 | 0.5390 | 3.062 | up, by half |
+| Manual, N42 on both rings | 670000 | 670000 | 0.2278 | 2.751 | up |
+| Manual, Recoma 20 inner, Y30 outer | 2.500e6 | 100.0 | 0.4251 | 2.949 | stays |
+| Manual, BCN-19 inner, Recoma 26 outer | 25000 | 1.540e6 | 0.2661 | 2.790 | stays |
+| Library parts, Y30 and Recoma 20 typed as grades | 670000 | 670000 | 0.2278 | 2.751 | up |
+| Library part inner, manual Y30 outer | 670000 | 100.0 | 0.1139 | 2.637 | up, by half |
+| Manual, a grade the table does not have ("N99") | 670000 | 670000 | 0.2278 | 2.751 | up |
+| Manual, Y30 inner, N42 outer, the input at 1.0e6 | 100.0 | 1.000e6 | 0.1701 | 2.694 | up, by half |
+| Manual, Y30 on both rings, the input at 2.0e6 | 100.0 | 100.0 | 3.401e-5 | 2.523 | stays |
+| Manual, Recoma 20 on both rings, a measured drag of 0.01 N·m | 2.500e6 | 2.500e6 | 0.8502 | 3.374 | stays |
+| Manual, Y30 on both rings, 6061-T6 hub and cup | 100.0 | 100.0 | 3.401e-5 | 2.690 | stays |
+| Manual, Y30 on both rings, the stored field doubled | 100.0 | 100.0 | 1.360e-4 | 2.524 | stays |
+
+`validate` accepted every design of the table. With the library parts the "grade used" rows read N42SH whatever was
+typed in the grade fields, and with "N99" they are blank. With the measured drag "Loss used below" reads 2.094 W and
+the high-case steady temperature 71.98 °C. The high-case steady temperature reads 92.51 °C at the defaults and with no
+grade, 90.23 °C on Y30 rings, 95.47 °C on Recoma 26 rings, 98.74 °C on Recoma 20 rings, 90.32 °C on BCN-19 rings and
+91.37 °C on Y30 inside N42. `set_by_pick` named the inner grade for the input in the 11 designs whose rings are both of
+another family, and nothing in the other 11.
+
+Each grade of the table on both rings (manual dimensions): the 12 sintered NdFeB grades (N35, N42, N48, N52, N50,
+N42M, N50M, N42H, N42SH, N38UH, N35EH, N33AH) read 670000 S/m on both rows and 0.2278 W; SmCo_2_17_26 and SmCo_2_17_30
+1.540e6 S/m and 0.5237 W; SmCo_1_5_20 2.500e6 S/m and 0.8502 W; Y30 100.0 S/m and 3.401e-5 W; Bonded_NdFeB_BCN19 25000
+S/m and 0.008502 W.
+
+#### What changing the input does
+
+The magnets' heat in W with the input one slider step down, as found, one step up, and at the slider's ends.
+
+| Design | Step down, as found, step up | At 1e5 S/m | At 2e6 S/m |
+|---|---|---|---|
+| Defaults | 0.22751, 0.22785, 0.22819 | 0.03401 | 0.6801 |
+| Manual, no grade | 0.22751, 0.22785, 0.22819 | 0.03401 | 0.6801 |
+| Manual, Y30 on both rings | 3.401e-5 each, bit for bit | 3.401e-5 | 3.401e-5 |
+| Manual, Recoma 20 on both rings | 0.8502 each, bit for bit | 0.8502 | 0.8502 |
+| Manual, BCN-19 on both rings | 0.008502 each, bit for bit | 0.008502 | 0.008502 |
+| Manual, Y30 inner, N42 outer | 0.11377, 0.11394, 0.11411 | 0.01702 | 0.3401 |
+| Manual, no grade inner, Recoma 20 outer | 0.53884, 0.53901, 0.53918 | 0.4421 | 0.7652 |
+| Manual, Recoma 20 inner, Y30 outer | 0.4251 each, bit for bit | 0.4251 | 0.4251 |
+
+In each design the heat over the heat of the same design with both grades blank equals the mean of the two rows over
+the input to 15 digits: 1 where both rows read the input, 0.50007 on Y30 with N42 or with no grade, 2.2985 on Recoma
+26, 3.7313 on Recoma 20, 1.4925e-4 on Y30, 0.037313 on BCN-19, 2.3657 on no grade inside Recoma 20, 1.8657 on Recoma 20
+inside Y30 and 1.1679 on BCN-19 inside Recoma 26.
+
+#### Words
+
+Counted with the crate's `word_count` and `sentence_count`; the guard is `plain_text_violations` and
+`mentions_gearbox_protection`.
+
+| Text | Words | Sentences (words in each) | Guard | "clamp", gearbox, wall or seal |
+|---|---|---|---|---|
+| `temperature.slip_loss.sigma_ndfeb_S_m` help | 30 | 2 (13, 17) | clean | none |
+| the same help before the change | 26 | 2 (15, 11) | clean | none |
+| the inner row's label | 5 | not a sentence | clean | none |
+| the outer row's label | 5 | not a sentence | clean | none |
+| the inner row's help | 29 | 1 | clean | none |
+| the outer row's help | 29 | 1 | clean | none |
+| E26's title | 21 | not a sentence | clean | none |
+| the stored field's help (unchanged neighbour) | 27 | 2 | clean | none |
+| the specific heat's help (unchanged neighbour) | 18 | 2 | clean | none |
+| the modulus's help (unchanged neighbour) | 22 | 2 | clean | none |
+| SF-1 New | 30 | 2 (13, 17) | clean | none |
+| SF-2 New | 12 | not a sentence | clean | none |
+
+E26 as listed is 26 words. Its id trips the guard's pattern for a correction number, as E25's does: the line is shown
+only with the spreadsheet details on.
+
+#### Traps and rules
+
+- Slice-2 spec section 8 (the 17 physics traps) and slice-1 spec section 8: none is written or touched. The nearest
+  are "Each ring uses its own α" (only rings with a picked grade do) and slice 1's "The stored 3D demagnetization
+  fields follow geometry or grade". The texts say the same of the conductivity as the first trap's bracket says of α:
+  a ring with no grade, and a sintered NdFeB ring, uses the input. No text says a stored field follows the grade.
+- Slice-2 spec 3.5 (help: one or two sentences, at most 30 words, what the input is, which results it moves and which
+  way, when a part pick replaces it, no default number, no spreadsheet or audit id): the changed help and the two new
+  helps are inside it. The changed help is at the cap.
+- The ferrite value is a maker's upper bound: no text of the item calls it a measurement, and none holds the word.
+- The stored field does not follow the grade: no text says the magnets' heat is now right for a grade.
+- E26 is an assumption that is not approved: no text says or implies an approval. The helps state what each ring
+  reads and name no owner, ruling, correction or approval; each listing of E26 ends "(an assumption, not approved)".
+- Standing rules: no text says the coupling protects the gearbox, says a wall seals the rings or holds "clamp". The
+  helps hold no cell name, correction id, file or code name.
+
+#### Tests
+
+On the worktree as found, all green: `cargo test` (lib 245 passed, 1 ignored; `tests/magnet_conductivity.rs` 7 passed;
+`tests/deviations.rs` 86 passed; `tests/explain.rs` 63 passed, 1 ignored) and `cargo test --features app` (lib 1000
+passed, 6 ignored); `cargo clippy` both ways and `cargo fmt --check` clean. One mutation check: with a ferrite ring
+kept on the input (`&& sigma > 1.0e3` added to the guard of `temperature::magnet_sigma_S_m`,
+`src/engine/temperature.rs`, line 953), `every_direction_a_batch_b_help_states_holds_one_slider_step_up` failed
+("temperature.slip_loss.sigma_ndfeb_S_m one step up on the Y30 grades design: temperature.slip_loss.magnets_W
+0.22784639081300484 -> 0.22818646005302426", Up where the help's claim row says Stays). So the changed help's second
+sentence is held by its claim rows. The line was put back by hand, the file's hash matched and the test passed again.
+Before this record was added, a fresh `git diff` and `git status` of the worktree matched the ones saved at the start
+byte for byte, and the new test file matched its saved copy. The full gate was not run; the reviewer changed no code.
+
+#### Not checked
+
+- The GUI was not run. The texts were read from the crate's own functions and from where they are drawn; how a hover
+  wraps and how the panel typesets the three formulas was not seen. Whether the table cuts the two new labels in a
+  narrow window was not worked out.
+- The exported files (CSV, JSON, XLSX) were not opened. The spreadsheet's rows were read from the sheets in memory.
+- No mutation check was made of the helps' words: no test pins them (the changed help's directions are pinned by its
+  claim rows, the "not approved" words by the tests of the titles and of the Summary).
+- The corrections were on in every probe, as the app shows them. E26 off was not probed.
+- Hubs: 4140, and 6061-T6 once. Poles, gap, ring radius and block sizes were held at the defaults. Of the library's
+  parts only the example's (B842SH) was probed.
+- The printed values behind the family numbers were not opened again: the research file was read, not its sources.
+  That is the physics review's ground.
+
+#### Recorded, no change asked
+
+- With the spreadsheet details off, nothing on the screen says the family values rest on an assumption. The two new
+  rows read as any other Rust-only result, and their help says "the value taken for the grade's family". With the
+  details on, E26 is listed in three places, each time as not approved. The register (row A-8), the backlog, the
+  README and `docs/ai` say it. Whether the rows should carry a mark of their own is the owner's to rule on with the
+  answer itself.
+- Nothing on the screen says the ferrite value is a bound. A Y30 ring's row reads "100.0 S/m" like any other value,
+  while the two values the research found printed for ferrite are 1.0e-2 and 1.0e-3 S/m. No text calls it a
+  measurement, and the heat at the bound
+  is 3.401e-5 W of a 2.523 W total, so nothing on the screen rides on it. The README, the registry and `docs/ai` call
+  it a maker's upper bound.
+- The mark E26 and the line "Differs from the original spreadsheet:" stand on the 40 cells at every design, the
+  example included, where E26 moves nothing (0.22784639081300484 W there, the workbook's value). That is how every
+  correction marks a cell the registry names for it: E17 marks the hub's loss on a steel hub, and E25 marks the
+  rotating diameter at the default boss. E26's line gives no "was, now", since it moves no default cell. With a
+  measured drag entered the marks on "Loss used below" and the rows after it stay, though E26 no longer reaches
+  them; E5 and E17 do the same.
+- Where both rings are of another family the input is still a live slider that moves nothing; its help says why.
+  `set_by_pick` then names it as set by the inner ring's grade, for a note's change entry. No note has a change entry
+  on this input, so "set by the Inner magnet grade (manual dimensions) pick" is drawn nowhere today. A click on the
+  input's label there still traces to the magnets' heat and the rows after it: the trace follows the records' terms,
+  not the design, as it does for the NdFeB expansion input on a ferrite inner ring.
+- The input keeps the workbook's label, "NdFeB conductivity", though a bonded NdFeB ring does not read it. The help's
+  first words say "sintered NdFeB", the new rows' help names the input by that label, and the rows show what each
+  ring reads.
+- The rows read "670000 S/m", "25000 S/m" and "100.0 S/m" beside "1.540e6 S/m" and "2.500e6 S/m": the table's own
+  number form. SmCo5's 2.5e6 S/m is above the input slider's top (2e6) and the ferrite and bonded values are below
+  its low end (1e5): the family values do not pass through the input's range check, as the README says.
+- In the two new records the local symbol and the table field's symbol are the same, so the clause reads "where
+  σ_grade = σ_grade(grade_i,used)". E20's records of the grade's coercivity temperature coefficient (β_grade) read
+  the same way.
+- No dashboard row carries E26. The temperature verdict reads the steady temperature, and the explorer lists E26
+  among its upstream corrections (24 results in all), but its cell is not one the registry names for E26; it is not
+  named for E5 or E17 either. On Recoma 20 rings the high-case steady temperature reads 98.74 °C, the governing
+  limit 101.7 °C and the verdict OK.
+- The task text cites section 6 of the slice-2 spec for the traps; they are in section 8.
+
+Verdict: PASS. No must-fix. Three should-fix offered (SF-1, SF-2, SF-3).

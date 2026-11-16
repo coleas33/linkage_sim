@@ -5,7 +5,8 @@
 //! `reference/magcoupling-py/` is the oracle: every result must match the
 //! workbook snapshot and the Python engine, except where an approved
 //! correction (the M1 math audit's E1 to E14, the Addendum A verification's E15
-//! to E20) is registered in [`engine::deviations::REGISTRY`]. The Addendum A
+//! to E20) is registered in [`engine::deviations::REGISTRY`]. E25 and E26 there
+//! were approved by the owner on 2026-11-16 (BL-061, BL-062). The Addendum A
 //! inputs the Python engine does not have (part materials, grades, the
 //! coercivity source, the E17 free-space fields, the harmonic set, the axial
 //! length override) are Rust-only and default to the ported behaviour. The

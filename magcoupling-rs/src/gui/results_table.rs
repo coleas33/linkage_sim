@@ -1428,7 +1428,7 @@ mod tests {
             .iter()
             .map(|(path, _)| entry_index(path).unwrap())
             .collect();
-        assert_eq!(failing.len(), 7);
+        assert_eq!(failing.len(), 8);
         for order in ResultOrder::ALL {
             let lines = table_lines(&all, order, Some(&failing), &|_| true);
             assert_eq!(

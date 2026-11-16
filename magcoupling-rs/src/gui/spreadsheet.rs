@@ -1188,6 +1188,8 @@ mod tests {
         for (row, deviation) in rows[corrections + 1..].iter().zip(&applied) {
             assert_eq!(row[0], Cell::text(deviation.id.to_string()));
             assert_eq!(row[1], Cell::text(deviation.title));
+            // The heading calls the approved ones on, and every listed one is approved.
+            assert!(!row[1].as_text().contains("not approved"));
         }
     }
 

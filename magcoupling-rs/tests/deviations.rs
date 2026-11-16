@@ -27,10 +27,12 @@ use magcoupling::engine::api::{
 };
 use magcoupling::engine::compat::parity_close;
 use magcoupling::engine::deviations::{
-    A4_REPORT, ADDENDUM_REPORT, Approval, Deviation, DeviationClass, DeviationId, DeviationStatus,
-    Deviations, Literal, Probe, REGISTRY, REPORT,
+    A4_REPORT, ADDENDUM_REPORT, Approval, BACKLOG, Deviation, DeviationClass, DeviationId,
+    DeviationStatus, Deviations, Literal, Probe, REGISTRY, REPORT,
 };
+use magcoupling::engine::housing::INSIDE_THE_SPACE_CLAIM;
 use magcoupling::engine::meta::{InputSet, NumOrText, Value, input_rows, result_rows};
+use magcoupling::engine::size_controls::with_ring_radius;
 
 const BLESS_VAR: &str = "MAGCOUPLING_BLESS";
 
@@ -272,6 +274,22 @@ fn every_entry_is_approved_in_its_report() {
                         d.id
                     );
                 }
+                assert_eq!(d.class, DeviationClass::Engine, "{}", d.id);
+            }
+            // E25 and E26 are approved by the owner, not by a report: the backlog item holds
+            // the question, the answer and the dated approval.
+            Approval::Owner { item } => {
+                let backlog = read_text(&repo_path(BACKLOG));
+                let entry = backlog
+                    .split_once(&format!("\n- id: {item}\n"))
+                    .map(|(_, rest)| rest.split("\n- id: ").next().unwrap_or(rest))
+                    .unwrap_or_else(|| panic!("{BACKLOG} has no item {item}"));
+                assert!(
+                    entry.contains("Approved by the owner on 2026-11-16"),
+                    "{}: {BACKLOG} item {item} does not hold the dated owner approval",
+                    d.id
+                );
+                assert!(d.id.index() >= DeviationId::E25.index(), "{}", d.id);
                 assert_eq!(d.class, DeviationClass::Engine, "{}", d.id);
             }
         }
@@ -674,8 +692,8 @@ fn each_probe_shows_its_correction() {
 
 #[test]
 fn addendum_entries_name_every_cell_their_probes_change() {
-    // The Addendum A and A-4 entries (E15 onward) name every cell their probes change,
-    // downstream cells included, so the registry alone says where each correction shows. The
+    // The Addendum A and A-4 entries and the assumptions E25 and E26 (E15 onward) name every cell
+    // their probes change, downstream cells included, so the registry alone says where each shows. The
     // M1 entries (E1 to E14) name the corrected and report-named cells only: their probes
     // change hundreds of sweep and downstream cells (E7, E8), and the broad ones keep golden
     // files.
@@ -1205,7 +1223,8 @@ fn assert_report_table(
 
 const NO_BACK_IRON: [(&str, Value); 1] = [("coupling.backiron", Value::Int(0))];
 
-/// The report's M2 basis: E1 to E14 on, the Addendum corrections off.
+/// The report's M2 basis: E1 to E14 on, the Addendum corrections and the assumptions E25 and E26
+/// off.
 fn m2() -> Deviations {
     [
         DeviationId::E15,
@@ -1215,7 +1234,10 @@ fn m2() -> Deviations {
         DeviationId::E19,
         DeviationId::E20,
         DeviationId::E21,
+        DeviationId::E22,
         DeviationId::E24,
+        DeviationId::E25,
+        DeviationId::E26,
     ]
     .into_iter()
     .fold(Deviations::ALL, Deviations::without)
@@ -2637,6 +2659,646 @@ fn e24_fails_a_cure_that_reaches_the_inner_ring_s_own_onset() {
         -8.170,
     );
     assert_eq!(a.temperature.summary.verdict, VERDICT_CHECK);
+}
+
+/// The placements the A-4 harness ran for each grade (its section 1): the grade on both
+/// rings, on the inner ring only and on the outer ring only (beside the default part B842SH).
+fn grade_placements(grade: &str) -> [(&'static str, Overrides); 3] {
+    let text = |s: &str| Value::Text(s.into());
+    [
+        ("both rings", grade_rings(grade, grade).to_vec()),
+        (
+            "inner only",
+            vec![
+                ("coupling.magnets.part_inner", text("")),
+                ("coupling.magnets.grade_inner", text(grade)),
+            ],
+        ),
+        (
+            "outer only",
+            vec![
+                ("coupling.magnets.part_outer", text("")),
+                ("coupling.magnets.grade_outer", text(grade)),
+            ],
+        ),
+    ]
+}
+
+#[test]
+fn e22_leaves_every_default_cell_bit_for_bit() {
+    // The default part is sintered NdFeB: C95 stays the magnet CTE, and the shear is positive.
+    assert_a4_defaults_unchanged(DeviationId::E22);
+}
+
+#[test]
+fn e22_moves_only_a_ferrite_or_smco_inner_ring() {
+    // A-4 report sections 4.1, 4.2 and 4.5: E22 reads the inner ring's grade CTE (the hub
+    // bonds the inner ring), so a grade with one (ferrite, SmCo) moves the bond screen and
+    // warning rule 6 when it is the inner ring, and nothing moves anywhere else: an outer-only
+    // grade, sintered and bonded NdFeB, every library part, on both hubs and both bases, at
+    // the default sliders (a slider corner moves sintered NdFeB too, decision A4-4:
+    // `e22_compares_the_size_of_a_negative_shear_on_sintered_ndfeb_too`). Wired as approved:
+    // E22 equals E22 off with C95 set to the grade's value, on every row (the readings agree
+    // because wherever the shear is negative here its size stays below both thresholds,
+    // report IN1).
+    use magcoupling::engine::grades::GRADES;
+    use magcoupling::engine::library::MAGNET_LIBRARY;
+    let mut configs: Vec<(String, Overrides, Option<f64>)> = Vec::new();
+    for g in &GRADES {
+        for (placement, overrides) in grade_placements(g.id) {
+            let inner_cte = (placement != "outer only")
+                .then_some(g.bond_plane_cte_per_C)
+                .flatten();
+            configs.push((format!("{} {placement}", g.id), overrides, inner_cte));
+        }
+    }
+    for spec in &MAGNET_LIBRARY {
+        configs.push((
+            format!("{} both rings", spec.part),
+            both_rings(spec.part).to_vec(),
+            None,
+        ));
+    }
+    let mut moved = 0;
+    for (hub, backiron) in HUBS {
+        for (basis, before, after) in a4_bases(DeviationId::E22) {
+            for (label, overrides, inner_cte) in &configs {
+                let mut o = overrides.clone();
+                o.push(("coupling.backiron", Value::Int(backiron)));
+                let what = format!("{label}, {hub}, {basis}");
+                let (b, a) = (results_with(&o, before), results_with(&o, after));
+                let Some(cte) = *inner_cte else {
+                    assert_same_results(&b, &a, &what);
+                    continue;
+                };
+                moved += 1;
+                assert_eq!(a.temperature.mismatch.magnet_cte_per_C, cte, "{what}");
+                assert_ne!(
+                    b.temperature.mismatch.peak_shear_current_MPa,
+                    a.temperature.mismatch.peak_shear_current_MPa,
+                    "{what}"
+                );
+                let mut wired = inputs_with(&o, before);
+                wired.temperature.mismatch.ndfeb_cte_per_C = cte;
+                assert_same_results(
+                    &compute_all_with(&wired, before),
+                    &a,
+                    &format!("{what}, wiring"),
+                );
+            }
+        }
+    }
+    // Y30, Recoma 20, 26 and 30, on both rings and inside; two hubs; two bases.
+    assert_eq!(moved, 4 * 2 * 2 * 2);
+}
+
+/// A row of the A-4 report's table 4.3 (the grade on both rings): (grade, basis, hub code,
+/// C104 and C201 as [before, after], and as [before, after] whether C106 and C202 read
+/// "Above" and warning rule 6 fires).
+type ScreenRow = (
+    &'static str,
+    &'static str,
+    i64,
+    [f64; 2],
+    [f64; 2],
+    [bool; 2],
+    [bool; 2],
+    [bool; 2],
+);
+
+#[test]
+fn e22_reproduces_the_report_s_bond_screen_table() {
+    // A-4 report section 4.3 (bonded NdFeB keeps C95, decision 7: no row moves).
+    const T: bool = true;
+    const F: bool = false;
+    let rows: [ScreenRow; 16] = [
+        (
+            "Y30",
+            "registry",
+            1,
+            [64.07, 11.25],
+            [11.37, 1.995],
+            [T, F],
+            [T, F],
+            [F, F],
+        ),
+        (
+            "Y30",
+            "registry",
+            0,
+            [64.07, 11.25],
+            [11.37, 1.995],
+            [T, F],
+            [T, F],
+            [T, F],
+        ),
+        (
+            "Y30",
+            "user",
+            1,
+            [16.11, 2.829],
+            [2.563, 0.4500],
+            [T, F],
+            [F, F],
+            [F, F],
+        ),
+        (
+            "Y30",
+            "user",
+            0,
+            [28.63, 15.96],
+            [4.655, 2.595],
+            [T, T],
+            [T, F],
+            [T, F],
+        ),
+        (
+            "SmCo_1_5_20",
+            "registry",
+            1,
+            [64.07, -8.315],
+            [11.37, -1.475],
+            [T, F],
+            [T, F],
+            [F, F],
+        ),
+        (
+            "SmCo_1_5_20",
+            "registry",
+            0,
+            [64.07, -8.315],
+            [11.37, -1.475],
+            [T, F],
+            [T, F],
+            [T, F],
+        ),
+        (
+            "SmCo_1_5_20",
+            "user",
+            1,
+            [13.11, -1.701],
+            [2.563, -0.3326],
+            [F, F],
+            [F, F],
+            [F, F],
+        ),
+        (
+            "SmCo_1_5_20",
+            "user",
+            0,
+            [23.30, 9.166],
+            [4.655, 1.832],
+            [T, F],
+            [T, F],
+            [T, F],
+        ),
+        (
+            "SmCo_2_17_26",
+            "registry",
+            1,
+            [64.07, -3.424],
+            [11.37, -0.6073],
+            [T, F],
+            [T, F],
+            [F, F],
+        ),
+        (
+            "SmCo_2_17_26",
+            "registry",
+            0,
+            [64.07, -3.424],
+            [11.37, -0.6073],
+            [T, F],
+            [T, F],
+            [T, F],
+        ),
+        (
+            "SmCo_2_17_26",
+            "user",
+            1,
+            [13.11, -0.7004],
+            [2.563, -0.1370],
+            [F, F],
+            [F, F],
+            [F, F],
+        ),
+        (
+            "SmCo_2_17_26",
+            "user",
+            0,
+            [23.30, 10.12],
+            [4.655, 2.022],
+            [T, F],
+            [T, F],
+            [T, F],
+        ),
+        (
+            "SmCo_2_17_30",
+            "registry",
+            1,
+            [64.07, -3.424],
+            [11.37, -0.6073],
+            [T, F],
+            [T, F],
+            [F, F],
+        ),
+        (
+            "SmCo_2_17_30",
+            "registry",
+            0,
+            [64.07, -3.424],
+            [11.37, -0.6073],
+            [T, F],
+            [T, F],
+            [T, F],
+        ),
+        (
+            "SmCo_2_17_30",
+            "user",
+            1,
+            [10.19, -0.5446],
+            [2.563, -0.1370],
+            [F, F],
+            [F, F],
+            [F, F],
+        ),
+        (
+            "SmCo_2_17_30",
+            "user",
+            0,
+            [18.11, 7.869],
+            [4.655, 2.022],
+            [T, F],
+            [T, F],
+            [T, F],
+        ),
+    ];
+    let bases = a4_bases(DeviationId::E22);
+    for (grade, basis, backiron, c104, c201, above, daily_above, fires) in rows {
+        let (_, before, after) = *bases.iter().find(|(b, _, _)| *b == basis).expect("a basis");
+        let mut o = grade_rings(grade, grade).to_vec();
+        o.push(("coupling.backiron", Value::Int(backiron)));
+        let what = format!("{grade}, {basis}, backiron {backiron}");
+        for (side, dev) in [(0, before), (1, after)] {
+            let r = results_with(&o, dev);
+            let (m, life) = (&r.temperature.mismatch, &r.temperature.adhesive_life);
+            assert_sig4(&what, &Value::Num(m.peak_shear_current_MPa), c104[side]);
+            assert_sig4(&what, &Value::Num(life.daily_peak_shear_MPa), c201[side]);
+            assert_eq!(
+                m.reading.starts_with("Above"),
+                above[side],
+                "{what} C106 {side}"
+            );
+            assert_eq!(
+                life.daily_screen.starts_with("Above"),
+                daily_above[side],
+                "{what} C202 {side}"
+            );
+            assert_eq!(
+                !r.warnings.cte_mismatch_with_magnets.is_empty(),
+                fires[side],
+                "{what} rule 6 {side}"
+            );
+        }
+    }
+}
+
+#[test]
+fn e22_compares_the_size_of_a_negative_shear() {
+    // Decision 9: a grade that expands more than the hub shears the bond the other way; the
+    // screens compare the shear's size and keep the signed value on display. Recoma 20
+    // (14e-6 /C) on a 416 stainless back iron (10.08e-6 /C) on the registry basis (the
+    // workbook's 0.55 GPa adhesive): C104 is below -15 MPa, AA 326's lap shear, so C106 reads
+    // "Above"; a signed comparison would read "Below".
+    let mut o = grade_rings("SmCo_1_5_20", "SmCo_1_5_20").to_vec();
+    o.push(("materials.parts.back_iron", Value::Int(4)));
+    let [(_, before, after), _] = a4_bases(DeviationId::E22);
+    let r = results_with(&o, after);
+    let (m, life) = (&r.temperature.mismatch, &r.temperature.adhesive_life);
+    assert!(
+        m.peak_shear_current_MPa < -15.0,
+        "{}",
+        m.peak_shear_current_MPa
+    );
+    assert_eq!(m.reading, "Above the lap-shear strength at the block ends");
+    assert!(
+        life.daily_peak_shear_MPa < -3.0,
+        "{}",
+        life.daily_peak_shear_MPa
+    );
+    assert_eq!(
+        life.daily_screen,
+        "Above the fatigue endurance: qualify by thermal cycling"
+    );
+    // BL-063: the screen at the entered bondline compares the size too.
+    assert!(
+        life.daily_entered_peak_shear_MPa < -3.0,
+        "{}",
+        life.daily_entered_peak_shear_MPa
+    );
+    assert_eq!(
+        life.daily_entered_screen,
+        "Above the fatigue endurance: qualify by thermal cycling"
+    );
+    // Without E22 the same design shears the positive way (C95, -0.8e-6 /C).
+    assert!(
+        results_with(&o, before)
+            .temperature
+            .mismatch
+            .peak_shear_current_MPa
+            > 15.0
+    );
+}
+
+#[test]
+fn e22_compares_the_size_of_a_negative_shear_on_sintered_ndfeb_too() {
+    // Decision 9 is gated on E22 alone (plan decision A4-4), so it also reads a sintered
+    // NdFeB design whose mismatch a slider makes negative: the default back iron's CTE input
+    // C17 at its 5e-6 /C floor, below C95 at its 6e-6 /C ceiling (every library hub material
+    // is at 9.0e-6 /C or more). With the stiffest adhesive (C96 3.0 GPa) on 0.01 mm bondlines,
+    // C104 is -22.6 MPa (registry basis) or -22.8 MPa (user basis): E22 reads it "Above" the
+    // 15 MPa lap shear (C106) and the endurance limit (C202), where the workbook's signed
+    // test reads "Below". C95 stays the magnet CTE, and no other cell moves.
+    let o = [
+        ("materials.steel.cte_per_C", Value::Num(5e-6)),
+        ("temperature.mismatch.ndfeb_cte_per_C", Value::Num(6e-6)),
+        (
+            "temperature.mismatch.adhesive_shear_modulus_GPa",
+            Value::Num(3.0),
+        ),
+        (
+            "temperature.mismatch.recommended_bondline_mm",
+            Value::Num(0.01),
+        ),
+        ("metal.bond_inner_mm", Value::Num(0.01)),
+    ];
+    for (basis, before, after) in a4_bases(DeviationId::E22) {
+        let (b, a) = (results_with(&o, before), results_with(&o, after));
+        let (mb, ma) = (&b.temperature.mismatch, &a.temperature.mismatch);
+        assert_eq!(ma.magnet_cte_per_C, 6e-6, "{basis}");
+        assert!(
+            ma.peak_shear_current_MPa < -15.0,
+            "{basis}: {}",
+            ma.peak_shear_current_MPa
+        );
+        assert_eq!(mb.reading, "Below the lap-shear strength", "{basis}");
+        assert_eq!(
+            ma.reading, "Above the lap-shear strength at the block ends",
+            "{basis}"
+        );
+        assert_eq!(
+            b.temperature.adhesive_life.daily_screen, "Below the fatigue endurance",
+            "{basis}"
+        );
+        assert_eq!(
+            a.temperature.adhesive_life.daily_screen,
+            "Above the fatigue endurance: qualify by thermal cycling",
+            "{basis}"
+        );
+        // BL-063: the screen at the entered bondline (0.01 mm too) is gated the same way.
+        assert_eq!(
+            b.temperature.adhesive_life.daily_entered_screen, "Below the fatigue endurance",
+            "{basis}"
+        );
+        assert_eq!(
+            a.temperature.adhesive_life.daily_entered_screen,
+            "Above the fatigue endurance: qualify by thermal cycling",
+            "{basis}"
+        );
+        assert_eq!(
+            moved_cells(&b, &a),
+            ["Temperature design!C106", "Temperature design!C202"],
+            "{basis}"
+        );
+    }
+}
+
+#[test]
+fn e22_moves_no_differential_case() {
+    // A-4 report section 4.2, rechecked here with decision 9's size comparison: no case of
+    // the corpus picks a grade, and every shear in the corpus is positive.
+    let id = DeviationId::E22;
+    let bases = [
+        (Deviations::NONE, Deviations::only(id)),
+        (Deviations::ALL.without(id), Deviations::ALL),
+    ];
+    assert_no_differential_case_moves_between(&bases, "E22");
+}
+
+/// E25's probe inputs (BL-061's evidence design) with the shaft boss at `boss_mm`.
+fn e25_design(boss_mm: f64) -> Overrides {
+    let mut overrides = probe_overrides(&REGISTRY[DeviationId::E25.index()].probes[0]);
+    for (path, value) in &mut overrides {
+        if *path == "metal.boss_od_mm" {
+            *value = Value::Num(boss_mm);
+        }
+    }
+    overrides
+}
+
+#[test]
+fn e25_probe_is_the_backlog_item_s_evidence_design() {
+    // BL-061's evidence: the default design at a 7 mm ring radius through
+    // size_controls::with_ring_radius (the cap and its thread follow the cup), the shaft boss
+    // at 40 mm and a 38 mm claim on the diameter.
+    let mut evidence = with_ring_radius(&DesignInputs::default(), 7.0).expect("a 7 mm ring radius");
+    evidence.metal.boss_od_mm = 40.0;
+    evidence.metal.max_diameter_mm = 38.0;
+    assert_eq!(inputs_with(&e25_design(40.0), Deviations::ALL), evidence);
+}
+
+#[test]
+fn e25_leaves_every_default_cell_bit_for_bit() {
+    // At defaults the 22 mm boss is under the 42.8 mm cap: the workbook's C135 stays.
+    assert_a4_defaults_unchanged(DeviationId::E25);
+}
+
+#[test]
+fn e25_moves_only_a_boss_larger_than_the_cup_and_cap() {
+    // BL-061, approved by the owner on 2026-11-16. On the probe's design the cap (36.18 mm) is
+    // larger than the cup. A boss below it, or equal to it, leaves every result row bit for
+    // bit. The 40 mm boss moves the rotating diameter C135 and its reserve C136, no other
+    // cell, and the space claim no longer reads inside.
+    let cap = 36.17578798729891;
+    for (basis, before, after) in a4_bases(DeviationId::E25) {
+        for boss in [22.0, cap] {
+            let design = e25_design(boss);
+            assert_same_results(
+                &results_with(&design, before),
+                &results_with(&design, after),
+                &format!("{basis}, boss {boss}"),
+            );
+        }
+        let design = e25_design(40.0);
+        let (b, a) = (results_with(&design, before), results_with(&design, after));
+        assert_eq!(
+            moved_cells(&b, &a),
+            ["Metal design!C135", "Metal design!C136"],
+            "{basis}"
+        );
+        assert_eq!(b.metal.rotating_od_mm, cap, "{basis}");
+        assert_eq!(b.housing.space_claim_check, INSIDE_THE_SPACE_CLAIM);
+        assert_eq!(a.metal.rotating_od_mm, 40.0, "{basis}");
+        assert_eq!(a.metal.diameter_reserve_mm, -2.0, "{basis}");
+        assert_eq!(a.housing.diameter_overshoot_mm, 2.0, "{basis}");
+        assert_eq!(
+            a.housing.space_claim_check, "Exceeds the space claim: diameter 2.00 mm over",
+            "{basis}"
+        );
+    }
+}
+
+#[test]
+fn e25_moves_no_differential_case() {
+    // No case of the corpus has a shaft boss larger than its cup and its cap.
+    let id = DeviationId::E25;
+    let bases = [
+        (Deviations::NONE, Deviations::only(id)),
+        (Deviations::ALL.without(id), Deviations::ALL),
+    ];
+    assert_no_differential_case_moves_between(&bases, "E25");
+}
+
+/// The two Rust-only rows that show the conductivity each ring's magnets read (E26).
+const E26_ROWS: [&str; 2] = [
+    "temperature.slip_loss.inner_magnet_sigma_S_m",
+    "temperature.slip_loss.outer_magnet_sigma_S_m",
+];
+
+#[test]
+fn e26_leaves_every_default_cell_bit_for_bit() {
+    // The default part is sintered NdFeB on both rings: both read C113, and (s + s) / 2 is s.
+    assert_a4_defaults_unchanged(DeviationId::E26);
+}
+
+#[test]
+fn e26_moves_only_a_ring_of_another_family() {
+    // BL-062, approved by the owner on 2026-11-16. Each ring's half of the magnets' eddy heat
+    // reads its own ring's conductivity: the family's value for a SmCo, ferrite or bonded NdFeB
+    // grade on manual dimensions, else C113. Nothing moves for a sintered NdFeB grade or for a
+    // library part, on both bases. Wired as built: E26 equals E26 off with C113 set to the mean
+    // of the two rings' conductivities, on every row but the two that show each ring's own.
+    use magcoupling::engine::grades::GRADES;
+    use magcoupling::engine::library::MAGNET_LIBRARY;
+    let c113 = DesignInputs::default()
+        .temperature
+        .slip_loss
+        .sigma_ndfeb_S_m;
+    let mut configs: Vec<(String, Overrides, [Option<f64>; 2])> = Vec::new();
+    for g in &GRADES {
+        let family = g.family.magnet_sigma_S_m();
+        for (placement, overrides) in grade_placements(g.id) {
+            let rings = match placement {
+                "both rings" => [family, family],
+                "inner only" => [family, None],
+                _ => [None, family],
+            };
+            configs.push((format!("{} {placement}", g.id), overrides, rings));
+        }
+    }
+    for spec in &MAGNET_LIBRARY {
+        configs.push((
+            format!("{} both rings", spec.part),
+            both_rings(spec.part).to_vec(),
+            [None, None],
+        ));
+    }
+    let mut moved = 0;
+    for (basis, before, after) in a4_bases(DeviationId::E26) {
+        for (label, overrides, rings) in &configs {
+            let what = format!("{label}, {basis}");
+            let (b, a) = (
+                results_with(overrides, before),
+                results_with(overrides, after),
+            );
+            let (lb, la) = (&b.temperature.slip_loss, &a.temperature.slip_loss);
+            assert_eq!(
+                (lb.inner_magnet_sigma_S_m, lb.outer_magnet_sigma_S_m),
+                (c113, c113),
+                "{what}"
+            );
+            if rings.iter().all(Option::is_none) {
+                assert_same_results(&b, &a, &what);
+                continue;
+            }
+            moved += 1;
+            let [inner, outer] = rings.map(|own| own.unwrap_or(c113));
+            assert_eq!(
+                (la.inner_magnet_sigma_S_m, la.outer_magnet_sigma_S_m),
+                (inner, outer),
+                "{what}"
+            );
+            assert_ne!(lb.magnets_W, la.magnets_W, "{what}");
+            let mut wired = inputs_with(overrides, before);
+            wired.temperature.slip_loss.sigma_ndfeb_S_m = (inner + outer) / 2.0;
+            let wired = result_rows(&compute_all_with(&wired, before));
+            for (x, y) in wired.iter().zip(result_rows(&a)) {
+                assert!(
+                    same_value(&x.value, &y.value) || E26_ROWS.contains(&x.path.as_str()),
+                    "{what}, wiring: {} {:?} is not {:?}",
+                    x.path,
+                    x.value,
+                    y.value
+                );
+            }
+        }
+    }
+    // Recoma 20, 26 and 30, Y30 and BCN-19; three placements; two bases.
+    assert_eq!(moved, 5 * 3 * 2);
+}
+
+#[test]
+fn e26_off_gives_every_grade_the_input_s_heat() {
+    // Backlog BL-062's probe: without E26 the magnets' heat on manual dimensions is one number
+    // for all 17 grades, 0.2278 W, Y30 ferrite and the SmCo grades included.
+    use magcoupling::engine::grades::GRADES;
+    for off in [Deviations::NONE, Deviations::ALL.without(DeviationId::E26)] {
+        for g in &GRADES {
+            let loss = results_with(&grade_rings(g.id, g.id), off)
+                .temperature
+                .slip_loss;
+            assert_eq!(loss.magnets_W, 0.22784639081300484, "{}", g.id);
+            assert_eq!(loss.inner_magnet_sigma_S_m, 6.7e5, "{}", g.id);
+            assert_eq!(loss.outer_magnet_sigma_S_m, 6.7e5, "{}", g.id);
+        }
+    }
+}
+
+#[test]
+fn e26_reaches_no_result_past_the_estimate_when_a_drag_is_measured() {
+    // With a bench drag entered (Metal design!C38) the loss used is the drag times the slip
+    // speed: E26 moves the magnets' estimate C129, the total C130 and its drag C131, and no
+    // cell after them.
+    let mut o = grade_rings("SmCo_1_5_20", "SmCo_1_5_20").to_vec();
+    o.push(("metal.measured_drag_Nm", Value::Num(0.05)));
+    for (basis, before, after) in a4_bases(DeviationId::E26) {
+        let (b, a) = (results_with(&o, before), results_with(&o, after));
+        assert_eq!(
+            moved_cells(&b, &a),
+            [
+                "Temperature design!C129",
+                "Temperature design!C130",
+                "Temperature design!C131"
+            ],
+            "{basis}"
+        );
+        assert_eq!(
+            a.temperature.slip_loss.used_W,
+            0.05 * a.temperature.duty.slip_rad_s,
+            "{basis}"
+        );
+    }
+}
+
+#[test]
+fn e26_moves_no_differential_case() {
+    // No case of the corpus picks a grade for manual dimensions (a Rust-only input).
+    let id = DeviationId::E26;
+    let bases = [
+        (Deviations::NONE, Deviations::only(id)),
+        (Deviations::ALL.without(id), Deviations::ALL),
+    ];
+    assert_no_differential_case_moves_between(&bases, "E26");
 }
 
 #[test]

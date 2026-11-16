@@ -10,9 +10,16 @@
 //! 2026-09-30. The Addendum A-4 verification
 //! (`docs/analyses/2026-10-01-magcoupling-addendum-a4-verification.md`) added
 //! E21 (decision 1: the rating-calibration offset held at 0 or more), E24
-//! (decision 2: the cure margin from the lower ring) and the planned E22 and
-//! E23 (decisions 4 to 10: per-grade magnet CTE and specific heat; registered,
-//! not yet in the code), approved on 2026-10-01. Everything else stays
+//! (decision 2: the cure margin from the lower ring), E22 (decisions 4 to 7, 9
+//! and 10: the inner ring's grade expansion in the bond plane) and the planned
+//! E23 (decisions 4, 5, 8 and 10: per-grade specific heat; registered, not yet
+//! in the code), approved on 2026-10-01. E25 (the space claim's diameter judges
+//! the shaft boss too) was first taken as the conservative answer to an open
+//! question, under the owner's ruling of 2026-11-10 on open questions, and the owner
+//! approved it on 2026-11-16 (`docs/ai/backlog.yaml`, BL-061; [`Approval::Owner`]).
+//! So was E26 (the magnets' eddy heat reads each ring's conductivity by its grade's
+//! family; BL-062): approved by the owner on 2026-11-16.
+//! Everything else stays
 //! workbook-exact. This registry is the one place that says where
 //! the port departs from the workbook and why.
 //!
@@ -67,7 +74,12 @@ pub const ADDENDUM_REPORT: &str = "docs/analyses/2026-09-30-magcoupling-addendum
 /// `docs/analyses/2026-10-01-magcoupling-addendum-a4-data.json`).
 pub const A4_REPORT: &str = "docs/analyses/2026-10-01-magcoupling-addendum-a4-verification.md";
 
-/// Identifier of an approved correction, numbered as in the audit report.
+/// The backlog an owner-approved correction (E25 onward, [`Approval::Owner`]) cites: its
+/// item there holds the question, the answer and the dated approval. It is not a report.
+pub const BACKLOG: &str = "docs/ai/backlog.yaml";
+
+/// Identifier of an approved correction, numbered as in the audit report. E25 and E26 were
+/// approved by the owner on 2026-11-16 ([`Approval::Owner`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum DeviationId {
     E1,
@@ -94,11 +106,13 @@ pub enum DeviationId {
     E22,
     E23,
     E24,
+    E25,
+    E26,
 }
 
 impl DeviationId {
     /// Every identifier, in report order.
-    pub const ALL: [DeviationId; 24] = [
+    pub const ALL: [DeviationId; 26] = [
         DeviationId::E1,
         DeviationId::E2,
         DeviationId::E3,
@@ -123,6 +137,8 @@ impl DeviationId {
         DeviationId::E22,
         DeviationId::E23,
         DeviationId::E24,
+        DeviationId::E25,
+        DeviationId::E26,
     ];
 
     /// Position in [`DeviationId::ALL`] and in [`REGISTRY`].
@@ -162,6 +178,12 @@ pub enum Approval {
     /// These decisions of the Addendum A-4 verification report ([`A4_REPORT`],
     /// section 5), approved (option A) on 2026-10-01. No audit row.
     AddendumA4 { decisions: &'static [u32] },
+    /// Approved by the owner on 2026-11-16 at the review of the item's diff (the owner's
+    /// words: "Approve and yes. Stop asking for my direction and do what you think is
+    /// best"). The answer was first taken as the conservative answer to an open question
+    /// under the owner's ruling of 2026-11-10. The named item of `docs/ai/backlog.yaml`
+    /// ([`BACKLOG`]) holds the question, the answer and the dated approval.
+    Owner { item: &'static str },
 }
 
 /// Whether the correction is in the code yet.
@@ -227,7 +249,7 @@ pub struct Deviation {
     /// Short statement of the workbook error (the report's Group column).
     pub title: &'static str,
     pub class: DeviationClass,
-    /// Where the user approved it.
+    /// Where the user approved it; [`Approval::Owner`] for E25 and E26.
     pub approval: Approval,
     /// Corrections this one refines; its probes run with them on, on both
     /// sides (decision 15). Empty for all but E15, E16 and E17 (on E9) and
@@ -237,7 +259,8 @@ pub struct Deviation {
     /// Every workbook cell the report names for this entry (inputs, corrected
     /// formulas and named downstream cells). Each exists in the snapshot.
     pub cells: &'static [&'static str],
-    /// The correction, as approved (the report's Proposed correction column).
+    /// The correction, as approved (the report's Proposed correction column); for an
+    /// owner approval, the answer taken and approved.
     pub corrected_formula: &'static str,
     /// Workbook defaults of inputs whose declared default this deviation
     /// corrects, by input path. Empty unless the deviation changes a default.
@@ -261,16 +284,19 @@ pub struct Deviation {
 }
 
 impl Deviation {
-    /// The report that approves this entry.
+    /// The report that approves this entry; for an owner approval (E25, E26), the backlog
+    /// that holds the question, the answer and the dated approval.
     pub fn report(&self) -> &'static str {
         match self.approval {
             Approval::AuditRow => REPORT,
             Approval::Addendum { .. } => ADDENDUM_REPORT,
             Approval::AddendumA4 { .. } => A4_REPORT,
+            Approval::Owner { .. } => BACKLOG,
         }
     }
 
-    /// Where the evidence is: the audit report entry, or the Addendum A or A-4 decisions.
+    /// Where the evidence is: the audit report entry, or the Addendum A or A-4 decisions;
+    /// for an owner approval, its backlog item and the date.
     pub fn evidence(&self) -> String {
         match self.approval {
             Approval::AuditRow => format!("{REPORT}, entry {}", self.id),
@@ -279,6 +305,9 @@ impl Deviation {
             }
             Approval::AddendumA4 { decisions } => {
                 format!("{A4_REPORT}, section 5, {}", decision_list(decisions))
+            }
+            Approval::Owner { item } => {
+                format!("{BACKLOG}, item {item}: approved by the owner on 2026-11-16")
             }
         }
     }
@@ -1625,7 +1654,7 @@ pub const REGISTRY: &[Deviation] = &[
             decisions: &[4, 5, 6, 7, 9, 10],
         },
         depends_on: &[],
-        status: DeviationStatus::Planned,
+        status: DeviationStatus::Applied,
         cells: &[
             "Temperature design!C104",
             "Temperature design!C105",
@@ -1633,15 +1662,81 @@ pub const REGISTRY: &[Deviation] = &[
             "Temperature design!C201",
             "Temperature design!C202",
         ],
-        corrected_formula: "Planned (A-4 report section 4): the inner ring's grade CTE in the bond plane (Y30 10.0e-6, \
-            Recoma 20 14.0e-6, Recoma 26 and Recoma 30 13.0e-6 /K; bonded NdFeB and sintered NdFeB keep C95) in the \
-            mismatch screen C104 to C106, C201, C202 and warning rule 6, the screens comparing the size of the shear \
-            (decision 9). Not in the code: the engine is workbook-exact here.",
+        corrected_formula: "The magnet expansion in the bond plane (across the magnetization) is the inner ring's grade \
+            value: Y30 10.0e-6, Recoma 20 14.0e-6, Recoma 26 and Recoma 30 13.0e-6 /C (decisions 5, 6); C95 (-0.8e-6) \
+            stays for sintered NdFeB (every library part), a manual magnet without a grade and bonded NdFeB (decision 7). \
+            Both consumers read it: the Volkersen screen (delta alpha = hub CTE - magnet CTE: C104, C105, C201) and \
+            warning rule 6. Only the inner ring is read: the hub bonds it, and the cup bond is not screened. A grade that \
+            expands more than the hub makes the shear negative, so C106 compares |C104| with the lap shear and C202 \
+            compares |C201| with the endurance limit, the signed values kept on display (decision 9); so does C95 set \
+            above the default back iron's C17, a slider corner where the size comparison reads sintered NdFeB too (plan \
+            decision A4-4). C95 keeps its label and range; its help and the Rust-only \
+            temperature.mismatch.magnet_cte_per_C show the value in effect (decision 10).",
         workbook_input_defaults: &[],
-        workbook_help: &[],
+        workbook_help: &[(
+            "temperature.mismatch.ndfeb_cte_per_C",
+            "Across the magnetization.",
+        )],
         changes_at_defaults: &[],
         changes_file: None,
-        probes: &[],
+        probes: &[
+            Probe {
+                label: "Recoma 26 (13.0e-6 /C) for manual dimensions on both rings, steel hub (A-4 report probe E22-1): \
+                    the mismatch turns negative and the screen reads Below",
+                inputs: &[
+                    ("coupling.magnets.part_inner", Literal::Text("")),
+                    ("coupling.magnets.part_outer", Literal::Text("")),
+                    (
+                        "coupling.magnets.grade_inner",
+                        Literal::Text("SmCo_2_17_26"),
+                    ),
+                    (
+                        "coupling.magnets.grade_outer",
+                        Literal::Text("SmCo_2_17_26"),
+                    ),
+                ],
+                expect: &[
+                    CellChange {
+                        cell: "Temperature design!C104",
+                        workbook: Literal::Num(64.07367112080888),
+                        corrected: Literal::Num(-3.423783953020314),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C106",
+                        workbook: Literal::Text("Above the lap-shear strength at the block ends"),
+                        corrected: Literal::Text("Below the lap-shear strength"),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C201",
+                        workbook: Literal::Num(11.365659614702166),
+                        corrected: Literal::Num(-0.6073253229230151),
+                    },
+                ],
+            },
+            Probe {
+                label: "Y30 (10.0e-6 /C) for manual dimensions on both rings, steel hub (A-4 report probe E22-2)",
+                inputs: &[
+                    ("coupling.magnets.part_inner", Literal::Text("")),
+                    ("coupling.magnets.part_outer", Literal::Text("")),
+                    ("coupling.magnets.grade_inner", Literal::Text("Y30")),
+                    ("coupling.magnets.grade_outer", Literal::Text("Y30")),
+                ],
+                expect: &[
+                    CellChange {
+                        cell: "Temperature design!C104",
+                        workbook: Literal::Num(64.07367112080888),
+                        corrected: Literal::Num(11.249575845638201),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C202",
+                        workbook: Literal::Text(
+                            "Above the fatigue endurance: qualify by thermal cycling",
+                        ),
+                        corrected: Literal::Text("Below the fatigue endurance"),
+                    },
+                ],
+            },
+        ],
     },
     Deviation {
         id: DeviationId::E23,
@@ -1732,6 +1827,246 @@ pub const REGISTRY: &[Deviation] = &[
             }],
         }],
     },
+    Deviation {
+        id: DeviationId::E25,
+        title: "The rotating diameter the space claim judges is the larger of the cup and the cap, though the shaft boss turns with them and can be larger",
+        class: DeviationClass::Engine,
+        approval: Approval::Owner { item: "BL-061" },
+        depends_on: &[],
+        status: DeviationStatus::Applied,
+        cells: &["Metal design!C135", "Metal design!C136"],
+        corrected_formula: "Approved by the owner on 2026-11-16 (docs/ai/backlog.yaml, BL-061; first taken as the conservative answer to an open \
+            question, under the owner's ruling of 2026-11-10). C135 = MAX(cup OD, cap OD C166, boss OD C127): the \
+            rotating outside diameter is the largest of the cup, the front cap and the shaft boss. The diameter reserve \
+            C136 = C131 - C135 reads it, and so do the Rust-only diameter overshoot and space-claim check. A boss at or \
+            below the larger of the cup and the cap changes nothing, so no cell moves at default inputs (boss 22 mm, \
+            cap 42.8 mm). The other answers (the boss named apart from the claim, or left out as in the workbook) are \
+            not built.",
+        workbook_input_defaults: &[],
+        workbook_help: &[],
+        changes_at_defaults: &[],
+        changes_file: None,
+        probes: &[Probe {
+            label: "Ring radius 7 mm (the cap and its thread follow the cup, as the Size tab sets them), boss 40 mm, \
+                claim 38 mm (backlog BL-061's evidence): the boss passes the claim by 2 mm and the workbook reads a \
+                reserve of 1.82 mm",
+            inputs: &[
+                ("coupling.inner_back_apothem_mm", Literal::Num(7.0)),
+                ("metal.cap_od_mm", Literal::Num(36.17578798729891)),
+                ("metal.cap_thread_dia_mm", Literal::Num(34.375787987298914)),
+                ("metal.boss_od_mm", Literal::Num(40.0)),
+                ("metal.max_diameter_mm", Literal::Num(38.0)),
+            ],
+            expect: &[
+                CellChange {
+                    cell: "Metal design!C135",
+                    workbook: Literal::Num(36.17578798729891),
+                    corrected: Literal::Num(40.0),
+                },
+                CellChange {
+                    cell: "Metal design!C136",
+                    workbook: Literal::Num(1.8242120127010892),
+                    corrected: Literal::Num(-2.0),
+                },
+            ],
+        }],
+    },
+    Deviation {
+        id: DeviationId::E26,
+        title: "The magnets' eddy heat gives every ring sintered NdFeB's conductivity, though SmCo conducts more and ferrite and bonded NdFeB far less",
+        class: DeviationClass::Engine,
+        approval: Approval::Owner { item: "BL-062" },
+        depends_on: &[],
+        status: DeviationStatus::Applied,
+        cells: &[
+            "Temperature design!C17",
+            "Temperature design!C18",
+            "Temperature design!C19",
+            "Temperature design!C20",
+            "Temperature design!C22",
+            "Temperature design!C129",
+            "Temperature design!C130",
+            "Temperature design!C131",
+            "Temperature design!C132",
+            "Temperature design!C134",
+            "Temperature design!C145",
+            "Temperature design!C146",
+            "Temperature design!C147",
+            "Temperature design!C148",
+            "Temperature design!C149",
+            "Temperature design!C150",
+            "Temperature design!C151",
+            "Temperature design!C152",
+            "Temperature design!C154",
+            "Temperature design!C155",
+            "Temperature design!C156",
+            "Temperature design!C157",
+            "Temperature design!C161",
+            "Temperature design!C169",
+            "Temperature design!C170",
+            "Temperature design!C171",
+            "Temperature design!C172",
+            "Temperature design!C173",
+            "Temperature design!C175",
+            "Temperature design!C176",
+            "Temperature design!C177",
+            "Temperature design!C180",
+            "Temperature design!C181",
+            "Temperature design!C182",
+            "Temperature design!C186",
+            "Temperature design!C189",
+            "Temperature design!C190",
+            "Temperature design!C192",
+            "Temperature design!C193",
+            "Temperature design!C196",
+        ],
+        corrected_formula: "Approved by the owner on 2026-11-16 (docs/ai/backlog.yaml, BL-062; first taken as the conservative answer to an open \
+            question, under the owner's ruling of 2026-11-10). C129 = (sigma_inner + sigma_outer) / 2 * we^2 * C122^2 * \
+            w^2 / 24 * block volume * 2 * poles: each ring's half of the magnets' eddy heat reads its own ring's \
+            conductivity, by the family of the ring's grade: Sm2Co17 1.54e6, SmCo5 2.5e6, sintered ferrite 1.0e2 (a \
+            maker's upper bound, not a measurement) and bonded NdFeB 2.5e4 S/m, each the highest value printed with a \
+            clear unit for its family, of the values the research kept (more conductivity is more heat here). Sintered \
+            NdFeB (every library part) and a manual magnet without a grade keep C113 (6.7e5 S/m), so no cell moves at \
+            default inputs. The total C130 and the thermal cells that read it follow; with a measured drag entered the \
+            estimate is not used. Nothing else in C129 changes: the stored field C122 and the block size (the inner \
+            ring's, for both rings) still do not follow the grade, so the heat is not exact for any grade. The values \
+            are Rust-only grade data and do not pass through C113's range check. C113 keeps its label and range; the \
+            Rust-only temperature.slip_loss.inner_magnet_sigma_S_m and outer_magnet_sigma_S_m show the value each ring \
+            reads. The other answers (the lower printed values of each family; a higher sintered NdFeB value, which moves the \
+            default example) are not built.",
+        workbook_input_defaults: &[],
+        workbook_help: &[],
+        changes_at_defaults: &[],
+        changes_file: None,
+        probes: &[
+            Probe {
+                label: "Y30 ferrite (1.0e2 S/m) for manual dimensions on both rings (backlog BL-062's probe design, 0.2278 W for \
+                    every grade without E26): the magnets' heat falls to 3.4e-5 W",
+                inputs: &[
+                    ("coupling.magnets.part_inner", Literal::Text("")),
+                    ("coupling.magnets.part_outer", Literal::Text("")),
+                    ("coupling.magnets.grade_inner", Literal::Text("Y30")),
+                    ("coupling.magnets.grade_outer", Literal::Text("Y30")),
+                ],
+                expect: &[
+                    CellChange {
+                        cell: "Temperature design!C129",
+                        workbook: Literal::Num(0.22784639081300484),
+                        corrected: Literal::Num(3.4006924001941014e-5),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C130",
+                        workbook: Literal::Num(2.4771082543421903),
+                        corrected: Literal::Num(2.249295870453188),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C149",
+                        workbook: Literal::Num(89.7710825434219),
+                        corrected: Literal::Num(87.49295870453187),
+                    },
+                ],
+            },
+            Probe {
+                label: "Recoma 26, Sm2Co17 (1.54e6 S/m) for manual dimensions on both rings: the magnets' heat rises by 1.54e6 / \
+                    6.7e5",
+                inputs: &[
+                    ("coupling.magnets.part_inner", Literal::Text("")),
+                    ("coupling.magnets.part_outer", Literal::Text("")),
+                    (
+                        "coupling.magnets.grade_inner",
+                        Literal::Text("SmCo_2_17_26"),
+                    ),
+                    (
+                        "coupling.magnets.grade_outer",
+                        Literal::Text("SmCo_2_17_26"),
+                    ),
+                ],
+                expect: &[
+                    CellChange {
+                        cell: "Temperature design!C129",
+                        workbook: Literal::Num(0.22784639081300484),
+                        corrected: Literal::Num(0.5237066296298916),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C130",
+                        workbook: Literal::Num(2.4771082543421903),
+                        corrected: Literal::Num(2.7729684931590772),
+                    },
+                ],
+            },
+            Probe {
+                label: "Recoma 20, SmCo5 (2.5e6 S/m) for manual dimensions on both rings: the magnets' heat rises by 2.5e6 / \
+                    6.7e5",
+                inputs: &[
+                    ("coupling.magnets.part_inner", Literal::Text("")),
+                    ("coupling.magnets.part_outer", Literal::Text("")),
+                    ("coupling.magnets.grade_inner", Literal::Text("SmCo_1_5_20")),
+                    ("coupling.magnets.grade_outer", Literal::Text("SmCo_1_5_20")),
+                ],
+                expect: &[
+                    CellChange {
+                        cell: "Temperature design!C129",
+                        workbook: Literal::Num(0.22784639081300484),
+                        corrected: Literal::Num(0.8501731000485255),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C130",
+                        workbook: Literal::Num(2.4771082543421903),
+                        corrected: Literal::Num(3.0994349635777114),
+                    },
+                ],
+            },
+            Probe {
+                label: "Bonded NdFeB BCN-19 (2.5e4 S/m) for manual dimensions on both rings",
+                inputs: &[
+                    ("coupling.magnets.part_inner", Literal::Text("")),
+                    ("coupling.magnets.part_outer", Literal::Text("")),
+                    (
+                        "coupling.magnets.grade_inner",
+                        Literal::Text("Bonded_NdFeB_BCN19"),
+                    ),
+                    (
+                        "coupling.magnets.grade_outer",
+                        Literal::Text("Bonded_NdFeB_BCN19"),
+                    ),
+                ],
+                expect: &[
+                    CellChange {
+                        cell: "Temperature design!C129",
+                        workbook: Literal::Num(0.22784639081300484),
+                        corrected: Literal::Num(0.008501731000485253),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C130",
+                        workbook: Literal::Num(2.4771082543421903),
+                        corrected: Literal::Num(2.257763594529671),
+                    },
+                ],
+            },
+            Probe {
+                label: "A mixed pair for manual dimensions, Y30 inner and N42 outer: half the NdFeB pair's heat plus half the \
+                    ferrite pair's (the mean of 1.0e2 and 6.7e5 S/m)",
+                inputs: &[
+                    ("coupling.magnets.part_inner", Literal::Text("")),
+                    ("coupling.magnets.part_outer", Literal::Text("")),
+                    ("coupling.magnets.grade_inner", Literal::Text("Y30")),
+                    ("coupling.magnets.grade_outer", Literal::Text("N42")),
+                ],
+                expect: &[
+                    CellChange {
+                        cell: "Temperature design!C129",
+                        workbook: Literal::Num(0.22784639081300484),
+                        corrected: Literal::Num(0.11394019886850336),
+                    },
+                    CellChange {
+                        cell: "Temperature design!C130",
+                        workbook: Literal::Num(2.4771082543421903),
+                        corrected: Literal::Num(2.363202062397689),
+                    },
+                ],
+            },
+        ],
+    },
 ];
 
 /// A set of deviations switched on. Users only ever get [`Deviations::ALL`].
@@ -1741,7 +2076,8 @@ pub struct Deviations {
 }
 
 impl Deviations {
-    /// Every approved correction: what every user-facing computation uses.
+    /// Every approved correction, E25 and E26 (owner-approved on 2026-11-16) included:
+    /// what every user-facing computation uses.
     pub const ALL: Self = Self {
         mask: (1 << DeviationId::ALL.len()) - 1,
     };
@@ -1844,6 +2180,23 @@ mod tests {
                 }
                 Approval::Addendum { decisions } => decided(decisions, DeviationId::E15, 31),
                 Approval::AddendumA4 { decisions } => decided(decisions, DeviationId::E21, 10),
+                // An owner approval is newer than every report-approved entry (E1 to E24)
+                // and names its backlog item; tests/deviations.rs reads the item's text.
+                Approval::Owner { item } => {
+                    assert!(
+                        d.id.index() >= DeviationId::E25.index(),
+                        "{}: E1 to E24 are approved",
+                        d.id
+                    );
+                    assert!(item.starts_with("BL-"), "{} names no backlog item", d.id);
+                    assert!(
+                        d.evidence().ends_with(&format!(
+                            "item {item}: approved by the owner on 2026-11-16"
+                        )),
+                        "{}",
+                        d.id
+                    );
+                }
             }
             for dep in d.depends_on {
                 assert!(
@@ -1877,19 +2230,31 @@ mod tests {
             REGISTRY[DeviationId::E24.index()].evidence(),
             format!("{A4_REPORT}, section 5, decision 2")
         );
+        // E25 is approved by the owner: its evidence names the backlog item and the date.
+        let e25 = &REGISTRY[DeviationId::E25.index()];
+        assert_eq!(e25.approval, Approval::Owner { item: "BL-061" });
+        assert_eq!(e25.report(), BACKLOG);
+        assert_eq!(
+            e25.evidence(),
+            format!("{BACKLOG}, item BL-061: approved by the owner on 2026-11-16")
+        );
+        // So is E26.
+        let e26 = &REGISTRY[DeviationId::E26.index()];
+        assert_eq!(e26.approval, Approval::Owner { item: "BL-062" });
+        assert_eq!(
+            e26.evidence(),
+            format!("{BACKLOG}, item BL-062: approved by the owner on 2026-11-16")
+        );
     }
 
     #[test]
-    fn e22_and_e23_are_registered_but_not_yet_applied() {
-        // The ids are index-based, so E24 needs E22 and E23 to exist; they stay Planned (no code
-        // reads them) until their own change lands (backlog BL-058).
-        for id in [DeviationId::E22, DeviationId::E23] {
-            assert_eq!(
-                REGISTRY[id.index()].status,
-                DeviationStatus::Planned,
-                "{id}"
-            );
-        }
+    fn e23_is_registered_but_not_yet_applied() {
+        // The ids are index-based, so E24 needs E23 to exist; it stays Planned (no code reads
+        // it) until its own change lands (backlog BL-076).
+        assert_eq!(
+            REGISTRY[DeviationId::E23.index()].status,
+            DeviationStatus::Planned
+        );
     }
 
     #[test]

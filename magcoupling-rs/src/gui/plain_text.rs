@@ -126,7 +126,7 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "metal.max_diameter_mm",
-        "Largest diameter the coupling may take, over the cup or the front cap, whichever is larger. Past it, the space claim check fails.",
+        "Largest diameter the coupling may take, over the cup, the front cap or the shaft boss, whichever is largest. Past it, the space claim check fails.",
     ),
     (
         "metal.max_overall_axial_mm",
@@ -388,7 +388,7 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "materials.steel.cte_per_C",
-        "Thermal expansion of the steel hub; its difference from the magnets' expansion sets the bond shear from temperature swings, so higher raises it. Picking another back-iron material replaces it.",
+        "Thermal expansion of the steel hub; the further from the magnets' expansion, the higher the bond shear from temperature swings. Picking another back-iron material replaces it.",
     ),
     (
         "materials.steel.modulus_GPa",
@@ -400,7 +400,7 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "temperature.slip_loss.sigma_ndfeb_S_m",
-        "Electrical conductivity of the magnets: eddy-current heat inside the blocks during slip rises with it. Used whatever the magnet grade, which overstates the heat in ferrite.",
+        "Electrical conductivity of sintered NdFeB magnets: their eddy-current slip heat rises with it. A ring with no grade uses it; SmCo, ferrite and bonded NdFeB rings use their family's value.",
     ),
     (
         "temperature.thermal.c_ndfeb",
@@ -416,7 +416,7 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "temperature.mismatch.recommended_bondline_mm",
-        "A second adhesive thickness at which the bond shear from temperature swings is also computed; the daily-cycle screen uses it. Thicker lowers that shear.",
+        "A second adhesive thickness for the bond shear from temperature swings; thicker lowers that shear. The daily-cycle screen reads it, the entered-bondline screen the thickness under the inner magnets.",
     ),
     (
         "temperature.adhesive_life.fatigue_endurance",
@@ -477,7 +477,7 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "metal.boss_od_mm",
-        "Outside diameter of the drawn shaft boss: it sets the boss mass and the outside diameter when larger than the cup and cap.",
+        "Outside diameter of the drawn shaft boss: it sets the boss mass and, when larger than the cup and cap, the outside diameter the space claim checks.",
     ),
     (
         "metal.cap_axial_mm",
@@ -733,7 +733,7 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "temperature.mismatch.ndfeb_cte_per_C",
-        "Thermal expansion of the magnets in the bonded face; the further it is from the hub's, the higher the bond shear from temperature swings. Used whatever the magnet grade.",
+        "Magnet thermal expansion in the bonded face; the further from the hub's, the higher the bond shear from temperature swings. A ferrite or SmCo inner ring uses its grade's value.",
     ),
     (
         "temperature.slip_loss.high_multiplier",
@@ -1661,18 +1661,21 @@ mod batch_b_tests {
         ("temperature.mismatch.ndfeb_modulus_GPa", "example", "temperature.mismatch.peak_shear_current_MPa", Up),
         ("temperature.mismatch.ndfeb_modulus_GPa", "Y30 grades", "temperature.mismatch.peak_shear_current_MPa", Up),
         ("temperature.slip_loss.sigma_ndfeb_S_m", "example", "temperature.slip_loss.magnets_W", Up),
-        ("temperature.slip_loss.sigma_ndfeb_S_m", "Y30 grades", "temperature.slip_loss.magnets_W", Up),
+        ("temperature.slip_loss.sigma_ndfeb_S_m", "manual, no grade", "temperature.slip_loss.magnets_W", Up),
+        ("temperature.slip_loss.sigma_ndfeb_S_m", "Y30 grades", "temperature.slip_loss.magnets_W", Stays),
         ("temperature.thermal.c_ndfeb", "Y30 grades", "temperature.thermal.heat_capacity_J_K", Up),
         ("temperature.thermal.c_ndfeb", "example", "temperature.thermal.steady_high_C", Stays),
         ("temperature.thermal.c_ndfeb", "example", "temperature.thermal.heat_capacity_J_K", Up),
         ("metal.bond_inner_mm", "example", "model.hub_wall_mm", Down),
         ("metal.bond_inner_mm", "example", "temperature.mismatch.peak_shear_current_MPa", Down),
+        ("metal.bond_inner_mm", "example", "temperature.adhesive_life.daily_entered_peak_shear_MPa", Down),
         ("metal.bond_inner_mm", "example", "model.pullout_Nm", Stays),
         ("metal.bond_outer_mm", "example", "model.cup_od_mm", Up),
         ("metal.bond_outer_mm", "example", "mass.cup_g", Up),
         ("metal.bond_outer_mm", "example", "model.pullout_Nm", Stays),
         ("temperature.mismatch.recommended_bondline_mm", "example", "temperature.adhesive_life.daily_peak_shear_MPa", Down),
         ("temperature.mismatch.recommended_bondline_mm", "example", "temperature.mismatch.peak_shear_current_MPa", Stays),
+        ("temperature.mismatch.recommended_bondline_mm", "example", "temperature.adhesive_life.daily_entered_peak_shear_MPa", Stays),
         ("temperature.adhesive_life.fatigue_endurance", "example", "temperature.adhesive_life.hot_fatigue_margin", Up),
         ("temperature.slip_loss.sigma_316_S_m", "example", "temperature.slip_loss.sleeve_W", Up),
         ("temperature.slip_loss.sigma_316_S_m", "titanium sleeve", "temperature.slip_loss.total_W", Stays),
@@ -1805,7 +1808,7 @@ mod batch_b_tests {
         ("materials.steel.conductivity_S_m", "example", "temperature.slip_loss.total_W", Up),
         ("materials.steel.conductivity_S_m", "1018 back iron", "temperature.slip_loss.total_W", Stays),
         ("temperature.mismatch.ndfeb_cte_per_C", "example", "temperature.mismatch.peak_shear_current_MPa", Down),
-        ("temperature.mismatch.ndfeb_cte_per_C", "Y30 grades", "temperature.mismatch.peak_shear_current_MPa", Down),
+        ("temperature.mismatch.ndfeb_cte_per_C", "Y30 grades", "temperature.mismatch.peak_shear_current_MPa", Stays),
         ("temperature.slip_loss.high_multiplier", "example", "temperature.thermal.steady_high_C", Up),
         ("temperature.slip_loss.high_multiplier", "measured drag", "temperature.thermal.steady_high_C", Stays),
         ("temperature.slip_loss.high_multiplier", "example", "temperature.slip_loss.total_W", Stays),
@@ -1864,6 +1867,7 @@ mod batch_b_tests {
                 "temperature.demag.hcj20_kA_m",
                 "temperature.demag.beta_hcj_per_C",
                 "temperature.mismatch.adhesive_shear_modulus_GPa",
+                "temperature.mismatch.ndfeb_cte_per_C",
             ]
         );
         for path in BATCH_B_OVERRIDES {
@@ -2310,6 +2314,8 @@ mod batch_b_tests {
             dimensions(&big_boss).expect("a size").diameter_mm,
             outside + 1.0
         );
+        // ... and the space claim checks that diameter (E25, approved by the owner on 2026-11-16: BL-061).
+        assert_eq!(compute_all(&big_boss).metal.rotating_od_mm, outside + 1.0);
         // metal.cap_od_mm: the cap sets the outside diameter only when it is the largest part.
         let cap_step = 0.1;
         assert_eq!(example.metal.cap_od_mm, outside);

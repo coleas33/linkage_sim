@@ -350,6 +350,10 @@ mod tests {
             group_of("temperature.adhesive_life.daily_screen"),
             "adhesive"
         );
+        assert_eq!(
+            group_of("temperature.adhesive_life.daily_entered_screen"),
+            "adhesive"
+        );
         assert_eq!(group_of("mass.magnets_g"), "mass");
         assert_eq!(group_of("metal.corner_gap_mm"), "geometry");
         // So no temperature design result is left among the other results.
