@@ -102,6 +102,9 @@ pub fn generate_mechanism_gif_bytes(
     if n_steps == 0 {
         return Err("No sweep data to export".to_string());
     }
+    if omega == 0.0 || !omega.is_finite() {
+        return Err("Cannot export GIF: driver speed must be non-zero and finite".to_string());
+    }
 
     let mut buf: Vec<u8> = Vec::new();
     {
@@ -121,6 +124,7 @@ pub fn generate_mechanism_gif_bytes(
             .collect();
 
         let mut q_guess = q_start.clone();
+        let mut frames_written = 0usize;
 
         for &i in &all_indices {
             let angle_rad = sweep.angles_deg[i].to_radians();
@@ -141,12 +145,16 @@ pub fn generate_mechanism_gif_bytes(
                             encoder
                                 .write_frame(&frame)
                                 .map_err(|e| format!("Failed to write GIF frame: {}", e))?;
+                            frames_written += 1;
                         }
                     }
                     q_guess = result.q;
                 }
                 _ => {}
             }
+        }
+        if frames_written == 0 {
+            return Err("No GIF frames could be rendered".to_string());
         }
     }
     Ok(buf)
@@ -283,6 +291,37 @@ mod tests {
         );
 
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    #[cfg(feature = "raster")]
+    fn export_gif_zero_omega_returns_error() {
+        use crate::gui::samples::SampleMechanism;
+        use crate::gui::state::AppState;
+
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        let mech = state.mechanism.as_ref().unwrap();
+        let sweep = state.sweep_data.as_ref().unwrap();
+        let r = generate_mechanism_gif_bytes(mech, sweep, &state.q, 0.0, 0.0, 400, 300, 5);
+        assert!(r.is_err(), "zero driver speed must be an error");
+    }
+
+    #[test]
+    #[cfg(feature = "raster")]
+    fn export_gif_no_frames_rendered_returns_error() {
+        use crate::gui::samples::SampleMechanism;
+        use crate::gui::state::AppState;
+
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        let mech = state.mechanism.as_ref().unwrap();
+        let sweep = state.sweep_data.as_ref().unwrap();
+        // Zero-size canvas: every frame fails to rasterize.
+        let r = generate_mechanism_gif_bytes(
+            mech, sweep, &state.q, state.driver_omega(), state.driver_theta_0(), 0, 0, 5,
+        );
+        assert!(r.is_err(), "a GIF with no frames must be an error");
     }
 
     #[test]
