@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - linkage-sim-rs drops the unused `open` dependency (audit LCS-01, INF-16; branch audit/2026-11-16-cleanup)
+- What changed: removed the optional `open` crate and `dep:open` from the `native` feature (64d5126; that commit's subject line wrongly reads "apply machine-applicable clippy fixes (INF-02)", its body is the INF-02 text, but the diff is only Cargo.toml and Cargo.lock). Cargo.lock loses open, is-wsl, is-docker and pathdiff. Kept `wasm-bindgen-futures` (the async `#[wasm_bindgen(start)]` in src/bin/linkage_web.rs expands to it; removing it breaks the wasm32 build) and `uuid` (the dxf crate needs its `js` feature on WASM). `meval` is used.
+- Tests: cargo test --all, cargo clippy --all-targets and the gate 3 wasm32 check pass.
+
 ## 2026-11-16 - linkage-sim-rs clippy warnings cleared and gate 2 denies them (audit INF-02; branch audit/2026-11-16-cleanup)
 - What changed: the crate went from about 275 clippy warnings to zero with no behaviour change: cargo clippy --fix (8722228), then hand fixes and narrow allows with a one-line reason for dead native export entry points and long parameter lists (9a03b3c). Gate 2 now runs `cargo clippy --all-targets -- -D warnings` (3998a12); BL-003 is fixed.
 - Tests: cargo test --all passes; the wasm32 linkage-web check builds (it keeps seven wasm-only warnings, which gate 3's plain cargo check does not deny).

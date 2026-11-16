@@ -137,8 +137,8 @@ The repository's rule is more tests, not fewer, so none of these was changed. Ma
 - **INF-06** audit-campaign.js and fix-campaign.js hard-code the main checkout's absolute path as ROOT. This is why the audit could not run as the repository's own campaign in a worktree. Both files hold your uncommitted edits, so they were not touched.
 - **INF-04** deploy-web.yml compiles wasm-bindgen-cli from source on every run, so its cache entry buys nothing. The check confirmed this only in part.
 - **INF-01** Gate 7 re-runs every test gate 4 already ran.
-- **INF-16** Direct dependencies `wasm-bindgen-futures` and `uuid` of linkage-sim-rs are named nowhere in its code. The check confirmed this only in part.
-- **LCS-01** Cargo.toml lists dependencies the code never uses. The check confirmed this only in part.
+- **INF-16** Direct dependencies `wasm-bindgen-futures` and `uuid` of linkage-sim-rs are named nowhere in its code. The check confirmed this only in part. FIXED 64d5126 (partly): only `open` was unused and is removed; `wasm-bindgen-futures` is pulled in by the async `#[wasm_bindgen(start)]` macro and `uuid` is the dxf WASM pin, so both stay.
+- **LCS-01** Cargo.toml lists dependencies the code never uses. The check confirmed this only in part. FIXED 64d5126 (partly): `open` removed; `wasm-bindgen-futures` and `uuid` are needed (see INF-16); `meval` is used and is not duplicated in dev-dependencies.
 - **MEC-02** Cargo.toml comments name checks and a host that no longer exist.
 - **DMH-01** README (and Cargo.toml comments) still say linkage-sim-rs depends on magcoupling-rs and that a gate checks lock agreement.
 - **INF-08** rust-test-fixer agent hard-codes `model: opus`, against the repo's model rule. A local, git-ignored file in your main checkout; not touched.
