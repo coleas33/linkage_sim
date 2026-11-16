@@ -22,7 +22,7 @@ use crate::solver::statics::get_joint_reactions;
 
 use nalgebra::{DVector, Vector2};
 
-use super::{AppState, DriverKind, ForceResults, SolverStatus};
+use super::{driver_angle_to_time, AppState, DriverKind, ForceResults, SolverStatus};
 use crate::gui::sweep::{
     apply_motion_profile, compute_sweep_data_with_weights, compute_trajectory,
     detect_fourbar_links, empty_trajectory_sweep_data, SweepMode,
@@ -342,12 +342,7 @@ impl AppState {
         self.driver_joint_id = detect_driver_joint_id(&mech);
 
         // Solve at current position using last_good_q as initial guess.
-        let omega = self.driver_omega();
-        let t = if omega.abs() > f64::EPSILON {
-            (self.driver_angle - self.driver_theta_0()) / omega
-        } else {
-            0.0
-        };
+        let t = driver_angle_to_time(self.driver_angle, self.driver_theta_0(), self.driver_omega());
 
         // Try solving with last_good_q if it has the right dimension;
         // after a topology change, seed the surviving bodies by id.
@@ -543,12 +538,7 @@ impl AppState {
     /// mechanism. Used after mass/inertia/gravity changes that don't alter
     /// the kinematic structure.
     pub(crate) fn recompute_dynamics(&mut self) {
-        let omega = self.driver_omega();
-        let t = if omega.abs() > f64::EPSILON {
-            (self.driver_angle - self.driver_theta_0()) / omega
-        } else {
-            0.0
-        };
+        let t = driver_angle_to_time(self.driver_angle, self.driver_theta_0(), self.driver_omega());
         self.compute_forces(t);
         self.mark_sweep_dirty();
     }

@@ -7,6 +7,7 @@ use crate::core::body::make_ground;
 use crate::core::mechanism::Mechanism;
 use crate::solver::kinematics::solve_position;
 
+use super::fourbar::build_standard_fourbar;
 use super::helpers::{
     attach_driver_to_grounded_revolute_with_theta0, make_ternary, set_bar_mass,
     set_ternary_mass, solve_with_continuation,
@@ -681,44 +682,11 @@ fn watt_ii_find_initial(
 pub(super) fn build_pantograph(
     driver_joint_id: Option<&str>,
 ) -> Result<(Mechanism, DVector<f64>), String> {
-    let o2 = (0.0_f64, 0.0_f64);
-    let o4 = (0.050_f64, 0.0_f64);
-    let l_crank = 0.030_f64;
-    let l_coupler = 0.050_f64;
-    let l_rocker = 0.030_f64;
-
-    let ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
-    let mut crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
-    set_bar_mass(&mut crank, l_crank);
-    // Coupler with extension point P at 1.5x coupler length for scaling
-    let mut coupler = make_bar("coupler", "B", "C", l_coupler, 0.0, 0.0);
-    coupler.add_coupler_point("P", 0.075, 0.0).unwrap();
-    set_bar_mass(&mut coupler, l_coupler);
-    let mut rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
-    set_bar_mass(&mut rocker, l_rocker);
-
-    let mut mech = Mechanism::new();
-    mech.add_body(ground).unwrap();
-    mech.add_body(crank).unwrap();
-    mech.add_body(coupler).unwrap();
-    mech.add_body(rocker).unwrap();
-
-    mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
-    mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
-    mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
-    mech.add_revolute_joint("J4", "rocker", "D", "ground", "O4").unwrap();
-
-    let joint_id = driver_joint_id.unwrap_or("J1");
-
-    use super::helpers::fourbar_initial_q0;
-    attach_driver_to_grounded_revolute_with_theta0(&mut mech, joint_id, "D1", 0.0)?;
-
-    mech.build().map_err(|e| e.to_string())?;
-
-    let q0 = fourbar_initial_q0(
-        mech.state(), o2, o4, l_crank, l_coupler, l_rocker, 0.0,
-        "crank", "coupler", "rocker", false,
-    );
-
-    Ok((mech, q0))
+    // Coupler with extension point P at 1.5x coupler length for scaling.
+    build_standard_fourbar(
+        "crank", "coupler", "rocker",
+        0.050, 0.030, 0.050, 0.030, Some((0.075, 0.0)),
+        0.0, false,
+        driver_joint_id,
+    )
 }

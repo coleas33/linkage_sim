@@ -235,33 +235,24 @@ pub(crate) fn draw_menu_bar(
                             .on_hover_text("Download the mechanism JSON to your device")
                             .clicked()
                         {
-                            match state.serialize_to_json_string() {
-                                Ok(json) => {
-                                    // Push to recent before downloading so the
-                                    // user can recover even if they don't keep
-                                    // the downloaded file.
-                                    crate::gui::state::AppState::wasm_push_recent_mechanism(
-                                        "downloaded",
-                                        &json,
-                                    );
-                                    let outcome = export::download::download_text(
-                                        "mechanism.json",
-                                        "application/json",
-                                        &json,
-                                        export::download::FileFilter {
-                                            label: "JSON",
-                                            extensions: &["json"],
-                                        },
-                                    );
-                                    apply_download_outcome(state, outcome);
-                                }
-                                Err(e) => {
-                                    state
-                                        .error_log
-                                        .push(format!("JSON serialize failed: {}", e));
-                                    state.show_error_panel = true;
-                                }
+                            let generated = state.serialize_to_json_string();
+                            if let Ok(json) = &generated {
+                                // Push to recent before downloading so the
+                                // user can recover even if they don't keep
+                                // the downloaded file.
+                                crate::gui::state::AppState::wasm_push_recent_mechanism(
+                                    "downloaded",
+                                    json,
+                                );
                             }
+                            download_generated(
+                                state,
+                                generated,
+                                "JSON serialize failed",
+                                "mechanism.json",
+                                "application/json",
+                                export::download::FileFilter { label: "JSON", extensions: &["json"] },
+                            );
                             ui.close();
                         }
                         if !crate::gui::state::AppState::wasm_load_recent_mechanisms().is_empty() {
@@ -314,26 +305,15 @@ pub(crate) fn draw_menu_bar(
                         .clicked()
                     {
                         if let Some(ref sweep) = state.sweep_data {
-                            match export::generate_sweep_csv_string(sweep) {
-                                Ok(csv) => {
-                                    let outcome = export::download::download_text(
-                                        "sweep_data.csv",
-                                        "text/csv",
-                                        &csv,
-                                        export::download::FileFilter {
-                                            label: "CSV",
-                                            extensions: &["csv"],
-                                        },
-                                    );
-                                    apply_download_outcome(state, outcome);
-                                }
-                                Err(e) => {
-                                    state
-                                        .error_log
-                                        .push(format!("CSV export failed: {}", e));
-                                    state.show_error_panel = true;
-                                }
-                            }
+                            let generated = export::generate_sweep_csv_string(sweep);
+                            download_generated(
+                                state,
+                                generated,
+                                "CSV export failed",
+                                "sweep_data.csv",
+                                "text/csv",
+                                export::download::FileFilter { label: "CSV", extensions: &["csv"] },
+                            );
                         }
                         ui.close();
                     }
@@ -346,26 +326,15 @@ pub(crate) fn draw_menu_bar(
                         .clicked()
                     {
                         if let Some(ref sweep) = state.sweep_data {
-                            match export::generate_coupler_csv_string(sweep) {
-                                Ok(csv) => {
-                                    let outcome = export::download::download_text(
-                                        "coupler_trace.csv",
-                                        "text/csv",
-                                        &csv,
-                                        export::download::FileFilter {
-                                            label: "CSV",
-                                            extensions: &["csv"],
-                                        },
-                                    );
-                                    apply_download_outcome(state, outcome);
-                                }
-                                Err(e) => {
-                                    state
-                                        .error_log
-                                        .push(format!("Coupler CSV export failed: {}", e));
-                                    state.show_error_panel = true;
-                                }
-                            }
+                            let generated = export::generate_coupler_csv_string(sweep);
+                            download_generated(
+                                state,
+                                generated,
+                                "Coupler CSV export failed",
+                                "coupler_trace.csv",
+                                "text/csv",
+                                export::download::FileFilter { label: "CSV", extensions: &["csv"] },
+                            );
                         }
                         ui.close();
                     }
@@ -387,26 +356,15 @@ pub(crate) fn draw_menu_bar(
                         })
                         .clicked()
                     {
-                        match build_firmware_json_string(state) {
-                            Ok(json) => {
-                                let outcome = export::download::download_text(
-                                    "trajectory_firmware.json",
-                                    "application/json",
-                                    &json,
-                                    export::download::FileFilter {
-                                        label: "JSON",
-                                        extensions: &["json"],
-                                    },
-                                );
-                                apply_download_outcome(state, outcome);
-                            }
-                            Err(e) => {
-                                state
-                                    .error_log
-                                    .push(format!("Firmware export failed: {}", e));
-                                state.show_error_panel = true;
-                            }
-                        }
+                        let generated = build_firmware_json_string(state);
+                        download_generated(
+                            state,
+                            generated,
+                            "Firmware export failed",
+                            "trajectory_firmware.json",
+                            "application/json",
+                            export::download::FileFilter { label: "JSON", extensions: &["json"] },
+                        );
                         ui.close();
                     }
                     if ui
@@ -415,26 +373,15 @@ pub(crate) fn draw_menu_bar(
                         .clicked()
                     {
                         if let Some(ref mech) = state.mechanism {
-                            match export::generate_svg_string(mech, &state.q) {
-                                Ok(svg) => {
-                                    let outcome = export::download::download_text(
-                                        "mechanism.svg",
-                                        "image/svg+xml",
-                                        &svg,
-                                        export::download::FileFilter {
-                                            label: "SVG",
-                                            extensions: &["svg"],
-                                        },
-                                    );
-                                    apply_download_outcome(state, outcome);
-                                }
-                                Err(e) => {
-                                    state
-                                        .error_log
-                                        .push(format!("SVG generation failed: {}", e));
-                                    state.show_error_panel = true;
-                                }
-                            }
+                            let generated = export::generate_svg_string(mech, &state.q);
+                            download_generated(
+                                state,
+                                generated,
+                                "SVG generation failed",
+                                "mechanism.svg",
+                                "image/svg+xml",
+                                export::download::FileFilter { label: "SVG", extensions: &["svg"] },
+                            );
                         }
                         ui.close();
                     }
@@ -450,30 +397,19 @@ pub(crate) fn draw_menu_bar(
                         .clicked()
                     {
                         if let Some(ref mech) = state.mechanism {
-                            match export::schematic::generate_schematic_svg(
+                            let generated = export::schematic::generate_schematic_svg(
                                 mech,
                                 &state.q,
                                 &state.sensor_config,
-                            ) {
-                                Ok(svg) => {
-                                    let outcome = export::download::download_text(
-                                        "mechanism_schematic.svg",
-                                        "image/svg+xml",
-                                        &svg,
-                                        export::download::FileFilter {
-                                            label: "SVG",
-                                            extensions: &["svg"],
-                                        },
-                                    );
-                                    apply_download_outcome(state, outcome);
-                                }
-                                Err(e) => {
-                                    state
-                                        .error_log
-                                        .push(format!("Schematic generation failed: {}", e));
-                                    state.show_error_panel = true;
-                                }
-                            }
+                            );
+                            download_generated(
+                                state,
+                                generated,
+                                "Schematic generation failed",
+                                "mechanism_schematic.svg",
+                                "image/svg+xml",
+                                export::download::FileFilter { label: "SVG", extensions: &["svg"] },
+                            );
                         }
                         ui.close();
                     }
@@ -483,26 +419,15 @@ pub(crate) fn draw_menu_bar(
                         .clicked()
                     {
                         if let Some(ref mech) = state.mechanism {
-                            match export::generate_dxf_string(mech, &state.q) {
-                                Ok(dxf) => {
-                                    let outcome = export::download::download_text(
-                                        "mechanism.dxf",
-                                        "image/vnd.dxf",
-                                        &dxf,
-                                        export::download::FileFilter {
-                                            label: "DXF",
-                                            extensions: &["dxf"],
-                                        },
-                                    );
-                                    apply_download_outcome(state, outcome);
-                                }
-                                Err(e) => {
-                                    state
-                                        .error_log
-                                        .push(format!("DXF generation failed: {}", e));
-                                    state.show_error_panel = true;
-                                }
-                            }
+                            let generated = export::generate_dxf_string(mech, &state.q);
+                            download_generated(
+                                state,
+                                generated,
+                                "DXF generation failed",
+                                "mechanism.dxf",
+                                "image/vnd.dxf",
+                                export::download::FileFilter { label: "DXF", extensions: &["dxf"] },
+                            );
                         }
                         ui.close();
                     }
@@ -515,33 +440,22 @@ pub(crate) fn draw_menu_bar(
                         .clicked()
                     {
                         if let (Some(mech), Some(sweep)) = (&state.mechanism, &state.sweep_data) {
-                            match export::generate_html_report(
+                            let generated = export::generate_html_report(
                                 mech,
                                 &state.q,
                                 sweep,
                                 state.grashof_result.as_ref(),
                                 &state.display_units,
                                 &state.sensor_config,
-                            ) {
-                                Ok(html) => {
-                                    let outcome = export::download::download_text(
-                                        "mechanism_report.html",
-                                        "text/html",
-                                        &html,
-                                        export::download::FileFilter {
-                                            label: "HTML",
-                                            extensions: &["html"],
-                                        },
-                                    );
-                                    apply_download_outcome(state, outcome);
-                                }
-                                Err(e) => {
-                                    state
-                                        .error_log
-                                        .push(format!("Report generation failed: {}", e));
-                                    state.show_error_panel = true;
-                                }
-                            }
+                            );
+                            download_generated(
+                                state,
+                                generated,
+                                "Report generation failed",
+                                "mechanism_report.html",
+                                "text/html",
+                                export::download::FileFilter { label: "HTML", extensions: &["html"] },
+                            );
                         }
                         ui.close();
                     }
@@ -556,24 +470,15 @@ pub(crate) fn draw_menu_bar(
                         )
                         .clicked()
                     {
-                        match export::generate_animation_html(state) {
-                            Ok(html) => {
-                                let outcome = export::download::download_text(
-                                    "mechanism_animation.html",
-                                    "text/html",
-                                    &html,
-                                    export::download::FileFilter {
-                                        label: "HTML",
-                                        extensions: &["html"],
-                                    },
-                                );
-                                apply_download_outcome(state, outcome);
-                            }
-                            Err(e) => {
-                                state.error_log.push(format!("Animation export failed: {}", e));
-                                state.show_error_panel = true;
-                            }
-                        }
+                        let generated = export::generate_animation_html(state);
+                        download_generated(
+                            state,
+                            generated,
+                            "Animation export failed",
+                            "mechanism_animation.html",
+                            "text/html",
+                            export::download::FileFilter { label: "HTML", extensions: &["html"] },
+                        );
                         ui.close();
                     }
                     // ── Raster exports (gated by `raster` feature; native always
@@ -589,28 +494,17 @@ pub(crate) fn draw_menu_bar(
                             .clicked()
                         {
                             if let Some(ref mech) = state.mechanism {
-                                match export::generate_mechanism_png_bytes(
+                                let generated = export::generate_mechanism_png_bytes(
                                     mech, &state.q, 1920, 1080,
-                                ) {
-                                    Ok(bytes) => {
-                                        let outcome = export::download::download_bytes(
-                                            "mechanism.png",
-                                            "image/png",
-                                            &bytes,
-                                            export::download::FileFilter {
-                                                label: "PNG",
-                                                extensions: &["png"],
-                                            },
-                                        );
-                                        apply_download_outcome(state, outcome);
-                                    }
-                                    Err(e) => {
-                                        state
-                                            .error_log
-                                            .push(format!("PNG export failed: {}", e));
-                                        state.show_error_panel = true;
-                                    }
-                                }
+                                );
+                                download_generated(
+                                    state,
+                                    generated,
+                                    "PNG export failed",
+                                    "mechanism.png",
+                                    "image/png",
+                                    export::download::FileFilter { label: "PNG", extensions: &["png"] },
+                                );
                             }
                             ui.close();
                         }
@@ -625,7 +519,7 @@ pub(crate) fn draw_menu_bar(
                             if let (Some(mech), Some(sweep)) =
                                 (&state.mechanism, &state.sweep_data)
                             {
-                                match export::generate_mechanism_gif_bytes(
+                                let generated = export::generate_mechanism_gif_bytes(
                                     mech,
                                     sweep,
                                     &state.q,
@@ -634,26 +528,15 @@ pub(crate) fn draw_menu_bar(
                                     800,
                                     600,
                                     5,
-                                ) {
-                                    Ok(bytes) => {
-                                        let outcome = export::download::download_bytes(
-                                            "mechanism.gif",
-                                            "image/gif",
-                                            &bytes,
-                                            export::download::FileFilter {
-                                                label: "GIF",
-                                                extensions: &["gif"],
-                                            },
-                                        );
-                                        apply_download_outcome(state, outcome);
-                                    }
-                                    Err(e) => {
-                                        state
-                                            .error_log
-                                            .push(format!("GIF export failed: {}", e));
-                                        state.show_error_panel = true;
-                                    }
-                                }
+                                );
+                                download_generated(
+                                    state,
+                                    generated,
+                                    "GIF export failed",
+                                    "mechanism.gif",
+                                    "image/gif",
+                                    export::download::FileFilter { label: "GIF", extensions: &["gif"] },
+                                );
                             }
                             ui.close();
                         }
@@ -1039,6 +922,34 @@ fn apply_download_outcome(
     }
 }
 
+/// The menu's "generate contents, download them, report the outcome" step:
+/// on `Err` log `"<error_prefix>: <error>"` and open the error panel; on `Ok`
+/// download the contents (text or bytes) and apply the outcome.
+fn download_generated<T: AsRef<[u8]>, E: std::fmt::Display>(
+    state: &mut AppState,
+    generated: Result<T, E>,
+    error_prefix: &str,
+    default_filename: &str,
+    mime_type: &str,
+    filter: export::download::FileFilter,
+) {
+    match generated {
+        Ok(contents) => {
+            let outcome = export::download::download_bytes(
+                default_filename,
+                mime_type,
+                contents.as_ref(),
+                filter,
+            );
+            apply_download_outcome(state, outcome);
+        }
+        Err(e) => {
+            state.error_log.push(format!("{}: {}", error_prefix, e));
+            state.show_error_panel = true;
+        }
+    }
+}
+
 /// Format a Unix timestamp as a coarse "X ago" string for the recent-
 /// mechanisms list. Anything older than 24h shows the absolute date.
 #[cfg(target_arch = "wasm32")]
@@ -1121,5 +1032,22 @@ mod tests {
             session.contains(&format!("pub const PUBLIC_BASE_URL: &str = \"{MAGCOUPLER_PUBLIC_URL}\";")),
             "magcoupling-rs PUBLIC_BASE_URL is {MAGCOUPLER_PUBLIC_URL}"
         );
+    }
+
+    #[test]
+    fn a_failed_generation_is_logged_with_its_prefix_and_opens_the_error_panel() {
+        let mut state = AppState::default();
+        let filter = export::download::FileFilter { label: "CSV", extensions: &["csv"] };
+        download_generated::<String, _>(
+            &mut state,
+            Err("no sweep"),
+            "CSV export failed",
+            "sweep_data.csv",
+            "text/csv",
+            filter,
+        );
+        assert_eq!(state.error_log, ["CSV export failed: no sweep"]);
+        assert!(state.show_error_panel);
+        assert!(state.status_message.is_none(), "no download was attempted");
     }
 }

@@ -5,6 +5,30 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - magcoupling GUI: status constants, unit helper, clamps_paused, one Minimum OD clear (audit MGV-05, MGG-04, MGV-04, MGP-10; branch audit/2026-11-16-dry)
+- What changed: MGV-05 (3acf7c5): `STATUS_NOMINAL` and `STATUS_BELOW_MINIMUM` in engine/sweeps.rs, used by the status code there and by gui/plots.rs (strings unchanged; the Python oracle's). MGG-04 (f28a61d): `guidance::result_unit(path)` replaces the unit one-liner at seven sites (guidance.rs x5, torque_card.rs, explorer.rs). MGV-04 (0969e9f): `explorer_ui` takes `clamps_paused` for the Start here hover and the Used by links; `START_HERE_HOVER` is removed (use `start_here_hover(clamps_paused)`); the Start here walk (`notes::START_HERE`) still reads `clamps::PAUSED`; the clamp section stays paused and hidden. MGP-10 (e68ae6a): private `MagcouplingPanel::replace_design` clears `minimum_diameter_mm` for open, load and reset (undo and redo still do not clear); a load now clears before `set_design`, not after, like open and reset.
+- Tests: new `result_unit_is_the_results_own_unit_and_empty_for_a_non_result`, `the_panel_s_pause_decides_the_drawn_used_by_links` and `a_new_design_clears_the_lowered_minimum_od_but_undo_and_redo_keep_it`; the start-here hover tests check both forms. cargo test, cargo test --features app, clippy with and without --features app and cargo fmt --check pass.
+
+## 2026-11-16 - sweep CSV column list (audit LGE-13; branch audit/2026-11-16-dry)
+- What changed: LGE-13 (034ffc3): `write_sweep_csv` in gui/export/csv.rs builds one list of columns (header, decimals, series) and writes the header and every row from it; the toggle column stays sparse (blank on NaN). Output is byte-identical.
+- Tests: new `sweep_csv_all_columns_pinned` pins header and rows with every optional column, a short series and a toggle; it passed on the old code first. cargo test --all and cargo clippy --all-targets -- -D warnings pass.
+
+## 2026-11-16 - menu download helper (audit LGS-09; branch audit/2026-11-16-dry)
+- What changed: LGS-09 (0a115f4): the File menu's "generate, download, report" block (eleven sites) is `download_generated` in gui/menu_bar.rs, with the same file names, MIME types, filters and error messages. `download::download_text` had no caller left and is removed; `download_bytes` takes text as bytes.
+- Tests: new `a_failed_generation_is_logged_with_its_prefix_and_opens_the_error_panel`; the Ok path opens a save dialog and cannot run headless. cargo test --all and cargo clippy --all-targets -- -D warnings pass; wasm32 lib check compiles the web-only JSON download.
+
+## 2026-11-16 - sample builders use build_standard_fourbar (audit LGE-15; branch audit/2026-11-16-dry)
+- What changed: LGE-15 (ed2f476): quick-return, toggle clamp, Hoeken, Roberts, figure-8 coupler curve and pantograph call `build_standard_fourbar` (now `pub(super)`; coupler point is an optional (x, y), plus an `above` flag). Left as they are because the skeleton differs: build_fourbar_with_driver, parallelogram press and actuator, both Chebyshev samples, slider-cranks, Whitworth, bell crank, six-bars. No behaviour change.
+- Tests: new `standard_fourbar_samples_keep_their_coupler_point_and_branch`; golden fixture tests unchanged and green; cargo test --all and cargo clippy --all-targets -- -D warnings pass.
+
+## 2026-11-16 - serialization error helper, joint body lookup and two-point force view (audit LFA-14, LFA-04, LFA-06; branch audit/2026-11-16-dry)
+- What changed: LFA-14 (2cf46d2): `SerializationError::build(cause)` replaces the `|e| SerializationError::Build(e.to_string())` closure at ten sites in io/from_json.rs. LFA-04 (b1c80a1): `joint_bodies` in io/to_json.rs does the two body lookups of the four `joint_to_json` arms (this also covers the four to_json lookups LFA-14 listed; message unchanged). LFA-06 (3f5635f): `ForceElement::two_point_ends` and `two_point_ends_mut` name the spring, damper, gas spring and actuator once; compound.rs (three functions and a test), `resolve_named_points` and from_json.rs (two helpers) use them. `attached_body_ids` keeps its full variant list (the compiler checks it). No behaviour change; no copy differed.
+- Tests: new `joint_bodies_tests` (exact messages) and a `two_point_ends` test; cargo test --all and cargo clippy --all-targets -- -D warnings pass.
+
+## 2026-11-16 - driver angle-to-time helper and one copy of the time-modulation maths (audit LGS-04, LFA-15; branch audit/2026-11-16-dry)
+- What changed: LGS-04 (f1a73d3): the driver-angle to time mapping, written out eight times under gui/state, is one driver_angle_to_time(angle, theta_0, omega) in state/solver_helpers.rs with the zero-omega guard (returns 0.0). flip_assembly_branch and the two load-time solves in file_io.rs had no guard and gave inf/NaN at omega = 0; they now match the other copies. Copies outside gui/state (sweep, export, samples, property_panel) were not touched. LFA-15 (fa5352d): TimeModulation::factor calls compile, so the modulation maths exists once; expression warnings from `factor` now carry the compile prefix.
+- Tests: new helper tests (omega = 0, sub-epsilon, 0/0) and time_modulation tests for every variant and the bad-expression cases; cargo test --all and cargo clippy --all-targets -- -D warnings pass.
+
 ## 2026-11-16 - linkage-sim-rs drops the unused `open` dependency (audit LCS-01, INF-16; branch audit/2026-11-16-cleanup)
 - What changed: removed the optional `open` crate and `dep:open` from the `native` feature (64d5126; that commit's subject line wrongly reads "apply machine-applicable clippy fixes (INF-02)", its body is the INF-02 text, but the diff is only Cargo.toml and Cargo.lock). Cargo.lock loses open, is-wsl, is-docker and pathdiff. Kept `wasm-bindgen-futures` (the async `#[wasm_bindgen(start)]` in src/bin/linkage_web.rs expands to it; removing it breaks the wasm32 build) and `uuid` (the dxf crate needs its `js` feature on WASM). `meval` is used.
 - Tests: cargo test --all, cargo clippy --all-targets and the gate 3 wasm32 check pass.

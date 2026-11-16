@@ -23,3 +23,11 @@ pub enum SerializationError {
         y: f64,
     },
 }
+
+impl SerializationError {
+    /// A [`SerializationError::Build`] carrying `cause`'s message. Used as
+    /// `.map_err(SerializationError::build)` on any builder error.
+    pub(crate) fn build(cause: impl std::fmt::Display) -> Self {
+        SerializationError::Build(cause.to_string())
+    }
+}

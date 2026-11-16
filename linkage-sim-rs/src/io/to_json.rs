@@ -42,6 +42,20 @@ fn find_point_name(
     })
 }
 
+/// Look up both bodies of a joint, `body_i` first.
+fn joint_bodies<'a>(
+    bodies: &'a HashMap<String, Body>,
+    body_i_id: &str,
+    body_j_id: &str,
+) -> Result<(&'a Body, &'a Body), SerializationError> {
+    let find = |id: &str| {
+        bodies
+            .get(id)
+            .ok_or_else(|| SerializationError::build(format!("body '{id}' not found")))
+    };
+    Ok((find(body_i_id)?, find(body_j_id)?))
+}
+
 /// Convert a `Body` to its JSON representation.
 fn body_to_json(body: &Body) -> BodyJson {
     let attachment_points = body
@@ -89,8 +103,7 @@ fn joint_to_json(
         JointConstraint::Revolute(j) => {
             let body_i_id = j.body_i_id();
             let body_j_id = j.body_j_id();
-            let body_i = bodies.get(body_i_id).ok_or_else(|| SerializationError::Build(format!("body '{}' not found", body_i_id)))?;
-            let body_j = bodies.get(body_j_id).ok_or_else(|| SerializationError::Build(format!("body '{}' not found", body_j_id)))?;
+            let (body_i, body_j) = joint_bodies(bodies, body_i_id, body_j_id)?;
             Ok(JointJson::Revolute {
                 body_i: body_i_id.to_string(),
                 body_j: body_j_id.to_string(),
@@ -102,8 +115,7 @@ fn joint_to_json(
         JointConstraint::Fixed(j) => {
             let body_i_id = j.body_i_id();
             let body_j_id = j.body_j_id();
-            let body_i = bodies.get(body_i_id).ok_or_else(|| SerializationError::Build(format!("body '{}' not found", body_i_id)))?;
-            let body_j = bodies.get(body_j_id).ok_or_else(|| SerializationError::Build(format!("body '{}' not found", body_j_id)))?;
+            let (body_i, body_j) = joint_bodies(bodies, body_i_id, body_j_id)?;
             Ok(JointJson::Fixed {
                 body_i: body_i_id.to_string(),
                 body_j: body_j_id.to_string(),
@@ -116,8 +128,7 @@ fn joint_to_json(
         JointConstraint::Prismatic(j) => {
             let body_i_id = j.body_i_id();
             let body_j_id = j.body_j_id();
-            let body_i = bodies.get(body_i_id).ok_or_else(|| SerializationError::Build(format!("body '{}' not found", body_i_id)))?;
-            let body_j = bodies.get(body_j_id).ok_or_else(|| SerializationError::Build(format!("body '{}' not found", body_j_id)))?;
+            let (body_i, body_j) = joint_bodies(bodies, body_i_id, body_j_id)?;
             Ok(JointJson::Prismatic {
                 body_i: body_i_id.to_string(),
                 body_j: body_j_id.to_string(),
@@ -131,8 +142,7 @@ fn joint_to_json(
         JointConstraint::CamFollower(j) => {
             let body_i_id = j.body_i_id();
             let body_j_id = j.body_j_id();
-            let body_i = bodies.get(body_i_id).ok_or_else(|| SerializationError::Build(format!("body '{}' not found", body_i_id)))?;
-            let body_j = bodies.get(body_j_id).ok_or_else(|| SerializationError::Build(format!("body '{}' not found", body_j_id)))?;
+            let (body_i, body_j) = joint_bodies(bodies, body_i_id, body_j_id)?;
             Ok(JointJson::CamFollower {
                 body_i: body_i_id.to_string(),
                 body_j: body_j_id.to_string(),
@@ -259,4 +269,34 @@ pub fn save_mechanism(mech: &Mechanism) -> Result<String, SerializationError> {
     let json_struct = mechanism_to_json(mech)?;
     let json_str = serde_json::to_string_pretty(&json_struct)?;
     Ok(json_str)
+}
+
+#[cfg(test)]
+mod joint_bodies_tests {
+    use super::*;
+
+    fn bodies() -> HashMap<String, Body> {
+        let mut m = HashMap::new();
+        m.insert("a".to_string(), Body::new("a"));
+        m
+    }
+
+    #[test]
+    fn missing_body_i_is_reported_first() {
+        let err = joint_bodies(&bodies(), "x", "y").unwrap_err();
+        assert_eq!(err.to_string(), "Failed to build mechanism: body 'x' not found");
+    }
+
+    #[test]
+    fn missing_body_j_is_reported() {
+        let err = joint_bodies(&bodies(), "a", "y").unwrap_err();
+        assert_eq!(err.to_string(), "Failed to build mechanism: body 'y' not found");
+    }
+
+    #[test]
+    fn both_found() {
+        let b = bodies();
+        let (i, j) = joint_bodies(&b, "a", "a").unwrap();
+        assert_eq!((i.id.as_str(), j.id.as_str()), ("a", "a"));
+    }
 }

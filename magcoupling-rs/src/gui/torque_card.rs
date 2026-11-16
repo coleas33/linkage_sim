@@ -25,13 +25,13 @@ use crate::engine::meta::SliderRange;
 use crate::engine::model::blocks_fit;
 use crate::engine::size_controls::{SizeControls, dimensions, dimensions_with_minimum_diameter};
 use crate::engine::sizing::FreeVariable;
-use crate::gui::dashboard::{Level, result_info};
+use crate::gui::dashboard::Level;
 use crate::gui::format::{
     TorquePrecision, decimals_with_a_digit, shared_torque_precision, signed_change, signed_percent,
     signed_torque_change, with_unit,
 };
 use crate::gui::guidance::{
-    CheckGuide, FACE_GAP, check_terms, counted_guides, level, result_number,
+    CheckGuide, FACE_GAP, check_terms, counted_guides, level, result_number, result_unit,
 };
 use crate::gui::inputs::slider_range;
 use crate::gui::plain_text::label_for;
@@ -809,7 +809,7 @@ impl Shown<'_> {
                     check: guide.label,
                     name: quoted.name,
                     change,
-                    unit: result_info(quoted.path).map_or("", |info| info.meta.unit),
+                    unit: result_unit(quoted.path),
                     decimals: quoted.decimals,
                 })
             })
@@ -826,6 +826,7 @@ mod tests {
     };
     use crate::engine::size_controls::{resize_diameter_with_minimum, resize_length};
     use crate::engine::sizing::is_valid;
+    use crate::gui::dashboard::result_info;
     use crate::gui::format::{
         TORQUE_DECIMALS, fixed, last_digit_step, reads_not_zero, signed_fixed,
     };

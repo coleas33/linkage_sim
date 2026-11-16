@@ -4,7 +4,7 @@ use std::path::Path;
 
 use crate::core::driver::DriverMeta;
 use crate::io::{load_mechanism_unbuilt, mechanism_to_json};
-use super::{AppState, LoadCaseManager};
+use super::{driver_angle_to_time, AppState, LoadCaseManager};
 use super::blueprint_ops::detect_driver_joint_id;
 
 // ── Share via URL helpers (compress + base64 encode) ─────────────────────────
@@ -408,7 +408,7 @@ impl AppState {
 
         // Solve at the shared angle (if present) or t=0.
         let target_angle = shared_angle.unwrap_or(driver_theta_0);
-        let target_t = (target_angle - driver_theta_0) / driver_omega;
+        let target_t = driver_angle_to_time(target_angle, driver_theta_0, driver_omega);
 
         let q0 = mech.state().make_q();
         let mut converged = self.solve_and_update(&mech, &q0, target_t, 1e-10, 50, Some(q0.clone()));
@@ -423,7 +423,7 @@ impl AppState {
                 -std::f64::consts::FRAC_PI_4,
             ];
             for &start_angle in &try_angles {
-                let t_start = (start_angle - driver_theta_0) / driver_omega;
+                let t_start = driver_angle_to_time(start_angle, driver_theta_0, driver_omega);
                 let q_zero = mech.state().make_q();
                 if let Ok(result) = solve_position(&mech, &q_zero, t_start, 1e-10, 100)
                     && result.converged {

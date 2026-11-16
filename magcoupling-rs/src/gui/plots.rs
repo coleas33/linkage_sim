@@ -45,7 +45,7 @@ use egui_plot::{Corner, HLine, Legend, Line, LineStyle, Plot, PlotPoints, PlotUi
 
 use crate::engine::meta::{NumOrText, ResultSet, Value};
 use crate::engine::model::{end_effect_in_range, harmonic_count, ring_pair_factor};
-use crate::engine::sweeps::SweepRow;
+use crate::engine::sweeps::{STATUS_BELOW_MINIMUM, STATUS_NOMINAL, SweepRow};
 use crate::gui::dashboard::{Level, end_effect_out_of_range, hover_text, result_info};
 use crate::gui::format::{format_value, with_unit};
 use crate::gui::plain_text::{PULL_OUT_NOMINAL, REQUIRED_TORQUE, label_for};
@@ -320,8 +320,8 @@ pub fn sweep_points(rows: &[SweepRow]) -> SweepPoints {
         }
         points.line.push(p);
         match row.status.as_str() {
-            "nominal: test needed" => points.nominal.push(p),
-            "below hot minimum" => points.below_minimum.push(p),
+            STATUS_NOMINAL => points.nominal.push(p),
+            STATUS_BELOW_MINIMUM => points.below_minimum.push(p),
             _ => points.no_fit.push(p),
         }
     }

@@ -233,9 +233,9 @@ The sure line fixes are in the fixed table. What is left needs new wording or a 
 - **LFA-09** Actuator stroke limits need both ends set, which the field docs and one test do not say.
 - **LGS-18** The expression-driver editor applies on every keystroke and again on focus loss.
 - **MGP-06** A part or grade row says the same thing twice, in two different wordings.
-- **MGP-10** `minimum_diameter_mm` is cleared in three overlapping places.
+- **MGP-10** `minimum_diameter_mm` is cleared in three overlapping places. FIXED e68ae6a: a private replace_design clears it once for open, load and reset.
 - **MGV-01** The results table and the clamp tab draw the catalogue label; every other view draws the display label.
-- **MGV-04** The Equation panel reads `clamps::PAUSED` while the panel passes `clamps_paused` everywhere else.
+- **MGV-04** The Equation panel reads `clamps::PAUSED` while the panel passes `clamps_paused` everywhere else. FIXED 0969e9f: explorer_ui takes clamps_paused for its hover and Used by links.
 - **PY-09** scripts/export_gifs.py behaves differently from the other scripts and hides failures.
 
 ### H. Speed (14)
@@ -262,18 +262,18 @@ Nothing here was measured. Each is a place where the code does the same work mor
 
 You asked for repetition to be flagged hard. None of these was merged: each merge is a refactor, and a refactor is a judgment.
 
-- **LGS-04** The driver-angle to time mapping is written out five times in scope, and one copy lacks the zero-omega guard. More than repetition: the copies at `gui/state/mod.rs:1300` and `gui/state/file_io.rs:408, 423` divide by the driver speed without the zero guard the other copies have.
+- **LGS-04** The driver-angle to time mapping is written out five times in scope, and one copy lacks the zero-omega guard. More than repetition: the copies at `gui/state/mod.rs:1300` and `gui/state/file_io.rs:408, 423` divide by the driver speed without the zero guard the other copies have. FIXED f1a73d3: one `driver_angle_to_time` helper with the guard, used at all eight sites in gui/state.
 - **LGC-10** Force editor repeats one DragValue block about 50 times in a 1,100-line function.
 - **LGC-06** Fourteen copies of the plot trailer and the per-plot Plot builder.
 - **LGS-15** Templates and custom samples are two full copies of the same persistence and CRUD code.
-- **LGS-09** Eight-plus copies of the "generate text, download, report outcome" menu block.
-- **LGE-15** The four-bar skeleton is hand-copied into eleven sample builders although build_standard_fourbar exists.
+- **LGS-09** Eight-plus copies of the "generate text, download, report outcome" menu block. FIXED 0a115f4: `download_generated` in menu_bar.rs used by all eleven sites; unused `download_text` removed.
+- **LGE-15** The four-bar skeleton is hand-copied into eleven sample builders although build_standard_fourbar exists. FIXED ed2f476: six builders (quick-return, toggle clamp, Hoeken, Roberts, figure-8 curve, pantograph) use it; the rest differ and stay.
 - **LGE-12** compute_sweep_data_with_weights and compute_trajectory repeat the same setup; SweepData is built long-hand three times.
-- **LGE-13** write_sweep_csv codes each of eleven optional columns twice.
-- **LFA-06** The "four two-point forces" match is written out in eight places.
-- **LFA-04** Four identical copies of the body-lookup block in `joint_to_json`.
-- **LFA-14** `.map_err(|e| SerializationError::Build(e.to_string()))` repeated nine times in from_json and four more lookups in to_json.
-- **LFA-15** The time-modulation maths is written twice.
+- **LGE-13** write_sweep_csv codes each of eleven optional columns twice. FIXED 034ffc3: one column list drives header and rows; output pinned byte for byte.
+- **LFA-06** The "four two-point forces" match is written out in eight places. FIXED 3f5635f: `ForceElement::two_point_ends` (and `_mut`) used by seven sites; `attached_body_ids` left, the compiler checks it.
+- **LFA-04** Four identical copies of the body-lookup block in `joint_to_json`. FIXED b1c80a1: `joint_bodies` helper.
+- **LFA-14** `.map_err(|e| SerializationError::Build(e.to_string()))` repeated nine times in from_json and four more lookups in to_json. FIXED 2cf46d2 (from_json, `SerializationError::build`) and b1c80a1 (to_json lookups).
+- **LFA-15** The time-modulation maths is written twice. FIXED fa5352d: `factor` now calls `compile`, one copy of the maths.
 - **LFA-13** The same 4-bar test fixture is typed out again and again in this part.
 - **LCS-05** pass-1-only result is built twice, and the transposed Jacobian SVD solve is written three times.
 - **LGC-03** Coupler-trace dashes re-implement draw_dashed_line, and the dashed force-zone rectangle is written twice.
@@ -285,11 +285,11 @@ You asked for repetition to be flagged hard. None of these was merged: each merg
 - **PY-06** The same four-bar and slider-crank builders are rewritten in about 20 test files and 10 scripts.
 - **PY-04** The four golden mechanism builders are copied between export_golden.py and test_golden_fixtures.py.
 - **PY-05** The ternary-plate constructor and the six-bar initial-guess solver are pasted 7 and 4 times. The check confirmed this only in part.
-- **MGV-05** plots.rs matches the sweep status by literal strings the engine owns. Ready to apply on your word: shared constants (the check's exact change) or a status enum. The strings are also the Python oracle's.
+- **MGV-05** plots.rs matches the sweep status by literal strings the engine owns. Ready to apply on your word: shared constants (the check's exact change) or a status enum. The strings are also the Python oracle's. FIXED 3acf7c5: STATUS_NOMINAL and STATUS_BELOW_MINIMUM in engine/sweeps.rs, read by plots.rs.
 - **MEX-10** The 23 shaft joint paths are typed in three places (SCOPE chain, note `equations`, and the records file).
 - **MEC-01** "quote the failing value one last digit past the limit" written three times. The check confirmed this only in part.
 - **MGG-03** (the part not fixed) `gui/guidance.rs:199` and `:1815`, whose constants live in another module or function.
-- **MGG-04** the unit of a result is looked up with the same one-liner in seven places.
+- **MGG-04** the unit of a result is looked up with the same one-liner in seven places. FIXED f28a61d: guidance::result_unit.
 - **MGG-05** Value to f64 conversion is written out in several modules.
 - **MGG-09** the typesetter spells its stroke width and small-script size inline in several places.
 - **MGG-10** two guidance tests share a 25-line skeleton.

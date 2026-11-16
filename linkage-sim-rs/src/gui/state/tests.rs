@@ -3759,3 +3759,52 @@
         assert_eq!(from_mech, expected, "fixture: load set the range");
         assert_eq!((state.sweep_stroke_min, state.sweep_stroke_max), expected);
     }
+
+    #[test]
+    fn driver_angle_to_time_divides_by_omega() {
+        assert_eq!(driver_angle_to_time(3.0, 1.0, 2.0), 1.0);
+        assert_eq!(driver_angle_to_time(0.0, 1.0, -2.0), 0.5);
+    }
+
+    #[test]
+    fn driver_angle_to_time_zero_omega_is_zero_not_inf_or_nan() {
+        // LGS-04: flip_assembly_branch and file_io used to divide unguarded.
+        for omega in [0.0, -0.0, f64::EPSILON / 2.0] {
+            let t = driver_angle_to_time(1.5, 0.5, omega);
+            assert!(t.is_finite());
+            assert_eq!(t, 0.0);
+        }
+        // angle == theta_0 and omega == 0 was 0/0 = NaN in the unguarded copies.
+        assert_eq!(driver_angle_to_time(0.5, 0.5, 0.0), 0.0);
+    }
+
+    #[test]
+    fn flip_assembly_branch_with_zero_omega_stays_finite() {
+        // LGS-04: flip_assembly_branch used to compute (angle - theta_0) / omega
+        // directly; at omega = 0 that is inf/NaN and the re-solve never returned.
+        // No UI or file path can set omega = 0 (set_constant_speed_driver and the
+        // JSON loader both clamp it), so the stalled driver is set on the state
+        // directly. Run on a thread so a regression fails fast instead of hanging.
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut state = AppState::default();
+            state.load_sample(SampleMechanism::FourBar);
+            state.solve_at_angle(45f64.to_radians());
+            assert!(state.solver_status.converged, "setup must converge");
+            state.driver_kind = DriverKind::Revolute {
+                angle: state.driver_angle,
+                omega: 0.0,
+                theta_0: 0.0,
+            };
+            state.flip_assembly_branch();
+            let _ = tx.send((
+                state.q.iter().all(|x| x.is_finite()),
+                state.solver_status.converged,
+            ));
+        });
+        let (finite, converged) = rx
+            .recv_timeout(std::time::Duration::from_secs(20))
+            .expect("flip_assembly_branch at omega = 0 hung or panicked");
+        assert!(finite, "q must stay finite at omega = 0");
+        assert!(converged, "flip at omega = 0 must still converge");
+    }

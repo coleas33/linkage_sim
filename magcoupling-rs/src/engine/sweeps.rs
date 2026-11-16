@@ -45,6 +45,11 @@ pub const GAP_SWEEP_CORNER_GAPS_MM: [f64; 13] = [
 /// Pole counts of the pole sweep (rows 6-11).
 pub const POLE_SWEEP_POLES: [i64; 6] = [6, 8, 10, 12, 14, 16];
 
+/// The status of a row that fits and passes the hot minimum (read by `gui::plots`).
+pub const STATUS_NOMINAL: &str = "nominal: test needed";
+/// The status of a row that fits but falls below the hot minimum (read by `gui::plots`).
+pub const STATUS_BELOW_MINIMUM: &str = "below hot minimum";
+
 rows! {
     /// One row of the Gap sweep or Pole sweep sheet (columns B-AA). Labels and
     /// units are the workbook headers (rows 4 and 5).
@@ -170,9 +175,9 @@ fn row(
     } else if G > ctx.max_diameter_mm {
         "outside OD envelope"
     } else if X < ctx.required_floor_Nm {
-        "below hot minimum"
+        STATUS_BELOW_MINIMUM
     } else {
-        "nominal: test needed"
+        STATUS_NOMINAL
     };
     let [h1, h3, h5, ..] = h;
     SweepRow {

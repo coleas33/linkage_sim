@@ -30,26 +30,14 @@ pub enum DownloadOutcome {
     Failed(String),
 }
 
-/// Trigger a download / save of the given text contents.
+/// Trigger a download / save of the given contents: text (pass
+/// `s.as_bytes()`) or binary (PNG, GIF, etc).
 ///
 /// `default_filename` is the suggested filename (e.g. `"mechanism.svg"`).
 /// `mime_type` is used by the web build to set the Blob MIME type
 /// (e.g. `"image/svg+xml"`). The native build ignores it.
 /// `filter` is used by the native save dialog to constrain visible
 /// file types; the web build ignores it.
-pub fn download_text(
-    default_filename: &str,
-    mime_type: &str,
-    contents: &str,
-    filter: FileFilter,
-) -> DownloadOutcome {
-    download_bytes(default_filename, mime_type, contents.as_bytes(), filter)
-}
-
-/// Trigger a download / save of the given binary contents (PNG, GIF, etc).
-///
-/// Same semantics as `download_text` but accepts raw bytes — required
-/// for binary formats where UTF-8 conversion would corrupt the data.
 pub fn download_bytes(
     default_filename: &str,
     mime_type: &str,

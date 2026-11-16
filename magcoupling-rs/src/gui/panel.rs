@@ -585,8 +585,14 @@ impl MagcouplingPanel {
     /// starts there, so the first Undo does not throw it away. Every other replacement of the
     /// design (a loaded file, reset all) is an edit and can be undone.
     pub fn open_design(&mut self, design: Design) {
-        self.minimum_diameter_mm = None;
         self.history = History::new(design.clone());
+        self.replace_design(design);
+    }
+
+    /// Replaces the design with one that is not an undo or redo step: the Minimum OD an earlier
+    /// design lowered does not carry over (undo and redo keep it, through [`Self::set_design`]).
+    fn replace_design(&mut self, design: Design) {
+        self.minimum_diameter_mm = None;
         self.set_design(design);
     }
 
@@ -615,7 +621,7 @@ impl MagcouplingPanel {
         loaded: Result<LoadedDesign, LoadError>,
         done: &str,
     ) -> Result<(), LoadError> {
-        self.load_with(loaded, done, Self::set_design)
+        self.load_with(loaded, done, Self::replace_design)
     }
 
     /// Applies a loaded design with `apply` (an edit, or a new start) and says `done`, then the
@@ -630,7 +636,6 @@ impl MagcouplingPanel {
         match loaded {
             Ok(LoadedDesign { design, notice }) => {
                 apply(self, design);
-                self.minimum_diameter_mm = None;
                 self.status = Some(match notice {
                     Some(notice) => format!("{done}. {notice}"),
                     None => done.to_owned(),
@@ -683,8 +688,7 @@ impl MagcouplingPanel {
 
     /// Back to the default design (inputs and sizing state); it can be undone.
     pub fn reset(&mut self) {
-        self.minimum_diameter_mm = None;
-        self.set_design(Design::default());
+        self.replace_design(Design::default());
     }
 
     /// Draws the panel into `ui` and applies this frame's edits.
@@ -915,6 +919,7 @@ impl MagcouplingPanel {
                         &self.results,
                         show_details,
                         &held,
+                        self.clamps_paused,
                     );
                 });
         }
@@ -1935,9 +1940,9 @@ mod tests {
 
         /// A harness drawing `panel` on a screen of `size`, one frame in. Its panel draws the
         /// whole shaft-clamp section, as every panel test did before the pause (ruling 11): a
-        /// test of the paused panel sets `harness.panel.clamps_paused` itself. The explorer
-        /// reads `clamps::PAUSED` itself (Start here, its hover, Used by), so even this harness
-        /// walks the paused Start here.
+        /// test of the paused panel sets `harness.panel.clamps_paused` itself. The explorer's
+        /// Start here walk still reads `clamps::PAUSED` itself, so even this harness walks the
+        /// paused Start here; its hover and Used by links follow the panel's `clamps_paused`.
         fn of(mut panel: MagcouplingPanel, size: egui::Vec2) -> Self {
             panel.clamps_paused = false;
             let mut harness = Self {
@@ -5197,6 +5202,54 @@ mod tests {
         harness.panel.reset();
         assert_eq!(harness.panel.minimum_diameter_mm, None);
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
+    fn a_new_design_clears_the_lowered_minimum_od_but_undo_and_redo_keep_it() {
+        // MGP-10: open, load (file and link), and reset each start from no lowered Minimum OD.
+        let mut other = Design::default();
+        other.inputs.coupling.npole = 8;
+        let text = design_to_json(&other);
+        let payload = crate::gui::session::encode_share_payload(&other);
+        let cleared = |panel: &MagcouplingPanel| {
+            assert_eq!(panel.minimum_diameter_mm, None);
+            assert_eq!(panel.results, compute_all(&panel.shown_inputs()));
+        };
+        let lowered = || {
+            let mut panel = MagcouplingPanel::new();
+            panel.minimum_diameter_mm = Some(45.0);
+            panel
+        };
+        let mut panel = lowered();
+        panel.open_design(other.clone());
+        cleared(&panel);
+        assert_eq!(panel.design(), other);
+        let mut panel = lowered();
+        panel.load_design_file(&text).unwrap();
+        cleared(&panel);
+        let mut panel = lowered();
+        panel.load_share_payload(&payload).unwrap();
+        cleared(&panel);
+        let mut panel = lowered();
+        panel.open_share_payload(&payload).unwrap();
+        cleared(&panel);
+        let mut panel = lowered();
+        panel.reset();
+        cleared(&panel);
+        // A refused load changes nothing.
+        let mut panel = lowered();
+        assert!(panel.load_design_file("not a design").is_err());
+        assert_eq!(panel.minimum_diameter_mm, Some(45.0));
+        // Undo and redo are not new designs.
+        let mut panel = MagcouplingPanel::new();
+        panel.load_design_file(&text).unwrap();
+        panel.minimum_diameter_mm = Some(45.0);
+        panel.undo();
+        assert_eq!(panel.design(), Design::default(), "the load was undone");
+        assert_eq!(panel.minimum_diameter_mm, Some(45.0));
+        panel.redo();
+        assert_eq!(panel.design(), other, "the load was redone");
+        assert_eq!(panel.minimum_diameter_mm, Some(45.0));
     }
 
     #[test]

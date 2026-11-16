@@ -6,8 +6,9 @@ use crate::core::body::{make_bar, make_ground, Body};
 use crate::core::mechanism::Mechanism;
 use crate::solver::kinematics::solve_position;
 
+use super::fourbar::build_standard_fourbar;
 use super::helpers::{
-    attach_driver_to_grounded_revolute_with_theta0, fourbar_initial_q0, make_ternary,
+    attach_driver_to_grounded_revolute_with_theta0, make_ternary,
     set_bar_mass, set_slider_mass, set_ternary_mass, solve_with_continuation,
 };
 
@@ -21,40 +22,12 @@ use super::helpers::{
 pub(super) fn build_quick_return(
     driver_joint_id: Option<&str>,
 ) -> Result<(Mechanism, DVector<f64>), String> {
-    let o2 = (0.0, 0.0);
-    let o4 = (0.060, 0.0);
-    let l_crank = 0.015;
-    let l_coupler = 0.060;
-    let l_rocker = 0.045;
-
-    let ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
-    let mut crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
-    let mut coupler = make_bar("coupler", "B", "C", l_coupler, 0.0, 0.0);
-    let mut rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
-    set_bar_mass(&mut crank, l_crank);
-    set_bar_mass(&mut coupler, l_coupler);
-    set_bar_mass(&mut rocker, l_rocker);
-
-    let mut mech = Mechanism::new();
-    mech.add_body(ground).unwrap();
-    mech.add_body(crank).unwrap();
-    mech.add_body(coupler).unwrap();
-    mech.add_body(rocker).unwrap();
-
-    mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
-    mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
-    mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
-    mech.add_revolute_joint("J4", "rocker", "D", "ground", "O4").unwrap();
-
-    let joint_id = driver_joint_id.unwrap_or("J1");
-    attach_driver_to_grounded_revolute_with_theta0(&mut mech, joint_id, "D1", 0.0)?;
-    mech.build().map_err(|e| e.to_string())?;
-
-    let q0 = fourbar_initial_q0(
-        mech.state(), o2, o4, l_crank, l_coupler, l_rocker, 0.0,
-        "crank", "coupler", "rocker", false,
-    );
-    Ok((mech, q0))
+    build_standard_fourbar(
+        "crank", "coupler", "rocker",
+        0.060, 0.015, 0.060, 0.045, None,
+        0.0, false,
+        driver_joint_id,
+    )
 }
 
 /// Toggle clamp — 4-bar near toggle configuration.
@@ -66,40 +39,12 @@ pub(super) fn build_quick_return(
 pub(super) fn build_toggle_clamp(
     driver_joint_id: Option<&str>,
 ) -> Result<(Mechanism, DVector<f64>), String> {
-    let o2 = (0.0, 0.0);
-    let o4 = (0.040, 0.0);
-    let l_crank = 0.012;
-    let l_coupler = 0.038;
-    let l_rocker = 0.020;
-
-    let ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
-    let mut crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
-    let mut coupler = make_bar("coupler", "B", "C", l_coupler, 0.0, 0.0);
-    let mut rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
-    set_bar_mass(&mut crank, l_crank);
-    set_bar_mass(&mut coupler, l_coupler);
-    set_bar_mass(&mut rocker, l_rocker);
-
-    let mut mech = Mechanism::new();
-    mech.add_body(ground).unwrap();
-    mech.add_body(crank).unwrap();
-    mech.add_body(coupler).unwrap();
-    mech.add_body(rocker).unwrap();
-
-    mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
-    mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
-    mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
-    mech.add_revolute_joint("J4", "rocker", "D", "ground", "O4").unwrap();
-
-    let joint_id = driver_joint_id.unwrap_or("J1");
-    attach_driver_to_grounded_revolute_with_theta0(&mut mech, joint_id, "D1", 0.0)?;
-    mech.build().map_err(|e| e.to_string())?;
-
-    let q0 = fourbar_initial_q0(
-        mech.state(), o2, o4, l_crank, l_coupler, l_rocker, 0.0,
-        "crank", "coupler", "rocker", false,
-    );
-    Ok((mech, q0))
+    build_standard_fourbar(
+        "crank", "coupler", "rocker",
+        0.040, 0.012, 0.038, 0.020, None,
+        0.0, false,
+        driver_joint_id,
+    )
 }
 
 /// Scotch yoke — produces pure sinusoidal output motion.
@@ -600,47 +545,19 @@ pub(super) fn build_bell_crank(
 pub(super) fn build_peaucellier_lipkin(
     driver_joint_id: Option<&str>,
 ) -> Result<(Mechanism, DVector<f64>), String> {
-    let o2 = (0.0_f64, 0.0_f64);
-    let o4 = (0.060_f64, 0.0_f64); // ground = 60mm
-    let l_crank = 0.040_f64;       // 40mm
-    let l_coupler = 0.080_f64;     // 80mm
-    let l_rocker = 0.060_f64;      // 60mm
+    // ground = 60mm, crank = 40mm, coupler = 80mm, rocker = 60mm.
+    let l_coupler = 0.080_f64;
 
-    let ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
-    let mut crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
-    let mut coupler = make_bar("coupler", "B", "C", l_coupler, 0.0, 0.0);
-    // Coupler point at offset for interesting trace
-    coupler.add_coupler_point("P", l_coupler / 2.0, l_coupler / 3.0).unwrap();
-    let mut rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
-    set_bar_mass(&mut crank, l_crank);
-    set_bar_mass(&mut coupler, l_coupler);
-    set_bar_mass(&mut rocker, l_rocker);
-
-    let mut mech = Mechanism::new();
-    mech.add_body(ground).unwrap();
-    mech.add_body(crank).unwrap();
-    mech.add_body(coupler).unwrap();
-    mech.add_body(rocker).unwrap();
-
-    mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
-    mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
-    mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
-    mech.add_revolute_joint("J4", "rocker", "D", "ground", "O4").unwrap();
-
+    // Coupler point at offset for interesting trace.
     // Use PI/2 as initial crank angle since at theta=0 the geometry is at a
     // change-point singularity (crank tip to O4 distance equals |coupler-rocker|).
-    let init_angle = std::f64::consts::FRAC_PI_2;
-    let joint_id = driver_joint_id.unwrap_or("J1");
-    attach_driver_to_grounded_revolute_with_theta0(&mut mech, joint_id, "D1", init_angle)?;
-
-    mech.build().map_err(|e| e.to_string())?;
-
-    let q0 = fourbar_initial_q0(
-        mech.state(), o2, o4, l_crank, l_coupler, l_rocker, init_angle,
-        "crank", "coupler", "rocker", true,
-    );
-
-    Ok((mech, q0))
+    // above = true: the coupler-rocker joint starts in +y.
+    build_standard_fourbar(
+        "crank", "coupler", "rocker",
+        0.060, 0.040, l_coupler, 0.060, Some((l_coupler / 2.0, l_coupler / 3.0)),
+        std::f64::consts::FRAC_PI_2, true,
+        driver_joint_id,
+    )
 }
 
 // ---------------------------------------------------------------------------

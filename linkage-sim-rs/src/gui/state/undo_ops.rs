@@ -4,7 +4,7 @@ use nalgebra::DVector;
 
 use crate::gui::undo::MechanismSnapshot;
 use crate::io::{load_mechanism_unbuilt, mechanism_to_json};
-use super::AppState;
+use super::{driver_angle_to_time, AppState};
 
 impl AppState {
     /// Create a snapshot of the current mechanism document state.
@@ -44,11 +44,7 @@ impl AppState {
 
         // Solve at the snapshot's driver angle, using the stored q as the initial guess.
         // Falls back to make_q() (all zeros) if the snapshot has no q data.
-        let t = if snapshot.driver_omega.abs() > f64::EPSILON {
-            (snapshot.driver_angle - snapshot.driver_theta_0) / snapshot.driver_omega
-        } else {
-            0.0
-        };
+        let t = driver_angle_to_time(snapshot.driver_angle, snapshot.driver_theta_0, snapshot.driver_omega);
         let q0 = if snapshot.q.len() == mech.state().n_coords() {
             DVector::from_vec(snapshot.q.clone())
         } else {

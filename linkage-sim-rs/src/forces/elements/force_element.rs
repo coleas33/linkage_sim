@@ -30,6 +30,27 @@ pub enum ForceElement {
     ForceZone(ForceZoneElement),
 }
 
+/// The end points shared by the four two-point forces (see
+/// [`ForceElement::two_point_ends`]).
+pub struct TwoPointEnds<'a> {
+    pub body_a: &'a str,
+    pub point_a: [f64; 2],
+    pub point_a_name: Option<&'a str>,
+    pub body_b: &'a str,
+    pub point_b: [f64; 2],
+    pub point_b_name: Option<&'a str>,
+}
+
+/// Mutable borrow of the end-point fields of a two-point force.
+pub struct TwoPointEndsMut<'a> {
+    pub body_a: &'a mut String,
+    pub point_a: &'a mut [f64; 2],
+    pub point_a_name: &'a mut Option<String>,
+    pub body_b: &'a mut String,
+    pub point_b: &'a mut [f64; 2],
+    pub point_b_name: &'a mut Option<String>,
+}
+
 /// Look up a body for point resolution; an unknown id is an error, not a panic.
 fn body_of<'a>(
     bodies: &'a HashMap<String, Body>,
@@ -170,56 +191,70 @@ impl ForceElement {
         bodies: &HashMap<String, Body>,
     ) -> Result<ForceElement, crate::core::body::BodyError> {
         let mut resolved = self.clone();
-        match &mut resolved {
-            ForceElement::LinearSpring(s) => {
-                if let Some(ref name) = s.point_a_name.clone() {
-                    let pt = body_of(bodies, &s.body_a)?.resolve_force_point(name)?;
-                    s.point_a = [pt.x, pt.y];
-                }
-                if let Some(ref name) = s.point_b_name.clone() {
-                    let pt = body_of(bodies, &s.body_b)?.resolve_force_point(name)?;
-                    s.point_b = [pt.x, pt.y];
-                }
+        if let Some(e) = resolved.two_point_ends_mut() {
+            if let Some(name) = e.point_a_name.clone() {
+                let pt = body_of(bodies, e.body_a)?.resolve_force_point(&name)?;
+                *e.point_a = [pt.x, pt.y];
             }
-            ForceElement::LinearDamper(d) => {
-                if let Some(ref name) = d.point_a_name.clone() {
-                    let pt = body_of(bodies, &d.body_a)?.resolve_force_point(name)?;
-                    d.point_a = [pt.x, pt.y];
-                }
-                if let Some(ref name) = d.point_b_name.clone() {
-                    let pt = body_of(bodies, &d.body_b)?.resolve_force_point(name)?;
-                    d.point_b = [pt.x, pt.y];
-                }
+            if let Some(name) = e.point_b_name.clone() {
+                let pt = body_of(bodies, e.body_b)?.resolve_force_point(&name)?;
+                *e.point_b = [pt.x, pt.y];
             }
-            ForceElement::GasSpring(g) => {
-                if let Some(ref name) = g.point_a_name.clone() {
-                    let pt = body_of(bodies, &g.body_a)?.resolve_force_point(name)?;
-                    g.point_a = [pt.x, pt.y];
-                }
-                if let Some(ref name) = g.point_b_name.clone() {
-                    let pt = body_of(bodies, &g.body_b)?.resolve_force_point(name)?;
-                    g.point_b = [pt.x, pt.y];
-                }
-            }
-            ForceElement::LinearActuator(a) => {
-                if let Some(ref name) = a.point_a_name.clone() {
-                    let pt = body_of(bodies, &a.body_a)?.resolve_force_point(name)?;
-                    a.point_a = [pt.x, pt.y];
-                }
-                if let Some(ref name) = a.point_b_name.clone() {
-                    let pt = body_of(bodies, &a.body_b)?.resolve_force_point(name)?;
-                    a.point_b = [pt.x, pt.y];
-                }
-            }
-            ForceElement::ExternalForce(e) => {
-                if let Some(ref name) = e.local_point_name.clone() {
-                    let pt = body_of(bodies, &e.body_id)?.resolve_force_point(name)?;
-                    e.local_point = [pt.x, pt.y];
-                }
-            }
-            _ => {}
+        } else if let ForceElement::ExternalForce(e) = &mut resolved
+            && let Some(ref name) = e.local_point_name.clone()
+        {
+            let pt = body_of(bodies, &e.body_id)?.resolve_force_point(name)?;
+            e.local_point = [pt.x, pt.y];
         }
         Ok(resolved)
+    }
+
+    /// The two end points of a spring, damper, gas spring or linear actuator
+    /// (the four elements that act between a point on body A and a point on
+    /// body B); `None` for every other variant.
+    pub fn two_point_ends(&self) -> Option<TwoPointEnds<'_>> {
+        macro_rules! ends {
+            ($e:expr) => {
+                Some(TwoPointEnds {
+                    body_a: &$e.body_a,
+                    point_a: $e.point_a,
+                    point_a_name: $e.point_a_name.as_deref(),
+                    body_b: &$e.body_b,
+                    point_b: $e.point_b,
+                    point_b_name: $e.point_b_name.as_deref(),
+                })
+            };
+        }
+        match self {
+            ForceElement::LinearSpring(e) => ends!(e),
+            ForceElement::LinearDamper(e) => ends!(e),
+            ForceElement::GasSpring(e) => ends!(e),
+            ForceElement::LinearActuator(e) => ends!(e),
+            _ => None,
+        }
+    }
+
+    /// Mutable form of [`ForceElement::two_point_ends`].
+    pub fn two_point_ends_mut(&mut self) -> Option<TwoPointEndsMut<'_>> {
+        macro_rules! ends {
+            ($e:expr) => {
+                Some(TwoPointEndsMut {
+                    body_a: &mut $e.body_a,
+                    point_a: &mut $e.point_a,
+                    point_a_name: &mut $e.point_a_name,
+                    body_b: &mut $e.body_b,
+                    point_b: &mut $e.point_b,
+                    point_b_name: &mut $e.point_b_name,
+                })
+            };
+        }
+        match self {
+            ForceElement::LinearSpring(e) => ends!(e),
+            ForceElement::LinearDamper(e) => ends!(e),
+            ForceElement::GasSpring(e) => ends!(e),
+            ForceElement::LinearActuator(e) => ends!(e),
+            _ => None,
+        }
     }
 
     /// Returns body IDs this force element is attached to.
