@@ -147,7 +147,7 @@ The repository's rule is more tests, not fewer, so none of these was changed. Ma
 - **DOC-13** Rules in CLAUDE.md section 5 and AGENTS.md point at agent files and skills that are not in the repository, and the one agent file that exists breaks the rule. The agent files, the fbd-derive skill and the hooks exist only in your checkout, because `.gitignore` ignores `.claude/*` except the workflows. A clone cannot follow the rules that name them.
 - **DOC-15** AGENTS.md says CLAUDE.md "holds the project's working rules"; CLAUDE.md holds none of the repository's rules, and has stray characters. CLAUDE.md is your own prompt text, so it was not touched.
 - **INF-17** .gitignore carries a stale heading and two commented-out rules. Left as it is: the commented-out rules also record that the golden fixtures and the output GIFs are tracked on purpose, so deleting them is a wording choice, not a defect.
-- **MGV-08** The `app` feature lists dependencies its `gui` feature already enables. Ready to apply on your word (the check gives the exact change). Harmless as it is, and some keep such lists explicit on purpose.
+- **MGV-08** The `app` feature lists dependencies its `gui` feature already enables. Ready to apply on your word (the check gives the exact change). Harmless as it is, and some keep such lists explicit on purpose. FIXED e44603a: the app feature drops "dep:log" and "dep:js-sys".
 
 ### E. Dead or unfinished code and files: delete or finish (34)
 
@@ -155,10 +155,10 @@ Each of these is something nothing uses. Whether it is rubbish or the start of s
 
 - **LGS-07** Menu "Parametric Study [WIP]" is a permanently disabled checkbox.
 - **LGS-08** Grid "Spacing" setting and `auto_grid_spacing` overwritten on first canvas frame.
-- **LGC-01** Two dead functions with misleading names (driver_lambda_units, draw_actuator_stroke_annotation). Ready to apply on your word (the check gives the exact deletion). Held because each reads as a feature that was started: delete it or wire it up.
-- **LGE-06** add_plotly_multi_chart is dead and its job is written three times inline in generate_html_report. Ready to apply on your word: delete the helper, or use it in the three places.
-- **MGG-06** two public typeset methods exist only for tests. Ready to apply on your word (`TermColors::is_empty`, `texts`). Marking them `#[cfg(test)]` shrinks the library's public surface.
-- **MGV-03** Two `pub` functions in shipped code are called only from tests. Ready to apply on your word (`Cell::as_text`, `package_label`). Moving them into the test modules shrinks the public surface.
+- **LGC-01** Two dead functions with misleading names (driver_lambda_units, draw_actuator_stroke_annotation). Ready to apply on your word (the check gives the exact deletion). Held because each reads as a feature that was started: delete it or wire it up. FIXED 4afc5c8: the two dead functions deleted.
+- **LGE-06** add_plotly_multi_chart is dead and its job is written three times inline in generate_html_report. Ready to apply on your word: delete the helper, or use it in the three places. FIXED 1d262b7: helper deleted (the three inline charts differ, so it was not reused).
+- **MGG-06** two public typeset methods exist only for tests. Ready to apply on your word (`TermColors::is_empty`, `texts`). Marking them `#[cfg(test)]` shrinks the library's public surface. FIXED eda24a8: is_empty and texts are #[cfg(test)].
+- **MGV-03** Two `pub` functions in shipped code are called only from tests. Ready to apply on your word (`Cell::as_text`, `package_label`). Moving them into the test modules shrinks the public surface. FIXED fbf0186: as_text and package_label are #[cfg(test)].
 - **LCS-03** simulate_with_events repeats simulate and rk4_integrate, and nothing outside tests calls it.
 - **LCS-12** (the part not fixed) `State::set_angle` and `JointConstraint::is_cam_follower` have no caller, and `rtol`/`atol` and the local-frame reactions are used only by tests.
 - **LFA-03** (the part not fixed) `JointJson::RevoluteDriver` is a legacy variant the canvas and blueprint code still match; old files may hold it.
