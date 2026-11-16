@@ -47,7 +47,8 @@ pub struct VirtualWorkResult {
 /// * `tol` - Tolerance for the agreement check.
 ///
 /// # Errors
-/// Returns `LinkageError::MechanismNotBuilt` if the mechanism has not been built.
+/// Returns `LinkageError::MechanismNotBuilt` if the mechanism has not been built,
+/// and `LinkageError::NoDriver` if it is built but has no revolute driver.
 pub fn virtual_work_check(
     mech: &Mechanism,
     q: &DVector<f64>,
@@ -59,6 +60,9 @@ pub fn virtual_work_check(
         return Err(LinkageError::MechanismNotBuilt);
     }
 
+    // A built mechanism can still lack a driver; say so before solving.
+    let (body_i, body_j) = mech.driver_body_pair().ok_or(LinkageError::NoDriver)?;
+
     // 1. Solve velocity: Phi_q * q_dot = -Phi_t
     let q_dot = solve_velocity(mech, q, t)?;
 
@@ -66,10 +70,7 @@ pub fn virtual_work_check(
     let q_dot_zero = DVector::zeros(q.len());
     let q_forces = mech.assemble_forces(q, &q_dot_zero, t);
 
-    // 3. Get input angular velocity from the driver body pair.
-    let (body_i, body_j) = mech
-        .driver_body_pair()
-        .ok_or(LinkageError::MechanismNotBuilt)?;
+    // 3. Input angular velocity from the driver body pair.
 
     let state = mech.state();
 
@@ -276,5 +277,32 @@ mod tests {
 
         assert!(result.input_torque.is_nan());
         assert!(!result.agrees);
+    }
+
+    #[test]
+    fn virtual_work_on_built_mechanism_without_driver_reports_no_driver() {
+        let mut mech = Mechanism::new();
+        mech.add_body(make_ground(&[("O2", 0.0, 0.0), ("O4", 4.0, 0.0)]))
+            .unwrap();
+        mech.add_body(make_bar("crank", "A", "B", 1.0, 1.0, 1.0 / 12.0))
+            .unwrap();
+        mech.add_body(make_bar("coupler", "B", "C", 3.0, 1.0, 1.0 / 12.0))
+            .unwrap();
+        mech.add_body(make_bar("rocker", "D", "C", 2.0, 1.0, 1.0 / 12.0))
+            .unwrap();
+        mech.add_revolute_joint("J1", "ground", "O2", "crank", "A")
+            .unwrap();
+        mech.add_revolute_joint("J2", "crank", "B", "coupler", "B")
+            .unwrap();
+        mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C")
+            .unwrap();
+        mech.add_revolute_joint("J4", "ground", "O4", "rocker", "D")
+            .unwrap();
+        mech.build().unwrap();
+        assert!(mech.is_built());
+
+        let q = mech.state().make_q();
+        let err = virtual_work_check(&mech, &q, 0.0, 1.0, 1e-6).unwrap_err();
+        assert!(matches!(err, LinkageError::NoDriver), "got {err:?}");
     }
 }

@@ -14,6 +14,10 @@ pub enum LinkageError {
     #[error("Mechanism must be built before solving.")]
     MechanismNotBuilt,
 
+    /// The mechanism is built but has no revolute driver, so there is no input to size.
+    #[error("Mechanism has no driver; add a revolute driver before this analysis.")]
+    NoDriver,
+
     // -- Numerical errors (solver failures) --
     /// The position Newton-Raphson iteration did not converge.
     #[error(
