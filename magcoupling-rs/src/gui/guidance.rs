@@ -1842,7 +1842,7 @@ fn cure_margin_texts(results: &DesignResults) -> (String, String) {
             if rounded_up_to_pass {
                 return as_results();
             }
-            let unit = result_info(MARGIN).map_or("", |info| info.meta.unit);
+            let unit = result_unit(MARGIN);
             (
                 with_unit(shown, unit),
                 with_unit(fixed(CURE_MARGIN_MIN_C, decimals), unit),
@@ -1981,11 +1981,15 @@ pub use crate::engine::explain::plain::{BANNED, plain_text_violations};
 
 /// The result at `path` as the readouts show it: four significant digits, then its unit.
 pub(crate) fn result_text(results: &DesignResults, path: &str) -> String {
-    let unit = result_info(path).map_or("", |info| info.meta.unit);
     with_unit(
         format_value(&results.get(path).unwrap_or(Value::None)),
-        unit,
+        result_unit(path),
     )
+}
+
+/// The unit of the result at `path` (none for a path that is not a result).
+pub(crate) fn result_unit(path: &str) -> &'static str {
+    result_info(path).map_or("", |info| info.meta.unit)
 }
 
 /// The input at `path` as a readout shows it: four significant digits, then its unit.
@@ -2006,8 +2010,7 @@ fn input_unit(path: &str) -> &'static str {
 /// A number worked out here from results and inputs (no result holds it), in the unit of the
 /// result at `unit_of`.
 fn number_text(x: f64, unit_of: &str) -> String {
-    let unit = result_info(unit_of).map_or("", |info| info.meta.unit);
-    with_unit(format_value(&Value::Num(x)), unit)
+    with_unit(format_value(&Value::Num(x)), result_unit(unit_of))
 }
 
 /// The value a number reads as: `x` to four significant digits, as [`format_value`] shows it.
@@ -2430,7 +2433,7 @@ fn onset_texts(results: &DesignResults) -> (String, String) {
     const ONSET: &str = "temperature.demag.inner_onset_single_ring_C";
     match shown_decimals(results.shaft_joint.hub_fit_allowed_C) {
         Some(decimals) => {
-            let unit = result_info(ONSET).map_or("", |info| info.meta.unit);
+            let unit = result_unit(ONSET);
             let onset = results.temperature.demag.inner_onset_single_ring_C;
             (
                 with_unit(fixed(onset, decimals), unit),
@@ -2563,7 +2566,7 @@ fn window_quotes(needed: f64, upper: f64, unit_of: &str) -> (String, String) {
         .max()
         .map_or(SIGNIFICANT_DIGITS as usize, |decimals| decimals + 1);
     let (decimals, (low, high)) = fewest_decimals_apart(first, at, |&(low, high)| low < high);
-    let unit = result_info(unit_of).map_or("", |info| info.meta.unit);
+    let unit = result_unit(unit_of);
     (
         with_unit(fixed(low, decimals), unit),
         with_unit(fixed(high, decimals), unit),
@@ -3852,6 +3855,15 @@ mod tests {
     }
 
     // ------------------------------------------------------------------ the guides and links
+
+    #[test]
+    fn result_unit_is_the_results_own_unit_and_empty_for_a_non_result() {
+        let info = result_info("model.pullout_Nm").expect("a result");
+        assert!(!info.meta.unit.is_empty());
+        assert_eq!(result_unit("model.pullout_Nm"), info.meta.unit);
+        assert_eq!(result_unit(FIT_CHECK), "");
+        assert_eq!(result_unit(""), "");
+    }
 
     #[test]
     fn the_guides_cover_every_dashboard_check_and_the_fit_row() {

@@ -64,7 +64,7 @@ use crate::gui::dashboard::{
 };
 use crate::gui::diagrams::diagram_ui;
 use crate::gui::format::with_unit;
-use crate::gui::guidance::{Learn, result_text, row_learn};
+use crate::gui::guidance::{Learn, result_text, result_unit, row_learn};
 use crate::gui::input_ui::CHANGED_DOT;
 use crate::gui::inputs::InputCatalogue;
 use crate::gui::plain_text::label_for;
@@ -1130,7 +1130,7 @@ fn swatch(ui: &mut egui::Ui, color: Color32) {
 fn no_equation_body(ui: &mut egui::Ui, path: &str, results: &DesignResults, show_details: bool) {
     let label = term_label(path);
     let value = results.get(path).unwrap_or(Value::None);
-    let unit = result_info(path).map_or("", |info| info.meta.unit);
+    let unit = result_unit(path);
     ui.strong(format!("{label} = {}", value_text(path, &value, unit)));
     if show_details {
         let cell = result_info(path)
