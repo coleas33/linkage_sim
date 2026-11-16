@@ -556,51 +556,6 @@ fn add_plotly_line_chart(
     html.push_str("</script>\n");
 }
 
-/// Emit a multi-series Plotly line chart into `html`.
-///
-/// Each `(name, data_json, color, dash)` tuple becomes one scatter trace.
-/// `dash` is an optional line style string (e.g. "dash", "dot"); pass None
-/// for a solid line. X-axis and Y-axis labels are supplied as literal
-/// strings so the caller can pick units (e.g. "X (m)" for coupler traces).
-///
-/// If `equal_aspect` is true, the Y axis uses scaleanchor='x' to force
-/// 1:1 pixel ratio (used by coupler trace plots).
-fn add_plotly_multi_chart(
-    html: &mut String,
-    plot_id: &str,
-    title: &str,
-    x_axis_label: &str,
-    y_axis_label: &str,
-    series: &[(&str, String, &str, Option<&str>)],
-    equal_aspect: bool,
-    x_data_for_all: Option<&str>,
-) {
-    html.push_str(&format!("<div id='{}' class='plotly-chart'></div>\n", plot_id));
-    html.push_str("<script>\n");
-    html.push_str(&format!("Plotly.newPlot('{}', [\n", plot_id));
-    for (i, (name, y_json, color, dash)) in series.iter().enumerate() {
-        let comma = if i + 1 < series.len() { "," } else { "" };
-        let dash_clause = match dash {
-            Some(d) => format!(",dash:'{}'", d),
-            None => String::new(),
-        };
-        // For multi-series time plots (reactions, energy) all series share
-        // one X vector; for XY plots (coupler) each series has its own X.
-        let x_expr = x_data_for_all.unwrap_or("null /* per-series x provided */");
-        html.push_str(&format!(
-            "  {{x:{},y:{},type:'scatter',mode:'lines',name:'{}',line:{{color:'{}'{}}}}}{}\n",
-            x_expr, y_json, name, color, dash_clause, comma
-        ));
-    }
-    let y_scale = if equal_aspect { ",scaleanchor:'x'" } else { "" };
-    html.push_str(&format!(
-        "], {{title:'{}',xaxis:{{title:'{}'}},yaxis:{{title:'{}'{}}},\
-         margin:{{t:40,b:50,l:60,r:20}}}}, {{responsive:true}});\n",
-        title, x_axis_label, y_axis_label, y_scale
-    ));
-    html.push_str("</script>\n");
-}
-
 /// Get current timestamp formatted in US Eastern time (`EST` in winter,
 /// `EDT` in summer). Native uses `std::time::SystemTime`; wasm32 uses
 /// `js_sys::Date::now()` because `SystemTime::now()` panics with
