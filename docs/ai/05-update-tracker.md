@@ -14,7 +14,7 @@ Reverse chronological (newest at top).
 - Tests: cargo test --all passes; the wasm32 linkage-web check builds (it keeps seven wasm-only warnings, which gate 3's plain cargo check does not deny).
 
 ## 2026-11-16 - Dead and test-only code removed (audit LGC-01, LGE-06, MGG-06, MGV-03, MGV-08; branch audit/2026-11-16-cleanup)
-- What changed: linkage-sim-rs deletes `EqKind::driver_lambda_units`, `draw_actuator_stroke_annotation` (4afc5c8) and the unused `add_plotly_multi_chart` (1d262b7; not reused because the three inline charts differ in mode, colours, per-series x, axis anchor and name escaping). magcoupling-rs marks `TermColors::is_empty`, `Typeset::texts` (eda24a8), `Cell::as_text` and `package_label` (fbf0186) `#[cfg(test)]`, and drops `dep:log` and `dep:js-sys` from the `app` feature (e44603a). No behaviour change.
+- What changed: linkage-sim-rs deletes `EqKind::driver_lambda_units`, `draw_actuator_stroke_annotation` (4afc5c8) and the unused `add_plotly_multi_chart` (1d262b7; not reused because the three inline charts differ in mode, colours, per-series x, axis anchor and name escaping). magcoupling-rs marks `TermColors::is_empty`, `Laid::texts` (eda24a8), `Cell::as_text` and `package_label` (fbf0186) `#[cfg(test)]`, and drops `dep:log` and `dep:js-sys` from the `app` feature (e44603a). No behaviour change.
 - Tests: both crates' full suites and clippy gates pass (magcoupling-rs with and without the `app` feature); no new tests, removal only.
 
 ## 2026-11-16 - The panel's clamp-text allowlist is asserted empty with its reason (audit MGP-11; branch audit/2026-11-16-section-c)
