@@ -297,6 +297,11 @@ impl AppState {
         crate::io::assign_point_mass_ids(&mut json_struct.bodies);
         let point_mass_warnings = crate::io::point_mass_warnings(&json_struct);
 
+        // Build first: a file that fails to build must leave every setting below untouched.
+        let mut mech =
+            load_mechanism_unbuilt(json_str).map_err(|e| e.to_string())?;
+        mech.build().map_err(|e| e.to_string())?;
+
         // Restore GUI sweep state (mode + trajectory severity) if present.
         // Backward-compatible: missing field → leave defaults (Angle / Analysis).
         if let Some(state_json) = json_struct.sweep_state.as_ref() {
@@ -356,10 +361,6 @@ impl AppState {
         }
 
         self.blueprint = Some(json_struct);
-
-        let mut mech =
-            load_mechanism_unbuilt(json_str).map_err(|e| e.to_string())?;
-        mech.build().map_err(|e| e.to_string())?;
 
         // Extract driver parameters before we move mech into self.
         let (driver_omega, driver_theta_0) = if let Some(driver) = mech.drivers().first() {
@@ -570,6 +571,40 @@ impl AppState {
         self.add_recent_file(path);
 
         Ok(())
+    }
+
+    /// Recover the mechanism from an autosave file. The file is deleted only after a
+    /// load that succeeded; on failure it stays on disk (it may be the only copy of the
+    /// work) and the error goes to the status bar.
+    pub fn recover_autosave_file(&mut self, path: &Path) {
+        match self.load_from_file(path) {
+            Ok(()) => {
+                let _ = std::fs::remove_file(path);
+            }
+            Err(e) => {
+                log::error!("Failed to recover autosave: {}", e);
+                self.status_message = Some(format!(
+                    "Autosave recovery failed (the file was kept): {}",
+                    e
+                ));
+            }
+        }
+    }
+
+    /// Recover the mechanism from the localStorage autosave JSON; same rule as
+    /// [`Self::recover_autosave_file`]. `json_str` is `None` when nothing is stored.
+    #[cfg(target_arch = "wasm32")]
+    pub(crate) fn recover_wasm_autosave(&mut self, json_str: Option<String>) {
+        match json_str.ok_or_else(|| "no autosave found".to_string()).and_then(|j| self.load_from_json_str(&j)) {
+            Ok(()) => Self::wasm_clear_autosave(),
+            Err(e) => {
+                log::error!("Failed to recover WASM autosave: {}", e);
+                self.status_message = Some(format!(
+                    "Autosave recovery failed (the autosave was kept): {}",
+                    e
+                ));
+            }
+        }
     }
 
     // ── WASM autosave (localStorage) ─────────────────────────────────────
@@ -1067,5 +1102,41 @@ mod tests {
             Some("preserved".to_string())
         );
         assert!(state.sensor_config.actuator_position_enabled);
+    }
+
+    #[test]
+    fn failed_build_leaves_settings_unchanged() {
+        // LGS-12: a file that parses but cannot build must not half-apply its
+        // settings to the running app.
+        let bad_json = r#"{
+            "schema_version": "1.1.0",
+            "bodies": {
+                "ground": {
+                    "attachment_points": {"A": [0.0, 0.0]},
+                    "mass": 0.0,
+                    "cg_local": [0.0, 0.0],
+                    "izz_cg": 0.0
+                }
+            },
+            "joints": {
+                "J1": {"type": "revolute", "body_i": "ground", "body_j": "missing", "point_i": "A", "point_j": "A"}
+            },
+            "drivers": {},
+            "forces": [],
+            "mounting_angle": 0.0,
+            "linear_drivers": [],
+            "actuator_rated_force": 777.0,
+            "simulation_duration": 33.0,
+            "sensor_config": {"encoder_joint": "J1", "encoder_noise_std": 0.0, "actuator_position_enabled": true, "actuator_noise_std": 0.0}
+        }"#;
+        let mut state = AppState::default();
+        state.actuator_rated_force = 999.0;
+        state.simulation_duration = 12.0;
+        let blueprint_before = state.blueprint.is_some();
+        assert!(state.load_from_json_str(bad_json).is_err());
+        assert!((state.actuator_rated_force - 999.0).abs() < 1e-9);
+        assert!((state.simulation_duration - 12.0).abs() < 1e-12);
+        assert_eq!(state.sensor_config.encoder_joint, None);
+        assert_eq!(state.blueprint.is_some(), blueprint_before);
     }
 }

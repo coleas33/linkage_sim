@@ -1021,11 +1021,7 @@ impl eframe::App for LinkageApp {
                 });
             if load {
                 if let Some(path) = self.state.recovery_path.take() {
-                    if let Err(e) = self.state.load_from_file(&path) {
-                        log::error!("Failed to recover autosave: {}", e);
-                    }
-                    // Clean up the autosave file after loading.
-                    let _ = std::fs::remove_file(&path);
+                    self.state.recover_autosave_file(&path);
                 }
             } else if dismiss {
                 if let Some(path) = self.state.recovery_path.take() {
@@ -1064,13 +1060,7 @@ impl eframe::App for LinkageApp {
                 });
             if load {
                 self.state.wasm_has_recovery = false;
-                if let Some(json_str) = AppState::wasm_load_autosave() {
-                    if let Err(e) = self.state.load_from_json_str(&json_str) {
-                        log::error!("Failed to recover WASM autosave: {}", e);
-                    }
-                }
-                // Clean up after loading.
-                AppState::wasm_clear_autosave();
+                self.state.recover_wasm_autosave(AppState::wasm_load_autosave());
             } else if dismiss {
                 self.state.wasm_has_recovery = false;
                 AppState::wasm_clear_autosave();

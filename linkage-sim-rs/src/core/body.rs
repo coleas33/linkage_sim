@@ -374,6 +374,8 @@ pub enum BodyError {
         available_attachment: Vec<String>,
         available_mount: Vec<String>,
     },
+    #[error("Force names a point on unknown body '{body}'")]
+    UnknownBody { body: String },
     #[error("Invalid body geometry: {reason}")]
     InvalidGeometry { reason: String },
 }

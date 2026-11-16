@@ -1873,6 +1873,34 @@
         let _ = std::fs::remove_file(&tmp);
     }
 
+    #[cfg(feature = "native")]
+    #[test]
+    fn recover_autosave_keeps_file_and_reports_when_load_fails() {
+        let tmp = std::env::temp_dir().join("linkage_test_recover_bad.json");
+        std::fs::write(&tmp, "not json").unwrap();
+        let mut state = AppState::default();
+
+        state.recover_autosave_file(&tmp);
+
+        assert!(tmp.exists(), "a failed recovery must not delete the autosave");
+        let msg = state.status_message.clone().expect("failure must show a status message");
+        assert!(msg.contains("recovery failed"), "{msg}");
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[cfg(feature = "native")]
+    #[test]
+    fn recover_autosave_deletes_file_after_successful_load() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        let tmp = std::env::temp_dir().join("linkage_test_recover_ok.json");
+        state.save_to_file(&tmp).expect("save should succeed");
+
+        state.recover_autosave_file(&tmp);
+
+        assert!(!tmp.exists(), "a successful recovery deletes the autosave");
+    }
+
     #[test]
     fn add_point_mass_modifies_blueprint() {
         let mut state = AppState::default();
@@ -2962,6 +2990,20 @@
 
         let ke = ParametricMetric::PeakKineticEnergy.extract(sweep);
         assert!(ke >= 0.0, "peak KE should be non-negative, got {}", ke);
+    }
+
+    /// LGE-02: failed statics samples are NaN driver torques; the RMS metric
+    /// must skip them, not turn the whole sweep into NaN.
+    #[test]
+    fn rms_driver_torque_metric_skips_failed_samples() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.compute_sweep();
+        let mut sweep = state.sweep_data.clone().expect("should have sweep data");
+        let all = ParametricMetric::RmsDriverTorque.extract(&sweep);
+        sweep.driver_torques.as_mut().unwrap()[0] = f64::NAN;
+        let with_gap = ParametricMetric::RmsDriverTorque.extract(&sweep);
+        assert!(all.is_finite() && with_gap.is_finite(), "{all} {with_gap}");
     }
 
     // ── Counterbalance tests ──────────────────────────────────────────────
