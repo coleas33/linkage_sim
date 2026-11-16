@@ -232,7 +232,7 @@ Every solver capability is validated against known analytical or published resul
 ### Running Benchmarks
 
 ```bash
-python -m pytest tests/ -k benchmark --benchmark-report
+python -m pytest tests/ -k benchmark
 ```
 
 Each benchmark test:

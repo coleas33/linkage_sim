@@ -670,7 +670,6 @@ fn draw_driver_type_selector(ui: &mut egui::Ui, state: &mut AppState) {
     let mut apply_new_omega: Option<f64> = None;
     if !is_expression {
         let current_omega = state.driver_omega();
-        let current_theta_0 = state.driver_theta_0();
         ui.horizontal(|ui| {
             ui.label("Speed:");
             let mut rpm = current_omega * 60.0 / (2.0 * std::f64::consts::PI);
@@ -691,7 +690,6 @@ fn draw_driver_type_selector(ui: &mut egui::Ui, state: &mut AppState) {
                     apply_new_omega = Some(new_omega);
                 }
             }
-            let _ = current_theta_0;
         });
     }
     if let Some(new_omega) = apply_new_omega {

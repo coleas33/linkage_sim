@@ -1,0 +1,3 @@
+[
+  {"file": "linkage-sim-rs/src/io/error.rs", "old": "    },\n\n    #[error(\"Unknown joint type '{0}'\")]\n    UnknownJointType(String),\n}\n", "new": "    },\n}\n", "count": 1}
+]

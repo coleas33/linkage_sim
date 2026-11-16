@@ -452,7 +452,7 @@ Even when multipliers are technically unique, ill-conditioning of `Φ_q` amplifi
 
 #### Interaction with Transmission Angle
 
-Singularity of `Φ_q` is directly related to transmission angle: `σ_min → 0` corresponds to transmission angle → 0° or 180°. The transmission angle metric (see `docs/ENGINEERING_OUTPUTS.md`) and the `σ_min` metric carry the same information in different forms. Both should be reported together so the engineer sees the geometric interpretation (transmission angle) alongside the numerical reliability indicator (condition number).
+Singularity of `Φ_q` is directly related to transmission angle: `σ_min → 0` corresponds to transmission angle → 0° or 180°. The transmission angle metric (see `docs/architecture/ENGINEERING_OUTPUTS.md`) and the `σ_min` metric carry the same information in different forms. Both should be reported together so the engineer sees the geometric interpretation (transmission angle) alongside the numerical reliability indicator (condition number).
 
 ### Inverse Dynamics
 

@@ -579,7 +579,7 @@ pub static ROW_LEARN: [(&str, Learn); DASHBOARD.len()] = [
     ("model.pullout_Nm", Learn::Note("pullout_angle")),
     ("model.pullout_20C_Nm", Learn::Note("br_temperature")),
     ("metal.torque_hot_low_Nm", HOT_MIN_GUIDE.learn),
-    ("metal.hot_min_check", HOT_MIN_GUIDE.learn),
+    (HOT_MIN, HOT_MIN_GUIDE.learn),
     // The cold pull-out with the variation allowance added: the torque-band note explains it
     // beside hot-low (a value row a reviewed note covers links to that note).
     (
@@ -600,8 +600,8 @@ pub static ROW_LEARN: [(&str, Learn); DASHBOARD.len()] = [
         Learn::None("No note covers the rotating mass yet."),
     ),
     ("metal.min_running_clearance_mm", CLEARANCE_GUIDE.learn),
-    ("metal.clearance_check", CLEARANCE_GUIDE.learn),
-    ("materials.cup_wall_check", CUP_WALL_GUIDE.learn),
+    (CLEARANCE, CLEARANCE_GUIDE.learn),
+    (CUP_WALL, CUP_WALL_GUIDE.learn),
     (
         "temperature.summary.governing_limit_C",
         TEMPERATURE_GUIDE.learn,

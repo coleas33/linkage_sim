@@ -5369,7 +5369,6 @@ fn trace_at(r: &Registry, label: &str, base: &DesignInputs, paths: &[String]) ->
             let value = base.get(path).expect("an input path");
             let statics = r.downstream(path);
             let active = active_downstream(&edges, path);
-            let _ = &statics;
             for nudged in nudges(meta, &value) {
                 let mut inputs = base.clone();
                 if inputs.set(path, nudged.clone()).is_err() {

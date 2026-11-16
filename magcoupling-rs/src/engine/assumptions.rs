@@ -22,8 +22,8 @@
 //! magnets (the Calibration prototype always reads it).
 //!
 //! The spec's traceability test (each assumption changes every dependent result and no
-//! independent one, by the equation registry's dependency graph) needs the A2 equation
-//! registry and belongs to plan A-3.
+//! independent one, by the equation registry's dependency graph) is
+//! `tests/explain.rs::each_assumption_moves_what_depends_on_it_and_nothing_else`.
 
 use super::api::DesignInputs;
 use super::meta::{InputSet, Value, input_rows};

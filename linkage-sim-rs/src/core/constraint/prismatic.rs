@@ -20,7 +20,6 @@ pub struct PrismaticJoint {
     body_j_id_: String,
     point_i_local: Vector2<f64>,
     point_j_local: Vector2<f64>,
-    #[allow(dead_code)]
     axis_local_i: Vector2<f64>,
     n_hat_local_i: Vector2<f64>,
     delta_theta_0: f64,

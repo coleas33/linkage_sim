@@ -1,0 +1,8 @@
+[
+  {"file": "docs/architecture/ANALYSIS_MODES.md", "old": "`docs/NUMERICAL_FORMULATION.md`", "new": "`docs/architecture/NUMERICAL_FORMULATION.md`", "count": 6},
+  {"file": "docs/architecture/ANALYSIS_MODES.md", "old": "`docs/ENGINEERING_OUTPUTS.md`", "new": "`docs/architecture/ENGINEERING_OUTPUTS.md`", "count": 1},
+  {"file": "docs/architecture/ARCHITECTURE.md", "old": "`docs/NUMERICAL_FORMULATION.md`", "new": "`docs/architecture/NUMERICAL_FORMULATION.md`", "count": 1},
+  {"file": "docs/architecture/ARCHITECTURE.md", "old": "`docs/RUST_MIGRATION.md`", "new": "`docs/history/RUST_MIGRATION.md`", "count": 1},
+  {"file": "docs/architecture/EXTENSIBILITY.md", "old": "`docs/ARCHITECTURE.md`", "new": "`docs/architecture/ARCHITECTURE.md`", "count": 1},
+  {"file": "docs/architecture/NUMERICAL_FORMULATION.md", "old": "`docs/ENGINEERING_OUTPUTS.md`", "new": "`docs/architecture/ENGINEERING_OUTPUTS.md`", "count": 1}
+]

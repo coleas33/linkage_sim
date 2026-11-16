@@ -53,8 +53,8 @@ pub struct MechanismJson {
     pub schema_version: String,
     pub bodies: HashMap<String, BodyJson>,
     pub joints: HashMap<String, JointJson>,
-    /// Serialized driver constraints. Only constant-speed revolute drivers are
-    /// supported; other driver types are skipped with a warning.
+    /// Serialized revolute drivers (constant-speed and expression). A driver
+    /// built from a plain closure is skipped silently on save.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub drivers: HashMap<String, DriverJson>,
     /// Named load cases (driver configurations) for scenario comparison.
@@ -314,7 +314,8 @@ pub fn next_point_mass_id(bodies: &HashMap<String, BodyJson>) -> String {
 /// JSON representation of a joint constraint.
 ///
 /// Uses an internally-tagged enum so the JSON has a `"type"` field.
-/// Driver joints are represented as a marker -- the closure cannot be serialized.
+/// Drivers are stored in the top-level `drivers` map; `RevoluteDriver` here is a
+/// legacy marker that the loader ignores.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum JointJson {
@@ -359,8 +360,8 @@ pub enum JointJson {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         label: Option<String>,
     },
-    /// Marker for driver constraints. The closure is not serializable;
-    /// users must re-attach the driver function after loading.
+    /// Legacy marker for a driver stored in the joints map. The loader ignores
+    /// it; drivers are stored in the top-level `drivers` map.
     RevoluteDriver {
         body_i: String,
         body_j: String,

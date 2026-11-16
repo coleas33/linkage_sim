@@ -86,8 +86,9 @@ pub enum VelocityCoord {
 /// For angular/angular MA the result is dimensionless. For translational/angular
 /// the result has units of m/rad.
 ///
-/// Returns `None` if either body is ground, a body is not found, or the input
-/// velocity is effectively zero (|omega_in| < 1e-15).
+/// Returns `None` if a body is not found or the input velocity is effectively
+/// zero (|omega_in| < 1e-15), which includes an input on ground. A ground
+/// output has velocity 0 and gives `ma = 0`.
 ///
 /// # Arguments
 /// * `state` - Mechanism state (provides body index mapping).
@@ -120,7 +121,7 @@ pub fn mechanical_advantage(
 
 /// Extract a single velocity component from q_dot for the given body.
 ///
-/// Returns `None` if the body is ground or not found in the state.
+/// Returns `Some(0.0)` for ground and `None` if the body is not found in the state.
 fn get_velocity_component(
     state: &crate::core::state::State,
     q_dot: &nalgebra::DVector<f64>,

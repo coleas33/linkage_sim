@@ -121,7 +121,7 @@ assert_guard_trips magcoupling-app workbook-parity --manifest-path "$MAGCOUPLING
 assert_guard_trips magcoupling-web workbook-parity --manifest-path "$MAGCOUPLING" "${MAGCOUPLING_WEB_ARGS[@]}"
 
 echo "== gate 11/13: wasm-bindgen parity (both web bundles are bound by the one wasm-bindgen-cli deploy-web.yml installs) =="
-CLI_PIN="$(grep -oE 'wasm-bindgen-cli@[0-9.]+' "$REPO_ROOT/.github/workflows/deploy-web.yml" | head -n 1 | cut -d@ -f2)"
+CLI_PIN="$(grep -oE 'wasm-bindgen-cli@[0-9.]+' "$REPO_ROOT/.github/workflows/deploy-web.yml" | head -n 1 | cut -d@ -f2 || true)"
 for lock in "Cargo.lock" "$REPO_ROOT/magcoupling-rs/Cargo.lock"; do
   locked="$(lock_versions "$lock" wasm-bindgen)"
   if [[ -z "$CLI_PIN" || "$locked" != "$CLI_PIN" ]]; then

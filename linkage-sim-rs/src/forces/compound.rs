@@ -167,8 +167,8 @@ pub fn create_compound_rod(force_index: usize, half_len: f64) -> Body {
 ///
 /// The caller is responsible for ensuring that the named attachment points
 /// referenced by `mount_a` / `mount_b` exist on the target bodies before
-/// calling this function (Task 4 adds them from `mount_points` during the
-/// serialization load path).
+/// calling this function (`io::from_json` adds them from `mount_points`
+/// during the load path).
 pub fn expand_compound_force(
     mech: &mut Mechanism,
     force: &ForceElement,
@@ -221,7 +221,7 @@ pub fn expand_compound_force(
 
     // Revolute joint at end A: body_a ↔ cylinder "base".
     // If mount_a is true the attachment point on body_a was pre-created from
-    // the mount_point under the synthetic name `_force_{idx}_mount_a` (Task 4).
+    // the mount_point under the synthetic name `_force_{idx}_mount_a`.
     let pt_a_ref = if mount_a {
         format!("_force_{}_mount_a", force_index)
     } else {

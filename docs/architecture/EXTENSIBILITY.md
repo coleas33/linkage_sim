@@ -178,7 +178,7 @@ The v1 solver uses absolute coordinates (3 per moving body). Future phases may b
 | **Linearized model** | Natural frequency estimation, local sensitivity, small-signal stability | New analysis module (`analysis/linearization.py`). Compute tangent stiffness and mass matrices at an equilibrium, extract eigenvalues. Does not replace the nonlinear solver — supplements it |
 | **Joint coordinates** | Mechanisms where joint angles are more natural than Cartesian body poses | Alternative State implementation that stores joint coordinates and reconstructs body poses on demand. Constraint and force element interfaces unchanged if they query State, not raw `q` |
 
-**Design protection (v1):** The v1 code should access body poses through `State` methods (e.g., `state.get_pose(body_id)`, `state.get_point_global(body_id, local_point)`) rather than raw index arithmetic outside of the State module. This costs nothing and preserves the option to swap in alternative coordinate representations later. See `docs/ARCHITECTURE.md` § "Coordinate representation note."
+**Design protection (v1):** The v1 code should access body poses through `State` methods (e.g., `state.get_pose(body_id)`, `state.get_point_global(body_id, local_point)`) rather than raw index arithmetic outside of the State module. This costs nothing and preserves the option to swap in alternative coordinate representations later. See `docs/architecture/ARCHITECTURE.md` § "Coordinate representation note."
 
 ---
 

@@ -1,0 +1,3 @@
+[
+  {"file": "linkage-sim-rs/scripts/gate.sh", "old": "| head -n 1 | cut -d@ -f2)\"\n", "new": "| head -n 1 | cut -d@ -f2 || true)\"\n", "count": 1}
+]

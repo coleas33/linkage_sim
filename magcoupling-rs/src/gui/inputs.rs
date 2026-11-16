@@ -24,8 +24,7 @@ use crate::gui::plain_text::{display_label, help_for, original_help};
 /// The Key design group, in order (spec M4 "Layout": face gap, pole count, magnet part, axial
 /// length, operating temperature, back iron, cup wall, conductance, measured drag). The axial
 /// length is the A-2 override of both rings' length, blank by default (it moves the torque at
-/// the default library part; the manual lengths do not); the sizing mode switch sits above
-/// the group.
+/// the default library part; the manual lengths do not).
 pub const KEY_DESIGN: [&str; 10] = [
     "metal.face_gap_mm",
     "coupling.npole",

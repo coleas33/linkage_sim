@@ -281,8 +281,6 @@ All force elements are editable in the GUI property panel and rendered on the ca
 
 ### Actuator Sizing & Power
 
-- **Required power curve** -- P = F x v at each crank angle. Shows peak power for motor/pump sizing. Critical for selecting electric motors or hydraulic power units.
-- **Actuator speed plot** -- dL/dt (extension/retraction rate) at each angle. Actuators have speed limits that must not be exceeded. Already computed internally, just needs display.
 - **Force margin visualization** -- User enters actuator rated force (e.g., 5000 N). Plot shows margin (rated - required) at each angle. Red zones where actuator is undersized. Simple go/no-go for actuator selection.
 - **Hydraulic cylinder calculator** -- Given required force + system pressure, compute bore diameter. Given bore + pressure, overlay available force line on the actuator force plot. Most industrial actuators are hydraulic.
 - **Output force at a specific point** -- "What force does my mechanism produce at THIS point in THIS direction?" Direct readout instead of indirect computation via force zones.

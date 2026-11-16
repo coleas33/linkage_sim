@@ -1,0 +1,4 @@
+[
+  {"file": "linkage-sim-rs/src/gui/trajectory_panel/profile_input.rs", "old": "#[cfg(feature = \"native\")]\n#[allow(dead_code)] // used from the native-feature button path\nfn parse_keyframes_csv", "new": "#[cfg(feature = \"native\")]\nfn parse_keyframes_csv", "count": 1},
+  {"file": "magcoupling-rs/tests/explain.rs", "old": "            let active = active_downstream(&edges, path);\n            let _ = &statics;\n", "new": "            let active = active_downstream(&edges, path);\n", "count": 1}
+]
