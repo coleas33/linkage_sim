@@ -123,9 +123,9 @@ The repository's rule is more tests, not fewer, so none of these was changed. Ma
 - **MT-07** The vendored oracle's independent audit suite and its tools are run by nothing automatic.
 - **INF-07** gui-smoke.js re-derives the calculator's `passed` from its checks but takes the linkage step's `passed` on the agent's word.
 - **INF-02** Gate 2 (`cargo clippy --all-targets`, linkage-sim-rs) can only fail on a compile error.
-- **MT-06** The ignore guard checks six files, but its name and doc say "only the review tools are ignored". The check confirmed this only in part.
-- **MEX-06** `notes_before_snapshot` is a write-once generator that can only fail.
-- **MGP-11** An allowlist in a test is permanently empty.
+- **MT-06** The ignore guard checks six files, but its name and doc say "only the review tools are ignored". The check confirmed this only in part. FIXED 86cc4b0: the guard is renamed to say it reads six files.
+- **MEX-06** `notes_before_snapshot` is a write-once generator that can only fail. FIXED ee08985: the generator is documented and cannot fail.
+- **MGP-11** An allowlist in a test is permanently empty. FIXED 09608a3: the empty allowlist is asserted empty with its reason.
 - **INF-11** tests/braindump_repro.rs is tracked and still the repro BL-017 depends on, yet its header says "TEMPORARY ... Not for commit". FIXED e700cd4: header now says it is the tracked BL-017 repro.
 - **PY-07** Two golden files are used only by the Python tests, and the Python loader turns a missing fixture into a skip.
 - **LGE-20** Two identical sample-count tests, and a sample whose enum name does not match what it builds. FIXED d4d9f4e: duplicate test deleted, variant documented (not renamed: public API).
