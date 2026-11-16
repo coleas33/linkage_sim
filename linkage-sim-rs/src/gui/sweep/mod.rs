@@ -93,7 +93,9 @@ impl SweepMode {
 /// to avoid recomputing every frame. Used by the plot panel and canvas.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SweepData {
-    /// Driver angles in degrees at which solutions were obtained.
+    /// X-axis value of each solved sample: driver angle in degrees (Angle
+    /// mode), actuator stroke in metres (Stroke mode) or sample time in
+    /// seconds (Trajectory mode; empty only in `empty_trajectory_sweep_data`).
     pub angles_deg: Vec<f64>,
     /// Body orientation angles (degrees) keyed by body ID.
     pub body_angles: HashMap<String, Vec<f64>>,
@@ -242,8 +244,11 @@ impl SweepData {
     /// driver angle resolve to the same sample; an exact tie (0 and 360 in a
     /// full-revolution sweep) resolves to the first sample. Non-finite
     /// samples are skipped. `None` when `driver_value` is non-finite or the
-    /// sweep has no finite samples (trajectory sweeps leave `angles_deg`
-    /// empty).
+    /// sweep has no finite samples (only the placeholder from
+    /// `empty_trajectory_sweep_data`; a computed trajectory sweep fills
+    /// `angles_deg` with sample times in seconds). Do not call this for a
+    /// trajectory sweep: it would compare seconds with a driver angle in
+    /// degrees and return a plausible but meaningless index.
     pub fn index_at_driver(&self, driver_value: f64) -> Option<usize> {
         if !driver_value.is_finite() {
             return None;
