@@ -128,10 +128,6 @@ pub const fn start_here_hover(clamps_paused: bool) -> &'static str {
     }
 }
 
-/// The hover the Start here button shows: [`start_here_hover`] the shaft-clamp section's pause
-/// (`clamps::PAUSED`).
-pub const START_HERE_HOVER: &str = start_here_hover(clamps::PAUSED);
-
 /// The start-here steps' buttons.
 pub const PREVIOUS: &str = "Previous";
 pub const NEXT: &str = "Next";
@@ -615,7 +611,8 @@ fn unsummed(eq: &Equation, terms: &Design<'_>) -> Vec<String> {
 /// with `show_details` (the header's Show spreadsheet details, spec S2-5) also the value's
 /// workbook cell, the corrections its equation embodies and each term's internal name on hover.
 /// `held` says why an input is not free on the design shown ([`held_reason`]), for the notes'
-/// change entries.
+/// change entries. `clamps_paused` is the panel's pause of the shaft-clamp section: the Start here
+/// hover and the Used by links leave the clamp out while it holds.
 pub fn explorer_ui(
     ui: &mut egui::Ui,
     explorer: &mut Explorer,
@@ -623,6 +620,7 @@ pub fn explorer_ui(
     results: &DesignResults,
     show_details: bool,
     held: &dyn Fn(&str) -> Option<String>,
+    clamps_paused: bool,
 ) {
     let terms = Design { inputs, results };
     let view = NoteView {
@@ -667,7 +665,7 @@ pub fn explorer_ui(
             }
             if ui
                 .button(START_HERE_BUTTON)
-                .on_hover_text(START_HERE_HOVER)
+                .on_hover_text(start_here_hover(clamps_paused))
                 .clicked()
             {
                 explorer.start(0);
@@ -742,7 +740,7 @@ pub fn explorer_ui(
                 explorer.follow_note_link(link);
             }
             ui.add_space(6.0);
-            let users = used_by_shown(&path, clamps::PAUSED);
+            let users = used_by_shown(&path, clamps_paused);
             let mut up = None;
             if !users.is_empty() {
                 ui.horizontal_wrapped(|ui| {
@@ -1352,7 +1350,15 @@ mod tests {
         use crate::gui::test_support::{SCREEN, flat_shapes, sized_frame};
         let (inputs, results) = design();
         let output = sized_frame(ctx, SCREEN, Vec::new(), |ui| {
-            explorer_ui(ui, explorer, &inputs, &results, false, &nothing_held);
+            explorer_ui(
+                ui,
+                explorer,
+                &inputs,
+                &results,
+                false,
+                &nothing_held,
+                clamps::PAUSED,
+            );
         });
         flat_shapes(&output)
             .into_iter()
@@ -1452,8 +1458,11 @@ mod tests {
         assert_eq!(explorer.start_here(), None);
         assert_eq!(explorer.current(), Some(START_HERE[2].1));
         // The button's hover names the walk's topics in plain words, step 1's first.
-        assert!(crate::gui::guidance::plain_text_violations(START_HERE_HOVER).is_empty());
-        assert!(START_HERE_HOVER.starts_with("A suggested order: how the coupling makes torque"));
+        for paused in [false, true] {
+            let hover = start_here_hover(paused);
+            assert!(crate::gui::guidance::plain_text_violations(hover).is_empty());
+            assert!(hover.starts_with("A suggested order: how the coupling makes torque"));
+        }
     }
 
     #[test]
@@ -1470,7 +1479,6 @@ mod tests {
             start_here_hover(true)
         );
         assert!(!start_here_hover(true).to_lowercase().contains("clamp"));
-        assert_eq!(START_HERE_HOVER, start_here_hover(clamps::PAUSED));
         for paused in [false, true] {
             assert!(
                 crate::gui::guidance::plain_text_violations(start_here_hover(paused)).is_empty()
@@ -1508,6 +1516,33 @@ mod tests {
             users(false).len(),
             registry().used_by("metal.torque_cold_high_Nm").len()
         );
+    }
+
+    #[test]
+    fn the_panel_s_pause_decides_the_drawn_used_by_links() {
+        // MGV-04: the Equation panel follows the `clamps_paused` it is given, not the constant.
+        use crate::gui::test_support::{SCREEN, drawn_texts, sized_frame};
+        let path = "metal.torque_cold_high_Nm";
+        let clamp_user = crumb("clamps.max_torque_Nm");
+        let drawn = |paused: bool| {
+            let (inputs, results) = design();
+            let mut explorer = Explorer::default();
+            explorer.open_path(path);
+            let output = sized_frame(&egui::Context::default(), SCREEN, Vec::new(), |ui| {
+                explorer_ui(
+                    ui,
+                    &mut explorer,
+                    &inputs,
+                    &results,
+                    false,
+                    &nothing_held,
+                    paused,
+                );
+            });
+            drawn_texts(&output)
+        };
+        assert!(drawn(false).contains(&clamp_user.to_string()));
+        assert!(!drawn(true).contains(&clamp_user.to_string()));
     }
 
     #[test]
@@ -1670,7 +1705,17 @@ mod tests {
             &egui::Context::default(),
             SCREEN,
             |output| text_center(output, text),
-            |ui| explorer_ui(ui, explorer, &inputs, &results, show_details, &nothing_held),
+            |ui| {
+                explorer_ui(
+                    ui,
+                    explorer,
+                    &inputs,
+                    &results,
+                    show_details,
+                    &nothing_held,
+                    clamps::PAUSED,
+                )
+            },
         )
     }
 
@@ -1724,7 +1769,15 @@ mod tests {
             let mut explorer = Explorer::default();
             explorer.open_path(path);
             let output = sized_frame(&egui::Context::default(), SCREEN, Vec::new(), |ui| {
-                explorer_ui(ui, &mut explorer, inputs, &results, false, &nothing_held);
+                explorer_ui(
+                    ui,
+                    &mut explorer,
+                    inputs,
+                    &results,
+                    false,
+                    &nothing_held,
+                    clamps::PAUSED,
+                );
             });
             let engine = results.materials.cup_wall_check.clone();
             let lines: Vec<String> = drawn_texts(&output)

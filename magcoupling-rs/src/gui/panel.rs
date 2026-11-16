@@ -915,6 +915,7 @@ impl MagcouplingPanel {
                         &self.results,
                         show_details,
                         &held,
+                        self.clamps_paused,
                     );
                 });
         }
@@ -1935,9 +1936,9 @@ mod tests {
 
         /// A harness drawing `panel` on a screen of `size`, one frame in. Its panel draws the
         /// whole shaft-clamp section, as every panel test did before the pause (ruling 11): a
-        /// test of the paused panel sets `harness.panel.clamps_paused` itself. The explorer
-        /// reads `clamps::PAUSED` itself (Start here, its hover, Used by), so even this harness
-        /// walks the paused Start here.
+        /// test of the paused panel sets `harness.panel.clamps_paused` itself. The explorer's
+        /// Start here walk still reads `clamps::PAUSED` itself, so even this harness walks the
+        /// paused Start here; its hover and Used by links follow the panel's `clamps_paused`.
         fn of(mut panel: MagcouplingPanel, size: egui::Vec2) -> Self {
             panel.clamps_paused = false;
             let mut harness = Self {
