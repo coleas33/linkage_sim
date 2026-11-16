@@ -1,4 +1,7 @@
-# Update Tracker
+# Upda## 2026-11-16 - Undo and redo refresh the driver display offset and the stroke range (audit LGS-16; branch audit/2026-11-16-section-a)
+- What changed: AppState::restore_snapshot (gui/state/undo_ops.rs) now calls recompute_driver_display_offset() and the new shared AppState::refresh_sweep_stroke_range(&Mechanism) (gui/state/mod.rs), as rebuild and load do. Before, undo/redo kept the offset and sweep stroke range of the mechanism that was edited. The inline stroke-range loops in rebuild() (blueprint_ops.rs) and load (file_io.rs) are replaced by the same function. Readers checked: sweep_stroke_min/max and driver_display_offset readers (sweep, animation, input panel) only read; load_sample/rebuild behaviour is unchanged.
+- Tests: undo_restores_driver_display_offset, undo_restores_sweep_stroke_range (red first: both failed after undo with the old values).
+te Tracker
 
 Meaningful changes to the project that future sessions should know about.
 Reverse chronological (newest at top).

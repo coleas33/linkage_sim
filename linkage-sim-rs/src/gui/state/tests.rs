@@ -3704,3 +3704,62 @@
         state.driver_angle = 60.0_f64.to_radians();
         assert_eq!(state.actuator_label_power(), None);
     }
+
+    #[test]
+    fn undo_restores_driver_display_offset() {
+        // LGS-16: undo restored the mechanism but kept the offset of the edited one.
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        assert!(state.driver_display_offset.abs() < 1e-9, "fixture: offset 0");
+        state.push_undo();
+        let (bx, by) = (2.0_f64 * 30f64.to_radians().cos(), 2.0_f64 * 30f64.to_radians().sin());
+        state
+            .blueprint
+            .as_mut()
+            .unwrap()
+            .bodies
+            .get_mut("crank")
+            .unwrap()
+            .attachment_points
+            .insert("B".to_string(), [bx, by]);
+        state.rebuild();
+        assert!(
+            (state.driver_display_offset - 30f64.to_radians()).abs() < 1e-6,
+            "fixture: edit moved the offset"
+        );
+        state.undo();
+        assert!(
+            state.driver_display_offset.abs() < 1e-9,
+            "undo must refresh the offset, got {}",
+            state.driver_display_offset
+        );
+    }
+
+    #[test]
+    fn undo_restores_sweep_stroke_range() {
+        // LGS-16: undo kept the stroke range of the edited mechanism.
+        use crate::forces::elements::ForceElement;
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::ParallelogramActuator);
+        let expected = (state.sweep_stroke_min, state.sweep_stroke_max);
+        state.push_undo();
+        state.rebuild();
+        state.sweep_stroke_min = 99.0;
+        state.sweep_stroke_max = 123.0;
+        state.undo();
+        let from_mech = state
+            .mechanism
+            .as_ref()
+            .unwrap()
+            .forces()
+            .iter()
+            .find_map(|f| match f {
+                ForceElement::LinearActuator(a) if a.stroke_min > 0.0 || a.stroke_max > 0.0 => {
+                    Some((a.stroke_min, a.stroke_max))
+                }
+                _ => None,
+            })
+            .unwrap_or((0.0, 0.0));
+        assert_eq!(from_mech, expected, "fixture: load set the range");
+        assert_eq!((state.sweep_stroke_min, state.sweep_stroke_max), expected);
+    }

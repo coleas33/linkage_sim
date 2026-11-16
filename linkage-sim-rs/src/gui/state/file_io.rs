@@ -3,7 +3,6 @@
 use std::path::Path;
 
 use crate::core::driver::DriverMeta;
-use crate::forces::elements::ForceElement;
 use crate::io::{load_mechanism_unbuilt, mechanism_to_json};
 use super::{AppState, LoadCaseManager};
 use super::blueprint_ops::detect_driver_joint_id;
@@ -479,19 +478,8 @@ impl AppState {
         } else {
             super::DriverKind::None
         };
-        // Initialize stroke range from the first LinearActuator force element
-        // (if any) so the stroke sweep UI has sensible defaults.
-        self.sweep_stroke_min = 0.0;
-        self.sweep_stroke_max = 0.0;
-        for force in mech.forces() {
-            if let ForceElement::LinearActuator(act) = force {
-                if act.stroke_min > 0.0 || act.stroke_max > 0.0 {
-                    self.sweep_stroke_min = act.stroke_min;
-                    self.sweep_stroke_max = act.stroke_max;
-                    break;
-                }
-            }
-        }
+        self.refresh_sweep_stroke_range(&mech);
+
 
         self.mechanism = Some(mech);
         self.current_sample = None;
