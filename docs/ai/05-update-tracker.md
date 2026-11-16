@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - The ignore guard's name and doc say the six files it checks (audit MT-06; branch audit/2026-11-16-section-c)
+- What changed: magcoupling-rs/tests/explain.rs `only_the_review_tools_are_ignored` is now `in_the_six_files_that_hold_them_only_the_review_tools_are_ignored`, and its doc says it reads exactly the six listed sources. Scope is not widened (a directory walk would give up the compile-time `include_str!` list). The README, 03-structure.yaml and 04-memory.yaml follow the rename.
+- Tests: shown to bite: a test with an ignore attribute appended to tests/explain.rs fails the guard ("ignored checks: [tests/explain.rs: zz_extra]"). Removed.
+
 ## 2026-11-16 - notes_before_snapshot is a documented write-once generator that cannot fail (audit MEX-06; branch audit/2026-11-16-section-c)
 - What changed: in magcoupling-rs/src/engine/explain/notes.rs the ignored `notes_before_snapshot` asserted its output file did not exist, but the file is committed, so a hand run with `--ignored` could only fail. It now has a doc comment with the command (`cargo test --lib notes_before_snapshot -- --ignored`), the command in its ignore reason, and returns with a printed note when the file exists. It stays ignored and stays in the ignore guard's allow-list.
 - Tests: shown by the hand run: `--ignored` now passes where the old body panicked on the existing file.

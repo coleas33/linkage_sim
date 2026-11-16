@@ -1724,10 +1724,11 @@ fn start_here_is_fifteen_steps_and_fourteen_while_paused() {
 }
 
 /// The note, help and guide checks this slice wrote red and ignored run for good (spec section
-/// 6, tests 1, 7 and 9): in the files that hold them only the review tools stay ignored, the
-/// tests that print or write a file for a reviewer instead of checking anything.
+/// 6, tests 1, 7 and 9): in the six files that hold them (the six `sources` below, no others)
+/// only the review tools stay ignored, the tests that print or write a file for a reviewer
+/// instead of checking anything. An ignore attribute in any other file is not seen.
 #[test]
-fn only_the_review_tools_are_ignored() {
+fn in_the_six_files_that_hold_them_only_the_review_tools_are_ignored() {
     const TOOLS: [&str; 7] = [
         "review_sheet",
         "guidance_strings_for_review",
