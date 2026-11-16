@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - notes_before_snapshot is a documented write-once generator that cannot fail (audit MEX-06; branch audit/2026-11-16-section-c)
+- What changed: in magcoupling-rs/src/engine/explain/notes.rs the ignored `notes_before_snapshot` asserted its output file did not exist, but the file is committed, so a hand run with `--ignored` could only fail. It now has a doc comment with the command (`cargo test --lib notes_before_snapshot -- --ignored`), the command in its ignore reason, and returns with a printed note when the file exists. It stays ignored and stays in the ignore guard's allow-list.
+- Tests: shown by the hand run: `--ignored` now passes where the old body panicked on the existing file.
+
 ## 2026-11-16 - Python sweep tests fail on an unsolved or missing sample instead of skipping it (audit PY-08; branch audit/2026-11-16-section-c)
 - What changed: in test_numerical_consistency.py (the 3 six-bar FD tests and 5 sweep invariant/residual tests), test_sixbar_ternary.py, test_fourbar_benchmark.py and test_textbook_benchmarks.py, every `if sample is None: continue` is now an assert, so a sweep that stops converging, or a float-key lookup that stops matching, turns the test red instead of a green no-op. All samples converge today, so nothing else changed. Left alone on purpose: test_regression_baselines.py:501,503 (deliberate near-toggle exclusions) and test_failure_modes.py:498 (already follows assert n_converged == len(angles)). The three pasted angle-to-index loops are not merged (leads.md).
 - Tests: shown to bite: making position_sweep return None for step 7 fails 13 tests. Reverted.

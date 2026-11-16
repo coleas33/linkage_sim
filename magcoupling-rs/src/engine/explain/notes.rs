@@ -2421,16 +2421,23 @@ mod tests {
         }
     }
 
+    /// A write-once generator, not a check. Run by hand with
+    /// `cargo test --lib notes_before_snapshot -- --ignored` to (re)create
+    /// `docs/analyses/2026-10-14-magcoupler-notes-before.txt`. The file is committed and
+    /// `before::SNAPSHOT` `include_str!`s it, so the run finds it and leaves it alone: it cannot
+    /// fail and never overwrites the snapshot.
     #[test]
-    #[ignore = "writes docs/analyses/2026-10-14-magcoupler-notes-before.txt once, before the first note is rewritten (T4)"]
+    #[ignore = "write-once generator for docs/analyses/2026-10-14-magcoupler-notes-before.txt; run by hand with: cargo test --lib notes_before_snapshot -- --ignored"]
     fn notes_before_snapshot() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../docs/analyses/2026-10-14-magcoupler-notes-before.txt");
-        assert!(
-            !path.exists(),
-            "{} exists: it holds the notes as they stood before slice 2 and is never written again",
-            path.display()
-        );
+        if path.exists() {
+            println!(
+                "{} exists: it holds the notes as they stood before slice 2 and is never written again",
+                path.display()
+            );
+            return;
+        }
         std::fs::write(&path, before::snapshot_text()).expect("the snapshot is written");
     }
 
