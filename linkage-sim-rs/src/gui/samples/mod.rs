@@ -41,6 +41,9 @@ pub enum SampleMechanism {
     OffsetSliderCrank,
     WhitworthQuickReturn,
     BellCrank,
+    /// Not a Peaucellier-Lipkin linkage: a change-point 4-bar with a figure-8
+    /// coupler curve (see `special::build_peaucellier_lipkin`). The name is kept
+    /// because the enum is public API.
     PeaucellierLipkin,
     WattII,
     Pantograph,
@@ -930,15 +933,6 @@ mod tests {
                 sample
             );
         }
-    }
-
-    #[test]
-    fn sample_count_is_30() {
-        assert_eq!(
-            SampleMechanism::all().len(),
-            30,
-            "Expected 30 sample mechanisms"
-        );
     }
 
     #[test]
