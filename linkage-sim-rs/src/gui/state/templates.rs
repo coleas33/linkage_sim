@@ -94,7 +94,7 @@ impl AppState {
     /// Directory for template files: `~/.linkage-sim/templates/`.
     #[cfg(feature = "native")]
     fn templates_dir() -> Option<std::path::PathBuf> {
-        dirs::home_dir().map(|h| h.join(".linkage-sim").join("templates"))
+        storage_root().map(|r| r.join("templates"))
     }
 
     /// Persist a single template to disk as `<name>.json`.
@@ -280,7 +280,7 @@ impl AppState {
     /// Directory for custom sample files: `~/.linkage-sim/custom_samples/`.
     #[cfg(feature = "native")]
     fn custom_samples_dir() -> Option<std::path::PathBuf> {
-        dirs::home_dir().map(|h| h.join(".linkage-sim").join("custom_samples"))
+        storage_root().map(|r| r.join("custom_samples"))
     }
 
     /// Persist a single custom sample to disk as `<name>.json`.
@@ -382,6 +382,20 @@ impl AppState {
     fn remove_persisted_custom_sample(&self, _name: &str) {}
 }
 
+/// Root of the on-disk store: `~/.linkage-sim/`. Unit tests get a per-process
+/// temp dir instead, so they never write into the developer's real files.
+#[cfg(feature = "native")]
+fn storage_root() -> Option<std::path::PathBuf> {
+    #[cfg(test)]
+    {
+        Some(std::env::temp_dir().join(format!("linkage-sim-test-{}", std::process::id())))
+    }
+    #[cfg(not(test))]
+    {
+        dirs::home_dir().map(|h| h.join(".linkage-sim"))
+    }
+}
+
 /// Sanitize a template name for use as a filename.
 ///
 /// Replaces characters that are invalid in file paths with underscores.
@@ -408,6 +422,19 @@ mod tests {
         state.saved_templates.clear();
         state.custom_samples.clear();
         state
+    }
+
+    #[cfg(feature = "native")]
+    #[test]
+    fn tests_persist_under_temp_dir_not_home() {
+        let mut state = test_state();
+        state.save_as_template("isolation_t");
+        state.save_as_custom_sample("isolation_c");
+        let tmp = std::env::temp_dir();
+        let t = AppState::templates_dir().unwrap().join("isolation_t.json");
+        let c = AppState::custom_samples_dir().unwrap().join("isolation_c.json");
+        assert!(t.starts_with(&tmp) && t.is_file());
+        assert!(c.starts_with(&tmp) && c.is_file());
     }
 
     #[test]
