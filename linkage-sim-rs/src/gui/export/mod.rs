@@ -6,6 +6,7 @@ mod animation;
 mod csv;
 pub mod download;
 mod dxf;
+mod escape;
 pub mod firmware;
 mod raster;
 mod report;

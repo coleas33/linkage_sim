@@ -1,5 +1,6 @@
 //! DXF generation and file export for mechanism geometry.
 
+use super::escape::dxf_text;
 use crate::core::mechanism::Mechanism;
 
 /// Generate a DXF ASCII string for the mechanism at its current pose.
@@ -45,7 +46,7 @@ pub fn generate_dxf_string(
             let (_, p2) = &pair[1];
             dxf.push_str(&format!(
                 "0\nLINE\n8\n{}\n10\n{:.6}\n20\n{:.6}\n30\n0.0\n11\n{:.6}\n21\n{:.6}\n31\n0.0\n",
-                body_id, p1.x, p1.y, p2.x, p2.y
+                dxf_text(body_id), p1.x, p1.y, p2.x, p2.y
             ));
         }
         // Close polygon for 3+ points
@@ -54,7 +55,7 @@ pub fn generate_dxf_string(
             let (_, p_first) = &pts[0];
             dxf.push_str(&format!(
                 "0\nLINE\n8\n{}\n10\n{:.6}\n20\n{:.6}\n30\n0.0\n11\n{:.6}\n21\n{:.6}\n31\n0.0\n",
-                body_id, p_last.x, p_last.y, p_first.x, p_first.y
+                dxf_text(body_id), p_last.x, p_last.y, p_first.x, p_first.y
             ));
         }
     }
@@ -127,4 +128,22 @@ mod tests {
         assert!(dxf.contains("POINT"), "should have POINT entities for ground");
         assert!(dxf.contains("EOF"), "should have EOF marker");
     }
-}
+
+    /// LGE-07: a name with a line break cannot shift the DXF code/value pairs.
+    #[test]
+    fn dxf_layer_name_cannot_break_group_structure() {
+        use crate::core::body::{make_bar, make_ground};
+        use crate::core::mechanism::Mechanism;
+
+        let mut mech = Mechanism::new();
+        mech.add_body(make_ground(&[("O2", 0.0, 0.0)])).unwrap();
+        mech.add_body(make_bar("lay\ner\r0", "A", "B", 0.01, 0.0, 0.0)).unwrap();
+        mech.build().unwrap();
+        let q = mech.state().make_q();
+        let dxf = generate_dxf_string(&mech, &q).unwrap();
+        let lines: Vec<&str> = dxf.lines().collect();
+        assert_eq!(lines.len() % 2, 0);
+        for pair in lines.chunks(2) {
+            assert!(pair[0].trim().parse::<i32>().is_ok(), "group code expected, got {:?}", pair[0]);
+        }
+    }}

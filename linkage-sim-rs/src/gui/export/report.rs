@@ -3,6 +3,7 @@
 use crate::core::mechanism::Mechanism;
 use crate::gui::sweep::SweepData;
 
+use super::escape::{html_escape, js_str};
 use super::schematic::generate_schematic_svg;
 use super::svg::generate_svg_string;
 
@@ -147,7 +148,7 @@ pub fn generate_html_report(
             let dist = (pb - pa).norm();
             html.push_str(&format!(
                 "<tr><td>{}</td><td>{} \u{2192} {}</td><td>{:.3}{}</td></tr>\n",
-                body_id, na, nb, units.length(dist), units.length_suffix()
+                html_escape(body_id), html_escape(na), html_escape(nb), units.length(dist), units.length_suffix()
             ));
         }
     }
@@ -161,7 +162,7 @@ pub fn generate_html_report(
         let body = &mechanism.bodies()[*body_id];
         html.push_str(&format!(
             "<tr><td>{}</td><td>{:.4}</td><td>{:.6}</td><td>({:.4}, {:.4})</td></tr>\n",
-            body_id, body.mass, body.izz_cg, body.cg_local.x, body.cg_local.y
+            html_escape(body_id), body.mass, body.izz_cg, body.cg_local.x, body.cg_local.y
         ));
     }
     html.push_str("</table>\n");
@@ -380,7 +381,7 @@ pub fn generate_html_report(
             if let Some(env) = compute_envelope(vals) {
                 html.push_str(&format!(
                     "<tr><td>{}</td><td>{:.3}</td><td>{:.3}</td></tr>\n",
-                    jid, env.max_value, env.mean
+                    html_escape(jid), env.max_value, env.mean
                 ));
             }
         }
@@ -398,8 +399,8 @@ pub fn generate_html_report(
             let color = colors[i % colors.len()];
             let comma = if i + 1 < jids.len() { "," } else { "" };
             html.push_str(&format!(
-                "  {{x:{},y:{},type:'scatter',name:'{}',line:{{color:'{}'}}}}{}\n",
-                angles_json, vals_json, jid, color, comma
+                "  {{x:{},y:{},type:'scatter',name:{},line:{{color:'{}'}}}}{}\n",
+                angles_json, vals_json, js_str(jid), color, comma
             ));
         }
         html.push_str("], {title:'Joint Reactions vs Crank Angle',xaxis:{title:'Crank Angle (deg)'},yaxis:{title:'Reaction Force (N)'},margin:{t:40,b:50,l:60,r:20}}, {responsive:true});\n");
@@ -471,8 +472,8 @@ pub fn generate_html_report(
             let color = colors[i % colors.len()];
             let comma = if i + 1 < trace_names.len() { "," } else { "" };
             html.push_str(&format!(
-                "  {{x:{},y:{},mode:'lines',name:'{}',line:{{color:'{}'}}}}{}\n",
-                xs_json, ys_json, name, color, comma
+                "  {{x:{},y:{},mode:'lines',name:{},line:{{color:'{}'}}}}{}\n",
+                xs_json, ys_json, js_str(name), color, comma
             ));
         }
         html.push_str("], {title:'Coupler Point Traces',xaxis:{title:'X (m)',scaleanchor:'y'},yaxis:{title:'Y (m)'},margin:{t:40,b:50,l:60,r:20}}, {responsive:true});\n");
@@ -820,16 +821,6 @@ fn write_loop_equations_section(
     }
 }
 
-/// Minimal HTML escaping for the loop-equations table cells. Symbolic forms
-/// contain `<` (in `≤`/`≥` they don't, but defensive anyway) and the
-/// driver-meta strings can include arbitrary user expressions, so we escape
-/// the four characters that would break table markup.
-fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-}
 
 /// Geometry of a four-bar linkage extracted from a mechanism, in the
 /// canonical Freudenstein orientation (crank → coupler → rocker → ground).
@@ -3505,14 +3496,14 @@ fn force_element_summary(fe: &crate::forces::elements::ForceElement) -> (&'stati
         ForceElement::TorsionSpring(e) => ("Torsion Spring", format!("k = {:.2} N*m/rad, free = {:.2} rad", e.stiffness, e.free_angle)),
         ForceElement::LinearDamper(e) => ("Linear Damper", format!("c = {:.2} N*s/m", e.damping)),
         ForceElement::RotaryDamper(e) => ("Rotary Damper", format!("c = {:.2} N*m*s/rad", e.damping)),
-        ForceElement::ExternalForce(e) => ("External Force", format!("F = ({:.2}, {:.2}) N on {}", e.force[0], e.force[1], e.body_id)),
-        ForceElement::ExternalTorque(e) => ("External Torque", format!("T = {:.2} N*m on {}", e.torque, e.body_id)),
+        ForceElement::ExternalForce(e) => ("External Force", format!("F = ({:.2}, {:.2}) N on {}", e.force[0], e.force[1], html_escape(&e.body_id))),
+        ForceElement::ExternalTorque(e) => ("External Torque", format!("T = {:.2} N*m on {}", e.torque, html_escape(&e.body_id))),
         ForceElement::GasSpring(e) => ("Gas Spring", format!("F0 = {:.1} N, stroke = {:.4} m", e.initial_force, e.stroke)),
         ForceElement::BearingFriction(e) => ("Bearing Friction", format!("drag = {:.3}, viscous = {:.3}", e.constant_drag, e.viscous_coeff)),
         ForceElement::JointLimit(e) => ("Joint Limit", format!("range = [{:.1}, {:.1}] rad, k = {:.0} N*m/rad", e.angle_min, e.angle_max, e.stiffness)),
         ForceElement::Motor(e) => ("Motor", format!("T_stall = {:.2} N*m, w_nl = {:.2} rad/s", e.stall_torque, e.no_load_speed)),
         ForceElement::LinearActuator(e) => ("Linear Actuator", format!("F = {:.1} N, v_max = {:.3} m/s", e.force, e.speed_limit)),
-        ForceElement::ForceZone(e) => ("Force Zone", format!("F = ({:.1}, {:.1}) N on {}", e.force[0], e.force[1], e.body_id)),
+        ForceElement::ForceZone(e) => ("Force Zone", format!("F = ({:.1}, {:.1}) N on {}", e.force[0], e.force[1], html_escape(&e.body_id))),
     }
 }
 
@@ -3600,7 +3591,7 @@ fn write_math_background_section(
     let body_q_strs: Vec<String> = moving
         .iter()
         .map(|b| {
-            let safe = latex_text_escape(b);
+            let safe = html_escape(&latex_text_escape(b));
             format!(
                 "x_{{\\text{{{0}}}}}\\,y_{{\\text{{{0}}}}}\\,\\theta_{{\\text{{{0}}}}}",
                 safe
@@ -4621,4 +4612,24 @@ mod tests {
         let s = format_unix_timestamp_eastern(secs);
         assert_eq!(s, "2026-05-02 23:30:00 EDT");
     }
-}
+
+    /// LGE-07: names from a mechanism file reach the HTML and the report's
+    /// script escaped.
+    #[test]
+    fn report_escapes_hostile_names() {
+        use super::super::escape::test_support::*;
+        let (mech, q) = hostile_fourbar();
+        let (sweep, _) = crate::gui::sweep::compute_sweep_data(&mech, &q, 2.0 * std::f64::consts::PI, 0.0, 9.81, None);
+        let html = generate_html_report(
+            &mech, &q, &sweep, None,
+            &crate::gui::state::DisplayUnits::default(),
+            &crate::gui::state::SensorConfig::default(),
+        )
+        .expect("report");
+        assert!(!html.contains("<script>alert(1)"), "a body name opened a script");
+        assert!(!html.contains("<img src=x"), "a joint name opened a tag");
+        assert!(!html.contains(QUOTE_NAME), "a raw </script> from a name");
+        assert!(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;"), "tables show the escaped body name");
+        // Inside the reactions plot the joint name is a JS string.
+        assert!(html.contains("name:\"x\\\"\\u003c/script>\""), "plot trace name is a JS string");
+    }}
