@@ -1,110 +1,151 @@
-//! 4-bar linkage detection for transmission angle computation.
+//! 4-bar linkage detection, shared by the sweep (transmission angle, Grashof)
+//! and the HTML report (Freudenstein and friends).
 
-use crate::core::constraint::Constraint;
+use nalgebra::{DVector, Vector2};
+
+use crate::core::constraint::{Constraint, JointConstraint, RevoluteJoint};
 use crate::core::mechanism::Mechanism;
 use crate::core::state::GROUND_ID;
 
-/// Try to detect a classic 4-bar linkage and return (crank, coupler, rocker,
-/// ground) link lengths for transmission angle computation.
+/// Topology and link lengths of a planar 4-bar (crank, coupler, rocker, ground).
 ///
-/// A 4-bar is identified by:
-/// - Exactly 3 moving bodies
-/// - Exactly 4 revolute joints
-/// - Each moving body is a binary bar (exactly 2 attachment points)
-/// - One of the moving bodies is the driven body (crank)
-///
-/// Returns `None` for non-4-bar mechanisms.
-pub(crate) fn detect_fourbar_links(mech: &Mechanism) -> Option<(f64, f64, f64, f64)> {
-    let body_order = mech.body_order();
-    if body_order.len() != 3 {
-        return None;
-    }
+/// Lengths come from the revolute joint anchors, not from the bodies'
+/// attachment-point lists, so a coupler point or an extra ground reference
+/// point does not stop detection or change a length.
+#[derive(Debug, Clone)]
+pub(crate) struct FourbarGeometry {
+    pub crank_id: String,
+    pub coupler_id: String,
+    pub rocker_id: String,
+    /// Ground anchor of the crank pivot (J1), ground-local = world.
+    pub o2: Vector2<f64>,
+    /// Crank-side anchor of the crank-coupler joint (J2), crank-local.
+    pub b_on_crank: Vector2<f64>,
+    /// Rocker-side anchor of the coupler-rocker joint (J3), rocker-local.
+    pub c_on_rocker: Vector2<f64>,
+    /// Ground anchor of the rocker pivot (J4), ground-local = world.
+    pub o4: Vector2<f64>,
+    /// Crank length |O2 B|.
+    pub a: f64,
+    /// Coupler length |B C|.
+    pub b: f64,
+    /// Rocker length |C O4|.
+    pub c: f64,
+    /// Ground length |O2 O4|.
+    pub d: f64,
+}
 
-    let joints = mech.joints();
-    let revolute_joints: Vec<_> = joints.iter().filter(|j| j.is_revolute()).collect();
-    if revolute_joints.len() != 4 {
-        return None;
+impl FourbarGeometry {
+    /// World positions of the four joints (O2, B, C, O4) at pose `q`.
+    pub fn world_points(
+        &self,
+        mech: &Mechanism,
+        q: &DVector<f64>,
+    ) -> [Vector2<f64>; 4] {
+        let st = mech.state();
+        [
+            self.o2,
+            st.body_point_global(&self.crank_id, &self.b_on_crank, q),
+            st.body_point_global(&self.rocker_id, &self.c_on_rocker, q),
+            self.o4,
+        ]
     }
+}
 
-    // Identify which body is the crank (driven body).
-    let driver_pair = mech.driver_body_pair()?;
-    let driven_body = if driver_pair.0 == GROUND_ID {
-        driver_pair.1
+/// Anchor of a revolute joint in the local frame of `body`.
+fn anchor_on(joint: &RevoluteJoint, body: &str) -> Vector2<f64> {
+    if joint.body_i_id() == body {
+        *joint.point_i_local()
     } else {
-        driver_pair.0
+        *joint.point_j_local()
+    }
+}
+
+/// Detect a planar 4-bar: ground + 3 moving bodies, exactly 4 joints (all
+/// revolute), exactly 1 driver (revolute, between ground and the crank) and
+/// no linear driver. Returns `None` for any other topology (slider-cranks,
+/// 6-bars, multi-driver mechanisms, non-revolute joints).
+pub(crate) fn detect_fourbar(mech: &Mechanism) -> Option<FourbarGeometry> {
+    // 4 bodies total = ground + 3 moving (crank, coupler, rocker).
+    if mech.bodies().len() != 4 {
+        return None;
+    }
+    let joints = mech.joints();
+    if joints.len() != 4 || !joints.iter().all(|j| matches!(j, JointConstraint::Revolute(_))) {
+        return None;
+    }
+    if mech.drivers().len() != 1 || !mech.linear_drivers().is_empty() {
+        return None;
+    }
+
+    let drv = mech.drivers().first()?;
+    // Crank is the non-ground side of the driver.
+    let crank_id = if drv.body_i_id() == GROUND_ID {
+        drv.body_j_id().to_string()
+    } else if drv.body_j_id() == GROUND_ID {
+        drv.body_i_id().to_string()
+    } else {
+        return None;
     };
 
-    let bodies = mech.bodies();
-
-    // Find the crank length (distance between its two attachment points).
-    let crank_body = bodies.get(driven_body)?;
-    if crank_body.attachment_points.len() != 2 {
-        return None;
-    }
-    let crank_pts: Vec<_> = crank_body.attachment_points.values().collect();
-    let crank_len = (crank_pts[0] - crank_pts[1]).norm();
-
-    // Find the coupler and rocker. The coupler connects to the crank at a
-    // non-ground joint, and the rocker connects the coupler to ground.
-    // We identify them by finding which bodies connect to the crank vs ground.
-    let other_bodies: Vec<&str> = body_order
-        .iter()
-        .map(|s| s.as_str())
-        .filter(|s| *s != driven_body)
-        .collect();
-
-    if other_bodies.len() != 2 {
-        return None;
-    }
-
-    // Check which of the two bodies connects to ground (rocker).
-    let mut coupler_id = None;
-    let mut rocker_id = None;
-    for &body_id in &other_bodies {
-        let connects_to_ground = revolute_joints.iter().any(|j| {
-            (j.body_i_id() == body_id && j.body_j_id() == GROUND_ID)
-                || (j.body_j_id() == body_id && j.body_i_id() == GROUND_ID)
-        });
-        let connects_to_crank = revolute_joints.iter().any(|j| {
-            (j.body_i_id() == body_id && j.body_j_id() == driven_body)
-                || (j.body_j_id() == body_id && j.body_i_id() == driven_body)
-        });
-
-        if connects_to_ground && !connects_to_crank {
-            rocker_id = Some(body_id);
-        } else if connects_to_crank && !connects_to_ground {
-            coupler_id = Some(body_id);
-        } else if connects_to_crank && connects_to_ground {
-            // This body connects to both -- could be either in a parallelogram.
-            // Treat as rocker if we haven't assigned one yet.
-            if rocker_id.is_none() {
-                rocker_id = Some(body_id);
-            } else {
-                coupler_id = Some(body_id);
+    let find_revolute = |a: &str, b: &str| {
+        joints.iter().find_map(|j| match j {
+            JointConstraint::Revolute(r)
+                if (r.body_i_id() == a && r.body_j_id() == b)
+                    || (r.body_i_id() == b && r.body_j_id() == a) =>
+            {
+                Some(r)
             }
-        }
-    }
+            _ => None,
+        })
+    };
 
-    let coupler_body = bodies.get(coupler_id?)?;
-    let rocker_body = bodies.get(rocker_id?)?;
+    // Rocker = body connected to ground by a revolute joint, other than the crank.
+    let rocker_id = joints.iter().find_map(|j| {
+        let JointConstraint::Revolute(r) = j else { return None };
+        let other = if r.body_i_id() == GROUND_ID {
+            r.body_j_id()
+        } else if r.body_j_id() == GROUND_ID {
+            r.body_i_id()
+        } else {
+            return None;
+        };
+        (other != crank_id).then(|| other.to_string())
+    })?;
 
-    if coupler_body.attachment_points.len() != 2 || rocker_body.attachment_points.len() != 2 {
-        return None;
-    }
+    // Coupler is the remaining body.
+    let coupler_id = mech
+        .body_order()
+        .iter()
+        .find(|b| **b != crank_id && **b != rocker_id && b.as_str() != GROUND_ID)
+        .cloned()?;
 
-    let coupler_pts: Vec<_> = coupler_body.attachment_points.values().collect();
-    let coupler_len = (coupler_pts[0] - coupler_pts[1]).norm();
+    let j1 = find_revolute(GROUND_ID, &crank_id)?;
+    let j2 = find_revolute(&crank_id, &coupler_id)?;
+    let j3 = find_revolute(&coupler_id, &rocker_id)?;
+    let j4 = find_revolute(&rocker_id, GROUND_ID)?;
 
-    let rocker_pts: Vec<_> = rocker_body.attachment_points.values().collect();
-    let rocker_len = (rocker_pts[0] - rocker_pts[1]).norm();
+    let o2 = anchor_on(j1, GROUND_ID);
+    let o4 = anchor_on(j4, GROUND_ID);
+    let b_on_crank = anchor_on(j2, &crank_id);
+    let c_on_rocker = anchor_on(j3, &rocker_id);
 
-    // Ground length: distance between the two ground pivots.
-    let ground = bodies.get(GROUND_ID)?;
-    if ground.attachment_points.len() != 2 {
-        return None;
-    }
-    let ground_pts: Vec<_> = ground.attachment_points.values().collect();
-    let ground_len = (ground_pts[0] - ground_pts[1]).norm();
+    Some(FourbarGeometry {
+        a: (b_on_crank - anchor_on(j1, &crank_id)).norm(),
+        b: (anchor_on(j2, &coupler_id) - anchor_on(j3, &coupler_id)).norm(),
+        c: (c_on_rocker - anchor_on(j4, &rocker_id)).norm(),
+        d: (o4 - o2).norm(),
+        crank_id,
+        coupler_id,
+        rocker_id,
+        o2,
+        b_on_crank,
+        c_on_rocker,
+        o4,
+    })
+}
 
-    Some((crank_len, coupler_len, rocker_len, ground_len))
+/// (crank, coupler, rocker, ground) link lengths of a detected 4-bar.
+pub(crate) fn detect_fourbar_links(mech: &Mechanism) -> Option<(f64, f64, f64, f64)> {
+    detect_fourbar(mech).map(|g| (g.a, g.b, g.c, g.d))
 }

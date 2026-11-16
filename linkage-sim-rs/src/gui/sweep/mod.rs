@@ -4,7 +4,7 @@ mod fourbar;
 mod motion_profile;
 mod weights;
 
-pub(crate) use fourbar::detect_fourbar_links;
+pub(crate) use fourbar::{detect_fourbar, detect_fourbar_links};
 pub(crate) use motion_profile::apply_motion_profile;
 pub use weights::{ShareBasis, WeightBreakdown};
 use weights::{required_totals, WeightBreakdownBuilder};
@@ -1526,6 +1526,36 @@ mod tests {
             let count_off = state.sweep_data.as_ref().unwrap().angles_deg.len();
             assert_eq!(count_off, count_full, "Cycle {} OFF: expected {} angles, got {}", cycle, count_full, count_off);
         }
+    }
+
+    /// LGE-10: the sweep detector used to count attachment points, so a
+    /// coupler point or an extra ground reference point made a plain 4-bar
+    /// "not a 4-bar" (no transmission angle) while the report detected it.
+    /// One detector now serves both; lengths come from the joint anchors.
+    #[test]
+    fn detect_fourbar_ignores_extra_attachment_points() {
+        use crate::core::body::{make_bar, make_ground};
+        let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 0.038, 0.0), ("REF", 0.5, 0.5)]);
+        let crank = make_bar("crank", "A", "B", 0.01, 0.0, 0.0);
+        let mut coupler = make_bar("coupler", "B", "C", 0.04, 0.0, 0.0);
+        coupler.add_attachment_point("P", 0.02, 0.01).unwrap();
+        let rocker = make_bar("rocker", "C", "D", 0.03, 0.0, 0.0);
+        let mut mech = crate::core::mechanism::Mechanism::new();
+        for b in [ground, crank, coupler, rocker] {
+            mech.add_body(b).unwrap();
+        }
+        mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
+        mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
+        mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
+        mech.add_revolute_joint("J4", "rocker", "D", "ground", "O4").unwrap();
+        mech.add_constant_speed_driver("D1", "ground", "crank", 1.0, 0.0).unwrap();
+        mech.build().unwrap();
+
+        let (a, b, c, d) = detect_fourbar_links(&mech).expect("still a 4-bar");
+        assert!((a - 0.01).abs() < 1e-12);
+        assert!((b - 0.04).abs() < 1e-12);
+        assert!((c - 0.03).abs() < 1e-12);
+        assert!((d - 0.038).abs() < 1e-12);
     }
 
     #[test]

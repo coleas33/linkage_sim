@@ -800,126 +800,28 @@ struct FourbarLayout {
     d: f64,
 }
 
-/// Detect whether the mechanism is a planar 4-bar (one driver, four
-/// revolute joints, three moving bodies + ground) and extract the
-/// crank/coupler/rocker assignment plus link lengths. Returns `None`
-/// for any topology that doesn't match Freudenstein's setup, e.g.
-/// slider-cranks, multi-driver mechanisms, non-revolute joints.
+/// The shared 4-bar detector (`gui::sweep::detect_fourbar`) plus the world
+/// positions of the four joints at pose `q`. `None` for any other topology.
 fn detect_fourbar(
     mechanism: &crate::core::mechanism::Mechanism,
     q: &nalgebra::DVector<f64>,
 ) -> Option<FourbarLayout> {
-    use crate::core::constraint::{Constraint, JointConstraint};
-    use crate::core::state::GROUND_ID;
-
-    // 4 bodies total = ground + 3 moving (crank, coupler, rocker).
-    if mechanism.bodies().len() != 4 {
-        return None;
-    }
-    let n_revolute = mechanism
-        .joints()
-        .iter()
-        .filter(|j| matches!(j, JointConstraint::Revolute(_)))
-        .count();
-    if n_revolute != 4 || mechanism.joints().len() != 4 {
-        return None;
-    }
-    if mechanism.drivers().len() != 1 || !mechanism.linear_drivers().is_empty() {
-        return None;
-    }
-
-    let drv = mechanism.drivers().first()?;
-    // Crank is the non-ground side of the driver.
-    let crank_id = if drv.body_i_id() == GROUND_ID {
-        drv.body_j_id().to_string()
-    } else if drv.body_j_id() == GROUND_ID {
-        drv.body_i_id().to_string()
-    } else {
-        return None;
-    };
-
-    // Helper: among the revolute joints, find one matching a topology test
-    // and return the joint reference.
-    let find_revolute = |a: &str, b: &str| {
-        mechanism.joints().iter().find_map(|j| {
-            if let JointConstraint::Revolute(r) = j {
-                let i = r.body_i_id();
-                let jb = r.body_j_id();
-                if (i == a && jb == b) || (i == b && jb == a) {
-                    Some(r)
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        })
-    };
-
-    // Identify rocker = body connected to ground via a non-driver revolute joint.
-    let rocker_id = mechanism.joints().iter().find_map(|j| {
-        if let JointConstraint::Revolute(r) = j {
-            let other = if r.body_i_id() == GROUND_ID {
-                Some(r.body_j_id().to_string())
-            } else if r.body_j_id() == GROUND_ID {
-                Some(r.body_i_id().to_string())
-            } else {
-                None
-            };
-            other.filter(|id| id != &crank_id)
-        } else {
-            None
-        }
-    })?;
-
-    // Coupler is the remaining body.
-    let coupler_id = mechanism
-        .body_order()
-        .iter()
-        .find(|b| **b != crank_id && **b != rocker_id && b.as_str() != GROUND_ID)
-        .cloned()?;
-
-    let j1 = find_revolute(GROUND_ID, &crank_id)?;
-    let j2 = find_revolute(&crank_id, &coupler_id)?;
-    let j3 = find_revolute(&coupler_id, &rocker_id)?;
-    let j4 = find_revolute(&rocker_id, GROUND_ID)?;
-
-    // Helper: extract anchor on the requested body, transform to world.
-    let world_anchor =
-        |joint: &crate::core::constraint::RevoluteJoint, body: &str| -> nalgebra::Vector2<f64> {
-            let local = if joint.body_i_id() == body {
-                *joint.point_i_local()
-            } else {
-                *joint.point_j_local()
-            };
-            mechanism.state().body_point_global(body, &local, q)
-        };
-
-    let o2_world = world_anchor(j1, GROUND_ID);
-    let b_world = world_anchor(j2, &crank_id);
-    let c_world = world_anchor(j3, &rocker_id);
-    let o4_world = world_anchor(j4, GROUND_ID);
-
-    let d = (o4_world - o2_world).norm();
-    let a = (b_world - o2_world).norm();
-    let b_len = (c_world - b_world).norm();
-    let c_len = (c_world - o4_world).norm();
-
+    let g = crate::gui::sweep::detect_fourbar(mechanism)?;
+    let [o2_world, b_world, c_world, o4_world] = g.world_points(mechanism, q);
     Some(FourbarLayout {
-        crank_id,
-        coupler_id,
-        rocker_id,
+        crank_id: g.crank_id,
+        coupler_id: g.coupler_id,
+        rocker_id: g.rocker_id,
         o2_world,
         b_world,
         c_world,
         o4_world,
-        a,
-        b: b_len,
-        c: c_len,
-        d,
+        a: g.a,
+        b: g.b,
+        c: g.c,
+        d: g.d,
     })
 }
-
 /// Append a "Freudenstein's equation" subsection to the report, but only
 /// when the mechanism is a planar 4-bar in Freudenstein's standard
 /// configuration. Skipped silently otherwise (slider-cranks, multi-driver
