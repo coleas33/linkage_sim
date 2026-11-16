@@ -106,11 +106,7 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
 
         // Only show driver torque tab if data exists.
         let has_dt = sweep.driver_torques.is_some();
-        let torque_tab_label = if sweep.sweep_mode.is_stroke() {
-            "Actuator Force"
-        } else {
-            "Driver Torque"
-        };
+        let torque_tab_label = driver_tab_label(sweep);
         let torque_tab_tip = if sweep.sweep_mode.is_stroke() {
             "Force required by the linear actuator at each stroke position, computed from static equilibrium (no inertia). Positive = extending, negative = retracting."
         } else {
@@ -540,6 +536,16 @@ fn driver_effort_y_label(sweep: &SweepData) -> &'static str {
     }
 }
 
+/// Label of the driver-effort tab. In stroke mode it must differ from the
+/// separate "Actuator Force" tab (statics plus inertia), so it says what it plots.
+fn driver_tab_label(sweep: &SweepData) -> &'static str {
+    if sweep.sweep_mode.is_stroke() {
+        "Stroke Force (Static)"
+    } else {
+        "Driver Torque"
+    }
+}
+
 /// Return the series name for the driver effort in the plot legend.
 ///
 /// In angle mode: `"Driver Torque"`. In stroke mode: `"Actuator Force"`.
@@ -877,6 +883,16 @@ mod tests {
         stroke.angles_deg = vec![0.05, 0.1, 0.25];
         let (slo, shi) = reference_line_x_span(&stroke, &deg_units());
         assert!((slo - 50.0).abs() < 1e-9 && (shi - 250.0).abs() < 1e-9);
+    }
+
+    /// In stroke mode the driver-effort tab and the actuator-force tab are both
+    /// enabled, so their labels must differ.
+    #[test]
+    fn stroke_mode_driver_tab_label_differs_from_actuator_force_tab() {
+        let stroke = empty_trajectory_sweep_data(SweepMode::Stroke);
+        let angle = empty_trajectory_sweep_data(SweepMode::Angle);
+        assert_ne!(driver_tab_label(&stroke), "Actuator Force");
+        assert_eq!(driver_tab_label(&angle), "Driver Torque");
     }
 
     /// Flat curve with two near-singular spikes: the removed Tukey fence
