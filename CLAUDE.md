@@ -134,6 +134,8 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 This overrides the default of letting subagents inherit the session model. It applies whenever you dispatch a subagent (Agent tool) or write a workflow script, and always under ultracode.
 
+**Roles.** Fable (alias `fable`, the newest Fable; the session model) is the **controller** and the **decider**: the main loop that plans, dispatches and rules on what gets built, and every agent that judges, reviews, synthesizes or settles a physics or design question. Sonnet and Haiku do the mechanical work under it. Every agent definition (`.claude/agents/*.md`), workflow script and `Agent` call names its model, so the split is visible in the file, never implied.
+
 - **Simple tasks run on `sonnet`** (the alias for the newest Sonnet). Simple means mechanical, well specified, low judgment:
   - exploring or mapping code; audit finders for the `tests`, `quality`, and `gui` dimensions;
   - implementing a plan task whose plan gives the exact code (transcription plus running tests);
@@ -142,13 +144,13 @@ This overrides the default of letting subagents inherit the session model. It ap
   - reproduce-it skeptics on non-physics findings;
   - doc and YAML edits, lint fixes, running commands and reporting output, GUI smoke runs.
 - **Git housekeeping runs on `haiku` at `effort: 'low'`:** stash, cleanup, and scoped commit helpers.
-- **Judgment-heavy work keeps the session model (omit `model`):**
+- **Judgment-heavy work runs on `fable`, the decider:**
   - physics, meaning every `risk: physics` backlog item (fix, rework, and review), `fbd-math-reviewer` passes, the `physics` finder dimension, all skeptic lenses on physics findings, and the magcoupling math audit;
   - architecture, design, and planning;
   - debugging without a known root cause, including braindump chase-downs;
   - feature or integration work that spans several files without exact code in a plan;
   - final whole-branch reviews.
-- **Precedence:** when a task matches both lists, the session model wins.
-- **Escalate, never downgrade.** A `sonnet` attempt has failed when it ends `blocked`, leaves the gate red, or is rejected in review. Every retry or rework of that task runs on the session model, as the `rework:` step in `fix-campaign.js` does. Escalate too when a task turns out mid-way to need judgment.
-- **When unsure, use the session model.**
-- **Make the choice visible in workflow scripts.** Set `model: 'sonnet'` or `model: 'haiku'` explicitly on every simple-task `agent()` call. For session-model calls, omit `model` on purpose and say why in a comment, such as `// session model: physics`. Never hard-code an Opus alias or version. For queues that mix risk levels, use the conditional spread in `.claude/workflows/fix-campaign.js` and `.claude/workflows/audit-campaign.js`: `...(item.risk === 'physics' ? {} : { model: 'sonnet' })`.
+- **Precedence:** when a task matches both lists, `fable` wins.
+- **Escalate, never downgrade.** A `sonnet` attempt has failed when it ends `blocked`, leaves the gate red, or is rejected in review. Every retry or rework of that task runs on `fable`, as the `rework:` step in `fix-campaign.js` does. Escalate too when a task turns out mid-way to need judgment.
+- **When unsure, use `fable`.**
+- **Make the choice visible in workflow scripts and agent definitions.** Set `model: 'sonnet'`, `model: 'haiku'` or `model: 'fable'` explicitly on every `agent()` call and in every agent definition's frontmatter, with a comment that names the role, such as `// fable: decider, physics review`. Never hard-code an Opus alias or version. For queues that mix risk levels, use the conditional spread in `.claude/workflows/fix-campaign.js` and `.claude/workflows/audit-campaign.js`: `...(item.risk === 'physics' ? { model: 'fable' } : { model: 'sonnet' })`.

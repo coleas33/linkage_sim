@@ -47,7 +47,7 @@ Pipeline (all steps mandatory, in order):
 3. GATE: run "bash scripts/gate.sh" from ${ROOT}; it must exit 0 printing GATE PASS. If you cannot get it green after honest attempts, return status "blocked" with the failure output in notes.
 4. MUTATION (only if you added a physics cross-check test): temporarily break the solver quantity under test, confirm your new test goes red, restore. Note the mutation you used.
 Return files_changed as repo-relative paths.`,
-    { phase: 'Fix', label: `fix:${item.id}`, schema: FIX_SCHEMA, ...(item.risk === 'physics' ? {} : { model: 'sonnet' }) },
+    { phase: 'Fix', label: `fix:${item.id}`, schema: FIX_SCHEMA, ...(item.risk === 'physics' ? { model: 'fable' } : { model: 'sonnet' }) }, // fable: decider, physics
   )
 
   if (!fix || fix.status !== 'fixed') {
@@ -71,14 +71,14 @@ Run "git status" and "git diff" yourself. Judge: (a) correctness of the change; 
       {
         phase: 'Fix', label: `review:${item.id}:r${round}`, schema: REVIEW_SCHEMA,
         agentType: item.risk === 'physics' ? 'fbd-math-reviewer' : 'feature-dev:code-reviewer',
-        ...(item.risk === 'physics' ? {} : { model: 'sonnet' }), // session model for physics reviews
+        ...(item.risk === 'physics' ? { model: 'fable' } : { model: 'sonnet' }), // fable: decider, physics reviews
       },
     )
     if (lastReview && lastReview.approved) { approved = true; break }
     if (round === 1) {
       const rework = await agent(
         `Address these review findings for backlog item ${item.id} in ${ROOT} (do NOT commit): ${JSON.stringify(lastReview ? lastReview.findings : ['review agent died'])}. Then re-run "bash scripts/gate.sh" — must print GATE PASS. Keep changes minimal.`,
-        { phase: 'Fix', label: `rework:${item.id}`, schema: FIX_SCHEMA }, // session model: escalation after a rejected review
+        { phase: 'Fix', label: `rework:${item.id}`, schema: FIX_SCHEMA, model: 'fable' }, // fable: escalation after a rejected review
       )
       if (!rework || rework.status !== 'fixed') break
       changedFiles = Array.from(new Set([...changedFiles, ...(rework.files_changed || [])]))

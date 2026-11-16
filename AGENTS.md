@@ -18,6 +18,7 @@ If `AGENTS.md` or the response document is an untracked file in your worktree, i
 ## Project rules
 
 - `CLAUDE.md` holds the project's working rules and applies to every agent, not just Claude.
+- Model roles (`CLAUDE.md` section 5): Fable is the controller and the decider, meaning the main loop and every agent that judges, reviews or settles a physics or design question; Sonnet and Haiku do the mechanical work. Every agent definition and `agent()` call names its model.
 - Read `docs/ai/*.yaml` before any job, and update them after file-modifying work.
 - `docs/ai/backlog.yaml` is the work queue. A `risk: physics` item needs the fbd-math-reviewer pass and the user's explicit review of its diff before merge, so it is not `fixed` until then.
 - A test must fail before a fix and pass after it, and docs change with the code.
