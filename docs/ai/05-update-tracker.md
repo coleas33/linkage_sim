@@ -5,6 +5,18 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - A control target with a zero direction is an error, not a panic (audit LCS-13; branch audit/2026-11-16-section-a)
+- What changed: new ControlTarget::validate (inverse_kinematics/control_target.rs) returns the new LinkageError::InvalidControlTarget for a Projection whose axis_dir is zero or NaN; workspace_probe calls it first, so solve_for_target and the trajectory sweep return an Err (Strict and Analysis alike) instead of stopping at the assert. The asserts in evaluate/gradient/hessian and the projection() constructor stay. Readers checked: evaluate/gradient/hessian are reached only after a probe (solve_for_target, sweep, trajectory_ops); no match on LinkageError is exhaustive.
+- Tests: zero_direction_projection_target_is_an_error_not_a_panic (red first: panicked "Projection axis_dir is zero"). Commit 134b45d.
+
+## 2026-11-16 - check_grashof no longer panics on a NaN link length (audit LFA-18; branch audit/2026-11-16-section-a)
+- What changed: the sort and the shortest-link search in analysis/grashof.rs use unwrap_or(Ordering::Equal), as motor_sizing.rs does. A NaN length gives is_grashof false, is_change_point false and NonGrashof. Readers checked: update_grashof (blueprint_ops.rs) and crank_selection.rs read only the result fields.
+- Tests: nan_link_length_is_not_grashof_and_does_not_panic (red first: panicked at the old unwrap). Commit c287553.
+
+## 2026-11-16 - The virtual-work check names a missing driver (audit LFA-12; branch audit/2026-11-16-section-a)
+- What changed: virtual_work_check (analysis/virtual_work.rs) looks for the driver body pair first and returns the new LinkageError::NoDriver ("Mechanism has no driver; add a revolute driver before this analysis.") instead of MechanismNotBuilt. The two unknown-body lookups below it still report MechanismNotBuilt. Readers checked: no match on LinkageError is exhaustive, so no other arm was needed.
+- Tests: virtual_work_on_built_mechanism_without_driver_reports_no_driver (red first: got MechanismNotBuilt). Commit bd0ba5f.
+
 ## 2026-11-16 - Two samples refuse a driver joint they cannot honour and the Custom 6-bar errors when no start solves (audit LGE-14; branch audit/2026-11-16-section-a)
 - What changed: build_chebyshev_lambda_actuator (samples/fourbar.rs) and build_custom_6bar (samples/special.rs) return an error for Some(joint) other than "J1" (None and "J1" build as before; both samples drive on J1). The Custom 6-bar's start search moved into custom_6bar_from_json and ends in an error when no start angle converged, instead of a log line and a zero q0. Readers checked: the only caller with a joint is AppState::reassign_driver (state/driver_ops.rs), which already logs an Err and falls back to the blueprint path; build_sample (None) is unchanged, and the Custom 6-bar test shows its embedded blueprint still solves.
 - Tests: samples_with_a_fixed_driver_joint_reject_another_joint and custom_6bar_that_does_not_assemble_is_an_error (red first: both failed, the second needed the new custom_6bar_from_json seam, added before the fix). Commit 181acc5.
