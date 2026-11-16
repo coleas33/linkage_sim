@@ -1,4 +1,7 @@
-# Upda## 2026-11-16 - GIF export fails when no frame is written or the driver speed is zero (audit LGE-04; branch audit/2026-11-16-section-a)
+# Upda## 2026-11-16 - A failed open, save or shared-link load shows in the status line (audit LGS-10; branch audit/2026-11-16-section-a)
+- What changed: new AppState::report_failure (gui/state/file_io.rs) logs and sets status_message (5 s) to "<what>: <error>". Open JSON, Recent Files, Save, Save As (menu_bar.rs), Ctrl+S, Ctrl+Shift+S and the shared-URL load (gui/mod.rs) call it instead of log::error! alone. Readers checked: recover_autosave_file and recover_wasm_autosave already set a status on failure, left as is; save_to_file/load_from_file still return Err unchanged; the status line reader is unchanged.
+- Tests: failed_save_is_shown_in_the_status_line (red first: report_failure stubbed as a no-op, the status stayed empty). Commit 78f4fe4.
+## 2026-11-16 - GIF export fails when no frame is written or the driver speed is zero (audit LGE-04; branch audit/2026-11-16-section-a)
 - What changed: generate_mechanism_gif_bytes (gui/export/raster.rs) now returns Err when omega is zero or not finite (it divided by omega with no guard) and when no frame was written (frames that failed to solve or rasterize were skipped and an empty GIF came back as Ok). Readers checked: export_mechanism_gif (passes the error on) and the menu_bar.rs GIF export call (already shows an Err); no other callers.
 - Tests: export_gif_zero_omega_returns_error, export_gif_no_frames_rendered_returns_error (red first: both guards removed, the no-frames test failed and the zero-omega run did not return).
 ## 2026-11-16 - Undo and redo refresh the driver display offset and the stroke range (audit LGS-16; branch audit/2026-11-16-section-a)
