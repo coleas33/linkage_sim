@@ -224,10 +224,10 @@ The sure line fixes are in the fixed table. What is left needs new wording or a 
 - **LGC-14** Health and Diagnostics sections show the same facts twice with different thresholds, colours and wording.
 - **LGC-08** Reference lines span a hard-coded 0..360 x range.
 - **LGC-13** Parametric panel: five LinearActuator fields have no current-value lookup, and a dead comment. The check confirmed this only in part.
-- **LGE-10** Two four-bar detectors with different rules.
+- **LGE-10** Two four-bar detectors with different rules. FIXED 1d11528: one detector (sweep/fourbar.rs, the report's rule) serves the sweep and the report.
 - **LGE-16** DXF overlay drops lines that cross the view, and import silently skips unsupported entities.
-- **LGE-17** svg.rs mechanism SVG and schematic.rs repeat the bounding-box and scaling block with different rules.
-- **LGE-18** index_at_driver doc says trajectory sweeps leave angles_deg empty, but compute_trajectory fills it with sample times.
+- **LGE-17** svg.rs mechanism SVG and schematic.rs repeat the bounding-box and scaling block with different rules. FIXED a6afd9c: one padded_world_bounds helper (schematic's rules) in svg.rs, used by both.
+- **LGE-18** index_at_driver doc says trajectory sweeps leave angles_deg empty, but compute_trajectory fills it with sample times. FIXED 65fa63f: the index_at_driver and angles_deg docs now say what trajectory sweeps hold (doc only; no guard added).
 - **LCS-07** (the part not fixed) the cam profile named "Spline" is piecewise linear; its guards and an `if let Ok` disagree with that.
 - **LCS-15** Small inconsistencies between sibling APIs in body.rs and mechanism.rs.
 - **LFA-09** Actuator stroke limits need both ends set, which the field docs and one test do not say.

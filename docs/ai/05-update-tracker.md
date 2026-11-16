@@ -5,6 +5,18 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - LGE-18: index_at_driver and angles_deg docs say what trajectory sweeps hold (audit; branch audit/2026-11-16-consistency)
+- What changed: LGE-18 (65fa63f): doc comments only. A computed trajectory sweep fills `angles_deg` with sample times in seconds (only `empty_trajectory_sweep_data` leaves it empty); `index_at_driver` compares degrees, so it must not be called on a trajectory sweep. No guard was added: whether `current_sweep_index` callers can reach a trajectory sweep is a behaviour question left to the owner.
+- Tests: none (comments only). clippy passes.
+
+## 2026-11-16 - one world bounding-box helper for the mechanism SVG and the schematic (audit LGE-17; branch audit/2026-11-16-consistency)
+- What changed: LGE-17 (a6afd9c): `padded_world_bounds` in gui/export/svg.rs builds the padded world box for both exporters (pad 15% for the SVG, 20% for the schematic, unchanged). It takes the schematic's rules: linear-driver endpoints are included and a zero-size span is widened about its centre (threshold 1e-10). Existing samples give identical output; the mechanism SVG changes only for a driver endpoint that is not an attachment point (no longer clipped) and a zero-size span (centred, not stretched one way).
+- Tests: new `padded_world_bounds_include_linear_driver_endpoints_and_centre_a_zero_span`, red with the driver loop removed. cargo test --all and clippy pass.
+
+## 2026-11-16 - one four-bar detector for the sweep and the report (audit LGE-10; branch audit/2026-11-16-consistency)
+- What changed: LGE-10 (1d11528): `detect_fourbar` in gui/sweep/fourbar.rs (the report's rule: ground plus 3 moving bodies, exactly 4 revolute joints, one revolute driver, no linear driver, lengths from the joint anchors) is the only detector. `detect_fourbar_links` (transmission angle, Grashof) is a tuple view of it; the report's `detect_fourbar` adds the world joint positions at the pose. A four-bar with a coupler point or an extra ground point used to be "not a four-bar" in the sweep (no transmission angle, no Grashof result) and is now detected; lengths no longer depend on the pose.
+- Tests: new `detect_fourbar_ignores_extra_attachment_points`, red with the old attachment-count rule. cargo test --all and clippy pass.
+
 ## 2026-11-16 - driver time at a sweep sample uses the shared helper (audit LGS-04 follow-up; branch audit/2026-11-16-consistency)
 - What changed: LGS-04 (follow-up, df2fdcf): `sweep_time` (gui/sweep), `compute_t_mech` (gui/property_panel/equations.rs), the GIF export loop (gui/export/raster.rs) and the non-Grashof sample loader (gui/samples/special.rs) call `driver_angle_to_time` instead of writing `(angle - theta_0) / omega` out again. The helper stays `pub(crate)` in gui/state (every user already reaches it). `sweep_time` angle mode had no zero-omega guard (inf, or NaN at angle == theta_0); it now returns 0 like its stroke mode. Test-only copies with constant omega are left alone.
 - Tests: new `sweep_time_zero_omega_is_zero_in_both_modes`, red on the old code (inf). Loading clamps omega to 0.01, so only direct callers of `compute_sweep_data` reach omega = 0; the GIF export rejects omega = 0 first; the equations copy already had the guard. cargo test --all and clippy (with and without --features raster) pass.
