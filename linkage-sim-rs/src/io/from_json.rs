@@ -24,26 +24,18 @@ use super::schema::*;
 ///
 /// Returns `[0.0, 0.0]` for force variants that don't carry explicit point coordinates.
 fn get_force_point_pos(force: &ForceElement, is_a: bool) -> [f64; 2] {
-    match force {
-        ForceElement::LinearSpring(s) => if is_a { s.point_a } else { s.point_b },
-        ForceElement::LinearDamper(d) => if is_a { d.point_a } else { d.point_b },
-        ForceElement::GasSpring(g) => if is_a { g.point_a } else { g.point_b },
-        ForceElement::LinearActuator(a) => if is_a { a.point_a } else { a.point_b },
-        _ => [0.0, 0.0],
-    }
+    force
+        .two_point_ends()
+        .map_or([0.0, 0.0], |e| if is_a { e.point_a } else { e.point_b })
 }
 
 /// Extract the body-A and body-B IDs from a two-point force element.
 ///
 /// Returns `None` for force variants that don't reference two specific bodies.
 fn get_force_body_ids(force: &ForceElement) -> Option<(String, String)> {
-    match force {
-        ForceElement::LinearSpring(s) => Some((s.body_a.clone(), s.body_b.clone())),
-        ForceElement::LinearDamper(d) => Some((d.body_a.clone(), d.body_b.clone())),
-        ForceElement::GasSpring(g) => Some((g.body_a.clone(), g.body_b.clone())),
-        ForceElement::LinearActuator(a) => Some((a.body_a.clone(), a.body_b.clone())),
-        _ => None,
-    }
+    force
+        .two_point_ends()
+        .map(|e| (e.body_a.to_string(), e.body_b.to_string()))
 }
 
 // ---------------------------------------------------------------------------

@@ -52,38 +52,14 @@ pub fn analyze_force(
     bodies_json: &HashMap<String, BodyJson>,
 ) -> CompoundAnalysis {
     // Extract the four identifiers we care about.  Non-point forces bail early.
-    let (body_a_id, point_a_name, body_b_id, point_b_name) = match force {
-        ForceElement::LinearSpring(s) => (
-            s.body_a.as_str(),
-            s.point_a_name.as_deref(),
-            s.body_b.as_str(),
-            s.point_b_name.as_deref(),
-        ),
-        ForceElement::LinearDamper(d) => (
-            d.body_a.as_str(),
-            d.point_a_name.as_deref(),
-            d.body_b.as_str(),
-            d.point_b_name.as_deref(),
-        ),
-        ForceElement::GasSpring(g) => (
-            g.body_a.as_str(),
-            g.point_a_name.as_deref(),
-            g.body_b.as_str(),
-            g.point_b_name.as_deref(),
-        ),
-        ForceElement::LinearActuator(a) => (
-            a.body_a.as_str(),
-            a.point_a_name.as_deref(),
-            a.body_b.as_str(),
-            a.point_b_name.as_deref(),
-        ),
-        // All other variants (Gravity, TorsionSpring, RotaryDamper,
-        // ExternalForce, ExternalTorque, …) are pure — no named point refs.
-        other => return CompoundAnalysis::PureForce(other.clone()),
+    // All other variants (Gravity, TorsionSpring, RotaryDamper,
+    // ExternalForce, ExternalTorque, …) are pure — no named point refs.
+    let Some(ends) = force.two_point_ends() else {
+        return CompoundAnalysis::PureForce(force.clone());
     };
 
-    let mount_a = is_mount_point(body_a_id, point_a_name, bodies_json);
-    let mount_b = is_mount_point(body_b_id, point_b_name, bodies_json);
+    let mount_a = is_mount_point(ends.body_a, ends.point_a_name, bodies_json);
+    let mount_b = is_mount_point(ends.body_b, ends.point_b_name, bodies_json);
 
     if mount_a || mount_b {
         CompoundAnalysis::NeedsExpansion {
@@ -187,33 +163,13 @@ pub fn expand_compound_force(
     let rod_id = format!("force_{}_rod", force_index);
 
     // Extract body IDs and point names from the original force.
-    let (body_a_id, point_a_name, body_b_id, point_b_name) = match force {
-        ForceElement::LinearSpring(s) => (
-            s.body_a.clone(),
-            s.point_a_name.clone(),
-            s.body_b.clone(),
-            s.point_b_name.clone(),
-        ),
-        ForceElement::LinearDamper(d) => (
-            d.body_a.clone(),
-            d.point_a_name.clone(),
-            d.body_b.clone(),
-            d.point_b_name.clone(),
-        ),
-        ForceElement::GasSpring(g) => (
-            g.body_a.clone(),
-            g.point_a_name.clone(),
-            g.body_b.clone(),
-            g.point_b_name.clone(),
-        ),
-        ForceElement::LinearActuator(a) => (
-            a.body_a.clone(),
-            a.point_a_name.clone(),
-            a.body_b.clone(),
-            a.point_b_name.clone(),
-        ),
-        _ => return Err("Cannot expand non-point force element".into()),
+    let Some(ends) = force.two_point_ends() else {
+        return Err("Cannot expand non-point force element".into());
     };
+    let body_a_id = ends.body_a.to_string();
+    let body_b_id = ends.body_b.to_string();
+    let point_a_name = ends.point_a_name.map(str::to_string);
+    let point_b_name = ends.point_b_name.map(str::to_string);
 
     // Revolute joint at end A: body_a ↔ cylinder "base".
     // If mount_a is true the attachment point on body_a was pre-created from
@@ -293,49 +249,16 @@ fn remap_force_to_compound(force: &ForceElement, idx: usize, half_len: f64) -> F
     let cyl_id = format!("force_{}_cyl", idx);
     let rod_id = format!("force_{}_rod", idx);
 
-    match force {
-        ForceElement::LinearSpring(s) => {
-            let mut r = s.clone();
-            r.body_a = cyl_id;
-            r.point_a = [0.0, 0.0];
-            r.point_a_name = None;
-            r.body_b = rod_id;
-            r.point_b = [half_len, 0.0];
-            r.point_b_name = None;
-            ForceElement::LinearSpring(r)
-        }
-        ForceElement::LinearDamper(d) => {
-            let mut r = d.clone();
-            r.body_a = cyl_id;
-            r.point_a = [0.0, 0.0];
-            r.point_a_name = None;
-            r.body_b = rod_id;
-            r.point_b = [half_len, 0.0];
-            r.point_b_name = None;
-            ForceElement::LinearDamper(r)
-        }
-        ForceElement::GasSpring(g) => {
-            let mut r = g.clone();
-            r.body_a = cyl_id;
-            r.point_a = [0.0, 0.0];
-            r.point_a_name = None;
-            r.body_b = rod_id;
-            r.point_b = [half_len, 0.0];
-            r.point_b_name = None;
-            ForceElement::GasSpring(r)
-        }
-        ForceElement::LinearActuator(a) => {
-            let mut r = a.clone();
-            r.body_a = cyl_id;
-            r.point_a = [0.0, 0.0];
-            r.point_a_name = None;
-            r.body_b = rod_id;
-            r.point_b = [half_len, 0.0];
-            r.point_b_name = None;
-            ForceElement::LinearActuator(r)
-        }
-        other => other.clone(),
+    let mut remapped = force.clone();
+    if let Some(e) = remapped.two_point_ends_mut() {
+        *e.body_a = cyl_id;
+        *e.point_a = [0.0, 0.0];
+        *e.point_a_name = None;
+        *e.body_b = rod_id;
+        *e.point_b = [half_len, 0.0];
+        *e.point_b_name = None;
     }
+    remapped
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -629,19 +552,32 @@ mod tests {
 
         for original in &variants {
             let r = remap_force_to_compound(original, 4, half_len);
-            let (ba, pa, na, bb, pb, nb) = match &r {
-                ForceElement::LinearSpring(e) => (&e.body_a, e.point_a, &e.point_a_name, &e.body_b, e.point_b, &e.point_b_name),
-                ForceElement::LinearDamper(e) => (&e.body_a, e.point_a, &e.point_a_name, &e.body_b, e.point_b, &e.point_b_name),
-                ForceElement::GasSpring(e) => (&e.body_a, e.point_a, &e.point_a_name, &e.body_b, e.point_b, &e.point_b_name),
-                ForceElement::LinearActuator(e) => (&e.body_a, e.point_a, &e.point_a_name, &e.body_b, e.point_b, &e.point_b_name),
-                _ => panic!("remap changed the variant"),
-            };
-            assert_eq!(ba, &cyl.id);
-            assert_eq!(bb, &rod.id);
-            assert_eq!(pa, [base.x, base.y], "point_a must be the cylinder base pin");
-            assert_eq!(pb, [tip.x, tip.y], "point_b must be the rod tip pin");
-            assert!(na.is_none() && nb.is_none());
+            let e = r.two_point_ends().expect("remap changed the variant");
+            assert_eq!(e.body_a, cyl.id);
+            assert_eq!(e.body_b, rod.id);
+            assert_eq!(e.point_a, [base.x, base.y], "point_a must be the cylinder base pin");
+            assert_eq!(e.point_b, [tip.x, tip.y], "point_b must be the rod tip pin");
+            assert!(e.point_a_name.is_none() && e.point_b_name.is_none());
         }
+    }
+
+    #[test]
+    fn two_point_ends_covers_only_the_four_two_point_forces() {
+        use crate::forces::elements::GravityElement;
+        let mut spring = ForceElement::LinearSpring(LinearSpringElement {
+            body_a: "a".into(), point_a: [1.0, 2.0], point_a_name: Some("pa".into()),
+            body_b: "b".into(), point_b: [3.0, 4.0], point_b_name: None,
+            stiffness: 1.0, free_length: 1.0,
+        });
+        let e = spring.two_point_ends().unwrap();
+        assert_eq!((e.body_a, e.point_a, e.point_a_name), ("a", [1.0, 2.0], Some("pa")));
+        assert_eq!((e.body_b, e.point_b, e.point_b_name), ("b", [3.0, 4.0], None));
+        *spring.two_point_ends_mut().unwrap().point_b = [5.0, 6.0];
+        assert_eq!(spring.two_point_ends().unwrap().point_b, [5.0, 6.0]);
+
+        let mut gravity = ForceElement::Gravity(GravityElement::default());
+        assert!(gravity.two_point_ends().is_none());
+        assert!(gravity.two_point_ends_mut().is_none());
     }
 
     // ── A failed expansion leaves no orphan compound bodies ──────────────────
