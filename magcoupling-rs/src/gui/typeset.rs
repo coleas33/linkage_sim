@@ -126,6 +126,7 @@ impl TermColors {
     }
 
     /// Whether no term has a colour.
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.colors.is_empty()
     }
@@ -184,6 +185,7 @@ impl Laid {
     }
 
     /// Every text run in drawing order, with its rect in the box.
+    #[cfg(test)]
     pub fn texts(&self) -> Vec<(String, Rect)> {
         self.inks
             .iter()
