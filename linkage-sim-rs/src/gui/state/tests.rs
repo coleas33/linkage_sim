@@ -3759,3 +3759,21 @@
         assert_eq!(from_mech, expected, "fixture: load set the range");
         assert_eq!((state.sweep_stroke_min, state.sweep_stroke_max), expected);
     }
+
+    #[test]
+    fn driver_angle_to_time_divides_by_omega() {
+        assert_eq!(driver_angle_to_time(3.0, 1.0, 2.0), 1.0);
+        assert_eq!(driver_angle_to_time(0.0, 1.0, -2.0), 0.5);
+    }
+
+    #[test]
+    fn driver_angle_to_time_zero_omega_is_zero_not_inf_or_nan() {
+        // LGS-04: flip_assembly_branch and file_io used to divide unguarded.
+        for omega in [0.0, -0.0, f64::EPSILON / 2.0] {
+            let t = driver_angle_to_time(1.5, 0.5, omega);
+            assert!(t.is_finite());
+            assert_eq!(t, 0.0);
+        }
+        // angle == theta_0 and omega == 0 was 0/0 = NaN in the unguarded copies.
+        assert_eq!(driver_angle_to_time(0.5, 0.5, 0.0), 0.0);
+    }

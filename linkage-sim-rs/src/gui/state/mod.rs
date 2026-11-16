@@ -39,6 +39,7 @@ pub use preferences::UserPreferences;
 
 // Re-export blueprint helper functions used in tests and other modules.
 pub(crate) use blueprint_ops::detect_driver_joint_id;
+pub(crate) use solver_helpers::driver_angle_to_time;
 
 // ── Motion Profile ──────────────────────────────────────────────────────────
 
@@ -1200,17 +1201,9 @@ impl AppState {
             return;
         };
 
-        // Guard against omega==0 driving t to infinity. Other solver
-        // callsites (blueprint_ops, file_io, undo_ops) use the same
-        // pattern. Clamping at UI / load boundaries should keep
-        // `driver_omega` above `MIN_DRIVER_OMEGA_ABS`; this is defense
-        // in depth.
-        let omega = self.driver_omega();
-        let t = if omega.abs() > f64::EPSILON {
-            (angle_rad - self.driver_theta_0()) / omega
-        } else {
-            0.0
-        };
+        // Clamping at UI / load boundaries should keep `driver_omega` above
+        // `MIN_DRIVER_OMEGA_ABS`; `driver_angle_to_time` guards omega == 0 anyway.
+        let t = driver_angle_to_time(angle_rad, self.driver_theta_0(), self.driver_omega());
 
         let guess = self.last_good_q.clone();
         let converged = self.solve_and_update(&mech, &guess, t, 1e-10, 50, None);
@@ -1309,7 +1302,7 @@ impl AppState {
         // 4. Re-solve at the current driver angle with the reflected
         //    guess. solve_and_update handles status + q bookkeeping.
         let q_before = self.q.clone();
-        let t = (self.driver_angle - self.driver_theta_0()) / self.driver_omega();
+        let t = driver_angle_to_time(self.driver_angle, self.driver_theta_0(), self.driver_omega());
         let converged = self.solve_and_update(&mech, &q_guess, t, 1e-10, 50, None);
 
         self.mechanism = Some(mech);
@@ -1349,12 +1342,7 @@ impl AppState {
             return;
         }
 
-        let velocity = self.driver_omega();
-        let t = if velocity.abs() > f64::EPSILON {
-            (stroke_m - self.driver_theta_0()) / velocity
-        } else {
-            0.0
-        };
+        let t = driver_angle_to_time(stroke_m, self.driver_theta_0(), self.driver_omega());
 
         let guess = self.last_good_q.clone();
         let mech = self.mechanism.take().unwrap();

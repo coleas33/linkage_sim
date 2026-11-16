@@ -11,6 +11,18 @@ use crate::solver::kinematics::solve_position;
 
 use super::{AppState, SolverStatus};
 
+/// Driver time `t` that puts the driver at `angle` (or stroke): `(angle - theta_0) / omega`.
+///
+/// Returns 0.0 when `omega` is zero (or within `f64::EPSILON` of it) so a stalled
+/// driver never yields an infinite or NaN time.
+pub(crate) fn driver_angle_to_time(angle: f64, theta_0: f64, omega: f64) -> f64 {
+    if omega.abs() > f64::EPSILON {
+        (angle - theta_0) / omega
+    } else {
+        0.0
+    }
+}
+
 impl AppState {
     /// Solve the position problem and update state accordingly.
     ///
