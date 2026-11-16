@@ -71,7 +71,8 @@ pub fn check_grashof(
     ];
 
     let mut sorted_lengths = [ground_length, crank_length, coupler_length, rocker_length];
-    sorted_lengths.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    // A NaN length compares Equal (as in motor_sizing.rs); its sums are NaN, so it classifies NonGrashof.
+    sorted_lengths.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
     let s = sorted_lengths[0];
     let l = sorted_lengths[3];
@@ -84,7 +85,7 @@ pub fn check_grashof(
     // Find which link name is shortest
     let shortest_is = named
         .iter()
-        .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+        .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
         .unwrap()
         .0;
 
@@ -190,5 +191,19 @@ mod tests {
         assert_eq!(result.longest, 3.0);
         assert_eq!(result.grashof_sum, 4.0);
         assert_eq!(result.other_sum, 4.0);
+    }
+
+    #[test]
+    fn nan_link_length_is_not_grashof_and_does_not_panic() {
+        for lengths in [
+            [f64::NAN, 1.0, 3.5, 2.5],
+            [4.0, 1.0, 3.5, f64::NAN],
+            [f64::NAN; 4],
+        ] {
+            let r = check_grashof(lengths[0], lengths[1], lengths[2], lengths[3], 1e-10);
+            assert!(!r.is_grashof, "{lengths:?}");
+            assert!(!r.is_change_point, "{lengths:?}");
+            assert_eq!(r.classification, GrashofType::NonGrashof, "{lengths:?}");
+        }
     }
 }
