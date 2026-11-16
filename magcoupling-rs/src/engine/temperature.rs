@@ -690,6 +690,10 @@ results! {
             daily_cycles: f64 => out("cycles", "Daily thermal cycles over life", "", "Temperature design!C200"),
             daily_peak_shear_MPa: f64 => out("MPa", "Peak end shear per daily cycle, recommended bondline", "", "Temperature design!C201"),
             daily_screen: String => out("", "Daily-cycle screen", "", "Temperature design!C202"),
+            daily_entered_peak_shear_MPa: f64 => out_rust_only("MPa", "Peak end shear per daily cycle, entered bondline",
+                "The daily-cycle shear at the bondline entered as the adhesive thickness under the inner magnets, not at the recommended one."),
+            daily_entered_screen: String => out_rust_only("", "Daily-cycle screen, entered bondline",
+                "The daily-cycle screen's comparison, on the shear at the entered bondline."),
         }
     }
 }
@@ -1430,6 +1434,17 @@ pub fn compute(
     let amp = tq_var / (npole * r_mid / 1000.0) / area;
     let hot_fm = sel.lap_shear_MPa * al.hot_strength_retained * al.fatigue_endurance / amp;
     let daily = s2 * al.daily_swing_C / dT;
+    // BL-063: the workbook's screen reads the recommended bondline's shear (s2), so a thinner
+    // entered bondline passes it unseen. The second screen reads the entered bondline's (s1).
+    let daily_entered = s1 * al.daily_swing_C / dT;
+    let daily_screen = |shear: f64| {
+        if size(shear) < sel.lap_shear_MPa * al.fatigue_endurance {
+            "Below the fatigue endurance"
+        } else {
+            "Above the fatigue endurance: qualify by thermal cycling"
+        }
+        .to_owned()
+    };
     let alife = AdhesiveLifeResults {
         peak_C: peak,
         margin_C: sel.design_limit_C - peak,
@@ -1445,12 +1460,9 @@ pub fn compute(
         .to_owned(),
         daily_cycles: al.service_years * 365.0,
         daily_peak_shear_MPa: daily,
-        daily_screen: if size(daily) < sel.lap_shear_MPa * al.fatigue_endurance {
-            "Below the fatigue endurance"
-        } else {
-            "Above the fatigue endurance: qualify by thermal cycling"
-        }
-        .to_owned(),
+        daily_screen: daily_screen(daily),
+        daily_entered_peak_shear_MPa: daily_entered,
+        daily_entered_screen: daily_screen(daily_entered),
     };
 
     // ---- summary
@@ -1829,6 +1841,62 @@ mod tests {
             run(&ti, &k).adhesive_life.daily_screen,
             "Below the fatigue endurance"
         );
+    }
+
+    #[test]
+    fn daily_entered_screen_is_above_at_equal_shear() {
+        // BL-063: the same strict comparison on `s1 * swing / dT`, the entered bondline's shear
+        // (0.05 mm here, the recommended one 0.1 mm), set up as in the test above. The swing
+        // that puts the entered bondline's shear exactly on the limit leaves the recommended
+        // bondline's shear under it, so the two screens read differently.
+        let mut k = links();
+        k.inner_length_mm = 1000.0;
+        let mut ti = TemperatureInputs::default();
+        ti.adhesive.selected = 1;
+        ti.mismatch.adhesive_shear_modulus_GPa = 0.55; // explicit: correction E1 changes the default
+        ti.adhesive_life.fatigue_endurance = 0.2;
+        let limit = ADHESIVES[0].lap_shear_MPa * 0.2;
+        let base = run(&ti, &k);
+        ti.adhesive_life.daily_swing_C =
+            limit * base.mismatch.worst_swing_C / base.mismatch.peak_shear_current_MPa;
+        let r = run(&ti, &k);
+        assert_eq!(r.adhesive_life.daily_entered_peak_shear_MPa, limit);
+        assert_eq!(
+            r.adhesive_life.daily_entered_screen,
+            "Above the fatigue endurance: qualify by thermal cycling"
+        );
+        assert!(r.adhesive_life.daily_peak_shear_MPa < limit);
+        assert_eq!(r.adhesive_life.daily_screen, "Below the fatigue endurance");
+        ti.adhesive_life.daily_swing_C *= 0.99; // just below the limit
+        assert_eq!(
+            run(&ti, &k).adhesive_life.daily_entered_screen,
+            "Below the fatigue endurance"
+        );
+    }
+
+    #[test]
+    fn both_daily_screens_read_above_when_the_worst_swing_is_zero() {
+        // EA 9514 cures at 120 °C, above its 113 °C design limit, so with the cold limit at the
+        // cure temperature the worst swing is 0. Both shears are then 0 * swing / 0, a NaN, and
+        // the strict comparison is false: the second screen reads as the workbook's does.
+        let mut k = links();
+        k.min_temp_C = 120.0;
+        let mut ti = TemperatureInputs::default();
+        ti.adhesive.selected = 2;
+        for dev in [Deviations::NONE, Deviations::ALL] {
+            let r = compute(&ti, &k, dev);
+            assert_eq!(r.mismatch.worst_swing_C, 0.0);
+            let life = &r.adhesive_life;
+            assert!(
+                life.daily_peak_shear_MPa.is_nan() && life.daily_entered_peak_shear_MPa.is_nan()
+            );
+            for screen in [&life.daily_screen, &life.daily_entered_screen] {
+                assert_eq!(
+                    screen,
+                    "Above the fatigue endurance: qualify by thermal cycling"
+                );
+            }
+        }
     }
 
     #[test]

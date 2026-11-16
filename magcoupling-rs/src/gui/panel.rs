@@ -3341,7 +3341,8 @@ mod tests {
         use crate::gui::results_table::{
             FAILING_ONLY, NO_RESULT, NOTHING_FAILS, SEARCH_HINT, table_entries,
         };
-        // Manual magnets: the defaults' five red checks and two amber rating checks.
+        // Manual magnets: the defaults' five red checks, two amber rating checks and the amber
+        // daily-cycle screen at the entered bondline (BL-063).
         let mut harness = Harness::new();
         harness.panel.inputs.coupling.magnets.part_inner.clear();
         harness.panel.inputs.coupling.magnets.part_outer.clear();
@@ -3349,9 +3350,9 @@ mod tests {
         harness.click_text(FAILING_ONLY);
         let output = harness.frame(Vec::new());
         let failing = failing_checks(harness.panel.results(), false);
-        assert_eq!(failing.len(), 7);
+        assert_eq!(failing.len(), 8);
         let total = table_entries().len();
-        assert_eq!(count(&output, &format!("7 of {total} results")), 1);
+        assert_eq!(count(&output, &format!("8 of {total} results")), 1);
         // In the table, between the inputs and the dashboard: each failing check's label, and
         // no passing check's (two checks may share a label: "Verdict").
         let centre =
@@ -3368,7 +3369,7 @@ mod tests {
                 .count();
             assert_eq!(drawn, want, "{check}");
         }
-        // Five red badges and two amber in the table, in the dashboard's colours: every badge
+        // Five red badges and three amber in the table, in the dashboard's colours: every badge
         // drawn but the dashboard's own.
         let visuals = harness.ctx.style().visuals.clone();
         let lines = crate::gui::dashboard::dashboard_lines(harness.panel.results());
@@ -3385,7 +3386,7 @@ mod tests {
         };
         assert_eq!(
             (table_badges(Level::Bad), table_badges(Level::Caution)),
-            (5, 2)
+            (5, 3)
         );
         // Off again: the groups come back.
         harness.click_text(FAILING_ONLY);
@@ -10176,24 +10177,32 @@ mod tests {
         use crate::gui::dashboard::failing_checks;
         use crate::gui::results_table::{FAILING_ONLY, entry_index, table_entries};
         // BL-059: at the defaults the gearbox check fails beside the cup ring, the hot minimum,
-        // the clearance and the cup wall, all red. The filter lists the five, and the gearbox
-        // check's row once in the table, with a red badge.
+        // the clearance and the cup wall, all red. The filter lists the five, then the amber
+        // daily-cycle screen at the entered bondline (BL-063), and the gearbox check's row once
+        // in the table, with a red badge.
         let mut harness = Harness::new();
         harness.click_text(CentreView::Results.label());
         harness.click_text(FAILING_ONLY);
         let output = harness.frame(Vec::new());
         let failing = failing_checks(harness.panel.results(), false);
-        assert_eq!(failing.len(), 5, "{failing:?}");
+        assert_eq!(failing.len(), 6, "{failing:?}");
         assert!(
-            failing.iter().all(|&(_, level)| level == Level::Bad),
+            failing[..5].iter().all(|&(_, level)| level == Level::Bad),
             "{failing:?}"
         );
         assert!(
             failing.contains(&(GEARBOX_CHECK, Level::Bad)),
             "{failing:?}"
         );
+        assert_eq!(
+            failing[5],
+            (
+                "temperature.adhesive_life.daily_entered_screen",
+                Level::Caution
+            )
+        );
         let total = table_entries().len();
-        assert_eq!(count(&output, &format!("5 of {total} results")), 1);
+        assert_eq!(count(&output, &format!("6 of {total} results")), 1);
         let in_table = |x: f32| x > INPUTS_WIDTH && x < SCREEN.x - DASHBOARD_WIDTH;
         // The row is found by the label the table draws: its entry's (`row_ui`), which an
         // overlay name for the dashboard row would not change.

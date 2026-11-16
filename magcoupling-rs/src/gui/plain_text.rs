@@ -416,7 +416,7 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "temperature.mismatch.recommended_bondline_mm",
-        "A second adhesive thickness at which the bond shear from temperature swings is also computed; the daily-cycle screen uses it. Thicker lowers that shear.",
+        "A second adhesive thickness for the bond shear from temperature swings; thicker lowers that shear. The daily-cycle screen reads it, the entered-bondline screen the thickness under the inner magnets.",
     ),
     (
         "temperature.adhesive_life.fatigue_endurance",
@@ -1667,12 +1667,14 @@ mod batch_b_tests {
         ("temperature.thermal.c_ndfeb", "example", "temperature.thermal.heat_capacity_J_K", Up),
         ("metal.bond_inner_mm", "example", "model.hub_wall_mm", Down),
         ("metal.bond_inner_mm", "example", "temperature.mismatch.peak_shear_current_MPa", Down),
+        ("metal.bond_inner_mm", "example", "temperature.adhesive_life.daily_entered_peak_shear_MPa", Down),
         ("metal.bond_inner_mm", "example", "model.pullout_Nm", Stays),
         ("metal.bond_outer_mm", "example", "model.cup_od_mm", Up),
         ("metal.bond_outer_mm", "example", "mass.cup_g", Up),
         ("metal.bond_outer_mm", "example", "model.pullout_Nm", Stays),
         ("temperature.mismatch.recommended_bondline_mm", "example", "temperature.adhesive_life.daily_peak_shear_MPa", Down),
         ("temperature.mismatch.recommended_bondline_mm", "example", "temperature.mismatch.peak_shear_current_MPa", Stays),
+        ("temperature.mismatch.recommended_bondline_mm", "example", "temperature.adhesive_life.daily_entered_peak_shear_MPa", Stays),
         ("temperature.adhesive_life.fatigue_endurance", "example", "temperature.adhesive_life.hot_fatigue_margin", Up),
         ("temperature.slip_loss.sigma_316_S_m", "example", "temperature.slip_loss.sleeve_W", Up),
         ("temperature.slip_loss.sigma_316_S_m", "titanium sleeve", "temperature.slip_loss.total_W", Stays),

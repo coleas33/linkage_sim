@@ -2988,6 +2988,16 @@ fn e22_compares_the_size_of_a_negative_shear() {
         life.daily_screen,
         "Above the fatigue endurance: qualify by thermal cycling"
     );
+    // BL-063: the screen at the entered bondline compares the size too.
+    assert!(
+        life.daily_entered_peak_shear_MPa < -3.0,
+        "{}",
+        life.daily_entered_peak_shear_MPa
+    );
+    assert_eq!(
+        life.daily_entered_screen,
+        "Above the fatigue endurance: qualify by thermal cycling"
+    );
     // Without E22 the same design shears the positive way (C95, -0.8e-6 /C).
     assert!(
         results_with(&o, before)
@@ -3040,6 +3050,16 @@ fn e22_compares_the_size_of_a_negative_shear_on_sintered_ndfeb_too() {
         );
         assert_eq!(
             a.temperature.adhesive_life.daily_screen,
+            "Above the fatigue endurance: qualify by thermal cycling",
+            "{basis}"
+        );
+        // BL-063: the screen at the entered bondline (0.01 mm too) is gated the same way.
+        assert_eq!(
+            b.temperature.adhesive_life.daily_entered_screen, "Below the fatigue endurance",
+            "{basis}"
+        );
+        assert_eq!(
+            a.temperature.adhesive_life.daily_entered_screen,
             "Above the fatigue endurance: qualify by thermal cycling",
             "{basis}"
         );

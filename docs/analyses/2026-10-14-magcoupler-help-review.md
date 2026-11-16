@@ -7878,3 +7878,350 @@ at the start line for line. The full gate was not run; the reviewer changed no c
 - The task text cites section 6 of the slice-2 spec for the traps; they are in section 8.
 
 Verdict: PASS. No must-fix. Three should-fix offered (SF-1, SF-2, SF-3).
+
+## BL-063 the daily-cycle screen at the entered bondline (2026-11-11)
+
+BL-063 (`docs/ai/backlog.yaml`) asks whether the daily-cycle bond screen should judge the entered bondline or report
+both. The workbook's screen (Temperature design C201 and C202) reads the bond shear at the recommended bondline (0.1
+mm by default), so a thinner entered bondline (0.05 mm by default) passed it unseen. The owner has not answered. Under
+the owner's ruling of 2026-11-10 (an open question takes the conservative answer, and the assumption is made known)
+the answer taken for now is "report both": the workbook's screen stays cell for cell, and two Rust-only results right
+after it give the daily-cycle shear and the same screen at the entered bondline
+(`magcoupling-rs/src/engine/temperature.rs`). Row A-9 of `docs/analyses/2026-11-10-conservative-assumptions.md` (kept
+in the owner's main checkout) records it. That is an assumption, not the owner's answer, and the owner's review of the
+diff is still owed before a merge. On screen, one help text changed and two result rows are new, each with a label and
+a help. These texts had their G-3 review in a fresh context on the uncommitted change in the worktree (branch
+`magcoupling/off-default-fixes`, HEAD 4737962, 14 changed files). The reviewer's report for the record follows.
+
+- Scope: one changed help, two new labels and two new helps, each whole.
+  - The overlay help of the input `temperature.mismatch.recommended_bondline_mm`, "Recommended bondline"
+    (`magcoupling-rs/src/gui/plain_text.rs`, line 419).
+  - The label and the help of the new result `temperature.adhesive_life.daily_entered_peak_shear_MPa`
+    (`magcoupling-rs/src/engine/temperature.rs`, lines 693 and 694).
+  - The label and the help of the new result `temperature.adhesive_life.daily_entered_screen` (the same file, lines
+    695 and 696), and the two verdict texts it shows (the workbook screen's own, not changed).
+  - Read beside them, for the same design each time: the workbook's two rows ("Peak end shear per daily cycle,
+    recommended bondline", C201; "Daily-cycle screen", C202), the two shears, the two screens and their badges, the
+    rows "Current bondline", "Peak end shear, current bondline", "Peak end shear, recommended bondline" and "Reading",
+    the failing filter, the Adhesive group's heading badge, the status line, and the unchanged helps of
+    `metal.bond_inner_mm` (`gui/plain_text.rs`, line 411; the diff does not change it),
+    `temperature.adhesive_life.daily_swing_C` (line 169) and `temperature.adhesive_life.fatigue_endurance` (line 423).
+  - The diff changes no other text a user sees: no derivation record, guide, Problem, note, warning or hint. Neither
+    new row is a dashboard row or has a guide.
+- Reviewer: fresh context, general-purpose agent on fable, 2026-11-11; round 1 of the item's text reviews. The step
+  was resumed on 2026-11-16, and every probe and test run below is of that day. The worktree's diff was then the one
+  the item's code review left on 2026-11-11 (the two saved diffs are the same but for how the files hold the
+  characters outside ASCII, and the two saved statuses are the same). Every number below is from the reviewer's own
+  probes: a scratch crate outside the worktree that calls the engine (`compute_all`, every correction on, the GUI's
+  basis) and the crate's own text, hover, table and status functions.
+- The texts as found (each guard clean):
+  - `temperature.mismatch.recommended_bondline_mm` help (29 words, 2 sentences): "A second adhesive thickness for the
+    bond shear from temperature swings; thicker lowers that shear. The daily-cycle screen reads it, the
+    entered-bondline screen the thickness under the inner magnets." Before the change: "A second adhesive thickness at
+    which the bond shear from temperature swings is also computed; the daily-cycle screen uses it. Thicker lowers that
+    shear."
+  - The new shear. Label: "Peak end shear per daily cycle, entered bondline". Help (20 words, 1 sentence): "The
+    daily-cycle shear at the bondline entered as the adhesive thickness under the inner magnets, not at the
+    recommended one."
+  - The new screen. Label: "Daily-cycle screen, entered bondline". Help (11 words, 1 sentence): "The daily-cycle
+    screen's comparison, on the shear at the entered bondline."
+  - Its verdicts: "Below the fatigue endurance" (badge OK) and "Above the fatigue endurance: qualify by thermal
+    cycling" (badge Check), the workbook screen's two texts and badges.
+- Verdict: PASS. No must-fix. Every sentence of the changed help and of the two new helps is true in each of the 39
+  designs probed. Each screen read Below exactly where the size of its own shear was under the limit, and Above
+  elsewhere; each badge followed its text; with equal bondlines the two shears were equal bit for bit and the two
+  screens read the same. The new rows name their bondline in their labels, the workbook's shear row names its own, and
+  the changed help says which screen reads which thickness, so a reader can tell from the screen which bondline each
+  screen judges. The workbook's screen row is the weak one of the four (SF-1). No text says or implies that the owner
+  approved the second screen. Four should-fix items are offered: one on the changed help (SF-2), one on a new help
+  (SF-3) and two on unchanged neighbours (SF-1, SF-4). The texts break no physics trap, do not say "clamp", do not say
+  the coupling protects the gearbox and do not say a wall seals the rings.
+- Should-fix offered (the owner's choice; no text of the item is false as it stands):
+  - SF-1, the workbook's screen row (`temperature.adhesive_life.daily_screen`, "Daily-cycle screen"; the item does not
+    change it). Its label names no bondline and it has no help, so its hover is the label alone. Beside the second
+    screen it is the one row of the four that does not say which bondline it judges. A reader can still tell: its
+    shear row, right above it, says "recommended bondline", and the Recommended bondline's hover says "The daily-cycle
+    screen reads it". The failing filter lists no shear row, though. With the entered bondline at 0.2 mm and a daily
+    swing from 35.5 to 68.5 °C on the example design it lists, of the two screens, "Daily-cycle screen" alone (3.032
+    to 5.850 MPa at the recommended bondline, 1.547 to 2.985 MPa at the entered one), and with both above it lists the
+    two with only the second named. The label is the workbook's, and the engine's help of a ported result is held to
+    the Python engine's (`tests/python_schema.rs`), so the place is a row in the GUI overlay
+    (`gui::plain_text::HELP`). The overlay takes a result's path (`every_overlay_row_names_a_real_path_once`); no
+    result has a row there today.
+    - Old: no help.
+    - New: "Compares the daily-cycle shear at the recommended bondline, not at the entered one, with the adhesive's
+      fatigue endurance." (18 words, 1 sentence, guard clean.)
+    - Tried: with the row added after the recommended bondline's, the 746 GUI unit tests passed
+      (`cargo test --features app --lib gui::`). The row was then taken out by hand and the file's hash matched.
+  - SF-2, the changed help, sentence 2. "The daily-cycle screen reads it, the entered-bondline screen the thickness
+    under the inner magnets." leaves its second verb out. It is true and reads one way only, but the reader has to
+    supply "reads".
+    - Old: the help as found (above).
+    - New: "A second adhesive thickness for the bond shear from temperature swings; thicker lowers that shear. The
+      daily-cycle screen reads it; the entered-bondline screen reads the thickness under the inner magnets." (30
+      words, 2 sentences, guard clean; at the cap.)
+  - SF-3, the new shear's help: three names for one thickness. The input is "Inner magnet back bondline". The
+    workbook's rows of the same group call it "Current bondline" (C102) and "Peak end shear, current bondline" (C104).
+    The new rows call it the "entered bondline". The help ties the new name to the input, but not to the "Current
+    bondline" rows, whose shear the new row scales (11.68 MPa times 30 over 71.06 is 4.932 MPa at the defaults). The
+    table's search finds the new rows by "entered bondline" and not by "current bondline".
+    - Old: "The daily-cycle shear at the bondline entered as the adhesive thickness under the inner magnets, not at
+      the recommended one."
+    - New: "The daily-cycle shear at the adhesive thickness entered under the inner magnets, shown as Current
+      bondline, not at the recommended one." (21 words, 1 sentence, guard clean; not run through `tests/schema.rs`.)
+    - The other way, not offered: name the two new rows "..., current bondline". That matches the workbook's rows, but
+      the backlog, the register, the tests and the changed help all say "entered", and "current" says less to a
+      reader who has not seen the original spreadsheet.
+  - SF-4, the daily swing's help (`temperature.adhesive_life.daily_swing_C`, `gui/plain_text.rs` line 169; the item
+    does not change it). It says "the screen asks for thermal-cycling tests". There are two screens now, and at the
+    defaults one asks and the other does not. The sentence stays true of each screen by its own shear.
+    - Old: "How far the coupling's temperature swings each day. A larger swing raises the daily bond shear; above the
+      adhesive's fatigue endurance, the screen asks for thermal-cycling tests."
+    - New: "How far the coupling's temperature swings each day. A larger swing raises the daily bond shear; above the
+      adhesive's fatigue endurance, a daily-cycle screen asks for thermal-cycling tests." (28 words, 2 sentences,
+      guard clean.)
+- Each text as read:
+  - The changed help, sentence 1, "A second adhesive thickness for the bond shear from temperature swings; thicker
+    lowers that shear." True. One slider step (0.005 mm) down, as found and up on the example design, the shear at the
+    recommended bondline reads 6.377, 6.071 and 5.793 MPa and its daily-cycle shear 2.692, 2.563 and 2.446 MPa; the
+    slider's ends (0.01 and 0.5 mm) read 45.52 and 1.254 MPa (daily 19.22 and 0.5296 MPa). A negative shear falls in
+    size the same way: the daily-cycle shear reads -0.1439, -0.1370, -0.1307 MPa with a Recoma 26 inner ring on the
+    4140 hub, and -3.544, -3.396, -3.261 MPa with Recoma 20 on a 416 hub. "That shear" is the shear at this second
+    thickness; the shear at the entered bondline does not move with it (sentence 2).
+  - The changed help, sentence 2, "The daily-cycle screen reads it, the entered-bondline screen the thickness under
+    the inner magnets." True in both halves. Along the recommended bondline's whole slider the workbook's screen turns
+    (Above up to 0.08 mm, Below from 0.085 mm at 2.995 MPa), while the shear at the entered bondline stays bit for bit
+    (4.931933474274863 MPa at 0.01, 0.095, 0.1, 0.105 and 0.5 mm; -0.26353842992308363 MPa on Recoma 26;
+    -5.856713930337416 MPa on Recoma 20) and its screen never turns. The entered bondline moves the second screen's
+    shear (5.435, 4.932, 4.514 MPa a step down, as found and a step up) and turns that screen (Above up to 0.08 mm,
+    Below from 0.085 mm at 2.994 MPa). "The daily-cycle screen" is the row of that exact name, "the entered-bondline
+    screen" the row "Daily-cycle screen, entered bondline", and "the thickness under the inner magnets" the first
+    words of the entered bondline's own help. See SF-2.
+  - The new shear's label and help. True. The value was the "Peak end shear, current bondline" row times the daily
+    swing over the worst swing, bit for bit, and the "Current bondline" row was the entered input bit for bit, in each
+    of the 24 runs that compared them. "Not at the recommended one" holds with equal bondlines too: the two shears are
+    then one number (seven designs: 0.01, 0.05, 0.1 and 0.2 mm on the example; 0.01, 0.1 and 0.2 mm on Recoma 20), and
+    the help says which input is read, not that the numbers differ. See SF-3.
+  - The new screen's label and help. True. It is the workbook screen's comparison on the second shear: it read Below
+    exactly where that shear's size was under the lap shear times the endurance share (3.0 MPa on the example; 0.3
+    and 9.0 MPa at the share's slider ends; 9.0, 3.4 and 3.8 MPa on the other three adhesives), and Above elsewhere.
+    The workbook's screen did the same on its own shear in every design.
+  - The verdicts and badges. "Below the fatigue endurance" came with the OK badge and "Above the fatigue endurance:
+    qualify by thermal cycling" with the Check badge on both rows in every design, positive and negative shears
+    alike.
+- Beside the texts:
+  - The four rows end the Adhesive group in this order, in the grouped and in the original-sheet order: the shear at
+    the recommended bondline, "Daily-cycle screen", the shear at the entered bondline, "Daily-cycle screen, entered
+    bondline". Each screen sits right under its shear.
+  - At the defaults: "Peak end shear per daily cycle, recommended bondline 2.563 MPa", "Daily-cycle screen" OK "Below
+    the fatigue endurance", "Peak end shear per daily cycle, entered bondline 4.932 MPa", "Daily-cycle screen, entered
+    bondline" Check "Above the fatigue endurance: qualify by thermal cycling". The failing filter lists six rows, the
+    new screen the only amber one, and the Adhesive group's heading badge reads Check: no other check of the group
+    reads Check or Fails there.
+  - The hovers. The Recommended bondline's: the help, "Slider 0.01 to 0.5 mm, step 0.005", "Default: 0.1000". The new
+    shear's: its label, its help, "Exact value: 4.931933474274863". The new screen's: its label and its help. The
+    workbook screen's: its label alone (SF-1). With the spreadsheet details on, the two new rows add their path and
+    "Not in the original spreadsheet", their cell column reads "Rust-only" and they carry no correction mark.
+  - Nothing on the screen speaks of approval: no label, help or hover of the two new rows, and no word of the changed
+    help, holds "approved", "assumption", the owner or a correction. See the first item under "Recorded, no change
+    asked".
+  - `metal.bond_inner_mm` (unchanged): "Adhesive thickness under the inner magnets. The ring radius includes it, so
+    thicker thins the hub; it also lowers the bond shear from temperature swings." True beside the new rows: a step
+    down, as found and a step up the hub wall reads 5.105, 5.100, 5.095 mm, the shear at the current bondline 12.87,
+    11.68, 10.69 MPa and the new daily-cycle shear 5.435, 4.932, 4.514 MPa (-0.2904, -0.2635, -0.2412 MPa on Recoma
+    26; -6.323, -5.857, -5.456 MPa on Recoma 20).
+  - `temperature.adhesive_life.fatigue_endurance` (unchanged): "... the bond fatigue screens pass more easily when it
+    is higher." True of both screens: at 0.02 both read Above, at 0.6 both read Below, and the shears do not move.
+  - `temperature.adhesive_life.daily_swing_C` (unchanged): both daily-cycle shears rise with it (2.520, 2.563, 2.606
+    and 4.850, 4.932, 5.014 MPa). On the example design both screens read Below up to 18 °C, the second reads Above
+    from 18.5 °C (3.041 MPa) and the workbook's from 35.5 °C (3.033 MPa). See SF-4.
+  - The README and the `docs/ai` lines that name the second screen call it an assumption that is not approved.
+- For the step that commits: nothing must change. If a should-fix text is taken, the changed line needs its re-read.
+  The reviewer edited only this document; no help text, code, test or other doc was changed.
+
+**Report for the record (as returned).**
+
+#### Basis
+
+A scratch crate outside the worktree (a path dependency on the worktree's `magcoupling-rs` with its `gui` feature),
+run in debug, four programs. The first was left in the scratch folder by an earlier run of this step, which ended
+before any record; it was read line by line before it was used. The other three were written in this run. Each design
+is `DesignInputs::default()` with inputs set by field or by path and run through `compute_all`. For each design the
+probes printed the nine rows as the results table draws them (label, badge, value with its unit, cell column), the two
+daily-cycle shears exactly, whether each screen's text agrees with the size of its shear against the limit, the
+failing filter's rows, the Adhesive group's worst level and the status line. They also printed each text with its
+word count and the guard's result, the hovers of five inputs and of the nine rows with the spreadsheet details off and
+on, what the Equation panel has for each row, the table's search results and the table's column widths. Defaults:
+entered bondline 0.05 mm, recommended bondline 0.1 mm, daily swing 30 °C, AA 326 (lap shear 15 MPa), endurance share
+0.2 (limit 3.0 MPa), worst swing 71.06 °C.
+
+#### Cases
+
+"Recommended" and "Entered" are the two daily-cycle shears in MPa as the rows show them, each followed by its screen.
+"Below" is "Below the fatigue endurance" with the OK badge, "Above" is "Above the fatigue endurance: qualify by
+thermal cycling" with the Check badge. The last column is which of the two screens the failing filter lists. Bondlines
+are in mm, the swing in °C.
+
+| Case | Entered, recommended; swing | Recommended | Entered | Filter lists |
+|---|---|---|---|---|
+| Defaults | 0.05, 0.1; 30 | 2.563 Below | 4.932 Above | the second |
+| Entered equal to recommended | 0.1, 0.1; 30 | 2.563 Below | 2.563 Below | neither |
+| Equal at 0.05 | 0.05, 0.05; 30 | 4.932 Above | 4.932 Above | both |
+| Equal at 0.2 | 0.2, 0.2; 30 | 1.307 Below | 1.307 Below | neither |
+| Equal at 0.01 | 0.01, 0.01; 30 | 19.23 Above | 19.23 Above | both |
+| Entered one step under | 0.095, 0.1; 30 | 2.563 Below | 2.692 Below | neither |
+| Entered one step over | 0.105, 0.1; 30 | 2.563 Below | 2.445 Below | neither |
+| Entered thicker | 0.2, 0.1; 30 | 2.562 Below | 1.307 Below | neither |
+| Entered thicker, swing 35 | 0.2, 0.1; 35 | 2.989 Below | 1.525 Below | neither |
+| Entered thicker, swing 35.5 | 0.2, 0.1; 35.5 | 3.032 Above | 1.547 Below | the workbook's |
+| Entered thicker, swing 40 | 0.2, 0.1; 40 | 3.416 Above | 1.743 Below | the workbook's |
+| Entered thicker, swing 60 | 0.2, 0.1; 60 | 5.124 Above | 2.615 Below | the workbook's |
+| Entered thicker, swing 68.5 | 0.2, 0.1; 68.5 | 5.850 Above | 2.985 Below | the workbook's |
+| Entered thicker, swing 69 | 0.2, 0.1; 69 | 5.893 Above | 3.007 Above | both |
+| Entered thicker, swing 100 | 0.2, 0.1; 100 | 8.541 Above | 4.358 Above | both |
+| Large swing | 0.05, 0.1; 100 | 8.544 Above | 16.44 Above | both |
+| Small swing | 0.05, 0.1; 10 | 0.8544 Below | 1.644 Below | neither |
+| No swing | 0.05, 0.1; 0 | 0 Below | 0 Below | neither |
+| Entered at its slider's low end | 0.01, 0.1; 30 | 2.563 Below | 19.23 Above | the second |
+| Recommended at its slider's low end | 0.05, 0.01; 30 | 19.22 Above | 4.932 Above | both |
+| Recommended at its slider's high end | 0.05, 0.5; 30 | 0.5296 Below | 4.932 Above | the second |
+| Both thick | 0.2, 0.5; 30 | 0.5296 Below | 1.307 Below | neither |
+| Endurance share 0.02 (limit 0.3 MPa) | 0.05, 0.1; 30 | 2.563 Above | 4.932 Above | both |
+| Endurance share 0.6 (limit 9.0 MPa) | 0.05, 0.1; 30 | 2.563 Below | 4.932 Below | neither |
+| EA 9514 (limit 9.0 MPa) | 0.05, 0.1; 30 | 2.563 Below | 4.932 Below | neither |
+| 2214 Hi-Temp (limit 3.4 MPa) | 0.05, 0.1; 30 | 2.563 Below | 4.932 Above | the second |
+| DP460 (limit 3.8 MPa) | 0.05, 0.1; 30 | 2.563 Below | 4.932 Above | the second |
+| Recoma 26 inner, N42SH outer, 4140 hub | 0.05, 0.1; 30 | -0.1370 Below | -0.2635 Below | neither |
+| Recoma 26 on both rings, 4140 hub | 0.05, 0.1; 30 | -0.1370 Below | -0.2635 Below | neither |
+| The same, entered 0.01 | 0.01, 0.1; 30 | -0.1370 Below | -1.028 Below | neither |
+| The same, adhesive shear modulus 3 GPa | 0.01, 0.1; 30 | -2.031 Below | -6.730 Above | the second |
+| The same, swing 100 | 0.01, 0.1; 100 | -6.771 Above | -22.43 Above | both |
+| Recoma 20 on both rings, 416 hub, 0.55 GPa | 0.05, 0.1; 30 | -3.396 Above | -5.857 Above | both |
+| The same, entered equal to recommended | 0.1, 0.1; 30 | -3.395 Above | -3.395 Above | both |
+| The same, entered thicker | 0.2, 0.1; 30 | -3.391 Above | -1.854 Below | the workbook's |
+| The same, equal at 0.2 | 0.2, 0.2; 30 | -1.854 Below | -1.854 Below | neither |
+| The same, equal at 0.01 | 0.01, 0.01; 30 | -15.88 Above | -15.88 Above | both |
+| Y30 on both rings, 4140 hub | 0.05, 0.1; 30 | 0.4500 Below | 0.8659 Below | neither |
+| EA 9514, minimum temperature typed at 120 °C | 0.05, 0.1; 30 | NaN Above | NaN Above | both |
+
+The grade designs use custom magnet dimensions (no library part). The shears at the current and at the recommended
+bondline read -0.6242 and -0.3244 MPa on the Recoma 26 inner ring with an N42SH outer ring, -0.7004 and -0.3640 MPa on
+Recoma 26 on both rings, and -15.57 and -9.028 MPa on Recoma 20 over 416 at 0.55 GPa, where the "Reading" row fails
+too ("Above the lap-shear strength at the block ends"). In the last row the worst swing is 0 and both shears are 0
+times the swing over 0. `validate` accepted every design of the table. The status line read "Example design: fails 4
+of 9 checks" at the defaults and "Your design: fails 4 of 9 checks" in each of the 14 other runs that change only a
+bondline, the swing or the endurance share, whatever the two screens read (the shaft-clamp section paused): it counts
+neither screen.
+
+#### One slider step each way
+
+Daily-cycle shears in MPa, one step down, as found, one step up.
+
+| Design | Input stepped | At the recommended bondline | At the entered bondline |
+|---|---|---|---|
+| Example | entered bondline (0.005 mm) | 2.56323, 2.56320, 2.56317 | 5.435, 4.932, 4.514 |
+| Example | recommended bondline (0.005 mm) | 2.692, 2.563, 2.446 | 4.932 each, bit for bit |
+| Example | daily swing (0.5 °C) | 2.520, 2.563, 2.606 | 4.850, 4.932, 5.014 |
+| Example | endurance share (0.005) | 2.563 each | 4.932 each |
+| Recoma 26 inner on 4140 | entered bondline | -0.136967, -0.136965, -0.136963 | -0.2904, -0.2635, -0.2412 |
+| Recoma 26 inner on 4140 | recommended bondline | -0.1439, -0.1370, -0.1307 | -0.2635 each, bit for bit |
+| Recoma 20 on 416, 0.55 GPa | entered bondline | -3.39663, -3.39645, -3.39626 | -6.323, -5.857, -5.456 |
+| Recoma 20 on 416, 0.55 GPa | recommended bondline | -3.544, -3.396, -3.261 | -5.857 each, bit for bit |
+
+At the recommended bondline's slider ends on Recoma 20 the workbook's shear reads -15.86 MPa (0.01 mm, Above) and
+-0.7874 MPa (0.5 mm, Below) while the second stays -5.857 MPa, Above. A service life of 1 and of 50 years moves
+neither shear.
+
+#### Words
+
+Counted with the crate's `word_count` and `sentence_count`; the guard is `plain_text_violations` and
+`mentions_gearbox_protection`.
+
+| Text | Words | Sentences (words in each) | Guard | "clamp", gearbox, wall or seal |
+|---|---|---|---|---|
+| `temperature.mismatch.recommended_bondline_mm` help | 29 | 2 (15, 14) | clean | none |
+| the same help before the change | 24 | 2 (20, 4) | clean | none |
+| the new shear's label | 8 | not a sentence | clean | none |
+| the new shear's help | 20 | 1 | clean | none |
+| the new screen's label | 4 | not a sentence | clean | none |
+| the new screen's help | 11 | 1 | clean | none |
+| "Below the fatigue endurance" | 4 | not a sentence | clean | none |
+| "Above the fatigue endurance: qualify by thermal cycling" | 8 | not a sentence | clean | none |
+| `metal.bond_inner_mm` help (unchanged neighbour) | 25 | 2 (6, 19) | clean | none |
+| `temperature.adhesive_life.daily_swing_C` help (unchanged neighbour) | 27 | 2 (8, 19) | clean | none |
+| `temperature.adhesive_life.fatigue_endurance` help (unchanged neighbour) | 26 | 1 | clean | none |
+| SF-1 New | 18 | 1 | clean | none |
+| SF-2 New | 30 | 2 (15, 15) | clean | none |
+| SF-3 New | 21 | 1 | clean | none |
+| SF-4 New | 28 | 2 (8, 20) | clean | none |
+
+#### Traps and rules
+
+- Slice-2 spec section 8 (the 17 physics traps) and slice-1 spec section 8: none is written or touched. The nearest is
+  "The expansion caution counts the temperature swing"; the texts speak of the bond shear and its two screens, not of
+  that caution.
+- Slice-2 spec 3.5 (help: one or two sentences, at most 30 words, no default number, no spreadsheet or audit id): the
+  changed help and the two new helps are inside it.
+- The second screen is an assumption that is not approved: no text says or implies an approval. The helps state what
+  each row reads, and none names the owner, a ruling, a correction or an approval.
+- Standing rules: no text says the coupling protects the gearbox, says a wall seals the rings or holds "clamp". The
+  helps hold no cell name, correction id, file or code name.
+
+#### Tests
+
+On the worktree as found, all green: `cargo test` (lib 244 passed, 1 ignored; `tests/daily_screen.rs` 2 passed;
+`tests/deviations.rs` 81 passed) and `cargo test --features app` (lib 999 passed, 6 ignored); `cargo clippy` both ways
+and `cargo fmt --check` clean. One mutation check: with the second shear fed from the recommended bondline (`s2` for
+`s1` in `src/engine/temperature.rs`, line 1439), `every_direction_a_batch_b_help_states_holds_one_slider_step_up`
+failed ("temperature.mismatch.recommended_bondline_mm one step up on the example design:
+temperature.adhesive_life.daily_entered_peak_shear_MPa 2.5631982594525895 -> 2.445772985576681", Down where the help's
+claim row says Stays). So the changed help's second sentence is held by its claim rows. The line was put back by hand,
+the file's hash matched and the test passed again. One trial, for SF-1 (above), also put back by hand with the file's
+hash matched. Before this record was added, a fresh `git diff` and `git status` of the worktree matched the ones saved
+at the start byte for byte. The full gate was not run; the reviewer changed no code.
+
+#### Not checked
+
+- The GUI was not run. The texts were read from the crate's own functions and from where they are drawn; how a hover
+  wraps on screen was not seen. The column widths below are computed from egui's default body font, not seen.
+- The exported files (CSV, JSON, XLSX) were not opened.
+- No mutation check was made of the helps' words: no test pins them (the two labels are pinned by
+  `tests/daily_screen.rs`, and the changed help's directions by its claim rows).
+- Hubs: 4140 and 416 only; no design without back iron. Poles, gap, ring radius and lengths were held at the defaults.
+- The corrections were on in every probe, as the app shows them.
+- `docs/ai/05-update-tracker.md` and the long lines of the README and of `docs/ai` were read in part only.
+
+#### Recorded, no change asked
+
+- Nothing on the screen says the second screen rests on an assumption. E25 (BL-061) says "(an assumption, not
+  approved)" wherever its title is listed; these two rows have no correction, so no list names them, and they read as
+  any other Rust-only result. The register (row A-9), the backlog, the README and `docs/ai` say it. At the example
+  design the assumption shows as one more amber row in the failing filter (six rows) and as the amber badge on the
+  Adhesive group's heading. Whether the screen should carry a mark is the owner's to rule on with the answer itself.
+- Where the worst swing is 0 (EA 9514 with the minimum temperature typed at 120 °C, 100 °C past its slider) both
+  shears read "NaN MPa" and both screens read Above with the Check badge. The workbook's screen did so before the item
+  and the second copies it (`both_daily_screens_read_above_when_the_worst_swing_is_zero`). The reading is on the safe
+  side.
+- The comparison is strict, so a shear equal to the limit reads Above (the two unit tests at equal shear). No slider
+  step probed lands on it.
+- With a SmCo inner grade the shears are negative and the screens compare their size (E22, reviewed under BL-058): a
+  row reading "-6.730 MPa" sits over "Above the fatigue endurance". No help says the size is compared. The workbook's
+  row reads the same way and has no help.
+- The table cuts long texts. Its value column is 130 points wide and both verdicts are wider (161.8 and 309.2 points),
+  as on the workbook's row; the first word and the badge still tell them apart. At the default 1280 x 800 window with
+  the spreadsheet details on the label column is 300 points: both new labels fit (265.8 and 200.8 points), and the
+  workbook's shear label (302.8 points) is 3 points over. In a narrow window the label column falls to 120 points and
+  both new labels are cut before "entered bondline" (the words up to the comma are 167.1 and 102.1 points wide); the
+  hover gives the label whole. The cutting is the table's, not the item's.
+- None of the four rows has an equation record or a teaching note of its own, so the Equation panel has only its
+  texts for such a row ("This value has no equation to show; its name and value are above." and "No teaching note is
+  shown here for this value."). The workbook's two were so before the item. The traces of the two bondlines, the daily
+  swing and the endurance share mark none of the four.
+- The status line counts neither screen, while the failing filter lists each one that reads Above. It was so for the
+  workbook's screen before the item.
+- The entered bondline moves the workbook's shear in its fifth digit (2.56323, 2.56320, 2.56317 MPa): the ring radius
+  includes the bondline, so the hub under the magnets thins by the step. No text says the workbook's screen reads the
+  recommended bondline alone.
+- The task text cites section 6 of the slice-2 spec for the traps; they are in section 8.
+
+Verdict: PASS. No must-fix. Four should-fix offered (SF-1, SF-2, SF-3, SF-4).

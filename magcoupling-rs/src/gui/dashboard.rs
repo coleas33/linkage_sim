@@ -273,7 +273,7 @@ pub const MARKER_LEGEND: &str = "E-numbers beside a value are corrections to the
 /// check. Each gives a badge level ([`verdict_level`]): the results table shows it, and its
 /// failing filter lists the checks that fail ([`failing_checks`]). The clamp table's per-size
 /// checks and the sweeps' status texts rate candidates, not the design, so they are left out.
-pub const CHECKS: [&str; 32] = [
+pub const CHECKS: [&str; 33] = [
     "calibration.end_effect_check",
     "model.inner_flat_check",
     "model.outer_flat_check",
@@ -294,6 +294,7 @@ pub const CHECKS: [&str; 32] = [
     "temperature.magnet_life.torque_hot_day_check",
     "temperature.adhesive_life.hot_fatigue_screen",
     "temperature.adhesive_life.daily_screen",
+    "temperature.adhesive_life.daily_entered_screen",
     "clamps.recommended",
     "clamps.head_check",
     "clamps.vent_port",
@@ -317,6 +318,11 @@ pub fn verdict_level(path: &str, text: &str) -> Option<Level> {
     const HOT_DAY: [&str; 2] = [
         "temperature.summary.torque_hot_day_note",
         "temperature.magnet_life.torque_hot_day_check",
+    ];
+    // BL-063: the daily-cycle screen at the recommended bondline and at the entered one.
+    const DAILY: [&str; 2] = [
+        "temperature.adhesive_life.daily_screen",
+        "temperature.adhesive_life.daily_entered_screen",
     ];
     // BL-064: each failing shaft joint text starts with its cause's constant.
     const SHAFT_JOINT_FAILS: [&str; 5] = [
@@ -364,11 +370,10 @@ pub fn verdict_level(path: &str, text: &str) -> Option<Level> {
         ("temperature.adhesive_life.hot_fatigue_screen", "CHECK: get hot fatigue data") => {
             Some(Caution)
         }
-        ("temperature.adhesive_life.daily_screen", "Below the fatigue endurance") => Some(Good),
-        (
-            "temperature.adhesive_life.daily_screen",
-            "Above the fatigue endurance: qualify by thermal cycling",
-        ) => Some(Caution),
+        (p, "Below the fatigue endurance") if DAILY.contains(&p) => Some(Good),
+        (p, "Above the fatigue endurance: qualify by thermal cycling") if DAILY.contains(&p) => {
+            Some(Caution)
+        }
         // The clamp's head and key checks read empty when no screw fits (the recommended
         // screw's "None:" is the red one).
         ("clamps.head_check", "OK") => Some(Good),
@@ -1359,6 +1364,18 @@ mod tests {
                 design(|i| i.temperature.adhesive_life.daily_swing_C = 300.0),
                 Caution,
             ),
+            // BL-063: the default 0.05 mm entered bondline is above the endurance; 0.2 mm,
+            // thicker than the 0.1 mm recommended one, is below it.
+            (
+                "temperature.adhesive_life.daily_entered_screen",
+                default(),
+                Caution,
+            ),
+            (
+                "temperature.adhesive_life.daily_entered_screen",
+                design(|i| i.metal.bond_inner_mm = 0.2),
+                Good,
+            ),
             ("clamps.head_check", default(), Good),
             ("clamps.head_check", design(|i| i.clamps.alloy = 2), Caution),
             ("clamps.vent_port", default(), Good),
@@ -1540,7 +1557,8 @@ mod tests {
         // The levels order by severity: the worst of several is their maximum.
         assert!(Good < Caution && Caution < Bad);
         assert_eq!([Caution, Bad, Good].into_iter().max(), Some(Bad));
-        // The defaults fail five checks, all red.
+        // The defaults fail six checks: five red, then the amber daily-cycle screen at the
+        // entered bondline (BL-063).
         let defaults = compute_all(&DesignInputs::default());
         assert_eq!(
             failing_checks(&defaults, false),
@@ -1550,6 +1568,7 @@ mod tests {
                 ("metal.clearance_check", Bad),
                 ("materials.cup_wall_check", Bad),
                 ("gearbox.cold_high_check", Bad),
+                ("temperature.adhesive_life.daily_entered_screen", Caution),
             ]
         );
         // Manual magnets add two amber rating checks, after the red.
@@ -1567,6 +1586,7 @@ mod tests {
                 ("gearbox.cold_high_check", Bad),
                 ("model.inner_temp_check", Caution),
                 ("model.outer_temp_check", Caution),
+                ("temperature.adhesive_life.daily_entered_screen", Caution),
             ]
         );
         // Exactly the checks whose level is red or amber, each once.
