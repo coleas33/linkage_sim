@@ -262,7 +262,7 @@ Nothing here was measured. Each is a place where the code does the same work mor
 
 You asked for repetition to be flagged hard. None of these was merged: each merge is a refactor, and a refactor is a judgment.
 
-- **LGS-04** The driver-angle to time mapping is written out five times in scope, and one copy lacks the zero-omega guard. More than repetition: the copies at `gui/state/mod.rs:1300` and `gui/state/file_io.rs:408, 423` divide by the driver speed without the zero guard the other copies have. FIXED f1a73d3: one `driver_angle_to_time` helper with the guard, used at all eight sites in gui/state.
+- **LGS-04** The driver-angle to time mapping is written out five times in scope, and one copy lacks the zero-omega guard. More than repetition: the copies at `gui/state/mod.rs:1300` and `gui/state/file_io.rs:408, 423` divide by the driver speed without the zero guard the other copies have. FIXED f1a73d3: one `driver_angle_to_time` helper with the guard, used at all eight sites in gui/state. Follow-up FIXED df2fdcf: `sweep_time`, `compute_t_mech`, the GIF export and the special sample loader use it too; `sweep_time` angle mode now has the guard.
 - **LGC-10** Force editor repeats one DragValue block about 50 times in a 1,100-line function.
 - **LGC-06** Fourteen copies of the plot trailer and the per-plot Plot builder.
 - **LGS-15** Templates and custom samples are two full copies of the same persistence and CRUD code.
