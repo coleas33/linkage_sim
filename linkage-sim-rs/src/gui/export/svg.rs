@@ -325,4 +325,5 @@ mod tests {
         assert!(!svg.contains("<img src=x"), "a joint name opened a tag");
         assert!(svg.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
         assert!(svg.contains("x&quot;&lt;/script&gt;"), "double quote and </script> escaped");
-    }}
+    }
+}

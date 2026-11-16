@@ -383,7 +383,6 @@ impl AppState {
 
         self.refresh_sweep_stroke_range(&mech);
 
-
         self.mechanism = Some(mech);
 
         self.compute_forces(t);

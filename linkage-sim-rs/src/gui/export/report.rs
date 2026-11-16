@@ -4632,4 +4632,5 @@ mod tests {
         assert!(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;"), "tables show the escaped body name");
         // Inside the reactions plot the joint name is a JS string.
         assert!(html.contains("name:\"x\\\"\\u003c/script>\""), "plot trace name is a JS string");
-    }}
+    }
+}

@@ -146,4 +146,5 @@ mod tests {
         for pair in lines.chunks(2) {
             assert!(pair[0].trim().parse::<i32>().is_ok(), "group code expected, got {:?}", pair[0]);
         }
-    }}
+    }
+}
