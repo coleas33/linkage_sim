@@ -122,7 +122,7 @@ The repository's rule is more tests, not fewer, so none of these was changed. Ma
 - **LGS-14** Template and custom-sample tests write into the developer's real ~/.linkage-sim/. They leave "test", "roundtrip", "a", "b" and "only" in `~/.linkage-sim/templates/`, and "only" is never removed. `gui/state/templates.rs:96-112`. FIXED d8d3c57: unit tests use a temp storage root.
 - **MT-07** The vendored oracle's independent audit suite and its tools are run by nothing automatic.
 - **INF-07** gui-smoke.js re-derives the calculator's `passed` from its checks but takes the linkage step's `passed` on the agent's word.
-- **INF-02** Gate 2 (`cargo clippy --all-targets`, linkage-sim-rs) can only fail on a compile error.
+- **INF-02** Gate 2 (`cargo clippy --all-targets`, linkage-sim-rs) can only fail on a compile error. FIXED 3998a12: linkage-sim-rs is at zero clippy warnings (8722228, 9a03b3c) and gate 2 runs with -D warnings.
 - **MT-06** The ignore guard checks six files, but its name and doc say "only the review tools are ignored". The check confirmed this only in part. FIXED 86cc4b0: the guard is renamed to say it reads six files.
 - **MEX-06** `notes_before_snapshot` is a write-once generator that can only fail. FIXED ee08985: the generator is documented and cannot fail.
 - **MGP-11** An allowlist in a test is permanently empty. FIXED 09608a3: the empty allowlist is asserted empty with its reason.
@@ -137,8 +137,8 @@ The repository's rule is more tests, not fewer, so none of these was changed. Ma
 - **INF-06** audit-campaign.js and fix-campaign.js hard-code the main checkout's absolute path as ROOT. This is why the audit could not run as the repository's own campaign in a worktree. Both files hold your uncommitted edits, so they were not touched.
 - **INF-04** deploy-web.yml compiles wasm-bindgen-cli from source on every run, so its cache entry buys nothing. The check confirmed this only in part.
 - **INF-01** Gate 7 re-runs every test gate 4 already ran.
-- **INF-16** Direct dependencies `wasm-bindgen-futures` and `uuid` of linkage-sim-rs are named nowhere in its code. The check confirmed this only in part.
-- **LCS-01** Cargo.toml lists dependencies the code never uses. The check confirmed this only in part.
+- **INF-16** Direct dependencies `wasm-bindgen-futures` and `uuid` of linkage-sim-rs are named nowhere in its code. The check confirmed this only in part. FIXED 64d5126 (partly): only `open` was unused and is removed; `wasm-bindgen-futures` is pulled in by the async `#[wasm_bindgen(start)]` macro and `uuid` is the dxf WASM pin, so both stay.
+- **LCS-01** Cargo.toml lists dependencies the code never uses. The check confirmed this only in part. FIXED 64d5126 (partly): `open` removed; `wasm-bindgen-futures` and `uuid` are needed (see INF-16); `meval` is used and is not duplicated in dev-dependencies.
 - **MEC-02** Cargo.toml comments name checks and a host that no longer exist.
 - **DMH-01** README (and Cargo.toml comments) still say linkage-sim-rs depends on magcoupling-rs and that a gate checks lock agreement.
 - **INF-08** rust-test-fixer agent hard-codes `model: opus`, against the repo's model rule. A local, git-ignored file in your main checkout; not touched.
@@ -147,7 +147,7 @@ The repository's rule is more tests, not fewer, so none of these was changed. Ma
 - **DOC-13** Rules in CLAUDE.md section 5 and AGENTS.md point at agent files and skills that are not in the repository, and the one agent file that exists breaks the rule. The agent files, the fbd-derive skill and the hooks exist only in your checkout, because `.gitignore` ignores `.claude/*` except the workflows. A clone cannot follow the rules that name them.
 - **DOC-15** AGENTS.md says CLAUDE.md "holds the project's working rules"; CLAUDE.md holds none of the repository's rules, and has stray characters. CLAUDE.md is your own prompt text, so it was not touched.
 - **INF-17** .gitignore carries a stale heading and two commented-out rules. Left as it is: the commented-out rules also record that the golden fixtures and the output GIFs are tracked on purpose, so deleting them is a wording choice, not a defect.
-- **MGV-08** The `app` feature lists dependencies its `gui` feature already enables. Ready to apply on your word (the check gives the exact change). Harmless as it is, and some keep such lists explicit on purpose.
+- **MGV-08** The `app` feature lists dependencies its `gui` feature already enables. Ready to apply on your word (the check gives the exact change). Harmless as it is, and some keep such lists explicit on purpose. FIXED e44603a: the app feature drops "dep:log" and "dep:js-sys".
 
 ### E. Dead or unfinished code and files: delete or finish (34)
 
@@ -155,10 +155,10 @@ Each of these is something nothing uses. Whether it is rubbish or the start of s
 
 - **LGS-07** Menu "Parametric Study [WIP]" is a permanently disabled checkbox.
 - **LGS-08** Grid "Spacing" setting and `auto_grid_spacing` overwritten on first canvas frame.
-- **LGC-01** Two dead functions with misleading names (driver_lambda_units, draw_actuator_stroke_annotation). Ready to apply on your word (the check gives the exact deletion). Held because each reads as a feature that was started: delete it or wire it up.
-- **LGE-06** add_plotly_multi_chart is dead and its job is written three times inline in generate_html_report. Ready to apply on your word: delete the helper, or use it in the three places.
-- **MGG-06** two public typeset methods exist only for tests. Ready to apply on your word (`TermColors::is_empty`, `texts`). Marking them `#[cfg(test)]` shrinks the library's public surface.
-- **MGV-03** Two `pub` functions in shipped code are called only from tests. Ready to apply on your word (`Cell::as_text`, `package_label`). Moving them into the test modules shrinks the public surface.
+- **LGC-01** Two dead functions with misleading names (driver_lambda_units, draw_actuator_stroke_annotation). Ready to apply on your word (the check gives the exact deletion). Held because each reads as a feature that was started: delete it or wire it up. FIXED 4afc5c8: the two dead functions deleted.
+- **LGE-06** add_plotly_multi_chart is dead and its job is written three times inline in generate_html_report. Ready to apply on your word: delete the helper, or use it in the three places. FIXED 1d262b7: helper deleted (the three inline charts differ, so it was not reused).
+- **MGG-06** two public typeset methods exist only for tests. Ready to apply on your word (`TermColors::is_empty`, `texts`). Marking them `#[cfg(test)]` shrinks the library's public surface. FIXED eda24a8: is_empty and texts are #[cfg(test)].
+- **MGV-03** Two `pub` functions in shipped code are called only from tests. Ready to apply on your word (`Cell::as_text`, `package_label`). Moving them into the test modules shrinks the public surface. FIXED fbf0186: as_text and package_label are #[cfg(test)].
 - **LCS-03** simulate_with_events repeats simulate and rk4_integrate, and nothing outside tests calls it.
 - **LCS-12** (the part not fixed) `State::set_angle` and `JointConstraint::is_cam_follower` have no caller, and `rtol`/`atol` and the local-frame reactions are used only by tests.
 - **LFA-03** (the part not fixed) `JointJson::RevoluteDriver` is a legacy variant the canvas and blueprint code still match; old files may hold it.

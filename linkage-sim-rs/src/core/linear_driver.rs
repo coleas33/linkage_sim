@@ -172,14 +172,14 @@ impl Constraint for LinearDriver {
             let theta_a = state.get_angle(&self.body_a_id_, q);
             let theta_a_dot = q_dot[idx_a.theta_idx()];
             let a_a = State::rotation_matrix(theta_a);
-            centripetal += (a_a * &self.point_a) * theta_a_dot.powi(2);
+            centripetal += (a_a * self.point_a) * theta_a_dot.powi(2);
         }
         if !state.is_ground(&self.body_b_id_) {
             let idx_b = state.get_index(&self.body_b_id_).unwrap();
             let theta_b = state.get_angle(&self.body_b_id_, q);
             let theta_b_dot = q_dot[idx_b.theta_idx()];
             let a_b = State::rotation_matrix(theta_b);
-            centripetal -= (a_b * &self.point_b) * theta_b_dot.powi(2);
+            centripetal -= (a_b * self.point_b) * theta_b_dot.powi(2);
         }
 
         // gamma = d''(t) - v_perp^2 / L - (d_vec . centripetal) / L
@@ -236,6 +236,7 @@ pub fn constant_velocity_linear_driver(
 /// This smoothly sweeps the actuator through its full range (extend + retract)
 /// in one period. The function is C-infinity, so the solver tracks continuously
 /// without branch jumps at turnaround points.
+#[allow(clippy::too_many_arguments)] // flat parameter list; a params struct would be a refactor
 pub fn cosine_linear_driver(
     id: &str,
     body_a: &str,

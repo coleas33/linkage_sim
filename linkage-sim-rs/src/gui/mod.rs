@@ -30,7 +30,7 @@ pub use sweep::{SweepData, SweepMode};
 use samples::SampleMechanism;
 use crate::core::state::GROUND_ID;
 use crate::solver::inverse_kinematics::ControlTarget;
-use state::{AngleUnit, EditorTool, LengthUnit, MotionProfile, PlaceForceState, SelectedEntity, Trajectory, TrajectoryProfile};
+use state::{EditorTool, MotionProfile, PlaceForceState, SelectedEntity, Trajectory, TrajectoryProfile};
 
 /// Top-level application struct for eframe.
 pub struct LinkageApp {
@@ -235,11 +235,10 @@ impl eframe::App for LinkageApp {
             if self.state.sweep_dirty_since.is_none() {
                 self.state.sweep_dirty_since = Some(now);
             }
-            if let Some(since) = self.state.sweep_dirty_since {
-                if (now - since) >= 0.2 {
+            if let Some(since) = self.state.sweep_dirty_since
+                && (now - since) >= 0.2 {
                     self.state.compute_sweep();
                 }
-            }
             ctx.request_repaint();
         }
 
@@ -836,7 +835,7 @@ impl eframe::App for LinkageApp {
                 && !self.state.tutorial.active
                 && !self.demo_mode
                 && self.state.current_sample.is_none()
-                && self.state.mechanism.as_ref().map_or(true, |m| {
+                && self.state.mechanism.as_ref().is_none_or(|m| {
                     m.body_order().is_empty() // no moving bodies
                 });
 
@@ -1023,11 +1022,10 @@ impl eframe::App for LinkageApp {
                 if let Some(path) = self.state.recovery_path.take() {
                     self.state.recover_autosave_file(&path);
                 }
-            } else if dismiss {
-                if let Some(path) = self.state.recovery_path.take() {
+            } else if dismiss
+                && let Some(path) = self.state.recovery_path.take() {
                     let _ = std::fs::remove_file(&path);
                 }
-            }
         }
 
         // ── WASM autosave recovery prompt ────────────────────────────────
@@ -1265,25 +1263,20 @@ fn handle_keyboard_shortcuts(ctx: &egui::Context, state: &mut AppState) {
             .add_filter("JSON", &["json"])
             .set_file_name("mechanism.json")
             .save_file()
-        {
-            if let Err(e) = state.save_to_file(&path) {
+            && let Err(e) = state.save_to_file(&path) {
                 state.report_failure("Save failed", &e);
             }
-        }
     }
     // Ctrl+Shift+S — Save As (always shows file dialog).
     #[cfg(feature = "native")]
-    if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::S) && i.modifiers.shift) {
-        if let Some(path) = rfd::FileDialog::new()
+    if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::S) && i.modifiers.shift)
+        && let Some(path) = rfd::FileDialog::new()
             .add_filter("JSON", &["json"])
             .set_file_name("mechanism.json")
             .save_file()
-        {
-            if let Err(e) = state.save_to_file(&path) {
+            && let Err(e) = state.save_to_file(&path) {
                 state.report_failure("Save failed", &e);
             }
-        }
-    }
 
     // Ctrl+N — New empty mechanism.
     if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::N)) {

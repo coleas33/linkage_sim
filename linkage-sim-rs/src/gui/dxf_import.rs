@@ -80,11 +80,10 @@ impl DxfOverlay {
             let dx = sc.center[0] - world_x;
             let dy = sc.center[1] - world_y;
             let dist = (dx * dx + dy * dy).sqrt();
-            if dist < threshold {
-                if best.is_none() || dist < best.unwrap().0 {
+            if dist < threshold
+                && (best.is_none() || dist < best.unwrap().0) {
                     best = Some((dist, sc.center));
                 }
-            }
         }
         best.map(|(_, c)| c)
     }
@@ -695,7 +694,7 @@ fn rescale_overlay(overlay: &mut DxfOverlay, new_scale: f64) {
 
 // ── Build mechanism from assignments ────────────────────────────────────────
 
-/// Convert body assignments into a MechanismJson and load it.
+// Convert body assignments into a MechanismJson and load it.
 // ── Conversion helpers ──────────────────────────────────────────────────────
 
 const JOINT_TOL: f64 = 0.002; // 2mm tolerance for "same point"
@@ -733,13 +732,12 @@ fn convert_selected_lines_to_links(state: &mut super::state::AppState, line_indi
         let oy = overlay.offset[1];
         let mut out = Vec::new();
         for &idx in line_indices {
-            if let Some(entity) = overlay.entities.iter().find(|e| e.index == idx) {
-                if let DxfEntityKind::Line { x1, y1, x2, y2 } = &entity.kind {
+            if let Some(entity) = overlay.entities.iter().find(|e| e.index == idx)
+                && let DxfEntityKind::Line { x1, y1, x2, y2 } = &entity.kind {
                     let p1 = snap_to_circle(overlay, [*x1 + ox, *y1 + oy]);
                     let p2 = snap_to_circle(overlay, [*x2 + ox, *y2 + oy]);
                     out.push((p1, p2));
                 }
-            }
         }
         out
     };
@@ -882,7 +880,7 @@ fn collect_selected_points(state: &super::state::AppState, indices: &[usize]) ->
     let oy = overlay.offset[1];
 
     let mut pts: Vec<[f64; 2]> = Vec::new();
-    let mut add_pt = |pts: &mut Vec<[f64; 2]>, p: [f64; 2]| {
+    let add_pt = |pts: &mut Vec<[f64; 2]>, p: [f64; 2]| {
         let snapped = snap_to_circle(overlay, p);
         if !pts.iter().any(|q| ((q[0]-snapped[0]).powi(2)+(q[1]-snapped[1]).powi(2)).sqrt() < JOINT_TOL) {
             pts.push(snapped);
@@ -1114,8 +1112,8 @@ fn convert_selected_to_rigid_geometry(
 
     state.push_undo();
 
-    if let Some(bp) = state.blueprint.as_mut() {
-        if let Some(body) = bp.bodies.get_mut(&target_body) {
+    if let Some(bp) = state.blueprint.as_mut()
+        && let Some(body) = bp.bodies.get_mut(&target_body) {
             body.geometry = Some(BodyGeometry {
                 width,
                 height,
@@ -1123,7 +1121,6 @@ fn convert_selected_to_rigid_geometry(
                 shape: crate::core::body::GeometryShape::Rectangle,
             });
         }
-    }
 
     state.rebuild();
 
@@ -1366,11 +1363,10 @@ pub fn hit_test_dxf_entity(overlay: &DxfOverlay, world_x: f64, world_y: f64, thr
             }
         };
 
-        if dist < threshold {
-            if best.is_none() || dist < best.unwrap().0 {
+        if dist < threshold
+            && (best.is_none() || dist < best.unwrap().0) {
                 best = Some((dist, entity.index));
             }
-        }
     }
 
     best.map(|(_, idx)| idx)

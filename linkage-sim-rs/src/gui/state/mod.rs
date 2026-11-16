@@ -21,7 +21,9 @@ mod preferences;
 pub use display_units::{format_decimal, format_mass_kg, LengthUnit, AngleUnit, DisplayUnits};
 pub use grid::GridSettings;
 pub use view_transform::ViewTransform;
-pub use load_cases::{LoadCase, LoadCaseManager};
+pub use load_cases::LoadCaseManager;
+#[cfg(test)]
+pub use load_cases::LoadCase;
 pub use types::{
     PendingJointType, PendingCanvasPickKind, EditorTool, ContextMenuTarget, SelectedEntity,
     WeightDrag, ValidationWarnings, SolverStatus, ForceResults, PropertyPanelTab,
@@ -49,8 +51,10 @@ pub(crate) use blueprint_ops::detect_driver_joint_id;
 /// velocity AND zero acceleration at both endpoints — used in real actuator
 /// hardware to avoid mechanical shocks at start/stop.
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Default)]
 pub enum MotionProfile {
     /// Constant angular velocity (existing default behaviour).
+    #[default]
     ConstantSpeed,
     /// Trapezoidal velocity profile: ramp up, cruise, ramp down.
     Trapezoidal {
@@ -72,11 +76,6 @@ pub enum MotionProfile {
     },
 }
 
-impl Default for MotionProfile {
-    fn default() -> Self {
-        MotionProfile::ConstantSpeed
-    }
-}
 
 use eframe::egui;
 use nalgebra::DVector;
@@ -90,8 +89,10 @@ use crate::analysis::grashof::GrashofResult;
 /// kind, so per-variant semantics is type-checked rather than relying
 /// on convention.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Default)]
 pub enum DriverKind {
     /// No driver — the mechanism is statically posed and animation is a no-op.
+    #[default]
     None,
     /// Revolute driver: angle-controlled (slider is the crank angle).
     /// `angle` is the slider's *body-frame* current value (rad);
@@ -105,11 +106,6 @@ pub enum DriverKind {
     Linear { stroke: f64, velocity: f64, length_0: f64 },
 }
 
-impl Default for DriverKind {
-    fn default() -> Self {
-        DriverKind::None
-    }
-}
 use crate::core::mechanism::Mechanism;
 use crate::core::state::GROUND_ID;
 use crate::forces::elements::{ForceElement, GravityElement};
@@ -1081,20 +1077,19 @@ impl AppState {
         self.sweep_stroke_max = 0.0;
         if let Some(ref m) = self.mechanism {
             for force in m.forces() {
-                if let ForceElement::LinearActuator(act) = force {
-                    if act.stroke_min > 0.0 || act.stroke_max > 0.0 {
+                if let ForceElement::LinearActuator(act) = force
+                    && (act.stroke_min > 0.0 || act.stroke_max > 0.0) {
                         self.sweep_stroke_min = act.stroke_min;
                         self.sweep_stroke_max = act.stroke_max;
                         break;
                     }
-                }
             }
         }
 
         self.selected = None;
 
         // Detect which joint is currently driven
-        self.driver_joint_id = self.mechanism.as_ref().and_then(|m| detect_driver_joint_id(m));
+        self.driver_joint_id = self.mechanism.as_ref().and_then(detect_driver_joint_id);
         // Initialize default load case from current driver settings
         self.load_cases = if let Some(ref joint_id) = self.driver_joint_id {
             LoadCaseManager::new_default(joint_id, self.driver_omega(), self.driver_theta_0())
@@ -1185,7 +1180,7 @@ impl AppState {
             if d2 < 1e-12 {
                 continue;
             }
-            if best.as_ref().map_or(true, |(prev_d2, _)| d2 > *prev_d2) {
+            if best.as_ref().is_none_or(|(prev_d2, _)| d2 > *prev_d2) {
                 best = Some((d2, *pt));
             }
         }

@@ -318,12 +318,10 @@ pub fn generate_html_report(
                 env.max_value
             ));
             html.push_str("</div>\n");
-            html.push_str(&format!(
-                "<p>Computed as <code>P = F·(dL/dt)</code> where F is the \
+            html.push_str("<p>Computed as <code>P = F·(dL/dt)</code> where F is the \
                  statics-derived actuator force. Inverse-dynamics-corrected \
                  power (which includes inertial loads) is shown separately if \
-                 a non-zero motion profile was used.</p>\n",
-            ));
+                 a non-zero motion profile was used.</p>\n");
         }
         let angles_json = float_vec_to_json(&sweep.angles_deg);
         let power_json = float_vec_to_json(act_power);
@@ -530,6 +528,7 @@ pub fn generate_html_report(
 /// `float_vec_to_json`). `extra_shapes` is an optional JSON array of shape
 /// objects for reference lines (e.g. the 40°/90° markers on the transmission
 /// angle plot).
+#[allow(clippy::too_many_arguments)] // flat parameter list; a params struct would be a refactor
 fn add_plotly_line_chart(
     html: &mut String,
     plot_id: &str,
@@ -552,51 +551,6 @@ fn add_plotly_line_chart(
          {{title:'{}',xaxis:{{title:'Crank Angle (deg)'}},yaxis:{{title:'{}'}},\
          margin:{{t:40,b:50,l:60,r:20}}{}}}, {{responsive:true}});\n",
         plot_id, x_data, y_data, series_name, color, title, y_label, shapes_clause
-    ));
-    html.push_str("</script>\n");
-}
-
-/// Emit a multi-series Plotly line chart into `html`.
-///
-/// Each `(name, data_json, color, dash)` tuple becomes one scatter trace.
-/// `dash` is an optional line style string (e.g. "dash", "dot"); pass None
-/// for a solid line. X-axis and Y-axis labels are supplied as literal
-/// strings so the caller can pick units (e.g. "X (m)" for coupler traces).
-///
-/// If `equal_aspect` is true, the Y axis uses scaleanchor='x' to force
-/// 1:1 pixel ratio (used by coupler trace plots).
-fn add_plotly_multi_chart(
-    html: &mut String,
-    plot_id: &str,
-    title: &str,
-    x_axis_label: &str,
-    y_axis_label: &str,
-    series: &[(&str, String, &str, Option<&str>)],
-    equal_aspect: bool,
-    x_data_for_all: Option<&str>,
-) {
-    html.push_str(&format!("<div id='{}' class='plotly-chart'></div>\n", plot_id));
-    html.push_str("<script>\n");
-    html.push_str(&format!("Plotly.newPlot('{}', [\n", plot_id));
-    for (i, (name, y_json, color, dash)) in series.iter().enumerate() {
-        let comma = if i + 1 < series.len() { "," } else { "" };
-        let dash_clause = match dash {
-            Some(d) => format!(",dash:'{}'", d),
-            None => String::new(),
-        };
-        // For multi-series time plots (reactions, energy) all series share
-        // one X vector; for XY plots (coupler) each series has its own X.
-        let x_expr = x_data_for_all.unwrap_or("null /* per-series x provided */");
-        html.push_str(&format!(
-            "  {{x:{},y:{},type:'scatter',mode:'lines',name:'{}',line:{{color:'{}'{}}}}}{}\n",
-            x_expr, y_json, name, color, dash_clause, comma
-        ));
-    }
-    let y_scale = if equal_aspect { ",scaleanchor:'x'" } else { "" };
-    html.push_str(&format!(
-        "], {{title:'{}',xaxis:{{title:'{}'}},yaxis:{{title:'{}'{}}},\
-         margin:{{t:40,b:50,l:60,r:20}}}}, {{responsive:true}});\n",
-        title, x_axis_label, y_axis_label, y_scale
     ));
     html.push_str("</script>\n");
 }
@@ -755,7 +709,6 @@ fn write_loop_equations_section(
     mechanism: &Mechanism,
     q: &nalgebra::DVector<f64>,
 ) {
-    use crate::core::constraint::Constraint;
     use crate::gui::eq_rendering::{
         kind_at, lambda_string, n_constraints, residual_norm_string, symbolic_form,
     };
@@ -1751,11 +1704,9 @@ fn write_state_estimation_section(
         let touches_ground_and_crank = mechanism
             .joints()
             .iter()
-            .chain(mechanism.drivers().iter().map(|_| {
-                // Drivers can also be encoder hosts — but we look them up below.
-                // Placeholder: not all drivers are JointConstraint.
-                None
-            }).filter_map(|x| x))
+            // Drivers can also be encoder hosts, but we look them up below;
+            // not all drivers are JointConstraint, so they add no joints here.
+            .chain(mechanism.drivers().iter().filter_map(|_| None))
             .any(|j| {
                 j.id() == joint_id
                     && (j.body_i_id() == "ground" || j.body_j_id() == "ground")
@@ -1869,12 +1820,8 @@ fn write_state_estimation_section(
         code.push_str("// State and covariance (EKF)\n");
         code.push_str("float x[2] = { theta2_init, 0.0f };\n");
         code.push_str("float P[2][2] = { { sigma_init², 0 }, { 0, sigma_init² } };\n");
-        code.push_str(&format!(
-            "const float SIGMA_PROC_THETA = ...;     // tune empirically\n"
-        ));
-        code.push_str(&format!(
-            "const float SIGMA_PROC_OMEGA = ...;     // tune empirically\n"
-        ));
+        code.push_str("const float SIGMA_PROC_THETA = ...;     // tune empirically\n");
+        code.push_str("const float SIGMA_PROC_OMEGA = ...;     // tune empirically\n");
         if encoder_joint.is_some() {
             code.push_str(&format!(
                 "const float SIGMA_ENC = {:.6}f;            // [rad]\n",
@@ -1887,7 +1834,7 @@ fn write_state_estimation_section(
                 sensor_config.actuator_noise_std,
             ));
         }
-        code.push_str("\n");
+        code.push('\n');
         code.push_str("void ekf_step(float dt) {\n");
         code.push_str("    // ── Predict ───────────────────────────────\n");
         code.push_str("    float x_pred[2] = { x[0] + x[1]*dt, x[1] };\n");
@@ -1899,7 +1846,7 @@ fn write_state_estimation_section(
         code.push_str("    P_pred[1][0] = P[1][0] + dt*P[1][1];\n");
         code.push_str("    P_pred[1][1] = P[1][1]\n");
         code.push_str("                 + SIGMA_PROC_OMEGA*SIGMA_PROC_OMEGA * dt;\n");
-        code.push_str("\n");
+        code.push('\n');
         code.push_str("    // ── Update ───────────────────────────────\n");
         code.push_str("    // Build h(x_pred) and H = ∂h/∂x for the active sensors.\n");
         if encoder_joint.is_some() && actuator_enabled {
@@ -3914,11 +3861,11 @@ fn write_math_background_section(
         ));
     }
 
-    if let (Some(ref qd), Some(ref qdd)) = (q_dot.as_ref(), q_ddot.as_ref()) {
+    if let (Some(qd), Some(qdd)) = (q_dot.as_ref(), q_ddot.as_ref()) {
         // Acceleration check: Φ_q · q̈ - γ = 0
         use crate::solver::assembly::assemble_gamma;
         let gamma = assemble_gamma(mechanism, q, qd, 0.0);
-        let acc_resid = (&phi_q_mat * *qdd) - &gamma;
+        let acc_resid = (&phi_q_mat * qdd) - &gamma;
         html.push_str(
             "<p><b>Acceleration residual</b> \\(\\|\\Phi_q\\,\\ddot q - \\gamma\\|\\) \
              — verifies the acceleration solve is consistent with \\(\\gamma\\):</p>\n",
@@ -4426,8 +4373,10 @@ mod tests {
         let units = DisplayUnits::default();
 
         // Encoder only.
-        let mut sensors = SensorConfig::default();
-        sensors.encoder_joint = Some("D1".to_string());
+        let sensors = SensorConfig {
+            encoder_joint: Some("D1".to_string()),
+            ..SensorConfig::default()
+        };
         let html = generate_html_report(&mech, &q, &sweep, None, &units, &sensors).unwrap();
         assert!(
             html.contains("State estimation and sensor fusion"),
@@ -4461,9 +4410,11 @@ mod tests {
             9.81,
             None,
         );
-        let mut sensors2 = SensorConfig::default();
-        sensors2.encoder_joint = Some("D1".to_string());
-        sensors2.actuator_position_enabled = true;
+        let sensors2 = SensorConfig {
+            encoder_joint: Some("D1".to_string()),
+            actuator_position_enabled: true,
+            ..SensorConfig::default()
+        };
         let html2 =
             generate_html_report(&mech2, &q2, &sweep2, None, &units, &sensors2).unwrap();
         assert!(

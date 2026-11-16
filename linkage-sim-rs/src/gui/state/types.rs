@@ -61,16 +61,13 @@ pub enum PendingCanvasPickKind {
 /// (constraint Φ_J* values + λ multipliers). Defaults to `Properties` so
 /// existing user workflows remain the default landing tab.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub enum PropertyPanelTab {
+    #[default]
     Properties,
     Equations,
 }
 
-impl Default for PropertyPanelTab {
-    fn default() -> Self {
-        PropertyPanelTab::Properties
-    }
-}
 
 /// Active editor tool — determines what happens on canvas clicks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

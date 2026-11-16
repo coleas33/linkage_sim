@@ -327,7 +327,7 @@ pub(crate) fn compute_sweep_data_with_weights(
     } else {
         SweepMode::Angle
     };
-    let (start_x, end_x) = sweep_range.unwrap_or_else(|| {
+    let (start_x, end_x) = sweep_range.unwrap_or({
         if is_stroke {
             (theta_0 - 0.1, theta_0 + 0.1) // ±100 mm around length_0
         } else {
@@ -480,9 +480,9 @@ pub(crate) fn compute_sweep_data_with_weights(
         // for visualization even if no explicit coupler points exist).
         for (point_name, local) in &body.attachment_points {
             let key = trace_key(body_id, point_name);
-            if !data.coupler_traces.contains_key(&key) {
-                coupler_keys.push((key.clone(), body_id.clone(), *local));
-                data.coupler_traces.insert(key, Vec::with_capacity(capacity));
+            if let std::collections::hash_map::Entry::Vacant(slot) = data.coupler_traces.entry(key.clone()) {
+                coupler_keys.push((key, body_id.clone(), *local));
+                slot.insert(Vec::with_capacity(capacity));
             }
         }
     }
@@ -505,7 +505,7 @@ pub(crate) fn compute_sweep_data_with_weights(
     let ma_bodies: Option<(String, String)> = mech.driver_body_pair().and_then(|(_bi, driver)| {
         let output = mech.body_order().iter()
             .filter(|b| b.as_str() != driver)
-            .last()
+            .next_back()
             .cloned();
         output.map(|out| (driver.to_string(), out))
     });
@@ -927,6 +927,7 @@ fn push_reaction(reaction_data: &mut HashMap<String, Vec<f64>>, joint_id: &str, 
 /// Used when the position solver fails at an angle (e.g. non-Grashof mechanisms
 /// outside their reachable range). Keeps all data vectors aligned so plots show
 /// gaps rather than crashing on mismatched lengths.
+#[allow(clippy::too_many_arguments)] // flat parameter list; a params struct would be a refactor
 fn push_nan_row(
     data: &mut SweepData,
     angle_deg: f64,
@@ -1089,10 +1090,9 @@ pub fn compute_trajectory(
         }
         for (point_name, local) in &body.attachment_points {
             let key = trace_key(body_id, point_name);
-            if !data.coupler_traces.contains_key(&key) {
-                coupler_keys.push((key.clone(), body_id.clone(), *local));
-                data.coupler_traces
-                    .insert(key, Vec::with_capacity(n_samples));
+            if let std::collections::hash_map::Entry::Vacant(slot) = data.coupler_traces.entry(key.clone()) {
+                coupler_keys.push((key, body_id.clone(), *local));
+                slot.insert(Vec::with_capacity(n_samples));
             }
         }
     }
@@ -1111,7 +1111,7 @@ pub fn compute_trajectory(
                 .body_order()
                 .iter()
                 .filter(|b| b.as_str() != driver)
-                .last()
+                .next_back()
                 .cloned();
             output.map(|out| (driver.to_string(), out))
         });
@@ -1504,18 +1504,16 @@ mod tests {
 
             // Simulate user moving driver angle slider between toggles
             state.driver_angle = (90.0 + cycle as f64 * 45.0).to_radians();
-            if let Some(mech) = &state.mechanism {
-                if let Ok(result) = crate::solver::kinematics::solve_position(
+            if let Some(mech) = &state.mechanism
+                && let Ok(result) = crate::solver::kinematics::solve_position(
                     mech, &state.last_good_q,
                     (state.driver_angle - state.driver_theta_0()) / state.driver_omega(),
                     1e-10, 50,
-                ) {
-                    if result.converged {
+                )
+                    && result.converged {
                         state.q = result.q.clone();
                         state.last_good_q = result.q;
                     }
-                }
-            }
 
             // Toggle OFF
             state.sweep_range_enabled = false;

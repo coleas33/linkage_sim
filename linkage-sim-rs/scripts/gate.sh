@@ -79,8 +79,8 @@ oracle_python() {
 echo "== gate 1/13: cargo test --all (linkage-sim-rs) =="
 cargo test --all
 
-echo "== gate 2/13: cargo clippy --all-targets (linkage-sim-rs) =="
-cargo clippy --all-targets
+echo "== gate 2/13: cargo clippy --all-targets, warnings as errors (linkage-sim-rs) =="
+cargo clippy --all-targets -- -D warnings
 
 echo "== gate 3/13: WASM check (linkage-sim-rs) =="
 cargo check "${LINKAGE_WEB_ARGS[@]}"

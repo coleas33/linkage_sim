@@ -254,6 +254,7 @@ impl Mechanism {
     /// The follower displacement along `follower_direction_local` (in body_i's
     /// local frame) is prescribed by the cam profile as a function of body_i's
     /// rotation angle.
+    #[allow(clippy::too_many_arguments)] // flat parameter list; a params struct would be a refactor
     pub fn add_cam_follower_joint(
         &mut self,
         joint_id: &str,

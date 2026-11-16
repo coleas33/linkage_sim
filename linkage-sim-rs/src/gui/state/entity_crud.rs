@@ -180,18 +180,16 @@ impl AppState {
 
         self.mutate_and_rebuild(|s| {
             let Some(bp) = &mut s.blueprint else { return };
-            if let Some(body) = bp.bodies.get_mut(&body_i) {
-                if let Some(pt) = body.attachment_points.get_mut(&point_i) {
+            if let Some(body) = bp.bodies.get_mut(&body_i)
+                && let Some(pt) = body.attachment_points.get_mut(&point_i) {
                     pt[0] += di_x;
                     pt[1] += di_y;
                 }
-            }
-            if let Some(body) = bp.bodies.get_mut(&body_j) {
-                if let Some(pt) = body.attachment_points.get_mut(&point_j) {
+            if let Some(body) = bp.bodies.get_mut(&body_j)
+                && let Some(pt) = body.attachment_points.get_mut(&point_j) {
                     pt[0] += dj_x;
                     pt[1] += dj_y;
                 }
-            }
         });
     }
 

@@ -250,8 +250,8 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                     // ── Mass & Inertia ────────────────────────────────────
                     if body_id != GROUND_ID {
                         ui.separator();
-                        if let Some(bp) = &state.blueprint {
-                            if let Some(bp_body) = bp.bodies.get(&body_id) {
+                        if let Some(bp) = &state.blueprint
+                            && let Some(bp_body) = bp.bodies.get(&body_id) {
                                 let mut mass = bp_body.mass;
                                 let mr = ui.add(
                                     egui::Slider::new(&mut mass, 0.0..=100.0)
@@ -278,21 +278,19 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                     });
                                 }
                             }
-                        }
                     }
 
                     // ── Weights (always shown for a moving link) ─────────
-                    if body_id != GROUND_ID {
-                        if let Some(bp_body) = state.blueprint.as_ref().and_then(|bp| bp.bodies.get(&body_id)) {
+                    if body_id != GROUND_ID
+                        && let Some(bp_body) = state.blueprint.as_ref().and_then(|bp| bp.bodies.get(&body_id)) {
                             ui.separator();
                             weight_editor::draw_link_weights(ui, state, &body_id, bp_body, &mut pending);
                         }
-                    }
 
                     // ── Body Geometry ─────────────────────────────────────
-                    if body_id != GROUND_ID {
-                        if let Some(bp) = &state.blueprint {
-                            if let Some(bp_body) = bp.bodies.get(&body_id) {
+                    if body_id != GROUND_ID
+                        && let Some(bp) = &state.blueprint
+                            && let Some(bp_body) = bp.bodies.get(&body_id) {
                                 egui::CollapsingHeader::new("Geometry")
                                     .id_salt(format!("body_geometry_{}", body_id))
                                     .default_open(false)
@@ -411,12 +409,10 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                         }
                                     });
                             }
-                        }
-                    }
 
                     // ── Mount Points ──────────────────────────────────────
-                    if let Some(bp) = &state.blueprint {
-                        if let Some(body_json) = bp.bodies.get(&body_id) {
+                    if let Some(bp) = &state.blueprint
+                        && let Some(body_json) = bp.bodies.get(&body_id) {
                             ui.separator();
                             egui::CollapsingHeader::new("Mount Points")
                                 .id_salt(format!("mount_points_{}", body_id))
@@ -493,7 +489,6 @@ pub fn draw_property_panel(ui: &mut egui::Ui, state: &mut AppState) {
                                     }
                                 });
                         }
-                    }
                 }
             }
         });

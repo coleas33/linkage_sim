@@ -13,6 +13,7 @@ pub(crate) const MAGCOUPLER_ITEM: &str = "Magnetic coupling calculator";
 
 /// The calculator's own site (magcoupling-rs, `web/tools/magcoupler/`): its
 /// path on this site, and its public address.
+#[allow(dead_code)] // documents the site path; the menu uses the public URL
 pub(crate) const MAGCOUPLER_PATH: &str = "/tools/magcoupler/";
 pub(crate) const MAGCOUPLER_PUBLIC_URL: &str = "https://colesorkness.com/tools/magcoupler/";
 
@@ -135,11 +136,9 @@ pub(crate) fn draw_menu_bar(
                             if let Some(path) = rfd::FileDialog::new()
                                 .add_filter("JSON", &["json"])
                                 .pick_file()
-                            {
-                                if let Err(e) = state.load_from_file(&path) {
+                                && let Err(e) = state.load_from_file(&path) {
                                     state.report_failure("Open failed", &e);
                                 }
-                            }
                             ui.close();
                         }
                         if ui.button("Import DXF...")
@@ -187,11 +186,10 @@ pub(crate) fn draw_menu_bar(
                                         ui.close();
                                     }
                                 }
-                                if let Some(path) = load_path {
-                                    if let Err(e) = state.load_from_file(&path) {
+                                if let Some(path) = load_path
+                                    && let Err(e) = state.load_from_file(&path) {
                                         state.report_failure("Open failed", &e);
                                     }
-                                }
                             });
                             recent_resp.response.on_hover_text("Recently opened mechanism files");
                         }
@@ -207,11 +205,9 @@ pub(crate) fn draw_menu_bar(
                                 .add_filter("JSON", &["json"])
                                 .set_file_name("mechanism.json")
                                 .save_file()
-                            {
-                                if let Err(e) = state.save_to_file(&path) {
+                                && let Err(e) = state.save_to_file(&path) {
                                     state.report_failure("Save failed", &e);
                                 }
-                            }
                             ui.close();
                         }
                         if ui.button("Save As...  Ctrl+Shift+S")
@@ -222,11 +218,9 @@ pub(crate) fn draw_menu_bar(
                                 .add_filter("JSON", &["json"])
                                 .set_file_name("mechanism.json")
                                 .save_file()
-                            {
-                                if let Err(e) = state.save_to_file(&path) {
+                                && let Err(e) = state.save_to_file(&path) {
                                     state.report_failure("Save failed", &e);
                                 }
-                            }
                             ui.close();
                         }
                     } // close native-only block (Open / Save / Recent Files)
@@ -679,12 +673,11 @@ pub(crate) fn draw_menu_bar(
                             .small(),
                         );
                     }
-                    if state.dxf_overlay.is_some() {
-                        if ui.button("Clear DXF Overlay").clicked() {
+                    if state.dxf_overlay.is_some()
+                        && ui.button("Clear DXF Overlay").clicked() {
                             state.dxf_overlay = None;
                             ui.close();
                         }
-                    }
                     ui.separator();
                     if ui.button("Quit").on_hover_text("Close the application").clicked() {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);

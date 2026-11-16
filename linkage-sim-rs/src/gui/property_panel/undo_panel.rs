@@ -37,11 +37,7 @@ pub(super) fn draw_undo_section(
         // Visual timeline -- show entries as a compact list.
         // Limit display to avoid very long lists for deep undo stacks.
         let max_display = 20;
-        let skip = if total > max_display {
-            total - max_display
-        } else {
-            0
-        };
+        let skip = total.saturating_sub(max_display);
 
         if skip > 0 {
             ui.label(format!("  ... {} older entries", skip));

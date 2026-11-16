@@ -264,7 +264,7 @@ pub(super) fn draw_force_elements(
                         let perp = Vec2::new(-dir.y, dir.x);
                         let tick_half = 6.0_f32;
                         let tick_stroke = Stroke::new(1.5, ACTUATOR_COLOR);
-                        let scale = view.scale as f32;
+                        let scale = view.scale;
 
                         if la.stroke_min > 0.0 {
                             let min_frac = (la.stroke_min as f32 * scale) / length;
@@ -350,7 +350,7 @@ pub(super) fn draw_force_elements(
                 draw_torque_arc(painter, mid, m.direction as f32, MOTOR_COLOR);
             }
             ForceElement::ForceZone(fz) => {
-                draw_force_zone(painter, &fz, mech, mech_state, q, view);
+                draw_force_zone(painter, fz, mech, mech_state, q, view);
             }
         }
     }
@@ -438,8 +438,8 @@ fn draw_force_zone(
     );
 
     // 5. Active overlap highlight + application-point marker.
-    if let Some(body) = mech.bodies().get(&fz.body_id) {
-        if let Some(ref geo) = body.geometry {
+    if let Some(body) = mech.bodies().get(&fz.body_id)
+        && let Some(ref geo) = body.geometry {
             let zone = force_zone_application(fz, geo, mech_state.get_pose(&fz.body_id, q));
             if zone.active {
                 let screen_verts: Vec<Pos2> = zone
@@ -498,7 +498,6 @@ fn draw_force_zone(
                 );
             }
         }
-    }
 }
 
 
@@ -562,12 +561,11 @@ pub(super) fn load_path_color_for_body(
     // Find the maximum force magnitude at joints connected to this body.
     let mut body_max = 0.0_f64;
     for joint in mech.joints() {
-        if joint.body_i_id() == body_id || joint.body_j_id() == body_id {
-            if let Some(&(fx, fy)) = state.force_results.joint_reactions.get(joint.id()) {
+        if (joint.body_i_id() == body_id || joint.body_j_id() == body_id)
+            && let Some(&(fx, fy)) = state.force_results.joint_reactions.get(joint.id()) {
                 let mag = (fx * fx + fy * fy).sqrt();
                 body_max = body_max.max(mag);
             }
-        }
     }
 
     let t = (body_max / global_max) as f32;

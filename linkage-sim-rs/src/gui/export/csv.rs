@@ -9,6 +9,7 @@ use crate::gui::sweep::{SweepData, SweepMode};
 /// are produced by the cross-platform writer so the web download path
 /// (`generate_sweep_csv_string`) emits identical bytes.
 #[cfg(feature = "native")]
+#[allow(dead_code)] // native file entry point with no menu caller yet
 pub fn export_sweep_csv(path: &std::path::Path, sweep: &SweepData) -> Result<(), String> {
     let mut file = std::fs::File::create(path).map_err(|e| e.to_string())?;
     write_sweep_csv(&mut file, sweep).map_err(|e| e.to_string())
@@ -151,41 +152,34 @@ fn write_sweep_csv(out: &mut impl Write, sweep: &SweepData) -> std::io::Result<(
         if has_inv_dyn {
             row.push(format!("{:.6}", sweep.inverse_dynamics_torques.get(i).copied().unwrap_or(f64::NAN)));
         }
-        if has_actuator {
-            if let Some(ref forces) = sweep.actuator_forces {
+        if has_actuator
+            && let Some(ref forces) = sweep.actuator_forces {
                 row.push(format!("{:.6}", forces.get(i).copied().unwrap_or(f64::NAN)));
             }
-        }
-        if has_actuator_id {
-            if let Some(ref forces) = sweep.actuator_forces_id {
+        if has_actuator_id
+            && let Some(ref forces) = sweep.actuator_forces_id {
                 row.push(format!("{:.6}", forces.get(i).copied().unwrap_or(f64::NAN)));
             }
-        }
-        if has_actuator_len {
-            if let Some(ref lengths) = sweep.actuator_lengths {
+        if has_actuator_len
+            && let Some(ref lengths) = sweep.actuator_lengths {
                 row.push(format!("{:.6}", lengths.get(i).copied().unwrap_or(f64::NAN)));
             }
-        }
-        if has_actuator_speed {
-            if let Some(ref speeds) = sweep.actuator_speeds {
+        if has_actuator_speed
+            && let Some(ref speeds) = sweep.actuator_speeds {
                 row.push(format!("{:.6}", speeds.get(i).copied().unwrap_or(f64::NAN)));
             }
-        }
-        if has_actuator_power {
-            if let Some(ref power) = sweep.actuator_power {
+        if has_actuator_power
+            && let Some(ref power) = sweep.actuator_power {
                 row.push(format!("{:.6}", power.get(i).copied().unwrap_or(f64::NAN)));
             }
-        }
-        if has_actuator_power_id {
-            if let Some(ref power) = sweep.actuator_power_id {
+        if has_actuator_power_id
+            && let Some(ref power) = sweep.actuator_power_id {
                 row.push(format!("{:.6}", power.get(i).copied().unwrap_or(f64::NAN)));
             }
-        }
-        if has_output_force {
-            if let Some(ref forces) = sweep.output_forces {
+        if has_output_force
+            && let Some(ref forces) = sweep.output_forces {
                 row.push(format!("{:.6}", forces.get(i).copied().unwrap_or(f64::NAN)));
             }
-        }
         for jid in &reaction_ids {
             let val = sweep.joint_reaction_magnitudes[*jid]
                 .get(i)
@@ -356,6 +350,7 @@ fn format_status(s: &crate::solver::inverse_kinematics::InverseSolveStatus) -> S
 
 /// (Native only) Write coupler trace CSV to a file path.
 #[cfg(feature = "native")]
+#[allow(dead_code)] // native file entry point with no menu caller yet
 pub fn export_coupler_csv(path: &std::path::Path, sweep: &SweepData) -> Result<(), String> {
     if sweep.coupler_traces.is_empty() {
         return Err("No coupler traces available".to_string());

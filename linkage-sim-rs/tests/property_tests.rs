@@ -345,7 +345,7 @@ proptest! {
         // Verify each body's attachment points survived
         for (body_id, original_body) in mech.bodies() {
             let loaded_body = loaded.bodies().get(body_id)
-                .expect(&format!("body '{}' not found after round-trip", body_id));
+                .unwrap_or_else(|| panic!("body '{}' not found after round-trip", body_id));
 
             prop_assert_eq!(
                 original_body.attachment_points.len(),
@@ -356,7 +356,7 @@ proptest! {
 
             for (pt_name, pt_coords) in &original_body.attachment_points {
                 let loaded_pt = loaded_body.attachment_points.get(pt_name)
-                    .expect(&format!("point '{}' on body '{}' not found after round-trip", pt_name, body_id));
+                    .unwrap_or_else(|| panic!("point '{}' on body '{}' not found after round-trip", pt_name, body_id));
                 prop_assert!(
                     (loaded_pt.x - pt_coords.x).abs() < 1e-12,
                     "x-coordinate mismatch for point '{}' on body '{}'",

@@ -69,6 +69,7 @@ pub fn generate_mechanism_png_bytes(
 /// (Native only, requires `raster`) Export the mechanism at its current pose
 /// as a PNG image saved to disk.
 #[cfg(all(feature = "raster", feature = "native"))]
+#[allow(dead_code)] // native file entry point with no menu caller yet
 pub fn export_mechanism_png(
     path: &std::path::Path,
     mechanism: &Mechanism,
@@ -85,6 +86,7 @@ pub fn export_mechanism_png(
 /// sampled sweep step, renders via SVG + resvg, and encodes as a looping
 /// (ping-pong) animated GIF.
 #[cfg(feature = "raster")]
+#[allow(clippy::too_many_arguments)] // flat parameter list; a params struct would be a refactor
 pub fn generate_mechanism_gif_bytes(
     mech: &Mechanism,
     sweep: &SweepData,
@@ -120,7 +122,7 @@ pub fn generate_mechanism_gif_bytes(
             forward_indices.iter().rev().skip(1).copied().collect();
         let all_indices: Vec<usize> = forward_indices
             .into_iter()
-            .chain(reverse_indices.into_iter())
+            .chain(reverse_indices)
             .collect();
 
         let mut q_guess = q_start.clone();
@@ -132,8 +134,8 @@ pub fn generate_mechanism_gif_bytes(
 
             match solve_position(mech, &q_guess, t, 1e-10, 50) {
                 Ok(result) if result.converged => {
-                    if let Ok(svg_str) = generate_svg_string(mech, &result.q) {
-                        if let Ok(rgba) = rasterize_svg_to_rgba(&svg_str, width, height) {
+                    if let Ok(svg_str) = generate_svg_string(mech, &result.q)
+                        && let Ok(rgba) = rasterize_svg_to_rgba(&svg_str, width, height) {
                             let mut rgba_buf = rgba;
                             let mut frame = Frame::from_rgba_speed(
                                 width as u16,
@@ -147,7 +149,6 @@ pub fn generate_mechanism_gif_bytes(
                                 .map_err(|e| format!("Failed to write GIF frame: {}", e))?;
                             frames_written += 1;
                         }
-                    }
                     q_guess = result.q;
                 }
                 _ => {}
@@ -163,6 +164,8 @@ pub fn generate_mechanism_gif_bytes(
 /// (Native only, requires `raster`) Export an animated GIF of the mechanism
 /// sweep, saved to disk.
 #[cfg(all(feature = "raster", feature = "native"))]
+#[allow(dead_code)] // native file entry point with no menu caller yet
+#[allow(clippy::too_many_arguments)] // flat parameter list; a params struct would be a refactor
 pub fn export_mechanism_gif(
     path: &std::path::Path,
     mech: &Mechanism,
@@ -461,17 +464,16 @@ mod tests {
 
         for deg in 0..=315 {
             let t = ((deg as f64).to_radians() - theta_0) / omega;
-            if let Ok(result) = solve_position(&mech, &q, t, 1e-10, 50) {
-                if result.converged {
+            if let Ok(result) = solve_position(&mech, &q, t, 1e-10, 50)
+                && result.converged {
                     q = result.q.clone();
                     if angles.contains(&deg) {
                         let path = out_dir.join(format!("chebyshev_lambda_{:03}deg.png", deg));
                         export_mechanism_png(&path, &mech, &q, 1920, 1080)
-                            .expect(&format!("export at {}° should succeed", deg));
+                            .unwrap_or_else(|_| panic!("export at {}° should succeed", deg));
                         eprintln!("Exported: {}", path.display());
                     }
                 }
-            }
         }
     }
 }

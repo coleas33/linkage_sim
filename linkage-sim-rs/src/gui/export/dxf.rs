@@ -79,7 +79,7 @@ pub fn generate_dxf_string(
 
     // Export ground attachment points as POINT entities
     if let Some(ground) = bodies.get(GROUND_ID) {
-        for (_, local) in &ground.attachment_points {
+        for local in ground.attachment_points.values() {
             let global = state.body_point_global(GROUND_ID, local, q);
             dxf.push_str(&format!(
                 "0\nPOINT\n8\nGROUND\n10\n{:.6}\n20\n{:.6}\n30\n0.0\n",
@@ -96,6 +96,7 @@ pub fn generate_dxf_string(
 
 /// Export mechanism geometry as a DXF file.
 #[cfg(feature = "native")]
+#[allow(dead_code)] // native file entry point with no menu caller yet
 pub fn export_mechanism_dxf(
     path: &std::path::Path,
     mechanism: &Mechanism,

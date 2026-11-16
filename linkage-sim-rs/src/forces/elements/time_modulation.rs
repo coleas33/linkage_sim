@@ -8,8 +8,10 @@ use serde::{Deserialize, Serialize};
 /// Multiplies the base force/torque by a time-dependent factor.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "modulation_type")]
+#[derive(Default)]
 pub enum TimeModulation {
     /// Constant (default, no modulation). Factor = 1.0 always.
+    #[default]
     Constant,
     /// Sinusoidal: factor = sin(omega * t + phase).
     Sinusoidal { omega: f64, phase: f64 },
@@ -22,11 +24,6 @@ pub enum TimeModulation {
     Expression { expr: String },
 }
 
-impl Default for TimeModulation {
-    fn default() -> Self {
-        TimeModulation::Constant
-    }
-}
 
 impl TimeModulation {
     /// Compute the modulation factor at time `t`.

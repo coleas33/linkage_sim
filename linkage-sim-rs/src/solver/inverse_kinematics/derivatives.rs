@@ -214,10 +214,10 @@ mod tests {
         let u_dot = inverse_velocity(&mech, &q, &target, h_dot, 0.2).unwrap();
         // FD verification of dg/du
         let omega = 2.0 * PI;
-        let δ = 1e-6;
-        let q_plus = solve_at(&mech, 0.2 + δ / omega);
-        let q_minus = solve_at(&mech, 0.2 - δ / omega);
-        let dg_du_fd = (target.evaluate(&mech, &q_plus) - target.evaluate(&mech, &q_minus)) / (2.0 * δ);
+        let eps = 1e-6;
+        let q_plus = solve_at(&mech, 0.2 + eps / omega);
+        let q_minus = solve_at(&mech, 0.2 - eps / omega);
+        let dg_du_fd = (target.evaluate(&mech, &q_plus) - target.evaluate(&mech, &q_minus)) / (2.0 * eps);
         // u_dot * dg_du should equal h_dot
         assert_abs_diff_eq!(u_dot * dg_du_fd, h_dot, epsilon = 1e-3);
     }
@@ -233,9 +233,9 @@ mod tests {
         let u = 0.1 * nominal_rate; // u_k corresponding to t=0.1
         let u_dot = 0.5; // constant
         let h_ddot = 0.0;
-        let δ = 1e-4;
+        let eps = 1e-4;
         let u_ddot = inverse_acceleration_fd(
-            &mech, &q, &target, u, u_dot, h_ddot, δ,
+            &mech, &q, &target, u, u_dot, h_ddot, eps,
             u_0, nominal_rate,
         ).unwrap();
         assert_abs_diff_eq!(u_ddot, 0.0, epsilon = 1e-3);
@@ -277,9 +277,9 @@ mod tests {
             &mech, &q, &target, u, u_dot, h_ddot, u_0, nominal_rate,
         ).unwrap();
 
-        let δ = 1e-4;
+        let eps = 1e-4;
         let fd = inverse_acceleration_fd(
-            &mech, &q, &target, u, u_dot, h_ddot, δ, u_0, nominal_rate,
+            &mech, &q, &target, u, u_dot, h_ddot, eps, u_0, nominal_rate,
         ).unwrap();
 
         assert!(

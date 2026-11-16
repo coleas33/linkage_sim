@@ -47,7 +47,7 @@ pub fn project_onto_segment(point: Pos2, seg_a: Pos2, seg_b: Pos2) -> Option<(Po
         return None;
     }
     let t = ab.dot(ap) / len_sq;
-    if t < 0.0 || t > 1.0 {
+    if !(0.0..=1.0).contains(&t) {
         return None;
     }
     let proj = seg_a + ab * t;

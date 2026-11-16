@@ -42,8 +42,8 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
                 // angle means the driver body's local +X is aligned
                 // with world +X. Showing this explicitly so users
                 // aren't left guessing which body the slider drives.
-                if let Some(mech) = state.mechanism.as_ref() {
-                    if let Some((partner, driver)) = mech.driver_body_pair() {
+                if let Some(mech) = state.mechanism.as_ref()
+                    && let Some((partner, driver)) = mech.driver_body_pair() {
                         let reference_label = if partner == crate::core::state::GROUND_ID {
                             "world".to_string()
                         } else {
@@ -57,7 +57,6 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
                             .color(egui::Color32::from_rgb(150, 150, 160)),
                         );
                     }
-                }
 
                 // ── Revolute driver: angle slider in degrees ────────
                 // Slider operates in DISPLAY frame. `sweep_angle_min/max_deg`
@@ -446,8 +445,7 @@ fn draw_simulation_controls(ui: &mut egui::Ui, state: &mut AppState) {
             if ui.button(play_label)
                 .on_hover_text("Play/pause simulation timeline playback")
                 .clicked()
-            {
-                if let Some(sim) = &mut state.simulation {
+                && let Some(sim) = &mut state.simulation {
                     sim.playing = !sim.playing;
                     if sim.playing {
                         // Stop kinematic animation — only one can drive the canvas.
@@ -459,7 +457,6 @@ fn draw_simulation_controls(ui: &mut egui::Ui, state: &mut AppState) {
                         }
                     }
                 }
-            }
 
             ui.label("Speed:");
             let mut speed = state
@@ -476,11 +473,9 @@ fn draw_simulation_controls(ui: &mut egui::Ui, state: &mut AppState) {
                 )
                 .on_hover_text("Simulation playback speed multiplier")
                 .changed()
-            {
-                if let Some(sim) = &mut state.simulation {
+                && let Some(sim) = &mut state.simulation {
                     sim.speed = speed;
                 }
-            }
 
             if ui
                 .button("Stop")
@@ -701,8 +696,8 @@ fn draw_driver_type_selector(ui: &mut egui::Ui, state: &mut AppState) {
     // Show expression editor when in expression mode
     if is_expression {
         // Sync buffers from blueprint on first render (if empty)
-        if state.expr_buf.is_empty() {
-            if let Some(DriverJson::Expression {
+        if state.expr_buf.is_empty()
+            && let Some(DriverJson::Expression {
                 expr,
                 expr_dot,
                 expr_ddot,
@@ -713,7 +708,6 @@ fn draw_driver_type_selector(ui: &mut egui::Ui, state: &mut AppState) {
                 state.expr_dot_buf = expr_dot.clone();
                 state.expr_ddot_buf = expr_ddot.clone();
             }
-        }
 
         let mut changed = false;
         ui.horizontal(|ui| {

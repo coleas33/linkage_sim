@@ -3,7 +3,7 @@
 use eframe::egui;
 use egui_plot::{Line, Plot, PlotPoints, VLine};
 
-use crate::gui::state::{AngleUnit, DisplayUnits};
+use crate::gui::state::DisplayUnits;
 use crate::gui::sweep::SweepData;
 
 use super::{
@@ -86,7 +86,6 @@ pub(super) fn draw_coupler_trace(ui: &mut egui::Ui, sweep: &SweepData, units: &D
 /// Plot body angles vs driver angle, using the current display angle unit.
 ///
 /// Returns the clicked X coordinate (display angle units) if the user clicked.
-
 pub(super) fn draw_coupler_velocity(
     ui: &mut egui::Ui,
     sweep: &SweepData,
@@ -111,12 +110,11 @@ pub(super) fn draw_coupler_velocity(
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
         let colors = series_colors(nathan_mode);
-        let mut color_idx = 0;
 
         let mut keys: Vec<&String> = sweep.coupler_velocities.keys().collect();
         keys.sort();
 
-        for key in keys {
+        for (color_idx, key) in keys.into_iter().enumerate() {
             let velocities = &sweep.coupler_velocities[key];
             let pairs: Vec<(f64, f64)> = sweep
                 .angles_deg
@@ -137,7 +135,6 @@ pub(super) fn draw_coupler_velocity(
                 units,
                 nathan_mode,
             );
-            color_idx += 1;
         }
 
         // Vertical marker at current driver angle.
@@ -160,7 +157,6 @@ pub(super) fn draw_coupler_velocity(
 /// standard palette. Only finite values are plotted.
 ///
 /// Returns the clicked X coordinate (display angle units) if the user clicked.
-
 pub(super) fn draw_coupler_acceleration(
     ui: &mut egui::Ui,
     sweep: &SweepData,
@@ -185,12 +181,11 @@ pub(super) fn draw_coupler_acceleration(
     let mut clicked_x: Option<f64> = None;
     plot.show(ui, |plot_ui| {
         let colors = series_colors(nathan_mode);
-        let mut color_idx = 0;
 
         let mut keys: Vec<&String> = sweep.coupler_accelerations.keys().collect();
         keys.sort();
 
-        for key in keys {
+        for (color_idx, key) in keys.into_iter().enumerate() {
             let accelerations = &sweep.coupler_accelerations[key];
             let pairs: Vec<(f64, f64)> = sweep
                 .angles_deg
@@ -211,7 +206,6 @@ pub(super) fn draw_coupler_acceleration(
                 units,
                 nathan_mode,
             );
-            color_idx += 1;
         }
 
         // Vertical marker at current driver angle.
@@ -233,7 +227,6 @@ pub(super) fn draw_coupler_acceleration(
 /// Only available when a LinearActuator force element is present.
 ///
 /// Returns the clicked X coordinate (display angle units) if the user clicked.
-
 pub(super) fn draw_output_force(
     ui: &mut egui::Ui,
     sweep: &SweepData,

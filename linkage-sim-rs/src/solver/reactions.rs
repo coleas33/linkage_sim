@@ -495,6 +495,7 @@ fn pass1_eff_actuator_force(mech: &Mechanism) -> Option<f64> {
 /// Compute the trustworthiness verdict from the independent per-body
 /// equilibrium check, the condition-number gate, and (for pass-2) the
 /// driver-collapse expectation.
+#[allow(clippy::too_many_arguments)] // flat parameter list; a params struct would be a refactor
 fn compute_validation(
     mech: &Mechanism,
     q: &DVector<f64>,
@@ -513,14 +514,13 @@ fn compute_validation(
     // catches a wrong back-solved actuator force — the per-body equilibrium
     // alone cannot, since the reactions self-consistently balance whatever
     // (possibly wrong) actuator force was injected.
-    if expect_driver_collapse {
-        if let Some(eff) = reactions.iter().find(|r| r.n_equations == 1).map(|r| r.effort) {
+    if expect_driver_collapse
+        && let Some(eff) = reactions.iter().find(|r| r.n_equations == 1).map(|r| r.effort) {
             let reference = driver_torque_pass1.unwrap_or(0.0).abs().max(1.0);
             if !eff.is_finite() || eff.abs() > 1e-6 * reference {
                 return ValidationState::Failed;
             }
         }
-    }
     match body_equilibrium_residual(mech, q, t, reactions, eff_actuator_force) {
         Some(r) if r.is_finite() && r < EQUILIBRIUM_REL_TOL => ValidationState::Verified,
         Some(_) => ValidationState::Failed,
@@ -1958,7 +1958,7 @@ mod tests {
         bad.iter_mut().find(|x| x.n_equations > 1).unwrap().force_global[0] = f64::NAN;
         let resid = body_equilibrium_residual(&mech, &q, angle, &bad, r.actuator_force)
             .expect("modeled");
-        assert!(!(resid < EQUILIBRIUM_REL_TOL), "NaN reaction must not pass; got {resid}");
+        assert!(resid >= EQUILIBRIUM_REL_TOL || resid.is_nan(), "NaN reaction must not pass; got {resid}");
         let v = compute_validation(
             &mech, &q, angle, &bad, r.actuator_force,
             r.condition_number, true, r.driver_torque,

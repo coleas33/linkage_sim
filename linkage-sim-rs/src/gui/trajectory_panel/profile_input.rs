@@ -266,8 +266,7 @@ fn draw_keyframe_editor(kt: &mut KeyframeTrajectory, ui: &mut egui::Ui) {
                     "Load a 2-column CSV (t_seconds, target_value) as keyframes.",
                 )
                 .clicked()
-            {
-                if let Some(path) = rfd::FileDialog::new()
+                && let Some(path) = rfd::FileDialog::new()
                     .add_filter("CSV", &["csv"])
                     .pick_file()
                 {
@@ -276,7 +275,6 @@ fn draw_keyframe_editor(kt: &mut KeyframeTrajectory, ui: &mut egui::Ui) {
                         Err(e) => log::warn!("CSV import failed: {}", e),
                     }
                 }
-            }
         }
         // On web, the equivalent path is drag-and-drop: dropping a `.csv`
         // file on the canvas while in Trajectory mode replaces the

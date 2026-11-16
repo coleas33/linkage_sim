@@ -5,7 +5,7 @@ use eframe::egui::{self, Color32, FontId, Pos2, Rect, Stroke, Vec2};
 use crate::core::body::Body;
 use crate::core::constraint::Constraint;
 use crate::core::mechanism::Mechanism;
-use crate::core::state::{State, GROUND_ID};
+use crate::core::state::GROUND_ID;
 use crate::forces::elements::*;
 use crate::gui::state::{AppState, SelectedEntity, ViewTransform, GridSettings};
 
@@ -20,11 +20,13 @@ mod weights;
 
 // Re-export from submodules so external callers do not need to know the layout.
 pub use primitives::{draw_dashed_line, draw_ground_marker, draw_diamond_marker, fill_force_template};
-pub use force_render::{force_zone_app_point_world, heat_color};
+pub use force_render::force_zone_app_point_world;
+#[cfg(test)]
+pub use force_render::heat_color;
 pub(crate) use force_render::{format_magnitude, SHOWN_AS_ZERO_N};
 
 use primitives::{
-    draw_alignment_guides, draw_force_arrow, draw_force_arrow_components, draw_rotary_badge,
+    draw_alignment_guides, draw_force_arrow, draw_force_arrow_components,
 };
 use force_render::{draw_force_elements, load_path_color_for_body};
 
@@ -63,11 +65,9 @@ pub fn render_mechanism(
     // top. Trajectory mode only.
     if state.show_motion_ribbon
         && state.sweep_mode.is_trajectory()
-    {
-        if let Some(sweep_data) = state.sweep_data.as_ref() {
+        && let Some(sweep_data) = state.sweep_data.as_ref() {
             draw_motion_ribbon(painter, state, sweep_data);
         }
-    }
 
     // Nathan Mode: optional grayscale color transform for canvas elements.
     let gc = |c: Color32| -> Color32 {
@@ -580,6 +580,7 @@ pub fn render_mechanism(
 ///
 /// This is called after the immutable borrow scope ends, because it needs
 /// mutable access to state for tool previews.
+#[allow(clippy::too_many_arguments)] // flat parameter list; a params struct would be a refactor
 pub fn render_overlays(
     ui: &mut egui::Ui,
     painter: &egui::Painter,
@@ -661,8 +662,8 @@ pub fn render_overlays(
         }
 
         // Ghost dot at cursor position with connecting line from last placed point.
-        if let Some(hover_pos) = ui.input(|i| i.pointer.hover_pos()) {
-            if canvas_rect.contains(hover_pos) {
+        if let Some(hover_pos) = ui.input(|i| i.pointer.hover_pos())
+            && canvas_rect.contains(hover_pos) {
                 let [gwx, gwy] = state.view.screen_to_world(hover_pos.x, hover_pos.y);
                 let (sx, sy) = state.grid.snap_point(gwx, gwy);
                 let ghost_screen = state.view.world_to_screen(sx, sy);
@@ -678,7 +679,6 @@ pub fn render_overlays(
                     );
                 }
             }
-        }
     }
 
     // ── Crank-angle indicator ────────────────────────────────────────
@@ -985,7 +985,7 @@ fn draw_equation_overlay(
     state: &AppState,
     joint_hit_targets: &[(Pos2, String)],
 ) {
-    use crate::gui::eq_rendering::{kind_at, EqKind};
+    use crate::gui::eq_rendering::kind_at;
 
     let Some(mech) = state.mechanism.as_ref() else { return };
     let view = &state.view;
@@ -1037,15 +1037,14 @@ fn draw_equation_overlay(
                 }
             }
         }
-        if let Some(anchor) = anchor {
-            if canvas_rect.contains(anchor) {
+        if let Some(anchor) = anchor
+            && canvas_rect.contains(anchor) {
                 let Some(kind) = kind_at(mech, constr_idx) else { continue };
                 let label = render_driver_overlay_label(id_label, drv.meta());
                 let color = kind_overlay_color(state, kind);
                 let pos = Pos2::new(anchor.x - 8.0, anchor.y - 24.0);
                 draw_pill_label(painter, pos, &label, color, egui::Align2::RIGHT_TOP);
             }
-        }
     }
 
     // Linear drivers: label at the midpoint of P_a–P_b in world space.
@@ -1178,8 +1177,8 @@ fn render_hover_tooltips(
     use crate::gui::state::EditorTool;
     use super::hit_testing::find_nearest_body_segment;
 
-    if let Some(hover_pos) = ui.input(|i| i.pointer.hover_pos()) {
-        if canvas_rect.contains(hover_pos) && state.active_tool == EditorTool::Select {
+    if let Some(hover_pos) = ui.input(|i| i.pointer.hover_pos())
+        && canvas_rect.contains(hover_pos) && state.active_tool == EditorTool::Select {
             // Weights first, as in click selection (they sit on pins).
             let mut shown_tooltip = weights::show_weight_tooltip(ui, state, hover_pos);
 
@@ -1187,8 +1186,8 @@ fn render_hover_tooltips(
             if !shown_tooltip {
                 for (jpos, jid) in joint_hit_targets {
                     if jpos.distance(hover_pos) < HIT_RADIUS {
-                        if let Some(mech) = &state.mechanism {
-                            if let Some(joint) = mech.joints().iter().find(|j| j.id() == jid) {
+                        if let Some(mech) = &state.mechanism
+                            && let Some(joint) = mech.joints().iter().find(|j| j.id() == jid) {
                                 let joint_type_str = if joint.is_revolute() {
                                     "Revolute"
                                 } else if joint.is_prismatic() {
@@ -1229,7 +1228,6 @@ fn render_hover_tooltips(
                                 });
                                 shown_tooltip = true;
                             }
-                        }
                         break;
                     }
                 }
@@ -1239,8 +1237,8 @@ fn render_hover_tooltips(
             if !shown_tooltip {
                 for hit in attachment_hit_targets {
                     if hit.screen_pos.distance(hover_pos) < HIT_RADIUS {
-                        if let Some(mech) = &state.mechanism {
-                            if let Some(body) = mech.bodies().get(&hit.body_id) {
+                        if let Some(mech) = &state.mechanism
+                            && let Some(body) = mech.bodies().get(&hit.body_id) {
                                 if hit.body_id == GROUND_ID {
                                     egui::Tooltip::always_open(
                                         ui.ctx().clone(),
@@ -1256,27 +1254,23 @@ fn render_hover_tooltips(
                                 }
                                 shown_tooltip = true;
                             }
-                        }
                         break;
                     }
                 }
             }
 
             // Then check body segments (link lines) -- wider radius for easier hover
-            if !shown_tooltip {
-                if let Some(seg_hit) = find_nearest_body_segment(hover_pos, body_segments, LINK_HALF_WIDTH + 4.0) {
-                    if let Some(mech) = &state.mechanism {
-                        if let Some(body) = mech.bodies().get(&seg_hit.body_id) {
+            if !shown_tooltip
+                && let Some(seg_hit) = find_nearest_body_segment(hover_pos, body_segments, LINK_HALF_WIDTH + 4.0)
+                    && let Some(mech) = &state.mechanism
+                        && let Some(body) = mech.bodies().get(&seg_hit.body_id) {
                             show_body_tooltip(ui, body, &seg_hit.body_id);
                             shown_tooltip = true;
                         }
-                    }
-                }
-            }
 
             // Then check force zones
-            if !shown_tooltip {
-                if let Some(mech) = &state.mechanism {
+            if !shown_tooltip
+                && let Some(mech) = &state.mechanism {
                     for elem in mech.forces() {
                         if let ForceElement::ForceZone(fz) = elem {
                             let min_sp = state.view.world_to_screen(fz.zone_min[0], fz.zone_min[1]);
@@ -1312,11 +1306,9 @@ fn render_hover_tooltips(
                         }
                     }
                 }
-            }
 
             let _ = shown_tooltip; // suppress unused warning
         }
-    }
 }
 
 // ── Background image rendering ──────────────────────────────────────────────

@@ -133,6 +133,7 @@ pub fn package_of(path: &str) -> &str {
 }
 
 /// The heading of a package; `None` if [`PACKAGE_LABELS`] lacks it (a test checks none does).
+#[cfg(test)]
 pub fn package_label(package: &str) -> Option<&'static str> {
     PACKAGE_LABELS
         .iter()

@@ -2,8 +2,6 @@
 //! and `derivatives` test modules. The 4-bar mechanism + warm-start `q` it
 //! produces is the canonical test linkage for inverse-kinematics unit tests.
 
-#![cfg(test)]
-
 use nalgebra::DVector;
 use std::f64::consts::PI;
 

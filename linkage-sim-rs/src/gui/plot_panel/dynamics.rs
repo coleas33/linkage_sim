@@ -1,15 +1,14 @@
 //! Dynamics plots: driver torque, inverse dynamics, energy.
 
 use eframe::egui;
-use egui_plot::{Line, Plot, PlotPoint, PlotPoints, Text as PlotText, VLine};
+use egui_plot::{Line, Plot, PlotPoints, VLine};
 
-use crate::gui::state::{AngleUnit, DisplayUnits};
+use crate::gui::state::DisplayUnits;
 use crate::gui::sweep::SweepData;
 
 use super::{
     detect_plot_click, draw_angle_series_with_range, draw_range_boundary_markers,
-    draw_toggle_markers, driver_effort_series_name, driver_effort_y_label, faded_color,
-    series_colors, sweep_x_to_display, with_default_x_bounds, x_axis_label_for_sweep,
+    draw_toggle_markers, driver_effort_series_name, driver_effort_y_label, sweep_x_to_display, with_default_x_bounds, x_axis_label_for_sweep,
 };
 
 pub(super) fn draw_driver_torque(
@@ -72,7 +71,6 @@ pub(super) fn draw_driver_torque(
 /// with optional statics torque overlay for comparison.
 ///
 /// Returns the clicked X coordinate (display angle units) if the user clicked.
-
 pub(super) fn draw_inverse_dynamics(
     ui: &mut egui::Ui,
     sweep: &SweepData,
@@ -179,7 +177,6 @@ pub(super) fn draw_inverse_dynamics(
 /// Plot energy (KE, PE, total) vs driver angle.
 ///
 /// Returns the clicked X coordinate (display angle units) if the user clicked.
-
 pub(super) fn draw_energy(
     ui: &mut egui::Ui,
     sweep: &SweepData,

@@ -127,12 +127,11 @@ fn load_impl() -> UserPreferences {
 #[cfg(feature = "native")]
 fn save_impl(prefs: &UserPreferences) {
     let Some(path) = prefs_path() else { return };
-    if let Some(parent) = path.parent() {
-        if std::fs::create_dir_all(parent).is_err() {
+    if let Some(parent) = path.parent()
+        && std::fs::create_dir_all(parent).is_err() {
             log::warn!("Failed to create preferences dir: {:?}", parent);
             return;
         }
-    }
     match serde_json::to_string_pretty(prefs) {
         Ok(s) => {
             if let Err(e) = std::fs::write(&path, s) {
@@ -188,12 +187,14 @@ mod tests {
 
     #[test]
     fn user_preferences_round_trip_through_json() {
-        let mut prefs = UserPreferences::default();
-        prefs.show_dimensions = false;
-        prefs.show_equation_overlay = true;
-        prefs.show_force_components = true;
-        prefs.dismiss_welcome = true;
-        prefs.nathan_mode = true;
+        let mut prefs = UserPreferences {
+            show_dimensions: false,
+            show_equation_overlay: true,
+            show_force_components: true,
+            dismiss_welcome: true,
+            nathan_mode: true,
+            ..UserPreferences::default()
+        };
         prefs.grid.snap_enabled = false;
         prefs.grid.spacing_m = 0.005;
         prefs.display_units.length = super::super::LengthUnit::Meters;
@@ -238,14 +239,16 @@ mod tests {
         use crate::gui::state::AppState;
 
         let mut state = AppState::default();
-        let mut prefs = UserPreferences::default();
-        prefs.show_dimensions = false;
-        prefs.show_labels = false;
-        prefs.show_forces = false;
-        prefs.show_force_components = true;
-        prefs.show_equation_overlay = true;
-        prefs.dismiss_welcome = true;
-        prefs.nathan_mode = true;
+        let mut prefs = UserPreferences {
+            show_dimensions: false,
+            show_labels: false,
+            show_forces: false,
+            show_force_components: true,
+            show_equation_overlay: true,
+            dismiss_welcome: true,
+            nathan_mode: true,
+            ..UserPreferences::default()
+        };
         prefs.grid.snap_enabled = false;
         prefs.grid.show_grid = false;
         prefs.grid.spacing_m = 0.005;

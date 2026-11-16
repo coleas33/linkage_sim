@@ -5,7 +5,7 @@ use eframe::egui::{self, Color32, FontId, Pos2, Stroke};
 use crate::core::state::GROUND_ID;
 use crate::forces::elements::*;
 use crate::gui::state::{
-    AddBodyState, AppState, DrawBodyGeometryState, EditorTool, ForceZoneDragState,
+    AddBodyState, AppState, EditorTool, ForceZoneDragState,
     PendingCanvasPickKind, SelectedEntity, WeightDrag,
 };
 use crate::gui::sweep::SweepMode;
@@ -20,19 +20,19 @@ use super::hit_testing::{
 use super::rendering::{draw_dashed_line, fill_force_template};
 
 /// Find the nearest attachment point within hit radius of a screen position.
-fn find_nearest_attachment<'a>(
+fn find_nearest_attachment(
     pos: Pos2,
-    attachment_hit_targets: &'a [AttachmentHit],
-) -> Option<&'a AttachmentHit> {
+    attachment_hit_targets: &[AttachmentHit],
+) -> Option<&AttachmentHit> {
     find_nearest_attachment_radius(pos, attachment_hit_targets, HIT_RADIUS)
 }
 
 /// Find the nearest attachment point within a custom screen-pixel radius.
-fn find_nearest_attachment_radius<'a>(
+fn find_nearest_attachment_radius(
     pos: Pos2,
-    attachment_hit_targets: &'a [AttachmentHit],
+    attachment_hit_targets: &[AttachmentHit],
     radius: f32,
-) -> Option<&'a AttachmentHit> {
+) -> Option<&AttachmentHit> {
     attachment_hit_targets
         .iter()
         .filter(|h| pos.distance(h.screen_pos) <= radius)
@@ -46,6 +46,7 @@ fn find_nearest_attachment_radius<'a>(
 /// Handle all canvas interaction: drag, pan, zoom, keyboard shortcuts, tool modes,
 /// and click-to-select. Returns whether a right-drag just ended (used to suppress
 /// context menu).
+#[allow(clippy::too_many_arguments)] // flat parameter list; a params struct would be a refactor
 pub fn handle_interaction(
     ui: &mut egui::Ui,
     painter: &egui::Painter,
@@ -121,8 +122,7 @@ pub fn handle_interaction(
         && response.drag_started_by(egui::PointerButton::Primary)
         && !is_shift
         && !is_dragging_weight
-    {
-        if let Some(pos) = response.interact_pointer_pos() {
+        && let Some(pos) = response.interact_pointer_pos() {
             // Only consider ground body attachment points.
             let ground_hit = attachment_hit_targets
                 .iter()
@@ -138,11 +138,10 @@ pub fn handle_interaction(
                     Some((hit.point_name.clone(), hit.world_pos));
             }
         }
-    }
 
     // During drag: draw a ghost marker at the cursor position with alignment snapping.
-    if state.dragging_ground_pivot.is_some() {
-        if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
+    if state.dragging_ground_pivot.is_some()
+        && let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
             let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
             let (gx, gy) = state.grid.snap_point(wx, wy);
 
@@ -175,14 +174,13 @@ pub fn handle_interaction(
                 Stroke::new(2.5, ghost_color),
             );
         }
-    }
 
     // On drag end: apply the ground pivot move and rebuild.
     if state.dragging_ground_pivot.is_some()
         && response.drag_stopped_by(egui::PointerButton::Primary)
     {
-        if let Some((pivot_name, _start_pos)) = state.dragging_ground_pivot.take() {
-            if let Some(pos) = response.interact_pointer_pos() {
+        if let Some((pivot_name, _start_pos)) = state.dragging_ground_pivot.take()
+            && let Some(pos) = response.interact_pointer_pos() {
                 let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
                 let (gx, gy) = state.grid.snap_point(wx, wy);
 
@@ -195,7 +193,6 @@ pub fn handle_interaction(
 
                 state.update_ground_pivot_position(&pivot_name, sx, sy);
             }
-        }
         state.alignment_guides.clear();
     }
 
@@ -212,14 +209,13 @@ pub fn handle_interaction(
         && state.dragging_force_zone_app_point.is_none()
         && !is_dragging_ground
         && !is_dragging_weight
-    {
-        if let Some(pos) = response.interact_pointer_pos() {
-            if let Some(mech) = state.mechanism.as_ref() {
+        && let Some(pos) = response.interact_pointer_pos()
+            && let Some(mech) = state.mechanism.as_ref() {
                 let mech_state = mech.state();
                 let q = &state.q;
                 for (idx, f) in mech.forces().iter().enumerate() {
-                    if let crate::forces::elements::ForceElement::ForceZone(fz) = f {
-                        if let Some(world) = super::rendering::force_zone_app_point_world(
+                    if let crate::forces::elements::ForceElement::ForceZone(fz) = f
+                        && let Some(world) = super::rendering::force_zone_app_point_world(
                             fz, mech, mech_state, q,
                         ) {
                             let sp = state.view.world_to_screen(world.x, world.y);
@@ -229,11 +225,8 @@ pub fn handle_interaction(
                                 break;
                             }
                         }
-                    }
                 }
             }
-        }
-    }
 
     // During drag: draw a ghost crosshair at the pointer so the user
     // sees where the application point will land on release.
@@ -270,8 +263,8 @@ pub fn handle_interaction(
         let idx = state.dragging_force_zone_app_point.take().unwrap();
         if let Some(pos) = response.interact_pointer_pos() {
             let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
-            if let Some(mech) = state.mechanism.as_ref() {
-                if let Some(crate::forces::elements::ForceElement::ForceZone(fz)) =
+            if let Some(mech) = state.mechanism.as_ref()
+                && let Some(crate::forces::elements::ForceElement::ForceZone(fz)) =
                     mech.forces().get(idx)
                 {
                     let mech_state = mech.state();
@@ -296,7 +289,6 @@ pub fn handle_interaction(
                         crate::forces::elements::ForceElement::ForceZone(updated),
                     );
                 }
-            }
         }
     }
 
@@ -311,13 +303,11 @@ pub fn handle_interaction(
         && !is_dragging_force_zone_ap
         && !is_dragging_weight
         && !is_ctrl_dragging_image
-    {
-        if state.active_tool == EditorTool::Select
+        && state.active_tool == EditorTool::Select
             && state.draw_link_start.is_none()
         {
             is_panning = true;
         }
-    }
 
     // ── Interaction: pan ────────────────────────────────────────────────
     // Right-drag also pans (in addition to middle-click and shift+primary).
@@ -421,8 +411,8 @@ pub fn handle_interaction(
     }
 
     // ── Interaction: Reassign point mass to a different link ─────────────
-    if state.reassigning_point_mass.is_some() && response.clicked() {
-        if let Some(pos) = response.interact_pointer_pos() {
+    if state.reassigning_point_mass.is_some() && response.clicked()
+        && let Some(pos) = response.interact_pointer_pos() {
             let hit = find_nearest_body_segment(pos, body_segments, LINK_PICK_RADIUS);
             if let Some(seg_hit) = hit {
                 let new_body_id = seg_hit.body_id.clone();
@@ -436,36 +426,32 @@ pub fn handle_interaction(
                 }
             }
         }
-    }
 
     // ── Interaction: Reposition point mass via mouse click ──────────────
-    if state.repositioning_point_mass.is_some() && response.clicked() {
-        if let Some(pos) = response.interact_pointer_pos() {
+    if state.repositioning_point_mass.is_some() && response.clicked()
+        && let Some(pos) = response.interact_pointer_pos() {
             let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
             let (body_id, weight_id) = state.repositioning_point_mass.take().unwrap();
-            let [lx, ly] = state.world_to_body_local(&body_id, wx as f64, wy as f64);
+            let [lx, ly] = state.world_to_body_local(&body_id, wx, wy);
             state.move_point_mass(&body_id, &weight_id, &body_id, [lx, ly]);
         }
-    }
 
     // ── Interaction: Add joint point to a body ────────────────────────────
     if let Some(ref body_id) = state.adding_joint_point.clone() {
-        if response.clicked() {
-            if let Some(pos) = response.interact_pointer_pos() {
+        if response.clicked()
+            && let Some(pos) = response.interact_pointer_pos() {
                 let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
                 let (gx, gy) = state.grid.snap_point(wx, wy);
-                let [lx, ly] = state.world_to_body_local(body_id, gx as f64, gy as f64);
+                let [lx, ly] = state.world_to_body_local(body_id, gx, gy);
                 let name = state.next_attachment_point_name(body_id);
                 state.push_undo();
-                if let Some(bp) = &mut state.blueprint {
-                    if let Some(body) = bp.bodies.get_mut(body_id) {
+                if let Some(bp) = &mut state.blueprint
+                    && let Some(body) = bp.bodies.get_mut(body_id) {
                         body.attachment_points.insert(name, [lx, ly]);
                     }
-                }
                 state.rebuild();
                 state.adding_joint_point = None;
             }
-        }
         // Show preview dot at cursor
         if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
             let preview_color = Color32::from_rgba_premultiplied(80, 200, 120, 180);
@@ -475,13 +461,12 @@ pub fn handle_interaction(
     }
 
     // Show preview and hint for reassign/reposition modes
-    if state.reassigning_point_mass.is_some() || state.repositioning_point_mass.is_some() {
-        if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
+    if (state.reassigning_point_mass.is_some() || state.repositioning_point_mass.is_some())
+        && let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
             let color = state.nc(WEIGHT_COLOR);
             painter.circle_filled(pos, 6.0, color.linear_multiply(0.5));
             painter.circle_stroke(pos, 6.0, Stroke::new(1.5, color));
         }
-    }
 
     // ── Interaction: Draw Link tool ─────────────────────────────────────
     if state.active_tool == EditorTool::DrawLink {
@@ -714,8 +699,8 @@ fn handle_draw_link(
     use crate::gui::state::DrawLinkStart;
 
     // Drag start: record start point, snapping to existing point if near one.
-    if response.drag_started_by(egui::PointerButton::Primary) && !is_shift {
-        if let Some(pos) = response.interact_pointer_pos() {
+    if response.drag_started_by(egui::PointerButton::Primary) && !is_shift
+        && let Some(pos) = response.interact_pointer_pos() {
             let snap_hit = find_nearest_attachment(pos, attachment_hit_targets);
             if let Some(hit) = snap_hit {
                 // Snap to existing attachment point.
@@ -735,11 +720,10 @@ fn handle_draw_link(
             }
             // If clicking on empty space, do NOT start -- user must use +Ground tool first.
         }
-    }
 
     // Preview line while dragging -- snap end to existing points or body segments.
-    if let Some(ref start) = state.draw_link_start {
-        if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
+    if let Some(ref start) = state.draw_link_start
+        && let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
             let [sx, sy] = start.world_pos;
             let snap_end = find_nearest_attachment(pos, attachment_hit_targets);
             let (ex, ey, end_snapped) = if let Some(hit) = snap_end {
@@ -820,7 +804,6 @@ fn handle_draw_link(
                 Color32::WHITE,
             );
         }
-    }
 
     // Drag released -> create body + auto-joints with exact snap positions.
     if state.draw_link_start.is_some() && response.drag_stopped() {
@@ -921,9 +904,9 @@ fn handle_place_force(
     }
 
     // Preview line from start to cursor after first click.
-    if let Some(ref pf_state) = state.place_force_state {
-        if let Some(ref start) = pf_state.start {
-            if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
+    if let Some(ref pf_state) = state.place_force_state
+        && let Some(ref start) = pf_state.start
+            && let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
                 let [sx, sy] = start.world_pos;
                 let snap_end = find_nearest_attachment(pos, attachment_hit_targets);
                 let (ex, ey, end_snapped) = if let Some(hit) = snap_end {
@@ -960,12 +943,10 @@ fn handle_place_force(
                     end_color,
                 );
             }
-        }
-    }
 
     // Handle clicks.
-    if response.clicked() {
-        if let Some(pos) = response.interact_pointer_pos() {
+    if response.clicked()
+        && let Some(pos) = response.interact_pointer_pos() {
             let snap_hit = find_nearest_attachment(pos, attachment_hit_targets);
 
             let (world_pos, body_id, point_name) = if let Some(hit) = snap_hit {
@@ -1016,7 +997,6 @@ fn handle_place_force(
                 }
             }
         }
-    }
 }
 
 // ── Create Force Zone tool ───────────────────────────────────────────────────
@@ -1030,19 +1010,18 @@ fn handle_create_force_zone(
     is_shift: bool,
 ) {
     // On drag start: record the starting world position.
-    if response.drag_started_by(egui::PointerButton::Primary) && !is_shift {
-        if let Some(pos) = response.interact_pointer_pos() {
+    if response.drag_started_by(egui::PointerButton::Primary) && !is_shift
+        && let Some(pos) = response.interact_pointer_pos() {
             let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
             let (gx, gy) = state.grid.snap_point(wx, wy);
             state.creating_force_zone = Some(ForceZoneDragState {
                 start_world: [gx, gy],
             });
         }
-    }
 
     // Preview rectangle while dragging.
-    if let Some(ref fz_drag) = state.creating_force_zone {
-        if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
+    if let Some(ref fz_drag) = state.creating_force_zone
+        && let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
             let [sx, sy] = fz_drag.start_world;
             let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
             let (gx, gy) = state.grid.snap_point(wx, wy);
@@ -1077,12 +1056,11 @@ fn handle_create_force_zone(
             draw_dashed_line(painter, br, bl, preview_stroke, dash, gap);
             draw_dashed_line(painter, bl, tl, preview_stroke, dash, gap);
         }
-    }
 
     // On drag release: create the force zone element.
-    if response.drag_stopped_by(egui::PointerButton::Primary) {
-        if let Some(fz_drag) = state.creating_force_zone.take() {
-            if let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
+    if response.drag_stopped_by(egui::PointerButton::Primary)
+        && let Some(fz_drag) = state.creating_force_zone.take()
+            && let Some(pos) = ui.input(|i| i.pointer.hover_pos()) {
                 let [wx, wy] = state.view.screen_to_world(pos.x, pos.y);
                 let (gx, gy) = state.grid.snap_point(wx, wy);
 
@@ -1128,8 +1106,6 @@ fn handle_create_force_zone(
 
                 state.active_tool = EditorTool::Select;
             }
-        }
-    }
 }
 
 // ── Draw Body Geometry tool ──────────────────────────────────────────────────
@@ -1168,8 +1144,8 @@ fn handle_place_mass(
     let Some(body_id) = state.place_mass_body.clone() else {
         // Phase 1: select a body by clicking near a link segment.
         // Highlight nearest body segment on hover.
-        if let Some(hover) = ui.input(|i| i.pointer.hover_pos()) {
-            if let Some(seg_hit) = find_nearest_body_segment(hover, body_segments, LINK_PICK_RADIUS) {
+        if let Some(hover) = ui.input(|i| i.pointer.hover_pos())
+            && let Some(seg_hit) = find_nearest_body_segment(hover, body_segments, LINK_PICK_RADIUS) {
                 // Draw highlight on the hovered body segment
                 let highlight = color.linear_multiply(0.4);
                 painter.line_segment(
@@ -1187,16 +1163,14 @@ fn handle_place_mass(
                     Stroke::new(4.0, highlight),
                 );
             }
-        }
 
-        if response.clicked() {
-            if let Some(pos) = response.interact_pointer_pos() {
+        if response.clicked()
+            && let Some(pos) = response.interact_pointer_pos() {
                 // Find nearest body segment within the link pick radius
                 if let Some(seg_hit) = find_nearest_body_segment(pos, body_segments, LINK_PICK_RADIUS) {
                     state.place_mass_body = Some(seg_hit.body_id.clone());
                 }
             }
-        }
         return false;
     };
 
@@ -1243,24 +1217,22 @@ fn handle_add_body(
     let can_finish = state
         .add_body_state
         .as_ref()
-        .map_or(false, |abs| abs.points.len() >= 2);
+        .is_some_and(|abs| abs.points.len() >= 2);
 
     // Enter key finishes the body.
-    if ui.input(|i| i.key_pressed(egui::Key::Enter)) && can_finish {
-        if let Some(abs) = state.add_body_state.take() {
+    if ui.input(|i| i.key_pressed(egui::Key::Enter)) && can_finish
+        && let Some(abs) = state.add_body_state.take() {
             state.add_body_with_points(&abs.points);
         }
-    }
 
     // Double-click finishes (same as Enter -- do NOT place a new point).
     // Guard with state.add_body_state.is_some() in case Enter already consumed it
     // on the same frame.
     if response.double_clicked() {
-        if can_finish {
-            if let Some(abs) = state.add_body_state.take() {
+        if can_finish
+            && let Some(abs) = state.add_body_state.take() {
                 state.add_body_with_points(&abs.points);
             }
-        }
     } else if response.clicked() {
         // Single click: place a point.
         if let Some(pos) = response.interact_pointer_pos() {
@@ -1414,7 +1386,7 @@ fn handle_click_selection(
                         if new_scale < state.view.scale {
                             state.view.scale = new_scale;
                             // Center on the placed pivot
-                            let sp = state.view.world_to_screen(sx as f64, sy as f64);
+                            let sp = state.view.world_to_screen(sx, sy);
                             let cx = canvas_rect.center().x;
                             let cy = canvas_rect.center().y;
                             state.view.offset[0] += cx - sp[0];
@@ -1540,14 +1512,15 @@ fn apply_canvas_pick(
             //    on state.sweep_mode (we'll need state.world_to_body_local
             //    below, which takes &self on AppState).
             let target_body: String = match &state.sweep_mode {
-                SweepMode::Trajectory { target, .. } => match target {
-                    ControlTarget::WorldX { body_id, .. }
-                    | ControlTarget::WorldY { body_id, .. }
-                    | ControlTarget::Projection { body_id, .. }
-                    | ControlTarget::Distance { body_id, .. } => body_id.clone(),
-                    _ => return, // Angle target has no local_pt
-                },
-                _ => return,
+                SweepMode::Trajectory {
+                    target:
+                        ControlTarget::WorldX { body_id, .. }
+                        | ControlTarget::WorldY { body_id, .. }
+                        | ControlTarget::Projection { body_id, .. }
+                        | ControlTarget::Distance { body_id, .. },
+                    ..
+                } => body_id.clone(),
+                _ => return, // Angle target has no local_pt
             };
 
             // 2. Find which body the click landed on (attachment first, then segment).
@@ -1578,26 +1551,27 @@ fn apply_canvas_pick(
             // 3. Convert world → body-local using the existing helper, then
             //    write into the target's local_pt field.
             let local = state.world_to_body_local(&target_body, world_pos[0], world_pos[1]);
-            if let SweepMode::Trajectory { target, .. } = &mut state.sweep_mode {
-                match target {
+            if let SweepMode::Trajectory {
+                target:
                     ControlTarget::WorldX { local_pt, .. }
                     | ControlTarget::WorldY { local_pt, .. }
                     | ControlTarget::Projection { local_pt, .. }
-                    | ControlTarget::Distance { local_pt, .. } => *local_pt = local,
-                    _ => {}
-                }
+                    | ControlTarget::Distance { local_pt, .. },
+                ..
+            } = &mut state.sweep_mode
+            {
+                *local_pt = local;
             }
         }
         PendingCanvasPickKind::AxisOrigin => {
-            if let SweepMode::Trajectory { target, .. } = &mut state.sweep_mode {
-                if let ControlTarget::Projection { axis_origin, .. } = target {
+            if let SweepMode::Trajectory { target, .. } = &mut state.sweep_mode
+                && let ControlTarget::Projection { axis_origin, .. } = target {
                     *axis_origin = [world_pos[0], world_pos[1]];
                 }
-            }
         }
         PendingCanvasPickKind::AxisDir => {
-            if let SweepMode::Trajectory { target, .. } = &mut state.sweep_mode {
-                if let ControlTarget::Projection {
+            if let SweepMode::Trajectory { target, .. } = &mut state.sweep_mode
+                && let ControlTarget::Projection {
                     axis_dir,
                     axis_origin,
                     ..
@@ -1615,14 +1589,12 @@ fn apply_canvas_pick(
                         *axis_dir = [1.0, 0.0];
                     }
                 }
-            }
         }
         PendingCanvasPickKind::RefPt => {
-            if let SweepMode::Trajectory { target, .. } = &mut state.sweep_mode {
-                if let ControlTarget::Distance { ref_pt, .. } = target {
+            if let SweepMode::Trajectory { target, .. } = &mut state.sweep_mode
+                && let ControlTarget::Distance { ref_pt, .. } = target {
                     *ref_pt = [world_pos[0], world_pos[1]];
                 }
-            }
         }
     }
 }

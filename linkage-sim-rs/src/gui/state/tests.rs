@@ -81,14 +81,13 @@
         // length at 2.0 (the sample default).
         let new_bx = 2.0_f64 * 30f64.to_radians().cos();
         let new_by = 2.0_f64 * 30f64.to_radians().sin();
-        if let Some(bp) = state.blueprint.as_mut() {
-            if let Some(crank) = bp.bodies.get_mut("crank") {
+        if let Some(bp) = state.blueprint.as_mut()
+            && let Some(crank) = bp.bodies.get_mut("crank") {
                 crank.attachment_points.insert(
                     "B".to_string(),
                     [new_bx, new_by],
                 );
             }
-        }
         state.rebuild();
         assert!(
             (state.driver_display_offset - 30f64.to_radians()).abs() < 1e-6,
@@ -961,7 +960,7 @@
             joints_before
         );
         // No remaining joint should reference "coupler".
-        for (_id, joint) in &bp.joints {
+        for joint in bp.joints.values() {
             let (bi, bj) = joint_body_ids(joint);
             assert_ne!(bi, "coupler", "Joint still references removed body");
             assert_ne!(bj, "coupler", "Joint still references removed body");
@@ -1853,8 +1852,10 @@
     #[cfg(feature = "native")]
     #[test]
     fn autosave_path_with_save_path_creates_sibling() {
-        let mut state = AppState::default();
-        state.last_save_path = Some(std::path::PathBuf::from("/tmp/my_mechanism.json"));
+        let state = AppState {
+            last_save_path: Some(std::path::PathBuf::from("/tmp/my_mechanism.json")),
+            ..AppState::default()
+        };
         let path = state.autosave_path();
         assert!(path.is_some());
         let p = path.unwrap();
@@ -3073,8 +3074,10 @@
 
     #[test]
     fn run_simulation_no_blueprint_no_panic() {
-        let mut state = AppState::default();
-        state.blueprint = None;
+        let mut state = AppState {
+            blueprint: None,
+            ..AppState::default()
+        };
         state.run_simulation(1.0);
         // No blueprint means early return with no errors logged.
         assert!(state.error_log.is_empty());
@@ -3235,10 +3238,7 @@
         let torques_grav: Vec<f64> = sweep_grav
             .driver_torques
             .as_ref()
-            .unwrap()
-            .iter()
-            .copied()
-            .collect();
+            .unwrap().to_vec();
 
         // Without gravity
         state.gravity_magnitude = 0.0;
@@ -3248,10 +3248,7 @@
         let torques_no_grav: Vec<f64> = sweep_no_grav
             .driver_torques
             .as_ref()
-            .unwrap()
-            .iter()
-            .copied()
-            .collect();
+            .unwrap().to_vec();
 
         assert_eq!(torques_grav.len(), torques_no_grav.len());
         let differs = torques_grav
@@ -3459,12 +3456,11 @@
         let mut converged_count = 0;
         for &u_k in u_values.iter() {
             let t_mech = (u_k - u_0) / nominal_rate;
-            if let Ok(res) = solve_position(mech, &q_seed, t_mech, 1e-10, 50) {
-                if res.converged {
+            if let Ok(res) = solve_position(mech, &q_seed, t_mech, 1e-10, 50)
+                && res.converged {
                     q_seed = res.q;
                     converged_count += 1;
                 }
-            }
         }
         // We don't require all to converge (some samples on the
         // trajectory may straddle a singularity), but the bulk should.

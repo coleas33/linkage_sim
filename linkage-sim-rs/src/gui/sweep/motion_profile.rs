@@ -279,7 +279,7 @@ mod tests {
         // Test several fractions: convert fraction -> angle -> fraction.
         for &orig_frac in &[0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0] {
             let cycle_time = 1.0;
-            let (omega, _) = trapezoidal_profile_at(
+            let (_omega, _) = trapezoidal_profile_at(
                 orig_frac,
                 total_angle,
                 cycle_time,

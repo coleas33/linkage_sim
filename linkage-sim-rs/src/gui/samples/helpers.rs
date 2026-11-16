@@ -265,6 +265,7 @@ pub fn fourbar_loop_closure(
 /// coupler-rocker joint), with D at the ground pivot O4. For the
 /// opposite convention (origin at D), use [`fourbar_loop_closure`]
 /// directly.
+#[allow(clippy::too_many_arguments)] // flat parameter list; a params struct would be a refactor
 pub fn try_fourbar_initial_q0(
     state: &crate::core::state::State,
     o2: (f64, f64),
@@ -305,6 +306,7 @@ pub fn try_fourbar_initial_q0(
 /// Does not check the triangle inequality. If the geometry cannot close,
 /// the result will contain `NaN` angles. Use [`try_fourbar_initial_q0`]
 /// for a checked version.
+#[allow(clippy::too_many_arguments)] // flat parameter list; a params struct would be a refactor
 pub fn fourbar_initial_q0(
     state: &crate::core::state::State,
     o2: (f64, f64),

@@ -39,9 +39,9 @@ pub(super) fn draw_diagnostics_section(ui: &mut egui::Ui, state: &AppState) {
             // ── Force zone geometry warnings ──────────────────────
             if let Some(bp) = &state.blueprint {
                 for force in &bp.forces {
-                    if let ForceElement::ForceZone(fz) = force {
-                        if let Some(body) = bp.bodies.get(&fz.body_id) {
-                            if body.geometry.is_none() {
+                    if let ForceElement::ForceZone(fz) = force
+                        && let Some(body) = bp.bodies.get(&fz.body_id)
+                            && body.geometry.is_none() {
                                 ui.colored_label(
                                     egui::Color32::from_rgb(255, 180, 60),
                                     format!(
@@ -50,8 +50,6 @@ pub(super) fn draw_diagnostics_section(ui: &mut egui::Ui, state: &AppState) {
                                     ),
                                 );
                             }
-                        }
-                    }
                 }
             }
 
@@ -219,8 +217,8 @@ pub(super) fn draw_diagnostics_section(ui: &mut egui::Ui, state: &AppState) {
 
             // ── Sweep envelope statistics ────────────────────────────
             if let Some(ref sweep) = state.sweep_data {
-                if let Some(ref torques) = sweep.driver_torques {
-                    if let Some(env) = compute_envelope(torques) {
+                if let Some(ref torques) = sweep.driver_torques
+                    && let Some(env) = compute_envelope(torques) {
                         if !has_grashof && !has_crank_rec && !has_condition {
                             ui.separator();
                         }
@@ -231,18 +229,16 @@ pub(super) fn draw_diagnostics_section(ui: &mut egui::Ui, state: &AppState) {
                         ));
                         ui.label(format!("RMS: {:.3} N\u{00b7}m", env.rms));
                     }
-                }
 
                 // Output force envelope (from force zone overlap).
-                if let Some(ref output_forces) = sweep.output_forces {
-                    if let Some(env) = compute_envelope(output_forces) {
+                if let Some(ref output_forces) = sweep.output_forces
+                    && let Some(env) = compute_envelope(output_forces) {
                         ui.label(format!(
                             "Output Force: {:.1} to {:.1} N",
                             env.min_value, env.max_value
                         ));
                         ui.label(format!("RMS: {:.1} N", env.rms));
                     }
-                }
             }
 
             // ── Force contributions ────────────────────────────────
