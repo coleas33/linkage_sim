@@ -8,6 +8,7 @@
 use eframe::egui;
 use crate::analysis::envelopes::compute_envelope;
 use crate::analysis::grashof::GrashofType;
+use crate::gui::plot_panel::format_sweep_x;
 use crate::gui::state::AppState;
 use crate::gui::sweep::SweepData;
 
@@ -47,7 +48,7 @@ pub(super) fn draw_health_section(ui: &mut egui::Ui, state: &AppState) {
         if let Some(ref sweep) = state.sweep_data {
             if any_shown { ui.separator(); }
             any_shown = true;
-            draw_toggle_indicator(ui, state, &sweep.toggle_angles);
+            draw_toggle_indicator(ui, state, sweep);
         }
 
         // 3. Transmission angle (4-bar only)
@@ -115,7 +116,7 @@ pub(super) fn draw_health_section(ui: &mut egui::Ui, state: &AppState) {
                     if any_shown { ui.separator(); }
                     any_shown = true;
                     draw_actuator_utilization_indicator(
-                        ui, state, forces, &sweep.angles_deg, state.actuator_rated_force,
+                        ui, state, sweep, forces, state.actuator_rated_force,
                     );
                 }
             }
@@ -162,8 +163,9 @@ fn draw_grashof_indicator(
 fn draw_toggle_indicator(
     ui: &mut egui::Ui,
     state: &AppState,
-    toggle_angles: &[f64],
+    sweep: &SweepData,
 ) {
+    let toggle_angles = &sweep.toggle_angles;
     ui.horizontal(|ui| {
         ui.label("Toggle points:");
         if toggle_angles.is_empty() {
@@ -179,7 +181,7 @@ fn draw_toggle_indicator(
 
             let angle_strs: Vec<String> = toggle_angles
                 .iter()
-                .map(|a| format!("{:.0}\u{00b0}", a))
+                .map(|&a| format_sweep_x(a, sweep, state.driver_display_offset.to_degrees(), &state.display_units))
                 .collect();
             ui.colored_label(color, angle_strs.join(", "));
         }
@@ -444,10 +446,11 @@ fn draw_residual_indicator(ui: &mut egui::Ui, state: &AppState) {
 fn draw_actuator_utilization_indicator(
     ui: &mut egui::Ui,
     state: &AppState,
+    sweep: &SweepData,
     forces: &[f64],
-    angles_deg: &[f64],
     rated: f64,
 ) {
+    let angles_deg = &sweep.angles_deg;
     // Compute peak utilization.
     let peak_abs = forces
         .iter()
@@ -480,11 +483,17 @@ fn draw_actuator_utilization_indicator(
     if !exceeding.is_empty() {
         let min_angle = exceeding.first().copied().unwrap_or(0.0);
         let max_angle = exceeding.last().copied().unwrap_or(0.0);
+        let offset_deg = state.driver_display_offset.to_degrees();
+        let units = &state.display_units;
         ui.horizontal(|ui| {
             ui.label("Exceeding 80%:");
             ui.colored_label(
                 state.nc(COLOR_RED),
-                format!("{:.0}\u{00b0} to {:.0}\u{00b0}", min_angle, max_angle),
+                format!(
+                    "{} to {}",
+                    format_sweep_x(min_angle, sweep, offset_deg, units),
+                    format_sweep_x(max_angle, sweep, offset_deg, units),
+                ),
             );
         });
     }

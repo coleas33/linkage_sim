@@ -419,6 +419,20 @@ fn sweep_x_to_display(x: f64, sweep: &SweepData, units: &DisplayUnits) -> f64 {
     }
 }
 
+/// Text for a body-frame sweep x value (toggle angle, `angles_deg` entry) the
+/// way the plots show it: shifted by `offset_deg` in angle mode, converted to
+/// the display angle unit, or metres as mm in stroke mode, with its unit.
+pub(crate) fn format_sweep_x(x: f64, sweep: &SweepData, offset_deg: f64, units: &DisplayUnits) -> String {
+    if sweep.sweep_mode.is_stroke() {
+        return format!("{:.1} mm", sweep_x_to_display(x, sweep, units));
+    }
+    let shown = sweep_x_to_display(x + offset_deg, sweep, units);
+    match units.angle {
+        AngleUnit::Degrees => format!("{:.0}\u{00b0}", shown),
+        AngleUnit::Radians => format!("{:.2} rad", shown),
+    }
+}
+
 /// Return the x-axis label string for plots that sweep over the driver variable.
 ///
 /// In angle mode this is `"Driver Angle (deg)"` or `"Driver Angle (rad)"`.
@@ -754,6 +768,17 @@ mod tests {
             .expect("nontrivial range yields bounds");
         assert!((lo - 66.5).abs() < 1e-6, "lo = {}", lo);
         assert!((hi - 180.0).abs() < 1e-6, "hi = {}", hi);
+    }
+
+    #[test]
+    fn health_x_text_shifts_by_display_offset_and_labels_units() {
+        let angle = empty_trajectory_sweep_data(SweepMode::Angle);
+        assert_eq!(format_sweep_x(120.0, &angle, 30.0, &deg_units()), "150\u{00b0}");
+        let rad = DisplayUnits { length: LengthUnit::Millimeters, angle: AngleUnit::Radians };
+        assert_eq!(format_sweep_x(90.0, &angle, 90.0, &rad), "3.14 rad");
+        let stroke = empty_trajectory_sweep_data(SweepMode::Stroke);
+        // metres to mm, no angle offset, no degree sign
+        assert_eq!(format_sweep_x(0.0504, &stroke, 30.0, &deg_units()), "50.4 mm");
     }
 
     #[test]
