@@ -7,7 +7,7 @@ description = "Planar linkage mechanism simulator — Rust port of the validated
 [features]
 default = ["native"]
 # native: full desktop build with file dialogs + raster export
-native = ["raster", "dep:rfd", "dep:open", "dep:dirs"]
+native = ["raster", "dep:rfd", "dep:dirs"]
 # raster: PNG/GIF export (resvg + gif). Available on both native and
 # web — `cargo build --features raster --target wasm32-unknown-unknown`
 # enables it on the WASM target. Disabled by default on WASM to keep
@@ -32,7 +32,6 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg"]
 rfd = { version = "0.15", optional = true }
 resvg = { version = "0.44", optional = true }
 gif = { version = "0.13", optional = true }
-open = { version = "5", optional = true }
 dirs = { version = "5", optional = true }
 dxf = "0.6"
 uuid = { version = "1", features = ["js"] }
