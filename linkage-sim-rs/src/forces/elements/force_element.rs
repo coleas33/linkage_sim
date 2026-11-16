@@ -30,6 +30,16 @@ pub enum ForceElement {
     ForceZone(ForceZoneElement),
 }
 
+/// Look up a body for point resolution; an unknown id is an error, not a panic.
+fn body_of<'a>(
+    bodies: &'a HashMap<String, Body>,
+    id: &str,
+) -> Result<&'a Body, crate::core::body::BodyError> {
+    bodies
+        .get(id)
+        .ok_or_else(|| crate::core::body::BodyError::UnknownBody { body: id.to_string() })
+}
+
 impl ForceElement {
     /// Create a Coulomb friction element (pure sliding friction at a revolute joint).
     ///
@@ -163,47 +173,47 @@ impl ForceElement {
         match &mut resolved {
             ForceElement::LinearSpring(s) => {
                 if let Some(ref name) = s.point_a_name.clone() {
-                    let pt = bodies[&s.body_a].resolve_force_point(name)?;
+                    let pt = body_of(bodies, &s.body_a)?.resolve_force_point(name)?;
                     s.point_a = [pt.x, pt.y];
                 }
                 if let Some(ref name) = s.point_b_name.clone() {
-                    let pt = bodies[&s.body_b].resolve_force_point(name)?;
+                    let pt = body_of(bodies, &s.body_b)?.resolve_force_point(name)?;
                     s.point_b = [pt.x, pt.y];
                 }
             }
             ForceElement::LinearDamper(d) => {
                 if let Some(ref name) = d.point_a_name.clone() {
-                    let pt = bodies[&d.body_a].resolve_force_point(name)?;
+                    let pt = body_of(bodies, &d.body_a)?.resolve_force_point(name)?;
                     d.point_a = [pt.x, pt.y];
                 }
                 if let Some(ref name) = d.point_b_name.clone() {
-                    let pt = bodies[&d.body_b].resolve_force_point(name)?;
+                    let pt = body_of(bodies, &d.body_b)?.resolve_force_point(name)?;
                     d.point_b = [pt.x, pt.y];
                 }
             }
             ForceElement::GasSpring(g) => {
                 if let Some(ref name) = g.point_a_name.clone() {
-                    let pt = bodies[&g.body_a].resolve_force_point(name)?;
+                    let pt = body_of(bodies, &g.body_a)?.resolve_force_point(name)?;
                     g.point_a = [pt.x, pt.y];
                 }
                 if let Some(ref name) = g.point_b_name.clone() {
-                    let pt = bodies[&g.body_b].resolve_force_point(name)?;
+                    let pt = body_of(bodies, &g.body_b)?.resolve_force_point(name)?;
                     g.point_b = [pt.x, pt.y];
                 }
             }
             ForceElement::LinearActuator(a) => {
                 if let Some(ref name) = a.point_a_name.clone() {
-                    let pt = bodies[&a.body_a].resolve_force_point(name)?;
+                    let pt = body_of(bodies, &a.body_a)?.resolve_force_point(name)?;
                     a.point_a = [pt.x, pt.y];
                 }
                 if let Some(ref name) = a.point_b_name.clone() {
-                    let pt = bodies[&a.body_b].resolve_force_point(name)?;
+                    let pt = body_of(bodies, &a.body_b)?.resolve_force_point(name)?;
                     a.point_b = [pt.x, pt.y];
                 }
             }
             ForceElement::ExternalForce(e) => {
                 if let Some(ref name) = e.local_point_name.clone() {
-                    let pt = bodies[&e.body_id].resolve_force_point(name)?;
+                    let pt = body_of(bodies, &e.body_id)?.resolve_force_point(name)?;
                     e.local_point = [pt.x, pt.y];
                 }
             }

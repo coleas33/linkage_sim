@@ -4,7 +4,8 @@ use std::collections::HashMap;
 
 use nalgebra::Vector2;
 
-use crate::core::body::Body;
+use crate::analysis::validation::validate_force_elements;
+use crate::core::body::{Body, BodyError};
 use crate::core::driver::clamp_driver_omega;
 use crate::core::linear_driver::constant_velocity_linear_driver;
 use crate::core::mechanism::Mechanism;
@@ -317,13 +318,20 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
     // Forces that reference mount points are expanded into compound bodies
     // (cylinder + rod + prismatic joint) so the solver can handle them.
     let bodies_snapshot = mech.bodies().clone();
-    let resolved_forces: Vec<ForceElement> = json_struct.forces
-        .iter()
-        .map(|f| f.resolve_named_points(&bodies_snapshot).unwrap_or_else(|e| {
-            log::warn!("Failed to resolve force point name: {e}");
-            f.clone()
-        }))
-        .collect();
+    let mut resolved_forces: Vec<ForceElement> = Vec::new();
+    for f in &json_struct.forces {
+        match f.resolve_named_points(&bodies_snapshot) {
+            Ok(r) => resolved_forces.push(r),
+            // A force on a body that does not exist cannot load.
+            Err(e @ BodyError::UnknownBody { .. }) => {
+                return Err(SerializationError::Build(e.to_string()))
+            }
+            Err(e) => {
+                log::warn!("Failed to resolve force point name: {e}");
+                resolved_forces.push(f.clone());
+            }
+        }
+    }
 
     for (i, force) in resolved_forces.iter().enumerate() {
         match analyze_force(force, &json_struct.bodies) {
@@ -361,6 +369,15 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
                 }
             }
         }
+    }
+
+    // Unknown bodies in forces without named points (resolve_named_points
+    // never sees them) are errors; the other warnings are only logged.
+    for w in validate_force_elements(&mech) {
+        if w.contains("references unknown body") {
+            return Err(SerializationError::Build(w));
+        }
+        log::warn!("{w}");
     }
 
     Ok(mech)
@@ -480,5 +497,43 @@ mod point_mass_validation_tests {
         assert_eq!(w.len(), 2, "{w:?}");
         assert!(w[0].contains("#2") && w[0].contains("'bar'"), "{w:?}");
         assert!(w[1].contains("'G'") && w[1].contains("'ground'"), "{w:?}");
+    }
+}
+
+#[cfg(test)]
+mod unknown_body_force_tests {
+    use super::*;
+
+    fn with_spring(extra: &str) -> String {
+        format!(
+            r#"{{
+                "schema_version": "1.1.0",
+                "bodies": {{
+                    "ground": {{"attachment_points": {{"O": [0.0, 0.0]}},
+                               "mass": 0.0, "cg_local": [0.0, 0.0], "izz_cg": 0.0}},
+                    "bar": {{"attachment_points": {{"A": [0.0, 0.0]}},
+                            "mass": 1.0, "cg_local": [0.0, 0.0], "izz_cg": 0.1}}
+                }},
+                "joints": {{}},
+                "forces": [{{"type": "LinearSpring", "body_a": "ground",
+                            "point_a": [0.0, 0.0], "body_b": "ghost",
+                            "point_b": [0.0, 0.0], {extra}
+                            "stiffness": 100.0, "free_length": 0.5}}]
+            }}"#
+        )
+    }
+
+    #[test]
+    fn named_point_on_unknown_body_is_an_error_not_a_panic() {
+        let r = load_mechanism_unbuilt(&with_spring(r#""point_b_name": "M","#));
+        let e = r.map(|_| ()).expect_err("must be Err").to_string();
+        assert!(e.contains("ghost"), "{e}");
+    }
+
+    #[test]
+    fn unnamed_point_on_unknown_body_is_an_error() {
+        let r = load_mechanism_unbuilt(&with_spring(""));
+        let e = r.map(|_| ()).expect_err("must be Err").to_string();
+        assert!(e.contains("ghost"), "{e}");
     }
 }

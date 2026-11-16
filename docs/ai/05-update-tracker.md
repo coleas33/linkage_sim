@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - A force on an unknown body is a load error, not a panic (audit LFA-05; branch audit/2026-11-16-section-a)
+- What changed: `ForceElement::resolve_named_points` (forces/elements/force_element.rs) indexed the body map (`bodies[&id]`), which panics on a missing key inside a function that returns a Result. It now returns the new `BodyError::UnknownBody`. The loader (io/from_json.rs) returns that as `SerializationError::Build` instead of swallowing it, and runs `validate_force_elements` (previously called only by tests) after the forces are added: a force that names an unknown body without a named point is an error too; the other validator warnings (negative stiffness and so on) are logged only. Readers checked: `resolve_named_points` has no other non-test caller; the point-name-not-found case still logs and keeps the force as before.
+- Tests: `named_point_on_unknown_body_is_an_error_not_a_panic` and `unnamed_point_on_unknown_body_is_an_error` (from_json.rs; red first: both loaded Ok, with the lookup fix alone, before the loader change).
+
 ## 2026-11-16 - A failed load leaves the app unchanged (audit LGS-12; branch audit/2026-11-16-section-a)
 - What changed: in linkage-sim-rs/src/gui/state/file_io.rs, load_from_json_str assigned the sweep mode, sensors, motion profile, rated force, duration, parametric settings and blueprint before the mechanism build, so a file that failed to build left the app half old and half new. The build now runs first (after parsing); the fields are assigned only when it built. Readers checked: the callers of load_from_json_str (file load, autosave recovery, templates, share URL) only act on the Err/Ok; the build reads no AppState field.
 - Tests: ailed_build_leaves_settings_unchanged (file_io.rs; red first: the rated force was overwritten by the failed file).
