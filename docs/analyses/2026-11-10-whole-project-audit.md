@@ -116,8 +116,8 @@ The skeptics confirmed that the code does what each line says. Whether that is w
 The repository's rule is more tests, not fewer, so none of these was changed. Making them strict may turn some red.
 
 - **INF-14** Assertions sit inside `if let Ok` / `if converged` / `return Ok(())` guards, so these tests pass when the solver fails every case. `linkage-sim-rs/tests/property_tests.rs:134-178`, `golden_fixtures.rs:1012-1045`. First step: count the cases that reached an assertion and assert the count. FIXED 33bfce8: the property checks report whether a case reached an assertion and two tests require 40%; the spring fixture asserts every angle.
-- **PY-08** Sweep-based finite-difference tests can pass without checking anything. The check confirmed this only in part.
-- **PY-03** A test with no assertion can never fail. The check confirmed this only in part.
+- **PY-08** Sweep-based finite-difference tests can pass without checking anything. The check confirmed this only in part. FIXED cdb0f32: every skip of an unsolved or missing sample in the sweep tests is now an assert.
+- **PY-03** A test with no assertion can never fail. The check confirmed this only in part. FIXED 67c7696: the test passes ground as the input body and asserts input velocity 0, MA inf; a rocker-to-rocker MA == 1 test added.
 - **LCS-16** Two tests assert nothing that can fail, and a fourth copy of the same 4-bar fixture sits in each module. The check confirmed this only in part. FIXED 5e344f9: both tests now assert; the fixture copies are left (no crate-wide test-support module exists).
 - **LGS-14** Template and custom-sample tests write into the developer's real ~/.linkage-sim/. They leave "test", "roundtrip", "a", "b" and "only" in `~/.linkage-sim/templates/`, and "only" is never removed. `gui/state/templates.rs:96-112`. FIXED d8d3c57: unit tests use a temp storage root.
 - **MT-07** The vendored oracle's independent audit suite and its tools are run by nothing automatic.
