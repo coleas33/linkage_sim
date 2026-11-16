@@ -40,175 +40,116 @@ fn write_sweep_csv(out: &mut impl Write, sweep: &SweepData) -> std::io::Result<(
         return write_trajectory_csv(out, sweep);
     }
 
-    // Collect and sort body IDs for deterministic column order.
-    let mut body_ids: Vec<&String> = sweep.body_angles.keys().collect();
-    body_ids.sort();
+    // One column list drives both the header and every row, so they cannot
+    // drift. Each column is (header, decimals, series); a missing sample reads
+    // as NaN.
+    struct Col<'a> {
+        header: String,
+        decimals: usize,
+        series: &'a [f64],
+        /// Toggle column: NaN cells are written empty (sparse).
+        blank_nan: bool,
+    }
+    fn col<'a>(header: &str, decimals: usize, series: &'a [f64]) -> Col<'a> {
+        Col {
+            header: header.to_string(),
+            decimals,
+            series,
+            blank_nan: false,
+        }
+    }
 
-    // Header
-    let mut headers = vec!["angle_deg".to_string()];
-    for id in &body_ids {
-        headers.push(format!("{}_theta_deg", id));
+    // Sorted ids for deterministic column order.
+    fn sorted_keys(m: &std::collections::HashMap<String, Vec<f64>>) -> Vec<&String> {
+        let mut keys: Vec<&String> = m.keys().collect();
+        keys.sort();
+        keys
     }
-    if sweep.transmission_angles.is_some() {
-        headers.push("transmission_angle_deg".to_string());
+
+    let mut cols: Vec<Col> = Vec::new();
+    for id in sorted_keys(&sweep.body_angles) {
+        cols.push(col(&format!("{}_theta_deg", id), 6, &sweep.body_angles[id]));
     }
-    if sweep.driver_torques.is_some() {
-        headers.push("driver_torque_Nm".to_string());
+    if let Some(ta) = &sweep.transmission_angles {
+        cols.push(col("transmission_angle_deg", 4, ta));
     }
-    let has_ma = !sweep.mechanical_advantage.is_empty()
-        && sweep.mechanical_advantage.iter().any(|v| v.is_finite());
-    if has_ma {
-        headers.push("mechanical_advantage".to_string());
+    if let Some(dt) = &sweep.driver_torques {
+        cols.push(col("driver_torque_Nm", 6, dt));
     }
-    // Energy columns (always present — may be empty vecs, in which case we skip).
-    let has_energy = !sweep.kinetic_energy.is_empty();
-    if has_energy {
-        headers.push("kinetic_energy_J".to_string());
-        headers.push("potential_energy_J".to_string());
-        headers.push("total_energy_J".to_string());
+    if sweep.mechanical_advantage.iter().any(|v| v.is_finite()) {
+        cols.push(col("mechanical_advantage", 6, &sweep.mechanical_advantage));
     }
-    // Inverse dynamics torque column.
-    let has_inv_dyn = !sweep.inverse_dynamics_torques.is_empty();
-    if has_inv_dyn {
-        headers.push("inverse_dynamics_torque_Nm".to_string());
+    // Energy columns (always present, but may be empty vecs, in which case we skip).
+    if !sweep.kinetic_energy.is_empty() {
+        cols.push(col("kinetic_energy_J", 6, &sweep.kinetic_energy));
+        cols.push(col("potential_energy_J", 6, &sweep.potential_energy));
+        cols.push(col("total_energy_J", 6, &sweep.total_energy));
     }
-    // Actuator columns (present only when a LinearActuator force element exists).
-    let has_actuator = sweep.actuator_forces.is_some();
-    if has_actuator {
-        headers.push("actuator_force_N".to_string());
+    if !sweep.inverse_dynamics_torques.is_empty() {
+        cols.push(col("inverse_dynamics_torque_Nm", 6, &sweep.inverse_dynamics_torques));
     }
-    let has_actuator_id = sweep.actuator_forces_id.is_some();
-    if has_actuator_id {
-        headers.push("actuator_force_id_N".to_string());
+    // Actuator columns (present only when a LinearActuator force element exists)
+    // and the output force column (only when a ForceZone force element exists).
+    let optional: [(&str, &Option<Vec<f64>>); 7] = [
+        ("actuator_force_N", &sweep.actuator_forces),
+        ("actuator_force_id_N", &sweep.actuator_forces_id),
+        ("actuator_length_m", &sweep.actuator_lengths),
+        ("actuator_speed_m_s", &sweep.actuator_speeds),
+        ("actuator_power_W", &sweep.actuator_power),
+        ("actuator_power_id_W", &sweep.actuator_power_id),
+        ("output_force_N", &sweep.output_forces),
+    ];
+    for (header, series) in optional {
+        if let Some(series) = series {
+            cols.push(col(header, 6, series));
+        }
     }
-    let has_actuator_len = sweep.actuator_lengths.is_some();
-    if has_actuator_len {
-        headers.push("actuator_length_m".to_string());
+    for jid in sorted_keys(&sweep.joint_reaction_magnitudes) {
+        cols.push(col(&format!("{}_reaction_N", jid), 6, &sweep.joint_reaction_magnitudes[jid]));
     }
-    let has_actuator_speed = sweep.actuator_speeds.is_some();
-    if has_actuator_speed {
-        headers.push("actuator_speed_m_s".to_string());
+    for name in sorted_keys(&sweep.coupler_velocities) {
+        cols.push(col(&format!("{}_velocity_m_s", name), 6, &sweep.coupler_velocities[name]));
     }
-    let has_actuator_power = sweep.actuator_power.is_some();
-    if has_actuator_power {
-        headers.push("actuator_power_W".to_string());
-    }
-    let has_actuator_power_id = sweep.actuator_power_id.is_some();
-    if has_actuator_power_id {
-        headers.push("actuator_power_id_W".to_string());
-    }
-    // Output force column (present only when a ForceZone force element exists).
-    let has_output_force = sweep.output_forces.is_some();
-    if has_output_force {
-        headers.push("output_force_N".to_string());
-    }
-    // Joint reaction magnitude columns (sorted by joint ID).
-    let mut reaction_ids: Vec<&String> = sweep.joint_reaction_magnitudes.keys().collect();
-    reaction_ids.sort();
-    for jid in &reaction_ids {
-        headers.push(format!("{}_reaction_N", jid));
-    }
-    // Coupler velocity magnitude columns (sorted by trace name).
-    let mut vel_names: Vec<&String> = sweep.coupler_velocities.keys().collect();
-    vel_names.sort();
-    for name in &vel_names {
-        headers.push(format!("{}_velocity_m_s", name));
-    }
-    // Coupler acceleration magnitude columns (sorted by trace name).
-    let mut acc_names: Vec<&String> = sweep.coupler_accelerations.keys().collect();
-    acc_names.sort();
-    for name in &acc_names {
-        headers.push(format!("{}_acceleration_m_s2", name));
+    for name in sorted_keys(&sweep.coupler_accelerations) {
+        cols.push(col(
+            &format!("{}_acceleration_m_s2", name),
+            6,
+            &sweep.coupler_accelerations[name],
+        ));
     }
     // Toggle angles as a final informational column (sparse: only non-empty at toggle steps).
-    let has_toggles = !sweep.toggle_angles.is_empty();
-    if has_toggles {
-        headers.push("toggle_angle_deg".to_string());
+    let toggle_series: Vec<f64> = sweep
+        .angles_deg
+        .iter()
+        .map(|angle| {
+            if sweep.toggle_angles.iter().any(|ta| (ta - angle).abs() < 1e-6) {
+                *angle
+            } else {
+                f64::NAN
+            }
+        })
+        .collect();
+    if !sweep.toggle_angles.is_empty() {
+        cols.push(Col {
+            header: "toggle_angle_deg".to_string(),
+            decimals: 4,
+            series: &toggle_series,
+            blank_nan: true,
+        });
     }
+
+    let mut headers = vec!["angle_deg".to_string()];
+    headers.extend(cols.iter().map(|c| c.header.clone()));
     writeln!(out, "{}", headers.join(","))?;
 
-    // Data rows
     for (i, angle) in sweep.angles_deg.iter().enumerate() {
         let mut row = vec![format!("{:.4}", angle)];
-        for id in &body_ids {
-            let val = sweep.body_angles[*id].get(i).copied().unwrap_or(f64::NAN);
-            row.push(format!("{:.6}", val));
-        }
-        if let Some(ref ta) = sweep.transmission_angles {
-            row.push(format!("{:.4}", ta.get(i).copied().unwrap_or(f64::NAN)));
-        }
-        if let Some(ref dt) = sweep.driver_torques {
-            row.push(format!("{:.6}", dt.get(i).copied().unwrap_or(f64::NAN)));
-        }
-        if has_ma {
-            let ma = sweep.mechanical_advantage.get(i).copied().unwrap_or(f64::NAN);
-            row.push(format!("{:.6}", ma));
-        }
-        if has_energy {
-            row.push(format!("{:.6}", sweep.kinetic_energy.get(i).copied().unwrap_or(f64::NAN)));
-            row.push(format!("{:.6}", sweep.potential_energy.get(i).copied().unwrap_or(f64::NAN)));
-            row.push(format!("{:.6}", sweep.total_energy.get(i).copied().unwrap_or(f64::NAN)));
-        }
-        if has_inv_dyn {
-            row.push(format!("{:.6}", sweep.inverse_dynamics_torques.get(i).copied().unwrap_or(f64::NAN)));
-        }
-        if has_actuator
-            && let Some(ref forces) = sweep.actuator_forces {
-                row.push(format!("{:.6}", forces.get(i).copied().unwrap_or(f64::NAN)));
-            }
-        if has_actuator_id
-            && let Some(ref forces) = sweep.actuator_forces_id {
-                row.push(format!("{:.6}", forces.get(i).copied().unwrap_or(f64::NAN)));
-            }
-        if has_actuator_len
-            && let Some(ref lengths) = sweep.actuator_lengths {
-                row.push(format!("{:.6}", lengths.get(i).copied().unwrap_or(f64::NAN)));
-            }
-        if has_actuator_speed
-            && let Some(ref speeds) = sweep.actuator_speeds {
-                row.push(format!("{:.6}", speeds.get(i).copied().unwrap_or(f64::NAN)));
-            }
-        if has_actuator_power
-            && let Some(ref power) = sweep.actuator_power {
-                row.push(format!("{:.6}", power.get(i).copied().unwrap_or(f64::NAN)));
-            }
-        if has_actuator_power_id
-            && let Some(ref power) = sweep.actuator_power_id {
-                row.push(format!("{:.6}", power.get(i).copied().unwrap_or(f64::NAN)));
-            }
-        if has_output_force
-            && let Some(ref forces) = sweep.output_forces {
-                row.push(format!("{:.6}", forces.get(i).copied().unwrap_or(f64::NAN)));
-            }
-        for jid in &reaction_ids {
-            let val = sweep.joint_reaction_magnitudes[*jid]
-                .get(i)
-                .copied()
-                .unwrap_or(f64::NAN);
-            row.push(format!("{:.6}", val));
-        }
-        for name in &vel_names {
-            let val = sweep.coupler_velocities[*name]
-                .get(i)
-                .copied()
-                .unwrap_or(f64::NAN);
-            row.push(format!("{:.6}", val));
-        }
-        for name in &acc_names {
-            let val = sweep.coupler_accelerations[*name]
-                .get(i)
-                .copied()
-                .unwrap_or(f64::NAN);
-            row.push(format!("{:.6}", val));
-        }
-        if has_toggles {
-            // Toggle angles are sparse: emit the value only if this angle is a toggle.
-            let angle_val = *angle;
-            let is_toggle = sweep.toggle_angles.iter().any(|ta| (ta - angle_val).abs() < 1e-6);
-            if is_toggle {
-                row.push(format!("{:.4}", angle_val));
-            } else {
+        for c in &cols {
+            let val = c.series.get(i).copied().unwrap_or(f64::NAN);
+            if c.blank_nan && val.is_nan() {
                 row.push(String::new());
+            } else {
+                row.push(format!("{:.*}", c.decimals, val));
             }
         }
         writeln!(out, "{}", row.join(","))?;
@@ -574,6 +515,29 @@ mod tests {
         }
 
         let _ = std::fs::remove_file(&path);
+    }
+
+    /// Pins the full angle-sweep CSV (every optional column present, one
+    /// series shorter than the angle axis, one toggle angle) byte for byte.
+    #[test]
+    fn sweep_csv_all_columns_pinned() {
+        let mut sweep = test_sweep_data();
+        sweep.actuator_forces = Some(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
+        sweep.actuator_forces_id = Some(vec![1.5, 2.5, 3.5, 4.5, 5.5]);
+        sweep.actuator_lengths = Some(vec![0.1, 0.2, 0.3, 0.4, 0.5]);
+        sweep.actuator_speeds = Some(vec![0.01, 0.02, 0.03, 0.04, 0.05]);
+        sweep.actuator_power = Some(vec![10.0, 20.0, 30.0, 40.0, 50.0]);
+        sweep.actuator_power_id = Some(vec![11.0, 21.0, 31.0, 41.0]); // short: NaN pad
+        sweep.output_forces = Some(vec![100.0, 200.0, 300.0, 400.0, 500.0]);
+        sweep.toggle_angles = vec![90.0];
+        let csv = generate_sweep_csv_string(&sweep).expect("string export");
+        let expected = "angle_deg,crank_theta_deg,rocker_theta_deg,transmission_angle_deg,driver_torque_Nm,mechanical_advantage,kinetic_energy_J,potential_energy_J,total_energy_J,inverse_dynamics_torque_Nm,actuator_force_N,actuator_force_id_N,actuator_length_m,actuator_speed_m_s,actuator_power_W,actuator_power_id_W,output_force_N,J1_reaction_N,J2_reaction_N,coupler.tip_velocity_m_s,coupler.tip_acceleration_m_s2,toggle_angle_deg\n\
+0.0000,0.000000,30.000000,80.0000,1.000000,0.500000,0.100000,0.500000,0.600000,1.200000,1.000000,1.500000,0.100000,0.010000,10.000000,11.000000,100.000000,5.000000,3.000000,0.500000,1.000000,\n\
+90.0000,90.000000,45.000000,75.0000,1.500000,0.450000,0.200000,0.400000,0.600000,1.800000,2.000000,2.500000,0.200000,0.020000,20.000000,21.000000,200.000000,7.500000,4.500000,0.800000,1.500000,90.0000\n\
+180.0000,180.000000,60.000000,90.0000,0.500000,0.600000,0.300000,0.300000,0.600000,0.600000,3.000000,3.500000,0.300000,0.030000,30.000000,31.000000,300.000000,6.000000,3.500000,0.600000,1.200000,\n\
+270.0000,270.000000,45.000000,105.0000,-0.500000,0.550000,0.200000,0.400000,0.600000,-0.400000,4.000000,4.500000,0.400000,0.040000,40.000000,41.000000,400.000000,8.000000,5.000000,0.700000,1.300000,\n\
+360.0000,360.000000,30.000000,80.0000,1.000000,0.500000,0.100000,0.500000,0.600000,1.200000,5.000000,5.500000,0.500000,0.050000,50.000000,NaN,500.000000,5.000000,3.000000,0.500000,1.000000,\n";
+        assert_eq!(csv.replace("\r\n", "\n"), expected);
     }
 
     #[test]
