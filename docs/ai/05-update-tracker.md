@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - The browser build's shortcut help no longer lists Ctrl+S and Ctrl+Shift+S (audit LGS-03; branch audit/2026-11-16-section-a)
+- What changed: gui/mod.rs builds the shortcut help rows in shortcut_rows(browser); the window passes cfg!(target_arch = "wasm32") and the two save rows are dropped in the browser build, where handle_keyboard_shortcuts has no handler for them (it is feature = "native"). Not changed: the File menu button labels in gui/menu_bar.rs still say Ctrl+S (outside the finding; the menu's Save is a different path in the browser).
+- Tests: shortcut_help_lists_save_rows_only_outside_the_browser (red first: did not compile, no builder). The wasm32 branch itself is not run natively; the test passes browser = true.
+
 ## 2026-11-16 - Renaming a link is one undo step and marks the file changed (audit LGC-12; branch audit/2026-11-16-section-a)
 - What changed: property_panel/pending_edits.rs UpdateLabel calls push_undo before it edits the blueprint and mechanism (undo step, dirty = true); the sweep recompute stays (the weight breakdown shows the names). property_panel/mod.rs keeps the text being typed in egui memory and sends one UpdateLabel when the field loses focus with changed text (Esc drops it), as the weight name field does, so a rename is one undo step, not one per keystroke. Readers checked: UpdateLabel has one producer (the link editor label field).
 - Tests: rename_link_is_one_undo_step_and_marks_dirty (red first: undo depth did not grow).
