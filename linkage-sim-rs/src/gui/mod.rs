@@ -68,7 +68,7 @@ impl LinkageApp {
     /// Called from the WASM entry point when a `?m=` parameter was decoded.
     pub fn load_shared_mechanism(&mut self, json_str: &str) {
         if let Err(e) = self.state.load_from_json_str(json_str) {
-            log::error!("Failed to load shared mechanism: {}", e);
+            self.state.report_failure("Shared link failed to load", &e);
         } else {
             self.state.pending_fit_to_view = true;
             self.state.status_message = Some("Loaded mechanism from shared URL".to_string());
@@ -1249,7 +1249,7 @@ fn handle_keyboard_shortcuts(ctx: &egui::Context, state: &mut AppState) {
     if ctx.input(|i| i.modifiers.command && i.key_pressed(egui::Key::S) && !i.modifiers.shift) {
         if let Some(path) = state.last_save_path.clone() {
             if let Err(e) = state.save_to_file(&path) {
-                log::error!("Quick save failed: {}", e);
+                state.report_failure("Save failed", &e);
             }
         } else if let Some(path) = rfd::FileDialog::new()
             .add_filter("JSON", &["json"])
@@ -1257,7 +1257,7 @@ fn handle_keyboard_shortcuts(ctx: &egui::Context, state: &mut AppState) {
             .save_file()
         {
             if let Err(e) = state.save_to_file(&path) {
-                log::error!("Save failed: {}", e);
+                state.report_failure("Save failed", &e);
             }
         }
     }
@@ -1270,7 +1270,7 @@ fn handle_keyboard_shortcuts(ctx: &egui::Context, state: &mut AppState) {
             .save_file()
         {
             if let Err(e) = state.save_to_file(&path) {
-                log::error!("Save As failed: {}", e);
+                state.report_failure("Save failed", &e);
             }
         }
     }

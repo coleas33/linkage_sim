@@ -93,6 +93,15 @@ impl AppState {
         Ok(())
     }
 
+    /// Log a failed open/save/load and show it in the status line, where the success
+    /// message goes, so a failure is not mistaken for success. (what reads like
+    /// "Save failed".)
+    pub fn report_failure(&mut self, what: &str, err: &str) {
+        log::error!("{}: {}", what, err);
+        self.status_message = Some(format!("{}: {}", what, err));
+        self.status_message_time = 5.0;
+    }
+
     /// Perform periodic autosave to a temp file alongside the last save path.
     ///
     /// Called from the update loop with accumulated dt. Saves every 30 seconds
@@ -724,6 +733,18 @@ fn wasm_now_secs() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failed_save_is_shown_in_the_status_line() {
+        let mut state = AppState::default();
+        let dir = std::env::temp_dir().join("lsim_lgs10_no_such_dir");
+        let err = state.save_to_file(&dir.join("x.json")).unwrap_err();
+        state.report_failure("Save failed", &err);
+        let msg = state.status_message.clone().expect("a failed save must set the status line");
+        assert!(msg.starts_with("Save failed: "), "{msg}");
+        assert!(msg.contains(&err), "{msg}");
+        assert!(state.status_message_time > 0.0);
+    }
 
     #[test]
     fn share_url_encode_decode_roundtrip() {
