@@ -4,6 +4,7 @@ use nalgebra::DVector;
 
 use crate::core::body::{make_bar, make_ground, Body};
 use crate::core::mechanism::Mechanism;
+use crate::gui::state::driver_angle_to_time;
 use crate::solver::kinematics::solve_position;
 
 use super::fourbar::build_standard_fourbar;
@@ -979,7 +980,7 @@ pub(super) fn custom_6bar_from_json(json: &str) -> Result<(Mechanism, DVector<f6
     let try_angles_deg: [f64; 8] = [217.0, 180.0, 200.0, 240.0, 150.0, 270.0, 90.0, 0.0];
     for angle_deg in try_angles_deg {
         let angle_rad = angle_deg.to_radians();
-        let t = (angle_rad - theta_0) / omega;
+        let t = driver_angle_to_time(angle_rad, theta_0, omega);
         if let Ok(result) = solve_position(&mech, &q0, t, 1e-10, 100)
             && result.converged {
                 // Continue from this angle to t=0 for a clean starting state.

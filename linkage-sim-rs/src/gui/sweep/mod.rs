@@ -10,6 +10,7 @@ pub use weights::{ShareBasis, WeightBreakdown};
 use weights::{required_totals, WeightBreakdownBuilder};
 
 use nalgebra::DVector;
+use crate::gui::state::driver_angle_to_time;
 use std::collections::HashMap;
 
 use crate::analysis::coupler::eval_coupler_point;
@@ -276,17 +277,10 @@ pub(crate) fn trace_key(body_id: &str, point_name: &str) -> String {
 /// The driver time of sweep sample `x_value` (degrees in angle mode, metres
 /// in stroke mode): the inverse of the driver's `f(t) = theta_0 + omega * t`.
 /// In linear mode `omega` is the velocity and `theta_0` the start length; a
-/// stopped linear driver gives 0.
+/// stopped driver (either mode) gives 0.
 pub(crate) fn sweep_time(x_value: f64, is_stroke: bool, omega: f64, theta_0: f64) -> f64 {
-    if is_stroke {
-        if omega.abs() > f64::EPSILON {
-            (x_value - theta_0) / omega
-        } else {
-            0.0
-        }
-    } else {
-        (x_value.to_radians() - theta_0) / omega
-    }
+    let angle = if is_stroke { x_value } else { x_value.to_radians() };
+    driver_angle_to_time(angle, theta_0, omega)
 }
 
 pub(crate) fn compute_sweep_data(
@@ -1397,6 +1391,17 @@ mod tests {
     use super::*;
     use crate::gui::samples::{build_sample, SampleMechanism};
     use crate::gui::state::AppState;
+
+    /// LGS-04 follow-up: angle mode divided by omega unguarded, so a stopped
+    /// driver gave inf (or NaN at angle == theta_0). Loading clamps omega to
+    /// 0.01, so this is reached only by direct callers such as compute_sweep_data.
+    #[test]
+    fn sweep_time_zero_omega_is_zero_in_both_modes() {
+        assert_eq!(sweep_time(90.0, false, 0.0, 0.5), 0.0);
+        assert_eq!(sweep_time(0.5_f64.to_degrees(), false, 0.0, 0.5), 0.0);
+        assert_eq!(sweep_time(0.3, true, 0.0, 0.1), 0.0);
+        assert_eq!(sweep_time(180.0, false, 2.0, 0.0), std::f64::consts::FRAC_PI_2);
+    }
 
     #[test]
     fn detect_fourbar_links_returns_some_for_fourbar() {

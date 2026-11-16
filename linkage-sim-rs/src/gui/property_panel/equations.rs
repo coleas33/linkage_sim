@@ -17,7 +17,7 @@ use eframe::egui;
 use crate::gui::eq_rendering::{
     kind_at, lambda_string, n_constraints, residual_norm_string, symbolic_form, EqKind,
 };
-use crate::gui::state::AppState;
+use crate::gui::state::{driver_angle_to_time, AppState};
 use crate::solver::assembly::assemble_constraints;
 use crate::solver::statics::solve_statics;
 
@@ -159,22 +159,14 @@ fn compute_t_mech(state: &AppState) -> f64 {
     use crate::gui::state::DriverKind;
     match state.driver_kind {
         DriverKind::Revolute { angle: _, omega, theta_0 } => {
-            if omega.abs() > f64::EPSILON {
-                (state.driver_angle - theta_0) / omega
-            } else {
-                0.0
-            }
+            driver_angle_to_time(state.driver_angle, theta_0, omega)
         }
         DriverKind::Linear {
             stroke,
             velocity,
             length_0,
         } => {
-            if velocity.abs() > f64::EPSILON {
-                (stroke - length_0) / velocity
-            } else {
-                0.0
-            }
+            driver_angle_to_time(stroke, length_0, velocity)
         }
         DriverKind::None => 0.0,
     }
