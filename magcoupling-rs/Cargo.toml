@@ -34,13 +34,11 @@ gui = [
 app = [
     "gui",
     "dep:eframe",
-    "dep:log",
     "dep:env_logger",
     "dep:rfd",
     "dep:wasm-bindgen",
     "dep:wasm-bindgen-futures",
     "dep:web-sys",
-    "dep:js-sys",
 ]
 # TEST-ONLY. Exposes the switch that turns the approved workbook corrections
 # (the deviation registry) off, so parity and differential tests compare
