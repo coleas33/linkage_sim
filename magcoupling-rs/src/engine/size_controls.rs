@@ -31,10 +31,10 @@
 
 use std::f64::consts::PI;
 
-use super::api::{DesignInputs, compute_all};
+use super::api::{DesignInputs, compute_all, input_meta};
 use super::deviations::Deviations;
 use super::housing::axial_housing;
-use super::meta::{SliderRange, input_rows};
+use super::meta::SliderRange;
 use super::model::blocks_fit;
 
 /// Current assembly dimensions and the ranges attainable with the other inputs fixed.
@@ -120,12 +120,7 @@ fn geometry(inputs: &DesignInputs, minimum_diameter: Option<f64>) -> Option<Geom
         return None;
     }
     inputs.validate().ok()?;
-    let rows = input_rows(inputs);
-    let input_range = |path: &str| {
-        rows.iter()
-            .find(|row| row.path == path)
-            .and_then(|row| row.meta.range)
-    };
+    let input_range = |path: &str| input_meta(path).and_then(|meta| meta.range);
     // Polygon geometry is meaningful for the even pole counts offered by the existing UI.
     let pole_range = input_range("coupling.npole")?;
     let poles = inputs.coupling.npole as f64;
