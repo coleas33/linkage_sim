@@ -235,7 +235,7 @@ pub fn expand_compound_force(
         let found = mech
             .bodies()
             .get(body_id)
-            .map_or(false, |b| b.attachment_points.contains_key(pt_ref));
+            .is_some_and(|b| b.attachment_points.contains_key(pt_ref));
         if !found {
             return Err(format!(
                 "Cannot expand force {force_index}: no attachment point '{pt_ref}' on body '{body_id}'"

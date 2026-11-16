@@ -71,8 +71,9 @@ pub fn check_grashof(
     ];
 
     let mut sorted_lengths = [ground_length, crank_length, coupler_length, rocker_length];
-    // A NaN length compares Equal (as in motor_sizing.rs); its sums are NaN, so it classifies NonGrashof.
-    sorted_lengths.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    // total_cmp is a total order (a NaN-as-Equal comparator may panic in sort since Rust 1.81);
+    // a NaN length makes the sums NaN, so it classifies NonGrashof.
+    sorted_lengths.sort_by(f64::total_cmp);
 
     let s = sorted_lengths[0];
     let l = sorted_lengths[3];
@@ -85,7 +86,7 @@ pub fn check_grashof(
     // Find which link name is shortest
     let shortest_is = named
         .iter()
-        .min_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+        .min_by(|a, b| a.1.total_cmp(&b.1))
         .unwrap()
         .0;
 
