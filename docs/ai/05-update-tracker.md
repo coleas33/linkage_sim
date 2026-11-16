@@ -5,6 +5,14 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - A cosine-stroke linear driver saves and loads as a cosine driver (audit LFA-01; branch audit/2026-11-16-section-a)
+- What changed: LinearDriverJson (io/schema.rs) has an optional cosine_stroke [min, max] field (serde default, skipped when absent). to_json writes it for DriverMeta::CosineStroke (length_0 = initial length, velocity kept for old readers); from_json builds cosine_linear_driver when it is present and constant_velocity_linear_driver otherwise, so old files load as before. Owner decision (controller): finish the feature, not delete it. Readers checked: the only other LinearDriverJson builder is gui/state/driver_ops.rs (sets None).
+- Tests: cosine_linear_driver_round_trips_through_json (red first: loaded back as LinearLength). Commit c855eb5.
+
+## 2026-11-16 - A compound force that cannot be expanded leaves no orphan bodies (audit LFA-07; branch audit/2026-11-16-section-a)
+- What changed: forces/compound.rs expand_compound_force resolves both end references and checks the body and attachment point exist before it adds the cylinder and rod, and returns an error otherwise. from_json already logs the error and adds the original force, now with no jointless bodies left behind. Readers checked: from_json is the only caller outside tests.
+- Tests: failed_expansion_leaves_no_orphan_bodies (red first: force_0_cyl was left in the mechanism). Commit 7fbeb5e.
+
 ## 2026-11-16 - The Health panel shows toggle and over-80% positions the way the plots do (audit LGC-16; branch audit/2026-11-16-section-a)
 - What changed: new plot_panel::format_sweep_x (reuses sweep_x_to_display) shifts a body-frame sweep x by the driver display offset in angle mode, converts to the display angle unit and labels it deg, rad or mm (stroke mode: metres to mm, no offset). Health toggle points and the Exceeding 80% range (gui/property_panel/health.rs) call it instead of printing raw values with a degree sign. Readers checked: has_toggles_in_range still compares in body frame; the plots and SweepData are unchanged.
 - Tests: health_x_text_shifts_by_display_offset_and_labels_units (red first: format_sweep_x stubbed to the old format, left 120 deg, right 150 deg). Commit 5d81637.
