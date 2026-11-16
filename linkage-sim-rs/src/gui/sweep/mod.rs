@@ -788,10 +788,7 @@ pub(crate) fn compute_sweep_data_with_weights(
                 if let Some(reactions) = &pending_reactions {
                     for jr in reactions {
                         if jr.n_equations > 1 {
-                            reaction_data
-                                .entry(jr.joint_id.clone())
-                                .or_insert_with(|| Vec::with_capacity(capacity))
-                                .push(jr.resultant);
+                            push_reaction(&mut reaction_data, &jr.joint_id, jr.resultant, data.angles_deg.len() - 1);
                         }
                     }
                 } else {
@@ -913,6 +910,16 @@ fn solve_sweep_positions(
     }
 
     positions
+}
+
+/// Append one joint's reaction at the current sample. A joint seen for the
+/// first time after `n_prior` failed samples is padded with NaN so every
+/// series stays aligned with `angles_deg`.
+fn push_reaction(reaction_data: &mut HashMap<String, Vec<f64>>, joint_id: &str, value: f64, n_prior: usize) {
+    reaction_data
+        .entry(joint_id.to_string())
+        .or_insert_with(|| vec![f64::NAN; n_prior])
+        .push(value);
 }
 
 /// Push NaN for all data channels at a given angle (solver failure case).
@@ -1332,10 +1339,7 @@ pub fn compute_trajectory(
         if let Some(reactions) = &pending_reactions {
             for jr in reactions {
                 if jr.n_equations > 1 {
-                    reaction_data
-                        .entry(jr.joint_id.clone())
-                        .or_insert_with(|| Vec::with_capacity(n_samples))
-                        .push(jr.resultant);
+                    push_reaction(&mut reaction_data, &jr.joint_id, jr.resultant, data.angles_deg.len() - 1);
                 }
             }
         } else {
@@ -2276,6 +2280,25 @@ mod tests {
         }
         for deg in (0..=24).chain(102..=258).chain(337..=360) {
             assert!(rocker[deg].is_nan(), "sample {} deg should be unreachable", deg);
+        }
+    }
+
+    /// LGE-01: a joint's reaction series is created at the first sample that
+    /// solves. When the early samples fail, the series was shorter than
+    /// `angles_deg`, so every later reaction sat at the wrong angle.
+    #[test]
+    fn sweep_reaction_series_stay_aligned_when_first_sample_fails() {
+        let (mech, q60) = build_rocker_fixture(0.08, 0.03, 60.0);
+        let (data, _) = compute_sweep_data(&mech, &q60, 1.0, 0.0, 9.81, None);
+        let n = data.angles_deg.len();
+        let rocker = &data.body_angles["rocker"];
+        assert!(rocker[0].is_nan(), "0 deg must be unreachable for this fixture");
+        assert!(!data.joint_reaction_magnitudes.is_empty());
+        for (id, series) in &data.joint_reaction_magnitudes {
+            assert_eq!(series.len(), n, "joint {id}: reaction series length");
+            for (k, a) in rocker.iter().enumerate() {
+                assert_eq!(series[k].is_nan(), a.is_nan(), "joint {id} sample {k}: reaction NaN iff the pose failed");
+            }
         }
     }
 
