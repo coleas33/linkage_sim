@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - The panel's clamp-text allowlist is asserted empty with its reason (audit MGP-11; branch audit/2026-11-16-section-c)
+- What changed: in magcoupling-rs/src/gui/panel.rs the test `every_text_the_panel_shows_has_glyphs_and_none_names_the_paused_clamp` keeps its `ALLOWED` hook (ruling 11: no text may name the paused clamp) and now asserts it is empty, with a message that an entry needs the owner's say and the assertion changes with that ruling.
+- Tests: shown to bite: one entry in ALLOWED fails the test with "ALLOWED holds a text that may name the paused clamp". Reverted.
+
 ## 2026-11-16 - The ignore guard's name and doc say the six files it checks (audit MT-06; branch audit/2026-11-16-section-c)
 - What changed: magcoupling-rs/tests/explain.rs `only_the_review_tools_are_ignored` is now `in_the_six_files_that_hold_them_only_the_review_tools_are_ignored`, and its doc says it reads exactly the six listed sources. Scope is not widened (a directory walk would give up the compile-time `include_str!` list). The README, 03-structure.yaml and 04-memory.yaml follow the rename.
 - Tests: shown to bite: a test with an ignore attribute appended to tests/explain.rs fails the guard ("ignored checks: [tests/explain.rs: zz_extra]"). Removed.
