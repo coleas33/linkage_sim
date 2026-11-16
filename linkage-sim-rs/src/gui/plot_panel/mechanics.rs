@@ -8,7 +8,7 @@ use crate::gui::sweep::SweepData;
 
 use super::{
     detect_plot_click, draw_angle_series_with_range, draw_range_boundary_markers,
-    draw_toggle_markers, series_colors, with_default_x_bounds, x_axis_label_for_sweep,
+    draw_toggle_markers, reference_line_x_span, series_colors, with_default_x_bounds, x_axis_label_for_sweep,
 };
 
 pub(super) fn draw_body_angles(
@@ -95,8 +95,8 @@ pub(super) fn draw_transmission_angle(
         return None;
     };
 
-    // The x-axis span in display units (0 to 2pi).
-    let x_max = units.angle(2.0 * std::f64::consts::PI);
+    // The reference lines span the plotted x range.
+    let (x_min, x_max) = reference_line_x_span(sweep, units);
 
     let plot = Plot::new("transmission_angle_plot")
         .allow_zoom(true)
@@ -128,8 +128,8 @@ pub(super) fn draw_transmission_angle(
         );
 
         // Ideal zone: 40-140 degrees (y-axis stays in degrees always).
-        let ideal_low: PlotPoints = [[0.0, 40.0], [x_max, 40.0]].into_iter().collect();
-        let ideal_high: PlotPoints = [[0.0, 140.0], [x_max, 140.0]].into_iter().collect();
+        let ideal_low: PlotPoints = [[x_min, 40.0], [x_max, 40.0]].into_iter().collect();
+        let ideal_high: PlotPoints = [[x_min, 140.0], [x_max, 140.0]].into_iter().collect();
         plot_ui.line(
             Line::new("Poor threshold (40 deg)", ideal_low)
                 .color(egui::Color32::from_rgba_premultiplied(200, 60, 60, 120))
@@ -144,7 +144,7 @@ pub(super) fn draw_transmission_angle(
         );
 
         // Text annotations inside the plot labelling the poor output zones.
-        let text_x = x_max * 0.5;
+        let text_x = (x_min + x_max) * 0.5;
         plot_ui.text(
             PlotText::new(
                 "poor_zone_low",
@@ -225,8 +225,8 @@ pub(super) fn draw_mechanical_advantage(
         );
 
         // Unity reference line (MA = 1).
-        let x_max = units.angle(2.0 * std::f64::consts::PI);
-        let unity: PlotPoints = [[0.0, 1.0], [x_max, 1.0]].into_iter().collect();
+        let (x_min, x_max) = reference_line_x_span(sweep, units);
+        let unity: PlotPoints = [[x_min, 1.0], [x_max, 1.0]].into_iter().collect();
         plot_ui.line(
             Line::new("MA = 1", unity)
                 .color(egui::Color32::from_rgba_premultiplied(200, 200, 200, 80))

@@ -49,8 +49,8 @@
 //! The space claim is not a condition: a solution may exceed it, and the housing results show
 //! by how much (spec A1: a red callout, not a constraint).
 
-use super::api::{DesignInputs, DesignResults, compute_all};
-use super::meta::{SetError, SliderRange, input_rows};
+use super::api::{DesignInputs, DesignResults, compute_all, input_meta};
+use super::meta::{SetError, SliderRange};
 use super::model::{blocks_fit, end_effect_in_range};
 
 /// Equal cells of the coarse scan over a continuous variable's search range. No coarse pass
@@ -93,10 +93,8 @@ impl FreeVariable {
 
     /// The variable's slider range, read from its input's metadata (one source).
     pub fn range(self) -> SliderRange {
-        input_rows(&DesignInputs::default())
-            .into_iter()
-            .find(|row| row.path == self.path())
-            .and_then(|row| row.meta.range)
+        input_meta(self.path())
+            .and_then(|meta| meta.range)
             .expect("every free variable is an input with a slider (tests/sizing.rs)")
     }
 

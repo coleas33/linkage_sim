@@ -26,6 +26,7 @@ use crate::core::mechanism::Mechanism;
 use crate::core::state::GROUND_ID;
 use crate::gui::eq_rendering;
 use super::escape::html_escape;
+use super::svg::padded_world_bounds;
 
 /// SVG canvas size — drawing area (top) + legend area (bottom).
 ///
@@ -68,65 +69,8 @@ pub fn generate_schematic_svg(
     let state = mech.state();
     let bodies = mech.bodies();
 
-    // ── 1. Compute world bounding box from all attachment points ──────────
-    let mut min_x = f64::MAX;
-    let mut min_y = f64::MAX;
-    let mut max_x = f64::MIN;
-    let mut max_y = f64::MIN;
-
-    for (body_id, body) in bodies.iter() {
-        for pt_local in body.attachment_points.values() {
-            let g = state.body_point_global(body_id, pt_local, q);
-            min_x = min_x.min(g.x);
-            min_y = min_y.min(g.y);
-            max_x = max_x.max(g.x);
-            max_y = max_y.max(g.y);
-        }
-    }
-    // Include linear-driver attachment points so they don't fall outside the box.
-    for drv in mech.linear_drivers() {
-        let pa = drv.point_a();
-        let pb = drv.point_b();
-        let g_a = state.body_point_global(
-            drv.body_i_id(),
-            &nalgebra::Vector2::new(pa[0], pa[1]),
-            q,
-        );
-        let g_b = state.body_point_global(
-            drv.body_j_id(),
-            &nalgebra::Vector2::new(pb[0], pb[1]),
-            q,
-        );
-        min_x = min_x.min(g_a.x).min(g_b.x);
-        min_y = min_y.min(g_a.y).min(g_b.y);
-        max_x = max_x.max(g_a.x).max(g_b.x);
-        max_y = max_y.max(g_a.y).max(g_b.y);
-    }
-
-    if min_x == f64::MAX || max_x == f64::MIN {
-        return Err("No attachment points found in mechanism".to_string());
-    }
-
-    // Guard degenerate (zero-size) bounding boxes.
-    if (max_x - min_x).abs() < 1e-12 {
-        let cx = 0.5 * (min_x + max_x);
-        min_x = cx - 0.5;
-        max_x = cx + 0.5;
-    }
-    if (max_y - min_y).abs() < 1e-12 {
-        let cy = 0.5 * (min_y + max_y);
-        min_y = cy - 0.5;
-        max_y = cy + 0.5;
-    }
-
-    // Pad the bounding box so labels don't get clipped against the drawing region.
-    let pad_x = (max_x - min_x) * 0.20;
-    let pad_y = (max_y - min_y) * 0.20;
-    min_x -= pad_x;
-    max_x += pad_x;
-    min_y -= pad_y;
-    max_y += pad_y;
-
+    // ── 1. Padded world bounding box (labels must not clip the drawing region) ──
+    let (min_x, min_y, max_x, max_y) = padded_world_bounds(mech, q, 0.20)?;
     let world_w = max_x - min_x;
     let world_h = max_y - min_y;
     let region_w = DRAW_X_MAX - DRAW_X_MIN;

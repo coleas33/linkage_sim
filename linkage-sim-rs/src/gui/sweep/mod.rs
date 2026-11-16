@@ -4,12 +4,13 @@ mod fourbar;
 mod motion_profile;
 mod weights;
 
-pub(crate) use fourbar::detect_fourbar_links;
+pub(crate) use fourbar::{detect_fourbar, detect_fourbar_links};
 pub(crate) use motion_profile::apply_motion_profile;
 pub use weights::{ShareBasis, WeightBreakdown};
 use weights::{required_totals, WeightBreakdownBuilder};
 
 use nalgebra::DVector;
+use crate::gui::state::driver_angle_to_time;
 use std::collections::HashMap;
 
 use crate::analysis::coupler::eval_coupler_point;
@@ -92,7 +93,9 @@ impl SweepMode {
 /// to avoid recomputing every frame. Used by the plot panel and canvas.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SweepData {
-    /// Driver angles in degrees at which solutions were obtained.
+    /// X-axis value of each solved sample: driver angle in degrees (Angle
+    /// mode), actuator stroke in metres (Stroke mode) or sample time in
+    /// seconds (Trajectory mode; empty only in `empty_trajectory_sweep_data`).
     pub angles_deg: Vec<f64>,
     /// Body orientation angles (degrees) keyed by body ID.
     pub body_angles: HashMap<String, Vec<f64>>,
@@ -241,8 +244,11 @@ impl SweepData {
     /// driver angle resolve to the same sample; an exact tie (0 and 360 in a
     /// full-revolution sweep) resolves to the first sample. Non-finite
     /// samples are skipped. `None` when `driver_value` is non-finite or the
-    /// sweep has no finite samples (trajectory sweeps leave `angles_deg`
-    /// empty).
+    /// sweep has no finite samples (only the placeholder from
+    /// `empty_trajectory_sweep_data`; a computed trajectory sweep fills
+    /// `angles_deg` with sample times in seconds). Do not call this for a
+    /// trajectory sweep: it would compare seconds with a driver angle in
+    /// degrees and return a plausible but meaningless index.
     pub fn index_at_driver(&self, driver_value: f64) -> Option<usize> {
         if !driver_value.is_finite() {
             return None;
@@ -276,17 +282,10 @@ pub(crate) fn trace_key(body_id: &str, point_name: &str) -> String {
 /// The driver time of sweep sample `x_value` (degrees in angle mode, metres
 /// in stroke mode): the inverse of the driver's `f(t) = theta_0 + omega * t`.
 /// In linear mode `omega` is the velocity and `theta_0` the start length; a
-/// stopped linear driver gives 0.
+/// stopped driver (either mode) gives 0.
 pub(crate) fn sweep_time(x_value: f64, is_stroke: bool, omega: f64, theta_0: f64) -> f64 {
-    if is_stroke {
-        if omega.abs() > f64::EPSILON {
-            (x_value - theta_0) / omega
-        } else {
-            0.0
-        }
-    } else {
-        (x_value.to_radians() - theta_0) / omega
-    }
+    let angle = if is_stroke { x_value } else { x_value.to_radians() };
+    driver_angle_to_time(angle, theta_0, omega)
 }
 
 pub(crate) fn compute_sweep_data(
@@ -1398,6 +1397,17 @@ mod tests {
     use crate::gui::samples::{build_sample, SampleMechanism};
     use crate::gui::state::AppState;
 
+    /// LGS-04 follow-up: angle mode divided by omega unguarded, so a stopped
+    /// driver gave inf (or NaN at angle == theta_0). Loading clamps omega to
+    /// 0.01, so this is reached only by direct callers such as compute_sweep_data.
+    #[test]
+    fn sweep_time_zero_omega_is_zero_in_both_modes() {
+        assert_eq!(sweep_time(90.0, false, 0.0, 0.5), 0.0);
+        assert_eq!(sweep_time(0.5_f64.to_degrees(), false, 0.0, 0.5), 0.0);
+        assert_eq!(sweep_time(0.3, true, 0.0, 0.1), 0.0);
+        assert_eq!(sweep_time(180.0, false, 2.0, 0.0), std::f64::consts::FRAC_PI_2);
+    }
+
     #[test]
     fn detect_fourbar_links_returns_some_for_fourbar() {
         let mut state = AppState::default();
@@ -1521,6 +1531,36 @@ mod tests {
             let count_off = state.sweep_data.as_ref().unwrap().angles_deg.len();
             assert_eq!(count_off, count_full, "Cycle {} OFF: expected {} angles, got {}", cycle, count_full, count_off);
         }
+    }
+
+    /// LGE-10: the sweep detector used to count attachment points, so a
+    /// coupler point or an extra ground reference point made a plain 4-bar
+    /// "not a 4-bar" (no transmission angle) while the report detected it.
+    /// One detector now serves both; lengths come from the joint anchors.
+    #[test]
+    fn detect_fourbar_ignores_extra_attachment_points() {
+        use crate::core::body::{make_bar, make_ground};
+        let ground = make_ground(&[("O2", 0.0, 0.0), ("O4", 0.038, 0.0), ("REF", 0.5, 0.5)]);
+        let crank = make_bar("crank", "A", "B", 0.01, 0.0, 0.0);
+        let mut coupler = make_bar("coupler", "B", "C", 0.04, 0.0, 0.0);
+        coupler.add_attachment_point("P", 0.02, 0.01).unwrap();
+        let rocker = make_bar("rocker", "C", "D", 0.03, 0.0, 0.0);
+        let mut mech = crate::core::mechanism::Mechanism::new();
+        for b in [ground, crank, coupler, rocker] {
+            mech.add_body(b).unwrap();
+        }
+        mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
+        mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
+        mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
+        mech.add_revolute_joint("J4", "rocker", "D", "ground", "O4").unwrap();
+        mech.add_constant_speed_driver("D1", "ground", "crank", 1.0, 0.0).unwrap();
+        mech.build().unwrap();
+
+        let (a, b, c, d) = detect_fourbar_links(&mech).expect("still a 4-bar");
+        assert!((a - 0.01).abs() < 1e-12);
+        assert!((b - 0.04).abs() < 1e-12);
+        assert!((c - 0.03).abs() < 1e-12);
+        assert!((d - 0.038).abs() < 1e-12);
     }
 
     #[test]

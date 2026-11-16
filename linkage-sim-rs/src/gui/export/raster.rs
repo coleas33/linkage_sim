@@ -97,6 +97,7 @@ pub fn generate_mechanism_gif_bytes(
     height: u32,
     frame_delay_cs: u16,
 ) -> Result<Vec<u8>, String> {
+    use crate::gui::state::driver_angle_to_time;
     use crate::solver::kinematics::solve_position;
     use gif::{Encoder, Frame, Repeat};
 
@@ -130,7 +131,7 @@ pub fn generate_mechanism_gif_bytes(
 
         for &i in &all_indices {
             let angle_rad = sweep.angles_deg[i].to_radians();
-            let t = (angle_rad - theta_0) / omega;
+            let t = driver_angle_to_time(angle_rad, theta_0, omega);
 
             match solve_position(mech, &q_guess, t, 1e-10, 50) {
                 Ok(result) if result.converged => {

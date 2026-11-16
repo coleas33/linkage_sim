@@ -217,21 +217,21 @@ The sure line fixes are in the fixed table. What is left needs new wording or a 
 
 ### G. Things that behave or read differently in two places (19)
 
-- **LGC-07** Two tabs both labelled "Actuator Force" in stroke mode.
+- **LGC-07** Two tabs both labelled "Actuator Force" in stroke mode. FIXED af964ed: the stroke-mode driver tab is now "Stroke Force (Static)".
 - **LGC-17** Force toolbar "Joint Torques" pairs the selected link with an arbitrary neighbour.
 - **LGC-11** Length units: three different conventions inside one property panel.
 - **LGC-20** Grid labels and hover tooltips ignore display units; Y grid labels lose sub-mm precision.
 - **LGC-14** Health and Diagnostics sections show the same facts twice with different thresholds, colours and wording.
-- **LGC-08** Reference lines span a hard-coded 0..360 x range.
+- **LGC-08** Reference lines span a hard-coded 0..360 x range. FIXED 4f670f8: reference lines span the sweep's own x range (reference_line_x_span).
 - **LGC-13** Parametric panel: five LinearActuator fields have no current-value lookup, and a dead comment. The check confirmed this only in part.
-- **LGE-10** Two four-bar detectors with different rules.
+- **LGE-10** Two four-bar detectors with different rules. FIXED 1d11528: one detector (sweep/fourbar.rs, the report's rule) serves the sweep and the report.
 - **LGE-16** DXF overlay drops lines that cross the view, and import silently skips unsupported entities.
-- **LGE-17** svg.rs mechanism SVG and schematic.rs repeat the bounding-box and scaling block with different rules.
-- **LGE-18** index_at_driver doc says trajectory sweeps leave angles_deg empty, but compute_trajectory fills it with sample times.
+- **LGE-17** svg.rs mechanism SVG and schematic.rs repeat the bounding-box and scaling block with different rules. FIXED a6afd9c: one padded_world_bounds helper (schematic's rules) in svg.rs, used by both.
+- **LGE-18** index_at_driver doc says trajectory sweeps leave angles_deg empty, but compute_trajectory fills it with sample times. FIXED 65fa63f: the index_at_driver and angles_deg docs now say what trajectory sweeps hold (doc only; no guard added).
 - **LCS-07** (the part not fixed) the cam profile named "Spline" is piecewise linear; its guards and an `if let Ok` disagree with that.
 - **LCS-15** Small inconsistencies between sibling APIs in body.rs and mechanism.rs.
 - **LFA-09** Actuator stroke limits need both ends set, which the field docs and one test do not say.
-- **LGS-18** The expression-driver editor applies on every keystroke and again on focus loss.
+- **LGS-18** The expression-driver editor applies on every keystroke and again on focus loss. FIXED 6634710: applies once when a box loses focus; Esc cancels; an unchanged edit pushes no undo step.
 - **MGP-06** A part or grade row says the same thing twice, in two different wordings.
 - **MGP-10** `minimum_diameter_mm` is cleared in three overlapping places. FIXED e68ae6a: a private replace_design clears it once for open, load and reset.
 - **MGV-01** The results table and the clamp tab draw the catalogue label; every other view draws the display label.
@@ -250,8 +250,8 @@ Nothing here was measured. Each is a place where the code does the same work mor
 - **LCS-09** Inverse-kinematics helpers repeat the singularity guard four times and the finite-difference path repeats its own solves; the analytic path the notes call faster is unused.
 - **LCS-10** (the part not fixed) an expression driver parses its formula again on every evaluation.
 - **LFA-08** Every force evaluation allocates several full-size vectors per element.
-- **MEX-01** Assumption helpers rebuild the defaults and the whole input schema on every call, and the GUI calls them every frame.
-- **MEC-03** slider ranges are re-read from a freshly built input table on every call; the GUI caches the same data.
+- **MEX-01** Assumption helpers rebuild the defaults and the whole input schema on every call, and the GUI calls them every frame. FIXED f674edc: the defaults and the schema are cached in OnceLocks (`api::workbook_defaults`, `api::input_meta`) and the helpers read those.
+- **MEC-03** slider ranges are re-read from a freshly built input table on every call; the GUI caches the same data. FIXED 7ac33da: `FreeVariable::range` and `size_controls::geometry` read the cached `api::input_meta`.
 - **MGG-02** the fix search recomputes the same moved designs and an unchanged baseline. The check confirmed this only in part.
 - **MGP-02** Under Auto the design shown and the solve key are rebuilt several times a frame. The check confirmed this only in part.
 - **MGP-03** Every drawn input row builds its tooltip strings each frame, hovered or not.
@@ -262,7 +262,7 @@ Nothing here was measured. Each is a place where the code does the same work mor
 
 You asked for repetition to be flagged hard. None of these was merged: each merge is a refactor, and a refactor is a judgment.
 
-- **LGS-04** The driver-angle to time mapping is written out five times in scope, and one copy lacks the zero-omega guard. More than repetition: the copies at `gui/state/mod.rs:1300` and `gui/state/file_io.rs:408, 423` divide by the driver speed without the zero guard the other copies have. FIXED f1a73d3: one `driver_angle_to_time` helper with the guard, used at all eight sites in gui/state.
+- **LGS-04** The driver-angle to time mapping is written out five times in scope, and one copy lacks the zero-omega guard. More than repetition: the copies at `gui/state/mod.rs:1300` and `gui/state/file_io.rs:408, 423` divide by the driver speed without the zero guard the other copies have. FIXED f1a73d3: one `driver_angle_to_time` helper with the guard, used at all eight sites in gui/state. Follow-up FIXED df2fdcf: `sweep_time`, `compute_t_mech`, the GIF export and the special sample loader use it too; `sweep_time` angle mode now has the guard.
 - **LGC-10** Force editor repeats one DragValue block about 50 times in a 1,100-line function.
 - **LGC-06** Fourteen copies of the plot trailer and the per-plot Plot builder.
 - **LGS-15** Templates and custom samples are two full copies of the same persistence and CRUD code.

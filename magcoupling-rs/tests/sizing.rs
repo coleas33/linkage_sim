@@ -1527,3 +1527,28 @@ fn a_nan_override_leaves_the_axial_housing_unknown() {
     assert!(r.metal.axial_stack_mm.is_nan() && r.metal.large_dia_stack_mm.is_nan());
     assert_eq!(h.space_claim_check, SPACE_CLAIM_UNKNOWN);
 }
+
+#[test]
+fn the_cached_slider_ranges_equal_a_freshly_built_input_table() {
+    // The size controls read the same cached table for any design, so it must not depend on
+    // the design values: compare it with a table built fresh from a changed design.
+    let mut changed = DesignInputs::default();
+    changed
+        .set("coupling.npole", Value::Int(10))
+        .expect("an even pole count");
+    for inputs in [DesignInputs::default(), changed] {
+        for row in input_rows(&inputs) {
+            let cached = magcoupling::engine::api::input_meta(&row.path)
+                .expect("every input has cached metadata")
+                .range;
+            assert_eq!(cached, row.meta.range, "{}", row.path);
+        }
+    }
+    for variable in FreeVariable::ALL {
+        let fresh = input_rows(&DesignInputs::default())
+            .into_iter()
+            .find(|row| row.path == variable.path())
+            .and_then(|row| row.meta.range);
+        assert_eq!(Some(variable.range()), fresh);
+    }
+}

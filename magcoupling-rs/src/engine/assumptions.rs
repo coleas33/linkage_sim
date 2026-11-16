@@ -25,8 +25,8 @@
 //! independent one, by the equation registry's dependency graph) is
 //! `tests/explain.rs::each_assumption_moves_what_depends_on_it_and_nothing_else`.
 
-use super::api::DesignInputs;
-use super::meta::{InputSet, Value, input_rows};
+use super::api::{DesignInputs, input_meta, workbook_defaults};
+use super::meta::{InputSet, Value};
 
 /// One assumption of the Addendum A3 panel.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -211,17 +211,13 @@ fn value_at(inputs: &DesignInputs, path: &str) -> Value {
 /// The panel for `inputs`: every assumption with its values, workbook defaults and unit, in
 /// [`ASSUMPTIONS`] order.
 pub fn states(inputs: &DesignInputs) -> Vec<AssumptionState> {
-    let defaults = DesignInputs::default();
-    let rows = input_rows(inputs);
+    let defaults = workbook_defaults();
     ASSUMPTIONS
         .iter()
         .map(|a| {
             let values: Vec<Value> = a.paths.iter().map(|p| value_at(inputs, p)).collect();
-            let workbook: Vec<Value> = a.paths.iter().map(|p| value_at(&defaults, p)).collect();
-            let unit = rows
-                .iter()
-                .find(|r| r.path == a.paths[0])
-                .map_or("", |r| r.meta.unit);
+            let workbook: Vec<Value> = a.paths.iter().map(|p| value_at(defaults, p)).collect();
+            let unit = input_meta(a.paths[0]).map_or("", |m| m.unit);
             AssumptionState {
                 assumption: a,
                 modified: values != workbook,
@@ -235,13 +231,13 @@ pub fn states(inputs: &DesignInputs) -> Vec<AssumptionState> {
 
 /// The assumptions that differ from their workbook default, in [`ASSUMPTIONS`] order.
 pub fn modified(inputs: &DesignInputs) -> Vec<&'static Assumption> {
-    let defaults = DesignInputs::default();
+    let defaults = workbook_defaults();
     ASSUMPTIONS
         .iter()
         .filter(|a| {
             a.paths
                 .iter()
-                .any(|p| value_at(inputs, p) != value_at(&defaults, p))
+                .any(|p| value_at(inputs, p) != value_at(defaults, p))
         })
         .collect()
 }
@@ -255,11 +251,11 @@ pub fn any_modified(inputs: &DesignInputs) -> bool {
 /// Puts every assumption back to its workbook default and leaves every design input as it
 /// is (the spec's "reset to workbook defaults" button).
 pub fn reset_to_workbook_defaults(inputs: &mut DesignInputs) {
-    let defaults = DesignInputs::default();
+    let defaults = workbook_defaults();
     for a in &ASSUMPTIONS {
         for path in a.paths {
             inputs
-                .set(path, value_at(&defaults, path))
+                .set(path, value_at(defaults, path))
                 .expect("a default is a valid value of its own input");
         }
     }
