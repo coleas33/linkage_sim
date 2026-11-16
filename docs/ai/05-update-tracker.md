@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - The solver property tests and the spring fixture count the cases that reach an assertion (audit INF-14; branch audit/2026-11-16-section-c)
+- What changed: tests/property_tests.rs: the residual and velocity properties moved into check_residual_after_solve and check_velocity_constraint (return whether the case reached its assertions); two new tests require at least 40% of cases to reach one (63% do today); a converged position with no velocity solution now fails. tests/golden_fixtures.rs spring_affects_statics_driver_torque asserts convergence and a virtual_work_check Ok at every angle and counts them.
+- Tests: shown to bite: solve_position forced to converged false fails both reach-count tests; virtual_work_check forced to Err fails the spring fixture. Both reverted. Commit SHA_INF14.
+
 ## 2026-11-16 - A control target with a zero direction is an error, not a panic (audit LCS-13; branch audit/2026-11-16-section-a)
 - What changed: new ControlTarget::validate (inverse_kinematics/control_target.rs) returns the new LinkageError::InvalidControlTarget for a Projection whose axis_dir is zero or NaN; workspace_probe calls it first, so solve_for_target and the trajectory sweep return an Err (Strict and Analysis alike) instead of stopping at the assert. The asserts in evaluate/gradient/hessian and the projection() constructor stay. Readers checked: evaluate/gradient/hessian are reached only after a probe (solve_for_target, sweep, trajectory_ops); no match on LinkageError is exhaustive.
 - Tests: zero_direction_projection_target_is_an_error_not_a_panic (red first: panicked "Projection axis_dir is zero"). Commit 134b45d.
