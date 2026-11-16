@@ -237,6 +237,7 @@ pub(super) fn apply_pending(state: &mut AppState, pending: Option<PendingPropert
                 edit_geometry(state, &body_id, |geo| *geo = None);
             }
             PendingPropertyEdit::UpdateLabel { body_id, label } => {
+                state.push_undo();
                 if let Some(bp) = &mut state.blueprint {
                     if let Some(body) = bp.bodies.get_mut(&body_id) {
                         body.label = if label.is_empty() { None } else { Some(label.clone()) };
@@ -435,6 +436,25 @@ mod tests {
 
         assert_eq!(state.selected, selected, "the selection stays");
         assert_eq!(state.undo_history.undo_count(), depth);
+    }
+
+    #[test]
+    fn rename_link_is_one_undo_step_and_marks_dirty() {
+        let (mut state, body, _, _) = four_bar_with_weight();
+        state.dirty = false;
+        let depth = state.undo_history.undo_count();
+        let old = state.blueprint.as_ref().unwrap().bodies[&body].label.clone();
+
+        apply_pending(
+            &mut state,
+            Some(PendingPropertyEdit::UpdateLabel { body_id: body.clone(), label: "Renamed".into() }),
+        );
+        assert_eq!(state.blueprint.as_ref().unwrap().bodies[&body].label.as_deref(), Some("Renamed"));
+        assert_eq!(state.undo_history.undo_count(), depth + 1);
+        assert!(state.dirty, "a rename marks the file changed");
+
+        state.undo();
+        assert_eq!(state.blueprint.as_ref().unwrap().bodies[&body].label, old);
     }
 
     #[test]

@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - Renaming a link is one undo step and marks the file changed (audit LGC-12; branch audit/2026-11-16-section-a)
+- What changed: property_panel/pending_edits.rs UpdateLabel calls push_undo before it edits the blueprint and mechanism (undo step, dirty = true); the sweep recompute stays (the weight breakdown shows the names). property_panel/mod.rs keeps the text being typed in egui memory and sends one UpdateLabel when the field loses focus with changed text (Esc drops it), as the weight name field does, so a rename is one undo step, not one per keystroke. Readers checked: UpdateLabel has one producer (the link editor label field).
+- Tests: rename_link_is_one_undo_step_and_marks_dirty (red first: undo depth did not grow).
+
 ## 2026-11-16 - A cosine-stroke linear driver saves and loads as a cosine driver (audit LFA-01; branch audit/2026-11-16-section-a)
 - What changed: LinearDriverJson (io/schema.rs) has an optional cosine_stroke [min, max] field (serde default, skipped when absent). to_json writes it for DriverMeta::CosineStroke (length_0 = initial length, velocity kept for old readers); from_json builds cosine_linear_driver when it is present and constant_velocity_linear_driver otherwise, so old files load as before. Owner decision (controller): finish the feature, not delete it. Readers checked: the only other LinearDriverJson builder is gui/state/driver_ops.rs (sets None).
 - Tests: cosine_linear_driver_round_trips_through_json (red first: loaded back as LinearLength). Commit c855eb5.
