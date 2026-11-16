@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - The Health panel shows toggle and over-80% positions the way the plots do (audit LGC-16; branch audit/2026-11-16-section-a)
+- What changed: new plot_panel::format_sweep_x (reuses sweep_x_to_display) shifts a body-frame sweep x by the driver display offset in angle mode, converts to the display angle unit and labels it deg, rad or mm (stroke mode: metres to mm, no offset). Health toggle points and the Exceeding 80% range (gui/property_panel/health.rs) call it instead of printing raw values with a degree sign. Readers checked: has_toggles_in_range still compares in body frame; the plots and SweepData are unchanged.
+- Tests: health_x_text_shifts_by_display_offset_and_labels_units (red first: format_sweep_x stubbed to the old format, left 120 deg, right 150 deg). Commit 5d81637.
+
 ## 2026-11-16 - The deploy runs the tests before it builds or deploys (audit INF-05; branch audit/2026-11-16-section-a)
 - What changed: .github/workflows/deploy-web.yml has three new steps before the wasm-bindgen install and build: cargo test --all (linkage-sim-rs), cargo test and cargo test --features app (magcoupling-rs), gate.sh gates 1, 4 and 7 on the pinned 1.89.0 toolchain and the existing cache. Clippy, the Python oracle and the wasm-bindgen parity gates stay local. docs/guides/WASM_DEPLOYMENT.md said the deploy installs the stable toolchain; it now says 1.89.0 and lists the test step.
 - Tests: none possible for CI YAML. The YAML parses (python yaml.safe_load, step order checked) and each added command exits 0 locally.
