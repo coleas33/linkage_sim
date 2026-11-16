@@ -690,6 +690,34 @@ mod tests {
         );
     }
 
+    /// Pins what the shared four-bar skeleton must keep per sample: the coupler
+    /// point (none, or at its local x, y) and which side of the ground line C starts on.
+    #[test]
+    fn standard_fourbar_samples_keep_their_coupler_point_and_branch() {
+        let cases = [
+            (SampleMechanism::QuickReturn, None, false),
+            (SampleMechanism::ToggleClamp, None, false),
+            (SampleMechanism::Hoeken, Some([0.0625, 0.0]), false),
+            (SampleMechanism::Roberts, Some([0.03, -0.015]), false),
+            (SampleMechanism::PeaucellierLipkin, Some([0.04, 0.080 / 3.0]), true),
+            (SampleMechanism::Pantograph, Some([0.075, 0.0]), false),
+        ];
+        for (sample, point, above) in cases {
+            let (mech, q0) = super::build_sample(sample);
+            let points = &mech.bodies()["coupler"].coupler_points;
+            match point {
+                None => assert!(points.is_empty(), "{sample:?}: no coupler point"),
+                Some(p) => {
+                    assert_eq!(points.len(), 1, "{sample:?}");
+                    assert!((points["P"][0] - p[0]).abs() < 1e-12, "{sample:?} P.x");
+                    assert!((points["P"][1] - p[1]).abs() < 1e-12, "{sample:?} P.y");
+                }
+            }
+            let cy = q0[mech.state().get_index("rocker").unwrap().y_idx()];
+            assert_eq!(cy > 0.0, above, "{sample:?}: rocker origin y = {cy}");
+        }
+    }
+
     #[test]
     fn all_samples_listed() {
         assert_eq!(SampleMechanism::all().len(), 30);

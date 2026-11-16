@@ -155,17 +155,20 @@ pub(super) fn build_slider_crank_with_driver(
 /// Build a standard 4-bar linkage (d=ground, a=crank, b=coupler, c=rocker)
 /// with ground pivots at O2=(0,0) and O4=(d,0).
 ///
-/// A coupler point P is placed on the coupler at local x = coupler_point_x, y = 0
-/// (i.e. at the midpoint if coupler_point_x = l_coupler/2).
+/// A coupler point P is placed on the coupler at the local `coupler_point`
+/// (x, y), or not at all for `None`.
 ///
 /// `theta_crank_init` sets the initial crank angle. Use 0.0 for Grashof linkages
 /// where the loop always closes at theta=0. For non-Grashof linkages the loop
 /// may be geometrically invalid at theta=0 (e.g. rocker too long to reach the
 /// crank tip), so pass a valid starting angle (e.g. PI/2).
 ///
+/// `above` puts the coupler-rocker joint above (true) or below (false) the
+/// ground line in the initial pose.
+///
 /// The driver defaults to J1 (grounded revolute at O2, drives the crank).
 #[allow(clippy::too_many_arguments)] // flat parameter list; a params struct would be a refactor
-fn build_standard_fourbar(
+pub(super) fn build_standard_fourbar(
     crank_id: &str,
     coupler_id: &str,
     rocker_id: &str,
@@ -173,8 +176,9 @@ fn build_standard_fourbar(
     l_crank: f64,
     l_coupler: f64,
     l_rocker: f64,
-    coupler_point_x: f64,
+    coupler_point: Option<(f64, f64)>,
     theta_crank_init: f64,
+    above: bool,
     driver_joint_id: Option<&str>,
 ) -> Result<(Mechanism, DVector<f64>), String> {
     let o2 = (0.0_f64, 0.0_f64);
@@ -183,9 +187,9 @@ fn build_standard_fourbar(
     let ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
     let mut crank = make_bar(crank_id, "A", "B", l_crank, 0.0, 0.0);
     let mut coupler = make_bar(coupler_id, "B", "C", l_coupler, 0.0, 0.0);
-    coupler
-        .add_coupler_point("P", coupler_point_x, 0.0)
-        .unwrap();
+    if let Some((px, py)) = coupler_point {
+        coupler.add_coupler_point("P", px, py).unwrap();
+    }
     let mut rocker = make_bar(rocker_id, "C", "D", l_rocker, 0.0, 0.0);
     set_bar_mass(&mut crank, l_crank);
     set_bar_mass(&mut coupler, l_coupler);
@@ -227,7 +231,7 @@ fn build_standard_fourbar(
         crank_id,
         coupler_id,
         rocker_id,
-        false,
+        above,
     );
 
     Ok((mech, q0))
@@ -243,8 +247,8 @@ pub(super) fn build_crank_rocker_with_driver(
 ) -> Result<(Mechanism, DVector<f64>), String> {
     build_standard_fourbar(
         "crank", "coupler", "rocker",
-        4.0, 2.0, 4.0, 3.0, 2.0,
-        0.0,
+        4.0, 2.0, 4.0, 3.0, Some((2.0, 0.0)),
+        0.0, false,
         driver_joint_id,
     )
 }
@@ -260,8 +264,8 @@ pub(super) fn build_double_rocker_with_driver(
 ) -> Result<(Mechanism, DVector<f64>), String> {
     build_standard_fourbar(
         "crank", "coupler", "rocker",
-        5.0, 3.0, 4.0, 7.0, 2.0,
-        PI / 2.0,
+        5.0, 3.0, 4.0, 7.0, Some((2.0, 0.0)),
+        PI / 2.0, false,
         driver_joint_id,
     )
 }
@@ -276,8 +280,8 @@ pub(super) fn build_double_crank_with_driver(
 ) -> Result<(Mechanism, DVector<f64>), String> {
     build_standard_fourbar(
         "crank", "coupler", "rocker",
-        2.0, 4.0, 3.5, 3.0, 1.75,
-        0.0,
+        2.0, 4.0, 3.5, 3.0, Some((1.75, 0.0)),
+        0.0, false,
         driver_joint_id,
     )
 }
@@ -291,8 +295,8 @@ pub(super) fn build_parallelogram_with_driver(
 ) -> Result<(Mechanism, DVector<f64>), String> {
     build_standard_fourbar(
         "crank", "coupler", "rocker",
-        4.0, 2.0, 4.0, 2.0, 2.0,
-        0.0,
+        4.0, 2.0, 4.0, 2.0, Some((2.0, 0.0)),
+        0.0, false,
         driver_joint_id,
     )
 }
@@ -525,8 +529,8 @@ pub(super) fn build_triple_rocker_with_driver(
 ) -> Result<(Mechanism, DVector<f64>), String> {
     build_standard_fourbar(
         "crank", "coupler", "rocker",
-        4.0, 2.0, 5.0, 2.0, 2.5,
-        PI / 2.0,
+        4.0, 2.0, 5.0, 2.0, Some((2.5, 0.0)),
+        PI / 2.0, false,
         driver_joint_id,
     )
 }
@@ -720,44 +724,13 @@ pub(super) fn build_chebyshev_lambda_actuator(
 pub(super) fn build_hoeken_with_driver(
     driver_joint_id: Option<&str>,
 ) -> Result<(Mechanism, DVector<f64>), String> {
-    let o2 = (0.0_f64, 0.0_f64);
-    let o4 = (0.100_f64, 0.0_f64); // ground = 100mm
-    let l_crank = 0.025_f64;
-    let l_coupler = 0.100_f64;
-    let l_rocker = 0.100_f64;
-
-    let ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
-    let mut crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
-    let mut coupler = make_bar("coupler", "B", "C", l_coupler, 0.0, 0.0);
-    // Hoeken coupler point at 2.5 * crank length from B along coupler
-    coupler.add_coupler_point("P", 0.0625, 0.0).unwrap();
-    let mut rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
-    set_bar_mass(&mut crank, l_crank);
-    set_bar_mass(&mut coupler, l_coupler);
-    set_bar_mass(&mut rocker, l_rocker);
-
-    let mut mech = Mechanism::new();
-    mech.add_body(ground).unwrap();
-    mech.add_body(crank).unwrap();
-    mech.add_body(coupler).unwrap();
-    mech.add_body(rocker).unwrap();
-
-    mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
-    mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
-    mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
-    mech.add_revolute_joint("J4", "rocker", "D", "ground", "O4").unwrap();
-
-    let joint_id = driver_joint_id.unwrap_or("J1");
-    attach_driver_to_grounded_revolute_with_theta0(&mut mech, joint_id, "D1", 0.0)?;
-
-    mech.build().map_err(|e| e.to_string())?;
-
-    let q0 = fourbar_initial_q0(
-        mech.state(), o2, o4, l_crank, l_coupler, l_rocker, 0.0,
-        "crank", "coupler", "rocker", false,
-    );
-
-    Ok((mech, q0))
+    // Ground = 100mm; Hoeken coupler point at 2.5 * crank length from B along coupler.
+    build_standard_fourbar(
+        "crank", "coupler", "rocker",
+        0.100, 0.025, 0.100, 0.100, Some((0.0625, 0.0)),
+        0.0, false,
+        driver_joint_id,
+    )
 }
 
 /// Roberts straight-line mechanism (4-bar).
@@ -780,43 +753,16 @@ pub(super) fn build_roberts_with_driver(
     // Roberts proportions: ground=2, crank=rocker=sqrt(2), coupler=2
     // Scaled by 30mm: ground=60mm, crank=rocker=42.43mm, coupler=60mm
     let scale = 0.030_f64;
-    let o2 = (0.0_f64, 0.0_f64);
     let l_ground = 2.0 * scale;
-    let o4 = (l_ground, 0.0_f64);
     let l_crank = std::f64::consts::SQRT_2 * scale;
     let l_coupler = 2.0 * scale;
     let l_rocker = std::f64::consts::SQRT_2 * scale;
 
-    let ground = make_ground(&[("O2", o2.0, o2.1), ("O4", o4.0, o4.1)]);
-    let mut crank = make_bar("crank", "A", "B", l_crank, 0.0, 0.0);
-    let mut coupler = make_bar("coupler", "B", "C", l_coupler, 0.0, 0.0);
     // Coupler point at midpoint, offset perpendicular for straight-line trace
-    coupler.add_coupler_point("P", l_coupler / 2.0, -l_coupler / 4.0).unwrap();
-    let mut rocker = make_bar("rocker", "C", "D", l_rocker, 0.0, 0.0);
-    set_bar_mass(&mut crank, l_crank);
-    set_bar_mass(&mut coupler, l_coupler);
-    set_bar_mass(&mut rocker, l_rocker);
-
-    let mut mech = Mechanism::new();
-    mech.add_body(ground).unwrap();
-    mech.add_body(crank).unwrap();
-    mech.add_body(coupler).unwrap();
-    mech.add_body(rocker).unwrap();
-
-    mech.add_revolute_joint("J1", "ground", "O2", "crank", "A").unwrap();
-    mech.add_revolute_joint("J2", "crank", "B", "coupler", "B").unwrap();
-    mech.add_revolute_joint("J3", "coupler", "C", "rocker", "C").unwrap();
-    mech.add_revolute_joint("J4", "rocker", "D", "ground", "O4").unwrap();
-
-    let joint_id = driver_joint_id.unwrap_or("J1");
-    attach_driver_to_grounded_revolute_with_theta0(&mut mech, joint_id, "D1", 0.0)?;
-
-    mech.build().map_err(|e| e.to_string())?;
-
-    let q0 = fourbar_initial_q0(
-        mech.state(), o2, o4, l_crank, l_coupler, l_rocker, 0.0,
-        "crank", "coupler", "rocker", false,
-    );
-
-    Ok((mech, q0))
+    build_standard_fourbar(
+        "crank", "coupler", "rocker",
+        l_ground, l_crank, l_coupler, l_rocker, Some((l_coupler / 2.0, -l_coupler / 4.0)),
+        0.0, false,
+        driver_joint_id,
+    )
 }
