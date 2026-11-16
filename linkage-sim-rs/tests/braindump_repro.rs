@@ -1,4 +1,5 @@
-//! TEMPORARY audit repro tests for BL-017. Not for commit.
+//! Tracked repro for BL-017 (docs/ai/backlog.yaml): the sizing-mode sweep of
+//! ChebyshevLambdaActuator. BL-017 stays open and depends on this file; keep it.
 //! (BL-011 repro promoted to src/gui/sweep/mod.rs tests; BL-010 repros
 //! promoted to tests/actuator_force_label.rs with assertions inverted.)
 //! Run: cargo test --test braindump_repro -- --nocapture
