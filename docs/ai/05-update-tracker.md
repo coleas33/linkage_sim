@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - driver angle-to-time helper and one copy of the time-modulation maths (audit LGS-04, LFA-15; branch audit/2026-11-16-dry)
+- What changed: LGS-04 (f1a73d3): the driver-angle to time mapping, written out eight times under gui/state, is one driver_angle_to_time(angle, theta_0, omega) in state/solver_helpers.rs with the zero-omega guard (returns 0.0). flip_assembly_branch and the two load-time solves in file_io.rs had no guard and gave inf/NaN at omega = 0; they now match the other copies. Copies outside gui/state (sweep, export, samples, property_panel) were not touched. LFA-15 (fa5352d): TimeModulation::factor calls compile, so the modulation maths exists once; expression warnings from actor now carry the compile prefix.
+- Tests: new helper tests (omega = 0, sub-epsilon, 0/0) and time_modulation tests for every variant and the bad-expression cases; cargo test --all and cargo clippy --all-targets -- -D warnings pass.
+
 ## 2026-11-16 - linkage-sim-rs drops the unused `open` dependency (audit LCS-01, INF-16; branch audit/2026-11-16-cleanup)
 - What changed: removed the optional `open` crate and `dep:open` from the `native` feature (64d5126; that commit's subject line wrongly reads "apply machine-applicable clippy fixes (INF-02)", its body is the INF-02 text, but the diff is only Cargo.toml and Cargo.lock). Cargo.lock loses open, is-wsl, is-docker and pathdiff. Kept `wasm-bindgen-futures` (the async `#[wasm_bindgen(start)]` in src/bin/linkage_web.rs expands to it; removing it breaks the wasm32 build) and `uuid` (the dxf crate needs its `js` feature on WASM). `meval` is used.
 - Tests: cargo test --all, cargo clippy --all-targets and the gate 3 wasm32 check pass.

@@ -262,7 +262,7 @@ Nothing here was measured. Each is a place where the code does the same work mor
 
 You asked for repetition to be flagged hard. None of these was merged: each merge is a refactor, and a refactor is a judgment.
 
-- **LGS-04** The driver-angle to time mapping is written out five times in scope, and one copy lacks the zero-omega guard. More than repetition: the copies at `gui/state/mod.rs:1300` and `gui/state/file_io.rs:408, 423` divide by the driver speed without the zero guard the other copies have.
+- **LGS-04** The driver-angle to time mapping is written out five times in scope, and one copy lacks the zero-omega guard. More than repetition: the copies at `gui/state/mod.rs:1300` and `gui/state/file_io.rs:408, 423` divide by the driver speed without the zero guard the other copies have. FIXED f1a73d3: one `driver_angle_to_time` helper with the guard, used at all eight sites in gui/state.
 - **LGC-10** Force editor repeats one DragValue block about 50 times in a 1,100-line function.
 - **LGC-06** Fourteen copies of the plot trailer and the per-plot Plot builder.
 - **LGS-15** Templates and custom samples are two full copies of the same persistence and CRUD code.
@@ -273,7 +273,7 @@ You asked for repetition to be flagged hard. None of these was merged: each merg
 - **LFA-06** The "four two-point forces" match is written out in eight places.
 - **LFA-04** Four identical copies of the body-lookup block in `joint_to_json`.
 - **LFA-14** `.map_err(|e| SerializationError::Build(e.to_string()))` repeated nine times in from_json and four more lookups in to_json.
-- **LFA-15** The time-modulation maths is written twice.
+- **LFA-15** The time-modulation maths is written twice. FIXED fa5352d: `factor` now calls `compile`, one copy of the maths.
 - **LFA-13** The same 4-bar test fixture is typed out again and again in this part.
 - **LCS-05** pass-1-only result is built twice, and the transposed Jacobian SVD solve is written three times.
 - **LGC-03** Coupler-trace dashes re-implement draw_dashed_line, and the dashed force-zone rectangle is written twice.
