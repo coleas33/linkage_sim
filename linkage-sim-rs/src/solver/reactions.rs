@@ -513,14 +513,13 @@ fn compute_validation(
     // catches a wrong back-solved actuator force — the per-body equilibrium
     // alone cannot, since the reactions self-consistently balance whatever
     // (possibly wrong) actuator force was injected.
-    if expect_driver_collapse {
-        if let Some(eff) = reactions.iter().find(|r| r.n_equations == 1).map(|r| r.effort) {
+    if expect_driver_collapse
+        && let Some(eff) = reactions.iter().find(|r| r.n_equations == 1).map(|r| r.effort) {
             let reference = driver_torque_pass1.unwrap_or(0.0).abs().max(1.0);
             if !eff.is_finite() || eff.abs() > 1e-6 * reference {
                 return ValidationState::Failed;
             }
         }
-    }
     match body_equilibrium_residual(mech, q, t, reactions, eff_actuator_force) {
         Some(r) if r.is_finite() && r < EQUILIBRIUM_REL_TOL => ValidationState::Verified,
         Some(_) => ValidationState::Failed,

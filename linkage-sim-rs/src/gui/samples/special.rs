@@ -856,9 +856,9 @@ fn strandbeest_find_initial(
         let crank_angle = 2.0 * PI * (i as f64) / (n_angles as f64);
         let t_for_angle = crank_angle / (2.0 * PI);
 
-        if let Some(q_guess) = strandbeest_exact_guess(state, crank_angle, &params) {
-            if let Ok(result) = solve_position(mech, &q_guess, t_for_angle, 1e-10, 200) {
-                if result.converged {
+        if let Some(q_guess) = strandbeest_exact_guess(state, crank_angle, &params)
+            && let Ok(result) = solve_position(mech, &q_guess, t_for_angle, 1e-10, 200)
+                && result.converged {
                     // Continue from this angle to t=0
                     if let Some(q0) = solve_with_continuation(
                         mech, &result.q, t_for_angle, 0.0, 60,
@@ -866,8 +866,6 @@ fn strandbeest_find_initial(
                         return Ok(q0);
                     }
                 }
-            }
-        }
     }
     Err("Strandbeest: could not find converging initial guess".to_string())
 }
@@ -1064,8 +1062,8 @@ pub(super) fn custom_6bar_from_json(json: &str) -> Result<(Mechanism, DVector<f6
     for angle_deg in try_angles_deg {
         let angle_rad = angle_deg.to_radians();
         let t = (angle_rad - theta_0) / omega;
-        if let Ok(result) = solve_position(&mech, &q0, t, 1e-10, 100) {
-            if result.converged {
+        if let Ok(result) = solve_position(&mech, &q0, t, 1e-10, 100)
+            && result.converged {
                 // Continue from this angle to t=0 for a clean starting state.
                 let steps = 40;
                 let mut q = result.q.clone();
@@ -1084,7 +1082,6 @@ pub(super) fn custom_6bar_from_json(json: &str) -> Result<(Mechanism, DVector<f6
                 // If continuation to t=0 failed, return at the solved angle.
                 return Ok((mech, result.q));
             }
-        }
     }
 
     Err("Custom 6-bar: no starting angle converged".to_string())

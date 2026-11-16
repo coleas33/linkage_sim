@@ -3,12 +3,12 @@
 use eframe::egui;
 use egui_plot::{HLine, Line, Plot, PlotPoints, Points, VLine};
 
-use crate::gui::state::{AngleUnit, DisplayUnits};
+use crate::gui::state::DisplayUnits;
 use crate::gui::sweep::SweepData;
 
 use super::{
     detect_plot_click, draw_angle_series_with_range, draw_range_boundary_markers,
-    draw_toggle_markers, finite_series, series_colors, sweep_x_to_display, with_default_x_bounds,
+    draw_toggle_markers, finite_series, sweep_x_to_display, with_default_x_bounds,
     x_axis_label_for_sweep,
 };
 use super::weights::draw_braking_bands;

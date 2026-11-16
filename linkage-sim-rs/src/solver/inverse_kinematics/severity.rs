@@ -9,16 +9,13 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum Severity {
     Strict,
+    #[default]
     Analysis,
 }
 
-impl Default for Severity {
-    fn default() -> Self {
-        Severity::Analysis
-    }
-}
 
 /// Per-sample diagnostic produced by `solve_for_target`.
 ///

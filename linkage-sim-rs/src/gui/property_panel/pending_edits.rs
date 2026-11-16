@@ -238,16 +238,14 @@ pub(super) fn apply_pending(state: &mut AppState, pending: Option<PendingPropert
             }
             PendingPropertyEdit::UpdateLabel { body_id, label } => {
                 state.push_undo();
-                if let Some(bp) = &mut state.blueprint {
-                    if let Some(body) = bp.bodies.get_mut(&body_id) {
+                if let Some(bp) = &mut state.blueprint
+                    && let Some(body) = bp.bodies.get_mut(&body_id) {
                         body.label = if label.is_empty() { None } else { Some(label.clone()) };
                     }
-                }
-                if let Some(mech) = &mut state.mechanism {
-                    if let Some(body) = mech.body_mut(&body_id) {
+                if let Some(mech) = &mut state.mechanism
+                    && let Some(body) = mech.body_mut(&body_id) {
                         body.label = label;
                     }
-                }
                 state.mark_sweep_dirty();
             }
             PendingPropertyEdit::UpdateGroundPivot { name, x, y } => {

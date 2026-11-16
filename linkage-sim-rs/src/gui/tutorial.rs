@@ -27,6 +27,7 @@ pub struct TutorialStep {
 
 /// Tracks the active tutorial state. When `active` is false, no overlay is
 /// drawn and no tutorial logic runs.
+#[derive(Default)]
 pub struct TutorialState {
     /// Whether a tutorial is currently active.
     pub active: bool,
@@ -36,15 +37,6 @@ pub struct TutorialState {
     pub steps: Vec<TutorialStep>,
 }
 
-impl Default for TutorialState {
-    fn default() -> Self {
-        Self {
-            active: false,
-            step: 0,
-            steps: Vec::new(),
-        }
-    }
-}
 
 impl TutorialState {
     /// Create the "Build a 4-Bar" tutorial sequence.
@@ -208,7 +200,7 @@ fn actuator_sizing_steps() -> Vec<TutorialStep> {
                 This tells the solver to COMPUTE the required force instead of \
                 applying a fixed value.",
             is_complete: |state| {
-                state.blueprint.as_ref().map_or(false, |bp| {
+                state.blueprint.as_ref().is_some_and(|bp| {
                     bp.forces.iter().any(|f| {
                         if let ForceElement::LinearActuator(a) = f {
                             a.force.abs() < 1.0

@@ -127,12 +127,11 @@ fn load_impl() -> UserPreferences {
 #[cfg(feature = "native")]
 fn save_impl(prefs: &UserPreferences) {
     let Some(path) = prefs_path() else { return };
-    if let Some(parent) = path.parent() {
-        if std::fs::create_dir_all(parent).is_err() {
+    if let Some(parent) = path.parent()
+        && std::fs::create_dir_all(parent).is_err() {
             log::warn!("Failed to create preferences dir: {:?}", parent);
             return;
         }
-    }
     match serde_json::to_string_pretty(prefs) {
         Ok(s) => {
             if let Err(e) = std::fs::write(&path, s) {

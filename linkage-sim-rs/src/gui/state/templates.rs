@@ -131,8 +131,8 @@ impl AppState {
         let mut templates = Vec::new();
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("json") {
-                if let Ok(json) = std::fs::read_to_string(&path) {
+            if path.extension().and_then(|e| e.to_str()) == Some("json")
+                && let Ok(json) = std::fs::read_to_string(&path) {
                     // Derive name from filename (strip .json extension).
                     let name = path
                         .file_stem()
@@ -141,7 +141,6 @@ impl AppState {
                         .to_string();
                     templates.push((name, json));
                 }
-            }
         }
         templates.sort_by(|a, b| a.0.cmp(&b.0));
         templates
@@ -317,8 +316,8 @@ impl AppState {
         let mut samples = Vec::new();
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("json") {
-                if let Ok(json) = std::fs::read_to_string(&path) {
+            if path.extension().and_then(|e| e.to_str()) == Some("json")
+                && let Ok(json) = std::fs::read_to_string(&path) {
                     let name = path
                         .file_stem()
                         .and_then(|s| s.to_str())
@@ -326,7 +325,6 @@ impl AppState {
                         .to_string();
                     samples.push((name, json));
                 }
-            }
         }
         samples.sort_by(|a, b| a.0.cmp(&b.0));
         samples

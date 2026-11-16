@@ -6,7 +6,7 @@
 //! that angle.
 
 use eframe::egui;
-use egui_plot::{HLine, Line, Plot, PlotPoint, PlotPoints, Points, Text as PlotText, VLine};
+use egui_plot::{Line, Plot, PlotPoints, VLine};
 
 use super::state::{AngleUnit, AppState, DisplayUnits};
 use super::sweep::{SweepData, SweepMode};
@@ -183,7 +183,7 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
         });
 
         // Only show actuator force tab when a LinearActuator is present.
-        let has_af = sweep.actuator_forces.as_ref().map_or(false, |v| !v.is_empty());
+        let has_af = sweep.actuator_forces.as_ref().is_some_and(|v| !v.is_empty());
         ui.add_enabled_ui(has_af, |ui| {
             ui.selectable_value(
                 &mut selected_tab,
@@ -193,7 +193,7 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
         });
 
         // Only show actuator speed tab when actuator speed data exists.
-        let has_as = sweep.actuator_speeds.as_ref().map_or(false, |v| !v.is_empty());
+        let has_as = sweep.actuator_speeds.as_ref().is_some_and(|v| !v.is_empty());
         ui.add_enabled_ui(has_as, |ui| {
             ui.selectable_value(
                 &mut selected_tab,
@@ -203,7 +203,7 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
         });
 
         // Only show actuator power tab when actuator power data exists.
-        let has_ap = sweep.actuator_power.as_ref().map_or(false, |v| !v.is_empty());
+        let has_ap = sweep.actuator_power.as_ref().is_some_and(|v| !v.is_empty());
         ui.add_enabled_ui(has_ap, |ui| {
             ui.selectable_value(
                 &mut selected_tab,
@@ -224,7 +224,7 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
         });
 
         // Only show output force tab when force zone data exists.
-        let has_of = sweep.output_forces.as_ref().map_or(false, |v| !v.is_empty());
+        let has_of = sweep.output_forces.as_ref().is_some_and(|v| !v.is_empty());
         ui.add_enabled_ui(has_of, |ui| {
             ui.selectable_value(
                 &mut selected_tab,
@@ -324,11 +324,10 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
                     .range(0.0..=1e6)
                     .suffix(" N"))
                     .on_hover_text("Maximum continuous force rating of the actuator in Newtons. Set to 0 to hide the safety band.");
-                if state.actuator_rated_force > 0.0 {
-                    if ui.small_button("Clear").on_hover_text("Reset rated force to 0 and hide the safety band overlay").clicked() {
+                if state.actuator_rated_force > 0.0
+                    && ui.small_button("Clear").on_hover_text("Reset rated force to 0 and hide the safety band overlay").clicked() {
                         state.actuator_rated_force = 0.0;
                     }
-                }
             });
             actuator::draw_actuator_force(ui, sweep, current_driver_display, &state.display_units, nm, state.actuator_rated_force)
         }
@@ -550,11 +549,10 @@ fn driver_effort_series_name(sweep: &SweepData) -> &'static str {
 /// Call this inside a `plot_ui` closure. Returns `Some(x)` when the user
 /// clicks (not drags) on the plot area.
 fn detect_plot_click(plot_ui: &egui_plot::PlotUi) -> Option<f64> {
-    if plot_ui.response().clicked() {
-        if let Some(coord) = plot_ui.pointer_coordinate() {
+    if plot_ui.response().clicked()
+        && let Some(coord) = plot_ui.pointer_coordinate() {
             return Some(coord.x);
         }
-    }
     None
 }
 
@@ -588,8 +586,8 @@ fn draw_range_boundary_markers(
     sweep: &SweepData,
     units: &DisplayUnits,
 ) {
-    if let Some((start, end)) = sweep.active_range {
-        if let (Some(&min_val), Some(&max_val)) =
+    if let Some((start, end)) = sweep.active_range
+        && let (Some(&min_val), Some(&max_val)) =
             (sweep.angles_deg.get(start), sweep.angles_deg.get(end))
         {
             let min_display = sweep_x_to_display(min_val, sweep, units);
@@ -609,7 +607,6 @@ fn draw_range_boundary_markers(
                     .width(1.0),
             );
         }
-    }
 }
 
 /// Create a faded version of a color for out-of-range plot data.

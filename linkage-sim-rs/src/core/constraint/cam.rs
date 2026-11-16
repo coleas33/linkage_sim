@@ -173,8 +173,8 @@ impl Constraint for CamFollowerJoint {
         let ds_dtheta = self.profile.derivative(theta_i);
 
         // Body j terms
-        if !state.is_ground(&self.body_j_id_) {
-            if let Ok(bj) = state.get_index(&self.body_j_id_) {
+        if !state.is_ground(&self.body_j_id_)
+            && let Ok(bj) = state.get_index(&self.body_j_id_) {
                 let theta_j = state.get_angle(&self.body_j_id_, q);
                 let b_j = State::rotation_matrix_derivative(theta_j);
                 // d/d(x_j, y_j): u_global
@@ -184,11 +184,10 @@ impl Constraint for CamFollowerJoint {
                 let d_ptj_dtheta = b_j * self.point_j_local;
                 jac[(0, bj.theta_idx())] = d_ptj_dtheta.dot(&u_global);
             }
-        }
 
         // Body i terms
-        if !state.is_ground(&self.body_i_id_) {
-            if let Ok(bi) = state.get_index(&self.body_i_id_) {
+        if !state.is_ground(&self.body_i_id_)
+            && let Ok(bi) = state.get_index(&self.body_i_id_) {
                 // d/d(x_i, y_i): -u_global
                 jac[(0, bi.x_idx())] = -u_global.x;
                 jac[(0, bi.y_idx())] = -u_global.y;
@@ -197,7 +196,6 @@ impl Constraint for CamFollowerJoint {
                 jac[(0, bi.theta_idx())] =
                     diff.dot(&du_dtheta) - d_pti_dtheta.dot(&u_global) - ds_dtheta;
             }
-        }
 
         jac
     }

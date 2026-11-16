@@ -19,18 +19,10 @@ mod svg;
 // generation (resvg/gif crates) remain native-only.
 pub use animation::{animation_export_available, generate_animation_html};
 pub use csv::{generate_coupler_csv_string, generate_sweep_csv_string};
-#[cfg(feature = "native")]
-pub use csv::{export_coupler_csv, export_sweep_csv};
 pub use dxf::generate_dxf_string;
-#[cfg(feature = "native")]
-pub use dxf::export_mechanism_dxf;
 #[cfg(feature = "raster")]
 pub use raster::{generate_mechanism_gif_bytes, generate_mechanism_png_bytes};
-#[cfg(all(feature = "native", feature = "raster"))]
-pub use raster::{export_mechanism_gif, export_mechanism_png};
 #[cfg(feature = "raster")]
 pub(crate) use raster::rasterize_svg_to_rgba;
 pub use report::generate_html_report;
 pub use svg::generate_svg_string;
-#[cfg(feature = "native")]
-pub use svg::export_mechanism_svg;

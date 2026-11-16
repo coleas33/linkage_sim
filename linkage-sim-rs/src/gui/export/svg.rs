@@ -24,7 +24,7 @@ pub fn generate_svg_string(
     let mut max_y = f64::MIN;
 
     for (body_id, body) in bodies.iter() {
-        for (_name, pt_local) in &body.attachment_points {
+        for pt_local in body.attachment_points.values() {
             let global = state.body_point_global(body_id, pt_local, q);
             min_x = min_x.min(global.x);
             min_y = min_y.min(global.y);
@@ -152,7 +152,7 @@ pub fn generate_svg_string(
 
     // Draw ground markers.
     if let Some(ground) = bodies.get(GROUND_ID) {
-        for (_name, pt_local) in &ground.attachment_points {
+        for pt_local in ground.attachment_points.values() {
             let global = state.body_point_global(GROUND_ID, pt_local, q);
             let (sx, sy) = to_svg(global.x, global.y);
             let s = 8.0_f64;

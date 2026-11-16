@@ -124,8 +124,8 @@ fn sixbar_b1_find_initial(
         state.set_pose("output6", &mut q, 2.5, 0.5, theta_o6);
 
         // Try to solve at this crank angle
-        if let Ok(result) = solve_position(mech, &q, crank_angle, 1e-10, 200) {
-            if result.converged {
+        if let Ok(result) = solve_position(mech, &q, crank_angle, 1e-10, 200)
+            && result.converged {
                 // Step back to t=0 via continuation
                 if let Some(q0) = solve_with_continuation(
                     mech, &result.q, crank_angle, 0.0, 20,
@@ -133,7 +133,6 @@ fn sixbar_b1_find_initial(
                     return Ok(q0);
                 }
             }
-        }
     }
     Err("SixBarB1: could not find converging initial guess at any starting angle".to_string())
 }
@@ -643,15 +642,13 @@ fn watt_ii_find_initial(
         let theta_b3 = (mid_y - q3y).atan2(mid_x - q3x);
         state.set_pose("b3", &mut q, q3x, q3y, theta_b3);
 
-        if let Ok(result) = solve_position(mech, &q, angle, 1e-10, 200) {
-            if result.converged {
-                if let Some(q0) = solve_with_continuation(
+        if let Ok(result) = solve_position(mech, &q, angle, 1e-10, 200)
+            && result.converged
+                && let Some(q0) = solve_with_continuation(
                     mech, &result.q, angle, 0.0, 20,
                 ) {
                     return Ok(q0);
                 }
-            }
-        }
     }
     Err("WattII: could not find converging initial guess at any starting angle".to_string())
 }

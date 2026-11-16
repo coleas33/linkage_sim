@@ -27,8 +27,8 @@ pub fn handle_context_menu(
     // and store it in AppState. The context_menu closure runs every frame
     // while the popup is open, so it reads from stored state.
     // Only trigger on a true click (not after a right-drag pan).
-    if response.secondary_clicked() && !right_drag_ended {
-        if let Some(pos) = response.interact_pointer_pos() {
+    if response.secondary_clicked() && !right_drag_ended
+        && let Some(pos) = response.interact_pointer_pos() {
             let joint_id = joint_hit_targets
                 .iter()
                 .find(|(screen_pos, _)| pos.distance(*screen_pos) <= HIT_RADIUS)
@@ -58,7 +58,6 @@ pub fn handle_context_menu(
                 world_pos,
             };
         }
-    }
 
     // Show context menu using a manual Popup so we can suppress it after
     // a right-drag pan.  Popup::context_menu() unconditionally opens on
@@ -300,14 +299,13 @@ fn show_body_area_menu(
     ui.label(format!("Body: {}", body_id));
     ui.separator();
 
-    if let Some([wx, wy]) = ctx_target.world_pos {
-        if ui.button("Add Pivot Here").on_hover_text("Add a new attachment point on this link at the clicked location").clicked() {
+    if let Some([wx, wy]) = ctx_target.world_pos
+        && ui.button("Add Pivot Here").on_hover_text("Add a new attachment point on this link at the clicked location").clicked() {
             let name = state.next_attachment_point_name(body_id);
             let (sx, sy) = state.grid.snap_point(wx, wy);
             state.add_attachment_point_to_body(body_id, &name, sx, sy);
             ui.close();
         }
-    }
 
     if ui.button("Delete Body").on_hover_text("Remove this body and all its joints from the mechanism").clicked() {
         state.remove_body(body_id);

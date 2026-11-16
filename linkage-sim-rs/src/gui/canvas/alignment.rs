@@ -43,11 +43,10 @@ pub fn compute_alignment_guides(
     for (body_id, body) in mech.bodies().iter() {
         for (pt_name, local_pt) in &body.attachment_points {
             // Skip the point being dragged.
-            if let Some(exclude) = exclude_name {
-                if pt_name == exclude && body_id == "ground" {
+            if let Some(exclude) = exclude_name
+                && pt_name == exclude && body_id == "ground" {
                     continue;
                 }
-            }
 
             let global = mech_state.body_point_global(body_id, local_pt, q);
             let px = global.x;

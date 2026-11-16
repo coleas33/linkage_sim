@@ -52,75 +52,65 @@ pub(super) fn draw_health_section(ui: &mut egui::Ui, state: &AppState) {
         }
 
         // 3. Transmission angle (4-bar only)
-        if let Some(ref sweep) = state.sweep_data {
-            if let Some(ref trans_angles) = sweep.transmission_angles {
+        if let Some(ref sweep) = state.sweep_data
+            && let Some(ref trans_angles) = sweep.transmission_angles {
                 if any_shown { ui.separator(); }
                 any_shown = true;
                 draw_transmission_angle_indicator(ui, state, trans_angles);
             }
-        }
 
         // 4. Peak driver torque
-        if let Some(ref sweep) = state.sweep_data {
-            if let Some(ref torques) = sweep.driver_torques {
-                if let Some(env) = compute_envelope(torques) {
+        if let Some(ref sweep) = state.sweep_data
+            && let Some(ref torques) = sweep.driver_torques
+                && let Some(env) = compute_envelope(torques) {
                     if any_shown { ui.separator(); }
                     any_shown = true;
                     draw_torque_indicator(ui, state, &env);
                 }
-            }
-        }
 
         // 4b. Peak profile torque (when a non-constant motion profile is active)
-        if let Some(ref sweep) = state.sweep_data {
-            if let Some(ref prof_torques) = sweep.profile_torques {
-                if let Some(env) = compute_envelope(prof_torques) {
+        if let Some(ref sweep) = state.sweep_data
+            && let Some(ref prof_torques) = sweep.profile_torques
+                && let Some(env) = compute_envelope(prof_torques) {
                     if any_shown { ui.separator(); }
                     any_shown = true;
                     draw_profile_torque_indicator(ui, state, &env);
                 }
-            }
-        }
 
         // 5. Peak joint reactions
-        if let Some(ref sweep) = state.sweep_data {
-            if !sweep.joint_reaction_magnitudes.is_empty() {
+        if let Some(ref sweep) = state.sweep_data
+            && !sweep.joint_reaction_magnitudes.is_empty() {
                 if any_shown { ui.separator(); }
                 any_shown = true;
                 draw_peak_reactions_indicator(ui, state, &sweep.joint_reaction_magnitudes);
             }
-        }
 
         // 6. Actuator stroke and peak force
-        if let Some(ref sweep) = state.sweep_data {
-            if sweep.actuator_forces.is_some() || sweep.actuator_lengths.is_some() {
+        if let Some(ref sweep) = state.sweep_data
+            && (sweep.actuator_forces.is_some() || sweep.actuator_lengths.is_some()) {
                 if any_shown { ui.separator(); }
                 any_shown = true;
                 draw_actuator_stroke_indicator(ui, state, sweep);
             }
-        }
 
         // 6b. RMS actuator force, power, and peak speed
-        if let Some(ref sweep) = state.sweep_data {
-            if sweep.actuator_forces.is_some() {
+        if let Some(ref sweep) = state.sweep_data
+            && sweep.actuator_forces.is_some() {
                 if any_shown { ui.separator(); }
                 any_shown = true;
                 draw_actuator_rms_indicators(ui, state, sweep);
             }
-        }
 
         // 6c. Actuator utilization (when rated force is set)
-        if let Some(ref sweep) = state.sweep_data {
-            if state.actuator_rated_force > 0.0 {
-                if let Some(ref forces) = sweep.actuator_forces {
+        if let Some(ref sweep) = state.sweep_data
+            && state.actuator_rated_force > 0.0
+                && let Some(ref forces) = sweep.actuator_forces {
                     if any_shown { ui.separator(); }
                     any_shown = true;
                     draw_actuator_utilization_indicator(
                         ui, state, sweep, forces, state.actuator_rated_force,
                     );
                 }
-            }
-        }
 
         // 7. Jacobian conditioning
         if let Some(kappa) = state.force_results.condition_number {

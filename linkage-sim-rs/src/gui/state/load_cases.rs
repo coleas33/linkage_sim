@@ -14,19 +14,12 @@ pub type LoadCase = LoadCaseJson;
 
 /// Manages multiple load cases for the current mechanism.
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct LoadCaseManager {
     pub cases: Vec<LoadCase>,
     pub active_index: usize,
 }
 
-impl Default for LoadCaseManager {
-    fn default() -> Self {
-        Self {
-            cases: Vec::new(),
-            active_index: 0,
-        }
-    }
-}
 
 impl LoadCaseManager {
     /// Create a manager with a single default load case from the current driver settings.

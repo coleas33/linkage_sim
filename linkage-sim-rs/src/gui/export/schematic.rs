@@ -75,7 +75,7 @@ pub fn generate_schematic_svg(
     let mut max_y = f64::MIN;
 
     for (body_id, body) in bodies.iter() {
-        for (_name, pt_local) in &body.attachment_points {
+        for pt_local in body.attachment_points.values() {
             let g = state.body_point_global(body_id, pt_local, q);
             min_x = min_x.min(g.x);
             min_y = min_y.min(g.y);
@@ -181,7 +181,7 @@ pub fn generate_schematic_svg(
 
     // ── 5. Ground hatching — draw under each ground attachment point ───────
     if let Some(ground) = bodies.get(GROUND_ID) {
-        for (_name, pt_local) in &ground.attachment_points {
+        for pt_local in ground.attachment_points.values() {
             let g = state.body_point_global(GROUND_ID, pt_local, q);
             let (sx, sy) = to_svg(g.x, g.y);
             // Short ground line below the pivot, with hatch tick-marks.
@@ -356,7 +356,7 @@ pub fn generate_schematic_svg(
         let mut sum_x = 0.0;
         let mut sum_y = 0.0;
         let mut n = 0;
-        for (_name, pt_local) in &body.attachment_points {
+        for pt_local in body.attachment_points.values() {
             let g = state.body_point_global(body_id, pt_local, q);
             let (sx, sy) = to_svg(g.x, g.y);
             sum_x += sx;
@@ -379,8 +379,8 @@ pub fn generate_schematic_svg(
         ));
     }
     // Ground label (only if we have a ground body with attachment points).
-    if let Some(ground) = bodies.get(GROUND_ID) {
-        if let Some(first) = ground.attachment_points.values().next() {
+    if let Some(ground) = bodies.get(GROUND_ID)
+        && let Some(first) = ground.attachment_points.values().next() {
             let g = state.body_point_global(GROUND_ID, first, q);
             let (_sx, sy) = to_svg(g.x, g.y);
             // Place near bottom of the drawing region, centred horizontally.
@@ -392,7 +392,6 @@ pub fn generate_schematic_svg(
                 "ground"
             ));
         }
-    }
 
     // ── 9. Driver indicator (red) ──────────────────────────────────────────
     if let Some(drv) = mech.drivers().first() {

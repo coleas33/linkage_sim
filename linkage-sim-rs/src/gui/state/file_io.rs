@@ -210,7 +210,7 @@ impl AppState {
         // (forward-dynamics window), and parametric study config.
         // All are optional and skipped when at their defaults so existing
         // files don't get diff churn.
-        json_struct.motion_profile = serde_json::to_value(&self.motion_profile).ok();
+        json_struct.motion_profile = serde_json::to_value(self.motion_profile).ok();
         json_struct.actuator_rated_force = self.actuator_rated_force;
         json_struct.simulation_duration = Some(self.simulation_duration);
         json_struct.parametric_config = serde_json::to_value(&self.parametric_config).ok();
@@ -264,15 +264,12 @@ impl AppState {
             return None;
         }
         // Only offer recovery for recent autosaves (< 1 hour).
-        if let Ok(metadata) = std::fs::metadata(&p) {
-            if let Ok(modified) = metadata.modified() {
-                if let Ok(elapsed) = modified.elapsed() {
-                    if elapsed.as_secs() < 3600 {
+        if let Ok(metadata) = std::fs::metadata(&p)
+            && let Ok(modified) = metadata.modified()
+                && let Ok(elapsed) = modified.elapsed()
+                    && elapsed.as_secs() < 3600 {
                         return Some(p);
                     }
-                }
-            }
-        }
         None
     }
 
@@ -313,13 +310,12 @@ impl AppState {
         // Restore GUI sweep state (mode + trajectory severity) if present.
         // Backward-compatible: missing field → leave defaults (Angle / Analysis).
         if let Some(state_json) = json_struct.sweep_state.as_ref() {
-            if let Some(mode_value) = state_json.sweep_mode.as_ref() {
-                if let Ok(mode) = serde_json::from_value::<crate::gui::sweep::SweepMode>(
+            if let Some(mode_value) = state_json.sweep_mode.as_ref()
+                && let Ok(mode) = serde_json::from_value::<crate::gui::sweep::SweepMode>(
                     mode_value.clone(),
                 ) {
                     self.sweep_mode = mode;
                 }
-            }
             if let Some(sev_str) = state_json.trajectory_severity.as_ref() {
                 self.trajectory_severity = match sev_str.as_str() {
                     "Strict" => crate::solver::inverse_kinematics::Severity::Strict,
@@ -346,27 +342,25 @@ impl AppState {
         // semantics as sensor_config: a user who set up motion_profile /
         // actuator_rated_force in the GUI then loads an older mechanism
         // keeps their configuration.
-        if let Some(mp_value) = json_struct.motion_profile.as_ref() {
-            if let Ok(mp) =
+        if let Some(mp_value) = json_struct.motion_profile.as_ref()
+            && let Ok(mp) =
                 serde_json::from_value::<crate::gui::state::MotionProfile>(mp_value.clone())
             {
                 self.motion_profile = mp;
             }
-        }
         if json_struct.actuator_rated_force != 0.0 {
             self.actuator_rated_force = json_struct.actuator_rated_force;
         }
         if let Some(dur) = json_struct.simulation_duration {
             self.simulation_duration = dur;
         }
-        if let Some(pc_value) = json_struct.parametric_config.as_ref() {
-            if let Ok(pc) = serde_json::from_value::<
+        if let Some(pc_value) = json_struct.parametric_config.as_ref()
+            && let Ok(pc) = serde_json::from_value::<
                 crate::gui::state::ParametricStudyConfig,
             >(pc_value.clone())
             {
                 self.parametric_config = pc;
             }
-        }
 
         self.blueprint = Some(json_struct);
 
@@ -431,8 +425,8 @@ impl AppState {
             for &start_angle in &try_angles {
                 let t_start = (start_angle - driver_theta_0) / driver_omega;
                 let q_zero = mech.state().make_q();
-                if let Ok(result) = solve_position(&mech, &q_zero, t_start, 1e-10, 100) {
-                    if result.converged {
+                if let Ok(result) = solve_position(&mech, &q_zero, t_start, 1e-10, 100)
+                    && result.converged {
                         // Continuation: step from start_angle to target angle
                         let steps = 20;
                         let mut q_cont = result.q;
@@ -452,7 +446,6 @@ impl AppState {
                             if converged { break; }
                         }
                     }
-                }
             }
         }
 

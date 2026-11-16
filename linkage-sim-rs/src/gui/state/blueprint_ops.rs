@@ -404,11 +404,10 @@ impl AppState {
         new_y: f64,
     ) {
         let Some(bp) = &mut self.blueprint else { return };
-        if let Some(body) = bp.bodies.get_mut(body_id) {
-            if let Some(pt) = body.attachment_points.get_mut(point_name) {
+        if let Some(body) = bp.bodies.get_mut(body_id)
+            && let Some(pt) = body.attachment_points.get_mut(point_name) {
                 *pt = [new_x, new_y];
             }
-        }
         self.rebuild();
     }
 
@@ -441,11 +440,10 @@ impl AppState {
 
         let new_pb = [pa[0] + ux * new_length, pa[1] + uy * new_length];
 
-        if let Some(body) = bp.bodies.get_mut(body_id) {
-            if let Some(pt) = body.attachment_points.get_mut(point_b) {
+        if let Some(body) = bp.bodies.get_mut(body_id)
+            && let Some(pt) = body.attachment_points.get_mut(point_b) {
                 *pt = new_pb;
             }
-        }
         self.rebuild();
     }
 
@@ -477,11 +475,10 @@ impl AppState {
             pa[1] + current_len * new_angle_rad.sin(),
         ];
 
-        if let Some(body) = bp.bodies.get_mut(body_id) {
-            if let Some(pt) = body.attachment_points.get_mut(point_b) {
+        if let Some(body) = bp.bodies.get_mut(body_id)
+            && let Some(pt) = body.attachment_points.get_mut(point_b) {
                 *pt = new_pb;
             }
-        }
         self.rebuild();
     }
 
@@ -580,15 +577,14 @@ impl AppState {
             } else {
                 mech.add_force(ForceElement::Gravity(g_elem));
             }
-        } else if has_gravity {
-            if let Some(idx) = mech
+        } else if has_gravity
+            && let Some(idx) = mech
                 .forces()
                 .iter()
                 .position(|f| matches!(f, ForceElement::Gravity(_)))
             {
                 mech.remove_force(idx);
             }
-        }
     }
 
     /// Compute static force results (joint reactions + driver torque) at the
@@ -649,7 +645,7 @@ impl AppState {
             if let Some((_body_i, driver_body)) = mech.driver_body_pair() {
                 let output_body = mech.body_order().iter()
                     .filter(|b| b.as_str() != driver_body)
-                    .last();
+                    .next_back();
                 if let Some(out_id) = output_body {
                     mechanical_advantage(
                         mech.state(), &q_dot,
@@ -868,11 +864,10 @@ impl AppState {
         self.push_undo();
         {
             let Some(bp) = &mut self.blueprint else { return };
-            if let Some(body) = bp.bodies.get_mut(body_id) {
-                if let Some(pos) = body.mount_points.remove(old_name) {
+            if let Some(body) = bp.bodies.get_mut(body_id)
+                && let Some(pos) = body.mount_points.remove(old_name) {
                     body.mount_points.insert(new_name.to_string(), pos);
                 }
-            }
             Self::rename_force_point_refs(&mut bp.forces, body_id, old_name, new_name);
         }
         self.rebuild();
@@ -884,11 +879,10 @@ impl AppState {
     pub fn update_mount_point_position(&mut self, body_id: &str, name: &str, pos: [f64; 2]) {
         {
             let Some(bp) = &mut self.blueprint else { return };
-            if let Some(body) = bp.bodies.get_mut(body_id) {
-                if let Some(pt) = body.mount_points.get_mut(name) {
+            if let Some(body) = bp.bodies.get_mut(body_id)
+                && let Some(pt) = body.mount_points.get_mut(name) {
                     *pt = pos;
                 }
-            }
         }
         self.rebuild();
     }
@@ -1122,11 +1116,10 @@ impl AppState {
     /// Continuous parameter tweak — no undo snapshot pushed.
     pub fn update_prismatic_axis(&mut self, joint_id: &str, axis: [f64; 2]) {
         let Some(bp) = &mut self.blueprint else { return };
-        if let Some(joint) = bp.joints.get_mut(joint_id) {
-            if let JointJson::Prismatic { axis_local_i, .. } = joint {
+        if let Some(joint) = bp.joints.get_mut(joint_id)
+            && let JointJson::Prismatic { axis_local_i, .. } = joint {
                 *axis_local_i = axis;
             }
-        }
         self.rebuild();
     }
 
@@ -1209,20 +1202,18 @@ impl AppState {
                 }
             }
             super::SweepParameter::AttachmentX(body_id, point_name) => {
-                if let Some(body) = bp.bodies.get_mut(body_id) {
-                    if let Some(pt) = body.attachment_points.get_mut(point_name) {
+                if let Some(body) = bp.bodies.get_mut(body_id)
+                    && let Some(pt) = body.attachment_points.get_mut(point_name) {
                         pt[0] = value;
                         return true;
                     }
-                }
             }
             super::SweepParameter::AttachmentY(body_id, point_name) => {
-                if let Some(body) = bp.bodies.get_mut(body_id) {
-                    if let Some(pt) = body.attachment_points.get_mut(point_name) {
+                if let Some(body) = bp.bodies.get_mut(body_id)
+                    && let Some(pt) = body.attachment_points.get_mut(point_name) {
                         pt[1] = value;
                         return true;
                     }
-                }
             }
             super::SweepParameter::ForceParam(idx, field) => {
                 if let Some(force) = bp.forces.get_mut(*idx) {
@@ -1296,8 +1287,7 @@ impl AppState {
             severity,
             n_samples,
         } = self.sweep_mode.clone()
-        {
-            if matches!(
+            && matches!(
                 self.driver_kind,
                 DriverKind::Revolute { .. } | DriverKind::Linear { .. }
             ) {
@@ -1331,7 +1321,7 @@ impl AppState {
                 };
 
                 let q_seed = if self.q_at_zero.len() == self.last_good_q.len()
-                    && self.q_at_zero.len() > 0
+                    && !self.q_at_zero.is_empty()
                 {
                     self.q_at_zero.clone()
                 } else {
@@ -1371,14 +1361,13 @@ impl AppState {
             }
             // No driver case: fall through to compute_sweep_data which also
             // gracefully handles the "no driver" state.
-        }
 
         let mech = self.mechanism.as_ref().unwrap();
         let omega = self.driver_omega();
         let theta_0 = self.driver_theta_0();
 
         // Always start the sweep at t=0 with the known-good state at 0 degrees.
-        let q_start = if self.q_at_zero.len() == self.last_good_q.len() && self.q_at_zero.len() > 0 {
+        let q_start = if self.q_at_zero.len() == self.last_good_q.len() && !self.q_at_zero.is_empty() {
             self.q_at_zero.clone()
         } else {
             self.last_good_q.clone()

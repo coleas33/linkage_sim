@@ -318,12 +318,10 @@ pub fn generate_html_report(
                 env.max_value
             ));
             html.push_str("</div>\n");
-            html.push_str(&format!(
-                "<p>Computed as <code>P = F·(dL/dt)</code> where F is the \
+            html.push_str(&"<p>Computed as <code>P = F·(dL/dt)</code> where F is the \
                  statics-derived actuator force. Inverse-dynamics-corrected \
                  power (which includes inertial loads) is shown separately if \
-                 a non-zero motion profile was used.</p>\n",
-            ));
+                 a non-zero motion profile was used.</p>\n".to_string());
         }
         let angles_json = float_vec_to_json(&sweep.angles_deg);
         let power_json = float_vec_to_json(act_power);
@@ -1710,7 +1708,7 @@ fn write_state_estimation_section(
                 // Drivers can also be encoder hosts — but we look them up below.
                 // Placeholder: not all drivers are JointConstraint.
                 None
-            }).filter_map(|x| x))
+            }).flatten())
             .any(|j| {
                 j.id() == joint_id
                     && (j.body_i_id() == "ground" || j.body_j_id() == "ground")
@@ -1824,12 +1822,8 @@ fn write_state_estimation_section(
         code.push_str("// State and covariance (EKF)\n");
         code.push_str("float x[2] = { theta2_init, 0.0f };\n");
         code.push_str("float P[2][2] = { { sigma_init², 0 }, { 0, sigma_init² } };\n");
-        code.push_str(&format!(
-            "const float SIGMA_PROC_THETA = ...;     // tune empirically\n"
-        ));
-        code.push_str(&format!(
-            "const float SIGMA_PROC_OMEGA = ...;     // tune empirically\n"
-        ));
+        code.push_str(&"const float SIGMA_PROC_THETA = ...;     // tune empirically\n".to_string());
+        code.push_str(&"const float SIGMA_PROC_OMEGA = ...;     // tune empirically\n".to_string());
         if encoder_joint.is_some() {
             code.push_str(&format!(
                 "const float SIGMA_ENC = {:.6}f;            // [rad]\n",
@@ -1842,7 +1836,7 @@ fn write_state_estimation_section(
                 sensor_config.actuator_noise_std,
             ));
         }
-        code.push_str("\n");
+        code.push('\n');
         code.push_str("void ekf_step(float dt) {\n");
         code.push_str("    // ── Predict ───────────────────────────────\n");
         code.push_str("    float x_pred[2] = { x[0] + x[1]*dt, x[1] };\n");
@@ -1854,7 +1848,7 @@ fn write_state_estimation_section(
         code.push_str("    P_pred[1][0] = P[1][0] + dt*P[1][1];\n");
         code.push_str("    P_pred[1][1] = P[1][1]\n");
         code.push_str("                 + SIGMA_PROC_OMEGA*SIGMA_PROC_OMEGA * dt;\n");
-        code.push_str("\n");
+        code.push('\n');
         code.push_str("    // ── Update ───────────────────────────────\n");
         code.push_str("    // Build h(x_pred) and H = ∂h/∂x for the active sensors.\n");
         if encoder_joint.is_some() && actuator_enabled {
@@ -3869,11 +3863,11 @@ fn write_math_background_section(
         ));
     }
 
-    if let (Some(ref qd), Some(ref qdd)) = (q_dot.as_ref(), q_ddot.as_ref()) {
+    if let (Some(qd), Some(qdd)) = (q_dot.as_ref(), q_ddot.as_ref()) {
         // Acceleration check: Φ_q · q̈ - γ = 0
         use crate::solver::assembly::assemble_gamma;
         let gamma = assemble_gamma(mechanism, q, qd, 0.0);
-        let acc_resid = (&phi_q_mat * *qdd) - &gamma;
+        let acc_resid = (&phi_q_mat * qdd) - &gamma;
         html.push_str(
             "<p><b>Acceleration residual</b> \\(\\|\\Phi_q\\,\\ddot q - \\gamma\\|\\) \
              — verifies the acceleration solve is consistent with \\(\\gamma\\):</p>\n",

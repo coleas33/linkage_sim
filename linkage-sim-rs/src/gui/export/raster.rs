@@ -120,7 +120,7 @@ pub fn generate_mechanism_gif_bytes(
             forward_indices.iter().rev().skip(1).copied().collect();
         let all_indices: Vec<usize> = forward_indices
             .into_iter()
-            .chain(reverse_indices.into_iter())
+            .chain(reverse_indices)
             .collect();
 
         let mut q_guess = q_start.clone();
@@ -132,8 +132,8 @@ pub fn generate_mechanism_gif_bytes(
 
             match solve_position(mech, &q_guess, t, 1e-10, 50) {
                 Ok(result) if result.converged => {
-                    if let Ok(svg_str) = generate_svg_string(mech, &result.q) {
-                        if let Ok(rgba) = rasterize_svg_to_rgba(&svg_str, width, height) {
+                    if let Ok(svg_str) = generate_svg_string(mech, &result.q)
+                        && let Ok(rgba) = rasterize_svg_to_rgba(&svg_str, width, height) {
                             let mut rgba_buf = rgba;
                             let mut frame = Frame::from_rgba_speed(
                                 width as u16,
@@ -147,7 +147,6 @@ pub fn generate_mechanism_gif_bytes(
                                 .map_err(|e| format!("Failed to write GIF frame: {}", e))?;
                             frames_written += 1;
                         }
-                    }
                     q_guess = result.q;
                 }
                 _ => {}

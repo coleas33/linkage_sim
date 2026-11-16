@@ -3,7 +3,7 @@
 use eframe::egui;
 use egui_plot::{Line, Plot, PlotPoints, VLine};
 
-use crate::gui::state::{AngleUnit, DisplayUnits};
+use crate::gui::state::DisplayUnits;
 use crate::gui::sweep::SweepData;
 
 use super::{
