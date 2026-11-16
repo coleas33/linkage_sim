@@ -3,6 +3,55 @@
 use super::escape::html_escape;
 use crate::core::mechanism::Mechanism;
 
+/// World bounding box of every attachment point and linear-driver endpoint at
+/// pose `q`, padded by `pad_frac` of the box size on each side. A zero-size
+/// span is widened to 1.0 about its centre. Shared by the mechanism SVG and the
+/// schematic so both frame the same mechanism the same way.
+pub(super) fn padded_world_bounds(
+    mechanism: &Mechanism,
+    q: &nalgebra::DVector<f64>,
+    pad_frac: f64,
+) -> Result<(f64, f64, f64, f64), String> {
+    use crate::core::constraint::Constraint as _;
+
+    let state = mechanism.state();
+    let mut min_x = f64::MAX;
+    let mut min_y = f64::MAX;
+    let mut max_x = f64::MIN;
+    let mut max_y = f64::MIN;
+    let mut include = |g: nalgebra::Vector2<f64>| {
+        min_x = min_x.min(g.x);
+        min_y = min_y.min(g.y);
+        max_x = max_x.max(g.x);
+        max_y = max_y.max(g.y);
+    };
+
+    for (body_id, body) in mechanism.bodies().iter() {
+        for pt_local in body.attachment_points.values() {
+            include(state.body_point_global(body_id, pt_local, q));
+        }
+    }
+    // Linear-driver endpoints may sit off every attachment point.
+    for drv in mechanism.linear_drivers() {
+        let (pa, pb) = (drv.point_a(), drv.point_b());
+        include(state.body_point_global(drv.body_i_id(), &nalgebra::Vector2::new(pa[0], pa[1]), q));
+        include(state.body_point_global(drv.body_j_id(), &nalgebra::Vector2::new(pb[0], pb[1]), q));
+    }
+
+    if min_x == f64::MAX || max_x == f64::MIN {
+        return Err("No attachment points found in mechanism".to_string());
+    }
+    if (max_x - min_x).abs() < 1e-10 {
+        let cx = 0.5 * (min_x + max_x);
+        (min_x, max_x) = (cx - 0.5, cx + 0.5);
+    }
+    if (max_y - min_y).abs() < 1e-10 {
+        let cy = 0.5 * (min_y + max_y);
+        (min_y, max_y) = (cy - 0.5, cy + 0.5);
+    }
+    let (pad_x, pad_y) = ((max_x - min_x) * pad_frac, (max_y - min_y) * pad_frac);
+    Ok((min_x - pad_x, min_y - pad_y, max_x + pad_x, max_y + pad_y))
+}
 /// Generate the SVG string for a mechanism at its current pose.
 ///
 /// This is the shared core used by both SVG file export and PNG rasterization.
@@ -17,41 +66,7 @@ pub fn generate_svg_string(
     let bodies = mechanism.bodies();
     let joints = mechanism.joints();
 
-    // Compute bounding box of all attachment points in world coords.
-    let mut min_x = f64::MAX;
-    let mut min_y = f64::MAX;
-    let mut max_x = f64::MIN;
-    let mut max_y = f64::MIN;
-
-    for (body_id, body) in bodies.iter() {
-        for pt_local in body.attachment_points.values() {
-            let global = state.body_point_global(body_id, pt_local, q);
-            min_x = min_x.min(global.x);
-            min_y = min_y.min(global.y);
-            max_x = max_x.max(global.x);
-            max_y = max_y.max(global.y);
-        }
-    }
-
-    // Guard against degenerate (empty or zero-size) bounding boxes.
-    if min_x == f64::MAX || max_x == f64::MIN {
-        return Err("No attachment points found in mechanism".to_string());
-    }
-    if (max_x - min_x).abs() < 1e-10 {
-        max_x = min_x + 1.0;
-    }
-    if (max_y - min_y).abs() < 1e-10 {
-        max_y = min_y + 1.0;
-    }
-
-    // Add margin (15% of bounding box on each side).
-    let margin_x = (max_x - min_x) * 0.15;
-    let margin_y = (max_y - min_y) * 0.15;
-    min_x -= margin_x;
-    min_y -= margin_y;
-    max_x += margin_x;
-    max_y += margin_y;
-
+    let (min_x, min_y, max_x, max_y) = padded_world_bounds(mechanism, q, 0.15)?;
     let width = max_x - min_x;
     let height = max_y - min_y;
 
@@ -314,6 +329,44 @@ mod tests {
 
         let result = generate_svg_string(&mech, &q);
         assert!(result.is_err(), "empty mechanism should return an error");
+    }
+
+    /// LGE-17: one bounding-box helper serves the mechanism SVG and the
+    /// schematic. A linear-driver endpoint that is not a named attachment
+    /// point (here the ground end at y = -0.5) must widen the box, and a
+    /// zero-size span is widened about its centre.
+    #[test]
+    fn padded_world_bounds_include_linear_driver_endpoints_and_centre_a_zero_span() {
+        use crate::core::body::{make_bar, make_ground};
+        use crate::core::linear_driver::constant_velocity_linear_driver;
+        use crate::core::mechanism::Mechanism;
+
+        let mut mech = Mechanism::new();
+        mech.add_body(make_ground(&[("O", 0.0, 0.0)])).unwrap();
+        mech.add_body(make_bar("bar", "A", "B", 0.1, 1.0, 0.01)).unwrap();
+        mech.add_revolute_joint("J1", "ground", "O", "bar", "A").unwrap();
+        mech.add_linear_driver(constant_velocity_linear_driver(
+            "LD1", "ground", [0.0, -0.5], "bar", [0.1, 0.0], 0.0, 0.5,
+        ))
+        .unwrap();
+        mech.build().unwrap();
+        let mut q = mech.state().make_q();
+        mech.state().set_pose("bar", &mut q, 0.0, 0.0, 0.0);
+
+        let (min_x, min_y, max_x, max_y) = padded_world_bounds(&mech, &q, 0.0).unwrap();
+        assert!((min_y + 0.5).abs() < 1e-12, "driver endpoint widens the box, got {min_y}");
+        assert!(max_y.abs() < 1e-12 && min_x.abs() < 1e-12 && (max_x - 0.1).abs() < 1e-12);
+
+        let (_, min_y, _, max_y) = padded_world_bounds(&mech, &q, 0.2).unwrap();
+        assert!((min_y + 0.6).abs() < 1e-12 && (max_y - 0.1).abs() < 1e-12, "20% pad of 0.5");
+
+        // Ground only: a single point has zero span in x and y.
+        let mut lone = Mechanism::new();
+        lone.add_body(make_ground(&[("O", 2.0, 3.0)])).unwrap();
+        lone.build().unwrap();
+        let (min_x, min_y, max_x, max_y) =
+            padded_world_bounds(&lone, &lone.state().make_q(), 0.0).unwrap();
+        assert_eq!((min_x, max_x, min_y, max_y), (1.5, 2.5, 2.5, 3.5));
     }
 
     /// LGE-07: body and joint names are escaped in the SVG text labels.
