@@ -5,6 +5,8 @@
 //! Clicking on any plot whose X-axis is driver angle scrubs the mechanism to
 //! that angle.
 
+use std::borrow::Cow;
+
 use eframe::egui;
 use egui_plot::{Line, Plot, PlotPoints, VLine};
 
@@ -261,7 +263,7 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
     let offset_rad = state.driver_display_offset;
     let offset_deg = offset_rad.to_degrees();
     let display_sweep = sweep_in_display_frame(sweep, offset_deg);
-    let sweep = &display_sweep;
+    let sweep: &SweepData = &display_sweep;
 
     // Current-position cursor on plot X-axis. For linear drivers the
     // current X is the actuator stroke (m); plots multiply by 1000 to
@@ -373,12 +375,14 @@ pub fn draw_plot_panel(ui: &mut egui::Ui, state: &mut AppState) {
 /// Return a copy of `SweepData` whose `angles_deg` and `toggle_angles`
 /// are in display frame (body-frame θ + `offset_deg`). Only applied to
 /// angle-mode sweeps — stroke-mode `angles_deg` carry metres and the
-/// driver_display_offset (an angle quantity) is meaningless there. The
-/// full clone is cheap enough for a per-frame panel redraw and keeps
-/// plot-rendering code path simple.
-fn sweep_in_display_frame(sweep: &SweepData, offset_deg: f64) -> SweepData {
+/// driver_display_offset (an angle quantity) is meaningless there. Stroke
+/// mode and a zero offset borrow the sweep with no copy; only a shifted
+/// angle-mode sweep is copied (shortcut: the other series are cloned too
+/// because the plots take a `&SweepData`; upgrade by passing the two
+/// shifted vectors separately).
+fn sweep_in_display_frame(sweep: &SweepData, offset_deg: f64) -> Cow<'_, SweepData> {
     if sweep.sweep_mode.is_stroke() || offset_deg.abs() < 1e-12 {
-        return sweep.clone();
+        return Cow::Borrowed(sweep);
     }
     let mut shifted = sweep.clone();
     for a in &mut shifted.angles_deg {
@@ -387,7 +391,7 @@ fn sweep_in_display_frame(sweep: &SweepData, offset_deg: f64) -> SweepData {
     for a in &mut shifted.toggle_angles {
         *a += offset_deg;
     }
-    shifted
+    Cow::Owned(shifted)
 }
 
 /// Convert a display-unit angle back to radians.
@@ -748,6 +752,38 @@ mod tests {
             length: LengthUnit::Millimeters,
             angle: AngleUnit::Degrees,
         }
+    }
+
+    /// Pins what the plots draw: angle mode shifts `angles_deg` and
+    /// `toggle_angles` by the offset and leaves every other series alone;
+    /// stroke mode and a zero offset draw the sweep as stored.
+    #[test]
+    fn display_frame_shift_values_are_pinned() {
+        let mut sweep = empty_trajectory_sweep_data(SweepMode::Angle);
+        sweep.angles_deg = vec![10.0, 20.0, 30.0];
+        sweep.toggle_angles = vec![15.0, 25.0];
+        sweep.kinetic_energy = vec![1.0, 2.0, 3.0];
+
+        let shifted = sweep_in_display_frame(&sweep, 43.0);
+        assert_eq!(shifted.angles_deg, vec![53.0, 63.0, 73.0]);
+        assert_eq!(shifted.toggle_angles, vec![58.0, 68.0]);
+        assert_eq!(shifted.kinetic_energy, vec![1.0, 2.0, 3.0]);
+        // The stored sweep is not touched.
+        assert_eq!(sweep.angles_deg, vec![10.0, 20.0, 30.0]);
+        assert_eq!(sweep.toggle_angles, vec![15.0, 25.0]);
+
+        let same = sweep_in_display_frame(&sweep, 0.0);
+        assert_eq!(same.angles_deg, sweep.angles_deg);
+        assert_eq!(same.toggle_angles, sweep.toggle_angles);
+        assert!(matches!(same, Cow::Borrowed(_)), "zero offset must not copy");
+
+        let mut stroke = empty_trajectory_sweep_data(SweepMode::Stroke);
+        stroke.angles_deg = vec![0.1, 0.2];
+        stroke.toggle_angles = vec![0.15];
+        let unshifted = sweep_in_display_frame(&stroke, 43.0);
+        assert_eq!(unshifted.angles_deg, vec![0.1, 0.2]);
+        assert_eq!(unshifted.toggle_angles, vec![0.15]);
+        assert!(matches!(unshifted, Cow::Borrowed(_)), "stroke mode must not copy");
     }
 
     #[test]
