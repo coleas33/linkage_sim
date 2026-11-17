@@ -244,7 +244,7 @@ Nothing here was measured. Each is a place where the code does the same work mor
 
 - **LCS-08** solve_for_target's doc tells callers to cache the workspace probe, but there is no way to, and the app runs 64 forward solves per trajectory sample.
 - **LGC-18** Motion ribbon runs up to 20 Newton position solves every frame.
-- **LGC-05** Whole SweepData cloned every frame to shift two vectors.
+- **LGC-05** Whole SweepData cloned every frame to shift two vectors. FIXED e064f5f: stroke mode and a zero offset borrow the sweep (Cow); a shifted angle-mode sweep is still copied (sweep_in_display_frame).
 - **LGS-20** Repeated blocks and per-frame work in `update()`.
 - **LCS-11** Every solver call goes through String-keyed HashMap lookups and builds full-width matrices per joint. The check confirmed this only in part.
 - **LCS-09** Inverse-kinematics helpers repeat the singularity guard four times and the finite-difference path repeats its own solves; the analytic path the notes call faster is unused.

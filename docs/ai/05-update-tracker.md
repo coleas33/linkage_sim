@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - Plot panel: sweep borrowed when no shift is needed (audit LGC-05; branch audit/2026-11-16-speed)
+- What changed: LGC-05 (e064f5f): `sweep_in_display_frame` in plot_panel/mod.rs returns a `Cow<SweepData>`. Stroke mode and a zero driver offset borrow the stored sweep, so those frames copy nothing. An angle-mode sweep with a non-zero offset is still cloned once per draw (the plots take `&SweepData`; passing the shifted vectors separately would touch every plot function). Drawn values are unchanged. Not measured.
+- Tests: new `display_frame_shift_values_are_pinned` pins the shifted `angles_deg` and `toggle_angles`, the untouched other series and stored sweep, and that stroke mode and zero offset borrow. No cache, so no invalidation test. cargo test --all and clippy pass.
+
 ## 2026-11-16 - Magcoupling speed: defaults, schema and slider ranges built once (audit MEX-01, MEC-03; branch audit/2026-11-16-consistency)
 - What changed: MEX-01 (f674edc): `api::workbook_defaults()` and `api::input_meta(path)` hold the workbook defaults and the input schema in OnceLocks; `assumptions::states`, `modified`, `any_modified` and `reset_to_workbook_defaults` read them instead of rebuilding both on every call (the GUI calls them every frame). MEC-03 (7ac33da): `FreeVariable::range` and `size_controls::geometry` read slider ranges from `input_meta`; ranges are static metadata, so they do not depend on the design values. Behaviour is unchanged. The cost per call was not measured, and the gui-smoke frame timing was not run.
 - Tests: new `the_cached_defaults_and_schema_equal_a_fresh_build` (tests/assumptions.rs) and `the_cached_slider_ranges_equal_a_freshly_built_input_table` (tests/sizing.rs). Both guard equality with a fresh build and cannot fail on the old code. cargo test, cargo test --features app, clippy (both feature sets) and fmt pass.
