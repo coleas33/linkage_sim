@@ -39,7 +39,7 @@ fn rust_results(module: &str, case: &Case) -> Result<BTreeMap<String, Value>, St
 }
 
 /// Compares every result of every case; returns the cases for coverage checks.
-fn check_module(module: &str) -> Vec<Case> {
+fn check_module(module: &str) -> &'static [Case] {
     let cases = load_cases(module);
     let minimum = if module == FULL { 100 } else { 200 };
     assert!(
@@ -48,7 +48,7 @@ fn check_module(module: &str) -> Vec<Case> {
         cases.len()
     );
     let mut failures = Vec::new();
-    for case in &cases {
+    for case in cases {
         let rust = match rust_results(module, case) {
             Ok(rust) => rust,
             Err(e) => {
@@ -316,11 +316,10 @@ fn matches_pattern(pattern: &str, path: &str) -> bool {
 
 #[test]
 fn every_branch_is_reached() {
-    let mut cache: BTreeMap<&str, Vec<Case>> = BTreeMap::new();
     let mut failures = Vec::new();
     for &(pattern, reaches) in BRANCHES {
         let module = group_of(pattern);
-        let cases = cache.entry(module).or_insert_with(|| load_cases(module));
+        let cases = load_cases(module);
         let values: Vec<&Value> = cases
             .iter()
             .flat_map(|c| c.results.iter())
@@ -340,6 +339,21 @@ fn every_branch_is_reached() {
         }
     }
     assert!(failures.is_empty(), "{}", report(&failures));
+}
+
+#[test]
+fn shared_cases_are_one_copy_equal_to_a_fresh_parse() {
+    let shared = load_cases("mass");
+    assert!(
+        std::ptr::eq(shared, load_cases("mass")),
+        "a second load reparsed"
+    );
+    let fresh = common::parse_cases("mass");
+    assert_eq!(shared.len(), fresh.len());
+    for (a, b) in shared.iter().zip(&fresh) {
+        assert_eq!((a.id, &a.tag, &a.inputs), (b.id, &b.tag, &b.inputs));
+        assert_eq!(a.results.len(), b.results.len());
+    }
 }
 
 #[test]

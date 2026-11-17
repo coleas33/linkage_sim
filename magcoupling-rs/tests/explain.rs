@@ -5196,7 +5196,7 @@ fn trace_points() -> Vec<(String, DesignInputs)> {
             .contains(l)
         })
         .collect();
-    for case in load_cases("full").into_iter().take(12) {
+    for case in load_cases("full").iter().take(12) {
         for (label, sets) in &augmentations {
             let mut inputs = DesignInputs::default();
             for (path, value) in case
