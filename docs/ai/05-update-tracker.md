@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - Canvas: motion ribbon poses solved once and reused (audit LGC-18; branch audit/2026-11-16-speed)
+- What changed: LGC-18 (f05212a): `draw_motion_ribbon` (canvas/rendering/mod.rs) keeps its ghost poses in `AppState::motion_ribbon_cache` (a `RefCell<Option<RibbonCache>>`; the render pass borrows state immutably) and draws from them. Inputs: ghost count, driver rate and start angle, the sweep's `u_values`, the warm-start seed `last_good_q`, and the mechanism (no revision counter exists, so `ribbon_cache_is_fresh` checks coordinate and constraint counts plus the constraint residual of every cached pose). While the live pose moves (playback) the seed changes each frame, so the poses are still re-solved then; idle, hover and pan repaints reuse them. Drawn ghosts are unchanged. Measured (debug build, 20 ghosts, sample four-bar): 14.5 ms to solve vs 0.15 ms for the freshness check.
+- Tests: new `ribbon_poses_match_the_original_per_frame_loop` (pin), `ribbon_cache_is_reused_while_inputs_are_unchanged`, `ribbon_cache_is_recomputed_when_any_input_changes` (ghost count, rate, start angle, u_values, seed, mechanism rebuild); ignored timing test `ribbon_timing_solve_versus_freshness_check`. cargo test --all and clippy pass.
+
 ## 2026-11-16 - Plot panel: sweep borrowed when no shift is needed (audit LGC-05; branch audit/2026-11-16-speed)
 - What changed: LGC-05 (e064f5f): `sweep_in_display_frame` in plot_panel/mod.rs returns a `Cow<SweepData>`. Stroke mode and a zero driver offset borrow the stored sweep, so those frames copy nothing. An angle-mode sweep with a non-zero offset is still cloned once per draw (the plots take `&SweepData`; passing the shifted vectors separately would touch every plot function). Drawn values are unchanged. Not measured.
 - Tests: new `display_frame_shift_values_are_pinned` pins the shifted `angles_deg` and `toggle_angles`, the untouched other series and stored sweep, and that stroke mode and zero offset borrow. No cache, so no invalidation test. cargo test --all and clippy pass.

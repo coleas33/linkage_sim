@@ -243,7 +243,7 @@ The sure line fixes are in the fixed table. What is left needs new wording or a 
 Nothing here was measured. Each is a place where the code does the same work more than once.
 
 - **LCS-08** solve_for_target's doc tells callers to cache the workspace probe, but there is no way to, and the app runs 64 forward solves per trajectory sample.
-- **LGC-18** Motion ribbon runs up to 20 Newton position solves every frame.
+- **LGC-18** Motion ribbon runs up to 20 Newton position solves every frame. FIXED f05212a: the ghost poses are cached on AppState and re-solved only when the ghost count, driver rate or start angle, sweep u_values, warm-start seed or mechanism changes.
 - **LGC-05** Whole SweepData cloned every frame to shift two vectors. FIXED e064f5f: stroke mode and a zero offset borrow the sweep (Cow); a shifted angle-mode sweep is still copied (sweep_in_display_frame).
 - **LGS-20** Repeated blocks and per-frame work in `update()`.
 - **LCS-11** Every solver call goes through String-keyed HashMap lookups and builds full-width matrices per joint. The check confirmed this only in part.
