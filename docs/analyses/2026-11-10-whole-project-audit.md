@@ -243,8 +243,8 @@ The sure line fixes are in the fixed table. What is left needs new wording or a 
 Nothing here was measured. Each is a place where the code does the same work more than once.
 
 - **LCS-08** solve_for_target's doc tells callers to cache the workspace probe, but there is no way to, and the app runs 64 forward solves per trajectory sample.
-- **LGC-18** Motion ribbon runs up to 20 Newton position solves every frame.
-- **LGC-05** Whole SweepData cloned every frame to shift two vectors.
+- **LGC-18** Motion ribbon runs up to 20 Newton position solves every frame. FIXED f05212a: the ghost poses are cached on AppState and re-solved only when the ghost count, driver rate or start angle, sweep u_values, warm-start seed or mechanism changes.
+- **LGC-05** Whole SweepData cloned every frame to shift two vectors. FIXED e064f5f: stroke mode and a zero offset borrow the sweep (Cow); a shifted angle-mode sweep is still copied (sweep_in_display_frame).
 - **LGS-20** Repeated blocks and per-frame work in `update()`.
 - **LCS-11** Every solver call goes through String-keyed HashMap lookups and builds full-width matrices per joint. The check confirmed this only in part.
 - **LCS-09** Inverse-kinematics helpers repeat the singularity guard four times and the finite-difference path repeats its own solves; the analytic path the notes call faster is unused.
@@ -254,9 +254,9 @@ Nothing here was measured. Each is a place where the code does the same work mor
 - **MEC-03** slider ranges are re-read from a freshly built input table on every call; the GUI caches the same data. FIXED 7ac33da: `FreeVariable::range` and `size_controls::geometry` read the cached `api::input_meta`.
 - **MGG-02** the fix search recomputes the same moved designs and an unchanged baseline. The check confirmed this only in part.
 - **MGP-02** Under Auto the design shown and the solve key are rebuilt several times a frame. The check confirmed this only in part.
-- **MGP-03** Every drawn input row builds its tooltip strings each frame, hovered or not.
-- **MGV-06** Every dashboard guide recomputes its level and notes each frame, also when its block is shut. The check confirmed this only in part.
-- **MT-02** Differential JSON (about 10 MB) is parsed again by almost every test that needs it. The check confirmed this only in part.
+- **MGP-03** Every drawn input row builds its tooltip strings each frame, hovered or not. FIXED c20fbd4: the tooltip strings are built inside on_hover_ui closures.
+- **MGV-06** Every dashboard guide recomputes its level and notes each frame, also when its block is shut. The check confirmed this only in part. FIXED e105f84: the notes are built only when the block is open.
+- **MT-02** Differential JSON (about 10 MB) is parsed again by almost every test that needs it. The check confirmed this only in part. FIXED 74b5353: load_cases parses each file once per test binary; the saving is within noise (43.1 s to 41.9 s).
 
 ### I. The same code written more than once (34)
 

@@ -853,7 +853,8 @@ fn fit_ui(
 struct GuideShown<'a> {
     level: Level,
     fixes: &'a [(&'static str, Direction)],
-    notes: &'a [String],
+    /// Read only when the block is open (they are drawn under its fixes).
+    notes: &'a dyn Fn() -> Vec<String>,
 }
 
 /// The lines of the guide at `index` of [`CHECK_GUIDES`] in this design ([`guide_ui`]): its
@@ -867,7 +868,7 @@ fn indexed_guide_ui(
     readouts: &mut Readouts,
 ) {
     let guide = &CHECK_GUIDES[index];
-    let notes = guide_notes(fixes, index, inputs, results);
+    let notes = || guide_notes(fixes, index, inputs, results);
     let shown = GuideShown {
         level: guidance::level(guide, inputs, results),
         fixes: fixes.get(index).map_or(&[], Vec::as_slice),
@@ -936,7 +937,7 @@ fn fix_line(ui: &mut egui::Ui, shown: &GuideShown, readouts: &mut Readouts) {
                 readouts.focus_input(path);
             }
         }
-        for note in shown.notes {
+        for note in (shown.notes)() {
             ui.add(egui::Label::new(note).wrap());
         }
     });
@@ -2685,7 +2686,7 @@ mod tests {
         GuideShown {
             level,
             fixes: &CUP_WALL_FIX,
-            notes: &[],
+            notes: &Vec::new,
         }
     }
 
@@ -2799,7 +2800,7 @@ mod tests {
         let two_picks = GuideShown {
             level: Level::Bad,
             fixes: &part,
-            notes: &[],
+            notes: &Vec::new,
         };
         let events = click_in_guide(&guide, &two_picks, &fix_text(part[0].0, part[0].1));
         assert_eq!(events.focus, Some("coupling.magnets.part_inner"));
@@ -2870,7 +2871,7 @@ mod tests {
         let none = GuideShown {
             level: Level::Bad,
             fixes: &[],
-            notes: &[],
+            notes: &Vec::new,
         };
         let (output, _) = guide_frames(&ctx, &guide, &none, Vec::new());
         let texts = drawn_texts(&output);
@@ -2881,13 +2882,38 @@ mod tests {
         let noted = GuideShown {
             level: Level::Bad,
             fixes: &CUP_WALL_FIX,
-            notes: &notes,
+            notes: &|| notes.to_vec(),
         };
         let (output, _) = guide_frames(&ctx, &guide, &noted, Vec::new());
         assert!(!drawn_texts(&output).iter().any(|t| t == guidance::NO_FIX));
         let fix = fix_text(CUP_WALL_FIX[0].0, CUP_WALL_FIX[0].1);
         let y = |text: &str| text_rect(&output, text).unwrap().top();
         assert!(y(&fix) < y(&note));
+    }
+
+    #[test]
+    fn a_guide_reads_its_notes_only_when_its_block_is_open() {
+        let guide = guide_with(Learn::None("A test reason."));
+        let reads = std::cell::Cell::new(0);
+        let counting = || {
+            reads.set(reads.get() + 1);
+            vec!["A test trade-off.".to_owned()]
+        };
+        for (level, want) in [(Level::Good, 0), (Level::Caution, 0), (Level::Bad, 1)] {
+            reads.set(0);
+            let block = GuideShown {
+                level,
+                fixes: &CUP_WALL_FIX,
+                notes: &counting,
+            };
+            let ctx = egui::Context::default();
+            let (output, _) = guide_frames(&ctx, &guide, &block, Vec::new());
+            assert_eq!(reads.get(), want, "{level:?}");
+            let shown = drawn_texts(&output)
+                .iter()
+                .any(|t| t == "A test trade-off.");
+            assert_eq!(shown, want > 0, "{level:?}");
+        }
     }
 
     #[test]
@@ -2930,7 +2956,7 @@ mod tests {
                         let shown = GuideShown {
                             level: Level::Bad,
                             fixes,
-                            notes: &notes,
+                            notes: &|| notes.clone(),
                         };
                         guide_ui(ui, guide, &shown, &inputs, &results, &mut readouts);
                     }

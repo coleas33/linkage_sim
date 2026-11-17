@@ -117,7 +117,8 @@ pub fn input_row(
     show_details: bool,
 ) -> RowOutput {
     let meta = entry.meta;
-    let tooltip = input_tooltip(entry, show_details);
+    // Built only when a hover shows it (the closures below run only then).
+    let tooltip = || input_tooltip(entry, show_details);
     let changed = *current != entry.default;
     let mut edit = None;
     let mut label_clicked = false;
@@ -128,7 +129,9 @@ pub fn input_row(
                 .on_hover_text(CHANGED_FROM_DEFAULT);
             label_clicked = ui
                 .add(egui::Label::new(label_for(&entry.path)).sense(egui::Sense::click()))
-                .on_hover_text(format!("{tooltip}\n{TRACE_HINT}"))
+                .on_hover_ui(|ui| {
+                    ui.add(egui::Label::new(format!("{}\n{TRACE_HINT}", tooltip())));
+                })
                 .clicked();
             ui.add_enabled_ui(!locked, |ui| {
                 if outside_range(meta.range, current) {
@@ -138,10 +141,12 @@ pub fn input_row(
                 if changed
                     && ui
                         .small_button(RESET_LABEL)
-                        .on_hover_text(format!(
-                            "Back to the default: {}",
-                            format_value(&entry.default)
-                        ))
+                        .on_hover_ui(|ui| {
+                            ui.add(egui::Label::new(format!(
+                                "Back to the default: {}",
+                                format_value(&entry.default)
+                            )));
+                        })
                         .clicked()
                 {
                     edit = Some(RowEdit::Reset);
@@ -150,7 +155,9 @@ pub fn input_row(
         });
         let widget = ui
             .add_enabled_ui(!locked, |ui| {
-                let widget = widget(ui, entry, current, seed, &mut edit).on_hover_text(&tooltip);
+                let widget = widget(ui, entry, current, seed, &mut edit).on_hover_ui(|ui| {
+                    ui.add(egui::Label::new(tooltip()));
+                });
                 if let Some(picked) = picker_ui(ui, &entry.path, current) {
                     edit = Some(picked);
                 }

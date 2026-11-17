@@ -2053,8 +2053,8 @@ fn assert_no_differential_case_moves_between(bases: &[(Deviations, Deviations)],
         .into_iter()
         .flat_map(|file| {
             load_cases(file)
-                .into_iter()
-                .map(move |case| (format!("{file} case {}", case.id), case.inputs))
+                .iter()
+                .map(move |case| (format!("{file} case {}", case.id), case.inputs.clone()))
         })
         .collect();
     assert!(!all.is_empty());

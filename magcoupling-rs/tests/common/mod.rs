@@ -6,6 +6,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 
 use magcoupling::engine::api::{DesignInputs, compute_all_with};
 use magcoupling::engine::deviations::{DeviationStatus, Deviations, REGISTRY};
@@ -323,7 +324,7 @@ pub struct Case {
     pub results: BTreeMap<String, Value>,
 }
 
-pub fn load_cases(module: &str) -> Vec<Case> {
+pub fn parse_cases(module: &str) -> Vec<Case> {
     let doc = read_json(&data_path(&format!("differential/{module}.json")));
     assert_eq!(doc["module"], module);
     let paths = |key: &str| -> Vec<String> {
@@ -364,6 +365,19 @@ pub fn load_cases(module: &str) -> Vec<Case> {
             }
         })
         .collect()
+}
+
+/// The cases of module, parsed once per test binary and shared (the files total about 10 MB).
+/// The lock is held while parsing, so concurrent tests wait for one parse instead of repeating it.
+pub fn load_cases(module: &str) -> &'static [Case] {
+    static CACHE: OnceLock<Mutex<BTreeMap<String, &'static [Case]>>> = OnceLock::new();
+    let mut cache = CACHE
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    cache
+        .entry(module.to_owned())
+        .or_insert_with(|| Box::leak(parse_cases(module).into_boxed_slice()))
 }
 
 /// Every differential data file with cases: one per ported result group, then the full run.

@@ -5,6 +5,26 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - Magcoupling tests: the differential JSON is parsed once per test binary (audit MT-02; branch audit/2026-11-16-speed)
+- What changed: MT-02 (74b5353): `load_cases` (magcoupling-rs/tests/common/mod.rs) caches each module's parsed cases for the life of the test binary and returns a shared `&'static [Case]`; `parse_cases` is the uncached parser. deviations.rs clones the inputs it moves; `every_branch_is_reached` lost its local cache. Measured: differential + deviations + explain, debug, 43.1 s before, 41.9 s after (within noise).
+- Tests: new `shared_cases_are_one_copy_equal_to_a_fresh_parse`. The data files never change during a run, so nothing to invalidate. Checks as above.
+
+## 2026-11-16 - Magcoupling dashboard: a guide's notes are built only when its block is open (audit MGV-06; branch audit/2026-11-16-speed)
+- What changed: MGV-06 (e105f84): `GuideShown.notes` (gui/dashboard.rs) is a closure that `fix_line` calls, so `guide_notes` runs only under an open block (red, or amber once opened). The level is still computed each frame (the header and the open decision need it); the fit row's second level call is left. Drawn texts unchanged. Not measured.
+- Tests: new `a_guide_reads_its_notes_only_when_its_block_is_open` (reads counted at green, shut amber, red); existing guide tests pin the drawn text. No cache. cargo test, cargo test --features app, both clippy runs and fmt --check pass.
+
+## 2026-11-16 - Magcoupling input rows: tooltips built only when hovered (audit MGP-03; branch audit/2026-11-16-speed)
+- What changed: MGP-03 (c20fbd4): `input_row` (gui/input_ui.rs) builds the row tooltip, the label hover and the reset hover inside `on_hover_ui` closures, so nothing is formatted until a tooltip shows. Hover text is unchanged. Not measured.
+- Tests: existing `an_input_row_s_hover_names_its_path_and_cell_only_with_the_spreadsheet_details` and the widget-hover panel tests pin the texts. No cache. Checks as above.
+
+## 2026-11-16 - Canvas: motion ribbon poses solved once and reused (audit LGC-18; branch audit/2026-11-16-speed)
+- What changed: LGC-18 (f05212a): `draw_motion_ribbon` (canvas/rendering/mod.rs) keeps its ghost poses in `AppState::motion_ribbon_cache` (a `RefCell<Option<RibbonCache>>`; the render pass borrows state immutably) and draws from them. Inputs: ghost count, driver rate and start angle, the sweep's `u_values`, the warm-start seed `last_good_q`, and the mechanism (no revision counter exists, so `ribbon_cache_is_fresh` checks coordinate and constraint counts plus the constraint residual of every cached pose). While the live pose moves (playback) the seed changes each frame, so the poses are still re-solved then; idle, hover and pan repaints reuse them. Drawn ghosts are unchanged. Measured (debug build, 20 ghosts, sample four-bar): 14.5 ms to solve vs 0.15 ms for the freshness check.
+- Tests: new `ribbon_poses_match_the_original_per_frame_loop` (pin), `ribbon_cache_is_reused_while_inputs_are_unchanged`, `ribbon_cache_is_recomputed_when_any_input_changes` (ghost count, rate, start angle, u_values, seed, mechanism rebuild); ignored timing test `ribbon_timing_solve_versus_freshness_check`. cargo test --all and clippy pass.
+
+## 2026-11-16 - Plot panel: sweep borrowed when no shift is needed (audit LGC-05; branch audit/2026-11-16-speed)
+- What changed: LGC-05 (e064f5f): `sweep_in_display_frame` in plot_panel/mod.rs returns a `Cow<SweepData>`. Stroke mode and a zero driver offset borrow the stored sweep, so those frames copy nothing. An angle-mode sweep with a non-zero offset is still cloned once per draw (the plots take `&SweepData`; passing the shifted vectors separately would touch every plot function). Drawn values are unchanged. Not measured.
+- Tests: new `display_frame_shift_values_are_pinned` pins the shifted `angles_deg` and `toggle_angles`, the untouched other series and stored sweep, and that stroke mode and zero offset borrow. No cache, so no invalidation test. cargo test --all and clippy pass.
+
 ## 2026-11-16 - Magcoupling speed: defaults, schema and slider ranges built once (audit MEX-01, MEC-03; branch audit/2026-11-16-consistency)
 - What changed: MEX-01 (f674edc): `api::workbook_defaults()` and `api::input_meta(path)` hold the workbook defaults and the input schema in OnceLocks; `assumptions::states`, `modified`, `any_modified` and `reset_to_workbook_defaults` read them instead of rebuilding both on every call (the GUI calls them every frame). MEC-03 (7ac33da): `FreeVariable::range` and `size_controls::geometry` read slider ranges from `input_meta`; ranges are static metadata, so they do not depend on the design values. Behaviour is unchanged. The cost per call was not measured, and the gui-smoke frame timing was not run.
 - Tests: new `the_cached_defaults_and_schema_equal_a_fresh_build` (tests/assumptions.rs) and `the_cached_slider_ranges_equal_a_freshly_built_input_table` (tests/sizing.rs). Both guard equality with a fresh build and cannot fail on the old code. cargo test, cargo test --features app, clippy (both feature sets) and fmt pass.
