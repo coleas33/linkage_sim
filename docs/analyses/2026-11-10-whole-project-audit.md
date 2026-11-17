@@ -254,8 +254,8 @@ Nothing here was measured. Each is a place where the code does the same work mor
 - **MEC-03** slider ranges are re-read from a freshly built input table on every call; the GUI caches the same data. FIXED 7ac33da: `FreeVariable::range` and `size_controls::geometry` read the cached `api::input_meta`.
 - **MGG-02** the fix search recomputes the same moved designs and an unchanged baseline. The check confirmed this only in part.
 - **MGP-02** Under Auto the design shown and the solve key are rebuilt several times a frame. The check confirmed this only in part.
-- **MGP-03** Every drawn input row builds its tooltip strings each frame, hovered or not.
-- **MGV-06** Every dashboard guide recomputes its level and notes each frame, also when its block is shut. The check confirmed this only in part.
+- **MGP-03** Every drawn input row builds its tooltip strings each frame, hovered or not. FIXED c20fbd4: the tooltip strings are built inside on_hover_ui closures.
+- **MGV-06** Every dashboard guide recomputes its level and notes each frame, also when its block is shut. The check confirmed this only in part. FIXED e105f84: the notes are built only when the block is open.
 - **MT-02** Differential JSON (about 10 MB) is parsed again by almost every test that needs it. The check confirmed this only in part.
 
 ### I. The same code written more than once (34)

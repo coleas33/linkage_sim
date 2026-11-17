@@ -5,6 +5,14 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - Magcoupling dashboard: a guide's notes are built only when its block is open (audit MGV-06; branch audit/2026-11-16-speed)
+- What changed: MGV-06 (e105f84): `GuideShown.notes` (gui/dashboard.rs) is a closure that `fix_line` calls, so `guide_notes` runs only under an open block (red, or amber once opened). The level is still computed each frame (the header and the open decision need it); the fit row's second level call is left. Drawn texts unchanged. Not measured.
+- Tests: new `a_guide_reads_its_notes_only_when_its_block_is_open` (reads counted at green, shut amber, red); existing guide tests pin the drawn text. No cache. cargo test, cargo test --features app, both clippy runs and fmt --check pass.
+
+## 2026-11-16 - Magcoupling input rows: tooltips built only when hovered (audit MGP-03; branch audit/2026-11-16-speed)
+- What changed: MGP-03 (c20fbd4): `input_row` (gui/input_ui.rs) builds the row tooltip, the label hover and the reset hover inside `on_hover_ui` closures, so nothing is formatted until a tooltip shows. Hover text is unchanged. Not measured.
+- Tests: existing `an_input_row_s_hover_names_its_path_and_cell_only_with_the_spreadsheet_details` and the widget-hover panel tests pin the texts. No cache. Checks as above.
+
 ## 2026-11-16 - Canvas: motion ribbon poses solved once and reused (audit LGC-18; branch audit/2026-11-16-speed)
 - What changed: LGC-18 (f05212a): `draw_motion_ribbon` (canvas/rendering/mod.rs) keeps its ghost poses in `AppState::motion_ribbon_cache` (a `RefCell<Option<RibbonCache>>`; the render pass borrows state immutably) and draws from them. Inputs: ghost count, driver rate and start angle, the sweep's `u_values`, the warm-start seed `last_good_q`, and the mechanism (no revision counter exists, so `ribbon_cache_is_fresh` checks coordinate and constraint counts plus the constraint residual of every cached pose). While the live pose moves (playback) the seed changes each frame, so the poses are still re-solved then; idle, hover and pan repaints reuse them. Drawn ghosts are unchanged. Measured (debug build, 20 ghosts, sample four-bar): 14.5 ms to solve vs 0.15 ms for the freshness check.
 - Tests: new `ribbon_poses_match_the_original_per_frame_loop` (pin), `ribbon_cache_is_reused_while_inputs_are_unchanged`, `ribbon_cache_is_recomputed_when_any_input_changes` (ghost count, rate, start angle, u_values, seed, mechanism rebuild); ignored timing test `ribbon_timing_solve_versus_freshness_check`. cargo test --all and clippy pass.
