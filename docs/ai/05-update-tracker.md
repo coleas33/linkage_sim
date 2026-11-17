@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-16 - Magcoupling tests: the differential JSON is parsed once per test binary (audit MT-02; branch audit/2026-11-16-speed)
+- What changed: MT-02 (74b5353): `load_cases` (magcoupling-rs/tests/common/mod.rs) caches each module's parsed cases for the life of the test binary and returns a shared `&'static [Case]`; `parse_cases` is the uncached parser. deviations.rs clones the inputs it moves; `every_branch_is_reached` lost its local cache. Measured: differential + deviations + explain, debug, 43.1 s before, 41.9 s after (within noise).
+- Tests: new `shared_cases_are_one_copy_equal_to_a_fresh_parse`. The data files never change during a run, so nothing to invalidate. Checks as above.
+
 ## 2026-11-16 - Magcoupling dashboard: a guide's notes are built only when its block is open (audit MGV-06; branch audit/2026-11-16-speed)
 - What changed: MGV-06 (e105f84): `GuideShown.notes` (gui/dashboard.rs) is a closure that `fix_line` calls, so `guide_notes` runs only under an open block (red, or amber once opened). The level is still computed each frame (the header and the open decision need it); the fit row's second level call is left. Drawn texts unchanged. Not measured.
 - Tests: new `a_guide_reads_its_notes_only_when_its_block_is_open` (reads counted at green, shut amber, red); existing guide tests pin the drawn text. No cache. cargo test, cargo test --features app, both clippy runs and fmt --check pass.

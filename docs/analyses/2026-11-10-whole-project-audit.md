@@ -256,7 +256,7 @@ Nothing here was measured. Each is a place where the code does the same work mor
 - **MGP-02** Under Auto the design shown and the solve key are rebuilt several times a frame. The check confirmed this only in part.
 - **MGP-03** Every drawn input row builds its tooltip strings each frame, hovered or not. FIXED c20fbd4: the tooltip strings are built inside on_hover_ui closures.
 - **MGV-06** Every dashboard guide recomputes its level and notes each frame, also when its block is shut. The check confirmed this only in part. FIXED e105f84: the notes are built only when the block is open.
-- **MT-02** Differential JSON (about 10 MB) is parsed again by almost every test that needs it. The check confirmed this only in part.
+- **MT-02** Differential JSON (about 10 MB) is parsed again by almost every test that needs it. The check confirmed this only in part. FIXED 74b5353: load_cases parses each file once per test binary; the saving is within noise (43.1 s to 41.9 s).
 
 ### I. The same code written more than once (34)
 
