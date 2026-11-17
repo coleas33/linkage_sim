@@ -7,7 +7,7 @@ use crate::core::constraint::Constraint;
 use crate::core::mechanism::Mechanism;
 use crate::core::state::GROUND_ID;
 use crate::forces::elements::*;
-use crate::gui::state::{AppState, SelectedEntity, ViewTransform, GridSettings};
+use crate::gui::state::{AppState, RibbonCache, SelectedEntity, ViewTransform, GridSettings};
 
 use super::colors::*;
 use super::hit_testing::{AttachmentHit, BodySegment};
@@ -1536,8 +1536,6 @@ fn draw_motion_ribbon(
     state: &AppState,
     sweep_data: &crate::gui::sweep::SweepData,
 ) {
-    use crate::solver::kinematics::solve_position;
-
     let n = state.motion_ribbon_n_ghosts;
     let total_samples = sweep_data.u_values.as_ref().map(|v| v.len()).unwrap_or(0);
     if total_samples < 2 || n < 2 {
@@ -1553,33 +1551,96 @@ fn draw_motion_ribbon(
     }
     let u_0 = state.driver_theta_0();
 
-    let stride = (total_samples - 1) as f64 / (n - 1) as f64;
     let u_values = sweep_data.u_values.as_ref().unwrap();
 
+    // The poses depend only on the inputs named in `ribbon_cache_is_fresh`,
+    // so a repaint with the same inputs (hover, pan, idle) reuses them.
+    let mut cache = state.motion_ribbon_cache.borrow_mut();
+    let fresh = cache.as_ref().is_some_and(|c| {
+        ribbon_cache_is_fresh(c, mech, u_values, n, nominal_rate, u_0, &state.last_good_q)
+    });
+    if !fresh {
+        *cache = Some(RibbonCache {
+            n,
+            omega: nominal_rate,
+            u_0,
+            seed: state.last_good_q.clone(),
+            u_values: u_values.clone(),
+            n_coords: mech.state().n_coords(),
+            n_constraints: mech.n_constraints(),
+            poses: ribbon_solve_poses(mech, u_values, n, nominal_rate, u_0, &state.last_good_q),
+        });
+    }
+
+    for (i, _, q) in &cache.as_ref().unwrap().poses {
+        // Alpha ramps 40 → 240 across ghosts so older poses are
+        // dimmer than later ones (gives a visible ordering).
+        let alpha = ((*i as f64) / (n.saturating_sub(1).max(1) as f64) * 200.0 + 40.0)
+            .min(255.0) as u8;
+        draw_mechanism_ghost(painter, state, mech, q, alpha);
+    }
+}
+
+/// Solve the `n` ghost poses: (ghost index, mechanism time, q) for every
+/// ghost whose position solve converged. Caller guarantees
+/// `u_values.len() >= 2`, `n >= 2`, `omega != 0`.
+fn ribbon_solve_poses(
+    mech: &Mechanism,
+    u_values: &[f64],
+    n: usize,
+    omega: f64,
+    u_0: f64,
+    seed: &nalgebra::DVector<f64>,
+) -> Vec<(usize, f64, nalgebra::DVector<f64>)> {
+    use crate::solver::kinematics::solve_position;
+
+    let total_samples = u_values.len();
+    let stride = (total_samples - 1) as f64 / (n - 1) as f64;
     // Warm-start each ghost solve from the previous successful pose so
     // we stay on the same assembly branch as the live mechanism.
-    let mut q_seed = state.last_good_q.clone();
-
+    let mut q_seed = seed.clone();
+    let mut poses = Vec::with_capacity(n);
     for i in 0..n {
         let idx = ((i as f64 * stride).round() as usize).min(total_samples - 1);
-        let u_k = u_values[idx];
-        let t_mech = (u_k - u_0) / nominal_rate;
-
-        match solve_position(mech, &q_seed, t_mech, 1e-10, 50) {
-            Ok(res) if res.converged => {
-                // Alpha ramps 40 → 240 across ghosts so older poses are
-                // dimmer than later ones (gives a visible ordering).
-                let alpha =
-                    ((i as f64) / (n.saturating_sub(1).max(1) as f64) * 200.0 + 40.0)
-                        .min(255.0) as u8;
-                draw_mechanism_ghost(painter, state, mech, &res.q, alpha);
-                q_seed = res.q;
-            }
-            _ => {
-                // Skip this ghost; keep the previous q_seed for the next attempt.
-            }
+        let t_mech = (u_values[idx] - u_0) / omega;
+        // A ghost that fails is skipped; the previous q_seed carries on.
+        if let Ok(res) = solve_position(mech, &q_seed, t_mech, 1e-10, 50)
+            && res.converged
+        {
+            q_seed = res.q.clone();
+            poses.push((i, t_mech, res.q));
         }
     }
+    poses
+}
+
+/// True when `c` still holds the poses `ribbon_solve_poses` would return.
+/// Inputs: ghost count, driver rate and start angle, the warm-start seed,
+/// the sweep's `u_values`, and the mechanism. The mechanism has no revision
+/// counter and is edited in place in many places, so it is checked by shape
+/// plus the residual of every cached pose (an edit that moves any link
+/// geometry makes a pose violate its constraints).
+fn ribbon_cache_is_fresh(
+    c: &RibbonCache,
+    mech: &Mechanism,
+    u_values: &[f64],
+    n: usize,
+    omega: f64,
+    u_0: f64,
+    seed: &nalgebra::DVector<f64>,
+) -> bool {
+    c.n == n
+        && c.omega == omega
+        && c.u_0 == u_0
+        && c.seed == *seed
+        && c.u_values == u_values
+        && mech.is_built()
+        && c.n_coords == mech.state().n_coords()
+        && c.n_constraints == mech.n_constraints()
+        && c.poses.iter().all(|(_, t, q)| {
+            q.len() == c.n_coords
+                && crate::solver::assembly::assemble_constraints(mech, q, *t).norm() < 1e-10
+        })
 }
 
 /// Render a faded silhouette of the mechanism at a given pose `q`.
@@ -1710,5 +1771,144 @@ mod tests {
                 t1, c1, c2
             );
         }
+    }
+
+    // ── Motion ribbon pose cache (LGC-18) ───────────────────────────────
+
+    use crate::gui::samples::SampleMechanism;
+
+    /// A four-bar in trajectory mode with a completed sweep, as the canvas sees it.
+    fn ribbon_state() -> AppState {
+        use crate::gui::state::{MotionProfile, Trajectory, TrajectoryProfile};
+        use crate::gui::sweep::SweepMode;
+        use crate::solver::inverse_kinematics::{ControlTarget, Severity};
+
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.sweep_mode = SweepMode::Trajectory {
+            target: ControlTarget::angle("crank"),
+            trajectory: Trajectory::Profile(TrajectoryProfile {
+                shape: MotionProfile::ConstantSpeed,
+                start_value: 0.5,
+                end_value: 1.5,
+                duration: 1.0,
+            }),
+            severity: Severity::Analysis,
+            n_samples: 40,
+        };
+        state.compute_sweep();
+        state
+    }
+
+    fn ribbon_cache_from(state: &AppState, n: usize) -> RibbonCache {
+        let mech = state.mechanism.as_ref().unwrap();
+        let u = state.sweep_data.as_ref().unwrap().u_values.clone().unwrap();
+        let (omega, u_0) = (state.driver_omega(), state.driver_theta_0());
+        RibbonCache {
+            n,
+            omega,
+            u_0,
+            seed: state.last_good_q.clone(),
+            n_coords: mech.state().n_coords(),
+            n_constraints: mech.n_constraints(),
+            poses: ribbon_solve_poses(mech, &u, n, omega, u_0, &state.last_good_q),
+            u_values: u,
+        }
+    }
+
+    #[test]
+    fn ribbon_poses_match_the_original_per_frame_loop() {
+        use crate::solver::kinematics::solve_position;
+        let state = ribbon_state();
+        let mech = state.mechanism.as_ref().unwrap();
+        let u = state.sweep_data.as_ref().unwrap().u_values.clone().unwrap();
+        let (omega, u_0) = (state.driver_omega(), state.driver_theta_0());
+        let n = 8;
+
+        // The loop draw_motion_ribbon ran every frame before the cache.
+        let stride = (u.len() - 1) as f64 / (n - 1) as f64;
+        let mut q_seed = state.last_good_q.clone();
+        let mut expected = Vec::new();
+        for i in 0..n {
+            let idx = ((i as f64 * stride).round() as usize).min(u.len() - 1);
+            let t = (u[idx] - u_0) / omega;
+            if let Ok(res) = solve_position(mech, &q_seed, t, 1e-10, 50)
+                && res.converged
+            {
+                q_seed = res.q.clone();
+                expected.push((i, res.q));
+            }
+        }
+        assert!(expected.len() >= 6, "ribbon should mostly converge");
+
+        let got = ribbon_solve_poses(mech, &u, n, omega, u_0, &state.last_good_q);
+        assert_eq!(got.len(), expected.len());
+        for ((gi, _, gq), (ei, eq)) in got.iter().zip(&expected) {
+            assert_eq!(gi, ei);
+            assert_eq!(gq, eq);
+        }
+    }
+
+    #[test]
+    fn ribbon_cache_is_reused_while_inputs_are_unchanged() {
+        let state = ribbon_state();
+        let c = ribbon_cache_from(&state, 8);
+        let mech = state.mechanism.as_ref().unwrap();
+        let u = state.sweep_data.as_ref().unwrap().u_values.clone().unwrap();
+        assert!(ribbon_cache_is_fresh(
+            &c, mech, &u, 8, state.driver_omega(), state.driver_theta_0(), &state.last_good_q
+        ));
+    }
+
+    #[test]
+    fn ribbon_cache_is_recomputed_when_any_input_changes() {
+        let mut state = ribbon_state();
+        let c = ribbon_cache_from(&state, 8);
+        let u = state.sweep_data.as_ref().unwrap().u_values.clone().unwrap();
+        let (omega, u_0) = (state.driver_omega(), state.driver_theta_0());
+        let seed = state.last_good_q.clone();
+        let fresh = |mech: &Mechanism, u: &[f64], n, omega, u_0, seed: &nalgebra::DVector<f64>| {
+            ribbon_cache_is_fresh(&c, mech, u, n, omega, u_0, seed)
+        };
+        {
+            let mech = state.mechanism.as_ref().unwrap();
+            assert!(fresh(mech, &u, 8, omega, u_0, &seed));
+            // the ribbon setting (ghost count)
+            assert!(!fresh(mech, &u, 9, omega, u_0, &seed));
+            // driver angle range / rate / start
+            assert!(!fresh(mech, &u, 8, omega * 2.0, u_0, &seed));
+            assert!(!fresh(mech, &u, 8, omega, u_0 + 0.1, &seed));
+            let mut u2 = u.clone();
+            u2[3] += 1e-3;
+            assert!(!fresh(mech, &u2, 8, omega, u_0, &seed));
+            // warm-start seed (live pose moved to another branch or place)
+            let mut seed2 = seed.clone();
+            seed2[3] += 1e-3;
+            assert!(!fresh(mech, &u, 8, omega, u_0, &seed2));
+        }
+        // mechanism rebuild with moved geometry
+        state.move_attachment_point("crank", "B", 0.0123, 0.0456);
+        let mech = state.mechanism.as_ref().unwrap();
+        assert!(!fresh(mech, &u, 8, omega, u_0, &seed));
+    }
+
+    #[test]
+    #[ignore = "timing, run by hand with --nocapture"]
+    fn ribbon_timing_solve_versus_freshness_check() {
+        let state = ribbon_state();
+        let c = ribbon_cache_from(&state, 20);
+        let mech = state.mechanism.as_ref().unwrap();
+        let u = state.sweep_data.as_ref().unwrap().u_values.clone().unwrap();
+        let (omega, u_0) = (state.driver_omega(), state.driver_theta_0());
+        let t = std::time::Instant::now();
+        for _ in 0..200 {
+            std::hint::black_box(ribbon_solve_poses(mech, &u, 20, omega, u_0, &state.last_good_q));
+        }
+        let solve = t.elapsed() / 200;
+        let t = std::time::Instant::now();
+        for _ in 0..200 {
+            std::hint::black_box(ribbon_cache_is_fresh(&c, mech, &u, 20, omega, u_0, &state.last_good_q));
+        }
+        println!("solve {:?}/frame, freshness check {:?}/frame", solve, t.elapsed() / 200);
     }
 }

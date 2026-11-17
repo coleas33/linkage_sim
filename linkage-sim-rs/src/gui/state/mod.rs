@@ -121,6 +121,26 @@ use crate::solver::forward_dynamics::{simulate, ForwardDynamicsConfig};
 
 // ── AppState ──────────────────────────────────────────────────────────────────
 
+/// Motion-ribbon ghost poses with the inputs they were solved from. The
+/// canvas reuses `poses` while every input below is unchanged (see
+/// `canvas::rendering::draw_motion_ribbon`).
+pub struct RibbonCache {
+    /// Ghost count the poses were solved for.
+    pub n: usize,
+    /// Driver rate and start angle used to map `u_values` to mechanism time.
+    pub omega: f64,
+    pub u_0: f64,
+    /// Warm-start seed (`last_good_q`) the solves began from.
+    pub seed: DVector<f64>,
+    /// Sweep input parameters the ghosts were sampled from.
+    pub u_values: Vec<f64>,
+    /// Shape of the mechanism the poses belong to.
+    pub n_coords: usize,
+    pub n_constraints: usize,
+    /// (ghost index, mechanism time, converged q) for each ghost that solved.
+    pub poses: Vec<(usize, f64, DVector<f64>)>,
+}
+
 /// All mutable application state in one place.
 pub struct AppState {
     /// The editable blueprint -- source of truth for the mechanism definition.
@@ -441,6 +461,9 @@ pub struct AppState {
     /// true. Clamped to 2..=20 by the slider; values outside that range
     /// are tolerated by the renderer (it short-circuits if < 2).
     pub motion_ribbon_n_ghosts: usize,
+    /// Ghost poses solved by the canvas, reused until an input changes.
+    /// Interior mutability because the render pass borrows state immutably.
+    pub motion_ribbon_cache: std::cell::RefCell<Option<RibbonCache>>,
     // ── Trajectory playback ──────────────────────────────────────────
     /// When true, the per-frame update advances `trajectory_playback_t`
     /// and back-solves the canvas pose at that trajectory time. Distinct
@@ -719,6 +742,7 @@ impl Default for AppState {
             last_trajectory_scrub_t: None,
             show_motion_ribbon: false,
             motion_ribbon_n_ghosts: 8,
+            motion_ribbon_cache: std::cell::RefCell::new(None),
             trajectory_playback_active: false,
             trajectory_playback_t: 0.0,
             trajectory_playback_speed: 1.0,
