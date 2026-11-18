@@ -994,12 +994,22 @@ pub(crate) fn glyph_context() -> egui::Context {
 /// at proportional 14 (the UI's criterion): egui draws an empty box for one it lacks. `what`
 /// names the text's source in the failure. The fonts load on `ctx`'s first frame
 /// ([`glyph_context`]).
+///
+/// With the app feature it also asserts that the standalone app's font holds the character
+/// (UX overhaul spec 8.1, test 7): the app draws one outside its cut of Inter in a built-in
+/// font, a different face in the middle of a word.
 pub(crate) fn assert_glyphs(ctx: &egui::Context, text: &str, what: &str) {
     let font = egui::FontId::proportional(14.0);
     for c in text.chars().filter(|c| !c.is_whitespace()) {
         assert!(
             ctx.fonts(|f| f.has_glyph(&font, c)),
             "{what}: no glyph for {c:?} (U+{:04X}) in {text:?}",
+            c as u32
+        );
+        #[cfg(feature = "app")]
+        assert!(
+            crate::app::fonts::cut_holds(c),
+            "{what}: {c:?} (U+{:04X}) in {text:?} is not in the app's font: add it to UNICODES in assets/fonts/subset_inter.py and build the cut again",
             c as u32
         );
     }

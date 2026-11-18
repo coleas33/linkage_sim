@@ -1,10 +1,11 @@
 //! The standalone app (feature `app`): [`MagcouplingApp`] shows the panel as a full page,
 //! for the native binary `magcoupling-app` and the web binary `magcoupling-web` (served at
-//! `/tools/magcoupler/`). It applies the calculator's theme ([`theme`]) and does the panel's
-//! platform work ([`files`]): saving files and picking a design file. The web entry also
-//! opens a share link's design (`?m=`).
+//! `/tools/magcoupler/`). It applies the calculator's theme ([`theme`]) and font ([`fonts`])
+//! and does the panel's platform work ([`files`]): saving files and picking a design file.
+//! The web entry also opens a share link's design (`?m=`).
 
 pub mod files;
+pub mod fonts;
 pub mod theme;
 
 use crate::DesignInputs;
@@ -103,9 +104,10 @@ pub struct MagcouplingApp {
 
 impl MagcouplingApp {
     /// The app at the starting design ([`starting_design`], the panel's baseline for the
-    /// session), with the theme applied to `ctx`.
+    /// session), with the theme and the font applied to `ctx`.
     pub fn new(ctx: &egui::Context) -> Self {
         theme::apply(ctx);
+        fonts::install(ctx);
         let panel = MagcouplingPanel::with_baseline(starting_design());
         let address_design = panel.design();
         Self {
@@ -326,6 +328,31 @@ mod tests {
             "{texts:?}"
         );
         assert_eq!(ctx.style().visuals, theme::visuals());
+    }
+
+    #[test]
+    fn the_app_draws_its_text_in_inter() {
+        // UX overhaul spec 6.2: the app installs its font; the panel alone does not.
+        let ctx = egui::Context::default();
+        let mut app = MagcouplingApp::new(&ctx);
+        frame_texts(&ctx, &mut app);
+        let first = |ctx: &egui::Context| {
+            ctx.fonts(|f| {
+                f.lock().fonts.definitions().families[&egui::FontFamily::Proportional][0].clone()
+            })
+        };
+        assert_eq!(first(&ctx), fonts::INTER_NAME);
+        // A number keeps its width whatever its digits (the cut's tabular digits).
+        let body = egui::TextStyle::Body.resolve(&ctx.style());
+        let width = |digit| ctx.fonts(|f| f.glyph_width(&body, digit));
+        assert_eq!(width('1'), width('8'));
+        // A panel in a context no app set up keeps egui's fonts.
+        let plain = egui::Context::default();
+        let mut panel = MagcouplingPanel::new();
+        let _ = plain.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| panel.ui(ui));
+        });
+        assert_ne!(first(&plain), fonts::INTER_NAME);
     }
 
     #[test]
