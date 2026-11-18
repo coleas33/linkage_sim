@@ -1732,12 +1732,12 @@ fn temperature_sentences(inputs: &DesignInputs, results: &DesignResults) -> Vec<
         })
         .collect();
     // The cold limit comes from the reverse-field inputs. Their defaults are 3D results for the
-    // default NdFeB design and follow neither this design's geometry nor its grade (spec
+    // example NdFeB design and follow neither this design's geometry nor its grade (spec
     // section 8, trap 6): while they are in use the sentence says so and asks for the design's
     // own; once a user has entered their own, it says nothing about where they came from.
     if !cold_limits.is_empty() {
         let source = if default_reverse_fields(inputs) {
-            " (from the default reverse-field inputs: 3D results for the default NdFeB design, not for this design's geometry or grade). Enter this design's own reverse fields to check the cold limit."
+            " (from the default reverse-field inputs: 3D results for the example NdFeB design, not for this design's geometry or grade). Enter this design's own reverse fields to check the cold limit."
         } else {
             "."
         };
@@ -1768,9 +1768,9 @@ fn magnet_limit_sentence(
         .collect();
     let margin = input_text(inputs, "temperature.demag.design_margin_C");
     // The onset comes from the stored reverse fields, as the cold limit does (physics review
-    // 3, S16): while they hold the default design's, the sentence says so.
+    // 3, S16): while they hold the example design's, the sentence says so.
     let source = if default_reverse_fields(inputs) {
-        " (slip fields from the default design; enter this design's own to confirm)"
+        " (slip fields from the example design; enter this design's own to confirm)"
     } else {
         ""
     };
@@ -1787,7 +1787,7 @@ fn magnet_limit_sentence(
 }
 
 /// Whether all four reverse-field inputs of the demagnetization check hold their defaults: the
-/// 3D results for the default NdFeB design.
+/// 3D results for the example NdFeB design.
 fn default_reverse_fields(inputs: &DesignInputs) -> bool {
     let fields = |d: &DemagInputs| {
         [
@@ -7817,7 +7817,7 @@ mod tests {
         // says (review 2, S1), and a quoted magnet limit says what it is (S2).
         assert_eq!(
             problem(TEMPERATURE, &design(hot_day)).unwrap(),
-            "Hot-day magnet temperature 140.0 °C (hot ambient plus the driving rise) is at or above the inner magnets' 93.06 °C limit, the outer magnets' 93.06 °C limit and the 120.0 °C adhesive limit. Each ring's magnet limit is the temperature at which the field of a slip starts to demagnetize its magnets, less the 10.00 °C design margin (slip fields from the default design; enter this design's own to confirm)."
+            "Hot-day magnet temperature 140.0 °C (hot ambient plus the driving rise) is at or above the inner magnets' 93.06 °C limit, the outer magnets' 93.06 °C limit and the 120.0 °C adhesive limit. Each ring's magnet limit is the temperature at which the field of a slip starts to demagnetize its magnets, less the 10.00 °C design margin (slip fields from the example design; enter this design's own to confirm)."
         );
         // Only the inner ring's library N42 block (rated 80 °C) is below the start.
         let text = problem(
@@ -7827,13 +7827,13 @@ mod tests {
         .unwrap();
         assert!(
             text.starts_with(
-                "Hot-day magnet temperature 65.00 °C (hot ambient plus the driving rise) is at or above the inner magnets' -3.517 °C limit. The inner magnets' limit is the temperature at which the field of a slip starts to demagnetize them, less the 10.00 °C design margin (slip fields from the default design; enter this design's own to confirm)."
+                "Hot-day magnet temperature 65.00 °C (hot ambient plus the driving rise) is at or above the inner magnets' -3.517 °C limit. The inner magnets' limit is the temperature at which the field of a slip starts to demagnetize them, less the 10.00 °C design margin (slip fields from the example design; enter this design's own to confirm)."
             ),
             "{text}"
         );
         assert_eq!(
             problem(TEMPERATURE, &design(slip_fault)).unwrap(),
-            "The slip-fault peak of 104.0 °C is at or above the 93.06 °C magnet limit. Each ring's magnet limit is the temperature at which the field of a slip starts to demagnetize its magnets, less the 10.00 °C design margin (slip fields from the default design; enter this design's own to confirm)."
+            "The slip-fault peak of 104.0 °C is at or above the 93.06 °C magnet limit. Each ring's magnet limit is the temperature at which the field of a slip starts to demagnetize its magnets, less the 10.00 °C design margin (slip fields from the example design; enter this design's own to confirm)."
         );
         assert_eq!(
             problem(TEMPERATURE, &design(cool_adhesive)).unwrap(),
@@ -7845,7 +7845,7 @@ mod tests {
         );
         assert_eq!(
             problem(TEMPERATURE, &design(ferrite)).unwrap(),
-            "The minimum magnet temperature -40.00 °C is below the inner magnets' 335.7 °C cold demagnetization limit and the outer magnets' 335.7 °C cold demagnetization limit (from the default reverse-field inputs: 3D results for the default NdFeB design, not for this design's geometry or grade). Enter this design's own reverse fields to check the cold limit."
+            "The minimum magnet temperature -40.00 °C is below the inner magnets' 335.7 °C cold demagnetization limit and the outer magnets' 335.7 °C cold demagnetization limit (from the default reverse-field inputs: 3D results for the example NdFeB design, not for this design's geometry or grade). Enter this design's own reverse fields to check the cold limit."
         );
         assert_eq!(problem(TEMPERATURE, &DesignInputs::default()), None);
     }
@@ -8012,7 +8012,7 @@ mod tests {
         outer_unknown.temperature.demag.outer_magnet_limit_C = f64::NAN;
         assert_eq!(
             (temperature.problem)(&inputs, &outer_unknown).unwrap(),
-            "Hot-day magnet temperature 140.0 °C (hot ambient plus the driving rise) is at or above the inner magnets' 93.06 °C limit and the 120.0 °C adhesive limit. The outer magnets' limit is not a number, so the hot-day magnet temperature cannot be checked against it. The inner magnets' limit is the temperature at which the field of a slip starts to demagnetize them, less the 10.00 °C design margin (slip fields from the default design; enter this design's own to confirm)."
+            "Hot-day magnet temperature 140.0 °C (hot ambient plus the driving rise) is at or above the inner magnets' 93.06 °C limit and the 120.0 °C adhesive limit. The outer magnets' limit is not a number, so the hot-day magnet temperature cannot be checked against it. The inner magnets' limit is the temperature at which the field of a slip starts to demagnetize them, less the 10.00 °C design margin (slip fields from the example design; enter this design's own to confirm)."
         );
         let mut both_unknown = outer_unknown.clone();
         both_unknown.temperature.demag.inner_magnet_limit_C = f64::NAN;
@@ -9781,7 +9781,7 @@ mod tests {
         // design margin, the margin read from its input; a ferrite ring's is its rating.
         let both = problem(TEMPERATURE, &breaking(n42_parts)).unwrap();
         assert!(
-            both.contains("Each ring's magnet limit is the temperature at which the field of a slip starts to demagnetize its magnets, less the 10.00 °C design margin (slip fields from the default design; enter this design's own to confirm)."),
+            both.contains("Each ring's magnet limit is the temperature at which the field of a slip starts to demagnetize its magnets, less the 10.00 °C design margin (slip fields from the example design; enter this design's own to confirm)."),
             "{both}"
         );
         let inner_only = problem(
@@ -9793,7 +9793,7 @@ mod tests {
         )
         .unwrap();
         assert!(
-            inner_only.contains("The inner magnets' limit is the temperature at which the field of a slip starts to demagnetize them, less the 12.50 °C design margin (slip fields from the default design; enter this design's own to confirm)."),
+            inner_only.contains("The inner magnets' limit is the temperature at which the field of a slip starts to demagnetize them, less the 12.50 °C design margin (slip fields from the example design; enter this design's own to confirm)."),
             "{inner_only}"
         );
         // Physics review 3, S16: the onset comes from the stored slip fields. Once this

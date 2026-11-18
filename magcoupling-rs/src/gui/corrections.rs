@@ -7,11 +7,11 @@
 //! the deviation registry instead (decision M41-10): a workbook cell carries a correction's
 //! marker when the registry ties the cell to it, in any of three ways:
 //!
-//! - the correction changes the cell at the default design (`changes_at_defaults`, or for the
+//! - the correction changes the cell at the example design (`changes_at_defaults`, or for the
 //!   broad corrections E3, E4 and E5 their reviewed golden files, which hold most of what E3
 //!   moves, the headline pull-out included);
 //! - the report names the cell for the correction (`cells`);
-//! - one of its probes shows the correction changing the cell off the default design.
+//! - one of its probes shows the correction changing the cell off the example design.
 //!
 //! Only applied engine corrections mark (E14 rewords help only). [`CorrectionIndex`] is built
 //! once, keyed by workbook cell; a value with no cell (a Rust-only result) has no marker. Plan
@@ -54,11 +54,11 @@ pub const GOLDEN_FILES: [(DeviationId, &str, &str); 3] = [
 /// How the registry ties a cell to a correction.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Tie {
-    /// The correction changes the cell at the default design: the workbook's value and the
+    /// The correction changes the cell at the example design: the workbook's value and the
     /// value with this correction alone applied.
     AtDefaults { workbook: Value, corrected: Value },
     /// The report names the cell for the correction, or a probe shows it changing off the
-    /// default design.
+    /// example design.
     Named,
 }
 
@@ -177,7 +177,7 @@ pub const MARKER_HEADING: &str = "Differs from the original spreadsheet";
 
 /// The last line of a marked value's hover text when a correction gives its values.
 pub const MARKER_SCOPE: &str =
-    "Was and now are values at the default design, with only that correction applied.";
+    "Was and now are values at the example design, with only that correction applied.";
 
 /// A correction as the hover texts name it: its id and its title.
 pub fn correction_title(id: DeviationId) -> String {
@@ -186,7 +186,7 @@ pub fn correction_title(id: DeviationId) -> String {
 
 /// The hover lines of the markers (spec 3.6; shown only with the spreadsheet details): the
 /// heading, then per correction its id and title, with ", was X, now Y" where it changes the
-/// cell at the default design, and then what those values are. The "now" value is the one with
+/// cell at the example design, and then what those values are. The "now" value is the one with
 /// that correction alone (as the registry and the golden files record it), so on a cell two
 /// corrections change neither is the value shown. No repo path: the export keeps the evidence.
 pub fn marker_tooltip(marks: &[Mark]) -> String {
@@ -255,7 +255,7 @@ mod tests {
         // E7 and E8 have probes on it; the ids are in report order.
         assert_eq!(marker_text(marks), "E3 E7 E8");
         // The hover (spec 3.6): the plain heading, each correction's title, E3's values at the
-        // default design and what those values are, and no repo path.
+        // example design and what those values are, and no repo path.
         let tooltip = marker_tooltip(marks);
         assert!(
             tooltip.starts_with(&format!("{MARKER_HEADING}:\nE3: ")),
@@ -269,6 +269,12 @@ mod tests {
         );
         assert!(tooltip.lines().any(|line| line == e3_line), "{tooltip}");
         assert!(tooltip.ends_with(MARKER_SCOPE), "{tooltip}");
+        // The spreadsheet's design is "the example design" on screen: there "default" is the
+        // design the session started on (UX overhaul slice A).
+        assert_eq!(
+            MARKER_SCOPE,
+            "Was and now are values at the example design, with only that correction applied."
+        );
         assert!(!tooltip.contains("docs/"), "{tooltip}");
         assert!(!tooltip.contains("workbook"), "{tooltip}");
     }
