@@ -1188,6 +1188,15 @@ mod tests {
     }
 
     #[test]
+    fn the_hub_page_does_not_name_the_paused_clamp_section() {
+        // UX overhaul spec 9.2 and 8.3: no "clamp" on screen while the section is paused
+        // (`engine::clamps::PAUSED`), and the hub's card for the calculator is a screen too.
+        let hub = include_str!("../../linkage-sim-rs/web/tools/index.html");
+        assert!(hub.contains("Magnetic Coupling Calculator"));
+        assert!(!hub.to_lowercase().contains("clamp"));
+    }
+
+    #[test]
     fn the_canvas_id_matches_the_web_page() {
         let page = include_str!("../../linkage-sim-rs/web/tools/magcoupler/index.html");
         assert!(
