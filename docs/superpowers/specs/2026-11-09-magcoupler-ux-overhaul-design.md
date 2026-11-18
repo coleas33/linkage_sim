@@ -574,8 +574,12 @@ the other three are dropped.
   `session.rs:408`; `SHARE_PARAM = "m"`). No second encoding.
 - A link that cannot be read changes nothing, says why in the status line, and leaves the address as it was until
   the first edit.
-- Browsers limit `replaceState` (Safari refuses past 100 calls in 30 seconds). Writing only on settled edits keeps
-  far under that; a refused write is ignored and the next edit writes again.
+- Browsers limit `replaceState` (Safari refuses more than about 100 calls in 10 seconds). The app writes only a
+  settled design, and never while a key is held: a held Ctrl+Z or Ctrl+Y undoes or redoes one step at every key
+  repeat, each step a settled design, so the whole run gives one write when the key is released. A refused write
+  leaves the address standing for the last design it took, and the app asks again on its next frame. (Changed by
+  the independent review of slice A, 2026-11-17: the first build wrote at every step of a held undo and counted a
+  refused write as written.)
 - The native app does nothing. The selection, the tab and every other view flag stay out of the address.
 - One thing a reload does not bring back: the Minimum OD preference of the Size tab (C-24). It is view state
   (`panel.rs:387-388`), not a design input, and the file reader refuses a key it does not know

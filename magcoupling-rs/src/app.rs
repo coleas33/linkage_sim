@@ -67,26 +67,37 @@ pub fn address_of(base: &str, design: &Design) -> String {
 }
 
 /// Rewrites the page's address in place with `history.replaceState` (UX overhaul spec 7.2): no
-/// history entry is added, so the browser's Back still leaves the tool. A refused write (Safari
-/// refuses past 100 calls in 30 seconds) is ignored: the next settled edit writes again.
+/// history entry is added, so the browser's Back still leaves the tool. `false` when the
+/// browser refused the write (Safari refuses more than about 100 calls in 10 seconds): the
+/// address is then unchanged.
 #[cfg(target_arch = "wasm32")]
-fn replace_address(address: &str) {
-    if let Some(history) = web_sys::window().and_then(|window| window.history().ok()) {
-        let _ = history.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(address));
-    }
+fn replace_address(address: &str) -> bool {
+    web_sys::window()
+        .and_then(|window| window.history().ok())
+        .is_some_and(|history| {
+            history
+                .replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(address))
+                .is_ok()
+        })
 }
 
 /// The native app has no address to write.
-#[cfg(not(target_arch = "wasm32"))]
-fn replace_address(_address: &str) {}
+#[cfg(not(any(target_arch = "wasm32", test)))]
+fn replace_address(_address: &str) -> bool {
+    true
+}
+
+// The native tests' page: it records each write asked of it and can refuse one.
+#[cfg(all(test, not(target_arch = "wasm32")))]
+use tests::replace_address;
 
 /// The standalone app: one [`MagcouplingPanel`], full page.
 pub struct MagcouplingApp {
     panel: MagcouplingPanel,
     picker: files::DesignPicker,
     /// The design the page's address stands for (UX overhaul spec 7.2): the design the app
-    /// opened on, then the last one whose address it wrote. Compared with the panel's settled
-    /// design every frame, so a frame that changes nothing encodes nothing.
+    /// opened on, then the last one whose address the page took. Compared with the panel's
+    /// settled design every frame, so a frame that changes nothing encodes nothing.
     address_design: Design,
 }
 
@@ -153,10 +164,18 @@ impl MagcouplingApp {
                 PanelRequest::OpenDesign => self.picker.pick(ctx),
             }
         }
-        // The address follows the design once an edit has settled (UX overhaul spec 7.2).
-        if *self.panel.settled_design() != self.address_design {
-            self.address_design = self.panel.settled_design().clone();
-            replace_address(&address_of(self.panel.share_base(), &self.address_design));
+        // The address follows the design once an edit has settled (UX overhaul spec 7.2), and
+        // waits while a key is held: a held Ctrl+Z or Ctrl+Y settles a step at every key repeat,
+        // and a write for each would pass the browser's limit. A refused write is asked again.
+        // shortcut: asked again on every later frame with no back-off; fine while a refusal ends
+        // within seconds (Safari's window), add a back-off if a browser can refuse for good.
+        let key_held = ctx.input(|input| !input.keys_down.is_empty());
+        let settled = self.panel.settled_design();
+        if !key_held
+            && *settled != self.address_design
+            && replace_address(&address_of(self.panel.share_base(), settled))
+        {
+            self.address_design = settled.clone();
         }
     }
 }
@@ -224,6 +243,26 @@ mod tests {
         ("metal.cup_wall_corner_mm", 1.8, 2.2),
         ("metal.cap_thread_dia_mm", 41.0, 41.7),
     ];
+
+    thread_local! {
+        /// The addresses this test asked the page to take, in order, refused ones included.
+        static WRITES: std::cell::RefCell<Vec<String>> =
+            const { std::cell::RefCell::new(Vec::new()) };
+        /// Whether the page refuses a write, as Safari does past its rate limit.
+        static REFUSES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+
+    /// The page's address under test, in place of `history.replaceState`: it records the write
+    /// asked for and takes it unless `REFUSES` is set.
+    pub(super) fn replace_address(address: &str) -> bool {
+        WRITES.with_borrow_mut(|writes| writes.push(address.to_owned()));
+        !REFUSES.get()
+    }
+
+    /// The writes asked of the page since the last call, in order.
+    fn take_writes() -> Vec<String> {
+        WRITES.take()
+    }
 
     /// One frame of `app` on the laptop screen with `events`; the texts it drew.
     fn frame_with(
@@ -608,6 +647,141 @@ mod tests {
         app.panel.reset();
         frame_texts(&ctx, &mut app);
         assert_eq!(address(&app), base);
+    }
+
+    #[test]
+    fn a_held_undo_or_redo_writes_the_address_once_at_its_release() {
+        // Independent review, 2026-11-17: Ctrl+Z and Ctrl+Y act on every key repeat and each
+        // step they reach is a settled design, so a write per step sent a write per repeat;
+        // Safari refuses more than about 100 in 10 seconds.
+        let ctx = egui::Context::default();
+        let mut app = MagcouplingApp::new(&ctx);
+        let base = app.panel().share_base().to_owned();
+        take_writes();
+        // Five undo steps, each one settled and written on its own frame.
+        let gaps = [1.5, 1.6, 1.7, 1.9, 2.0];
+        for gap in gaps {
+            app.panel.load_design_file(&gap_file(gap)).unwrap();
+            frame_texts(&ctx, &mut app);
+        }
+        let last = app.panel().design();
+        assert_eq!(
+            take_writes().len(),
+            gaps.len(),
+            "one write per settled edit"
+        );
+        let key_event = |key, pressed, repeat| egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed,
+            repeat,
+            modifiers: egui::Modifiers::COMMAND,
+        };
+        // Ctrl+Z held for 60 frames runs back to the starting design, Ctrl+Y forward again.
+        for (key, reached) in [(egui::Key::Z, starting()), (egui::Key::Y, last)] {
+            for frame in 0..60 {
+                frame_with(&ctx, &mut app, vec![key_event(key, true, frame > 0)]);
+            }
+            assert_eq!(
+                app.panel().design(),
+                reached,
+                "{key:?} ran through every step"
+            );
+            assert_eq!(
+                take_writes(),
+                Vec::<String>::new(),
+                "{key:?}: no write while the key is held"
+            );
+            frame_with(&ctx, &mut app, vec![key_event(key, false, false)]);
+            assert_eq!(
+                take_writes(),
+                [address_of(&base, &reached)],
+                "{key:?}: one write at its release"
+            );
+        }
+    }
+
+    #[test]
+    fn a_refused_address_write_is_tried_again_on_the_next_frame() {
+        // Independent review, 2026-11-17: a write the browser refuses leaves the address as it
+        // was, so the app must not count it as written.
+        let ctx = egui::Context::default();
+        let mut app = MagcouplingApp::new(&ctx);
+        let base = app.panel().share_base().to_owned();
+        frame_texts(&ctx, &mut app);
+        take_writes();
+        REFUSES.set(true);
+        app.panel.load_design_file(&gap_file(2.0)).unwrap();
+        frame_texts(&ctx, &mut app);
+        REFUSES.set(false);
+        let edited = app.panel().design();
+        let link = share_link(&base, &edited);
+        assert_eq!(
+            take_writes(),
+            std::slice::from_ref(&link),
+            "the write was asked for"
+        );
+        assert_eq!(
+            app.address_design,
+            starting(),
+            "the address still stands for the last design it took"
+        );
+        // The next frame asks again; once the page takes the write, no frame asks a third time.
+        frame_texts(&ctx, &mut app);
+        assert_eq!(take_writes(), [link]);
+        assert_eq!(app.address_design, edited);
+        frame_texts(&ctx, &mut app);
+        assert_eq!(take_writes(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_link_cut_at_two_thousand_characters_is_refused_and_the_header_says_why() {
+        // A link is about 2,700 characters, and a host or a message app may cut a long address.
+        // Whatever part of a base64 group the cut leaves (four cut lengths, one per remainder),
+        // the link is refused: the design stays and the header shows the reader's reason.
+        use crate::gui::session::{PUBLIC_BASE_URL, SHARE_PARAM};
+        const NOT_BASE64: &str = "share link refused: not URL-safe base64 (";
+        const NOT_COMPRESSED: &str = "share link refused: not a compressed design (";
+        let link = share_link(PUBLIC_BASE_URL, &Design::default());
+        let prefix = format!("{PUBLIC_BASE_URL}?{SHARE_PARAM}=");
+        for length in [2_000, 1_999, 1_998, 1_997] {
+            let payload = link[..length].strip_prefix(&prefix).expect("a share link");
+            let ctx = egui::Context::default();
+            let mut app = MagcouplingApp::new(&ctx);
+            let reason = app
+                .open_share_payload(payload)
+                .expect_err("a cut link is refused")
+                .to_string();
+            let wanted: &[&str] = match payload.len() % 4 {
+                // Whole groups decode, and the compressed design they hold stops short.
+                0 => &[NOT_COMPRESSED],
+                // One symbol of a group is no base64.
+                1 => &[NOT_BASE64],
+                // Two or three symbols decode only when their spare bits are zero.
+                _ => &[NOT_BASE64, NOT_COMPRESSED],
+            };
+            assert!(
+                wanted.iter().any(|start| reason.starts_with(start)),
+                "{length}: {reason}"
+            );
+            assert_eq!(
+                app.panel().design(),
+                starting(),
+                "{length}: nothing changes"
+            );
+            frame_texts(&ctx, &mut app);
+            let texts = frame_texts(&ctx, &mut app);
+            assert!(
+                texts.contains(&reason),
+                "{length}: the header says why ({reason}): {texts:?}"
+            );
+            assert!(texts.iter().any(|t| t == STARTING_STATUS), "{length}");
+            assert_eq!(
+                app.address_design,
+                starting(),
+                "{length}: nothing is written"
+            );
+        }
     }
 
     #[test]

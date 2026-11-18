@@ -87,3 +87,20 @@ So the verdicts do not sit on an edge: they hold with reverse fields a tenth lar
 Note 7 for the owner, added with this round: **the first view's "passes every check" is the tool's verdict with the example design's 3D fields.** Row A-18 holds the choice.
 
 APPROVED after two rounds (three changes in all: S2, C5 and C6; commits 022efd9 and 20120ac).
+
+## Addendum: the independent review (2026-11-17)
+
+A reviewer with a fresh context read the branch at e258eb8, after the verdict above. It is the independent read the first paragraph of this record says the two rounds were not. It found the defects below; each was fixed with a failing test first, in its own commit.
+
+| # | Finding | Evidence | Fix |
+|---|---|---|---|
+| I-1 | A held Ctrl+Z or Ctrl+Y wrote the address at every key repeat. A refused write was counted as written, so the address stayed on an older design with nothing to show it. | The panel's shortcuts act on key repeat (`gui/panel.rs`, `shortcuts`), and each undo or redo step is at once the history's settled design, so `MagcouplingApp::ui` wrote one address per repeat. Safari refuses more than about 100 `replaceState` calls in 10 seconds. `replace_address` dropped the call's result and `address_design` had already moved. Red before the fix: five undo steps held through 60 frames gave five writes, and a refused write left `address_design` on the edited design. The design's section 7.2 said writing only on settled edits "keeps far under" the limit, which a held undo disproved. | `MagcouplingApp::ui` writes only while no key is held, so a held run gives one write at the key's release. `replace_address` returns whether the page took the write, and `address_design` advances only then; a refused write is asked again on the next frame. Tests: `app::tests::a_held_undo_or_redo_writes_the_address_once_at_its_release`, `app::tests::a_refused_address_write_is_tried_again_on_the_next_frame`. The design's 7.2, the README and `docs/ai` say the new rule. |
+
+Added with I-1, as coverage the review asked for (it passed before any change): `app::tests::a_link_cut_at_two_thousand_characters_is_refused_and_the_header_says_why`. A link is about 2,700 characters. Cut at 2,000, 1,999, 1,998 or 1,997 characters (one cut per remainder of a base64 group) it is refused, the design and the address stay, and the header shows the reader's reason: "share link refused: not URL-safe base64 (...)" or "share link refused: not a compressed design (...)". Neither reason says the link looks cut short; the words were not changed here.
+
+Limits of the I-1 fix, for the owner:
+
+- The retry has no back-off: while the browser keeps refusing, each frame encodes the link and asks again. A refusal by Safari's limit ends within its 10 seconds. A browser that refused every write would be asked on every frame.
+- A click on the header's Undo or Redo button still writes once per click, since each click is its own settled step. More than about 100 clicks in 10 seconds would be needed to reach Safari's limit.
+- The write, the limit and the retry were not run in a browser. The tests use a stand-in page that records each write and can refuse one. The smoke run exercises the call in Chromium only and does not reach a limit.
+- Safari's figures (100 calls, 10 seconds) are the reviewer's; they were not checked against a Safari build.
