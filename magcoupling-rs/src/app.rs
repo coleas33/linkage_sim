@@ -40,7 +40,9 @@ pub const DESIGN_FILE_LOADED: &str = "magcoupling: loaded a design file";
 /// One line of the opening tab is outside the counted checks: the hub wall past the keyway is
 /// 2.25 mm, under the Size tab's guidance of about 2.5 mm, and the tab says so in the caution
 /// colour (register row A-17 in `docs/analyses/2026-11-10-conservative-assumptions.md`; a test
-/// pins the line).
+/// pins the line). Its temperature check and the inner hub's fitting temperature use the 3D
+/// fields stored for the example design, as every design's do; they were not computed for this
+/// geometry (row A-18).
 pub fn starting_design() -> DesignInputs {
     let mut inputs = DesignInputs::default();
     inputs.coupling.npole = 8;
