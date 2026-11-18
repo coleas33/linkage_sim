@@ -1,12 +1,12 @@
 # Magcoupler overhaul: an instrument that teaches — design
 
-- Date: 2026-11-09. Base: `main` at 1048962. Status: **approved by the owner on 2026-11-16 ("Approve and yes. Stop asking for my direction and do what you think is best"); nothing here is built yet.**
+- Date: 2026-11-09. Base: `main` at 1048962. Status: **approved by the owner on 2026-11-16 ("Approve and yes. Stop asking for my direction and do what you think is best"); slice A is built on the branch `magcoupling/overhaul-a` (BL-077) and waits for the owner's review of its diff; slices B to F are not built.**
 - Revised 2026-11-09 for the owner's ruling on the requirement (O-8, section 7.1) and for the builder check
   (section 12.5), and on 2026-11-10 for the owner's answer on the number (O-9) and the ruling on open questions (O-10).
 - This is an umbrella design for six slices (section 3). It is firm on slices A and B and lighter on C to F. Each
   slice gets its own plan and branch (`magcoupling/overhaul-<letter>-<name>`); slices C to F each get a short design
   addendum before their plan. After approval the next step is the plan for slice A, and nothing else.
-- Backlog: none filed yet. Each slice's plan files one item with the next free id (`dimension: gui`; `risk: physics`
+- Backlog: BL-077 is slice A's item (filed 2026-11-17 with its plan, `docs/superpowers/plans/2026-11-17-magcoupler-overhaul-a-first-arrival.md`). Each later slice's plan files one item with the next free id (`dimension: gui`; `risk: physics`
   wherever a slice shows a new number or a new physical claim, `risk: mechanical` otherwise).
 - `M` = `magcoupling-rs`; code paths are under `M/src/` unless they say otherwise, and every `path:line` is at 1048962.
 - Inputs: the inventory `docs/analyses/2026-11-09-magcoupler-ux-inventory.md` (what is on screen today, with its
