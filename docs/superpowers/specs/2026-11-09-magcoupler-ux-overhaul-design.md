@@ -541,6 +541,7 @@ The magnets stay B842SH on both rings at the stock length.
   design's is 0.90 mm on paper, with its thread below the cup body, which the drawing flags today. A thicker skirt
   needs a larger diameter claim. Section 12.4 files the missing check.
 - **Ring radius 9.00 mm is the slider's minimum.** A user cannot walk further down from it.
+- **The opening tab draws one amber line** (found by the slice A plan, 2026-11-17; register row A-17). At a ring radius of 9.00 mm the hub wall past the keyway is 2.25 mm, and the Size tab says so against its guidance of about 2.5 mm ("Wall past keyway: 2.25 mm; existing guidance is about 2.5 mm."). No counted check judges it, so the status line still reads "passes all 9 checks". A ring radius of 9.26 mm clears the line and takes the cap's skirt from 0.55 to 0.30 mm (with the cap thread at 42.2 mm; at 9.25 mm the wall computes a hair under 2.5 mm and the line still shows). The approved values are kept and the line stays visible until the owner rules.
 - **1.35 N·m is a choice inside a range, and the owner took it (O-9).** Anything up to 1.44 N·m passes on this design. The ceiling
   design's 1.69 N·m is the most the given facts allow; it is not taken because of its 0.15 mm skirt and its 0.6 %
   of gearbox margin.

@@ -201,6 +201,19 @@ Not a Cargo workspace member: `linkage-sim-rs` depends on it by path
 
 ### The panel
 
+**The starting design** (UX overhaul slice A, BL-077; owner rulings O-8 and O-9). The standalone app opens on `app::starting_design()` and hands it to the panel as its baseline, so the first status line reads "Starting design: passes all 9 checks". It keeps the example design's given facts (the 0.6 N·m gearbox input rating at 5:1, the 43 mm space claim, B842SH magnets at their stock length on both rings, the sleeve, the liner, the allowances and every assumption) and differs from the spreadsheet's values in six inputs, each on its slider's step:
+
+| Input | Spreadsheet | Starting design |
+|---|---|---|
+| Magnets per ring | 10 | 8 |
+| Ring radius | 10.15 mm | 9.00 mm |
+| Magnet face gap | 1.40 mm | 1.80 mm |
+| Minimum outer return ring wall | 1.80 mm | 2.20 mm |
+| Cap thread nominal diameter | 41.0 mm | 41.7 mm |
+| Required torque | 2.50 N·m | 1.35 N·m |
+
+Required torque is 1.35 N·m: 0.35 N·m of hot wheel-bearing drag plus 1.00 N·m to accelerate the wheel (the owner's figures; the tool takes the requirement as one number). Hot-low torque is 1.448 N·m, 7.3 % over the requirement, and the design passes up to a Required torque of 1.44 N·m. Cold-high torque at the gearbox input is 0.510 N·m against the 0.60 N·m rating. A test pins this to `compute_all` (`the_starting_design_passes_every_check_with_no_caution_and_no_warning`): if a later physics fix turns it red, the cure is a new starting design, not a looser test. Two things no counted check judges: the cap's skirt is 0.55 mm (cap outside diameter 42.8 mm less the 41.7 mm thread, halved), and the hub wall past the keyway is 2.25 mm, under the Size tab's guidance of about 2.5 mm, so the opening tab draws that one amber line (a ring radius of 9.26 mm with a 42.2 mm cap thread clears it and takes the skirt to 0.30 mm). `DesignInputs::default` is unchanged: it is the example design, the spreadsheet's values.
+
 **Size and torque** is the first view (decision G-5; it replaced the geometry view, M42-2).
 A one-line strip over the tabs, "Set the size -> read the torque -> open any red check to see
 why and what to change.", closes for the session (it is in no file, link or undo step). Adjust **Outside diameter**,

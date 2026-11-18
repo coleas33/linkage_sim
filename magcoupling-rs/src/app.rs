@@ -7,6 +7,7 @@
 pub mod files;
 pub mod theme;
 
+use crate::DesignInputs;
 use crate::gui::session::LoadError;
 use crate::gui::{MagcouplingPanel, PanelRequest};
 
@@ -24,18 +25,42 @@ pub const SHARE_LINK_LOADED: &str = "magcoupling: loaded the design from the sha
 /// it: the panel's own "Design file loaded" is drawn on the canvas only).
 pub const DESIGN_FILE_LOADED: &str = "magcoupling: loaded a design file";
 
+/// The design the app opens on when the page's address carries no share link (UX overhaul
+/// spec 7.1; owner rulings O-8 and O-9). It keeps the example design's given facts (the
+/// 0.6 N·m gearbox input rating at 5:1, the 43 mm space claim, B842SH magnets at their stock
+/// length on both rings, the sleeve, the liner, the allowances and every assumption) and is
+/// sized inside them to pass every check. Six inputs differ from the spreadsheet's, each on its
+/// slider's step.
+///
+/// Required torque is 1.35 N·m: 0.35 N·m of hot wheel-bearing drag plus 1.00 N·m to accelerate
+/// the wheel (the owner's figures; the tool takes the requirement as one number). The design
+/// passes every check up to a Required torque of 1.44 N·m.
+pub fn starting_design() -> DesignInputs {
+    let mut inputs = DesignInputs::default();
+    inputs.coupling.npole = 8;
+    inputs.coupling.inner_back_apothem_mm = 9.0;
+    inputs.metal.face_gap_mm = 1.8;
+    inputs.metal.cup_wall_corner_mm = 2.2;
+    inputs.metal.cap_thread_dia_mm = 41.7;
+    inputs.metal.required_min_Nm = 1.35;
+    inputs
+}
+
 /// The standalone app: one [`MagcouplingPanel`], full page.
-#[derive(Default)]
 pub struct MagcouplingApp {
     panel: MagcouplingPanel,
     picker: files::DesignPicker,
 }
 
 impl MagcouplingApp {
-    /// The app at the default design, with the linkage app's theme applied to `ctx`.
+    /// The app at the starting design ([`starting_design`], the panel's baseline for the
+    /// session), with the linkage app's theme applied to `ctx`.
     pub fn new(ctx: &egui::Context) -> Self {
         theme::apply(ctx);
-        Self::default()
+        Self {
+            panel: MagcouplingPanel::with_baseline(starting_design()),
+            picker: files::DesignPicker::default(),
+        }
     }
 
     /// The panel.
@@ -126,38 +151,300 @@ pub fn run_native() -> eframe::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gui::guidance::{design_status, design_status_text};
+    use crate::compute_all;
+    use crate::engine::meta::{InputSet, Value};
+    use crate::gui::dashboard::{Level, warning_lines};
+    use crate::gui::guidance::{counted_guides, design_status, level};
+    use crate::gui::inputs::InputCatalogue;
     use crate::gui::session::{Design, encode_share_payload};
     use crate::gui::test_support::drawn_texts;
-    use crate::{DesignInputs, compute_all};
 
-    #[test]
-    fn the_app_shows_the_panel_as_a_full_page() {
-        let ctx = egui::Context::default();
-        let mut app = MagcouplingApp::new(&ctx);
-        let input = || egui::RawInput {
+    /// The status line at the starting design and at the example design, with the shaft-clamp
+    /// section paused as the app runs it (nine counted checks).
+    const STARTING_STATUS: &str = "Starting design: passes all 9 checks";
+    const EXAMPLE_STATUS: &str = "Example design: fails 4 of 9 checks";
+
+    /// The six inputs the starting design changes (UX overhaul spec 7.1): the path, the
+    /// spreadsheet's value and the starting design's.
+    const STARTING_CHANGES: [(&str, f64, f64); 6] = [
+        ("coupling.npole", 10.0, 8.0),
+        ("coupling.inner_back_apothem_mm", 10.15, 9.0),
+        ("metal.required_min_Nm", 2.5, 1.35),
+        ("metal.face_gap_mm", 1.4, 1.8),
+        ("metal.cup_wall_corner_mm", 1.8, 2.2),
+        ("metal.cap_thread_dia_mm", 41.0, 41.7),
+    ];
+
+    /// One frame of `app` on the laptop screen; the texts it drew.
+    fn frame_texts(ctx: &egui::Context, app: &mut MagcouplingApp) -> Vec<String> {
+        let input = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
                 egui::Pos2::ZERO,
                 egui::vec2(1280.0, 800.0),
             )),
             ..Default::default()
         };
-        let _ = ctx.run(input(), |ctx| app.ui(ctx));
-        let texts = drawn_texts(&ctx.run(input(), |ctx| app.ui(ctx)));
+        drawn_texts(&ctx.run(input, |ctx| app.ui(ctx)))
+    }
+
+    /// The number at `path` of `inputs`.
+    fn number(inputs: &DesignInputs, path: &str) -> f64 {
+        match inputs.get(path) {
+            Some(Value::Num(x)) => x,
+            Some(Value::Int(i)) => i as f64,
+            other => panic!("{path}: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_app_shows_the_panel_as_a_full_page() {
+        let ctx = egui::Context::default();
+        let mut app = MagcouplingApp::new(&ctx);
+        frame_texts(&ctx, &mut app);
+        let texts = frame_texts(&ctx, &mut app);
         assert!(
             texts.iter().any(|t| t == "Magnetic coupling calculator"),
             "{texts:?}"
         );
-        // The design status line tops the dashboard: it was laid out (its lower rows scroll on
-        // this screen, under the check guides).
-        let defaults = DesignInputs::default();
-        let status = design_status_text(&design_status(
-            &defaults,
-            &compute_all(&defaults),
-            crate::engine::clamps::PAUSED,
-        ));
-        assert!(texts.contains(&status), "missing {status:?} in {texts:?}");
         assert_eq!(ctx.style().visuals, theme::cad_dark_visuals());
+    }
+
+    #[test]
+    fn the_starting_design_passes_every_check_with_no_caution_and_no_warning() {
+        // UX overhaul spec 8.1, test 1, pinned to compute_all. If a later physics fix turns
+        // this red the cure is a new starting design, never a loosened test (spec 12.2).
+        let inputs = starting_design();
+        let results = compute_all(&inputs);
+        // Nine counted checks while the shaft-clamp section is paused, ten with it shown.
+        for (clamps_paused, total) in [(true, 9), (false, 10)] {
+            let status = design_status(&inputs, &results, clamps_paused);
+            assert_eq!(
+                (status.bad, status.caution, status.total),
+                (0, 0, total),
+                "paused: {clamps_paused}"
+            );
+            for guide in counted_guides(clamps_paused) {
+                assert_eq!(
+                    level(guide, &inputs, &results),
+                    Level::Good,
+                    "{}",
+                    guide.label
+                );
+            }
+        }
+        let warnings = warning_lines(&results);
+        assert!(warnings.is_empty(), "{:?}", warnings[0].1);
+        // No drawing note asks for a look (the wall rule's hint has no level).
+        let notes = crate::gui::geometry::geometry(&inputs, &results, true).notes;
+        assert!(notes.iter().all(|note| note.level.is_none()), "{notes:?}");
+        // The numbers the design document and the README quote, at the precision they quote.
+        let close = |got: f64, want: f64, tolerance: f64| (got - want).abs() < tolerance;
+        let hot_low = results.metal.torque_hot_low_Nm;
+        assert!(close(hot_low, 1.448, 0.0005), "hot-low {hot_low}");
+        assert!(
+            close(hot_low / inputs.metal.required_min_Nm - 1.0, 0.073, 0.0005),
+            "the hot-low margin over 1.35 N·m"
+        );
+        let at_gearbox = results.metal.cold_high_input_Nm;
+        assert!(
+            close(at_gearbox, 0.510, 0.0005),
+            "at the gearbox {at_gearbox}"
+        );
+        assert_eq!(inputs.coupling.gearbox_input_rating_Nm, 0.6);
+        assert!(close(results.model.pullout_Nm, 1.704, 0.0005));
+        assert!(close(results.metal.torque_cold_high_Nm, 2.423, 0.0005));
+        // It passes up to a Required torque of 1.44 N·m, and not at 1.45.
+        for (required, bad) in [(1.44, 0), (1.45, 1)] {
+            let mut asked = starting_design();
+            asked.metal.required_min_Nm = required;
+            let status = design_status(&asked, &compute_all(&asked), true);
+            assert_eq!(status.bad, bad, "Required torque {required}");
+        }
+    }
+
+    #[test]
+    fn the_starting_design_changes_six_inputs_on_their_slider_steps_and_no_assumption() {
+        // UX overhaul spec 7.1: six inputs differ from the spreadsheet's, each one a value a
+        // slider step reaches, so a user can walk from one design to the other.
+        let (start, example) = (starting_design(), DesignInputs::default());
+        let mut differing = Vec::new();
+        start.visit("", &mut |path, _, value| {
+            if example.get(path) != Some(value) {
+                differing.push(path.to_owned());
+            }
+        });
+        differing.sort();
+        let mut want = STARTING_CHANGES.map(|(path, _, _)| path.to_owned());
+        want.sort();
+        assert_eq!(differing, want);
+        for (path, from, to) in STARTING_CHANGES {
+            assert_eq!(number(&example, path), from, "{path}");
+            assert_eq!(number(&start, path), to, "{path}");
+            let range = InputCatalogue::get()
+                .entry(path)
+                .and_then(|entry| entry.meta.range)
+                .unwrap_or_else(|| panic!("{path} has a slider"));
+            let steps = (to - range.min) / range.step;
+            assert!(
+                (range.min..=range.max).contains(&to) && (steps - steps.round()).abs() < 1e-9,
+                "{path}: {to} is not a step of {range:?}"
+            );
+        }
+        // It changes no assumption, so the assumptions banner is quiet at both designs.
+        for inputs in [&start, &example] {
+            let modified = crate::engine::assumptions::modified(inputs);
+            assert!(modified.is_empty(), "{:?}", modified[0].label);
+        }
+        // What the status line's hover says the design keeps (STARTING_DESIGN_HOVER): the
+        // gearbox rating, the space and the magnets; and it asks for less torque.
+        for path in [
+            "coupling.gearbox_input_rating_Nm",
+            "metal.max_diameter_mm",
+            "metal.max_overall_axial_mm",
+            "metal.max_large_dia_axial_mm",
+            "coupling.magnets.part_inner",
+            "coupling.magnets.part_outer",
+            "coupling.magnets.axial_length_mm",
+        ] {
+            assert!(start.get(path).is_some(), "{path} is an input");
+            assert_eq!(start.get(path), example.get(path), "{path}");
+        }
+        assert!(start.metal.required_min_Nm < example.metal.required_min_Nm);
+    }
+
+    #[test]
+    fn the_app_opens_the_starting_design() {
+        // UX overhaul spec 8.1, test 3: the app hands the panel the starting design as its
+        // baseline, so the first view names it and Reset all returns to it.
+        use crate::gui::input_ui::CHANGED_DOT;
+        let ctx = egui::Context::default();
+        let mut app = MagcouplingApp::new(&ctx);
+        assert_eq!(app.panel().inputs(), &starting_design());
+        frame_texts(&ctx, &mut app);
+        let texts = frame_texts(&ctx, &mut app);
+        let count = |text: &str| texts.iter().filter(|t| *t == text).count();
+        assert_eq!(count(STARTING_STATUS), 1, "{texts:?}");
+        assert_eq!(count(CHANGED_DOT), 0, "no input is changed at the baseline");
+        assert_eq!(
+            count(crate::gui::OPEN_EXAMPLE),
+            1,
+            "the example design's button"
+        );
+        // The readouts show the requirement and its margin.
+        assert_eq!(count("1.35 N·m"), 1, "{texts:?}");
+        assert_eq!(count("margin +0.10 N·m (+7.3 %)"), 1, "{texts:?}");
+        // The header takes a second row at this width; the torque card still opens.
+        assert_eq!(count(crate::gui::torque_card::CAPTION), 1, "{texts:?}");
+        // An edit, then Reset all: the starting design again, not the spreadsheet's.
+        app.panel
+            .load_design_file(&crate::gui::session::design_to_json(&Design::default()))
+            .unwrap();
+        app.panel.reset();
+        assert_eq!(app.panel().inputs(), &starting_design());
+    }
+
+    #[test]
+    fn the_starting_design_draws_one_advisory_on_the_opening_tab() {
+        // A finding of the slice A plan (2026-11-17), kept visible on purpose: at a ring radius
+        // of 9.00 mm the hub wall past the keyway is 2.25 mm, under the Size tab's guidance of
+        // about 2.5 mm, so the opening tab draws that one amber line. No counted check judges
+        // it. A ring radius of 9.26 mm with a 42.2 mm cap thread clears it and takes the cap
+        // skirt from 0.55 to 0.30 mm.
+        let inputs = starting_design();
+        let wall = compute_all(&inputs).model.hub_wall_past_key_mm;
+        assert!((wall - 2.25).abs() < 1e-9, "{wall}");
+        let ctx = egui::Context::default();
+        let mut app = MagcouplingApp::new(&ctx);
+        frame_texts(&ctx, &mut app);
+        let texts = frame_texts(&ctx, &mut app);
+        let advisory = "Wall past keyway: 2.25 mm; existing guidance is about 2.5 mm.";
+        assert!(texts.iter().any(|t| t == advisory), "{texts:?}");
+        assert!(
+            !texts.iter().any(|t| t.starts_with("Exploration only")),
+            "{texts:?}"
+        );
+    }
+
+    #[test]
+    fn the_example_design_opens_as_one_undo_step_from_the_starting_design() {
+        // UX overhaul spec 8.1, test 4, on the real starting design (the panel's own tests hold
+        // the mechanism on a test baseline).
+        let ctx = egui::Context::default();
+        let mut app = MagcouplingApp::new(&ctx);
+        frame_texts(&ctx, &mut app);
+        app.panel.open_example_design();
+        assert_eq!(app.panel().design(), Design::default());
+        frame_texts(&ctx, &mut app);
+        let texts = frame_texts(&ctx, &mut app);
+        assert!(texts.iter().any(|t| t == EXAMPLE_STATUS), "{texts:?}");
+        // One undo step back: the starting design, named so.
+        app.panel.undo();
+        assert_eq!(app.panel().inputs(), &starting_design());
+        frame_texts(&ctx, &mut app);
+        let texts = frame_texts(&ctx, &mut app);
+        assert!(texts.iter().any(|t| t == STARTING_STATUS), "{texts:?}");
+        // Redo, then Reset all: the baseline is still the starting design.
+        app.panel.redo();
+        assert_eq!(app.panel().design(), Design::default());
+        app.panel.reset();
+        assert_eq!(app.panel().inputs(), &starting_design());
+    }
+
+    #[test]
+    fn a_file_that_names_one_input_reads_the_rest_from_the_spreadsheet_not_the_baseline() {
+        // UX overhaul spec 7.1: a file or link made before this change opens to the same design
+        // as before. An input a file leaves out takes the spreadsheet's value, whatever the
+        // panel's baseline (the reader is not changed by this slice; this pins it).
+        let ctx = egui::Context::default();
+        let mut app = MagcouplingApp::new(&ctx);
+        let file = r#"{"format": "magcoupling-design", "version": 1, "inputs": {"metal.face_gap_mm": 2.0}}"#;
+        app.open_picked_file(Ok(file.to_owned()));
+        let mut want = Design::default();
+        want.inputs.metal.face_gap_mm = 2.0;
+        assert_eq!(app.panel().design(), want);
+    }
+
+    #[test]
+    fn the_spreadsheet_export_still_flags_against_the_workbook() {
+        // UX overhaul spec 7.1 (C-22) and 8.1, test 4: in the export "changed" means "differs
+        // from the workbook", whatever the panel's baseline: the six inputs at the starting
+        // design, none at the example design. The export's code is not changed by this slice;
+        // this pins it.
+        use crate::gui::spreadsheet::{CellValue, INPUT_COLUMNS, INPUTS_SHEET, YES, sheets};
+        use crate::gui::test_support::snapshot;
+        let column = |name: &str| {
+            INPUT_COLUMNS
+                .iter()
+                .position(|c| *c == name)
+                .unwrap_or_else(|| panic!("no column {name}"))
+        };
+        let (changed, path) = (column("Changed from default"), column("Path"));
+        let flagged = |inputs: &DesignInputs| -> Vec<String> {
+            let results = compute_all(inputs);
+            let book = sheets(&snapshot(inputs, &results));
+            let sheet = book
+                .iter()
+                .find(|sheet| sheet.name == INPUTS_SHEET)
+                .expect("the Inputs sheet");
+            let mut paths: Vec<String> = sheet
+                .rows
+                .iter()
+                .filter(|row| {
+                    row.len() == INPUT_COLUMNS.len()
+                        && row[changed].value == CellValue::Text(YES.to_owned())
+                })
+                .map(|row| match &row[path].value {
+                    CellValue::Text(path) => path.clone(),
+                    other => panic!("a path cell holds {other:?}"),
+                })
+                .collect();
+            paths.sort();
+            paths
+        };
+        let mut want = STARTING_CHANGES.map(|(path, _, _)| path.to_owned());
+        want.sort();
+        assert_eq!(flagged(&starting_design()), want);
+        assert_eq!(flagged(&DesignInputs::default()), Vec::<String>::new());
     }
 
     #[test]
