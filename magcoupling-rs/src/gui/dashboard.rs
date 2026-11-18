@@ -2215,7 +2215,7 @@ mod tests {
         // effect out of range).
         let mut texts: Vec<String> = crate::gui::inputs::InputCatalogue::get()
             .all()
-            .map(|entry| crate::gui::inputs::input_tooltip(entry, false))
+            .map(|entry| crate::gui::inputs::input_tooltip(entry, &entry.default, false))
             .collect();
         for entry in crate::gui::results_table::table_entries() {
             texts.push(hover_text(&entry.path, false).expect("every table row is a result"));

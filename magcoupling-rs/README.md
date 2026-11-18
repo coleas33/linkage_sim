@@ -631,7 +631,7 @@ can name an input Auto holds; its link then frames a locked row (known limitatio
   of every change to the design, one step per settled edit (a drag, a typed value, a part name
   typed letter by letter), one per arrow nudge and one for a held arrow key's whole auto-repeat
   run (M41-14): an edit is in progress while a pointer button is down, a key is held down or a
-  text field of an input row has focus (the results search is no edit); reset all; save and load
+  text field of an input row has focus (the results search is no edit); reset all (back to the baseline, below); save and load
   a design file; a share link copied to the clipboard. A link the web app opens at start-up is
   the session's start (`open_share_payload`: the first Undo keeps it). A host with its own undo
   can keep the keys (`set_keyboard_shortcuts(false)`: M5's linkage window). One format for files and links: JSON
@@ -643,6 +643,7 @@ can name an input Auto holds; its link then frames a locked row (known limitatio
   sizing state's. A later version that renames or removes an input path adds a
   `session::PATH_MIGRATIONS` entry and bumps `DESIGN_VERSION`, so older files and links keep
   opening.
+- **Baseline** (UX overhaul slice A, BL-077; design `docs/superpowers/specs/2026-11-09-magcoupler-ux-overhaul-design.md`, section 7.1): a panel holds one baseline design, set when it is built and fixed for the session. `MagcouplingPanel::with_baseline(inputs)` opens on it; `MagcouplingPanel::new()` keeps the spreadsheet's values as its baseline. On screen "the default" is the baseline's value: the changed dot, a row's reset and its hover, the "Default:" line of an input's tooltip, Reset all and the Equation panel's "changed" tag compare with it. The spreadsheet export's "Changed from default" column, the assumptions banner and the dots of the Assumptions view still compare with the spreadsheet's values. No undo, redo, file, link or opened design moves the baseline, and it is in no design file, link or undo step.
 - **Sizing** (`sizing.rs`, Addendum A1; the Size tab's Auto since slice 1): Auto on the Size tab is Torque -> Magnets (the Key design group shows
   only a status line, the solve's status and a button to the tab). In it the free variable (axial length, magnets per ring, ring radius) and the
   requirement `metal.required_min_Nm` (decision G-2: the one torque number; 2.5 N·m, the
