@@ -1915,7 +1915,7 @@ pub const STARTING_DESIGN: &str = "Starting design";
 
 /// The hover text of the status line at the starting design. It describes the standalone
 /// app's starting design (`app::starting_design`, whose tests hold each claim).
-pub const STARTING_DESIGN_HOVER: &str = "A design that passes every check. It keeps the example design's gearbox rating, space and magnets, and asks for less torque.";
+pub const STARTING_DESIGN_HOVER: &str = "A design that passes every check. It keeps the example design's gearbox rating, space and magnet part, and asks for less torque.";
 
 /// The design status line's start for any other design.
 pub const YOUR_DESIGN: &str = "Your design";

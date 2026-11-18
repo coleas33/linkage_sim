@@ -403,7 +403,7 @@ scroll-area floor lowered to none).
   (`DashboardLine::tooltip`). Over the rows, the material warnings that fire (below).
 - **Check guides** (`guidance.rs`, pure functions; decisions G-3, G-6): a status line tops the
   dashboard, "Example design: fails N of 10 checks" while the inputs are the defaults (its hover:
-  "The values from the original spreadsheet."; slice 2 amends G-6), "Starting design: ..." while the inputs are the panel's baseline and the baseline is not the spreadsheet's design (`status_line`; its hover: "A design that passes every check. It keeps the example design's gearbox rating, space and magnets, and asks for less torque."; UX overhaul slice A),
+  "The values from the original spreadsheet."; slice 2 amends G-6), "Starting design: ..." while the inputs are the panel's baseline and the baseline is not the spreadsheet's design (`status_line`; its hover: "A design that passes every check. It keeps the example design's gearbox rating, space and magnet part, and asks for less torque."; UX overhaul slice A),
   "Your design: fails N of 10 checks" or "passes all 10 checks" after an edit, with ", N cautions"
   added when amber rows exist (counted live from the guides; while the shaft-clamp section is paused the clamp's guide counts toward nothing, so the line reads "of 9 checks": the example design "fails 4 of 9 checks"). The ten guides are the
   dashboard's nine checks (the hot minimum, the clearance, the cup wall, the thermal verdict,

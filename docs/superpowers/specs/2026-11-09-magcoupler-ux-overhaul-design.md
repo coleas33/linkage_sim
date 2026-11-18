@@ -506,8 +506,9 @@ The magnets stay B842SH on both rings at the stock length.
 
 - **Starting design.** What the app opens on when the address carries no `?m=`. The status line reads "Starting
   design: passes all 9 checks". The name and its hover are new strings and take the text review. Draft hover: "A
-  design that passes every check. It keeps the example design's gearbox rating, space and magnets, and asks for
-  less torque."
+  design that passes every check. It keeps the example design's gearbox rating, space and magnet part, and asks for
+  less torque." (The text review of 2026-11-17 changed "magnets" to "magnet part": the part is kept, the number
+  per ring is not; `docs/analyses/2026-11-17-magcoupler-slice-a-review.md`.)
 - **Example design.** The spreadsheet's values, `DesignInputs::default`, unchanged. Its name and every sentence
   that says "example design" today stay as they are, and stay true: the stored 3D fields do come from that design.
   One string changes: its hover, "The starting values from the original spreadsheet." (`EXAMPLE_DESIGN_HOVER`,

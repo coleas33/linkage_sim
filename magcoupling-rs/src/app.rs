@@ -36,6 +36,11 @@ pub const DESIGN_FILE_LOADED: &str = "magcoupling: loaded a design file";
 /// Required torque is 1.35 N·m: 0.35 N·m of hot wheel-bearing drag plus 1.00 N·m to accelerate
 /// the wheel (the owner's figures; the tool takes the requirement as one number). The design
 /// passes every check up to a Required torque of 1.44 N·m.
+///
+/// One line of the opening tab is outside the counted checks: the hub wall past the keyway is
+/// 2.25 mm, under the Size tab's guidance of about 2.5 mm, and the tab says so in the caution
+/// colour (register row A-17 in `docs/analyses/2026-11-10-conservative-assumptions.md`; a test
+/// pins the line).
 pub fn starting_design() -> DesignInputs {
     let mut inputs = DesignInputs::default();
     inputs.coupling.npole = 8;
@@ -369,7 +374,7 @@ mod tests {
             assert!(modified.is_empty(), "{:?}", modified[0].label);
         }
         // What the status line's hover says the design keeps (STARTING_DESIGN_HOVER): the
-        // gearbox rating, the space and the magnets; and it asks for less torque.
+        // gearbox rating, the space and the magnet part; and it asks for less torque.
         for path in [
             "coupling.gearbox_input_rating_Nm",
             "metal.max_diameter_mm",
