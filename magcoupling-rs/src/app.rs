@@ -8,7 +8,8 @@ pub mod files;
 pub mod theme;
 
 use crate::DesignInputs;
-use crate::gui::session::LoadError;
+use crate::gui::session::{Design, LoadError, share_link};
+use crate::gui::sizing::SizingState;
 use crate::gui::{MagcouplingPanel, PanelRequest};
 
 /// Window and page title.
@@ -46,10 +47,40 @@ pub fn starting_design() -> DesignInputs {
     inputs
 }
 
+/// The page address that stands for `design` (UX overhaul spec 7.2): the clean address, `base`
+/// alone, at the starting design with Auto off (what the page opens on without a link); for any
+/// other design the share link Share copies. One encoding: [`share_link`].
+pub fn address_of(base: &str, design: &Design) -> String {
+    let starting = design.sizing == SizingState::default() && design.inputs == starting_design();
+    if starting {
+        base.to_owned()
+    } else {
+        share_link(base, design)
+    }
+}
+
+/// Rewrites the page's address in place with `history.replaceState` (UX overhaul spec 7.2): no
+/// history entry is added, so the browser's Back still leaves the tool. A refused write (Safari
+/// refuses past 100 calls in 30 seconds) is ignored: the next settled edit writes again.
+#[cfg(target_arch = "wasm32")]
+fn replace_address(address: &str) {
+    if let Some(history) = web_sys::window().and_then(|window| window.history().ok()) {
+        let _ = history.replace_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(address));
+    }
+}
+
+/// The native app has no address to write.
+#[cfg(not(target_arch = "wasm32"))]
+fn replace_address(_address: &str) {}
+
 /// The standalone app: one [`MagcouplingPanel`], full page.
 pub struct MagcouplingApp {
     panel: MagcouplingPanel,
     picker: files::DesignPicker,
+    /// The design the page's address stands for (UX overhaul spec 7.2): the design the app
+    /// opened on, then the last one whose address it wrote. Compared with the panel's settled
+    /// design every frame, so a frame that changes nothing encodes nothing.
+    address_design: Design,
 }
 
 impl MagcouplingApp {
@@ -57,9 +88,12 @@ impl MagcouplingApp {
     /// session), with the linkage app's theme applied to `ctx`.
     pub fn new(ctx: &egui::Context) -> Self {
         theme::apply(ctx);
+        let panel = MagcouplingPanel::with_baseline(starting_design());
+        let address_design = panel.design();
         Self {
-            panel: MagcouplingPanel::with_baseline(starting_design()),
+            panel,
             picker: files::DesignPicker::default(),
+            address_design,
         }
     }
 
@@ -78,10 +112,14 @@ impl MagcouplingApp {
     pub fn open_share_payload(&mut self, payload: &str) -> Result<(), LoadError> {
         let outcome = self.panel.open_share_payload(payload);
         match &outcome {
-            Ok(()) => log::info!(
-                "{SHARE_LINK_LOADED} (sizing: {})",
-                self.panel.sizing().mode.label()
-            ),
+            Ok(()) => {
+                // The address already carries this design: nothing is written until an edit.
+                self.address_design = self.panel.settled_design().clone();
+                log::info!(
+                    "{SHARE_LINK_LOADED} (sizing: {})",
+                    self.panel.sizing().mode.label()
+                );
+            }
             Err(error) => log::warn!("magcoupling: {error}"),
         }
         outcome
@@ -107,6 +145,11 @@ impl MagcouplingApp {
                 }
                 PanelRequest::OpenDesign => self.picker.pick(ctx),
             }
+        }
+        // The address follows the design once an edit has settled (UX overhaul spec 7.2).
+        if *self.panel.settled_design() != self.address_design {
+            self.address_design = self.panel.settled_design().clone();
+            replace_address(&address_of(self.panel.share_base(), &self.address_design));
         }
     }
 }
@@ -175,16 +218,46 @@ mod tests {
         ("metal.cap_thread_dia_mm", 41.0, 41.7),
     ];
 
-    /// One frame of `app` on the laptop screen; the texts it drew.
-    fn frame_texts(ctx: &egui::Context, app: &mut MagcouplingApp) -> Vec<String> {
+    /// One frame of `app` on the laptop screen with `events`; the texts it drew.
+    fn frame_with(
+        ctx: &egui::Context,
+        app: &mut MagcouplingApp,
+        events: Vec<egui::Event>,
+    ) -> Vec<String> {
         let input = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
                 egui::Pos2::ZERO,
                 egui::vec2(1280.0, 800.0),
             )),
+            events,
             ..Default::default()
         };
         drawn_texts(&ctx.run(input, |ctx| app.ui(ctx)))
+    }
+
+    /// One frame of `app` with no input; the texts it drew.
+    fn frame_texts(ctx: &egui::Context, app: &mut MagcouplingApp) -> Vec<String> {
+        frame_with(ctx, app, Vec::new())
+    }
+
+    /// The address the page shows, as the app last wrote it (or opened on).
+    fn address(app: &MagcouplingApp) -> String {
+        address_of(app.panel.share_base(), &app.address_design)
+    }
+
+    /// The design with the face gap at `gap`, as a design file's text.
+    fn gap_file(gap: f64) -> String {
+        let mut design = Design::default();
+        design.inputs.metal.face_gap_mm = gap;
+        crate::gui::session::design_to_json(&design)
+    }
+
+    /// The starting design as a design (Auto off).
+    fn starting() -> Design {
+        Design {
+            inputs: starting_design(),
+            sizing: SizingState::default(),
+        }
     }
 
     /// The number at `path` of `inputs`.
@@ -445,6 +518,129 @@ mod tests {
         want.sort();
         assert_eq!(flagged(&starting_design()), want);
         assert_eq!(flagged(&DesignInputs::default()), Vec::<String>::new());
+    }
+
+    #[test]
+    fn the_address_is_clean_at_the_starting_design_and_a_share_link_elsewhere() {
+        // UX overhaul spec 7.2 and C-23: one encoding, the link Share copies.
+        use crate::gui::session::{PUBLIC_BASE_URL, SHARE_PARAM, decode_share_payload};
+        let base = PUBLIC_BASE_URL;
+        assert_eq!(address_of(base, &starting()), base);
+        // Share still copies the full link at the starting design: a pasted link names every
+        // input, so it keeps its meaning if the starting design changes later.
+        let ctx = egui::Context::default();
+        let app = MagcouplingApp::new(&ctx);
+        let prefix = format!("{base}?{SHARE_PARAM}=");
+        let shared = app.panel().share_link();
+        let payload = shared.strip_prefix(&prefix).expect("a full link");
+        assert_eq!(decode_share_payload(payload).unwrap(), starting());
+        // Any other design: its share link, which decodes to the design that made it.
+        let mut auto_on = starting();
+        auto_on.sizing.mode = crate::gui::sizing::SizingMode::TorqueToMagnets;
+        let mut edited = starting();
+        edited.inputs.metal.face_gap_mm = 1.81;
+        for design in [Design::default(), auto_on, edited] {
+            let address = address_of(base, &design);
+            assert_eq!(address, share_link(base, &design));
+            let payload = address.strip_prefix(&prefix).expect("a share link");
+            assert_eq!(decode_share_payload(payload).unwrap(), design);
+        }
+    }
+
+    #[test]
+    fn a_link_stays_under_four_thousand_characters() {
+        // UX overhaul spec 7.2: a link names every input (decision M41-5), about 2,700
+        // characters whatever the design; the ceiling catches a format that grows past what
+        // an address bar and a host take.
+        let mut long_text = starting();
+        long_text.inputs.coupling.magnets.part_inner = "X".repeat(200);
+        long_text.inputs.coupling.magnets.part_outer = "Y".repeat(200);
+        for design in [starting(), Design::default(), long_text] {
+            let link = share_link(crate::gui::session::PUBLIC_BASE_URL, &design);
+            assert!(link.len() <= 4_000, "{} characters", link.len());
+            assert!(link.len() > 2_000, "{} characters: every input", link.len());
+        }
+    }
+
+    #[test]
+    fn the_address_follows_settled_edits_undo_and_redo() {
+        // UX overhaul spec 7.2 and 8.1, test 5. The write itself (history.replaceState) is the
+        // browser smoke run's; this holds which design the address stands for.
+        use crate::gui::test_support::key_event;
+        let ctx = egui::Context::default();
+        let mut app = MagcouplingApp::new(&ctx);
+        let base = app.panel().share_base().to_owned();
+        frame_texts(&ctx, &mut app);
+        assert_eq!(
+            address(&app),
+            base,
+            "the starting design: the clean address"
+        );
+        // An edit in progress (a key held down) writes nothing; its release does.
+        app.panel.load_design_file(&gap_file(2.0)).unwrap();
+        frame_with(&ctx, &mut app, vec![key_event(egui::Key::F12, true)]);
+        assert_eq!(address(&app), base, "the edit has not settled");
+        frame_with(&ctx, &mut app, vec![key_event(egui::Key::F12, false)]);
+        let edited = app.panel().design();
+        assert_eq!(address(&app), share_link(&base, &edited));
+        assert_ne!(address(&app), base);
+        // Idle frames keep it; undo returns the clean address; redo the link.
+        frame_texts(&ctx, &mut app);
+        assert_eq!(app.address_design, edited);
+        app.panel.undo();
+        frame_texts(&ctx, &mut app);
+        assert_eq!(address(&app), base);
+        app.panel.redo();
+        frame_texts(&ctx, &mut app);
+        assert_eq!(address(&app), share_link(&base, &edited));
+        // The example design is a design like any other: its full link.
+        app.panel.open_example_design();
+        frame_texts(&ctx, &mut app);
+        assert_eq!(address(&app), share_link(&base, &Design::default()));
+        // Reset all: the starting design, the clean address again.
+        app.panel.reset();
+        frame_texts(&ctx, &mut app);
+        assert_eq!(address(&app), base);
+    }
+
+    #[test]
+    fn a_link_opened_at_start_up_is_the_address_until_the_first_edit() {
+        // UX overhaul spec 7.2: a link's address is not rewritten when it opens; a link with
+        // the spreadsheet's values opens as the example design; a link that cannot be read
+        // changes nothing, says why and leaves the address until the first edit.
+        let ctx = egui::Context::default();
+        let mut app = MagcouplingApp::new(&ctx);
+        app.open_share_payload(&encode_share_payload(&Design::default()))
+            .unwrap();
+        assert_eq!(app.address_design, Design::default(), "no write is pending");
+        frame_texts(&ctx, &mut app);
+        let texts = frame_texts(&ctx, &mut app);
+        assert!(texts.iter().any(|t| t == EXAMPLE_STATUS), "{texts:?}");
+        assert_eq!(app.address_design, Design::default());
+        // The baseline is still the starting design: Reset all returns to it.
+        app.panel.reset();
+        frame_texts(&ctx, &mut app);
+        assert_eq!(app.address_design, starting());
+
+        let mut app = MagcouplingApp::new(&ctx);
+        assert!(app.open_share_payload("broken").is_err());
+        assert_eq!(
+            app.panel().design(),
+            starting(),
+            "a bad link changes nothing"
+        );
+        frame_texts(&ctx, &mut app);
+        let texts = frame_texts(&ctx, &mut app);
+        assert!(
+            texts.iter().any(|t| t.contains("not URL-safe base64")),
+            "the header says why: {texts:?}"
+        );
+        assert_eq!(app.address_design, starting(), "nothing is written");
+        // The first edit writes the address.
+        app.panel.load_design_file(&gap_file(2.0)).unwrap();
+        frame_texts(&ctx, &mut app);
+        assert_eq!(app.address_design, app.panel().design());
+        assert_ne!(app.address_design, starting());
     }
 
     #[test]

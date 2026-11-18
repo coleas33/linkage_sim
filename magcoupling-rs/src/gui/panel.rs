@@ -587,9 +587,21 @@ impl MagcouplingPanel {
         self.share_base = base.into();
     }
 
+    /// The address share links point at ([`MagcouplingPanel::set_share_base`]).
+    pub fn share_base(&self) -> &str {
+        &self.share_base
+    }
+
     /// The share link of the design.
     pub fn share_link(&self) -> String {
         share_link(&self.share_base, &self.design())
+    }
+
+    /// The design as of the last settled edit, undo, redo or load: what the undo history holds
+    /// as current. An edit in progress (a drag, a held key, a value being typed) is not in it
+    /// until it settles. The web app writes the page's address from it (UX overhaul spec 7.2).
+    pub fn settled_design(&self) -> &Design {
+        self.history.committed()
     }
 
     /// Loads a design file's text; on refusal the design is unchanged and the panel shows why.
@@ -4361,6 +4373,45 @@ mod tests {
         assert_eq!(harness.panel.history.undo_len(), 1);
         harness.panel.undo();
         assert_eq!(harness.panel.design(), Design::default());
+    }
+
+    #[test]
+    fn the_settled_design_follows_settled_edits_undo_redo_and_an_opened_link() {
+        // UX overhaul spec 7.2: what the web app writes the page's address from.
+        let mut harness = Harness::new();
+        assert_eq!(harness.panel.settled_design(), &Design::default());
+        assert_eq!(harness.panel.share_base(), PUBLIC_BASE_URL);
+        // A key held down: the edit is in progress, so the settled design waits.
+        harness.focus(FACE_GAP);
+        harness.frame(vec![key_event(egui::Key::ArrowRight, true)]);
+        assert_eq!(harness.panel.design(), gap_design(1.41));
+        assert_eq!(harness.panel.settled_design(), &Design::default());
+        harness.frame(vec![key_event(egui::Key::ArrowRight, false)]);
+        assert_eq!(harness.panel.settled_design(), &gap_design(1.41));
+        harness.click_text(UNDO);
+        assert_eq!(harness.panel.settled_design(), &Design::default());
+        harness.click_text(REDO);
+        assert_eq!(harness.panel.settled_design(), &gap_design(1.41));
+        // A loaded file settles in the frame that follows it.
+        harness
+            .panel
+            .load_design_file(&design_to_json(&gap_design(2.0)))
+            .unwrap();
+        harness.frame(Vec::new());
+        assert_eq!(harness.panel.settled_design(), &gap_design(2.0));
+        // A link opened as the session's start is settled at once.
+        harness
+            .panel
+            .open_share_payload(&encode_share_payload(&gap_design(1.6)))
+            .unwrap();
+        assert_eq!(harness.panel.settled_design(), &gap_design(1.6));
+        harness
+            .panel
+            .set_share_base("http://localhost:8080/tools/magcoupler/");
+        assert_eq!(
+            harness.panel.share_base(),
+            "http://localhost:8080/tools/magcoupler/"
+        );
     }
 
     #[test]
