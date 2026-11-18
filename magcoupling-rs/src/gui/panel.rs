@@ -26,6 +26,7 @@
 //! input row of the free variable show that value, locked, and the Key design group says so. The
 //! target is the requirement (decision G-2), the Size tab's Required slider.
 
+use crate::engine::api::workbook_defaults;
 use crate::engine::assumptions::{self, ASSUMPTIONS};
 use crate::engine::clamps;
 use crate::engine::meta::{InputSet, ResultSet, SliderRange, Value};
@@ -40,8 +41,8 @@ use crate::gui::explorer::{
 use crate::gui::format::{format_value, search_needle, with_unit};
 use crate::gui::geometry_view::{drawing_floor, geometry_ui};
 use crate::gui::guidance::{
-    ConsequenceCache, Consequences, FixCache, SIZE_TAB_ALIASES, SIZE_TAB_NOTE, TORQUE_BAND_NOTE,
-    within_minimum_diameter,
+    ConsequenceCache, Consequences, EXAMPLE_DESIGN_HOVER, FixCache, SIZE_TAB_ALIASES,
+    SIZE_TAB_NOTE, TORQUE_BAND_NOTE, within_minimum_diameter,
 };
 use crate::gui::history::History;
 use crate::gui::input_ui::{CHANGED_DOT, RowEdit, hint_line, input_row, slider, weak_line};
@@ -85,6 +86,13 @@ pub const HIDE_WELCOME_HINT: &str =
 
 /// The label of the button that restores the default design.
 pub const RESET_ALL: &str = "Reset all";
+
+/// The header button that opens the spreadsheet's design (UX overhaul spec 7.1), shown on a
+/// panel whose baseline is another design: there Reset all no longer reaches it.
+pub const OPEN_EXAMPLE: &str = "Open the example design";
+
+/// The status line after [`OPEN_EXAMPLE`].
+pub const EXAMPLE_OPENED: &str = "Example design opened";
 
 /// The session buttons.
 pub const UNDO: &str = "Undo";
@@ -711,6 +719,12 @@ impl MagcouplingPanel {
         });
     }
 
+    /// Opens the example design (the spreadsheet's values, with the default sizing state): an
+    /// edit like a loaded file, so it can be undone. The baseline stays where it is.
+    pub fn open_example_design(&mut self) {
+        self.replace_design(Design::default());
+    }
+
     /// Draws the panel into `ui` and applies this frame's edits.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let mut marks = self.explorer.marks(&self.inputs, &self.results);
@@ -753,6 +767,7 @@ impl MagcouplingPanel {
                             dashboard_ui(
                                 ui,
                                 &shown,
+                                &self.baseline,
                                 &self.results,
                                 &fixes,
                                 self.clamps_paused,
@@ -1273,6 +1288,16 @@ impl MagcouplingPanel {
             if ui.button(RESET_ALL).clicked() {
                 self.reset();
                 self.status = Some("Default design restored".to_owned());
+            }
+            // Where the baseline is the spreadsheet's design, Reset all already opens it.
+            if self.baseline != *workbook_defaults()
+                && ui
+                    .button(OPEN_EXAMPLE)
+                    .on_hover_text(EXAMPLE_DESIGN_HOVER)
+                    .clicked()
+            {
+                self.open_example_design();
+                self.status = Some(EXAMPLE_OPENED.to_owned());
             }
             ui.separator();
             if ui.button(SAVE_DESIGN).clicked() {
@@ -4546,6 +4571,87 @@ mod tests {
     }
 
     #[test]
+    fn the_status_line_reads_starting_design_at_the_baseline() {
+        // UX overhaul spec 7.1: the name follows the design; the count is live, as before.
+        let baseline = passing_design();
+        let mut harness = Harness::with_baseline(baseline, SCREEN);
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, "Starting design: passes all 10 checks"), 1);
+        harness.panel.inputs.metal.cup_wall_corner_mm = 2.05;
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, "Your design: passes all 10 checks"), 1);
+        harness.click_text(RESET_ALL);
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, "Starting design: passes all 10 checks"), 1);
+    }
+
+    #[test]
+    fn open_the_example_design_is_one_undo_step_and_keeps_the_baseline() {
+        // UX overhaul spec 7.1: the button opens the spreadsheet's design as an edit; the dots
+        // then show what the baseline changed; Reset all still returns to the baseline.
+        let baseline = passing_design();
+        let mut harness = Harness::with_baseline(baseline.clone(), SCREEN);
+        harness.click_text(OPEN_EXAMPLE);
+        assert_eq!(harness.panel.design(), Design::default());
+        assert_eq!(harness.panel.history.undo_len(), 1);
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, EXAMPLE_OPENED), 1);
+        assert_eq!(count(&output, "Example design: fails 4 of 10 checks"), 1);
+        // The Key design group shows two of the inputs the passing test design changes: the
+        // face gap and the cup wall.
+        assert_eq!(count(&output, CHANGED_DOT), 2);
+        harness.click_text(UNDO);
+        assert_eq!(harness.panel.design(), design_at(&baseline));
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, "Starting design: passes all 10 checks"), 1);
+        assert_eq!(count(&output, CHANGED_DOT), 0);
+        harness.click_text(REDO);
+        assert_eq!(harness.panel.design(), Design::default());
+        harness.click_text(RESET_ALL);
+        assert_eq!(harness.panel.design(), design_at(&baseline));
+    }
+
+    #[test]
+    fn the_first_arrival_s_new_texts_keep_the_text_rules() {
+        // UX overhaul spec 8.3: plain words; nothing says the coupling protects the gearbox;
+        // none of the words banned for new strings (no pressure boundary is modelled, a ring is
+        // not named by a colour, the clamp section is paused); no typed-in number.
+        use crate::engine::explain::plain::mentions_gearbox_protection;
+        use crate::gui::guidance::{STARTING_DESIGN, STARTING_DESIGN_HOVER, plain_text_violations};
+        for text in [
+            STARTING_DESIGN,
+            STARTING_DESIGN_HOVER,
+            EXAMPLE_DESIGN_HOVER,
+            OPEN_EXAMPLE,
+            EXAMPLE_OPENED,
+        ] {
+            assert_eq!(plain_text_violations(text), Vec::<&str>::new(), "{text:?}");
+            assert!(!mentions_gearbox_protection(text), "{text:?}");
+            let lower = text.to_lowercase();
+            for banned in [
+                "sealed",
+                "containment",
+                "leak",
+                "clamp",
+                "red ring",
+                "blue ring",
+            ] {
+                assert!(!lower.contains(banned), "{banned:?} in {text:?}");
+            }
+            assert!(!text.chars().any(|c| c.is_ascii_digit()), "{text:?}");
+        }
+    }
+
+    #[test]
+    fn a_panel_whose_baseline_is_the_spreadsheet_s_design_has_no_example_button() {
+        // Reset all already opens it there, and the header stays as it was (spec 8.1, test 2).
+        let mut harness = Harness::new();
+        assert_eq!(count(&harness.frame(Vec::new()), OPEN_EXAMPLE), 0);
+        let mut harness = Harness::with_baseline(passing_design(), SCREEN);
+        assert_eq!(count(&harness.frame(Vec::new()), OPEN_EXAMPLE), 1);
+    }
+
+    #[test]
     fn nothing_moves_the_baseline() {
         // UX overhaul spec 7.1: not an undo, a redo, a file, a link, a link opened as the
         // session's start or Reset all.
@@ -4992,6 +5098,17 @@ mod tests {
         texts.extend([SHOW_DETAILS, SHOW_DETAILS_HINT].map(str::to_owned));
         texts.push(crate::gui::dashboard::MARKER_LEGEND.to_owned());
         texts.push(crate::gui::guidance::EXAMPLE_DESIGN_HOVER.to_owned());
+        // The starting design's name and hover, and the example design's button and status
+        // (UX overhaul spec 7.1), which a panel at the spreadsheet's baseline does not draw.
+        texts.extend(
+            [
+                crate::gui::guidance::STARTING_DESIGN,
+                crate::gui::guidance::STARTING_DESIGN_HOVER,
+                OPEN_EXAMPLE,
+                EXAMPLE_OPENED,
+            ]
+            .map(str::to_owned),
+        );
         // The hover texts that are named consts (an inline hover literal is not collected).
         texts.extend(
             [
