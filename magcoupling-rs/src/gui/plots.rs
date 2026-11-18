@@ -455,29 +455,36 @@ pub fn plot_ui(
     readouts: &mut Readouts,
 ) {
     readouts_ui(ui, kind, results, readouts);
-    match kind {
-        PlotKind::TorqueTemperature => torque_temperature_ui(ui, inputs, results),
-        PlotKind::GapSweep => sweep_ui(
-            ui,
-            kind,
-            "Corner gap [mm]",
-            PULL_OUT,
-            &results.gap_sweep,
-            [results.model.corner_gap_mm, results.model.pullout_Nm],
-            results.model.required_floor_Nm,
-        ),
-        PlotKind::PoleSweep => sweep_ui(
-            ui,
-            kind,
-            label_for("coupling.npole"),
-            PULL_OUT_SMALLEST_APOTHEM,
-            &results.pole_sweep,
-            [inputs.coupling.npole as f64, results.model.pullout_Nm],
-            results.model.required_floor_Nm,
-        ),
-        PlotKind::SlipHeating => slip_heating_ui(ui, results),
-        PlotKind::TorqueAngle => torque_angle_ui(ui, inputs, results),
-    }
+    // egui_plot draws the grid, the ticks and the axis labels from the text colour. Under a
+    // theme whose body text is as bright as its values the grid is as loud as the curves, so
+    // the plot takes the weak text colour for them. (A legend entry is a button: its text
+    // keeps the button's colour.)
+    ui.scope(|ui| {
+        ui.visuals_mut().widgets.noninteractive.fg_stroke.color = ui.visuals().weak_text_color();
+        match kind {
+            PlotKind::TorqueTemperature => torque_temperature_ui(ui, inputs, results),
+            PlotKind::GapSweep => sweep_ui(
+                ui,
+                kind,
+                "Corner gap [mm]",
+                PULL_OUT,
+                &results.gap_sweep,
+                [results.model.corner_gap_mm, results.model.pullout_Nm],
+                results.model.required_floor_Nm,
+            ),
+            PlotKind::PoleSweep => sweep_ui(
+                ui,
+                kind,
+                label_for("coupling.npole"),
+                PULL_OUT_SMALLEST_APOTHEM,
+                &results.pole_sweep,
+                [inputs.coupling.npole as f64, results.model.pullout_Nm],
+                results.model.required_floor_Nm,
+            ),
+            PlotKind::SlipHeating => slip_heating_ui(ui, results),
+            PlotKind::TorqueAngle => torque_angle_ui(ui, inputs, results),
+        }
+    });
 }
 
 /// The line over a plot: each of [`PlotKind::readouts`] as "label: value", a readout.
@@ -1026,12 +1033,16 @@ mod tests {
 
     /// Two frames of `kind` for `inputs` (a plot settles its bounds on the first).
     fn draw(kind: PlotKind, inputs: &DesignInputs) -> egui::FullOutput {
-        let ctx = egui::Context::default();
+        draw_in(&egui::Context::default(), kind, inputs)
+    }
+
+    /// [`draw`] in `ctx`, whose visuals the plot reads.
+    fn draw_in(ctx: &egui::Context, kind: PlotKind, inputs: &DesignInputs) -> egui::FullOutput {
         let results = compute_all(inputs);
         let mut output = None;
         for _ in 0..2 {
             output = Some(sized_frame(
-                &ctx,
+                ctx,
                 egui::vec2(900.0, 600.0),
                 Vec::new(),
                 |ui| plot_ui(ui, kind, inputs, &results, &mut Readouts::default()),
@@ -1301,6 +1312,33 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn the_axes_take_the_weak_text_colour_and_the_readouts_do_not() {
+        // egui_plot draws its grid, ticks and axis labels from the text colour. Under a theme
+        // whose body text is as bright as its values (the standalone app's, UX overhaul spec 6)
+        // the grid would be as loud as the curves: the plot hands it the weak colour.
+        use crate::gui::test_support::text_color;
+        let (text, weak) = (
+            egui::Color32::from_rgb(250, 251, 252),
+            egui::Color32::from_rgb(101, 102, 103),
+        );
+        let ctx = egui::Context::default();
+        ctx.style_mut(|style| {
+            style.visuals.widgets.noninteractive.fg_stroke.color = text;
+            style.visuals.weak_text_color = Some(weak);
+        });
+        let output = draw_in(&ctx, PlotKind::TorqueTemperature, &DesignInputs::default());
+        for label in ["Magnet temperature [°C]", "Torque [N·m]"] {
+            assert_eq!(text_color(&output, label), Some(weak), "{label}");
+        }
+        // The line of values over the plot is a readout, not a caption.
+        let readout = drawn_texts(&output)
+            .into_iter()
+            .find(|t| t.starts_with(&format!("{PULL_OUT}: ")))
+            .expect("the pull-out's readout");
+        assert_eq!(text_color(&output, &readout), Some(text));
     }
 
     #[test]

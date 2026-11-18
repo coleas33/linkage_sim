@@ -1,6 +1,6 @@
 //! The standalone app (feature `app`): [`MagcouplingApp`] shows the panel as a full page,
 //! for the native binary `magcoupling-app` and the web binary `magcoupling-web` (served at
-//! `/tools/magcoupler/`). It applies the linkage app's theme ([`theme`]) and does the panel's
+//! `/tools/magcoupler/`). It applies the calculator's theme ([`theme`]) and does the panel's
 //! platform work ([`files`]): saving files and picking a design file. The web entry also
 //! opens a share link's design (`?m=`).
 
@@ -103,7 +103,7 @@ pub struct MagcouplingApp {
 
 impl MagcouplingApp {
     /// The app at the starting design ([`starting_design`], the panel's baseline for the
-    /// session), with the linkage app's theme applied to `ctx`.
+    /// session), with the theme applied to `ctx`.
     pub fn new(ctx: &egui::Context) -> Self {
         theme::apply(ctx);
         let panel = MagcouplingPanel::with_baseline(starting_design());
@@ -325,7 +325,7 @@ mod tests {
             texts.iter().any(|t| t == "Magnetic coupling calculator"),
             "{texts:?}"
         );
-        assert_eq!(ctx.style().visuals, theme::cad_dark_visuals());
+        assert_eq!(ctx.style().visuals, theme::visuals());
     }
 
     #[test]

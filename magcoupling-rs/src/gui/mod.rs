@@ -18,6 +18,7 @@ pub mod guidance;
 pub mod history;
 pub mod input_ui;
 pub mod inputs;
+pub mod look;
 mod panel;
 pub mod pickers;
 pub mod plain_text;

@@ -84,10 +84,11 @@ impl Level {
         }
     }
 
-    /// The badge colour: green, the theme's warning colour, the theme's error colour.
+    /// The badge colour: the panel's own green ([`crate::gui::look::OK`] in a dark theme), the
+    /// theme's warning colour, the theme's error colour.
     pub fn color(self, visuals: &egui::Visuals) -> egui::Color32 {
         match self {
-            Level::Good if visuals.dark_mode => egui::Color32::from_rgb(90, 200, 120),
+            Level::Good if visuals.dark_mode => crate::gui::look::OK,
             Level::Good => egui::Color32::from_rgb(20, 130, 60),
             Level::Caution => visuals.warn_fg_color,
             Level::Bad => visuals.error_fg_color,
@@ -2272,6 +2273,20 @@ mod tests {
         for rule in &WARNING_RULES {
             assert_eq!(warning_note(rule).map(|n| n.id), Some(rule.note_id));
         }
+    }
+
+    #[test]
+    fn a_passing_check_is_the_ok_token_in_a_dark_theme() {
+        // UX overhaul spec 6.3: the panel's own green takes the token's value (#4cc38a). A
+        // light theme's green is not a token and stays.
+        assert_eq!(
+            Level::Good.color(&egui::Visuals::dark()),
+            crate::gui::look::OK
+        );
+        assert_eq!(
+            Level::Good.color(&egui::Visuals::light()),
+            egui::Color32::from_rgb(20, 130, 60)
+        );
     }
 
     #[test]
