@@ -26,6 +26,7 @@
 //! input row of the free variable show that value, locked, and the Key design group says so. The
 //! target is the requirement (decision G-2), the Size tab's Required slider.
 
+use crate::engine::api::workbook_defaults;
 use crate::engine::assumptions::{self, ASSUMPTIONS};
 use crate::engine::clamps;
 use crate::engine::meta::{InputSet, ResultSet, SliderRange, Value};
@@ -40,8 +41,8 @@ use crate::gui::explorer::{
 use crate::gui::format::{format_value, search_needle, with_unit};
 use crate::gui::geometry_view::{drawing_floor, geometry_ui};
 use crate::gui::guidance::{
-    ConsequenceCache, Consequences, FixCache, SIZE_TAB_ALIASES, SIZE_TAB_NOTE, TORQUE_BAND_NOTE,
-    within_minimum_diameter,
+    ConsequenceCache, Consequences, EXAMPLE_DESIGN_HOVER, FixCache, SIZE_TAB_ALIASES,
+    SIZE_TAB_NOTE, TORQUE_BAND_NOTE, within_minimum_diameter,
 };
 use crate::gui::history::History;
 use crate::gui::input_ui::{CHANGED_DOT, RowEdit, hint_line, input_row, slider, weak_line};
@@ -85,6 +86,13 @@ pub const HIDE_WELCOME_HINT: &str =
 
 /// The label of the button that restores the default design.
 pub const RESET_ALL: &str = "Reset all";
+
+/// The header button that opens the spreadsheet's design (UX overhaul spec 7.1), shown on a
+/// panel whose baseline is another design: there Reset all no longer reaches it.
+pub const OPEN_EXAMPLE: &str = "Open the example design";
+
+/// The status line after [`OPEN_EXAMPLE`].
+pub const EXAMPLE_OPENED: &str = "Example design opened";
 
 /// The session buttons.
 pub const UNDO: &str = "Undo";
@@ -337,6 +345,12 @@ impl CentreView {
 /// [`MagcouplingPanel::ui`] once per frame.
 pub struct MagcouplingPanel {
     inputs: DesignInputs,
+    /// The session's baseline (UX overhaul spec 7.1, C-21 and C-22): what "the default" means
+    /// on screen (the changed dot, a row's reset, a tooltip's Default line, Reset all, the
+    /// Equation panel's changed tags, the status line's name). Set when the panel is built and
+    /// never moved: not by an undo, a file, a link or the example design. In no design file,
+    /// link or undo step.
+    baseline: DesignInputs,
     /// The sizing mode and free variable (the target is the requirement input, decision G-2).
     sizing: SizingState,
     /// Runs inverse sizing in Torque → Magnets.
@@ -424,18 +438,29 @@ impl Default for MagcouplingPanel {
 }
 
 impl MagcouplingPanel {
-    /// A panel at the default design.
+    /// A panel at the default design (the spreadsheet's values), which is also its baseline.
     pub fn new() -> Self {
+        Self::with_baseline(DesignInputs::default())
+    }
+
+    /// A panel that opens on `baseline` and keeps it as its baseline for the session (UX
+    /// overhaul spec 7.1): the standalone app hands it the starting design.
+    pub fn with_baseline(baseline: DesignInputs) -> Self {
         // The equation registry, built once per process, at start-up rather than on the first
         // hover.
         registry();
-        let inputs = DesignInputs::default();
+        let inputs = baseline.clone();
         let results = compute_all(&inputs);
+        let design = Design {
+            inputs: baseline.clone(),
+            sizing: SizingState::default(),
+        };
         Self {
             inputs,
+            baseline,
             sizing: SizingState::default(),
             runner: SizingRunner::default(),
-            history: History::new(Design::default()),
+            history: History::new(design),
             share_base: PUBLIC_BASE_URL.to_owned(),
             status: None,
             results,
@@ -562,9 +587,21 @@ impl MagcouplingPanel {
         self.share_base = base.into();
     }
 
+    /// The address share links point at ([`MagcouplingPanel::set_share_base`]).
+    pub fn share_base(&self) -> &str {
+        &self.share_base
+    }
+
     /// The share link of the design.
     pub fn share_link(&self) -> String {
         share_link(&self.share_base, &self.design())
+    }
+
+    /// The design as of the last settled edit, undo, redo or load: what the undo history holds
+    /// as current. An edit in progress (a drag, a held key, a value being typed) is not in it
+    /// until it settles. The web app writes the page's address from it (UX overhaul spec 7.2).
+    pub fn settled_design(&self) -> &Design {
+        self.history.committed()
     }
 
     /// Loads a design file's text; on refusal the design is unchanged and the panel shows why.
@@ -686,8 +723,17 @@ impl MagcouplingPanel {
         &self.results
     }
 
-    /// Back to the default design (inputs and sizing state); it can be undone.
+    /// Back to the baseline (its inputs, with the default sizing state); it can be undone.
     pub fn reset(&mut self) {
+        self.replace_design(Design {
+            inputs: self.baseline.clone(),
+            sizing: SizingState::default(),
+        });
+    }
+
+    /// Opens the example design (the spreadsheet's values, with the default sizing state): an
+    /// edit like a loaded file, so it can be undone. The baseline stays where it is.
+    pub fn open_example_design(&mut self) {
         self.replace_design(Design::default());
     }
 
@@ -733,6 +779,7 @@ impl MagcouplingPanel {
                             dashboard_ui(
                                 ui,
                                 &shown,
+                                &self.baseline,
                                 &self.results,
                                 &fixes,
                                 self.clamps_paused,
@@ -917,6 +964,7 @@ impl MagcouplingPanel {
                         &mut self.explorer,
                         shown,
                         &self.results,
+                        &self.baseline,
                         show_details,
                         &held,
                         self.clamps_paused,
@@ -1252,6 +1300,16 @@ impl MagcouplingPanel {
             if ui.button(RESET_ALL).clicked() {
                 self.reset();
                 self.status = Some("Default design restored".to_owned());
+            }
+            // Where the baseline is the spreadsheet's design, Reset all already opens it.
+            if self.baseline != *workbook_defaults()
+                && ui
+                    .button(OPEN_EXAMPLE)
+                    .on_hover_text(EXAMPLE_DESIGN_HOVER)
+                    .clicked()
+            {
+                self.open_example_design();
+                self.status = Some(EXAMPLE_OPENED.to_owned());
             }
             ui.separator();
             if ui.button(SAVE_DESIGN).clicked() {
@@ -1665,7 +1723,10 @@ impl MagcouplingPanel {
         .unwrap_or(Value::None);
         let seed = self.seed(entry);
         let show_details = readouts.show_details();
-        let row = ui.scope(|ui| input_row(ui, entry, &current, seed, locked, show_details));
+        // "The default" on screen is the baseline's value (UX overhaul spec 7.1, C-22).
+        let default = self.baseline.get(&entry.path).unwrap_or(Value::None);
+        let row =
+            ui.scope(|ui| input_row(ui, entry, &current, &default, seed, locked, show_details));
         readouts.mark(ui, row.response.rect, &entry.path);
         if self
             .explorer
@@ -1696,7 +1757,7 @@ impl MagcouplingPanel {
         if let Some(edit) = output.edit {
             let value = match edit {
                 RowEdit::Set(value) => value,
-                RowEdit::Reset => entry.default.clone(),
+                RowEdit::Reset => default,
             };
             self.last_error = self
                 .inputs
@@ -1892,9 +1953,9 @@ mod tests {
     use crate::gui::test_support::{
         SCREEN, clamp_at_its_limit, drawing_rect, drawn_texts, hot_day, hub_overstressed,
         key_event, key_tap, last_characters, no_back_iron, only_the_clamp_fails,
-        only_the_joint_fails, primary_button, row_line, select_all, short_magnets, sized_frame,
-        sized_frame_at, smoke_inputs, text_center, text_clip_rect, text_rect, text_rects,
-        text_shapes, tooltips_at_once, with_poles,
+        only_the_joint_fails, passing_design, primary_button, row_line, select_all, short_magnets,
+        sized_frame, sized_frame_at, smoke_inputs, text_center, text_clip_rect, text_rect,
+        text_rects, text_shapes, tooltips_at_once, with_poles,
     };
     use crate::gui::torque_card::{CAPTION, Control, held_line};
     use crate::headline;
@@ -1927,7 +1988,13 @@ mod tests {
         /// which the Size tab a new panel opens on folds under "Detailed inputs". The first
         /// view's own tests use [`Harness::first_view`].
         pub(crate) fn on_screen(size: egui::Vec2) -> Self {
-            let mut panel = MagcouplingPanel::new();
+            Self::with_baseline(DesignInputs::default(), size)
+        }
+
+        /// [`Harness::on_screen`] for a panel whose baseline is `baseline` (UX overhaul spec
+        /// 7.1): the panel opens on it.
+        fn with_baseline(baseline: DesignInputs, size: egui::Vec2) -> Self {
+            let mut panel = MagcouplingPanel::with_baseline(baseline);
             panel.centre = CentreView::Geometry;
             Self::of(panel, size)
         }
@@ -2394,7 +2461,10 @@ mod tests {
             harness.frame(vec![egui::Event::PointerMoved(rect.center())]);
             harness.frame(Vec::new());
             let output = harness.frame(Vec::new());
-            let want = format!("{}\n{TRACE_HINT}", input_tooltip(entry, show_details));
+            let want = format!(
+                "{}\n{TRACE_HINT}",
+                input_tooltip(entry, &entry.default, show_details)
+            );
             assert!(drawn_texts(&output).contains(&want), "{want:?}");
             assert_eq!(want.lines().any(|line| line == FACE_GAP), show_details);
             assert_eq!(want.lines().any(|line| line == cell), show_details);
@@ -2837,6 +2907,53 @@ mod tests {
         harness.click_text(RESET_LABEL);
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
         assert_eq!(count(&harness.frame(Vec::new()), CHANGED_DOT), 0);
+    }
+
+    #[test]
+    fn the_changed_dot_a_row_s_reset_and_the_default_line_follow_the_baseline() {
+        // UX overhaul spec 7.1 (C-22): on screen "the default" is the baseline's value.
+        use crate::gui::input_ui::TRACE_HINT;
+        use crate::gui::inputs::input_tooltip;
+        // The passing test design: its face gap is 1.8 mm, the spreadsheet's 1.4 mm.
+        let baseline = passing_design();
+        let mut harness = Harness::with_baseline(baseline.clone(), SCREEN);
+        tooltips_at_once(&harness.ctx);
+        // At the baseline no row carries the dot, though it differs from the spreadsheet's
+        // values in two rows of the Key design group (the face gap and the cup wall).
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, CHANGED_DOT), 0);
+        assert_eq!(count(&output, RESET_LABEL), 0);
+        // The label's hover gives the baseline's value as the default.
+        let entry = InputCatalogue::get().entry(FACE_GAP).unwrap();
+        let tooltip = input_tooltip(entry, &Value::Num(1.8), false);
+        assert!(tooltip.ends_with("Default: 1.800"), "{tooltip}");
+        let label = crate::gui::plain_text::label_for(FACE_GAP);
+        let at = text_center(&output, label);
+        harness.frame(vec![egui::Event::PointerMoved(at)]);
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        let want = format!("{tooltip}\n{TRACE_HINT}");
+        assert!(drawn_texts(&output).contains(&want), "{want:?}");
+        // One step off the baseline: the dot and the reset, whose hover names the baseline's
+        // value; the reset returns it, not the spreadsheet's.
+        harness.focus(FACE_GAP);
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, CHANGED_DOT), 1);
+        assert_eq!(count(&output, RESET_LABEL), 1);
+        let at = text_center(&output, RESET_LABEL);
+        harness.frame(vec![egui::Event::PointerMoved(at)]);
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, "Back to the default: 1.800"), 1);
+        harness.click_text(RESET_LABEL);
+        assert_eq!(harness.panel.inputs(), &baseline);
+        assert_eq!(count(&harness.frame(Vec::new()), CHANGED_DOT), 0);
+        // At the spreadsheet's values both rows carry the dot: they differ from the baseline.
+        harness.panel.inputs = DesignInputs::default();
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, CHANGED_DOT), 2);
+        assert_eq!(count(&output, RESET_LABEL), 2);
     }
 
     #[test]
@@ -4259,6 +4376,45 @@ mod tests {
     }
 
     #[test]
+    fn the_settled_design_follows_settled_edits_undo_redo_and_an_opened_link() {
+        // UX overhaul spec 7.2: what the web app writes the page's address from.
+        let mut harness = Harness::new();
+        assert_eq!(harness.panel.settled_design(), &Design::default());
+        assert_eq!(harness.panel.share_base(), PUBLIC_BASE_URL);
+        // A key held down: the edit is in progress, so the settled design waits.
+        harness.focus(FACE_GAP);
+        harness.frame(vec![key_event(egui::Key::ArrowRight, true)]);
+        assert_eq!(harness.panel.design(), gap_design(1.41));
+        assert_eq!(harness.panel.settled_design(), &Design::default());
+        harness.frame(vec![key_event(egui::Key::ArrowRight, false)]);
+        assert_eq!(harness.panel.settled_design(), &gap_design(1.41));
+        harness.click_text(UNDO);
+        assert_eq!(harness.panel.settled_design(), &Design::default());
+        harness.click_text(REDO);
+        assert_eq!(harness.panel.settled_design(), &gap_design(1.41));
+        // A loaded file settles in the frame that follows it.
+        harness
+            .panel
+            .load_design_file(&design_to_json(&gap_design(2.0)))
+            .unwrap();
+        harness.frame(Vec::new());
+        assert_eq!(harness.panel.settled_design(), &gap_design(2.0));
+        // A link opened as the session's start is settled at once.
+        harness
+            .panel
+            .open_share_payload(&encode_share_payload(&gap_design(1.6)))
+            .unwrap();
+        assert_eq!(harness.panel.settled_design(), &gap_design(1.6));
+        harness
+            .panel
+            .set_share_base("http://localhost:8080/tools/magcoupler/");
+        assert_eq!(
+            harness.panel.share_base(),
+            "http://localhost:8080/tools/magcoupler/"
+        );
+    }
+
+    #[test]
     fn a_drag_is_one_undo_step() {
         let mut harness = Harness::new();
         let rail = harness.widget(FACE_GAP).rect;
@@ -4420,6 +4576,160 @@ mod tests {
         assert_eq!(harness.panel.design(), Design::default());
         harness.click_text(UNDO);
         assert_eq!(harness.panel.design(), gap_design(1.41));
+    }
+
+    /// `inputs` as a design with the default sizing state: what a panel whose baseline is
+    /// `inputs` opens on and Reset all returns to.
+    fn design_at(inputs: &DesignInputs) -> Design {
+        Design {
+            inputs: inputs.clone(),
+            sizing: SizingState::default(),
+        }
+    }
+
+    #[test]
+    fn a_new_panel_keeps_the_spreadsheet_s_values_as_its_baseline() {
+        // UX overhaul spec 7.1 (C-21): a host or a test that builds the panel the old way sees
+        // the old behaviour.
+        assert_eq!(MagcouplingPanel::new().baseline, DesignInputs::default());
+        assert_eq!(
+            MagcouplingPanel::default().baseline,
+            DesignInputs::default()
+        );
+    }
+
+    #[test]
+    fn a_panel_opens_on_its_baseline_and_reset_all_returns_to_it() {
+        let baseline = passing_design();
+        let start = design_at(&baseline);
+        let mut harness = Harness::with_baseline(baseline.clone(), SCREEN);
+        assert_eq!(harness.panel.design(), start);
+        assert_eq!(harness.panel.results(), &compute_all(&baseline));
+        // The session starts there: nothing to undo.
+        assert!(!harness.panel.history.can_undo(&start));
+        // Auto on is part of the design, so Reset all turns it off again.
+        harness.focus(FACE_GAP);
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        harness.panel.set_sizing_mode(SizingMode::TorqueToMagnets);
+        harness.frame(Vec::new());
+        assert_ne!(harness.panel.design(), start);
+        harness.click_text(RESET_ALL);
+        assert_eq!(harness.panel.design(), start);
+        assert_eq!(harness.panel.results(), &compute_all(&baseline));
+        // Reset all is an edit like any other: Undo brings the changed design back.
+        harness.click_text(UNDO);
+        assert_ne!(harness.panel.design(), start);
+    }
+
+    #[test]
+    fn the_status_line_reads_starting_design_at_the_baseline() {
+        // UX overhaul spec 7.1: the name follows the design; the count is live, as before.
+        let baseline = passing_design();
+        let mut harness = Harness::with_baseline(baseline, SCREEN);
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, "Starting design: passes all 10 checks"), 1);
+        harness.panel.inputs.metal.cup_wall_corner_mm = 2.05;
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, "Your design: passes all 10 checks"), 1);
+        harness.click_text(RESET_ALL);
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, "Starting design: passes all 10 checks"), 1);
+    }
+
+    #[test]
+    fn open_the_example_design_is_one_undo_step_and_keeps_the_baseline() {
+        // UX overhaul spec 7.1: the button opens the spreadsheet's design as an edit; the dots
+        // then show what the baseline changed; Reset all still returns to the baseline.
+        let baseline = passing_design();
+        let mut harness = Harness::with_baseline(baseline.clone(), SCREEN);
+        harness.click_text(OPEN_EXAMPLE);
+        assert_eq!(harness.panel.design(), Design::default());
+        assert_eq!(harness.panel.history.undo_len(), 1);
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, EXAMPLE_OPENED), 1);
+        assert_eq!(count(&output, "Example design: fails 4 of 10 checks"), 1);
+        // The Key design group shows two of the inputs the passing test design changes: the
+        // face gap and the cup wall.
+        assert_eq!(count(&output, CHANGED_DOT), 2);
+        harness.click_text(UNDO);
+        assert_eq!(harness.panel.design(), design_at(&baseline));
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, "Starting design: passes all 10 checks"), 1);
+        assert_eq!(count(&output, CHANGED_DOT), 0);
+        harness.click_text(REDO);
+        assert_eq!(harness.panel.design(), Design::default());
+        harness.click_text(RESET_ALL);
+        assert_eq!(harness.panel.design(), design_at(&baseline));
+    }
+
+    #[test]
+    fn the_first_arrival_s_new_texts_keep_the_text_rules() {
+        // UX overhaul spec 8.3: plain words; nothing says the coupling protects the gearbox;
+        // none of the words banned for new strings (no pressure boundary is modelled, a ring is
+        // not named by a colour, the clamp section is paused); no typed-in number.
+        use crate::engine::explain::plain::mentions_gearbox_protection;
+        use crate::gui::guidance::{STARTING_DESIGN, STARTING_DESIGN_HOVER, plain_text_violations};
+        for text in [
+            STARTING_DESIGN,
+            STARTING_DESIGN_HOVER,
+            EXAMPLE_DESIGN_HOVER,
+            OPEN_EXAMPLE,
+            EXAMPLE_OPENED,
+        ] {
+            assert_eq!(plain_text_violations(text), Vec::<&str>::new(), "{text:?}");
+            assert!(!mentions_gearbox_protection(text), "{text:?}");
+            let lower = text.to_lowercase();
+            for banned in [
+                "sealed",
+                "containment",
+                "leak",
+                "clamp",
+                "red ring",
+                "blue ring",
+            ] {
+                assert!(!lower.contains(banned), "{banned:?} in {text:?}");
+            }
+            assert!(!text.chars().any(|c| c.is_ascii_digit()), "{text:?}");
+        }
+    }
+
+    #[test]
+    fn a_panel_whose_baseline_is_the_spreadsheet_s_design_has_no_example_button() {
+        // Reset all already opens it there, and the header stays as it was (spec 8.1, test 2).
+        let mut harness = Harness::new();
+        assert_eq!(count(&harness.frame(Vec::new()), OPEN_EXAMPLE), 0);
+        let mut harness = Harness::with_baseline(passing_design(), SCREEN);
+        assert_eq!(count(&harness.frame(Vec::new()), OPEN_EXAMPLE), 1);
+    }
+
+    #[test]
+    fn nothing_moves_the_baseline() {
+        // UX overhaul spec 7.1: not an undo, a redo, a file, a link, a link opened as the
+        // session's start or Reset all.
+        let baseline = passing_design();
+        let mut harness = Harness::with_baseline(baseline.clone(), SCREEN);
+        harness
+            .panel
+            .load_design_file(&design_to_json(&gap_design(2.0)))
+            .unwrap();
+        harness.frame(Vec::new());
+        harness
+            .panel
+            .load_share_payload(&encode_share_payload(&gap_design(1.5)))
+            .unwrap();
+        harness.frame(Vec::new());
+        harness.click_text(UNDO);
+        harness.click_text(REDO);
+        harness.click_text(RESET_ALL);
+        harness
+            .panel
+            .open_share_payload(&encode_share_payload(&Design::default()))
+            .unwrap();
+        harness.frame(Vec::new());
+        assert_eq!(harness.panel.baseline, baseline);
+        assert_eq!(harness.panel.design(), Design::default());
+        harness.panel.reset();
+        assert_eq!(harness.panel.design(), design_at(&baseline));
     }
 
     #[test]
@@ -4839,6 +5149,17 @@ mod tests {
         texts.extend([SHOW_DETAILS, SHOW_DETAILS_HINT].map(str::to_owned));
         texts.push(crate::gui::dashboard::MARKER_LEGEND.to_owned());
         texts.push(crate::gui::guidance::EXAMPLE_DESIGN_HOVER.to_owned());
+        // The starting design's name and hover, and the example design's button and status
+        // (UX overhaul spec 7.1), which a panel at the spreadsheet's baseline does not draw.
+        texts.extend(
+            [
+                crate::gui::guidance::STARTING_DESIGN,
+                crate::gui::guidance::STARTING_DESIGN_HOVER,
+                OPEN_EXAMPLE,
+                EXAMPLE_OPENED,
+            ]
+            .map(str::to_owned),
+        );
         // The hover texts that are named consts (an inline hover literal is not collected).
         texts.extend(
             [
@@ -4871,7 +5192,7 @@ mod tests {
         texts.extend(
             catalogue
                 .all()
-                .map(|entry| crate::gui::inputs::input_tooltip(entry, true)),
+                .map(|entry| crate::gui::inputs::input_tooltip(entry, &entry.default, true)),
         );
         // The material warnings the dashboard can show.
         texts.extend(
@@ -9121,6 +9442,31 @@ mod tests {
             harness.click_text(InputsView::Design.label());
             assert_eq!(harness.panel.inputs_view, InputsView::Design);
         }
+    }
+
+    #[test]
+    fn the_equation_panel_s_changed_tag_follows_the_baseline() {
+        // UX overhaul spec 7.1 (C-22). The passing test design asks for 1.6 N·m, the
+        // spreadsheet for 2.5 N·m; the hot minimum check's equation reads the requirement.
+        let input = "input: click to find its row";
+        let changed = format!("{CHANGED_DOT} changed; {input}");
+        let mut harness = Harness::with_baseline(passing_design(), SCREEN);
+        harness.panel.explorer.open_path("metal.hot_min_check");
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        assert_eq!(
+            (count(&output, input), count(&output, &changed)),
+            (1, 0),
+            "at the baseline"
+        );
+        harness.panel.inputs.metal.required_min_Nm = 2.5;
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        assert_eq!(
+            (count(&output, input), count(&output, &changed)),
+            (0, 1),
+            "at the spreadsheet's requirement"
+        );
     }
 
     #[test]

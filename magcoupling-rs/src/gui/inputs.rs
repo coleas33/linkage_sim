@@ -1007,11 +1007,12 @@ pub const ASSUMPTION_LINE: &str = "Model assumption: see Assumptions for why it 
 
 /// The hover text of an input: its help (the overlay's, else the engine's:
 /// [`help_for`]), path, workbook cell, slider range, default, and whether it is a model
-/// assumption.
+/// assumption. `default` is the value its Default line shows: the session's baseline value on
+/// the panel (UX overhaul spec 7.1, C-22), `entry.default` (the spreadsheet's) elsewhere.
 ///
 /// The original spreadsheet note ([`ORIGINAL_NOTE`]), the path and the workbook cell only with
 /// `show_details` (the header's Show spreadsheet details, spec S2-5), after the help.
-pub fn input_tooltip(entry: &InputEntry, show_details: bool) -> String {
+pub fn input_tooltip(entry: &InputEntry, default: &Value, show_details: bool) -> String {
     let meta = entry.meta;
     let mut lines = Vec::new();
     let help = help_for(&entry.path);
@@ -1036,7 +1037,7 @@ pub fn input_tooltip(entry: &InputEntry, show_details: bool) -> String {
             r.min, r.max, r.step
         ));
     }
-    let default = match (&entry.default, meta.ty) {
+    let default = match (default, meta.ty) {
         (Value::None, FieldType::OptF64) => "blank".to_owned(),
         (Value::Text(text), _) if text.is_empty() => "blank".to_owned(),
         (Value::Int(code), _) if !meta.choices.is_empty() => {
@@ -1600,31 +1601,68 @@ mod tests {
             help, original,
             "the face gap's terse workbook note is replaced on screen"
         );
+        let tooltip = |path: &str| {
+            let entry = catalogue.entry(path).unwrap();
+            input_tooltip(entry, &entry.default, true)
+        };
         assert_eq!(
-            input_tooltip(catalogue.entry("metal.face_gap_mm").unwrap(), true),
+            tooltip("metal.face_gap_mm"),
             format!(
                 "{help}\nOriginal spreadsheet note: {original}\nmetal.face_gap_mm\n\
                  Metal design!C119\nSlider 0.3 to 5 mm, step 0.01\nDefault: 1.400"
             )
         );
-        let backiron = input_tooltip(catalogue.entry("coupling.backiron").unwrap(), true);
+        let backiron = tooltip("coupling.backiron");
         assert!(
             backiron.ends_with("Default: 1 = steel circuit"),
             "{backiron}"
         );
-        let drag = input_tooltip(catalogue.entry("metal.measured_drag_Nm").unwrap(), true);
+        let drag = tooltip("metal.measured_drag_Nm");
         assert!(
             drag.contains("logarithmic") && drag.ends_with("Default: blank"),
             "{drag}"
         );
-        let harmonic = input_tooltip(catalogue.entry("coupling.max_harmonic").unwrap(), true);
+        let harmonic = tooltip("coupling.max_harmonic");
         assert!(
             harmonic.contains(crate::gui::plain_text::NO_SPREADSHEET_CELL)
                 && harmonic.ends_with(ASSUMPTION_LINE),
             "{harmonic}"
         );
-        let npole = input_tooltip(catalogue.entry("coupling.npole").unwrap(), true);
+        let npole = tooltip("coupling.npole");
         assert!(npole.contains("Slider 4 to 40, step 2"), "{npole}");
+    }
+
+    #[test]
+    fn the_default_line_shows_the_default_it_is_handed() {
+        // UX overhaul spec 7.1 (C-22): the panel hands the baseline's value; each arm of the
+        // line reads it, not the catalogue's default.
+        let catalogue = InputCatalogue::new();
+        let line = |path: &str, default: Value| {
+            let tooltip = input_tooltip(catalogue.entry(path).unwrap(), &default, false);
+            tooltip
+                .lines()
+                .find(|line| line.starts_with("Default: "))
+                .unwrap_or_else(|| panic!("{path}: no Default line in {tooltip}"))
+                .to_owned()
+        };
+        assert_eq!(line("metal.face_gap_mm", Value::Num(1.8)), "Default: 1.800");
+        assert_eq!(line("coupling.npole", Value::Int(8)), "Default: 8");
+        assert_eq!(
+            line("coupling.backiron", Value::Int(0)),
+            "Default: 0 = no back iron"
+        );
+        assert_eq!(
+            line("metal.measured_drag_Nm", Value::Num(0.05)),
+            "Default: 0.05000"
+        );
+        assert_eq!(
+            line("coupling.magnets.axial_length_mm", Value::None),
+            "Default: blank"
+        );
+        assert_eq!(
+            line("coupling.magnets.part_inner", Value::Text(String::new())),
+            "Default: blank"
+        );
     }
 
     #[test]
@@ -1635,8 +1673,8 @@ mod tests {
         let catalogue = InputCatalogue::new();
         for entry in catalogue.all() {
             let path = entry.path.as_str();
-            let on = input_tooltip(entry, true);
-            let off = input_tooltip(entry, false);
+            let on = input_tooltip(entry, &entry.default, true);
+            let off = input_tooltip(entry, &entry.default, false);
             let original = original_help(path).map(|note| format!("{ORIGINAL_NOTE}: {note}"));
             let added = 2 + usize::from(original.is_some());
             assert_eq!(
@@ -1816,7 +1854,7 @@ mod tests {
         // help); it is the guard that bites if an overlay row is not shown.
         for entry in InputCatalogue::get().all() {
             // With the spreadsheet details, so that a path with no help opens the tooltip.
-            let tooltip = input_tooltip(entry, true);
+            let tooltip = input_tooltip(entry, &entry.default, true);
             match help_for(&entry.path) {
                 "" => assert!(
                     tooltip.starts_with(&format!("{}\n", entry.path)),

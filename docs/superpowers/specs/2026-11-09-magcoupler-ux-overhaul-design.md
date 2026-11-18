@@ -1,12 +1,12 @@
 # Magcoupler overhaul: an instrument that teaches — design
 
-- Date: 2026-11-09. Base: `main` at 1048962. Status: **approved by the owner on 2026-11-16 ("Approve and yes. Stop asking for my direction and do what you think is best"); nothing here is built yet.**
+- Date: 2026-11-09. Base: `main` at 1048962. Status: **approved by the owner on 2026-11-16 ("Approve and yes. Stop asking for my direction and do what you think is best"); slice A is built on the branch `magcoupling/overhaul-a` (BL-077) and waits for the owner's review of its diff; slices B to F are not built.**
 - Revised 2026-11-09 for the owner's ruling on the requirement (O-8, section 7.1) and for the builder check
   (section 12.5), and on 2026-11-10 for the owner's answer on the number (O-9) and the ruling on open questions (O-10).
 - This is an umbrella design for six slices (section 3). It is firm on slices A and B and lighter on C to F. Each
   slice gets its own plan and branch (`magcoupling/overhaul-<letter>-<name>`); slices C to F each get a short design
   addendum before their plan. After approval the next step is the plan for slice A, and nothing else.
-- Backlog: none filed yet. Each slice's plan files one item with the next free id (`dimension: gui`; `risk: physics`
+- Backlog: BL-077 is slice A's item (filed 2026-11-17 with its plan, `docs/superpowers/plans/2026-11-17-magcoupler-overhaul-a-first-arrival.md`). Each later slice's plan files one item with the next free id (`dimension: gui`; `risk: physics`
   wherever a slice shows a new number or a new physical claim, `risk: mechanical` otherwise).
 - `M` = `magcoupling-rs`; code paths are under `M/src/` unless they say otherwise, and every `path:line` is at 1048962.
 - Inputs: the inventory `docs/analyses/2026-11-09-magcoupler-ux-inventory.md` (what is on screen today, with its
@@ -506,8 +506,9 @@ The magnets stay B842SH on both rings at the stock length.
 
 - **Starting design.** What the app opens on when the address carries no `?m=`. The status line reads "Starting
   design: passes all 9 checks". The name and its hover are new strings and take the text review. Draft hover: "A
-  design that passes every check. It keeps the example design's gearbox rating, space and magnets, and asks for
-  less torque."
+  design that passes every check. It keeps the example design's gearbox rating, space and magnet part, and asks for
+  less torque." (The text review of 2026-11-17 changed "magnets" to "magnet part": the part is kept, the number
+  per ring is not; `docs/analyses/2026-11-17-magcoupler-slice-a-review.md`.)
 - **Example design.** The spreadsheet's values, `DesignInputs::default`, unchanged. Its name and every sentence
   that says "example design" today stay as they are, and stay true: the stored 3D fields do come from that design.
   One string changes: its hover, "The starting values from the original spreadsheet." (`EXAMPLE_DESIGN_HOVER`,
@@ -541,6 +542,8 @@ The magnets stay B842SH on both rings at the stock length.
   design's is 0.90 mm on paper, with its thread below the cup body, which the drawing flags today. A thicker skirt
   needs a larger diameter claim. Section 12.4 files the missing check.
 - **Ring radius 9.00 mm is the slider's minimum.** A user cannot walk further down from it.
+- **The opening tab draws one amber line** (found by the slice A plan, 2026-11-17; register row A-17). At a ring radius of 9.00 mm the hub wall past the keyway is 2.25 mm, and the Size tab says so against its guidance of about 2.5 mm ("Wall past keyway: 2.25 mm; existing guidance is about 2.5 mm."). No counted check judges it, so the status line still reads "passes all 9 checks". A ring radius of 9.26 mm clears the line and takes the cap's skirt from 0.55 to 0.30 mm (with the cap thread at 42.2 mm; at 9.25 mm the wall computes a hair under 2.5 mm and the line still shows). The approved values are kept and the line stays visible until the owner rules.
+- **Two of its nine checks use the example design's 3D fields** (found by the slice A review, 2026-11-17; register row A-18). The temperature check, and the inner hub's fitting temperature inside the shaft joints check, read the stored reverse fields, which were computed in 3D for the example design's geometry and stay fixed for every design. Until slice A the page opened on the design those fields belong to. The dashboard says so under those checks ("Fixed 3D fields from the example design", with its hover); at 1280x800 that line is below the dashboard's first screen. With the four stored reverse fields raised by 10 % the starting design still passes all 9 checks with no caution; raised by 25 % the temperature check turns to a caution, and raised by 75 % the shaft joints check fails (probe of 2026-11-17, `docs/analyses/2026-11-17-magcoupler-slice-a-review.md`). Nothing is changed until the owner rules.
 - **1.35 N·m is a choice inside a range, and the owner took it (O-9).** Anything up to 1.44 N·m passes on this design. The ceiling
   design's 1.69 N·m is the most the given facts allow; it is not taken because of its 0.15 mm skirt and its 0.6 %
   of gearbox margin.
@@ -571,8 +574,12 @@ the other three are dropped.
   `session.rs:408`; `SHARE_PARAM = "m"`). No second encoding.
 - A link that cannot be read changes nothing, says why in the status line, and leaves the address as it was until
   the first edit.
-- Browsers limit `replaceState` (Safari refuses past 100 calls in 30 seconds). Writing only on settled edits keeps
-  far under that; a refused write is ignored and the next edit writes again.
+- Browsers limit `replaceState` (Safari refuses more than about 100 calls in 10 seconds). The app writes only a
+  settled design, and never while a key is held: a held Ctrl+Z or Ctrl+Y undoes or redoes one step at every key
+  repeat, each step a settled design, so the whole run gives one write when the key is released. A refused write
+  leaves the address standing for the last design it took, and the app asks again on its next frame. (Changed by
+  the independent review of slice A, 2026-11-17: the first build wrote at every step of a held undo and counted a
+  refused write as written.)
 - The native app does nothing. The selection, the tab and every other view flag stay out of the address.
 - One thing a reload does not bring back: the Minimum OD preference of the Size tab (C-24). It is view state
   (`panel.rs:387-388`), not a design input, and the file reader refuses a key it does not know

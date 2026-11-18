@@ -55,7 +55,7 @@ use crate::gui::explorer::reviewed_note;
 use crate::gui::format::{format_value, with_unit};
 use crate::gui::guidance::{
     self, BANNER_NOTE, CHECK_GUIDES, CheckGuide, Direction, FIT_CHECK, Learn, NO_FIX,
-    design_status, design_status_text, fix_text, guide_notes, row_learn,
+    design_status, fix_text, guide_notes, row_learn, status_line,
 };
 use crate::gui::plain_text::{display_label, help_for, label_for};
 use crate::gui::readouts::Readouts;
@@ -723,16 +723,18 @@ pub fn shown_lines(results: &DesignResults, clamps_paused: bool) -> Vec<Dashboar
 /// (`guidance::FixCache`). Each result row is a readout (`readouts`): its hover text and
 /// equation while hovered, a click opens it in the Equation panel. While the shaft-clamp
 /// section is paused (`clamps_paused`) its rows, their guide and their Why links are left out
-/// and the status line does not count its check.
+/// and the status line does not count its check. `baseline` is the session's baseline: the
+/// status line names the design against it ([`guidance::status_line`]).
 pub fn dashboard_ui(
     ui: &mut egui::Ui,
     inputs: &DesignInputs,
+    baseline: &DesignInputs,
     results: &DesignResults,
     fixes: &[Vec<(&'static str, Direction)>],
     clamps_paused: bool,
     readouts: &mut Readouts,
 ) {
-    status_ui(ui, inputs, results, clamps_paused);
+    status_ui(ui, inputs, baseline, results, clamps_paused);
     let lines = shown_lines(results, clamps_paused);
     if end_effect_banner_ui(ui, results, readouts) {
         ui.separator();
@@ -789,13 +791,15 @@ pub fn dashboard_ui(
     fit_ui(ui, inputs, results, fixes, readouts);
 }
 
-/// The design status line (guidance spec 3.1): whose design it is and how many guided checks
-/// fail (those that count with the shaft-clamp section's pause, `clamps_paused`), in the colour
-/// of the worst level, over a separator; at the defaults its hover says where the example's
-/// values come from (spec S2-5).
+/// The design status line (guidance spec 3.1): whose design it is against the session's
+/// `baseline` and how many guided checks fail (those that count with the shaft-clamp section's
+/// pause, `clamps_paused`), in the colour of the worst level, over a separator; at the example
+/// design and at the starting design its hover says what the design is (spec S2-5; UX overhaul
+/// spec 7.1).
 fn status_ui(
     ui: &mut egui::Ui,
     inputs: &DesignInputs,
+    baseline: &DesignInputs,
     results: &DesignResults,
     clamps_paused: bool,
 ) {
@@ -807,12 +811,13 @@ fn status_ui(
     } else {
         Level::Good
     };
-    let text = egui::RichText::new(design_status_text(&status))
+    let (text, hover) = status_line(&status, inputs, baseline);
+    let text = egui::RichText::new(text)
         .strong()
         .color(level.color(ui.visuals()));
     let line = ui.add(egui::Label::new(text).wrap());
-    if status.is_default {
-        line.on_hover_text(guidance::EXAMPLE_DESIGN_HOVER);
+    if let Some(hover) = hover {
+        line.on_hover_text(hover);
     }
     ui.separator();
 }
@@ -1043,7 +1048,9 @@ mod tests {
     use crate::engine::api::HEADLINE;
     use crate::engine::meta::InputSet;
     use crate::gui::corrections::MARKER_HEADING;
-    use crate::gui::guidance::{CHECK_GUIDES, Direction, Fixes, ROW_LEARN, all_fixes, trade_offs};
+    use crate::gui::guidance::{
+        CHECK_GUIDES, Direction, Fixes, ROW_LEARN, all_fixes, design_status_text, trade_offs,
+    };
     use crate::gui::readouts::ReadoutEvents;
     use crate::gui::test_support::{
         assert_glyphs, drawn_texts, hover_frames, hub_overstressed, only_the_clamp_fails,
@@ -2072,7 +2079,15 @@ mod tests {
             let ctx = egui::Context::default();
             let output = sized_frame(&ctx, egui::vec2(1280.0, 4000.0), Vec::new(), |ui| {
                 let mut readouts = Readouts::new(TermColors::default(), show_details);
-                dashboard_ui(ui, &inputs, &results, &fixes, false, &mut readouts);
+                dashboard_ui(
+                    ui,
+                    &inputs,
+                    &DesignInputs::default(),
+                    &results,
+                    &fixes,
+                    false,
+                    &mut readouts,
+                );
             });
             let texts = drawn_texts(&output);
             for marker in &markers {
@@ -2215,7 +2230,7 @@ mod tests {
         // effect out of range).
         let mut texts: Vec<String> = crate::gui::inputs::InputCatalogue::get()
             .all()
-            .map(|entry| crate::gui::inputs::input_tooltip(entry, false))
+            .map(|entry| crate::gui::inputs::input_tooltip(entry, &entry.default, false))
             .collect();
         for entry in crate::gui::results_table::table_entries() {
             texts.push(hover_text(&entry.path, false).expect("every table row is a result"));
@@ -2305,6 +2320,7 @@ mod tests {
             dashboard_ui(
                 ui,
                 inputs,
+                &DesignInputs::default(),
                 &results,
                 &fixes,
                 clamps_paused,
@@ -2570,6 +2586,7 @@ mod tests {
                     dashboard_ui(
                         ui,
                         &inputs,
+                        &DesignInputs::default(),
                         &results,
                         &fixes,
                         false,
@@ -2579,6 +2596,44 @@ mod tests {
             );
             let hover = guidance::EXAMPLE_DESIGN_HOVER.to_owned();
             assert_eq!(drawn_texts(&output).contains(&hover), example, "{text}");
+        }
+    }
+
+    #[test]
+    fn the_starting_design_s_status_line_says_on_hover_what_it_is() {
+        // UX overhaul spec 7.1: at the session's baseline, when that is not the spreadsheet's
+        // design, the line reads "Starting design" and its hover says what the design is; the
+        // same design on a panel whose baseline is the spreadsheet's is "Your design", with no
+        // hover.
+        let inputs = passing_design();
+        let results = compute_all(&inputs);
+        let fixes = all_fixes(&inputs, &results, false);
+        for (baseline, name, starting) in [
+            (passing_design(), guidance::STARTING_DESIGN, true),
+            (DesignInputs::default(), guidance::YOUR_DESIGN, false),
+        ] {
+            let text = format!("{name}: passes all 10 checks");
+            let (_, output) = hover_frames(
+                &egui::Context::default(),
+                egui::vec2(1280.0, 4000.0),
+                |output| text_center(output, &text),
+                |ui| {
+                    dashboard_ui(
+                        ui,
+                        &inputs,
+                        &baseline,
+                        &results,
+                        &fixes,
+                        false,
+                        &mut Readouts::default(),
+                    )
+                },
+            );
+            let texts = drawn_texts(&output);
+            let hover = guidance::STARTING_DESIGN_HOVER.to_owned();
+            assert_eq!(texts.contains(&hover), starting, "{text}");
+            let example = guidance::EXAMPLE_DESIGN_HOVER.to_owned();
+            assert!(!texts.contains(&example), "{text}");
         }
     }
 
@@ -2941,7 +2996,7 @@ mod tests {
             let fixes = all_fixes(&inputs, &results, false);
             let output = sized_frame(&ctx, egui::vec2(600.0, 8000.0), Vec::new(), |ui| {
                 let mut readouts = Readouts::default();
-                status_ui(ui, &inputs, &results, false);
+                status_ui(ui, &inputs, &DesignInputs::default(), &results, false);
                 fit_ui(ui, &inputs, &results, &fixes, &mut readouts);
                 for &(_, learn) in &ROW_LEARN {
                     why_line(ui, None, learn, &mut readouts);

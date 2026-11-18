@@ -1,6 +1,7 @@
 //! One input row of the left side (spec M4 "Sliders"): live recompute while dragging, a value
 //! box for typed entry, arrow-key nudges, step snapping, logarithmic scale, per-field reset, a
-//! dot when changed from default, a tooltip with help text (and, with the spreadsheet details,
+//! dot when changed from the default it is handed (the panel's baseline value, UX overhaul spec
+//! 7.1), a tooltip with help text (and, with the spreadsheet details,
 //! path and workbook cell); selectors as
 //! drop-downs, an optional input as a checkbox and a slider, a text input as a text field.
 //!
@@ -47,7 +48,7 @@ pub const OUTSIDE_RANGE_HINT: &str = "Kept until you edit it. Outside the slider
 pub enum RowEdit {
     /// Set the input to this value.
     Set(Value),
-    /// Back to the default.
+    /// Back to the default the row was drawn with.
     Reset,
 }
 
@@ -103,7 +104,9 @@ fn typed(meta: &InputMeta, x: f64) -> Value {
 }
 
 /// Draws one input row: a header line (the changed dot, the label, an out-of-range note, the
-/// reset button) and the widget under it. `seed` is where an optional input starts when the
+/// reset button) and the widget under it. `default` is the value the dot, the reset button's
+/// hover and the tooltip's Default line compare with and show: the session's baseline value
+/// (UX overhaul spec 7.1, C-22). `seed` is where an optional input starts when the
 /// user enters a value (`inputs::OPTIONAL_SEEDS`). A `locked` row (Torque -> Magnets' free
 /// variable) disables everything but its dot and label: the label still traces the input.
 /// `show_details` (the header's Show spreadsheet details) adds the path, the cell and the
@@ -112,14 +115,15 @@ pub fn input_row(
     ui: &mut egui::Ui,
     entry: &InputEntry,
     current: &Value,
+    default: &Value,
     seed: Option<f64>,
     locked: bool,
     show_details: bool,
 ) -> RowOutput {
     let meta = entry.meta;
     // Built only when a hover shows it (the closures below run only then).
-    let tooltip = || input_tooltip(entry, show_details);
-    let changed = *current != entry.default;
+    let tooltip = || input_tooltip(entry, default, show_details);
+    let changed = current != default;
     let mut edit = None;
     let mut label_clicked = false;
     ui.push_id(&entry.path, |ui| {
@@ -144,7 +148,7 @@ pub fn input_row(
                         .on_hover_ui(|ui| {
                             ui.add(egui::Label::new(format!(
                                 "Back to the default: {}",
-                                format_value(&entry.default)
+                                format_value(default)
                             )));
                         })
                         .clicked()

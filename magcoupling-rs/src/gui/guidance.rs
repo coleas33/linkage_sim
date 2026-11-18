@@ -1732,12 +1732,12 @@ fn temperature_sentences(inputs: &DesignInputs, results: &DesignResults) -> Vec<
         })
         .collect();
     // The cold limit comes from the reverse-field inputs. Their defaults are 3D results for the
-    // default NdFeB design and follow neither this design's geometry nor its grade (spec
+    // example NdFeB design and follow neither this design's geometry nor its grade (spec
     // section 8, trap 6): while they are in use the sentence says so and asks for the design's
     // own; once a user has entered their own, it says nothing about where they came from.
     if !cold_limits.is_empty() {
         let source = if default_reverse_fields(inputs) {
-            " (from the default reverse-field inputs: 3D results for the default NdFeB design, not for this design's geometry or grade). Enter this design's own reverse fields to check the cold limit."
+            " (from the default reverse-field inputs: 3D results for the example NdFeB design, not for this design's geometry or grade). Enter this design's own reverse fields to check the cold limit."
         } else {
             "."
         };
@@ -1768,9 +1768,9 @@ fn magnet_limit_sentence(
         .collect();
     let margin = input_text(inputs, "temperature.demag.design_margin_C");
     // The onset comes from the stored reverse fields, as the cold limit does (physics review
-    // 3, S16): while they hold the default design's, the sentence says so.
+    // 3, S16): while they hold the example design's, the sentence says so.
     let source = if default_reverse_fields(inputs) {
-        " (slip fields from the default design; enter this design's own to confirm)"
+        " (slip fields from the example design; enter this design's own to confirm)"
     } else {
         ""
     };
@@ -1787,7 +1787,7 @@ fn magnet_limit_sentence(
 }
 
 /// Whether all four reverse-field inputs of the demagnetization check hold their defaults: the
-/// 3D results for the default NdFeB design.
+/// 3D results for the example NdFeB design.
 fn default_reverse_fields(inputs: &DesignInputs) -> bool {
     let fields = |d: &DemagInputs| {
         [
@@ -1905,8 +1905,17 @@ fn temperature_fixes(
 /// The design status line's start for the defaults (spec G-6 as slice 2 amends it, S2-5).
 pub const EXAMPLE_DESIGN: &str = "Example design";
 
-/// The hover text of the status line at the defaults: where the example's values come from.
-pub const EXAMPLE_DESIGN_HOVER: &str = "The starting values from the original spreadsheet.";
+/// The hover text of the status line at the defaults, and of the header's Open the example
+/// design button: where the example's values come from.
+pub const EXAMPLE_DESIGN_HOVER: &str = "The values from the original spreadsheet.";
+
+/// The design status line's start at the session's baseline, when that is not the
+/// spreadsheet's design (UX overhaul spec 7.1, C-20): the standalone app's starting design.
+pub const STARTING_DESIGN: &str = "Starting design";
+
+/// The hover text of the status line at the starting design. It describes the standalone
+/// app's starting design (`app::starting_design`, whose tests hold each claim).
+pub const STARTING_DESIGN_HOVER: &str = "A design that passes every check. It keeps the example design's gearbox rating, space and magnet part, and asks for less torque.";
 
 /// The design status line's start for any other design.
 pub const YOUR_DESIGN: &str = "Your design";
@@ -1958,6 +1967,31 @@ pub fn design_status_text(status: &DesignStatus) -> String {
     } else {
         YOUR_DESIGN
     };
+    format!("{design}: {}", checks_text(status))
+}
+
+/// The design status line as the panel draws it, and its hover text (UX overhaul spec 7.1):
+/// [`design_status_text`], but named [`STARTING_DESIGN`] while `inputs` are the session's
+/// `baseline` and are not the spreadsheet's values. The example design and the starting design
+/// each have a hover; any other design has none. `status` is `inputs`' own
+/// ([`design_status`]).
+pub fn status_line(
+    status: &DesignStatus,
+    inputs: &DesignInputs,
+    baseline: &DesignInputs,
+) -> (String, Option<&'static str>) {
+    let (design, hover) = if status.is_default {
+        (EXAMPLE_DESIGN, Some(EXAMPLE_DESIGN_HOVER))
+    } else if inputs == baseline {
+        (STARTING_DESIGN, Some(STARTING_DESIGN_HOVER))
+    } else {
+        (YOUR_DESIGN, None)
+    };
+    (format!("{design}: {}", checks_text(status)), hover)
+}
+
+/// The status line after the design's name: how many checks fail, then the cautions.
+fn checks_text(status: &DesignStatus) -> String {
     let checks = if status.bad == 0 {
         format!("passes all {} checks", status.total)
     } else {
@@ -1968,7 +2002,7 @@ pub fn design_status_text(status: &DesignStatus) -> String {
         1 => ", 1 caution".to_owned(),
         n => format!(", {n} cautions"),
     };
-    format!("{design}: {checks}{cautions}")
+    format!("{checks}{cautions}")
 }
 
 // ------------------------------------------------------------------ plain words
@@ -5436,7 +5470,17 @@ mod tests {
             &egui::Context::default(),
             egui::vec2(1280.0, 4000.0),
             Vec::new(),
-            |ui| dashboard_ui(ui, inputs, results, &all, paused, &mut Readouts::default()),
+            |ui| {
+                dashboard_ui(
+                    ui,
+                    inputs,
+                    &DesignInputs::default(),
+                    results,
+                    &all,
+                    paused,
+                    &mut Readouts::default(),
+                )
+            },
         );
         let texts = drawn_texts(&output);
         let check = CHECK_GUIDES[guide_index].check;
@@ -7773,7 +7817,7 @@ mod tests {
         // says (review 2, S1), and a quoted magnet limit says what it is (S2).
         assert_eq!(
             problem(TEMPERATURE, &design(hot_day)).unwrap(),
-            "Hot-day magnet temperature 140.0 °C (hot ambient plus the driving rise) is at or above the inner magnets' 93.06 °C limit, the outer magnets' 93.06 °C limit and the 120.0 °C adhesive limit. Each ring's magnet limit is the temperature at which the field of a slip starts to demagnetize its magnets, less the 10.00 °C design margin (slip fields from the default design; enter this design's own to confirm)."
+            "Hot-day magnet temperature 140.0 °C (hot ambient plus the driving rise) is at or above the inner magnets' 93.06 °C limit, the outer magnets' 93.06 °C limit and the 120.0 °C adhesive limit. Each ring's magnet limit is the temperature at which the field of a slip starts to demagnetize its magnets, less the 10.00 °C design margin (slip fields from the example design; enter this design's own to confirm)."
         );
         // Only the inner ring's library N42 block (rated 80 °C) is below the start.
         let text = problem(
@@ -7783,13 +7827,13 @@ mod tests {
         .unwrap();
         assert!(
             text.starts_with(
-                "Hot-day magnet temperature 65.00 °C (hot ambient plus the driving rise) is at or above the inner magnets' -3.517 °C limit. The inner magnets' limit is the temperature at which the field of a slip starts to demagnetize them, less the 10.00 °C design margin (slip fields from the default design; enter this design's own to confirm)."
+                "Hot-day magnet temperature 65.00 °C (hot ambient plus the driving rise) is at or above the inner magnets' -3.517 °C limit. The inner magnets' limit is the temperature at which the field of a slip starts to demagnetize them, less the 10.00 °C design margin (slip fields from the example design; enter this design's own to confirm)."
             ),
             "{text}"
         );
         assert_eq!(
             problem(TEMPERATURE, &design(slip_fault)).unwrap(),
-            "The slip-fault peak of 104.0 °C is at or above the 93.06 °C magnet limit. Each ring's magnet limit is the temperature at which the field of a slip starts to demagnetize its magnets, less the 10.00 °C design margin (slip fields from the default design; enter this design's own to confirm)."
+            "The slip-fault peak of 104.0 °C is at or above the 93.06 °C magnet limit. Each ring's magnet limit is the temperature at which the field of a slip starts to demagnetize its magnets, less the 10.00 °C design margin (slip fields from the example design; enter this design's own to confirm)."
         );
         assert_eq!(
             problem(TEMPERATURE, &design(cool_adhesive)).unwrap(),
@@ -7801,7 +7845,7 @@ mod tests {
         );
         assert_eq!(
             problem(TEMPERATURE, &design(ferrite)).unwrap(),
-            "The minimum magnet temperature -40.00 °C is below the inner magnets' 335.7 °C cold demagnetization limit and the outer magnets' 335.7 °C cold demagnetization limit (from the default reverse-field inputs: 3D results for the default NdFeB design, not for this design's geometry or grade). Enter this design's own reverse fields to check the cold limit."
+            "The minimum magnet temperature -40.00 °C is below the inner magnets' 335.7 °C cold demagnetization limit and the outer magnets' 335.7 °C cold demagnetization limit (from the default reverse-field inputs: 3D results for the example NdFeB design, not for this design's geometry or grade). Enter this design's own reverse fields to check the cold limit."
         );
         assert_eq!(problem(TEMPERATURE, &DesignInputs::default()), None);
     }
@@ -7968,7 +8012,7 @@ mod tests {
         outer_unknown.temperature.demag.outer_magnet_limit_C = f64::NAN;
         assert_eq!(
             (temperature.problem)(&inputs, &outer_unknown).unwrap(),
-            "Hot-day magnet temperature 140.0 °C (hot ambient plus the driving rise) is at or above the inner magnets' 93.06 °C limit and the 120.0 °C adhesive limit. The outer magnets' limit is not a number, so the hot-day magnet temperature cannot be checked against it. The inner magnets' limit is the temperature at which the field of a slip starts to demagnetize them, less the 10.00 °C design margin (slip fields from the default design; enter this design's own to confirm)."
+            "Hot-day magnet temperature 140.0 °C (hot ambient plus the driving rise) is at or above the inner magnets' 93.06 °C limit and the 120.0 °C adhesive limit. The outer magnets' limit is not a number, so the hot-day magnet temperature cannot be checked against it. The inner magnets' limit is the temperature at which the field of a slip starts to demagnetize them, less the 10.00 °C design margin (slip fields from the example design; enter this design's own to confirm)."
         );
         let mut both_unknown = outer_unknown.clone();
         both_unknown.temperature.demag.inner_magnet_limit_C = f64::NAN;
@@ -9015,6 +9059,47 @@ mod tests {
     // ------------------------------------------------------------------ the design status
 
     #[test]
+    fn the_status_line_names_the_design_against_the_baseline() {
+        // UX overhaul spec 7.1: "Starting design" while the design is the session's baseline
+        // and the baseline is not the spreadsheet's design; "Example design" at the
+        // spreadsheet's values, whatever the baseline; "Your design" otherwise.
+        let line = |inputs: &DesignInputs, baseline: &DesignInputs| {
+            let status = design_status(inputs, &compute_all(inputs), false);
+            status_line(&status, inputs, baseline)
+        };
+        let defaults = DesignInputs::default();
+        let baseline = passing_design();
+        assert_eq!(
+            line(&baseline, &baseline),
+            (
+                "Starting design: passes all 10 checks".to_owned(),
+                Some(STARTING_DESIGN_HOVER)
+            )
+        );
+        assert_eq!(
+            line(&defaults, &baseline),
+            (
+                "Example design: fails 4 of 10 checks".to_owned(),
+                Some(EXAMPLE_DESIGN_HOVER)
+            )
+        );
+        let edited = design(|i| i.metal.cup_wall_corner_mm = 2.0);
+        assert_eq!(
+            line(&edited, &baseline),
+            ("Your design: fails 3 of 10 checks".to_owned(), None)
+        );
+        // A panel built the old way has the spreadsheet's design as its baseline: it stays the
+        // example design, no design is the starting design, and every line is
+        // design_status_text's.
+        for inputs in [&defaults, &baseline, &edited] {
+            let status = design_status(inputs, &compute_all(inputs), false);
+            assert_eq!(line(inputs, &defaults).0, design_status_text(&status));
+        }
+        assert_eq!(line(&defaults, &defaults).1, Some(EXAMPLE_DESIGN_HOVER));
+        assert_eq!(line(&baseline, &defaults).1, None);
+    }
+
+    #[test]
     fn the_design_status_counts_the_failing_checks() {
         let status = |inputs: &DesignInputs| design_status(inputs, &compute_all(inputs), false);
         let defaults = status(&DesignInputs::default());
@@ -9696,7 +9781,7 @@ mod tests {
         // design margin, the margin read from its input; a ferrite ring's is its rating.
         let both = problem(TEMPERATURE, &breaking(n42_parts)).unwrap();
         assert!(
-            both.contains("Each ring's magnet limit is the temperature at which the field of a slip starts to demagnetize its magnets, less the 10.00 °C design margin (slip fields from the default design; enter this design's own to confirm)."),
+            both.contains("Each ring's magnet limit is the temperature at which the field of a slip starts to demagnetize its magnets, less the 10.00 °C design margin (slip fields from the example design; enter this design's own to confirm)."),
             "{both}"
         );
         let inner_only = problem(
@@ -9708,7 +9793,7 @@ mod tests {
         )
         .unwrap();
         assert!(
-            inner_only.contains("The inner magnets' limit is the temperature at which the field of a slip starts to demagnetize them, less the 12.50 °C design margin (slip fields from the default design; enter this design's own to confirm)."),
+            inner_only.contains("The inner magnets' limit is the temperature at which the field of a slip starts to demagnetize them, less the 12.50 °C design margin (slip fields from the example design; enter this design's own to confirm)."),
             "{inner_only}"
         );
         // Physics review 3, S16: the onset comes from the stored slip fields. Once this

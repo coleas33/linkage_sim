@@ -89,6 +89,12 @@ impl<T: Clone + PartialEq> History<T> {
         !self.redo.is_empty() && *current == self.committed
     }
 
+    /// The state as of the last settled change: what [`History::observe`] last recorded, or the
+    /// state the last undo or redo gave. An edit in progress is not in it.
+    pub fn committed(&self) -> &T {
+        &self.committed
+    }
+
     /// The number of undo steps recorded (an unsettled edit not included).
     pub fn undo_len(&self) -> usize {
         self.undo.len()
@@ -135,6 +141,22 @@ mod tests {
         assert!(history.observe(&5, true));
         assert_eq!(history.undo_len(), 1);
         assert_eq!(history.undo(&5), Some(0));
+    }
+
+    #[test]
+    fn committed_is_the_last_settled_state() {
+        let mut history = History::new(1);
+        assert_eq!(*history.committed(), 1);
+        // An edit in progress is not in it.
+        assert!(!history.observe(&2, false));
+        assert_eq!(*history.committed(), 1);
+        assert!(history.observe(&2, true));
+        assert_eq!(*history.committed(), 2);
+        // After an undo or a redo it is the state that gave.
+        assert_eq!(history.undo(&2), Some(1));
+        assert_eq!(*history.committed(), 1);
+        assert_eq!(history.redo(&1), Some(2));
+        assert_eq!(*history.committed(), 2);
     }
 
     #[test]

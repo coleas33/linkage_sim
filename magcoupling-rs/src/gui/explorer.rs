@@ -610,14 +610,18 @@ fn unsummed(eq: &Equation, terms: &Design<'_>) -> Vec<String> {
 /// Draws the Equation panel: its header row (heading, breadcrumb, close), then the path shown;
 /// with `show_details` (the header's Show spreadsheet details, spec S2-5) also the value's
 /// workbook cell, the corrections its equation embodies and each term's internal name on hover.
+/// `baseline` is the session's baseline (UX overhaul spec 7.1, C-22): an input term carries the
+/// changed tag while it differs from the baseline's value.
 /// `held` says why an input is not free on the design shown ([`held_reason`]), for the notes'
 /// change entries. `clamps_paused` is the panel's pause of the shaft-clamp section: the Start here
 /// hover and the Used by links leave the clamp out while it holds.
+#[allow(clippy::too_many_arguments)] // the design shown, its results and its baseline, then the view's switches
 pub fn explorer_ui(
     ui: &mut egui::Ui,
     explorer: &mut Explorer,
     inputs: &DesignInputs,
     results: &DesignResults,
+    baseline: &DesignInputs,
     show_details: bool,
     held: &dyn Fn(&str) -> Option<String>,
     clamps_paused: bool,
@@ -721,6 +725,7 @@ pub fn explorer_ui(
                     ui,
                     eq,
                     &terms,
+                    baseline,
                     others_marked,
                     explorer.explain,
                     show_details,
@@ -953,12 +958,15 @@ fn note_alone_ui(
 /// clicked is followed), the value, with `show_details` the corrections it embodies (their
 /// titles on hover), with `explain` its teaching note (drawn against `view`) or, without one,
 /// Explain's next best read ([`note_fallback_ui`]), then the term list, its swatches faded while
-/// `others_marked`, a term's internal name on hover with `show_details`. Returns the term
-/// clicked and the link clicked in the note or in the next best read.
+/// `others_marked`, a term's internal name on hover with `show_details`. An input term carries
+/// the changed tag while it differs from `baseline`'s value. Returns the term clicked and the
+/// link clicked in the note or in the next best read.
+#[allow(clippy::too_many_arguments)] // the equation, its design and baseline, then the view's switches
 fn equation_body(
     ui: &mut egui::Ui,
     eq: &Equation,
     terms: &Design<'_>,
+    baseline: &DesignInputs,
     others_marked: bool,
     explain: bool,
     show_details: bool,
@@ -1065,9 +1073,15 @@ fn equation_body(
                         if term.clicked() {
                             clicked = Some(row.path.clone());
                         }
-                        let style = registry()
+                        let mut style = registry()
                             .term_style(&row.path, terms.inputs)
                             .expect("every term is an input or a result (registry build)");
+                        // The registry compares with the spreadsheet's values; on screen
+                        // "changed" is against the session's baseline.
+                        if matches!(style.kind, TermKind::Input { .. }) {
+                            style.changed_from_default =
+                                terms.inputs.get(&row.path) != baseline.get(&row.path);
+                        }
                         let tag = term_tag(style);
                         if style.affected_by_modified_assumption
                             || matches!(style.kind, TermKind::Input { assumption: true })
@@ -1355,6 +1369,7 @@ mod tests {
                 explorer,
                 &inputs,
                 &results,
+                &DesignInputs::default(),
                 false,
                 &nothing_held,
                 clamps::PAUSED,
@@ -1534,6 +1549,7 @@ mod tests {
                     &mut explorer,
                     &inputs,
                     &results,
+                    &DesignInputs::default(),
                     false,
                     &nothing_held,
                     paused,
@@ -1711,6 +1727,7 @@ mod tests {
                     explorer,
                     &inputs,
                     &results,
+                    &DesignInputs::default(),
                     show_details,
                     &nothing_held,
                     clamps::PAUSED,
@@ -1774,6 +1791,7 @@ mod tests {
                     &mut explorer,
                     inputs,
                     &results,
+                    &DesignInputs::default(),
                     false,
                     &nothing_held,
                     clamps::PAUSED,

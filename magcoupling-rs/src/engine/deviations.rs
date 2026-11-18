@@ -1353,7 +1353,7 @@ pub const REGISTRY: &[Deviation] = &[
             limit governs: C42 and C47 to C61 show that ring (the inner ring on a tie; the A-1 plan's decision A13). A \
             positive beta (hard ferrite) takes the signed onset form, where the knee falls as the magnet cools: the \
             onset is a cold limit, and the cold check passes only if both rings pass. \
-            N42SH keeps the workbook's 1592 kA/m and -0.005 /C (decisions 17 A, 18 A), so the default design does not move.",
+            N42SH keeps the workbook's 1592 kA/m and -0.005 /C (decisions 17 A, 18 A), so the example design does not move.",
         workbook_input_defaults: &[],
         workbook_help: &[
             ("temperature.demag.hcj20_kA_m", "N42SH ≥ 20 kOe."),
@@ -1509,7 +1509,7 @@ pub const REGISTRY: &[Deviation] = &[
             documented in C101's help), and the shown cure margin C24 can rise under a governing-ring flip (E24 takes \
             the lower ring's). C50 shows the applied offset (its help: held at 0 or more). Beyond the report's \
             section 2.4, whose \"never changed: C25\" covered only its 95 configurations: E21 can turn the verdict \
-            C25 (from OK to CHECK at a knee fraction C46 of 0.70 on the default design, and for N42's coercivity typed \
+            C25 (from OK to CHECK at a knee fraction C46 of 0.70 on the example design, and for N42's coercivity typed \
             into C44 and C45 on the user basis), so C25 is registered (34 cells); and C201 moves by 1 ulp in one \
             registry case, from rounding only (C105 C200 / C101 cancels C101).",
         workbook_input_defaults: &[],
@@ -2146,6 +2146,21 @@ mod tests {
             assert_eq!(entry.id, id);
             assert_eq!(id.index(), i);
             assert_eq!(id.to_string(), format!("E{}", i + 1));
+        }
+    }
+
+    #[test]
+    fn no_entry_calls_the_spreadsheet_s_design_the_default_design() {
+        // UX overhaul slice A: the tool opens on a starting design, which is what "default"
+        // means on screen, so the spreadsheet's design is "the example design" in every text.
+        for d in REGISTRY {
+            for text in [d.title, d.corrected_formula] {
+                assert!(
+                    !text.to_lowercase().contains("default design"),
+                    "{}: {text}",
+                    d.id
+                );
+            }
         }
     }
 
