@@ -64,3 +64,26 @@ CHANGES NEEDED: 2 (S2: one word of the hover; C5: one paragraph of a doc comment
 Checks after the change: `cargo fmt --check` clean, `cargo test --features app` green (1,029 lib tests), clippy clean with and without the app feature and for the wasm32 web binary. The plan's own text was not edited, as its Task 6 says, so the plan still quotes the first wording of the hover.
 
 APPROVED (one round; the two changes above are in their own commit, before this record's).
+
+## Addendum: a second round (2026-11-17)
+
+Found by the same reviewer while reading the README for the docs sweep (plan Task 7, Step 3), after the verdict above.
+
+| # | Claim | Verdict | Evidence | Replacement |
+|---|---|---|---|---|
+| C6 | The texts that describe the starting design say what its "passes every check" rests on. | FAIL (three places) | Two of the nine checks read the stored 3D fields (`dashboard::STORED_3D_INPUTS`): the temperature check, and the inner hub's fitting temperature inside the shaft joints check. The fields were computed for the example design (10 magnets, ring radius 10.15 mm, face gap 1.40 mm) and stay fixed for every design; the starting design has the same 14 values (probe). The tool says so itself: the dashboard draws "Fixed 3D fields from the example design" under those checks, and its hover ends "for another design, enter its own 3D fields to check the limits". Until this slice the page opened on the design the fields belong to. Now it opens on another one, and the README paragraph, the doc comment of `app::starting_design` and the design's section 7.1 described that design without saying so. On screen nothing is hidden, so the five strings keep their verdicts; at 1280 x 800 the line is below the dashboard's first screen (it was not drawn in the probe's 800-point frame and was drawn in its 6000-point frame). | One sentence in the README's starting-design paragraph, one in the doc comment of `app::starting_design`, one bullet under "What the owner should know about the starting design" in the design's section 7.1, and register row A-18 for the owner's ruling. No on-screen string, check or value changes. |
+
+Probe for C6, at `app::starting_design()` with the stored fields scaled (the tested points, not thresholds):
+
+| Stored fields scaled | x 1.1 | x 1.25 | x 1.5 | x 1.75 | x 2 to x 4 |
+|---|---|---|---|---|---|
+| The four reverse fields | all 9 pass, no caution | Temperature limits: caution | the same | Temperature limits: caution; Shaft joints: fails | the same |
+| The ten slip-loss fields | all 9 pass, no caution | the same | the same | the same | the same |
+
+So the verdicts do not sit on an edge: they hold with reverse fields a tenth larger than the example design's. Whether the starting geometry's own reverse fields are larger or smaller than the example design's was not computed; the Rust tool has no 3D field solver.
+
+**Re-review of round 2** (commit 20120ac). The three texts and row A-18 say what the table above says and no more: which two checks, whose fields, that every design shares them, where the dashboard says it, and the probe's four results. The row gives the answer taken for now (nothing changes) and the two other answers (compute and enter the fields for this geometry, or say it on the first view). Checks after the change: `cargo fmt --check` clean, `cargo test --features app` green (1,029 lib tests), clippy clean with and without the app feature. PASS.
+
+Note 7 for the owner, added with this round: **the first view's "passes every check" is the tool's verdict with the example design's 3D fields.** Row A-18 holds the choice.
+
+APPROVED after two rounds (three changes in all: S2, C5 and C6; commits 022efd9 and 20120ac).
