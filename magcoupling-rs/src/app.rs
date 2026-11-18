@@ -1171,6 +1171,42 @@ mod tests {
                 "the reloaded page's console messages are collected before the close"
             );
         }
+        // UX overhaul slice B, stage 1 (spec 6): on the clean page the script reads the page's
+        // background, typed once as PAGE_BACKGROUND and equal to the theme's panel colour as a
+        // browser reports it, and judges the look in the screenshot: the brand mark before the
+        // title and the line under the active tab.
+        {
+            let [r, g, b, _] = theme::PANEL.to_array();
+            let background = format!("rgb({r}, {g}, {b})");
+            assert_eq!(
+                quoted("PAGE_BACKGROUND"),
+                background,
+                "the script's PAGE_BACKGROUND"
+            );
+            assert_eq!(
+                script.matches(background.as_str()).count(),
+                1,
+                "the smoke prompt types the page's background once, in PAGE_BACKGROUND"
+            );
+            let clean_page = between("starting_design=true", "it carries a share link");
+            for (what, text) in [
+                ("judges the look", "look=true only if"),
+                (
+                    "reads the page's background",
+                    "getComputedStyle(document.body).backgroundColor",
+                ),
+                ("names the title", "Magnetic coupling calculator"),
+                (
+                    "names the active tab",
+                    crate::gui::CentreView::SizeAndTorque.label(),
+                ),
+            ] {
+                assert!(
+                    clean_page.contains(text),
+                    "the clean page's step {what}: {text}"
+                );
+            }
+        }
         // The app opens the link and the solve succeeds after its debounce.
         let ctx = egui::Context::default();
         let mut app = MagcouplingApp::new(&ctx);
