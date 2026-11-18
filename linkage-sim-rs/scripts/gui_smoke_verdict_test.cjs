@@ -113,9 +113,9 @@ const calculator = (args, reading) => run({ ...args, linkage: false }, { [CALCUL
 // The checks the calculator's prompt names for its passed, typed here as this test's own
 // statement of them: a check the script stops judging fails a case below, and one the script's
 // schema gains fails every case that should pass until GOOD has it.
-const CHECKS = ['canvas_present', 'first_view', 'details_toggle', 'share_link_loaded',
-  'sizing_solved', 'design_file_loaded', 'explorer_ready', 'why_link_opened', 'tooltip_plain',
-  'dashboard_scrolls', 'torque_card']
+const CHECKS = ['canvas_present', 'starting_design', 'first_view', 'details_toggle',
+  'share_link_loaded', 'sizing_solved', 'design_file_loaded', 'explorer_ready', 'why_link_opened',
+  'tooltip_plain', 'dashboard_scrolls', 'torque_card', 'address_follows']
 // A calculator agent's reading of a good run; each case changes one thing.
 const GOOD = {
   passed: true,

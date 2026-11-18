@@ -881,6 +881,42 @@ mod tests {
             between("drag_moved=true", "then close the browser").contains(collect),
             "the console messages of the page opened again are collected after the drag"
         );
+        // UX overhaul slice A (spec 7.1, 7.2 and 8.1 test 5): the clean address opens the
+        // starting design, whose status line the script types once as STARTING_STATUS; the
+        // step names the example design's button; and after the drag the address step reloads
+        // the page. Each of the two new pages has its console messages collected.
+        {
+            use crate::gui::guidance::status_line;
+            let start = starting_design();
+            let status = design_status(&start, &compute_all(&start), crate::engine::clamps::PAUSED);
+            let (line, _) = status_line(&status, &start, &start);
+            assert_eq!(
+                quoted("STARTING_STATUS"),
+                line,
+                "the script's STARTING_STATUS"
+            );
+            assert_eq!(
+                script.matches(line.as_str()).count(),
+                1,
+                "the smoke prompt types the starting design's status once, in STARTING_STATUS"
+            );
+            assert!(
+                script.contains(crate::gui::OPEN_EXAMPLE),
+                "the smoke prompt names the example design's button"
+            );
+            assert!(
+                between("starting_design=true", "it carries a share link").contains(collect),
+                "the clean page's console messages are collected before the link is opened"
+            );
+            assert!(
+                script.contains("await page.reload()"),
+                "the address step reloads the page"
+            );
+            assert!(
+                between("address_follows=true", "then close the browser").contains(collect),
+                "the reloaded page's console messages are collected before the close"
+            );
+        }
         // The app opens the link and the solve succeeds after its debounce.
         let ctx = egui::Context::default();
         let mut app = MagcouplingApp::new(&ctx);

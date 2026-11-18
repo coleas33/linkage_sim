@@ -1,6 +1,6 @@
 export const meta = {
   name: 'gui-smoke',
-  description: 'Smoke-test the locally served web build (the hub page at /tools/, the linkage app at /tools/linkage/, the calculator at /tools/magcoupler/): loads, canvas present, console clean; on the calculator a Why link opens a note, an input tooltip shows no spreadsheet details, the dashboard scrolls at 1280x800, the torque card shows its rows between the readouts and the drawing, and a drag of the gap slider is timed frame by frame (frame_check: true fails a p95 over one 60 fps frame)',
+  description: 'Smoke-test the locally served web build (the hub page at /tools/, the linkage app at /tools/linkage/, the calculator at /tools/magcoupler/): loads, canvas present, console clean; on the calculator the clean address opens the starting design, a Why link opens a note, an input tooltip shows no spreadsheet details, the dashboard scrolls at 1280x800, the torque card shows its rows between the readouts and the drawing, a drag of the gap slider is timed frame by frame (frame_check: true fails a p95 over one 60 fps frame), and the address follows that edit so a reload brings the design back',
   whenToUse: 'Before merging a batch that touched src/gui/ or magcoupling-rs/src/gui/, and during Phase 1 audit',
   phases: [{ title: 'Smoke' }],
 }
@@ -19,11 +19,13 @@ const SMOKE_SCHEMA = {
 }
 
 const MAGCOUPLING_SCHEMA = {
-  type: 'object', required: ['passed', 'canvas_present', 'console_errors', 'share_link_loaded', 'sizing_solved', 'design_file_loaded', 'first_view', 'explorer_ready', 'details_toggle', 'why_link_opened', 'tooltip_plain', 'dashboard_scrolls', 'torque_card', 'drag_moved', 'drag_frames_within_60fps'],
+  type: 'object', required: ['passed', 'canvas_present', 'console_errors', 'starting_design', 'share_link_loaded', 'sizing_solved', 'design_file_loaded', 'first_view', 'explorer_ready', 'details_toggle', 'why_link_opened', 'tooltip_plain', 'dashboard_scrolls', 'torque_card', 'drag_moved', 'drag_frames_within_60fps', 'address_follows'],
   properties: {
     passed: { type: 'boolean' },
     canvas_present: { type: 'boolean' },
     console_errors: { type: 'array', items: { type: 'string' } },
+    starting_design: { type: 'boolean' },
+    address_follows: { type: 'boolean' },
     first_view: { type: 'boolean' },
     explorer_ready: { type: 'boolean' },
     share_link_loaded: { type: 'boolean' },
@@ -73,6 +75,11 @@ const MAGCOUPLING_SMOKE_PAYLOAD = 'lVhLr5w2FP4vrHMRMMO8dm0WrVq1qpRIXVoeMINzARMb7
 // The design file the /tools/magcoupler/ smoke loads through the file picker (rfd's HTML overlay on
 // the web): the default design with the face gap at 2 mm. app.rs's smoke test reads it too.
 const MAGCOUPLING_SMOKE_DESIGN_FILE = '{"format": "magcoupling-design", "version": 1, "inputs": {"metal.face_gap_mm": 2.0}}'
+
+// The status line of the design the calculator opens on at the clean address (no ?m=), the
+// starting design (UX overhaul spec 7.1): typed once here. app.rs's smoke test holds it equal to
+// the line the app draws for app::starting_design.
+const STARTING_STATUS = 'Starting design: passes all 9 checks'
 
 // The torque card's heading, which the calculator's first view and its card step both look for:
 // typed once here. app.rs's smoke test holds it equal to gui::torque_card::CARD_HEADING.
@@ -133,7 +140,9 @@ passed=true only if: both pages loaded, hub_page, canvas present, title_warning=
   ) || noReading(SMOKE_SCHEMA)
 }
 
-// The magnetic coupling calculator: deterministic state through its share link, checked in
+// The magnetic coupling calculator. First (UX overhaul slice A, spec 7.1 and 7.2) the clean
+// address, with no share link: it opens the starting design and stays clean. Then
+// deterministic state through its share link, checked in
 // the console (the page is one canvas). A new page opens on Size and torque under the welcome
 // strip (decision G-5), so the first screenshot shows both with no click. One click on the
 // canvas, on the "Load design" button found in a screenshot, checks the web file picker (rfd's
@@ -142,7 +151,10 @@ passed=true only if: both pages loaded, hub_page, canvas present, title_warning=
 // off, and the dashboard scrolls to its last row at 1280 x 800. Then (slice 3, spec 7.2 and
 // 8.6) the link is opened again with a timer on every frame the app draws: on that fresh page the
 // torque card shows its heading, caption, Auto line and four rows between the readouts and the
-// drawing, and one drag of the gap slider is timed frame by frame. The script checks the agent's
+// drawing, and one drag of the gap slider is timed frame by frame. Last (slice A, spec 7.2 and
+// 8.1 test 5) the address: the drag was a settled edit, so the app rewrote the address with
+// history.replaceState, and a reload of that address brings the edited design back; this is the
+// one check of the replaceState call itself. The script checks the agent's
 // passed again from its checks (CALCULATOR_CHECKS) and its console errors, judges the drag from
 // its numbers (FRAME_BUDGET_MS, MIN_DRAG_FRAMES) and fails the run on the drag only with
 // frame_check: true. The Playwright MCP returns only the console messages since the last
@@ -159,7 +171,8 @@ if (ARGS.magcoupling !== false) {
   const page = `${url}/tools/magcoupler/?m=${MAGCOUPLING_SMOKE_PAYLOAD}`
   magcoupling = await agent(
     `Smoke-test the WASM magnetic coupling calculator using Playwright MCP tools (${MAGCOUPLING_TOOLS}).
-Steps: first set the window to 1280 x 800 CSS pixels with browser_resize (the laptop size the dashboard must scroll at). Then navigate to this exact URL (copy it whole; it carries a share link): ${page}
+Steps: first set the window to 1280 x 800 CSS pixels with browser_resize (the laptop size the dashboard must scroll at). Then the starting design: navigate to ${url}/tools/magcoupler/ (the clean address, with no share link) and wait 8 seconds (WASM init). Take a screenshot and read the address's query with browser_run_code_unsafe, code: async (page) => page.evaluate(() => location.search). starting_design=true only if the dashboard (the right side) is topped by the line "${STARTING_STATUS}", the header row at the top of the page (it may wrap to a second line) shows the button "Open the example design" right after "Reset all", and the code returned an empty string (at the starting design the address stays clean). Collect the console messages at level "info" (this page's: the next step navigates away).
+Then navigate to this exact URL (copy it whole; it carries a share link): ${page}
 Wait 8 seconds (WASM init, then the sizing solve after its 0.25 s debounce). Snapshot the page and confirm a <canvas> element with id "magcoupling_canvas" exists. Collect the console messages at level "info" (it includes errors and warnings). Take a screenshot and judge whether it shows the calculator rendered in a dark theme (the size controls on the left, dashboard on the right, the Size and torque view in the middle) vs a blank page. first_view=true only if the middle region shows the first view with no click: at its top the line "Set the size -> read the torque -> open any red check to see why and what to change." with a "Hide" button, under it a row of tabs starting "Size and torque" (the selected tab), and under the tabs the torque readouts, then the heading "${CARD_HEADING}" with a link starting "Why:" beside it, open, with lines of text under it, then a drawing of two rings of coloured magnet blocks inside a grey cup around a shaft. details_toggle=true only if the header row at the top of the page (it may wrap to a second line) shows, after the "Equation panel" button, a checkbox labelled "Show spreadsheet details", unticked.
 Then the design file picker: write this text, exactly, to the file .playwright-mcp/magcoupling-smoke-design.json under the repository root (gitignored; the Playwright MCP uploads only files under the repository) and note its absolute path: ${MAGCOUPLING_SMOKE_DESIGN_FILE}
 In the screenshot, find the "Load design" button in the header row at the top of the page (between "Save design" and "Copy share link") and click its centre with browser_run_code_unsafe, code: async (page) => { await page.mouse.click(X, Y); } (X and Y in CSS pixels of the screenshot; the canvas fills the page). rfd shows its overlay (#rfd-overlay: a file input #rfd-input shown as a "Choose File" button, and the buttons "Ok" and "Cancel") and opens the browser's file chooser at once (the tool output reports a "File chooser" modal state); if a snapshot shows the overlay but no chooser opened, click the "Choose File" button. Upload the file with browser_file_upload, click the overlay's "Ok" button, wait 2 seconds and collect the console messages again; delete the file.
@@ -171,9 +184,10 @@ If a target of these last three checks cannot be found after two attempts (each 
 Then the torque card and the drag's frame times, on the page opened again. Not on the page above: the design file loaded there has no sizing, so no row reads "Set by Auto" and no Auto line shows; the dashboard's Why link opened the Equation panel, which closes the card; and the tooltip step left the Geometry tab selected, where no card is drawn. Put a timer on every frame the app draws and open the share link again with browser_run_code_unsafe, code: async (page) => { await page.addInitScript(${FRAME_TIMER}); await page.goto('${page}'); }
 Wait 8 seconds (WASM init, then the sizing solve) and take a screenshot. torque_card=true only if the middle region shows, between the torque readouts and the drawing, the heading "${CARD_HEADING}" with a link starting "Why:" beside it, open, and under it, in this order: the line "The change in the model's hot-low torque after one step of one control alone.", the line "Auto sets the magnet length again after a change; each row keeps the length shown.", then four rows: one starting "Outside diameter:", the row "Overall length: Set by Auto; turn Auto off to edit", one starting "Magnet face gap:" and one starting "Magnets per ring:"; and the drawing still shows below the card. A row may wrap onto more lines.
 Then the drag: in a fresh screenshot find the handle of the "Magnet face gap" slider among the size controls on the left (it reads ${SMOKE_GAP_SHOWN}; Auto on the magnet length leaves this slider free). Drag it and read the frame times in one call of browser_run_code_unsafe, code: async (page) => { const x = X, y = Y; let sizing = 0; const onConsole = m => { if (m.text().includes('magcoupling sizing: ')) sizing += 1; }; page.on('console', onConsole); await page.mouse.move(x, y); await page.evaluate(() => { window.__frameMs = []; }); await page.mouse.down(); for (let i = 0; i < 60; i++) { await page.mouse.move(i % 2 === 0 ? x + 3 : x - 3, y); await page.waitForTimeout(50); } await page.mouse.up(); const ms = await page.evaluate(() => window.__frameMs.slice()); page.off('console', onConsole); const s = [...ms].sort((a, b) => a - b); const rank = q => (s.length ? s[Math.ceil(q * s.length) - 1] : null); return { frames: s.length, median: rank(0.5), p95: rank(0.95), max: s.length ? s[s.length - 1] : null, sizing_lines: sizing }; } (X and Y the handle's centre in CSS pixels of the screenshot; the timer is emptied just before the press, so only the drag's frames count, not the load, the solve or the screenshots). Then take a screenshot. drag_moved=true only if the Magnet face gap now reads a value other than ${SMOKE_GAP_SHOWN} (the drag held the handle). From the returned object: drag_frames=frames, drag_frame_ms_median=median, drag_frame_ms_p95=p95 and drag_frame_ms_max=max (milliseconds per frame, nearest rank). drag_frames_within_60fps=true only if drag_moved, drag_frames >= ${MIN_DRAG_FRAMES} and drag_frame_ms_p95 <= ${FRAME_BUDGET_MS} (this script checks it again from your numbers); under ${MIN_DRAG_FRAMES} frames the timer saw the app draw too few frames: say so in notes. In notes give sizing_lines, the number of "magcoupling sizing: " console lines logged during the drag (expected 0: the moves come 50 ms apart, so the 0.25 s debounce never runs a solve mid-drag). If the handle cannot be found after two attempts (each with a fresh screenshot), set drag_moved=false, leave the four numbers out and say why in notes.
-Collect the console messages at level "info" once more (it covers the reopened page and the drag), then close the browser.
+Collect the console messages at level "info" once more (it covers the reopened page and the drag).
+Then the address. The app rewrites it after every settled edit, and the drag was one. Read it, reload the page and read it again in one call of browser_run_code_unsafe, code: async (page) => { const before = await page.evaluate(() => location.href); await page.reload(); await page.waitForTimeout(8000); return { before, after: await page.evaluate(() => location.href) }; } Then take a screenshot. address_follows=true only if drag_moved, before contains "?m=" and is not the URL opened above (the drag's edit rewrote the address), after equals before, and on the reloaded page the Magnet face gap reads the value it read after the drag, not ${SMOKE_GAP_SHOWN} (the reload brought the edited design back). If drag_moved is false, address_follows=false: say so in notes. Collect the console messages at level "info" a last time (the reloaded page), then close the browser.
 share_link_loaded=true only if a console message contains "magcoupling: loaded the design from the share link". sizing_solved=true only if a console message contains "magcoupling sizing: Solved at". explorer_ready=true only if a console message contains "magcoupling explorer: " (the equation registry, built when the page starts).
-passed=true only if: page loaded, canvas present, first_view, details_toggle, share_link_loaded, sizing_solved, design_file_loaded, explorer_ready, why_link_opened, tooltip_plain, dashboard_scrolls, torque_card, and zero console messages of type error (warnings are OK — put them in notes); leave the drag's fields out of passed (this script judges them). List every console error string verbatim in console_errors. If navigation fails entirely, passed=false with the failure in notes — the server may not be running (serve linkage-sim-rs/web/ after running scripts/build_magcoupling_web.sh).`,
+passed=true only if: page loaded, canvas present, starting_design, first_view, details_toggle, share_link_loaded, sizing_solved, design_file_loaded, explorer_ready, why_link_opened, tooltip_plain, dashboard_scrolls, torque_card, address_follows, and zero console messages of type error (warnings are OK — put them in notes); leave the drag's fields out of passed (this script judges them). List every console error string verbatim in console_errors. If navigation fails entirely, passed=false with the failure in notes — the server may not be running (serve linkage-sim-rs/web/ after running scripts/build_magcoupling_web.sh).`,
     { label: 'gui-smoke-magcoupling', phase: 'Smoke', schema: MAGCOUPLING_SCHEMA, model: 'sonnet' },
   ) || noReading(MAGCOUPLING_SCHEMA)
   // The calculator's passed, checked again by this script from the agent's reading rather than
