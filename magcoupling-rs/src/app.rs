@@ -266,12 +266,12 @@ mod tests {
         WRITES.take()
     }
 
-    /// One frame of `app` on the laptop screen with `events`; the texts it drew.
-    fn frame_with(
+    /// One frame of `app` on the laptop screen with `events`.
+    fn frame_output(
         ctx: &egui::Context,
         app: &mut MagcouplingApp,
         events: Vec<egui::Event>,
-    ) -> Vec<String> {
+    ) -> egui::FullOutput {
         let input = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
                 egui::Pos2::ZERO,
@@ -280,7 +280,16 @@ mod tests {
             events,
             ..Default::default()
         };
-        drawn_texts(&ctx.run(input, |ctx| app.ui(ctx)))
+        ctx.run(input, |ctx| app.ui(ctx))
+    }
+
+    /// [`frame_output`]; the texts it drew.
+    fn frame_with(
+        ctx: &egui::Context,
+        app: &mut MagcouplingApp,
+        events: Vec<egui::Event>,
+    ) -> Vec<String> {
+        drawn_texts(&frame_output(ctx, app, events))
     }
 
     /// One frame of `app` with no input; the texts it drew.
@@ -353,6 +362,43 @@ mod tests {
             egui::CentralPanel::default().show(ctx, |ui| panel.ui(ui));
         });
         assert_ne!(first(&plain), fonts::INTER_NAME);
+    }
+
+    #[test]
+    fn the_accent_marks_the_brand_and_the_active_tab_and_nothing_else() {
+        // Decision C-5, in the app's own theme: crimson is never a text colour and never on a
+        // value or a check. At the starting design and at a failing one the accent is on two
+        // shapes, the brand mark and the line under the active tab.
+        use crate::gui::look::ACCENT;
+        use crate::gui::test_support::flat_shapes;
+        let ctx = egui::Context::default();
+        let mut app = MagcouplingApp::new(&ctx);
+        frame_texts(&ctx, &mut app);
+        for failing in [false, true] {
+            if failing {
+                app.panel.open_example_design();
+                assert!(frame_texts(&ctx, &mut app).contains(&EXAMPLE_STATUS.to_owned()));
+            }
+            let output = frame_output(&ctx, &mut app, Vec::new());
+            let mut marks = 0;
+            for shape in flat_shapes(&output) {
+                match shape {
+                    egui::Shape::Text(text) => {
+                        let mut colours = vec![text.fallback_color];
+                        colours.extend(text.override_text_color);
+                        colours.extend(text.galley.job.sections.iter().map(|s| s.format.color));
+                        assert!(!colours.contains(&ACCENT), "{:?}", text.galley.text());
+                    }
+                    egui::Shape::Rect(rect) if rect.fill == ACCENT => marks += 1,
+                    egui::Shape::LineSegment { stroke, .. } if stroke.color == ACCENT => marks += 1,
+                    egui::Shape::Circle(circle) => assert_ne!(circle.fill, ACCENT),
+                    _ => {}
+                }
+            }
+            assert_eq!(marks, 2, "failing: {failing}");
+        }
+        // A failing check is the theme's red, which is not the accent.
+        assert_ne!(theme::BAD, ACCENT);
     }
 
     #[test]

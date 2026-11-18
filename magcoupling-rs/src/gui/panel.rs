@@ -50,6 +50,7 @@ use crate::gui::inputs::{
     ADVANCED_HEADING, FILTER_HINT, InputCatalogue, InputEntry, InputGroup, InputOrder,
     InputSection, KEY_DESIGN, filter_inputs, optional_seed,
 };
+use crate::gui::look;
 use crate::gui::plots::{PlotKind, plot_ui};
 use crate::gui::readouts::{Readouts, registry};
 use crate::gui::results_table::{
@@ -981,7 +982,9 @@ impl MagcouplingPanel {
             }
             ui.horizontal_wrapped(|ui| {
                 for view in CentreView::tabs(self.clamps_paused) {
-                    ui.selectable_value(&mut self.centre, view, view.label());
+                    if look::tab_ui(ui, self.centre == view, view.label()).clicked() {
+                        self.centre = view;
+                    }
                 }
             });
             ui.separator();
@@ -1279,6 +1282,7 @@ impl MagcouplingPanel {
     fn header_ui(&mut self, ui: &mut egui::Ui) {
         let design = self.design();
         ui.horizontal_wrapped(|ui| {
+            look::mark_ui(ui);
             ui.heading(HEADING);
             ui.separator();
             let can_undo = self.history.can_undo(&design);
@@ -1951,11 +1955,11 @@ mod tests {
     };
     use crate::gui::sizing::DEBOUNCE_S;
     use crate::gui::test_support::{
-        SCREEN, clamp_at_its_limit, drawing_rect, drawn_texts, hot_day, hub_overstressed,
-        key_event, key_tap, last_characters, no_back_iron, only_the_clamp_fails,
+        SCREEN, clamp_at_its_limit, drawing_rect, drawn_texts, flat_shapes, hot_day,
+        hub_overstressed, key_event, key_tap, last_characters, no_back_iron, only_the_clamp_fails,
         only_the_joint_fails, passing_design, primary_button, row_line, select_all, short_magnets,
-        sized_frame, sized_frame_at, smoke_inputs, text_center, text_clip_rect, text_rect,
-        text_rects, text_shapes, tooltips_at_once, with_poles,
+        sized_frame, sized_frame_at, smoke_inputs, text_center, text_clip_rect, text_color,
+        text_rect, text_rects, text_shapes, tooltips_at_once, with_poles,
     };
     use crate::gui::torque_card::{CAPTION, Control, held_line};
     use crate::headline;
@@ -4730,6 +4734,91 @@ mod tests {
         assert_eq!(harness.panel.design(), Design::default());
         harness.panel.reset();
         assert_eq!(harness.panel.design(), design_at(&baseline));
+    }
+
+    /// The line segments drawn in the brand accent, each as (left, right, y).
+    fn accent_lines(output: &egui::FullOutput) -> Vec<(f32, f32, f32)> {
+        flat_shapes(output)
+            .into_iter()
+            .filter_map(|shape| match shape {
+                egui::Shape::LineSegment { points, stroke } if stroke.color == look::ACCENT => {
+                    Some((points[0].x, points[1].x, points[0].y))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_active_tab_is_underlined_in_the_accent_and_no_other() {
+        // UX overhaul spec 6.1 (the accent's role) and decision C-5: one line, under the active
+        // tab's label, as wide as the tab.
+        let under = |output: &egui::FullOutput, label: egui::Rect| {
+            let lines = accent_lines(output);
+            assert_eq!(lines.len(), 1, "{lines:?}");
+            let (left, right, y) = lines[0];
+            assert!(
+                left <= label.left() && label.right() <= right,
+                "{lines:?} {label:?}"
+            );
+            assert!(
+                label.bottom() <= y && y <= label.bottom() + 6.0,
+                "{lines:?} {label:?}"
+            );
+        };
+        let mut harness = Harness::first_view();
+        let output = harness.frame(Vec::new());
+        // The Size tab's name is drawn twice: the left side's heading, then the tab.
+        let size_tab = *text_rects(&output, CentreView::SizeAndTorque.label())
+            .last()
+            .expect("the tab");
+        under(&output, size_tab);
+        // A tab still answers a click, and the line follows it on the next frame.
+        let geometry = CentreView::Geometry.label();
+        harness.click_text(geometry);
+        assert_eq!(harness.panel.centre, CentreView::Geometry);
+        let output = harness.frame(Vec::new());
+        under(&output, text_rect(&output, geometry).expect("the tab"));
+        // The active tab's label is in the strong text colour, another's in the weak one.
+        let visuals = harness.ctx.style().visuals.clone();
+        assert_eq!(
+            text_color(&output, geometry),
+            Some(visuals.strong_text_color())
+        );
+        assert_eq!(
+            text_color(&output, PlotKind::GapSweep.label()),
+            Some(visuals.weak_text_color())
+        );
+        // The row wraps at this width: a tab on its second line is underlined where it is.
+        let last = CentreView::Results.label();
+        harness.click_text(last);
+        let output = harness.frame(Vec::new());
+        let label = text_rect(&output, last).expect("the tab");
+        assert!(label.top() > size_tab.bottom(), "{label:?} {size_tab:?}");
+        under(&output, label);
+    }
+
+    #[test]
+    fn the_brand_mark_is_one_accent_square_before_the_title() {
+        let mut harness = Harness::first_view();
+        let output = harness.frame(Vec::new());
+        let marks: Vec<egui::Rect> = flat_shapes(&output)
+            .into_iter()
+            .filter_map(|shape| match shape {
+                egui::Shape::Rect(rect) if rect.fill == look::ACCENT => Some(rect.rect),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(marks.len(), 1, "{marks:?}");
+        let mark = marks[0];
+        assert_eq!(mark.size(), egui::Vec2::splat(look::MARK_SIDE));
+        // The title's rect starts at the row's left edge (a wrapping label is indented to
+        // where its text goes): its first glyph marks where the title begins.
+        let (_, title) = text_shapes(&output, HEADING).next().expect("the title");
+        let first = title.galley.rows[0].glyphs[0].pos.x + title.pos.x;
+        assert!(mark.right() < first, "{mark:?} {first}");
+        let middle = title.galley.rect.translate(title.pos.to_vec2()).center().y;
+        assert!((mark.center().y - middle).abs() <= 2.0, "{mark:?} {middle}");
     }
 
     #[test]
