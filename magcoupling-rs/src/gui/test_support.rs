@@ -1015,17 +1015,24 @@ pub(crate) fn assert_glyphs(ctx: &egui::Context, text: &str, what: &str) {
     }
 }
 
-/// The colour of the first drawn text equal to `needle`: its override, else its first section's
-/// colour (a `RichText` colour or a painter text's), else the fallback colour.
+/// The colour of the first drawn text equal to `needle` ([`text_colors`]).
 pub(crate) fn text_color(output: &egui::FullOutput, needle: &str) -> Option<egui::Color32> {
-    text_shapes(output, needle).next().map(|(_, text)| {
-        text.override_text_color.unwrap_or_else(|| {
-            match text.galley.job.sections.first().map(|s| s.format.color) {
-                Some(color) if color != egui::Color32::PLACEHOLDER => color,
-                _ => text.fallback_color,
-            }
+    text_colors(output, needle).into_iter().next()
+}
+
+/// The colour of every drawn text equal to `needle`, in paint order: its override, else its
+/// first section's colour (a `RichText` colour or a painter text's), else the fallback colour.
+pub(crate) fn text_colors(output: &egui::FullOutput, needle: &str) -> Vec<egui::Color32> {
+    text_shapes(output, needle)
+        .map(|(_, text)| {
+            text.override_text_color.unwrap_or_else(|| {
+                match text.galley.job.sections.first().map(|s| s.format.color) {
+                    Some(color) if color != egui::Color32::PLACEHOLDER => color,
+                    _ => text.fallback_color,
+                }
+            })
         })
-    })
+        .collect()
 }
 
 /// Every sheet of an .xlsx file as calamine reads it: its name and its rows from A1 (calamine's

@@ -995,7 +995,8 @@ impl MagcouplingPanel {
         });
     }
 
-    /// The Size tab's torque readouts (spec 3.2): the requirement's slider, an ordinary design
+    /// The Size tab's torque readouts (spec 3.2), each label quieter than its value
+    /// ([`look::quiet_text`]): the requirement's slider, an ordinary design
     /// edit (undo, files, links); the hot-low torque with its gap to the requirement, red short
     /// or green margin; the nominal pull-out at the operating temperature. The Required and
     /// Hot-low rows end with the Why link to the hot minimum check's note (spec 3.7). Where the
@@ -1008,7 +1009,7 @@ impl MagcouplingPanel {
         let range = entry.meta.range.expect("the requirement has a slider");
         let required = self.inputs.metal.required_min_Nm;
         ui.horizontal_wrapped(|ui| {
-            ui.label(size_controls::REQUIRED);
+            ui.colored_label(look::quiet_text(ui.visuals()), size_controls::REQUIRED);
             let mut value = required;
             let response = ui
                 .push_id(REQUIREMENT_INPUT, |ui| {
@@ -1038,7 +1039,7 @@ impl MagcouplingPanel {
         });
         let required = self.inputs.metal.required_min_Nm;
         ui.horizontal_wrapped(|ui| {
-            ui.label(size_controls::HOT_LOW);
+            ui.colored_label(look::quiet_text(ui.visuals()), size_controls::HOT_LOW);
             if let Some(hot_low) =
                 torque_readout(ui, &self.results, "metal.torque_hot_low_Nm", readouts)
             {
@@ -1051,7 +1052,10 @@ impl MagcouplingPanel {
             }
         });
         ui.horizontal_wrapped(|ui| {
-            ui.label(size_controls::pullout_label(self.results.metal.op_temp_C));
+            ui.colored_label(
+                look::quiet_text(ui.visuals()),
+                size_controls::pullout_label(self.results.metal.op_temp_C),
+            );
             torque_readout(ui, &self.results, "model.pullout_Nm", readouts);
         });
     }

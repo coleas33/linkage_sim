@@ -402,6 +402,42 @@ mod tests {
     }
 
     #[test]
+    fn a_label_is_muted_and_its_value_is_in_the_text_colour() {
+        // UX overhaul spec 6.1: the muted token is for labels and captions, the text token for
+        // values. A reader scanning for a number finds it as the bright line of its row.
+        use crate::gui::test_support::text_colors;
+        let ctx = egui::Context::default();
+        let mut app = MagcouplingApp::new(&ctx);
+        frame_texts(&ctx, &mut app);
+        let all = |output: &egui::FullOutput, texts: &[&str], colour: egui::Color32| {
+            for text in texts {
+                let drawn = text_colors(output, text);
+                assert!(!drawn.is_empty(), "no {text:?} drawn");
+                assert!(drawn.iter().all(|&c| c == colour), "{text:?}: {drawn:?}");
+            }
+        };
+        // The starting design: a dashboard row's title and the head of its Why line; the Size
+        // tab's three readout labels ("Hot-low torque" is drawn as both). Then their values.
+        let output = frame_output(&ctx, &mut app, Vec::new());
+        let labels = [
+            "Pull-out torque (nominal)",
+            "Hot-low torque",
+            "Why:",
+            "Required torque",
+            "Pull-out torque (nominal, at 50 °C)",
+        ];
+        all(&output, &labels, theme::MUTED);
+        all(&output, &["1.704 N·m", "1.448 N·m"], theme::TEXT);
+        // The failing example design: the heads of an open block are captions too, and the
+        // Magnets fit row's title is a label (the dashboard scrolled to its foot).
+        app.panel.open_example_design();
+        frame_texts(&ctx, &mut app);
+        let output = frame_output(&ctx, &mut app, Vec::new());
+        all(&output, &["Problem:", "Fix:", "Why:"], theme::MUTED);
+        all(&output, &["2.688 N·m"], theme::TEXT);
+    }
+
+    #[test]
     fn the_starting_design_passes_every_check_with_no_caution_and_no_warning() {
         // UX overhaul spec 8.1, test 1, pinned to compute_all. If a later physics fix turns
         // this red the cure is a new starting design, never a loosened test (spec 12.2).

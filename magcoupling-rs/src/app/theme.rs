@@ -59,8 +59,9 @@ fn state(state: &mut WidgetVisuals, fill: Color32, button: Color32, outline: Str
 ///
 /// Body text, values and headings share [`TEXT`]; egui has no bold, so `strong()` no longer
 /// sets a value apart from the text beside it (a second, heavier face is the cure if a later
-/// slice needs one). `weak()` is [`MUTED`]. Borders are hairlines and nothing casts a shadow
-/// (decision C-6).
+/// slice needs one). `weak()` is [`MUTED`], and the panel draws a label beside its value in it
+/// (`gui::look::quiet_text`), so the value is the bright one of the pair. Borders are hairlines
+/// and nothing casts a shadow (decision C-6).
 pub fn visuals() -> egui::Visuals {
     let hairline = Stroke::new(1.0, BORDER);
     let radius = CornerRadius::same(RADIUS);

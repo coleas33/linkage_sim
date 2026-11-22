@@ -19,6 +19,21 @@ pub const MARK_SIDE: f32 = 8.0;
 /// The width of the line under the active tab [points].
 pub const UNDERLINE_WIDTH: f32 = 2.0;
 
+/// The colour of a label beside its value and of a caption's head ("Why:"): quieter than the
+/// value, and still easy to read (UX overhaul spec 6.1: muted is for labels and captions, text
+/// for values).
+///
+/// A theme that sets a weak text colour chose it for this, and the label takes it (the
+/// standalone app's theme: the muted token, 5.4:1 on the panel). egui's own visuals set none:
+/// their weak colour is the text colour at 60 %, about 2.6:1, too faint for a name a person
+/// must read, and their text colour is already a step under the strong colour of a value. So
+/// there the label keeps the text colour.
+pub fn quiet_text(visuals: &egui::Visuals) -> egui::Color32 {
+    visuals
+        .weak_text_color
+        .unwrap_or_else(|| visuals.text_color())
+}
+
 /// The brand mark: a small square in the accent, at the middle of a heading's height. The
 /// title follows it.
 pub fn mark_ui(ui: &mut egui::Ui) {
