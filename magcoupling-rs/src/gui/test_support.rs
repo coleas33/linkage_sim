@@ -982,6 +982,29 @@ pub(crate) fn text_center(output: &egui::FullOutput, needle: &str) -> egui::Pos2
         .center()
 }
 
+/// The texts of a frame that are cut sideways: each drawn text whose ink runs more than a point
+/// past the left or right edge of what egui shows of it, the rect it is clipped to inside
+/// `screen`. Each is named with how far it runs out. Left out: a text whose middle is above or
+/// below what shows (a list scrolls, and a row half out of view is not a cut), and a rotated
+/// text (a plot's vertical axis label).
+pub(crate) fn cut_texts(output: &egui::FullOutput, screen: egui::Rect) -> Vec<String> {
+    clipped_flat_shapes(output)
+        .into_iter()
+        .filter_map(|(clip, shape)| {
+            let egui::Shape::Text(text) = shape else {
+                return None;
+            };
+            let ink = text.galley.mesh_bounds.translate(text.pos.to_vec2());
+            let shown = clip.intersect(screen);
+            if text.angle != 0.0 || !shown.y_range().contains(ink.center().y) {
+                return None;
+            }
+            let cut = (ink.right() - shown.right()).max(shown.left() - ink.left());
+            (cut > 1.0).then(|| format!("{:?} by {cut:.0} points", text.galley.text()))
+        })
+        .collect()
+}
+
 /// A context whose fonts are loaded, for [`assert_glyphs`]: egui loads them on a context's first
 /// frame, so this runs one empty frame.
 pub(crate) fn glyph_context() -> egui::Context {

@@ -8,7 +8,7 @@
 //! callouts, the clamp summary and screw table, the plot readouts. While the value is hovered
 //! the tooltip
 //! shows that text, then the value's equation typeset with its terms in colour
-//! ([`TermColors::of`]); a click asks the panel to open it in the Equation panel. Both the
+//! ([`TermColors::of`]), no wider than the window; a click asks the panel to open it in the Equation panel. Both the
 //! text and the typesetting run only inside `on_hover_ui`, so a frame pays for the one value
 //! hovered. A value whose path is a term of the equation in view (the one hovered in the last
 //! frame, else the one open in the Equation panel) gets a frame in that term's colour, and so
@@ -27,7 +27,8 @@ use crate::gui::typeset::{TermColors, equation_ui};
 /// The hint under a tooltip's equation.
 pub const OPEN_HINT: &str = "Click to open it in the Equation panel";
 
-/// The text size of a tooltip's equation [points].
+/// The text size of a tooltip's equation [points]; an equation wider than the window at this
+/// size is set smaller (`typeset::equation_ui`).
 pub const TOOLTIP_SIZE: f32 = 15.0;
 
 /// The width of a term's mark [points].
@@ -132,7 +133,11 @@ impl Readouts {
             ui.label(text(show_details));
             if let Some(eq) = registry().equation_for(path) {
                 ui.separator();
-                equation_ui(ui, registry(), eq, &TermColors::of(eq), TOOLTIP_SIZE);
+                // The tooltip stays inside the window: a long equation is set smaller, and
+                // the text over it wraps at the tooltip's width.
+                let frame = egui::Frame::popup(ui.style()).total_margin().sum().x;
+                let room = ui.ctx().screen_rect().width() - frame;
+                equation_ui(ui, registry(), eq, &TermColors::of(eq), TOOLTIP_SIZE, room);
             }
             ui.weak(OPEN_HINT);
         });
@@ -244,6 +249,39 @@ mod tests {
             );
         }
         assert_eq!(events.clicked.as_deref(), Some("model.pullout_Nm"));
+    }
+
+    #[test]
+    fn an_equation_wider_than_the_window_is_set_smaller_and_another_keeps_its_size() {
+        // The Verdict row's equation is the widest (1279 points at the tooltip's size in egui's
+        // built-in font): its tooltip ran off a window narrower than that. The pull-out's fits.
+        use crate::gui::test_support::{cut_texts, text_shapes};
+        let size = egui::vec2(1024.0, 700.0);
+        let screen = Rect::from_min_size(egui::Pos2::ZERO, size);
+        for (path, fits) in [
+            ("temperature.summary.verdict", false),
+            ("model.pullout_Nm", true),
+        ] {
+            let (_, output) = hover_frames(
+                &egui::Context::default(),
+                size,
+                |output| text_center(output, "a value"),
+                |ui| {
+                    draw(ui, &mut Readouts::default(), path, "a value");
+                },
+            );
+            assert!(drawn_texts(&output).contains(&OPEN_HINT.to_owned()));
+            assert_eq!(cut_texts(&output, screen), Vec::<String>::new(), "{path}");
+            // The equation's own text: the sign between its symbol and its formula.
+            let sizes: Vec<f32> = text_shapes(&output, " = ")
+                .map(|(_, text)| text.galley.job.sections[0].format.font_id.size)
+                .collect();
+            assert!(!sizes.is_empty(), "{path}");
+            for set in sizes {
+                assert_eq!(set == TOOLTIP_SIZE, fits, "{path}: {set}");
+                assert!(set >= crate::gui::typeset::SMALLEST_FITTED_SIZE, "{path}");
+            }
+        }
     }
 
     #[test]

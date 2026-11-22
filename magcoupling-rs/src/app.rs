@@ -437,6 +437,87 @@ mod tests {
         all(&output, &["2.688 N·m"], theme::TEXT);
     }
 
+    /// One frame of `app` on a screen of `size` with `events`.
+    fn frame_on(
+        ctx: &egui::Context,
+        app: &mut MagcouplingApp,
+        size: egui::Vec2,
+        events: Vec<egui::Event>,
+    ) -> egui::FullOutput {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+            events,
+            ..Default::default()
+        };
+        ctx.run(input, |ctx| app.ui(ctx))
+    }
+
+    /// The two window sizes the look is checked at: the laptop screen and the smallest window
+    /// supported (decision C-18).
+    const WINDOWS: [egui::Vec2; 2] = [egui::vec2(1280.0, 800.0), egui::vec2(1024.0, 700.0)];
+
+    #[test]
+    fn no_text_is_cut_in_any_tab_in_the_app_s_own_font() {
+        // The whole-branch review (R-4): Inter is about 13 % wider than egui's built-in font,
+        // which every panel layout test draws in, so a text that just fitted there can be cut
+        // here and no other test sees it (R-2: the Pole sweep's legend lost its first letters).
+        // The app as a browser draws it, in its theme and font, on every tab.
+        use crate::gui::CentreView;
+        use crate::gui::test_support::{cut_texts, last_characters, primary_button};
+        for size in WINDOWS {
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+            let ctx = egui::Context::default();
+            let mut app = MagcouplingApp::new(&ctx);
+            frame_on(&ctx, &mut app, size, Vec::new());
+            for view in CentreView::tabs(crate::engine::clamps::PAUSED) {
+                let output = frame_on(&ctx, &mut app, size, Vec::new());
+                let tab = last_characters(&output, view.label())[0];
+                for pressed in [true, false] {
+                    frame_on(&ctx, &mut app, size, vec![primary_button(tab, pressed)]);
+                }
+                // The pointer leaves, so no tooltip is in the picture; then the view settles.
+                frame_on(&ctx, &mut app, size, vec![egui::Event::PointerGone]);
+                frame_on(&ctx, &mut app, size, Vec::new());
+                let output = frame_on(&ctx, &mut app, size, Vec::new());
+                let cut = cut_texts(&output, screen);
+                assert!(cut.is_empty(), "{size:?}, {}: cut: {cut:#?}", view.label());
+            }
+        }
+    }
+
+    #[test]
+    fn the_widest_tooltip_stays_inside_the_window_in_the_app_s_own_font() {
+        // The whole-branch review (R-1): the Verdict row's equation is the widest a tooltip
+        // typesets, 1351 points at the tooltip's size in Inter, and ran off a 1280-point
+        // window with the hover text over it.
+        use crate::gui::dashboard::hover_text;
+        use crate::gui::readouts::{OPEN_HINT, Readouts};
+        use crate::gui::test_support::{cut_texts, hover_frames, text_center};
+        const VERDICT: &str = "temperature.summary.verdict";
+        for size in WINDOWS {
+            let ctx = egui::Context::default();
+            theme::apply(&ctx);
+            fonts::install(&ctx);
+            let (_, output) = hover_frames(
+                &ctx,
+                size,
+                |output| text_center(output, "a value"),
+                |ui| {
+                    let rect = ui.label("a value").rect;
+                    Readouts::default().show_over(ui, rect, VERDICT, |details| {
+                        hover_text(VERDICT, details).unwrap_or_default()
+                    });
+                },
+            );
+            // The tooltip is up, with its equation.
+            let texts = drawn_texts(&output);
+            assert!(texts.contains(&OPEN_HINT.to_owned()), "{size:?}: {texts:?}");
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+            let cut = cut_texts(&output, screen);
+            assert!(cut.is_empty(), "{size:?}: cut: {cut:#?}");
+        }
+    }
+
     #[test]
     fn the_starting_design_passes_every_check_with_no_caution_and_no_warning() {
         // UX overhaul spec 8.1, test 1, pinned to compute_all. If a later physics fix turns

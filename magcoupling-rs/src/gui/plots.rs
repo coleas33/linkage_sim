@@ -18,7 +18,8 @@
 //!   green, below the hot minimum amber, a fit failure red) and greyed when its own f_end <= 0
 //!   (`model::end_effect_in_range`), with the design shown as a marker. The pole sweep's rows
 //!   take the smallest apothem that fits each count (the engine's `sweeps::pole_sweep`), so its
-//!   line's legend says so: the design, at its own apothem, can sit off that line.
+//!   line's name says so: the design, at its own apothem, can sit off that line. That name is
+//!   a sentence, written over the plot where it wraps, not in the legend ([`LineName`]).
 //! - **Slip heating**: the thermal network's first-order rise, start + rise (1 - exp(-t / tau)),
 //!   for the estimate and the high case, against the governing limit, over five time constants
 //!   (longer when the high case reaches the limit later), with the time to the limit marked.
@@ -69,6 +70,9 @@ pub const ANGLE_SAMPLES: usize = 361;
 
 /// The radius of a sweep row's marker [points].
 pub const POINT_RADIUS: f32 = 4.0;
+
+/// The width of the line through a sweep's rows [points].
+pub const SWEEP_LINE_WIDTH: f32 = 1.5;
 
 /// The plots, one tab each.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -467,7 +471,7 @@ pub fn plot_ui(
                 ui,
                 kind,
                 "Corner gap [mm]",
-                PULL_OUT,
+                LineName::Legend(PULL_OUT),
                 &results.gap_sweep,
                 [results.model.corner_gap_mm, results.model.pullout_Nm],
                 results.model.required_floor_Nm,
@@ -476,7 +480,7 @@ pub fn plot_ui(
                 ui,
                 kind,
                 label_for("coupling.npole"),
-                PULL_OUT_SMALLEST_APOTHEM,
+                LineName::Caption(PULL_OUT_SMALLEST_APOTHEM),
                 &results.pole_sweep,
                 [inputs.coupling.npole as f64, results.model.pullout_Nm],
                 results.model.required_floor_Nm,
@@ -496,8 +500,9 @@ fn readouts_ui(
 ) {
     ui.horizontal_wrapped(|ui| {
         // Whole readouts move to the next row (a wrapped text would start mid-row, and its
-        // hover area with it).
-        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+        // hover area with it). One longer than a whole row starts a row and wraps there.
+        let row_width = ui.available_width();
+        let font = egui::TextStyle::Small.resolve(ui.style());
         for &path in kind.readouts() {
             let Some(info) = result_info(path) else {
                 continue;
@@ -508,7 +513,19 @@ fn readouts_ui(
                 label_for(path),
                 with_unit(format_value(&value), info.meta.unit)
             );
-            let rect = ui.small(text).rect;
+            let width = ui
+                .fonts(|f| f.layout_no_wrap(text.clone(), font.clone(), Color32::PLACEHOLDER))
+                .size()
+                .x;
+            let label = egui::Label::new(egui::RichText::new(text).small());
+            let rect = if width > row_width {
+                if ui.cursor().left() > ui.max_rect().left() {
+                    ui.end_row();
+                }
+                ui.add(label.wrap()).rect
+            } else {
+                ui.add(label.extend()).rect
+            };
             readouts.show_over(ui, rect, path, |show_details| {
                 hover_text(path, show_details).unwrap_or_default()
             });
@@ -581,13 +598,41 @@ fn torque_temperature_ui(ui: &mut egui::Ui, inputs: &DesignInputs, results: &Des
     });
 }
 
+/// Where a sweep names the line through its rows.
+#[derive(Clone, Copy)]
+enum LineName<'a> {
+    /// In the plot's legend, as every other series is.
+    Legend(&'a str),
+    /// Over the plot, after a stroke in the line's colour ([`line_caption_ui`]): a sentence.
+    /// egui_plot draws a legend name on one row, so a name wider than the plot would be cut.
+    Caption(&'a str),
+}
+
+/// The width of the stroke before a line's caption [points].
+const KEY_WIDTH: f32 = 16.0;
+
+/// A sweep line's name over its plot: a stroke in the line's colour and width, then `text`,
+/// which wraps in the width left.
+fn line_caption_ui(ui: &mut egui::Ui, text: &str) {
+    ui.horizontal_top(|ui| {
+        let height = ui.text_style_height(&egui::TextStyle::Body);
+        let (key, _) = ui.allocate_exact_size(egui::vec2(KEY_WIDTH, height), egui::Sense::hover());
+        ui.painter().hline(
+            key.x_range(),
+            key.center().y,
+            egui::Stroke::new(SWEEP_LINE_WIDTH, BLUE),
+        );
+        ui.add(egui::Label::new(text).wrap());
+    });
+}
+
 /// A sweep's plot: `line` names the line through the rows in the end-effect model's range.
 #[allow(non_snake_case)] // unit suffix
 fn sweep_ui(
     ui: &mut egui::Ui,
     kind: PlotKind,
     x: &str,
-    line: &str,
+    line: LineName,
     rows: &[SweepRow],
     design: [f64; 2],
     floor_Nm: f64,
@@ -600,9 +645,21 @@ fn sweep_ui(
     if s.dropped > 0 {
         ui.weak(rows_not_plotted(s.dropped));
     }
+    // A line with no name has no legend entry.
+    let legend_name = match line {
+        LineName::Legend(name) => name,
+        LineName::Caption(text) => {
+            line_caption_ui(ui, text);
+            ""
+        }
+    };
     let visuals = ui.visuals().clone();
     plot(ui, kind, x, SWEEP_Y_AXIS).show(ui, |p| {
-        p.line(Line::new(line, s.line).color(BLUE).width(1.5));
+        p.line(
+            Line::new(legend_name, s.line)
+                .color(BLUE)
+                .width(SWEEP_LINE_WIDTH),
+        );
         for (name, points, color) in [
             (NOMINAL, s.nominal, Level::Good.color(&visuals)),
             (
@@ -1183,7 +1240,10 @@ mod tests {
                 &ctx,
                 egui::vec2(900.0, 600.0),
                 Vec::new(),
-                |ui| sweep_ui(ui, PlotKind::GapSweep, "x", PULL_OUT, rows, design, 1.0),
+                |ui| {
+                    let line = LineName::Legend(PULL_OUT);
+                    sweep_ui(ui, PlotKind::GapSweep, "x", line, rows, design, 1.0);
+                },
             ));
         }
         output.unwrap()
@@ -1339,6 +1399,91 @@ mod tests {
             .find(|t| t.starts_with(&format!("{PULL_OUT}: ")))
             .expect("the pull-out's readout");
         assert_eq!(text_color(&output, &readout), Some(text));
+    }
+
+    #[test]
+    fn the_pole_sweep_s_line_is_named_over_the_plot_on_as_many_rows_as_it_needs() {
+        // The whole-branch review (R-2): egui_plot draws a legend name on one row, and this
+        // one is a sentence, wider than the plot in a 1280-point window. It is written over
+        // the plot, where it wraps, after a stroke in the line's colour.
+        use crate::gui::test_support::{cut_texts, text_shapes};
+        let inputs = DesignInputs::default();
+        let results = compute_all(&inputs);
+        let size = egui::vec2(420.0, 500.0);
+        let ctx = egui::Context::default();
+        let frame = |kind| {
+            sized_frame(&ctx, size, Vec::new(), |ui| {
+                plot_ui(ui, kind, &inputs, &results, &mut Readouts::default());
+            })
+        };
+        frame(PlotKind::PoleSweep);
+        let output = frame(PlotKind::PoleSweep);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+        assert_eq!(cut_texts(&output, screen), Vec::<String>::new());
+        let names: Vec<_> = text_shapes(&output, PULL_OUT_SMALLEST_APOTHEM).collect();
+        assert_eq!(names.len(), 1);
+        let (_, name) = names[0];
+        assert!(name.galley.rows.len() > 1, "{} row", name.galley.rows.len());
+        // Its key: one stroke in the line's colour and width, level with the first row.
+        let first_row = name.galley.rows[0].rect().translate(name.pos.to_vec2());
+        let keys: Vec<[egui::Pos2; 2]> = flat_shapes(&output)
+            .into_iter()
+            .filter_map(|shape| match shape {
+                egui::Shape::LineSegment { points, stroke }
+                    if *stroke == egui::Stroke::new(SWEEP_LINE_WIDTH, BLUE) =>
+                {
+                    Some(*points)
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(keys.len(), 1, "{keys:?}");
+        let [from, to] = keys[0];
+        assert!(from.x < to.x && to.x < first_row.left(), "{keys:?}");
+        assert!(first_row.y_range().contains(from.y) && from.y == to.y);
+        // The gap sweep's line has a short name: it stays in the legend, on one row.
+        frame(PlotKind::GapSweep);
+        let output = frame(PlotKind::GapSweep);
+        let names: Vec<_> = text_shapes(&output, PULL_OUT).collect();
+        assert_eq!(names.len(), 1);
+        assert_eq!(names[0].1.galley.rows.len(), 1);
+    }
+
+    #[test]
+    fn a_readout_longer_than_a_row_wraps_on_rows_of_its_own() {
+        // The slip-heating plot's "time to the limit" readout is the longest: in the smallest
+        // window supported it ran 4 points past the centre column in the app's font (the
+        // whole-branch review). Here, a window narrower than it in the built-in font.
+        use crate::gui::test_support::{cut_texts, text_shapes};
+        let inputs = DesignInputs::default();
+        let results = compute_all(&inputs);
+        let size = egui::vec2(300.0, 500.0);
+        let ctx = egui::Context::default();
+        let frame = || {
+            sized_frame(&ctx, size, Vec::new(), |ui| {
+                let kind = PlotKind::SlipHeating;
+                plot_ui(ui, kind, &inputs, &results, &mut Readouts::default());
+            })
+        };
+        frame();
+        let output = frame();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+        assert_eq!(cut_texts(&output, screen), Vec::<String>::new());
+        let starts_with = |start: &str| {
+            let text = drawn_texts(&output)
+                .into_iter()
+                .find(|t| t.starts_with(start))
+                .unwrap_or_else(|| panic!("no readout {start:?}"));
+            let (_, shape) = text_shapes(&output, &text).next().unwrap();
+            (shape.galley.rows.len(), shape.pos.x)
+        };
+        // The short readout before it is whole on its row; the long one starts a row at the
+        // same left edge and takes two.
+        let (short_rows, left) = starts_with(label_for("temperature.thermal.time_constant_s"));
+        let (long_rows, long_left) =
+            starts_with(label_for("temperature.thermal.time_to_limit_high"));
+        assert_eq!((short_rows, long_rows), (1, 2));
+        assert_eq!(long_left, left);
     }
 
     #[test]
