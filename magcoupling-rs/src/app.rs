@@ -1423,10 +1423,9 @@ mod tests {
             script.contains(crate::gui::SHOW_DETAILS),
             "the smoke prompt names the header's toggle"
         );
-        // Spec R14 (guidance slice 2): the steps name the welcome strip, a note's What to change
-        // and its sources fold, the Geometry tab and the dashboard's last row as the page draws
-        // them, so the prompt cannot go stale unnoticed.
-        assert!(script.contains(crate::gui::WELCOME), "the welcome strip");
+        // Spec R14 (guidance slice 2): the steps name a note's What to change and its sources
+        // fold, the Geometry tab and the check list's last row as the page draws them, so the
+        // prompt cannot go stale unnoticed.
         assert!(
             script.contains(crate::gui::explorer::WHAT_TO_CHANGE),
             "a note's What to change"
@@ -1441,7 +1440,50 @@ mod tests {
         );
         let fit =
             crate::gui::guidance::guide(crate::gui::guidance::FIT_CHECK).expect("the fit guide");
-        assert!(script.contains(fit.label), "the dashboard's last row");
+        assert!(script.contains(fit.label), "the check list's last row");
+        // UX overhaul slice B, stage 2 (spec 4.4, 4.5 and 5): the first view and the check's
+        // entry are named by the words the page draws: the right column's two headings, the
+        // orientation's opening words, the Hot-low tile's line, the entry's headings and its
+        // lesson link; and the card step looks for the card under its heading in the entry.
+        {
+            use crate::gui::explain::{
+                FULL_LESSON, NUMBERS, ORIENTATION, WHAT_A_CHANGE_DOES, WHAT_IT_IS,
+            };
+            let opening: String = ORIENTATION
+                .split_whitespace()
+                .take(3)
+                .collect::<Vec<_>>()
+                .join(" ");
+            for (what, text) in [
+                ("the check list's heading", crate::gui::checks::HEADING),
+                ("the Explain panel's heading", crate::gui::explain::HEADING),
+                ("the orientation's opening words", opening.as_str()),
+                ("the Hot-low tile's line", crate::gui::tiles::NEEDS),
+                ("the entry's first heading", WHAT_IT_IS),
+                ("the entry's numbers", NUMBERS),
+                ("the entry's lesson link", FULL_LESSON),
+                ("the tile's entry's card heading", WHAT_A_CHANGE_DOES),
+            ] {
+                assert!(
+                    script.contains(text),
+                    "the smoke prompt names {what}: {text}"
+                );
+            }
+            let hot_low = crate::gui::guidance::guide("metal.hot_min_check").expect("its guide");
+            assert!(script.contains(hot_low.label), "the check the step opens");
+            let entry = script
+                .find("check_entry=true")
+                .expect("the entry's verdict");
+            let link = script
+                .find("lesson_link_opened=true")
+                .expect("the link's verdict");
+            assert!(
+                entry < link && script[entry..link].contains(FULL_LESSON),
+                "the check's entry is judged before its lesson link is clicked"
+            );
+            // The dashboard is gone: the prompt does not send the agent looking for it.
+            assert!(!script.to_lowercase().contains("dashboard"));
+        }
         // Slice 3 (spec 8.6, test 26): the card step quotes the torque card whole as the page
         // draws it at the smoke design (Auto on the magnet length): the heading, the caption, the
         // Auto line and the held row; it names the other three rows by their starts. The G-3
@@ -1566,7 +1608,7 @@ mod tests {
             &script[start..end]
         };
         assert!(
-            between("dashboard_scrolls=true", "page.goto(").contains(collect),
+            between("tooltip_plain=true was judged", "page.goto(").contains(collect),
             "the first page's console messages are collected before the link is opened again"
         );
         assert!(
