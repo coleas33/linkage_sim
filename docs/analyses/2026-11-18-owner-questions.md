@@ -50,6 +50,8 @@ The check run's result (2026-11-22; a second run by another method agreed):
 2. The two checks that read the fields barely move: the magnet temperature limit goes from 93.1 to 94.9 °C against a 65 °C hot-day start (margin 28.1 to 29.9 °C), and the inner hub's fitting temperature keeps its 6.7 °C margin.
 3. The field that sets the temperature limit would have to be about 23 % higher than computed before that check turns to a caution, and the field behind the hub fitting about 47 % higher before the shaft joints check fails.
 
+As asked on 2026-11-18, before the answer (the stored numbers, the check run and the line named below are now as above):
+
 The calculator cannot compute 3D fields itself. The stored numbers belong to the example design (10 magnets, 10.15 mm ring radius, 1.40 mm gap). The starting design is 8 magnets, 9.00 mm and 1.80 mm, and it says "passes all 9 checks". The two checks are the temperature check and the inner hub's fitting temperature inside the shaft joints check.
 
 How much room there is: the verdicts hold if the true reverse fields are up to 10 % higher. At 25 % higher the temperature check turns to a caution. At 75 % higher the shaft joints check fails.
@@ -67,6 +69,8 @@ Source: A-18.
 
 **Answered 2026-11-22: (c), "Standard 1.4 mm keyway".** Run through the nine checks first, as promised: every verdict and every margin is the same with 1.4 mm as with 1.7 mm. The wall goes from 2.25 to 2.55 mm and the amber line is gone. The standard (DIN 6885-1 and BS 4235-1, 3 x 3 mm key on a shaft over 8 up to 10 mm) gives 1.8 mm in the shaft and 1.4 mm in the hub, each +0.1 mm; the calculator's input is the depth in the hub. At the deepest the tolerance allows, 1.5 mm, the wall would be 2.45 mm. The example design keeps 1.7 mm. Built as BL-080.
 
+As asked on 2026-11-18, before the answer (the run through the nine checks is now done, above):
+
 The line reads "Wall past keyway: 2.25 mm; existing guidance is about 2.5 mm". No counted check judges it, so a first-time visitor sees a pass and an amber warning together. There are two ways to clear it.
 
 - **Larger ring.** Ring radius 9.00 to 9.26 mm and cap thread 41.7 to 42.2 mm. It still passes all 9 checks (hot-low torque 1.448 to 1.463 N·m; gearbox input 0.510 to 0.515 N·m against 0.60). But the cap's skirt wall thins from 0.55 to 0.30 mm, which no check judges (question 4).
@@ -82,7 +86,7 @@ Source: A-17, P-10, BL-064.
 
 ### 4. Should the calculator judge the cap's thin skirt wall, and below what thickness?
 
-**Answered 2026-11-22: (b).** An amber caution below a minimum of 0.5 mm (the controller's offer), so the starting design's 0.55 mm skirt stays clear. Filed as BL-082 (risk: physics); not built yet.
+**Answered 2026-11-22: (b) in this list.** The owner's words were "4a,6a, go!". The letter is the controller's dialog's, which put its recommendation first: (a) there was an amber caution below 0.5 mm, which is (b) here, not this list's (a), "leave it unjudged". So: an amber caution below a minimum of 0.5 mm (the controller's offer), and the starting design's 0.55 mm skirt stays clear. Filed as BL-082 (risk: physics); not built yet. The controller confirms this reading with the owner before BL-082 is built; if the owner meant this list's (a), BL-082 is closed.
 
 The skirt is the wall of the cap beyond its thread. No check looks at it: a design with a 0.15 mm skirt passes all 9 checks. The starting design's skirt is 0.55 mm, and nobody has confirmed that a wall that thin can be made.
 
@@ -320,7 +324,7 @@ Source: BL-078.
 
 Added 2026-11-22 (it keeps the next free number, so the other questions keep theirs).
 
-The 3D routine that gave the starting design its stored fields also returns a pull-out torque. For the starting design it is 1.34 N·m at 20 °C, against the calculator's 1.83 N·m: a ratio of 0.73. For the example design the ratio is 0.76 (2.17 against 2.85 N·m). The reference engine's README calls that 3D figure a lower bound for real iron, because the routine models the steel as mirror images only. No check reads the 3D torque. But the starting design passes its hot torque check by only 7 % (1.448 against 1.35 N·m), so "passes all 9 checks" depends far more on the torque model than on the stored fields.
+The 3D routine that gave the starting design its stored fields also returns a pull-out torque. For the starting design it is 1.34 N·m at 20 °C, against the calculator's 1.83 N·m: a ratio of 0.73. For the example design the ratio is 0.76 (2.17 against 2.85 N·m, both in the reference engine's README at Br 1.29 T; the Rust engine's 20 °C pull-out at Br 1.30 T is now 2.89 N·m, a ratio of about 0.75). The reference engine's README calls that 3D figure a lower bound for real iron, because the routine models the steel as mirror images only. No check reads the 3D torque. But the starting design passes its hot torque check by only 7 % (1.448 against 1.35 N·m), so "passes all 9 checks" depends far more on the torque model than on the stored fields.
 
 - **If you do not answer:** nothing changes. The starting design keeps its name and its "passes all 9 checks", and the caveat stays in writing.
 - (a) Leave it as a written caveat.

@@ -485,6 +485,7 @@ gearbox input, as today.
 | Minimum outer return ring wall | 1.80 mm | 2.20 mm |
 | Cap thread nominal diameter | 41.0 mm | 41.7 mm |
 | Required torque | 2.50 N·m | 1.35 N·m |
+| Keyway depth in the hub (amended 2026-11-22, BL-080) | 1.70 mm | 1.40 mm |
 
 The result (E; re-run on the real engine on 2026-11-09: "passes all 9 checks", no caution, no warning, no drawing
 note):
