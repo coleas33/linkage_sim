@@ -6,15 +6,11 @@
 //! window and event loop. The engine stays pure std; nothing here is compiled
 //! without the feature.
 
-// Drawn by the panel from Task 5 of this stage's plan, which removes this allow.
-#[allow(dead_code)]
 pub mod checks;
 pub mod clamp_drawing;
 pub mod corrections;
 pub mod dashboard;
 pub mod diagrams;
-// Drawn by the panel from Task 5 of this stage's plan, which removes this allow.
-#[allow(dead_code)]
 pub mod explain;
 pub mod explorer;
 mod format;
@@ -38,8 +34,6 @@ pub mod sizing;
 pub mod spreadsheet;
 #[cfg(test)]
 pub(crate) mod test_support;
-// Drawn by the panel from Task 5 of this stage's plan, which removes this allow.
-#[allow(dead_code)]
 pub mod tiles;
 pub mod torque_card;
 pub mod trace;
@@ -50,7 +44,6 @@ pub use format::{SIGNIFICANT_DIGITS, format_value, with_unit};
 pub use inputs::KEY_DESIGN;
 pub use panel::{
     CentreView, MagcouplingPanel, OPEN_EXAMPLE, PanelRequest, SHOW_DETAILS, SIZING_LOG_PREFIX,
-    WELCOME,
 };
 // The Size tab's gap text, public for the slice-3 screen dump (`size_controls` is private).
 pub use size_controls::torque_gap_text;

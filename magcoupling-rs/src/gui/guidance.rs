@@ -3182,16 +3182,15 @@ mod tests {
     use crate::engine::model::ring_fits;
     use crate::engine::shaft_joint::CAUSES;
     use crate::engine::sizing::{SizingOutcome, solve};
-    use crate::gui::dashboard::{CHECKS, DASHBOARD, FIX, dashboard_ui};
+    use crate::gui::dashboard::{CHECKS, DASHBOARD};
     use crate::gui::explorer::reviewed_note;
     use crate::gui::plain_text::label_for;
-    use crate::gui::readouts::Readouts;
     use crate::gui::test_support::{
-        QUOTED_UNITS, assert_glyphs, auto_states, clamp_at_its_limit, drawn_texts, end_effect_edge,
-        glyph_context, hot_day, hub_overstressed, is_shaft_joint, keyway_through, mixed_rings,
-        n42_parts, only_the_clamp_fails, only_the_gearbox_fails, only_the_joint_fails,
+        QUOTED_UNITS, assert_glyphs, auto_states, check_entry_texts, clamp_at_its_limit,
+        end_effect_edge, glyph_context, hot_day, hub_overstressed, is_shaft_joint, keyway_through,
+        mixed_rings, n42_parts, only_the_clamp_fails, only_the_gearbox_fails, only_the_joint_fails,
         passing_design, reversed_hub_band, shaft_joint_input_rows, shaft_joint_result_rows,
-        short_magnets, sized_frame, slider_range, small_boss, with_magnets, with_poles,
+        short_magnets, slider_range, small_boss, with_magnets, with_poles,
     };
     use std::collections::BTreeSet;
 
@@ -5481,10 +5480,10 @@ mod tests {
 
     /// Asserts that the guide at `guide_index` of [`CHECK_GUIDES`] has no fix to show in this
     /// design (`inputs`, whose results are `results`) with the shaft-clamp section paused or
-    /// shown (`paused`), and that the dashboard, fed the fixes as the panel hands them to it (no
-    /// Minimum OD set), draws [`NO_FIX`] right after the Fix label of the guide's open block,
-    /// found by its `problem`: `dashboard::fix_line` draws it for an open block whose fixes are
-    /// empty (ruling B-4).
+    /// shown (`paused`), and that the check's Explain entry, fed the fixes as the panel hands
+    /// them to it (no Minimum OD set), draws [`NO_FIX`] right under its What to change heading,
+    /// after its `problem`: the entry draws it for a failing check whose fixes are empty
+    /// (ruling B-4).
     fn assert_open_block_draws_no_fix(
         inputs: &DesignInputs,
         results: &DesignResults,
@@ -5492,31 +5491,20 @@ mod tests {
         problem: &str,
         paused: bool,
     ) {
+        use crate::gui::explorer::WHAT_TO_CHANGE;
         let all = within_minimum_diameter(&all_fixes(inputs, results, paused), inputs, None);
         assert_eq!(all[guide_index], [], "paused {paused}");
-        let output = sized_frame(
-            &egui::Context::default(),
-            egui::vec2(1280.0, 4000.0),
-            Vec::new(),
-            |ui| {
-                dashboard_ui(
-                    ui,
-                    inputs,
-                    &DesignInputs::default(),
-                    results,
-                    &all,
-                    paused,
-                    &mut Readouts::default(),
-                )
-            },
-        );
-        let texts = drawn_texts(&output);
         let check = CHECK_GUIDES[guide_index].check;
+        let texts = check_entry_texts(inputs, results, &all, paused, check);
         let open = texts
             .iter()
             .position(|t| t == problem)
-            .unwrap_or_else(|| panic!("the block of {check} is open, paused {paused}"));
-        let fix = open + texts[open..].iter().position(|t| t == FIX).unwrap();
+            .unwrap_or_else(|| panic!("the entry of {check} has its problem, paused {paused}"));
+        let fix = open
+            + texts[open..]
+                .iter()
+                .position(|t| t == WHAT_TO_CHANGE)
+                .unwrap();
         assert_eq!(texts[fix + 1], NO_FIX, "paused {paused}");
     }
 
@@ -10193,7 +10181,6 @@ mod tests {
                 .unwrap()
                 .label,
         );
-        emit("panel/welcome strip", crate::gui::panel::WELCOME);
         {
             use crate::gui::explain as ex;
             emit("explain/orientation", ex::ORIENTATION);

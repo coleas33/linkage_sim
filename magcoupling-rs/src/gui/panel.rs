@@ -1,7 +1,8 @@
 //! [`MagcouplingPanel`]: the calculator's state and its egui UI.
 //!
 //! Layout (spec M4 "Layout"): a header line, the inputs on the left (the Key design group,
-//! then every input by package group, [`crate::gui::inputs`]), the dashboard on the right and
+//! then every input by package group, [`crate::gui::inputs`]), the check list over the Explain
+//! panel on the right ([`crate::gui::checks`], [`crate::gui::explain`]: UX overhaul spec 4.5) and
 //! the centre region between them ([`CentreView`]: one tab row, the results table last;
 //! decision M42-1), opening on Size and torque under a welcome strip the session can hide
 //! (decision G-5, which reverses M42-2). Every result is recomputed with every approved correction
@@ -31,21 +32,21 @@ use crate::engine::assumptions::{self, ASSUMPTIONS};
 use crate::engine::clamps;
 use crate::engine::meta::{InputSet, ResultSet, SliderRange, Value};
 use crate::engine::sizing::{FreeVariable, SizingOutcome};
+use crate::gui::checks::{CHECKS_SHARE, checks_ui};
 use crate::gui::clamp_drawing::clamp_ui;
-use crate::gui::dashboard::{
-    Level, dashboard_ui, end_effect_banner, end_effect_banner_ui, why_note_link, why_note_text,
-};
+use crate::gui::dashboard::{Level, end_effect_banner_ui, why_note_link};
+use crate::gui::explain::{Asked, Selection, explain_ui};
 use crate::gui::explorer::{
-    EQUATION_PANEL, Explorer, FOCUS_WIDTH, explorer_ui, held_reason, panel_heights, reviewed_note,
+    EQUATION_PANEL, Explorer, FOCUS_WIDTH, explorer_ui, held_reason, panel_heights,
 };
-use crate::gui::format::{format_value, search_needle, with_unit};
-use crate::gui::geometry_view::{drawing_floor, geometry_ui};
+use crate::gui::format::search_needle;
+use crate::gui::geometry_view::geometry_ui;
 use crate::gui::guidance::{
-    ConsequenceCache, Consequences, EXAMPLE_DESIGN_HOVER, FixCache, SIZE_TAB_ALIASES,
-    SIZE_TAB_NOTE, TORQUE_BAND_NOTE, within_minimum_diameter,
+    ConsequenceCache, Consequences, Direction, EXAMPLE_DESIGN_HOVER, FixCache, SIZE_TAB_ALIASES,
+    TORQUE_BAND_NOTE, within_minimum_diameter,
 };
 use crate::gui::history::History;
-use crate::gui::input_ui::{CHANGED_DOT, RowEdit, hint_line, input_row, slider, weak_line};
+use crate::gui::input_ui::{CHANGED_DOT, RowEdit, hint_line, input_row, slider};
 use crate::gui::inputs::{
     ADVANCED_HEADING, FILTER_HINT, InputCatalogue, InputEntry, InputGroup, InputOrder,
     InputSection, KEY_DESIGN, filter_inputs, optional_seed,
@@ -66,24 +67,14 @@ use crate::gui::sizing::{
     sizing_range, with_own_value,
 };
 use crate::gui::spreadsheet::Snapshot;
-use crate::gui::torque_card::{CARD_HEADING, KEYWAY_BREAKS_THROUGH, SIDE_DOES_NOT_FIT};
+use crate::gui::tiles::tiles_ui;
+use crate::gui::torque_card::{KEYWAY_BREAKS_THROUGH, SIDE_DOES_NOT_FIT};
 use crate::gui::trace::{CLEAR_TRACE, Trace, TraceKind};
 use crate::gui::xlsx::{XLSX_FILE_NAME, XLSX_MIME, now_unix_s, spreadsheet_bytes};
 use crate::{DesignInputs, DesignResults, compute_all};
 
 /// The heading of the panel.
 pub const HEADING: &str = "Magnetic coupling calculator";
-
-/// The welcome strip above the centre tabs (spec 3.1), until the session hides it.
-pub const WELCOME: &str =
-    "Set the size -> read the torque -> open any red check to see why and what to change.";
-
-/// The button at the end of the welcome strip that hides it for the rest of the session.
-pub const HIDE_WELCOME: &str = "Hide";
-
-/// The hover text of [`HIDE_WELCOME`].
-pub const HIDE_WELCOME_HINT: &str =
-    "Hide this line until the page is opened again; the design is not changed";
 
 /// The label of the button that restores the default design.
 pub const RESET_ALL: &str = "Reset all";
@@ -204,48 +195,6 @@ const DASHBOARD_WIDTH: f32 = 300.0;
 /// The id of the Equation panel docked at the bottom of the centre region: egui keeps the
 /// panel's rect under it, and its resize handle's id derives from it.
 const EQUATION_PANEL_ID: &str = "magcoupling_equation_panel";
-
-/// The id of the torque card's collapsing state on the Size tab (slice 3 spec 6.1): egui keeps
-/// the card open or closed under it. The card's body salts its scroll area with it too.
-const TORQUE_CARD_ID: &str = "magcoupling_torque_card";
-
-/// The narrowest centre region the torque card starts open in [points] (slice 3 spec T-10,
-/// decision 4A's "the window is narrow" as a width rule): between the 278 points of a
-/// 930 x 800 window's region and the 628 of a 1280 x 800 window's.
-const CARD_OPEN_MIN_WIDTH: f32 = 400.0;
-
-/// The view the torque card's default is decided for (slice 3 spec 6.2): whether the Equation
-/// panel is open, and the screen's size in whole points. A design change never changes it, so
-/// the card never opens or closes under a drag; nor does the centre region's width, which a side
-/// panel widening to fit a design's content moves (code review 3 MF-2).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct CardView {
-    equation_open: bool,
-    screen_width: u32,
-    screen_height: u32,
-}
-
-impl CardView {
-    /// This frame's view: whether the Equation panel is open (`equation_open`), and `ctx`'s
-    /// screen rounded to whole points.
-    fn of(ctx: &egui::Context, equation_open: bool) -> Self {
-        let screen = ctx.screen_rect();
-        Self {
-            equation_open,
-            screen_width: screen.width().round() as u32,
-            screen_height: screen.height().round() as u32,
-        }
-    }
-}
-
-/// What the torque card's open-or-closed rule reads of a frame (slice 3 spec 6.2), taken at the
-/// top of the centre region before the Equation panel takes its part: the view, and the region's
-/// width [points] (rule 2, read on a deciding frame only).
-#[derive(Clone, Copy, Debug)]
-struct CardFrame {
-    view: CardView,
-    region_width: f32,
-}
 
 /// The results of the design the Size tab last asked its [`ConsequenceCache`] about, kept with
 /// that design (slice 3 spec 3.5): the lines under the controls and the torque card each ask
@@ -370,10 +319,6 @@ pub struct MagcouplingPanel {
     /// The main widget of every input row drawn in the last frame (a slider's value box while
     /// it has focus): a text field among them edits the design.
     design_widgets: Vec<egui::Id>,
-    /// The Size tab's Required slider's widget as drawn in the last frame. The centre view is
-    /// drawn after the solve checks [`MagcouplingPanel::editing`], so the inputs side lists it
-    /// in `design_widgets` ahead of that check: typing in its value box holds the solve.
-    requirement_widget: Option<egui::Id>,
     /// Whether the panel acts on the undo and redo keys
     /// ([`MagcouplingPanel::set_keyboard_shortcuts`]).
     keyboard_shortcuts: bool,
@@ -381,16 +326,6 @@ pub struct MagcouplingPanel {
     last_error: Option<String>,
     /// The view the centre region shows.
     centre: CentreView,
-    /// Whether the session has hidden the welcome strip (spec 3.1): a view choice, never in a
-    /// design file, a share link or the undo history, and kept by reset all and every load.
-    welcome_dismissed: bool,
-    /// The user's own open or close of the Size tab's torque card (slice 3 spec 6.2), set by a
-    /// click on its arrow or its heading: it wins for the session. A view choice, as
-    /// `welcome_dismissed` is.
-    card_choice: Option<bool>,
-    /// The torque card's default and the view it was decided for (slice 3 spec 6.2): decided
-    /// again only when the view differs, while the user has made no choice. A view choice too.
-    card_start: Option<(CardView, bool)>,
     /// Whether the header's Show spreadsheet details is on (spec S2-5): a view choice, never in
     /// a design file, a share link or the undo history, and kept by reset all and every load.
     show_details: bool,
@@ -430,6 +365,13 @@ pub struct MagcouplingPanel {
     /// Whether the shaft-clamp section is paused ([`clamps::PAUSED`], which every panel starts
     /// from): the views leave it out. A field, not the constant, so a test draws either state.
     clamps_paused: bool,
+    /// What the Explain panel shows (UX overhaul spec 5.1): the thing clicked last, or nothing
+    /// (the orientation). View state: in no design file, link or undo step, and kept by reset
+    /// all and every load.
+    selection: Selection,
+    /// Whether a text field had the keyboard as the last frame ended: Esc is then the field's,
+    /// not the Explain panel's.
+    typing: bool,
 }
 
 impl Default for MagcouplingPanel {
@@ -467,13 +409,9 @@ impl MagcouplingPanel {
             results,
             key_widgets: Vec::new(),
             design_widgets: Vec::new(),
-            requirement_widget: None,
             keyboard_shortcuts: true,
             last_error: None,
             centre: CentreView::SizeAndTorque,
-            welcome_dismissed: false,
-            card_choice: None,
-            card_start: None,
             show_details: false,
             inputs_view: InputsView::Design,
             input_order: InputOrder::default(),
@@ -488,6 +426,8 @@ impl MagcouplingPanel {
             explorer: Explorer::default(),
             trace: None,
             clamps_paused: clamps::PAUSED,
+            selection: Selection::default(),
+            typing: false,
         }
     }
 
@@ -750,6 +690,15 @@ impl MagcouplingPanel {
         }
         // The header's toggle as the frame begins: every view of this frame reads it here.
         let mut readouts = Readouts::new(marks, self.show_details);
+        // Esc returns the Explain panel to its orientation (UX overhaul spec 5.1), unless the
+        // key is another's: a text field that had the keyboard as the last frame ended (egui
+        // takes the keyboard from it at this key before the frame is drawn), or an open list.
+        if !self.typing
+            && !egui::Popup::is_any_open(ui.ctx())
+            && ui.input(|i| i.key_pressed(egui::Key::Escape))
+        {
+            self.selection = Selection::Nothing;
+        }
         ui.push_id("magcoupling_panel", |ui| {
             self.shortcuts(ui);
             egui::TopBottomPanel::top("magcoupling_header").show_inside(ui, |ui| {
@@ -774,19 +723,7 @@ impl MagcouplingPanel {
                 .resizable(true)
                 .default_width(DASHBOARD_WIDTH)
                 .show_inside(ui, |ui| {
-                    egui::ScrollArea::vertical()
-                        .id_salt("magcoupling_dashboard_scroll")
-                        .show(ui, |ui| {
-                            dashboard_ui(
-                                ui,
-                                &shown,
-                                &self.baseline,
-                                &self.results,
-                                &fixes,
-                                self.clamps_paused,
-                                &mut readouts,
-                            )
-                        });
+                    self.checks_and_explain_ui(ui, &shown, &fixes, &mut readouts)
                 });
             egui::CentralPanel::default()
                 .show_inside(ui, |ui| self.centre_ui(ui, &shown, &mut readouts));
@@ -822,6 +759,70 @@ impl MagcouplingPanel {
         // One undo step per settled edit.
         let settled = !self.editing(ui);
         self.history.observe(&self.design(), settled);
+        self.typing = focused_text_field(ui.ctx()).is_some();
+    }
+
+    /// The right column (UX overhaul spec 4.5): the check list, at its own height up to
+    /// [`CHECKS_SHARE`] of the column and scrolling beyond it, then the Explain panel in the
+    /// rest, scrolling on its own. A click on a check's row selects it, and the entry under the
+    /// list shows it in the same frame.
+    fn checks_and_explain_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        shown: &DesignInputs,
+        fixes: &[Vec<(&'static str, Direction)>],
+        readouts: &mut Readouts,
+    ) {
+        egui::ScrollArea::vertical()
+            .id_salt("magcoupling_checks_scroll")
+            .max_height(CHECKS_SHARE * ui.available_height())
+            .show(ui, |ui| {
+                let clicked = checks_ui(
+                    ui,
+                    shown,
+                    &self.baseline,
+                    &self.results,
+                    self.clamps_paused,
+                    self.selection.check(),
+                    readouts,
+                );
+                if let Some(check) = clicked {
+                    self.selection = Selection::Check(check);
+                }
+            });
+        ui.separator();
+        let auto = self.auto();
+        // Asked as the Size column asks (`size_tab_consequences`), and only for an entry that
+        // reads them: the cache computes once per design.
+        let consequences = self.selection.reads_consequences().then(|| {
+            let results = self.size_tab_results.get(shown);
+            self.consequences
+                .get(shown, results, self.minimum_diameter_mm, self.clamps_paused)
+        });
+        let asked = egui::ScrollArea::vertical()
+            .id_salt("magcoupling_explain_scroll")
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                let shown = crate::gui::explain::Shown {
+                    inputs: shown,
+                    results: &self.results,
+                    fixes,
+                    clamps_paused: self.clamps_paused,
+                    consequences,
+                    auto,
+                };
+                explain_ui(ui, self.selection, &shown, readouts)
+            })
+            .inner;
+        match asked {
+            Some(Asked::Select(selection)) => self.selection = selection,
+            Some(Asked::Equation(path)) => self.explorer.open_path(path),
+            Some(Asked::StartHere) => self.explorer.start(0),
+            None => {}
+        }
+        if asked.is_some() {
+            ui.ctx().request_repaint();
+        }
     }
 
     /// Whether an edit of the design is in progress: a pointer button down (a drag), a key held
@@ -940,12 +941,6 @@ impl MagcouplingPanel {
     /// view, decision M42-1) and the view of `shown`, the design shown, its values readouts
     /// (`readouts`), each in its own area above the panel.
     fn centre_ui(&mut self, ui: &mut egui::Ui, shown: &DesignInputs, readouts: &mut Readouts) {
-        // What the torque card's open-or-closed rule reads (slice 3 spec 6.2), once, before the
-        // Equation panel takes its part of the region.
-        let card = CardFrame {
-            view: CardView::of(ui.ctx(), self.explorer.open),
-            region_width: ui.available_rect_before_wrap().width(),
-        };
         // The Equation panel docks at the bottom of the centre region (decision M43-1). It
         // starts at about 45 % of the region, and its drag stops short of the view's strip.
         let show_details = readouts.show_details();
@@ -977,9 +972,6 @@ impl MagcouplingPanel {
         // the tab row and the banner live in the space above the panel, and the view in the
         // space left under them, each confined to it.
         confined(ui, "magcoupling_above_equation_panel", |ui| {
-            if !self.welcome_dismissed {
-                self.welcome_ui(ui);
-            }
             ui.horizontal_wrapped(|ui| {
                 for view in CentreView::tabs(self.clamps_paused) {
                     if look::tab_ui(ui, self.centre == view, view.label()).clicked() {
@@ -990,197 +982,25 @@ impl MagcouplingPanel {
             ui.separator();
             end_effect_banner_ui(ui, &self.results, readouts);
             confined(ui, "magcoupling_centre_view", |ui| {
-                self.view_ui(ui, shown, readouts, card);
+                self.view_ui(ui, shown, readouts);
             });
         });
-    }
-
-    /// The Size tab's torque readouts (spec 3.2), each label quieter than its value
-    /// ([`look::quiet_text`]): the requirement's slider, an ordinary design
-    /// edit (undo, files, links); the hot-low torque with its gap to the requirement, red short
-    /// or green margin; the nominal pull-out at the operating temperature. The Required and
-    /// Hot-low rows end with the Why link to the hot minimum check's note (spec 3.7). Where the
-    /// model makes no prediction a torque reads [`size_controls::NO_PREDICTION`] (or
-    /// `NO_TORQUE`) and the gap is left out.
-    fn torque_readouts_ui(&mut self, ui: &mut egui::Ui, readouts: &mut Readouts) {
-        let entry = InputCatalogue::get()
-            .entry(REQUIREMENT_INPUT)
-            .expect("the requirement has input metadata");
-        let range = entry.meta.range.expect("the requirement has a slider");
-        let required = self.inputs.metal.required_min_Nm;
-        ui.horizontal_wrapped(|ui| {
-            ui.colored_label(look::quiet_text(ui.visuals()), size_controls::REQUIRED);
-            let mut value = required;
-            let response = ui
-                .push_id(REQUIREMENT_INPUT, |ui| {
-                    ui.add(slider(&mut value, entry.meta, range))
-                })
-                .inner;
-            // Its value box is a text field of the design, as an input row's is; the next
-            // frame's inputs side lists it before the solve looks (`requirement_widget`).
-            if !self.design_widgets.contains(&response.id) {
-                self.design_widgets.push(response.id);
-            }
-            self.requirement_widget = Some(response.id);
-            if response.changed() && value != required {
-                self.last_error = self
-                    .inputs
-                    .set(REQUIREMENT_INPUT, Value::Num(value))
-                    .err()
-                    .map(|e| e.to_string());
-                // The dashboard was drawn before this edit: the readouts below show it now, the
-                // dashboard on the next frame.
-                self.results = compute_all(&self.shown_inputs());
-                ui.ctx().request_repaint();
-            }
-            if why_note_link(ui, TORQUE_BAND_NOTE) {
-                readouts.open_note(TORQUE_BAND_NOTE);
-            }
-        });
-        let required = self.inputs.metal.required_min_Nm;
-        ui.horizontal_wrapped(|ui| {
-            ui.colored_label(look::quiet_text(ui.visuals()), size_controls::HOT_LOW);
-            if let Some(hot_low) =
-                torque_readout(ui, &self.results, "metal.torque_hot_low_Nm", readouts)
-            {
-                let (gap, meets) = size_controls::torque_gap_text(hot_low, required);
-                let level = if meets { Level::Good } else { Level::Bad };
-                ui.colored_label(level.color(ui.visuals()), gap);
-            }
-            if why_note_link(ui, TORQUE_BAND_NOTE) {
-                readouts.open_note(TORQUE_BAND_NOTE);
-            }
-        });
-        ui.horizontal_wrapped(|ui| {
-            ui.colored_label(
-                look::quiet_text(ui.visuals()),
-                size_controls::pullout_label(self.results.metal.op_temp_C),
-            );
-            torque_readout(ui, &self.results, "model.pullout_Nm", readouts);
-        });
-    }
-
-    /// The welcome strip (spec 3.1): what to do first, wrapping in a narrow region, and the
-    /// button that hides it for the rest of the session.
-    fn welcome_ui(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal_wrapped(|ui| {
-            ui.label(WELCOME);
-            if ui
-                .small_button(HIDE_WELCOME)
-                .on_hover_text(HIDE_WELCOME_HINT)
-                .clicked()
-            {
-                self.welcome_dismissed = true;
-            }
-        });
-    }
-
-    /// The torque card (slice 3 spec 6.1), between the Size tab's readouts and its drawing: a
-    /// collapsing header whose one wrapping row holds the heading, which opens and closes the
-    /// card as its arrow does, and the Why link to how the coupling makes torque; under it the
-    /// card's lines for `shown`, the design shown after this frame's edits (spec 3.5), weak like
-    /// the lines under the controls, in a body that scrolls above the drawing's floor (spec 6.2).
-    /// Open or closed: the user's own choice for the session, else the default for `card`'s view
-    /// ([`MagcouplingPanel::card_default`]). It asks the cache as the lines under the controls
-    /// do ([`MagcouplingPanel::size_tab_consequences`]), so the cache's key and the results it is
-    /// handed come from one design whatever a later change puts between the panel's results and
-    /// this view.
-    fn torque_card_ui(
-        &mut self,
-        ui: &mut egui::Ui,
-        readouts: &mut Readouts,
-        card: CardFrame,
-        shown: &DesignInputs,
-    ) {
-        let auto = self.auto();
-        let lines = self.size_tab_consequences(shown).card.lines(auto);
-        let open = match self.card_choice {
-            Some(choice) => choice,
-            None => self.card_default(ui, card, &lines),
-        };
-        // `open` decides on every frame (`set_open`): egui keeps a card it already holds as it
-        // left it, so without it a default decided again for a new view would not reach the
-        // card. The default argument only builds the state of a card egui does not hold yet
-        // (egui has no other way to build one), where it is `open` too.
-        let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(
-            ui.ctx(),
-            egui::Id::new(TORQUE_CARD_ID),
-            open,
-        );
-        state.set_open(open);
-        // The heading toggles the card as the arrow does. `HeaderResponse` keeps the closure's
-        // return private until `body`, so the click is recorded here.
-        let mut heading_clicked = false;
-        let mut header = state.show_header(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                heading_clicked = ui
-                    .add(egui::Label::new(CARD_HEADING).sense(egui::Sense::click()))
-                    .clicked();
-                if why_note_link(ui, SIZE_TAB_NOTE) {
-                    readouts.open_note(SIZE_TAB_NOTE);
-                }
-            });
-        });
-        if heading_clicked {
-            header.toggle();
-        }
-        // A click on the arrow (inside `show_header`) or on the heading is the user's choice.
-        if header.is_open() != open {
-            self.card_choice = Some(header.is_open());
-        }
-        header.body(|ui| {
-            // The body scrolls inside a cap that keeps the drawing's floor under the card: the
-            // room over the floor left under the header (`room_over_the_floor`, the room rule 3
-            // reads at the card), and at least one row. The cap is also the body's least height
-            // while it scrolls: egui's own (64 points) would hold it taller and push the drawing
-            // under its floor beside the Equation panel.
-            let cap = room_over_the_floor(ui).max(ui.text_style_height(&egui::TextStyle::Body));
-            egui::ScrollArea::vertical()
-                .id_salt((TORQUE_CARD_ID, "body"))
-                .max_height(cap)
-                .min_scrolled_height(cap)
-                .show(ui, |ui| {
-                    for line in &lines {
-                        weak_line(ui, line);
-                    }
-                });
-        });
-    }
-
-    /// The torque card's default for `card`'s view (slice 3 spec 6.2): the one decided for that
-    /// view, else decided now and kept with it, so a design change never decides it again. Open
-    /// iff the Equation panel is closed (rule 1), the centre region is at least
-    /// [`CARD_OPEN_MIN_WIDTH`] wide (rule 2) and the open card leaves the drawing its floor
-    /// (rule 3: the card's height measured before it is drawn, [`card_open_height`] of `lines`,
-    /// is at most the room `ui` has at the card over the drawing's floor,
-    /// [`room_over_the_floor`], which the card's body is capped at too). Rule 3 is read last:
-    /// its pre-measure lays every line out, so it runs only where rules 1 and 2 open the card.
-    fn card_default(&mut self, ui: &egui::Ui, card: CardFrame, lines: &[String]) -> bool {
-        if let Some((view, open)) = self.card_start
-            && view == card.view
-        {
-            return open;
-        }
-        let open = !card.view.equation_open
-            && card.region_width >= CARD_OPEN_MIN_WIDTH
-            && card_open_height(ui, lines) <= room_over_the_floor(ui);
-        self.card_start = Some((card.view, open));
-        open
     }
 
     /// The view of the centre region the tabs select, of `shown`, the design shown, its values
-    /// readouts (`readouts`), with what the torque card's open-or-closed rule reads of the frame
-    /// (`card`). Each view fits itself to `ui`'s available height.
-    fn view_ui(
-        &mut self,
-        ui: &mut egui::Ui,
-        shown: &DesignInputs,
-        readouts: &mut Readouts,
-        card: CardFrame,
-    ) {
+    /// readouts (`readouts`). Each view fits itself to `ui`'s available height. The opening
+    /// tab (UX overhaul spec 4.4): the four tiles, a click on one selecting it for the Explain
+    /// panel; the "Exploration only" lines and the keyway's advisory, only when true; then the
+    /// drawing and its callout list in all the height left (the plan's decision D-19).
+    fn view_ui(&mut self, ui: &mut egui::Ui, shown: &DesignInputs, readouts: &mut Readouts) {
         match self.centre {
             CentreView::SizeAndTorque => {
-                self.torque_readouts_ui(ui, readouts);
+                let selected = self.selection.tile();
+                if let Some(tile) = tiles_ui(ui, shown, &self.results, selected, readouts) {
+                    // The Explain panel was drawn before this click: the next frame shows it.
+                    self.selection = Selection::Result(tile.path());
+                    ui.ctx().request_repaint();
+                }
                 if !crate::engine::model::blocks_fit(&shown.coupling, &self.results.model) {
                     ui.colored_label(
                         ui.visuals().error_fg_color,
@@ -1201,18 +1021,7 @@ impl MagcouplingPanel {
                         ),
                     );
                 }
-                // The design shown after this view's one edit, the Required slider's above (slice
-                // 3 spec 3.5): the card and the drawing below read this one copy, built once a
-                // frame (with Auto on the ring size each build runs two geometries).
-                let shown_after_edits = self.shown_inputs();
-                self.torque_card_ui(ui, readouts, card, &shown_after_edits);
-                geometry_ui(
-                    ui,
-                    &shown_after_edits,
-                    &self.results,
-                    self.clamps_paused,
-                    readouts,
-                );
+                geometry_ui(ui, shown, &self.results, self.clamps_paused, readouts);
             }
             CentreView::Geometry => {
                 geometry_ui(ui, shown, &self.results, self.clamps_paused, readouts);
@@ -1408,58 +1217,12 @@ impl MagcouplingPanel {
         // This frame's rows only, whichever groups are open.
         self.design_widgets.clear();
         if self.centre == CentreView::SizeAndTorque {
-            ui.heading(crate::gui::size_controls::HEADING);
-            // Auto (spec guidance 3.5) is the solver's one home. Turning it off adopts the value
-            // shown (decision M41-7) through the mode switch.
-            let asked = size_controls::auto_ui(ui, self.sizing);
-            self.sizing.variable = asked.variable;
-            self.set_sizing_mode(asked.mode);
-            let auto = self.auto();
-            let shown = self.shown_inputs();
-            if auto.is_some() {
-                let (line, color) = self.auto_outcome(&shown, ui.visuals());
-                ui.add(egui::Label::new(egui::RichText::new(line).color(color)).wrap());
-            }
-            let minimum = self.minimum_diameter_mm;
-            // Asked before the controls write the minimum back, with the design before this
-            // frame's edits.
-            let consequences = self.size_tab_consequences(&shown);
-            let output = size_controls::controls_ui(ui, &shown, minimum, consequences, auto);
-            // A Why link under Magnets per ring or Outside diameter (spec 3.7) opens its note.
-            if let Some(id) = output.note {
-                self.explorer.open_note(id);
-                ui.ctx().request_repaint();
-            }
-            // The lines under the controls were drawn from the design before this frame's edit:
-            // one more frame shows the edited design's.
-            if output.inputs != shown || output.minimum_diameter_mm != minimum {
-                ui.ctx().request_repaint();
-            }
-            self.design_widgets.extend(output.widgets);
-            // The Required slider is drawn after `run_sizing`: last frame's id stands in.
-            self.design_widgets.extend(self.requirement_widget);
-            self.minimum_diameter_mm = output.minimum_diameter_mm;
-            if output.inputs != shown {
-                // The controls edit the design shown: the inputs keep their own value of the size
-                // Auto sets until Auto turns off (decision M41-7).
-                self.inputs = match auto {
-                    Some(variable) => with_own_value(variable, output.inputs, &self.inputs),
-                    None => output.inputs,
-                };
-                self.last_error = output.error;
-            } else if output.error.is_some() {
-                self.last_error = output.error;
-            }
-            ui.separator();
-            egui::CollapsingHeader::new("Detailed inputs")
-                .default_open(false)
-                .open(
-                    self.explorer
-                        .focus()
-                        .filter(|focus| focus.scroll)
-                        .map(|_| true),
-                )
-                .show(ui, |ui| self.design_inputs_ui(ui, readouts));
+            // The column scrolls in a short window: its overflow would stretch the panel past
+            // the window's foot, and the centre region and its drawing with it.
+            egui::ScrollArea::vertical()
+                .id_salt("magcoupling_size_column")
+                .auto_shrink([false, true])
+                .show(ui, |ui| self.size_column_ui(ui, readouts));
             return;
         }
         if let Some(focus) = self.explorer.focus().filter(|f| f.scroll) {
@@ -1503,6 +1266,102 @@ impl MagcouplingPanel {
                 }
             });
         });
+    }
+
+    /// The Size column of the opening tab: its heading, the Required torque row, Auto and its
+    /// outcome, the size controls with their lines, the detailed inputs, folded, then the
+    /// footnote on what the size controls move.
+    fn size_column_ui(&mut self, ui: &mut egui::Ui, readouts: &Readouts) {
+        ui.heading(crate::gui::size_controls::HEADING);
+        let requirement = self.requirement_ui(ui);
+        // Auto (spec guidance 3.5) is the solver's one home. Turning it off adopts the value
+        // shown (decision M41-7) through the mode switch.
+        let asked = size_controls::auto_ui(ui, self.sizing);
+        self.sizing.variable = asked.variable;
+        self.set_sizing_mode(asked.mode);
+        let auto = self.auto();
+        let shown = self.shown_inputs();
+        if auto.is_some() {
+            let (line, color) = self.auto_outcome(&shown, ui.visuals());
+            ui.add(egui::Label::new(egui::RichText::new(line).color(color)).wrap());
+        }
+        let minimum = self.minimum_diameter_mm;
+        // Asked before the controls write the minimum back, with the design before this
+        // frame's edits.
+        let consequences = self.size_tab_consequences(&shown);
+        let output = size_controls::controls_ui(ui, &shown, minimum, consequences, auto);
+        // A Why link under Magnets per ring or Outside diameter (spec 3.7) opens its note.
+        if let Some(id) = output.note {
+            self.explorer.open_note(id);
+            ui.ctx().request_repaint();
+        }
+        // The lines under the controls were drawn from the design before this frame's edit:
+        // one more frame shows the edited design's.
+        if output.inputs != shown || output.minimum_diameter_mm != minimum {
+            ui.ctx().request_repaint();
+        }
+        self.design_widgets.extend(output.widgets);
+        // After the controls' own: the tests find those by their place in the list.
+        self.design_widgets.push(requirement);
+        self.minimum_diameter_mm = output.minimum_diameter_mm;
+        if output.inputs != shown {
+            // The controls edit the design shown: the inputs keep their own value of the size
+            // Auto sets until Auto turns off (decision M41-7).
+            self.inputs = match auto {
+                Some(variable) => with_own_value(variable, output.inputs, &self.inputs),
+                None => output.inputs,
+            };
+            self.last_error = output.error;
+        } else if output.error.is_some() {
+            self.last_error = output.error;
+        }
+        ui.separator();
+        egui::CollapsingHeader::new("Detailed inputs")
+            .default_open(false)
+            .open(
+                self.explorer
+                    .focus()
+                    .filter(|focus| focus.scroll)
+                    .map(|_| true),
+            )
+            .show(ui, |ui| self.design_inputs_ui(ui, readouts));
+        // Under the fold, so the fold is on the first view (plan review E-4).
+        ui.label(size_controls::LINKED_HOUSING);
+    }
+
+    /// The Required torque row that leads the Size column (UX overhaul spec 4.3; it was the
+    /// first of the Size tab's readouts): its label, quieter than the value in the slider's box
+    /// ([`look::quiet_text`]), with the Why link to the hot minimum check's note (spec 3.7),
+    /// then the requirement's slider, an ordinary design edit (undo, files, links). Returns the
+    /// slider's widget: its value box is a text field of the design, as an input row's is.
+    fn requirement_ui(&mut self, ui: &mut egui::Ui) -> egui::Id {
+        let entry = InputCatalogue::get()
+            .entry(REQUIREMENT_INPUT)
+            .expect("the requirement has input metadata");
+        let range = entry.meta.range.expect("the requirement has a slider");
+        let required = self.inputs.metal.required_min_Nm;
+        ui.horizontal_wrapped(|ui| {
+            ui.colored_label(look::quiet_text(ui.visuals()), size_controls::REQUIRED);
+            if why_note_link(ui, TORQUE_BAND_NOTE) {
+                self.explorer.open_note(TORQUE_BAND_NOTE);
+                ui.ctx().request_repaint();
+            }
+        });
+        let mut value = required;
+        let response = ui
+            .push_id(REQUIREMENT_INPUT, |ui| {
+                ui.add(slider(&mut value, entry.meta, range))
+            })
+            .inner;
+        if response.changed() && value != required {
+            self.last_error = self
+                .inputs
+                .set(REQUIREMENT_INPUT, Value::Num(value))
+                .err()
+                .map(|e| e.to_string());
+            ui.ctx().request_repaint();
+        }
+        response.id
     }
 
     /// The Assumptions view (spec Addendum A3 "Toggle panel"): each assumption with its
@@ -1818,96 +1677,6 @@ fn status_color(status: &str, visuals: &egui::Visuals) -> egui::Color32 {
     }
 }
 
-/// One torque readout of the Size tab: the value of the result at `path` with its unit, a
-/// readout (`readouts`: hover text and equation; a click opens it), or
-/// [`size_controls::NO_PREDICTION`] / [`size_controls::NO_TORQUE`] where the model makes none
-/// ([`size_controls::predicts`]). Returns the torque shown [N·m], if any.
-fn torque_readout(
-    ui: &mut egui::Ui,
-    results: &DesignResults,
-    path: &str,
-    readouts: &mut Readouts,
-) -> Option<f64> {
-    let Some(Value::Num(torque)) = results.get(path) else {
-        unreachable!("{path} is a torque result")
-    };
-    if !size_controls::predicts(results, torque) {
-        ui.weak(if end_effect_banner(results).is_some() {
-            size_controls::NO_PREDICTION
-        } else {
-            size_controls::NO_TORQUE
-        });
-        return None;
-    }
-    let text = with_unit(format_value(&Value::Num(torque)), "N\u{b7}m");
-    let response = ui.add(egui::Label::new(text).sense(egui::Sense::click()));
-    readouts.show(ui, response, path, |show_details| {
-        crate::gui::dashboard::hover_text(path, show_details).unwrap_or_default()
-    });
-    Some(torque)
-}
-
-/// The torque card's height when open [points], measured before it is drawn (slice 3 spec 6.2):
-/// its header row laid out as [`MagcouplingPanel::torque_card_ui`] draws it (beside the arrow,
-/// an indent wide, the heading, then the Why link continuing after it and wrapping under it in a
-/// narrow region, as egui lays a label out in a wrapping row, the row at least an interactive
-/// widget's height), then the item spacing and each of `lines` as a galley wrapped at the body's
-/// width (the row's, less the body's indent), with the item spacing between them. It repeats
-/// egui 0.32.3's label layout (`widgets/label.rs`), so an egui upgrade can move it:
-/// `the_card_s_measured_height_is_the_drawn_height` pins it to the drawn height.
-fn card_open_height(ui: &egui::Ui, lines: &[String]) -> f32 {
-    let spacing = ui.spacing();
-    let width = ui.available_width() - spacing.indent;
-    // A label's galley as egui lays it out: wrapped at `width`, its first row starting
-    // `indentation` in and at least `first_row` tall.
-    let galley = |text: &str, indentation: f32, first_row: f32| {
-        let mut job =
-            std::sync::Arc::unwrap_or_clone(egui::WidgetText::from(text).into_layout_job(
-                ui.style(),
-                egui::FontSelection::Default,
-                ui.text_valign(),
-            ));
-        job.wrap.max_width = width;
-        job.first_row_min_height = first_row;
-        job.halign = egui::Align::Min;
-        job.justify = false;
-        if let Some(section) = job.sections.first_mut() {
-            section.leading_space = indentation;
-        }
-        ui.fonts(|fonts| fonts.layout_job(job))
-    };
-    let row = spacing.interact_size.y;
-    let heading = galley(CARD_HEADING, 0.0, row).size();
-    let header = match reviewed_note(SIZE_TAB_NOTE) {
-        Some(note) => galley(
-            &why_note_text(note),
-            heading.x + spacing.item_spacing.x,
-            row,
-        )
-        .size()
-        .y
-        .max(heading.y),
-        // A note not reviewed has no link (`why_note_link` draws none). The release gate keeps
-        // this note reviewed, so only a later change to the note reaches this arm.
-        None => heading.y,
-    };
-    let body: f32 = lines
-        .iter()
-        .map(|line| galley(line, 0.0, 0.0).size().y)
-        .sum::<f32>()
-        + spacing.item_spacing.y * lines.len().saturating_sub(1) as f32;
-    header + spacing.item_spacing.y + body
-}
-
-/// The room `ui` has over the drawing's floor [points] (slice 3 spec 6.2): its available height
-/// less the item spacing before the drawing and [`drawing_floor`]. Rule 3 reads it at the
-/// torque card, where the open card must fit in it ([`MagcouplingPanel::card_default`]), and
-/// the card's body reads it under the header as its cap
-/// ([`MagcouplingPanel::torque_card_ui`]): one expression, so the rule and the cap agree.
-fn room_over_the_floor(ui: &egui::Ui) -> f32 {
-    ui.available_height() - ui.spacing().item_spacing.y - drawing_floor(ui)
-}
-
 /// Draws `add` in a child of `ui` (salted `id_salt`) confined to the space left in `ui`: the
 /// child's max rect and clip rect are that space, so nothing drawn in it paints or takes a
 /// click outside it. `ui` then moves past the whole space, never past what the child used, so
@@ -1940,10 +1709,13 @@ mod tests {
     use crate::engine::api::HEADLINE;
     use crate::engine::size_controls::{DiameterFit, diameter_breakdown, dimensions};
     use crate::engine::sizing::SizingOutcome;
-    use crate::gui::dashboard::{END_EFFECT_BANNER, STORED_3D_LABEL, result_info};
+    use crate::gui::dashboard::{
+        END_EFFECT_BANNER, STORED_3D_LABEL, end_effect_banner, result_info,
+    };
     use crate::gui::format::{format_value, with_unit};
-    use crate::gui::geometry_view::MIN_DRAWING_HEIGHT;
-    use crate::gui::guidance::{Consequences, FACE_GAP, RING_SIZE_STAYS, plain_text_violations};
+    use crate::gui::guidance::{
+        Consequences, FACE_GAP, RING_SIZE_STAYS, SIZE_TAB_NOTE, plain_text_violations,
+    };
     use crate::gui::input_ui::{BLANK_TEXT, CHANGED_DOT, OUTSIDE_RANGE_NOTE, RESET_LABEL};
     use crate::gui::inputs::WORKFLOW;
     use crate::gui::plain_text::{
@@ -1960,12 +1732,12 @@ mod tests {
     use crate::gui::sizing::DEBOUNCE_S;
     use crate::gui::test_support::{
         SCREEN, clamp_at_its_limit, drawing_rect, drawn_texts, flat_shapes, hot_day,
-        hub_overstressed, key_event, key_tap, last_characters, no_back_iron, only_the_clamp_fails,
+        hub_overstressed, key_event, key_tap, last_characters, only_the_clamp_fails,
         only_the_joint_fails, passing_design, primary_button, row_line, select_all, short_magnets,
         sized_frame, sized_frame_at, smoke_inputs, text_center, text_clip_rect, text_color,
         text_rect, text_rects, text_shapes, tooltips_at_once, with_poles,
     };
-    use crate::gui::torque_card::{CAPTION, Control, held_line};
+    use crate::gui::torque_card::{CAPTION, CARD_HEADING, Control, held_line};
     use crate::headline;
 
     const POLES: &str = "coupling.npole";
@@ -1973,6 +1745,8 @@ mod tests {
     const PART_INNER: &str = "coupling.magnets.part_inner";
     const MEASURED_DRAG: &str = "metal.measured_drag_Nm";
     const GEARBOX_CHECK: &str = "gearbox.cold_high_check";
+    const HOT_MIN_CHECK: &str = "metal.hot_min_check";
+    const SPACE_CLAIM_CHECK: &str = "housing.space_claim_check";
 
     /// A screen tall enough for every dashboard row: the check guides (their blocks and every
     /// row's Why line) push the lower rows past [`SCREEN`]'s, and egui paints no label
@@ -2007,8 +1781,8 @@ mod tests {
             Self::of(panel, size)
         }
 
-        /// A harness on a new panel as it opens (decision G-5): the Size tab under the welcome
-        /// strip, on the laptop screen.
+        /// A harness on a new panel as it opens (decision G-5): the Size tab, the Explain panel
+        /// on its orientation, on the laptop screen.
         pub(crate) fn first_view() -> Self {
             Self::of(MagcouplingPanel::new(), SCREEN)
         }
@@ -2096,6 +1870,22 @@ mod tests {
             assert!(self.ctx.memory(|m| m.has_focus(id)), "{path} has focus");
         }
 
+        /// Shows the Results tab, one frame in: its Headline group lists every headline number,
+        /// each a readout (its hover, its click), as the right column did before it became the
+        /// check list (UX overhaul spec 4.5).
+        fn on_results(mut self) -> Self {
+            self.panel.centre = CentreView::Results;
+            self.frame(Vec::new());
+            self
+        }
+
+        /// Selects `check`, as a click on its row of the check list does: the Explain panel
+        /// shows its entry in the frame this returns.
+        fn select(&mut self, check: &'static str) -> egui::FullOutput {
+            self.panel.selection = Selection::Check(check);
+            self.frame(Vec::new())
+        }
+
         /// A click (move, press, release) at `at`.
         fn click(&mut self, at: egui::Pos2) -> egui::FullOutput {
             self.frame(vec![egui::Event::PointerMoved(at)]);
@@ -2119,8 +1909,17 @@ mod tests {
         }
     }
 
-    /// The headline of `inputs`, as the panel displays it (value with unit; the cup wall's
-    /// failing verdict with its input's label, ruling R9).
+    /// The left edge of the right column in `output`, less its margin: where the check list's
+    /// heading starts.
+    fn right_column_left(output: &egui::FullOutput) -> f32 {
+        text_rect(output, crate::gui::checks::HEADING)
+            .expect("the check list's heading")
+            .left()
+            - 10.0
+    }
+
+    /// The headline of `inputs`, as the Results tab's Headline group displays it (value with
+    /// unit; the cup wall's failing verdict with its input's label, ruling R9).
     fn displayed_headline(inputs: &DesignInputs) -> Vec<String> {
         headline(&compute_all(inputs))
             .into_iter()
@@ -2215,16 +2014,235 @@ mod tests {
         assert_eq!(harness.panel.centre, CentreView::Geometry);
     }
 
+    // ------------------------------------------------------------------ the right column
+
+    /// Whether the one copy of `text` drawn in `output` is in view on `screen`: inside its
+    /// clip rect and inside the screen.
+    fn in_view(output: &egui::FullOutput, text: &str, screen: egui::Vec2) -> bool {
+        let rects = text_rects(output, text);
+        assert_eq!(rects.len(), 1, "{text:?}: {rects:?}");
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, screen);
+        text_clip_rect(output, text).contains_rect(rects[0]) && screen.contains_rect(rects[0])
+    }
+
     #[test]
-    fn a_new_panel_opens_on_size_and_torque_under_the_welcome_strip() {
-        // Decision G-5 (spec 3.1, reversing M42-2): the first view is the Size tab with the
-        // welcome strip above the centre tabs; showing them edits nothing, and Explain stays
-        // off (M43-2).
+    fn the_right_column_is_the_check_list_over_the_explain_panel_on_its_orientation() {
+        // UX overhaul spec 4.5, 5.4 and 8.2 test 10: at 1280 x 800 a new panel draws the check
+        // list (its status line and a row per check, in the guides' order) and under it the
+        // Explain panel, which shows the orientation on the first frame. Register row A-18: the
+        // line that says two of the checks read fixed 3D fields is in view with no scroll.
+        use crate::gui::explorer::START_HERE_BUTTON;
+        use crate::gui::guidance::counted_guides;
+        use crate::gui::{checks, explain};
+        let mut harness = Harness::first_view();
+        let first = harness.frame(Vec::new());
+        assert_eq!(count(&first, explain::ORIENTATION), 1, "on the first frame");
+        let output = harness.frame(Vec::new());
+        assert_eq!(harness.panel.selection, Selection::Nothing);
+        let mut column = vec![checks::HEADING];
+        column.extend(counted_guides(false).map(|guide| guide.label));
+        column.extend([STORED_3D_LABEL, explain::HEADING, explain::ORIENTATION]);
+        column.extend(explain::STEPS);
+        column.push(START_HERE_BUTTON);
+        let left = right_column_left(&output);
+        let mut last = f32::NEG_INFINITY;
+        for text in column {
+            // The Hot-low torque row's label is the Size tab's readout label too.
+            let rect = text_rects(&output, text)
+                .into_iter()
+                .find(|rect| rect.left() > left)
+                .unwrap_or_else(|| panic!("{text:?} in the right column"));
+            assert!(
+                text_clip_rect(&output, STORED_3D_LABEL).contains_rect(rect),
+                "{text:?} is in view at {rect:?}"
+            );
+            assert!(rect.top() > last, "{text:?} is under the text before it");
+            last = rect.top();
+        }
+        assert!(in_view(&output, STORED_3D_LABEL, SCREEN), "row A-18");
+        // The list never takes more than its share of the column: the Explain panel's heading
+        // starts above the middle of the screen.
+        let explain = text_rect(&output, explain::HEADING).unwrap();
+        assert!(explain.top() < SCREEN.y / 2.0, "{explain:?}");
+        assert_eq!(harness.panel.design(), Design::default());
+        assert_eq!(harness.panel.history.undo_len(), 0);
+    }
+
+    #[test]
+    fn a_click_on_a_check_shows_its_entry_and_esc_or_about_returns_the_orientation() {
+        // Spec 5.1, 5.2 and 8.2 test 10, and goal G-8: one click on a failing check shows its
+        // problem, its reason and its fixes. A hover changes nothing (decision C-2).
+        use crate::gui::explain;
+        use crate::gui::guidance::guide;
+        let mut harness = Harness::first_view();
+        let gearbox = guide(GEARBOX_CHECK).unwrap();
+        let cup_wall = guide("materials.cup_wall_check").unwrap();
+        harness.click_text(gearbox.label);
+        assert_eq!(harness.panel.selection, Selection::Check(GEARBOX_CHECK));
+        let output = harness.frame(Vec::new());
+        let panel = &harness.panel;
+        let problem = (gearbox.problem)(panel.inputs(), panel.results()).expect("it fails");
+        for text in [gearbox.why, problem.as_str(), explain::ABOUT] {
+            assert_eq!(count(&output, text), 1, "{text:?}");
+        }
+        assert_eq!(count(&output, explain::ORIENTATION), 0);
+        // Hovering another check's row leaves the entry as it is.
+        let at = text_rect(&output, cup_wall.label).unwrap().center();
+        harness.frame(vec![egui::Event::PointerMoved(at)]);
+        let output = harness.frame(Vec::new());
+        assert_eq!(harness.panel.selection, Selection::Check(GEARBOX_CHECK));
+        assert_eq!(count(&output, gearbox.why), 1);
+        // The last click owns the panel.
+        harness.click(at);
+        assert_eq!(
+            harness.panel.selection,
+            Selection::Check("materials.cup_wall_check")
+        );
+        // Esc returns the orientation; so does the link at the entry's head.
+        let output = harness.frame(key_tap(egui::Key::Escape));
+        assert_eq!(harness.panel.selection, Selection::Nothing);
+        assert_eq!(count(&output, explain::ORIENTATION), 1);
+        harness.click_text(gearbox.label);
+        harness.click_text(explain::ABOUT);
+        assert_eq!(harness.panel.selection, Selection::Nothing);
+        assert_eq!(harness.panel.design(), Design::default());
+        assert_eq!(harness.panel.history.undo_len(), 0);
+    }
+
+    #[test]
+    fn esc_in_a_text_field_is_the_field_s_and_keeps_the_selection() {
+        let mut harness = Harness::new();
+        harness.select(GEARBOX_CHECK);
+        harness.focus(PART_INNER);
+        harness.frame(vec![egui::Event::Text("X".to_owned())]);
+        harness.frame(key_tap(egui::Key::Escape));
+        assert_eq!(harness.panel.selection, Selection::Check(GEARBOX_CHECK));
+        // The field let go of the keyboard: the next Esc is the panel's.
+        harness.frame(key_tap(egui::Key::Escape));
+        assert_eq!(harness.panel.selection, Selection::Nothing);
+    }
+
+    #[test]
+    fn an_amber_check_s_entry_is_open_at_its_one_click() {
+        // Before the Explain panel an amber check's block was shut under a header: two clicks.
+        use crate::gui::guidance::guide;
+        let mut hot = DesignInputs::default();
+        hot_day(&mut hot);
+        let temperature = guide("temperature.summary.verdict").unwrap();
+        let mut harness = Harness::first_view();
+        harness.panel.inputs = hot;
+        harness.frame(Vec::new());
+        harness.click_text(temperature.label);
+        let output = harness.frame(Vec::new());
+        let panel = &harness.panel;
+        let problem = (temperature.problem)(panel.inputs(), panel.results()).expect("amber");
+        assert_eq!(count(&output, &problem), 1);
+        let visuals = harness.ctx.style().visuals.clone();
+        assert_eq!(
+            text_color(&output, &problem),
+            Some(Level::Caution.color(&visuals))
+        );
+    }
+
+    #[test]
+    fn the_selection_is_a_view_choice_in_no_file_link_or_undo_step() {
+        // Spec 5.1: selecting edits nothing, and reset all, a load and an undo keep it.
+        let mut harness = Harness::new();
+        let (file, link) = (
+            design_to_json(&harness.panel.design()),
+            harness.panel.share_link(),
+        );
+        harness.select(GEARBOX_CHECK);
+        harness.frame(Vec::new());
+        assert_eq!(design_to_json(&harness.panel.design()), file);
+        assert_eq!(harness.panel.share_link(), link);
+        assert_eq!(harness.panel.history.undo_len(), 0);
+        harness.focus(FACE_GAP);
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        harness.frame(Vec::new());
+        harness.panel.undo();
+        assert_eq!(harness.panel.selection, Selection::Check(GEARBOX_CHECK));
+        harness.panel.reset();
+        harness.panel.load_design_file(&file).unwrap();
+        assert_eq!(harness.panel.selection, Selection::Check(GEARBOX_CHECK));
+    }
+
+    #[test]
+    fn an_entry_s_equation_link_opens_the_equation_panel_and_the_selection_stays() {
+        // Decisions C-11 and C-25: the Equation link opens the docked panel at the entry's
+        // result, with no trace; a selection made afterwards leaves the open equation where it
+        // is. The orientation's link starts the Start here walk.
+        use crate::gui::explain;
+        use crate::gui::explorer::START_HERE_BUTTON;
+        use crate::gui::guidance::guide;
+        let mut harness = Harness::first_view();
+        assert!(!harness.panel.explorer.open);
+        harness.click_text(guide(GEARBOX_CHECK).unwrap().label);
+        harness.click_text(explain::EQUATION);
+        assert!(harness.panel.explorer.open);
+        assert_eq!(harness.panel.explorer.trail(), [GEARBOX_CHECK]);
+        assert_eq!(harness.panel.selection, Selection::Check(GEARBOX_CHECK));
+        assert_eq!(harness.panel.trace, None);
+        harness.click_text(guide(SPACE_CLAIM_CHECK).unwrap().label);
+        assert_eq!(harness.panel.selection, Selection::Check(SPACE_CLAIM_CHECK));
+        assert_eq!(harness.panel.explorer.trail(), [GEARBOX_CHECK]);
+        // Closing the Equation panel leaves the selection as it is.
+        harness.panel.explorer.close();
+        harness.frame(Vec::new());
+        assert_eq!(harness.panel.selection, Selection::Check(SPACE_CLAIM_CHECK));
+        harness.frame(key_tap(egui::Key::Escape));
+        harness.click_text(START_HERE_BUTTON);
+        assert!(harness.panel.explorer.open);
+        assert_eq!(harness.panel.explorer.start_here(), Some(0));
+        assert_eq!(harness.panel.design(), Design::default());
+    }
+
+    #[test]
+    fn the_check_list_and_the_explain_panel_compute_nothing_on_an_idle_frame() {
+        // Spec 8.2, test 14: with nothing selected, with a failing check's entry open and with
+        // the Hot-low tile's (the torque card: its consequences are 30 compute_all runs), a
+        // frame in which nothing changed runs no fix search and no results of its own.
+        let mut harness = Harness::first_view();
+        let hot_low = Selection::Result(crate::gui::tiles::Tile::HotLow.path());
+        let checks = [HOT_MIN_CHECK, GEARBOX_CHECK].map(|check| Some(Selection::Check(check)));
+        for check in [None, checks[0], checks[1], Some(hot_low)] {
+            match check {
+                Some(Selection::Check(path)) => {
+                    harness.select(path);
+                }
+                Some(selection) => harness.panel.selection = selection,
+                None => {}
+            }
+            harness.frame(Vec::new());
+            let fixes = harness.panel.fixes.computed;
+            let results = harness.panel.size_tab_results.computed;
+            let consequences = harness.panel.consequences.computed;
+            for _ in 0..5 {
+                harness.frame(Vec::new());
+            }
+            assert_eq!(harness.panel.fixes.computed, fixes, "{check:?}");
+            assert_eq!(
+                harness.panel.size_tab_results.computed, results,
+                "{check:?}"
+            );
+            assert_eq!(
+                harness.panel.consequences.computed, consequences,
+                "{check:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_new_panel_opens_on_size_and_torque_with_the_tiles_over_the_drawing() {
+        // Decision G-5 (spec 3.1, reversing M42-2) and UX overhaul spec 4.4: the first view is
+        // the Size tab, its four tiles over the drawing; showing them edits nothing, and
+        // Explain stays off (M43-2). The welcome strip is gone: the Explain panel's orientation
+        // says what to do first.
         use crate::gui::guidance::{design_status, design_status_text};
         use crate::gui::size_controls::{DIAMETER, GAP, LENGTH, MAGNETS};
+        use crate::gui::tiles::Tile;
         let panel = MagcouplingPanel::new();
         assert_eq!(panel.centre, CentreView::SizeAndTorque);
-        assert!(!panel.welcome_dismissed);
         assert!(!panel.explorer.explain);
         assert_eq!(
             MagcouplingPanel::default().centre,
@@ -2232,101 +2250,38 @@ mod tests {
         );
         let mut harness = Harness::first_view();
         let output = harness.frame(Vec::new());
-        assert_eq!(count(&output, WELCOME), 1);
-        assert_eq!(count(&output, HIDE_WELCOME), 1);
-        // The inputs side is the Size tab's: its controls, the Key design group folded away
-        // under the detailed inputs.
-        for label in [DIAMETER, LENGTH, GAP, MAGNETS] {
+        assert_eq!(count(&output, crate::gui::explain::ORIENTATION), 1);
+        // The inputs side is the Size tab's: the Required torque, then its controls, the Key
+        // design group folded away under the detailed inputs.
+        for label in [REQUIRED, DIAMETER, LENGTH, GAP, MAGNETS] {
             assert_eq!(count(&output, label), 1, "{label}");
         }
         assert_eq!(count(&output, KEY_DESIGN_HEADING), 0);
-        // The dashboard's design status line (spec 3.1) is on the first view, counted live.
+        // The check list's design status line (spec 3.1) is on the first view, counted live.
         let status = design_status(harness.panel.inputs(), harness.panel.results(), false);
         assert!(status.is_default);
         assert_eq!(count(&output, &design_status_text(&status)), 1);
-        // The strip is in the centre region, above the tab row.
-        let strip = text_rect(&output, WELCOME).expect("the strip");
+        // The tiles are in the centre region, under the tab row and over the drawing, in their
+        // order from the left.
         let tabs = text_rect(&output, CentreView::Geometry.label()).expect("the tab row");
-        assert!(strip.bottom() <= tabs.top(), "{strip:?} above {tabs:?}");
-        assert!(
-            strip.left() >= INPUTS_WIDTH && strip.right() <= SCREEN.x - DASHBOARD_WIDTH,
-            "{strip:?}"
-        );
-        assert_eq!(harness.panel.design(), Design::default());
-        assert_eq!(harness.panel.history.undo_len(), 0);
-    }
-
-    #[test]
-    fn hiding_the_welcome_strip_frees_its_row_and_edits_no_design() {
-        let mut harness = Harness::first_view();
-        let output = harness.frame(Vec::new());
-        let tabs_under_strip = text_rect(&output, CentreView::Geometry.label()).unwrap();
-        let file = design_to_json(&harness.panel.design());
-        let link = harness.panel.share_link();
-        harness.click_text(HIDE_WELCOME);
-        assert!(harness.panel.welcome_dismissed);
-        let output = harness.frame(Vec::new());
-        assert_eq!(count(&output, WELCOME), 0);
-        assert_eq!(count(&output, HIDE_WELCOME), 0);
-        let tabs = text_rect(&output, CentreView::Geometry.label()).unwrap();
-        assert!(
-            tabs.top() < tabs_under_strip.top(),
-            "the tab row moves up into the strip's room: {tabs:?} vs {tabs_under_strip:?}"
-        );
-        // A view choice of this session: the view, the design, its file and its link stay as
-        // they were, and it is no undo step.
-        assert_eq!(harness.panel.centre, CentreView::SizeAndTorque);
-        assert_eq!(harness.panel.design(), Design::default());
-        assert_eq!(design_to_json(&harness.panel.design()), file);
-        assert_eq!(harness.panel.share_link(), link);
-        assert_eq!(harness.panel.history.undo_len(), 0);
-        assert!(!harness.panel.history.can_undo(&Design::default()));
-        assert_eq!(harness.panel.last_error, None);
-    }
-
-    #[test]
-    fn the_hidden_welcome_strip_stays_hidden_for_the_session() {
-        // A loaded file, undo and redo, reset all, a refused file, a share link (as an edit and
-        // as the session's start) and every view keep it hidden; only a new panel (the page
-        // opened again) shows it.
-        let hidden = |harness: &mut Harness, after: &str| {
-            let output = harness.frame(Vec::new());
-            assert!(harness.panel.welcome_dismissed, "{after}");
-            assert_eq!(count(&output, WELCOME), 0, "{after}");
-        };
-        let mut harness = Harness::first_view();
-        harness.click_text(HIDE_WELCOME);
-        harness
-            .panel
-            .load_design_file(&design_to_json(&gap_design(2.0)))
-            .unwrap();
-        hidden(&mut harness, "a loaded design file");
-        harness.click_text(UNDO);
-        assert_eq!(harness.panel.design(), Design::default());
-        hidden(&mut harness, "undo");
-        harness.click_text(REDO);
-        assert_eq!(harness.panel.design(), gap_design(2.0));
-        hidden(&mut harness, "redo");
-        harness.click_text(RESET_ALL);
-        assert_eq!(harness.panel.design(), Design::default());
-        hidden(&mut harness, "reset all");
-        harness.panel.load_design_file("not a design").unwrap_err();
-        hidden(&mut harness, "a refused design file");
-        harness
-            .panel
-            .load_share_payload(&encode_share_payload(&gap_design(1.5)))
-            .unwrap();
-        hidden(&mut harness, "a share link");
-        harness
-            .panel
-            .open_share_payload(&encode_share_payload(&gap_design(1.6)))
-            .unwrap();
-        hidden(&mut harness, "a share link opened as the session's start");
-        for view in CentreView::ALL {
-            harness.panel.centre = view;
-            hidden(&mut harness, view.label());
+        let drawing = drawing_rect(&output);
+        let mut left = INPUTS_WIDTH;
+        for tile in Tile::ALL {
+            let label = tile.label(harness.panel.results());
+            let at = centre_rect(&output, &label);
+            assert!(
+                tabs.bottom() <= at.top() && at.bottom() <= drawing.top(),
+                "{label}: {at:?} between {tabs:?} and {drawing:?}"
+            );
+            assert!(at.left() >= left, "{label}: {at:?} right of {left}");
+            left = at.left();
         }
-        assert!(!MagcouplingPanel::new().welcome_dismissed, "a new session");
+        // Under the drawing its callout list, as on the Geometry tab, until a click on a
+        // dimension tag shows its callout in the Explain panel (decision D-19).
+        let list = centre_rect(&output, "Face gap 1.400 mm");
+        assert!(drawing.bottom() <= list.top(), "{drawing:?} over {list:?}");
+        assert_eq!(harness.panel.design(), Design::default());
+        assert_eq!(harness.panel.history.undo_len(), 0);
     }
 
     #[test]
@@ -2411,7 +2366,8 @@ mod tests {
     fn a_value_s_hover_names_its_path_cell_and_corrections_only_with_the_spreadsheet_details() {
         use crate::gui::corrections::MARKER_HEADING;
         use crate::gui::dashboard::{dashboard_lines, hover_text};
-        // The pull-out on the dashboard and on the Size tab: one result, two readouts.
+        // The pull-out on the Size tab: its readout's hover, and its dashboard row's text (the
+        // Results tab and the spreadsheet's Summary read the row).
         let path = "model.pullout_Nm";
         let cell = result_info(path)
             .unwrap()
@@ -2435,20 +2391,15 @@ mod tests {
                 assert_eq!(want.lines().any(|l| l == cell), show_details, "{want}");
                 assert_eq!(want.contains(MARKER_HEADING), show_details, "{want}");
             }
-            // The Size tab's readout in the centre, the dashboard's row on the right.
-            let mut rects = text_rects(&output, &shown);
-            rects.sort_by(|a, b| a.left().total_cmp(&b.left()));
-            assert_eq!(rects.len(), 2, "{rects:?}");
-            let (on_size_tab, on_dashboard) = (rects[0], rects[1]);
-            // At the text's right end (a wrapped label's rect starts at the row's left), with
-            // a frame for the last tooltip to close.
-            for (rect, want) in [(on_size_tab, &readout), (on_dashboard, &row)] {
-                let at = egui::pos2(rect.right() - 4.0, rect.center().y);
-                harness.frame(vec![egui::Event::PointerMoved(at)]);
-                harness.frame(Vec::new());
-                let output = harness.frame(Vec::new());
-                assert!(drawn_texts(&output).contains(want), "{want:?}");
-            }
+            // The Size tab's readout in the centre.
+            let rects = text_rects(&output, &shown);
+            assert_eq!(rects.len(), 1, "{rects:?}");
+            // At the text's right end (a wrapped label's rect starts at the row's left).
+            let at = egui::pos2(rects[0].right() - 4.0, rects[0].center().y);
+            harness.frame(vec![egui::Event::PointerMoved(at)]);
+            harness.frame(Vec::new());
+            let output = harness.frame(Vec::new());
+            assert!(drawn_texts(&output).contains(&readout), "{readout:?}");
         }
     }
 
@@ -2482,7 +2433,7 @@ mod tests {
     #[test]
     fn a_share_link_opened_at_start_up_opens_on_the_first_view() {
         // The web app opens a link's design on a new panel (MagcouplingApp::open_share_payload):
-        // the Size tab and the welcome strip, as for the default design.
+        // the Size tab and the Explain panel's orientation, as for the default design.
         let mut panel = MagcouplingPanel::new();
         panel
             .open_share_payload(&encode_share_payload(&gap_design(2.0)))
@@ -2490,7 +2441,7 @@ mod tests {
         let mut harness = Harness::of(panel, SCREEN);
         let output = harness.frame(Vec::new());
         assert_eq!(harness.panel.centre, CentreView::SizeAndTorque);
-        assert_eq!(count(&output, WELCOME), 1);
+        assert_eq!(count(&output, crate::gui::explain::ORIENTATION), 1);
         assert_eq!(harness.panel.design(), gap_design(2.0));
     }
 
@@ -2498,36 +2449,37 @@ mod tests {
     fn idle_frames_on_the_first_view_change_no_input() {
         // The Size tab's controls (the Required slider among them), like every input row, write
         // only on an edit (decision M41-2): idle frames on the first view keep values off the
-        // sliders' steps as they are. Slice 3 test 11: so do they under the torque card, open and
-        // closed by a click on its heading, at the shipped clamp pause (the first case is the
-        // harness's own, unpaused).
+        // sliders' steps as they are. Slice 3 test 11: so do they while the Explain panel
+        // draws the torque card (the Hot-low tile's entry), at the shipped clamp pause and
+        // without it.
+        use crate::gui::tiles::Tile;
         let mut design = Design::default();
         design.inputs.metal.face_gap_mm = 1.4123;
         design.inputs.coupling.inner_back_apothem_mm += 0.01234;
         design.inputs.coupling.magnets.axial_length_mm = Some(12.7123);
         design.inputs.metal.measured_drag_Nm = Some(0.012345);
         design.inputs.metal.required_min_Nm = 2.2345;
-        for card in [None, Some(true), Some(false)] {
+        for (paused, card) in [(false, false), (true, false), (true, true)] {
             let mut harness = Harness::first_view();
-            harness.panel.clamps_paused = card.is_some();
+            harness.panel.clamps_paused = paused;
             harness.panel.open_design(design.clone());
-            let mut output = harness.frame(Vec::new());
-            if card == Some(false) {
-                harness.click(text_center(&output, CARD_HEADING));
+            if card {
+                harness.panel.selection = Selection::Result(Tile::HotLow.path());
             }
+            let mut output = harness.frame(Vec::new());
             for _ in 0..15 {
                 output = harness.frame(Vec::new());
             }
+            let case = format!("paused {paused}, the card {card}");
             assert_eq!(harness.panel.centre, CentreView::SizeAndTorque);
-            assert_eq!(count(&output, WELCOME), 1);
             assert_eq!(
                 count(&output, CAPTION),
-                usize::from(card != Some(false)),
-                "{card:?}: the card's caption shows exactly while it is open"
+                usize::from(card),
+                "{case}: the card's caption shows exactly in the Hot-low tile's entry"
             );
-            assert_eq!(harness.panel.design(), design, "{card:?}");
-            assert_eq!(harness.panel.last_error, None, "{card:?}");
-            assert_eq!(harness.panel.history.undo_len(), 0, "{card:?}");
+            assert_eq!(harness.panel.design(), design, "{case}");
+            assert_eq!(harness.panel.last_error, None, "{case}");
+            assert_eq!(harness.panel.history.undo_len(), 0, "{case}");
         }
     }
 
@@ -2557,42 +2509,6 @@ mod tests {
                 "{path}: {rows:?} {focus:?}"
             );
             assert_eq!(harness.panel.inputs(), &DesignInputs::default(), "{path}");
-        }
-    }
-
-    #[test]
-    fn the_welcome_strip_wraps_in_a_narrow_window() {
-        // The M4-1 review's ~930 px window leaves the centre region about 300 points: the strip
-        // wraps inside it, left of the dashboard, above the tab row.
-        let width = 930.0;
-        let mut harness = Harness::of(MagcouplingPanel::new(), egui::vec2(width, 1024.0));
-        // The wrapped rows settle on the second frame (egui wraps from the last frame's widths).
-        harness.frame(Vec::new());
-        let output = harness.frame(Vec::new());
-        let strip = text_rect(&output, WELCOME).expect("the strip");
-        let hide = text_rect(&output, HIDE_WELCOME).expect("its button");
-        let tabs = text_rect(&output, CentreView::Geometry.label()).expect("the tab row");
-        assert!(
-            strip.left() >= INPUTS_WIDTH && strip.right() <= width - DASHBOARD_WIDTH,
-            "{strip:?}"
-        );
-        assert!(hide.right() <= width - DASHBOARD_WIDTH, "{hide:?}");
-        assert!(
-            strip.height() >= 2.0 * hide.height(),
-            "wrapped: {strip:?} {hide:?}"
-        );
-        assert!(strip.bottom() <= tabs.top(), "{strip:?} above {tabs:?}");
-    }
-
-    #[test]
-    fn the_welcome_strip_s_texts_are_plain_language() {
-        // Spec section 6, test 3: no cell references, correction ids or workbook jargon.
-        for text in [WELCOME, HIDE_WELCOME, HIDE_WELCOME_HINT] {
-            assert_eq!(
-                crate::gui::guidance::plain_text_violations(text),
-                Vec::<&str>::new(),
-                "{text}"
-            );
         }
     }
 
@@ -2678,12 +2594,13 @@ mod tests {
 
     #[test]
     fn every_headline_number_and_key_design_input_is_drawn_with_its_label() {
-        let mut harness = Harness::on_screen(TALL);
+        let mut harness = Harness::on_screen(TALL).on_results();
         let output = harness.frame(Vec::new());
         assert_drew_headline(&output, &DesignInputs::default());
         let texts = drawn_texts(&output);
+        // The Results tab's Headline group draws each under its catalogue label.
         for (_, path) in HEADLINE {
-            let label = label_for(path);
+            let label = result_info(path).unwrap().meta.label;
             assert!(texts.iter().any(|t| t == label), "missing {label:?}");
         }
         let mut renamed = 0;
@@ -2758,15 +2675,18 @@ mod tests {
         assert_eq!(harness.panel.design(), design);
         assert_eq!(harness.panel.last_error, None);
         assert_eq!(harness.panel.history.undo_len(), 0);
-        // Slice 3 test 11: the Size tab under the torque card, open and then closed by a click
-        // on its heading, at the shipped clamp pause: idle frames still change no input.
+        // Slice 3 test 11: the Size tab with the torque card drawn (the Hot-low tile's Explain
+        // entry) and then without it, at the shipped clamp pause: idle frames still change no
+        // input.
         harness.panel.clamps_paused = true;
         harness.click_text(CentreView::SizeAndTorque.label());
         for open in [true, false] {
+            harness.panel.selection = if open {
+                Selection::Result(crate::gui::tiles::Tile::HotLow.path())
+            } else {
+                Selection::Nothing
+            };
             let mut output = harness.frame(Vec::new());
-            if !open {
-                harness.click(text_center(&output, CARD_HEADING));
-            }
             for _ in 0..15 {
                 output = harness.frame(Vec::new());
             }
@@ -2799,7 +2719,7 @@ mod tests {
 
     #[test]
     fn an_arrow_key_on_the_face_gap_slider_updates_the_headline() {
-        let mut harness = Harness::on_screen(TALL);
+        let mut harness = Harness::on_screen(TALL).on_results();
         harness.focus(FACE_GAP);
         let output = harness.frame(key_tap(egui::Key::ArrowRight));
 
@@ -2839,7 +2759,7 @@ mod tests {
 
     #[test]
     fn clicking_the_end_of_the_face_gap_rail_sets_its_maximum() {
-        let mut harness = Harness::on_screen(TALL);
+        let mut harness = Harness::on_screen(TALL).on_results();
         let rail = harness.widget(FACE_GAP).rect;
         let output = harness.click(rail.right_center() - egui::vec2(1.0, 0.0));
         assert_eq!(harness.number(FACE_GAP), 5.0);
@@ -3225,8 +3145,15 @@ mod tests {
         // The workbook order heads the run by its package group.
         harness.click_text(InputOrder::Workbook.label());
         let output = harness.frame(Vec::new());
-        assert_eq!(count(&output, "Coupling"), 1);
-        assert_eq!(count(&output, "Shaft joints"), 1);
+        // On the inputs side: the check list has a "Shaft joints" row of its own.
+        let headings = |text: &str| {
+            text_rects(&output, text)
+                .into_iter()
+                .filter(|rect| rect.left() < INPUTS_WIDTH)
+                .count()
+        };
+        assert_eq!(headings("Coupling"), 1);
+        assert_eq!(headings("Shaft joints"), 1);
         assert_eq!(count(&output, &format!("4 of {total} inputs")), 1);
         // No match says so; a blank filter brings the groups back.
         harness.panel.input_filter = "no such input".to_owned();
@@ -3275,25 +3202,41 @@ mod tests {
     }
 
     #[test]
-    fn the_dashboard_shows_the_stored_3d_label_and_the_corrected_markers() {
+    fn the_right_column_shows_the_stored_3d_line_and_the_correction_ids() {
         use crate::gui::dashboard::MARKER_LEGEND;
         let mut harness = Harness::on_screen(TALL);
-        // The correction ids and their legend only with the spreadsheet details (spec S2-5).
-        harness.panel.show_details = true;
+        // The check list closes with the stored-3D line, whatever is selected; the entry of a
+        // check that reads the stored fields repeats it under its numbers.
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, STORED_3D_LABEL), 1);
-        // The pull-out's marker: E3 changes it at the defaults, E7 and E8 have probes on it.
-        assert!(count(&output, "E3 E7 E8") >= 1);
-        assert_eq!(count(&output, MARKER_LEGEND), 1);
+        let output = harness.select("temperature.summary.verdict");
+        assert_eq!(count(&output, STORED_3D_LABEL), 2);
+        let output = harness.select(SPACE_CLAIM_CHECK);
+        assert_eq!(count(&output, STORED_3D_LABEL), 1);
         assert_eq!(count(&output, "Inside the space claim"), 1);
         assert!(
             !drawn_texts(&output)
                 .iter()
                 .any(|t| t.starts_with(END_EFFECT_BANNER))
         );
+        // The correction ids and their legend only with the spreadsheet details (spec S2-5):
+        // the hot-low torque's, among the numbers behind the hot minimum.
+        let marker = crate::gui::dashboard::dashboard_lines(harness.panel.results())
+            .into_iter()
+            .find(|line| line.path == "metal.torque_hot_low_Nm")
+            .expect("the hot-low torque's row")
+            .marker;
+        assert!(
+            !marker.is_empty(),
+            "the hot-low torque carries correction ids"
+        );
+        harness.panel.show_details = true;
+        let output = harness.select(HOT_MIN_CHECK);
+        assert!(count(&output, &marker) >= 1);
+        assert_eq!(count(&output, MARKER_LEGEND), 1);
         harness.panel.show_details = false;
         let output = harness.frame(Vec::new());
-        assert_eq!(count(&output, "E3 E7 E8"), 0);
+        assert_eq!(count(&output, &marker), 0);
         assert_eq!(count(&output, MARKER_LEGEND), 0);
         assert_eq!(count(&output, STORED_3D_LABEL), 1);
     }
@@ -3307,21 +3250,21 @@ mod tests {
             .into_iter()
             .filter(|t| t.starts_with(&format!("{END_EFFECT_BANNER} (")))
             .collect();
-        // Over the dashboard and over the centre region, whichever view it shows (decision
-        // M42-1).
+        // Over the centre region, whichever view it shows (decision M42-1). The check list
+        // marks the End-effect model check as failing; it does not repeat the banner.
         let text = "End-effect model out of range (end-effect factor -1.202): the pull-out and the numbers computed from it are greyed.";
-        assert_eq!(banner, [text, text]);
+        assert_eq!(banner, [text]);
     }
 
     #[test]
     fn a_design_past_the_space_claim_shows_its_overshoot() {
         let mut harness = Harness::on_screen(TALL);
         harness.panel.inputs.coupling.magnets.axial_length_mm = Some(50.8);
-        let output = harness.frame(Vec::new());
+        let output = harness.select(SPACE_CLAIM_CHECK);
         let claim = drawn_texts(&output)
             .into_iter()
             .find(|t| t.starts_with("Exceeds the space claim:"))
-            .expect("the badge text");
+            .expect("the verdict, among the numbers of the check's entry");
         assert!(claim.contains("overall length"), "{claim}");
     }
 
@@ -3499,20 +3442,32 @@ mod tests {
                 .count();
             assert_eq!(drawn, want, "{check}");
         }
-        // Five red badges and three amber in the table, in the dashboard's shapes (decision
-        // C-4): every mark drawn but the dashboard's own.
+        // Five red badges and three amber in the table, in the check list's shapes (decision
+        // C-4): every disc and triangle drawn but the check list's own, one per failing check.
         let visuals = harness.ctx.style().visuals.clone();
-        let lines = crate::gui::dashboard::dashboard_lines(harness.panel.results());
+        let panel = &harness.panel;
+        let fail_marks = crate::gui::guidance::counted_guides(false)
+            .filter(|guide| {
+                crate::gui::guidance::level(guide, panel.inputs(), panel.results()) == Level::Bad
+            })
+            .count();
+        let caution_marks = crate::gui::guidance::counted_guides(false)
+            .filter(|guide| {
+                crate::gui::guidance::level(guide, panel.inputs(), panel.results())
+                    == Level::Caution
+            })
+            .count();
         let table_badges = |level: Level| {
             let drawn = crate::gui::test_support::flat_shapes(&output)
                 .into_iter()
                 .filter(|shape| mark_at(shape, &visuals).is_some_and(|(_, l)| l == level))
                 .count();
             drawn
-                - lines
-                    .iter()
-                    .filter(|line| line.level == Some(level))
-                    .count()
+                - match level {
+                    Level::Bad => fail_marks,
+                    Level::Caution => caution_marks,
+                    Level::Good => 0,
+                }
         };
         assert_eq!(
             (table_badges(Level::Bad), table_badges(Level::Caution)),
@@ -3590,9 +3545,9 @@ mod tests {
         use crate::gui::dashboard::{CHECKS, dashboard_lines, failing_checks};
         use crate::gui::results_table::{FAILING_ONLY, table_entries};
         use crate::gui::test_support::flat_shapes;
-        // Short magnets (f_end < 0): the dashboard greys the rows computed from the pull-out,
-        // without badges. In the table's headline (open) each check row carries exactly the
-        // dashboard's badge, so the hot minimum (red by its text), the screw sized from the
+        // Short magnets (f_end < 0): the rows computed from the pull-out are greyed, without
+        // badges. In the table's headline (open) each check row carries exactly its dashboard
+        // line's badge, so the hot minimum (red by its text), the screw sized from the
         // invalid pull-out, and the shaft joints and gearbox checks of a cold-high below zero
         // (all three green by their texts) carry none, and the failing filter leaves the hot
         // minimum out.
@@ -3601,14 +3556,9 @@ mod tests {
         harness.click_text(CentreView::Results.label());
         let output = harness.frame(Vec::new());
         let visuals = harness.ctx.style().visuals.clone();
-        // Between the inputs and the dashboard's badges (left of its first label).
-        let pullout = label_for("model.pullout_Nm");
-        let dashboard_left = text_rects(&output, pullout)
-            .into_iter()
-            .map(|r| r.left())
-            .fold(f32::MIN, f32::max)
-            - 30.0;
-        let centre = |x: f32| x > INPUTS_WIDTH && x < dashboard_left;
+        // Between the inputs and the check list.
+        let checks_left = right_column_left(&output);
+        let centre = |x: f32| x > INPUTS_WIDTH && x < checks_left;
         let lines = dashboard_lines(harness.panel.results());
         let checks: Vec<_> = lines
             .iter()
@@ -3688,7 +3638,7 @@ mod tests {
 
     #[test]
     fn clicking_an_input_s_label_frames_the_results_it_drives_until_a_second_click() {
-        use crate::gui::dashboard::DASHBOARD;
+        use crate::gui::guidance::counted_guides;
         use crate::gui::trace::TraceKind;
         let mut harness = Harness::new();
         let gap = label_for(FACE_GAP);
@@ -3702,20 +3652,14 @@ mod tests {
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, &trace.banner(false)), 1);
         let marks = trace_marks(&harness, &output);
-        // On the dashboard (right of its first label's badge): one frame per row the gap
-        // drives, none on the others.
-        let pullout_label = label_for("model.pullout_Nm");
-        let dashboard_left = text_rect(&output, pullout_label).unwrap().left() - 30.0;
-        let on_dashboard = marks
-            .iter()
-            .filter(|m| m.center().x > dashboard_left)
-            .count();
-        let driven = DASHBOARD
-            .iter()
-            .filter(|(path, _)| trace.marks(path))
+        // In the check list: one frame per check the gap drives, none on the others.
+        let checks_left = right_column_left(&output);
+        let on_checks = marks.iter().filter(|m| m.center().x > checks_left).count();
+        let driven = counted_guides(false)
+            .filter(|guide| trace.marks(guide.check))
             .count();
         assert!(driven > 0);
-        assert_eq!(on_dashboard, driven);
+        assert_eq!(on_checks, driven);
         // On the inputs side: the gap's own Key design row alone.
         let row = text_rects(&output, gap)
             .into_iter()
@@ -3739,7 +3683,7 @@ mod tests {
     #[test]
     fn clicking_a_result_frames_the_inputs_it_reads_and_counts_them_by_group() {
         use crate::gui::trace::{CLEAR_TRACE, TraceKind};
-        let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0));
+        let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0)).on_results();
         harness.click_text(&displayed_pullout(&DesignInputs::default()));
         let trace = harness.panel.trace.clone().expect("a trace");
         assert_eq!(
@@ -3913,7 +3857,7 @@ mod tests {
     fn a_result_traced_off_the_table_also_turns_the_trace_filter_off() {
         use crate::gui::results_table::{TRACED_ONLY, table_entries};
         use crate::gui::trace::TraceKind;
-        // A result clicked on the dashboard replaces an input's trace with its own (which marks
+        // A result clicked in the Explain panel replaces an input's trace with its own (which marks
         // inputs, and cannot filter the table): the box goes off with it, so an input traced
         // next, with no Clear trace between, does not find it ticked.
         let entries = table_entries();
@@ -3924,12 +3868,19 @@ mod tests {
         harness.click_text(TRACED_ONLY);
         let gap = harness.panel.trace.clone().expect("a trace");
         harness.click_text(CentreView::Geometry.label());
-        let outside = crate::gui::dashboard::dashboard_lines(harness.panel.results())
+        // One of the numbers behind a check, in that check's Explain entry.
+        let (outside, check) = crate::gui::dashboard::dashboard_lines(harness.panel.results())
             .into_iter()
-            .find(|line| registry().equation_for(line.path).is_some() && !gap.marks(line.path))
-            .expect("a dashboard result the face gap does not drive");
-        let output = harness.frame(Vec::new());
-        // The rightmost: the dashboard's.
+            .filter_map(|line| {
+                let (_, check) = crate::gui::dashboard::DASHBOARD
+                    .iter()
+                    .find(|&&(path, _)| path == line.path)?;
+                Some((line, (*check)?))
+            })
+            .find(|(line, _)| registry().equation_for(line.path).is_some() && !gap.marks(line.path))
+            .expect("a number behind a check that the face gap does not drive");
+        let output = harness.select(check);
+        // The rightmost: the Explain panel's.
         let value = text_rects(&output, &outside.shown_value())
             .into_iter()
             .max_by(|a, b| a.left().total_cmp(&b.left()))
@@ -4008,14 +3959,23 @@ mod tests {
             .unwrap_or_else(|| panic!("{} on screen", recordless.path));
         harness.click(row.center());
         assert_eq!(harness.panel.trace.as_ref(), Some(&trace));
-        // A result outside the trace, with a record (on the dashboard): its trace replaces the
-        // input's.
-        let outside = crate::gui::dashboard::dashboard_lines(harness.panel.results())
+        // A result outside the trace, with a record (in the Explain panel): its trace replaces
+        // the input's.
+        // One of the numbers behind a check, in that check's Explain entry.
+        let (outside, check) = crate::gui::dashboard::dashboard_lines(harness.panel.results())
             .into_iter()
-            .find(|line| registry().equation_for(line.path).is_some() && !trace.marks(line.path))
-            .expect("a dashboard result the face gap does not drive");
-        let output = harness.frame(Vec::new());
-        // The rightmost: the dashboard's.
+            .filter_map(|line| {
+                let (_, check) = crate::gui::dashboard::DASHBOARD
+                    .iter()
+                    .find(|&&(path, _)| path == line.path)?;
+                Some((line, (*check)?))
+            })
+            .find(|(line, _)| {
+                registry().equation_for(line.path).is_some() && !trace.marks(line.path)
+            })
+            .expect("a number behind a check that the face gap does not drive");
+        let output = harness.select(check);
+        // The rightmost: the Explain panel's.
         let value = text_rects(&output, &outside.shown_value())
             .into_iter()
             .max_by(|a, b| a.left().total_cmp(&b.left()))
@@ -4330,7 +4290,7 @@ mod tests {
 
     #[test]
     fn reset_all_restores_the_default_design_and_headline() {
-        let mut harness = Harness::on_screen(TALL);
+        let mut harness = Harness::on_screen(TALL).on_results();
         harness.focus(FACE_GAP);
         harness.frame(key_tap(egui::Key::ArrowRight));
         harness.focus(POLES);
@@ -5053,7 +5013,8 @@ mod tests {
                 crate::gui::test_support::assert_glyphs(&harness.ctx, text, "the panel");
             }
             if clamps_paused {
-                // The dashboard and its guides on designs failing every check, the clamp's too.
+                // The check list and each check's Explain entry on designs failing every check,
+                // the clamp's too.
                 let mut hot = DesignInputs::default();
                 hot_day(&mut hot);
                 for inputs in [
@@ -5064,11 +5025,13 @@ mod tests {
                     with_poles(40),
                 ] {
                     harness.panel.inputs = inputs;
-                    harness.frame(Vec::new());
-                    texts.extend(drawn_texts(&harness.frame(Vec::new())));
+                    for guide in crate::gui::guidance::counted_guides(true) {
+                        harness.select(guide.check);
+                        texts.extend(drawn_texts(&harness.frame(Vec::new())));
+                    }
                 }
                 // The shaft joints' guide (BL-064) counts while the section is paused: its
-                // Problem drawn, open under its red row, where the inner hub slips, where it is
+                // Problem drawn in its Explain entry, where the inner hub slips, where it is
                 // over its stress limit and cannot be fitted either, and on an uncooled wheel
                 // shaft.
                 let joint = crate::gui::guidance::guide("shaft_joint.check").expect("its guide");
@@ -5078,7 +5041,7 @@ mod tests {
                 uncooled.shaft_joint.wheel_shaft_fit_C = 20.0;
                 for inputs in [only_the_joint_fails(), overstressed, uncooled] {
                     harness.panel.inputs = inputs;
-                    harness.frame(Vec::new());
+                    harness.select(joint.check);
                     let drawn = drawn_texts(&harness.frame(Vec::new()));
                     let panel = &harness.panel;
                     let problem =
@@ -5293,7 +5256,6 @@ mod tests {
             );
         }
         texts.push(crate::gui::results_table::CLEAR_TO_CLOSE.to_owned());
-        texts.extend([WELCOME, HIDE_WELCOME, HIDE_WELCOME_HINT].map(str::to_owned));
         texts.extend([SHOW_DETAILS, SHOW_DETAILS_HINT].map(str::to_owned));
         texts.push(crate::gui::dashboard::MARKER_LEGEND.to_owned());
         texts.push(crate::gui::guidance::EXAMPLE_DESIGN_HOVER.to_owned());
@@ -5470,7 +5432,7 @@ mod tests {
             let mut harness = Harness::on_screen(TALL);
             harness.panel.clamps_paused = clamps_paused;
             harness.panel.inputs = at_limit.clone();
-            harness.frame(Vec::new());
+            harness.select(HOT_MIN_CHECK);
             let output = harness.frame(Vec::new());
             assert_eq!(
                 count(&output, &fix) > 0,
@@ -5806,20 +5768,29 @@ mod tests {
         assert!(end_effect_banner(harness.panel.results()).is_some());
         harness.click_text("Size and torque");
         let output = harness.frame(Vec::new());
-        // Hot-low and the pull-out read no prediction, and the gap is not shown (spec 3.2, 5).
-        assert_eq!(count(&output, NO_PREDICTION), 2);
-        assert_eq!(beside(&output, HOT_LOW)[0].0, NO_PREDICTION);
+        // The three torque tiles read no prediction, and the Hot-low tile shows neither what it
+        // needs nor the gap (spec 3.2, 5; UX overhaul spec 4.4).
+        assert_eq!(count(&output, NO_PREDICTION), 3);
         let (gap, _) = torque_gap_text(
             harness.panel.results().metal.torque_hot_low_Nm,
             harness.panel.inputs().metal.required_min_Nm,
         );
         assert_eq!(count(&output, &gap), 0, "{gap}");
+        let texts = drawn_texts(&output);
+        assert!(
+            !texts
+                .iter()
+                .any(|t| t.starts_with(crate::gui::tiles::NEEDS)),
+            "{texts:?}"
+        );
     }
 
     /// A harness on a screen of `screen` showing the Size tab for `inputs`, set as the panel's
-    /// inputs: the tab clicked, then one more frame, so the inputs side draws its controls.
+    /// inputs: the tab clicked, then one more frame, so the inputs side draws its controls. The
+    /// Hot-low tile is selected, so the Explain panel draws the torque card (decision C-10).
     fn size_tab(screen: egui::Vec2, inputs: DesignInputs) -> Harness {
         let mut harness = Harness::on_screen(screen);
+        harness.panel.selection = Selection::Result(crate::gui::tiles::Tile::HotLow.path());
         harness.panel.inputs = inputs;
         harness.frame(Vec::new());
         harness.click_text(CentreView::SizeAndTorque.label());
@@ -5867,36 +5838,33 @@ mod tests {
             .unwrap_or_else(|| panic!("no {label:?} right of the inputs side"))
     }
 
-    /// The texts drawn on the row of the label `label` and right of it, nearest first, with
-    /// their rects: what a readout row shows beside its label (texts further right on the same
-    /// row, the dashboard's, come after).
-    fn beside(output: &egui::FullOutput, label: &str) -> Vec<(String, egui::Rect)> {
-        let at = centre_rect(output, label);
-        let mut row: Vec<(String, egui::Rect)> = crate::gui::test_support::flat_shapes(output)
+    /// The Size column's Required slider's value box in `output`: the first text under the
+    /// row's label in the inputs side, the requirement with its unit.
+    fn required_box(output: &egui::FullOutput) -> egui::Rect {
+        let label = text_rect(output, REQUIRED).expect("the Required row");
+        assert!(label.right() <= INPUTS_WIDTH, "{label:?}");
+        let mut under: Vec<(String, egui::Rect)> = crate::gui::test_support::flat_shapes(output)
             .into_iter()
             .filter_map(|shape| match shape {
                 egui::Shape::Text(text) => {
-                    let mut rect = text.galley.rect.translate(text.pos.to_vec2());
-                    // In a wrapped row a label's galley starts at the row's left edge and is
-                    // indented to where the text goes: its first glyph marks the text's left.
-                    if let Some(glyph) = text.galley.rows.first().and_then(|r| r.glyphs.first()) {
-                        rect.min.x = rect.min.x.max(text.pos.x + glyph.pos.x);
-                    }
-                    let on_row = (rect.center().y - at.center().y).abs() < at.height() / 2.0;
-                    (on_row && rect.left() >= at.right() - 0.5)
+                    let rect = text.galley.rect.translate(text.pos.to_vec2());
+                    (rect.right() <= INPUTS_WIDTH && rect.top() >= label.bottom() - 0.5)
                         .then(|| (text.galley.text().to_owned(), rect))
                 }
                 _ => None,
             })
             .collect();
-        row.sort_by(|a, b| a.1.left().total_cmp(&b.1.left()));
-        row
+        under.sort_by(|a, b| a.1.top().total_cmp(&b.1.top()));
+        let (text, rect) = under.remove(0);
+        assert!(text.ends_with(" N\u{b7}m"), "{text}");
+        rect
     }
 
     #[test]
-    fn size_tab_reads_the_requirement_the_hot_low_gap_and_the_nominal_pull_out() {
-        // Spec 3.2 at the default design, whose hot-low torque is below the requirement: the gap
-        // reads short, in red, as the dashboard's hot minimum check fails.
+    fn the_tiles_read_hot_low_what_it_needs_its_gap_and_the_nominal_pull_out() {
+        // Spec 3.2 and UX overhaul spec 4.4 at the default design, whose hot-low torque is below
+        // the requirement: the gap reads short, in red, as the hot minimum check fails.
+        use crate::gui::test_support::text_color;
         let mut harness = size_tab(SCREEN, DesignInputs::default());
         let output = harness.frame(Vec::new());
         let results = harness.panel.results().clone();
@@ -5904,7 +5872,7 @@ mod tests {
         for text in [REQUIRED, label.as_str()] {
             assert_eq!(count(&output, text), 1, "{text}");
         }
-        // Hot-low torque is the dashboard row's name too (spec 3.5): one readout in the centre.
+        // Hot-low torque is a check's name too (spec 3.5): one tile in the centre.
         let in_centre =
             |r: &egui::Rect| r.left() >= INPUTS_WIDTH && r.right() <= SCREEN.x - DASHBOARD_WIDTH;
         assert_eq!(
@@ -5923,20 +5891,29 @@ mod tests {
         let required = harness.panel.inputs().metal.required_min_Nm;
         let (gap, meets) = torque_gap_text(results.metal.torque_hot_low_Nm, required);
         assert!(!meets && gap.starts_with("short "), "{gap}");
-        let hot_low_row: Vec<String> = beside(&output, HOT_LOW)
+        // The Hot-low tile from its top: its number, its label, what it needs, the gap.
+        use crate::gui::tiles::{NEEDS, gap_pieces};
+        let needs = with_unit(format_value(&Value::Num(required)), "N\u{b7}m");
+        let pieces = gap_pieces(&gap);
+        let hot_low = shown("metal.torque_hot_low_Nm");
+        let tops: Vec<f32> = [hot_low.as_str(), HOT_LOW, NEEDS, pieces[0].as_str()]
             .into_iter()
-            .take(2)
-            .map(|(text, _)| text)
+            .map(|text| centre_rect(&output, text).top())
             .collect();
-        assert_eq!(hot_low_row, [shown("metal.torque_hot_low_Nm"), gap.clone()]);
-        assert_eq!(beside(&output, &label)[0].0, shown("model.pullout_Nm"));
-        assert!(
-            beside(&output, REQUIRED)[0].0.ends_with(" N\u{b7}m"),
-            "the Required slider's value box"
-        );
+        assert!(tops.is_sorted(), "{tops:?}");
+        // The pull-out's tile: its number over its label.
+        let pullout = centre_rect(&output, &shown("model.pullout_Nm"));
+        assert!(pullout.bottom() <= centre_rect(&output, &label).top() + 0.5);
+        // Red is on what the tile needs and on the gap, never on the number alone.
+        let visuals = harness.ctx.style().visuals.clone();
+        let bad = Level::Bad.color(&visuals);
+        let reds = [NEEDS, needs.as_str()].into_iter();
+        for text in reds.chain(pieces.iter().map(String::as_str)) {
+            assert_eq!(text_color(&output, text), Some(bad), "{text}");
+        }
         assert_eq!(
-            crate::gui::test_support::text_color(&output, &gap),
-            Some(Level::Bad.color(&harness.ctx.style().visuals))
+            text_color(&output, &hot_low),
+            Some(visuals.strong_text_color())
         );
         assert_eq!(
             crate::gui::dashboard::check_level(&results, "metal.hot_min_check"),
@@ -5961,7 +5938,7 @@ mod tests {
         let undo = harness.panel.history.undo_len();
         let type_in = |harness: &mut Harness, text: &str| {
             let output = harness.frame(Vec::new());
-            let (_, value_box) = beside(&output, REQUIRED).remove(0);
+            let value_box = required_box(&output);
             harness.click(value_box.center());
             harness.frame([select_all(), vec![egui::Event::Text(text.to_owned())]].concat());
             harness.frame(key_tap(egui::Key::Enter));
@@ -5982,10 +5959,13 @@ mod tests {
         let hot_low = harness.panel.results().metal.torque_hot_low_Nm;
         let (gap, meets) = torque_gap_text(hot_low, 2.0);
         assert!(meets && gap.starts_with("margin +"), "{gap}");
-        assert_eq!(
-            crate::gui::test_support::text_color(&output, &gap),
-            Some(Level::Good.color(&harness.ctx.style().visuals))
-        );
+        for piece in crate::gui::tiles::gap_pieces(&gap) {
+            assert_eq!(
+                crate::gui::test_support::text_color(&output, &piece),
+                Some(Level::Good.color(&harness.ctx.style().visuals)),
+                "{piece}"
+            );
+        }
         // Files and links carry it.
         let design = harness.panel.design();
         assert_eq!(
@@ -6032,7 +6012,7 @@ mod tests {
         assert_eq!(harness.panel.centre, CentreView::SizeAndTorque);
         assert_eq!(harness.panel.runner.solves, 1);
         let output = harness.frame(Vec::new());
-        let (_, value_box) = beside(&output, REQUIRED).remove(0);
+        let value_box = required_box(&output);
         harness.click(value_box.center());
         let focused = focused_text_field(&harness.ctx).expect("the value box has focus");
         assert!(harness.panel.design_widgets.contains(&focused));
@@ -6092,23 +6072,40 @@ mod tests {
     const REPLACED_LABEL: &str = "Build checks are shown in the dashboard. The geometry drawing fits the view; use the dimensions to compare sizes.";
 
     #[test]
-    fn the_size_tab_draws_the_torque_card_in_place_of_the_label() {
-        // Slice 3 spec 6.1: the card's heading, then the card's lines for the design shown,
-        // each drawn once, one under the next; the label it replaced is gone. A click on the
-        // heading closes the card, as one on its arrow does, and another opens it; neither edits
-        // the design. Its place under the readouts is pinned by
-        // the_card_sits_between_the_readouts_and_the_drawing, and its Why link by
-        // the_size_tab_s_why_links_open_their_notes.
-        let mut harness = size_tab(SCREEN, DesignInputs::default());
+    fn the_hot_low_tile_s_entry_draws_the_torque_card() {
+        // Slice 3 spec 6.1 and decision C-10: the card is the Hot-low tile's Explain entry.
+        // Until the tile is clicked no line of it is on screen; then its heading and its lines
+        // for the design shown are drawn once each, one under the next, in the right column.
+        // Another tile's entry has no card. No click edits the design.
+        use crate::gui::explain::WHAT_A_CHANGE_DOES;
+        use crate::gui::tiles::{NEEDS, Tile};
+        let mut harness = Harness::first_view();
+        harness.frame(Vec::new());
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, REPLACED_LABEL), 0);
-        assert_eq!(count(&output, CARD_HEADING), 1);
+        assert_eq!(count(&output, CARD_HEADING), 0);
         let lines = card_lines(&harness);
         assert_eq!(lines.first().map(String::as_str), Some(CAPTION));
+        for line in &lines {
+            assert_eq!(count(&output, line), 0, "{line}");
+        }
+        let needs = drawn_texts(&output)
+            .into_iter()
+            .find(|text| text.starts_with(NEEDS))
+            .expect("the Hot-low tile says what it needs");
+        harness.click(text_center(&output, &needs));
+        assert_eq!(
+            harness.panel.selection,
+            Selection::Result(Tile::HotLow.path())
+        );
+        let output = harness.frame(Vec::new());
         let rect = |output: &egui::FullOutput, text: &str| {
             text_rect(output, text).unwrap_or_else(|| panic!("no {text:?}"))
         };
+        assert_eq!(count(&output, WHAT_A_CHANGE_DOES), 1);
+        assert_eq!(count(&output, CARD_HEADING), 1);
         let mut above = rect(&output, CARD_HEADING);
+        assert!(rect(&output, WHAT_A_CHANGE_DOES).bottom() <= above.top() + 0.5);
         for line in &lines {
             assert_eq!(count(&output, line), 1, "{line}");
             let at = rect(&output, line);
@@ -6116,22 +6113,28 @@ mod tests {
                 above.bottom() <= at.top() + 0.5,
                 "{line:?} is not under the line above it"
             );
+            assert!(
+                at.left() >= SCREEN.x - DASHBOARD_WIDTH,
+                "{line:?} at {at:?}"
+            );
             above = at;
         }
-        for open in [false, true] {
-            let output = harness.frame(Vec::new());
-            harness.click(text_center(&output, CARD_HEADING));
-            // Past the collapse animation.
-            let output = harness.frame_after(1.0, Vec::new());
-            assert_eq!(count(&output, CARD_HEADING), 1, "open {open}");
-            for line in &lines {
-                assert_eq!(
-                    count(&output, line),
-                    usize::from(open),
-                    "open {open}: {line}"
-                );
-            }
-        }
+        // The pull-out's entry: what it is, and no card.
+        let pullout = pullout_label(harness.panel.results().metal.op_temp_C);
+        harness.click(centre_rect(&output, &pullout).center());
+        assert_eq!(
+            harness.panel.selection,
+            Selection::Result(Tile::Pullout.path())
+        );
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, CARD_HEADING), 0);
+        assert_eq!(
+            count(
+                &output,
+                crate::gui::plain_text::help_for(Tile::Pullout.path())
+            ),
+            1
+        );
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
         assert_eq!(harness.panel.history.undo_len(), 0);
     }
@@ -6147,7 +6150,7 @@ mod tests {
         harness.panel.clamps_paused = true;
         let output = harness.frame(Vec::new());
         let before = card_lines(&harness);
-        let (_, value_box) = beside(&output, REQUIRED).remove(0);
+        let value_box = required_box(&output);
         harness.click(value_box.center());
         harness.frame([select_all(), vec![egui::Event::Text("2.4".to_owned())]].concat());
         let output = harness.frame(key_tap(egui::Key::Enter));
@@ -6165,792 +6168,6 @@ mod tests {
     // The torque card's open or closed and its room (slice 3 spec 6.2, tests 19 to 25). Each
     // test pauses the shaft-clamp section before the card's first frame, the one that decides
     // its default (`card_tab`), and steps frames past the collapse animation before it measures.
-
-    /// `inputs` as a design with Auto off.
-    fn design_of(inputs: DesignInputs) -> Design {
-        Design {
-            inputs,
-            sizing: SizingState::default(),
-        }
-    }
-
-    /// The defaults with a design file's calibration coefficient of 1e300 (Review Focus 5): of
-    /// the degenerate values the card's robustness test carries, the one whose card lines run
-    /// longest, 887 characters (each number within the owner's FO-4 bound), three times the
-    /// defaults' longest.
-    fn huge_calibration() -> DesignInputs {
-        let mut inputs = DesignInputs::default();
-        inputs.calibration.f_cal_original = 1e300;
-        inputs
-    }
-
-    /// The gui-smoke share link's design (slice 3 spec 2.1, (b)): the defaults with a 1.5 mm face
-    /// gap, Auto on the magnet length.
-    fn smoke_design() -> Design {
-        Design {
-            inputs: smoke_inputs(),
-            sizing: SizingState {
-                mode: SizingMode::TorqueToMagnets,
-                variable: FreeVariable::AxialLength,
-            },
-        }
-    }
-
-    /// A harness on a screen of `size` showing the Size tab for `design` (an Auto one solved),
-    /// with the shaft-clamp section paused and the Equation panel open or not, and the frame
-    /// that drew the card first, the one that decided its default (slice 3 spec 8.5). The
-    /// harness starts on the Geometry tab, which draws no card, and the pause, the design and
-    /// the Equation panel are set there, so the default is decided for them, at the shipped
-    /// pause; the last frames step past the collapse animation.
-    fn card_tab(
-        size: egui::Vec2,
-        design: Design,
-        equation_open: bool,
-    ) -> (Harness, egui::FullOutput) {
-        let mut harness = Harness::on_screen(size);
-        harness.panel.clamps_paused = true;
-        harness.panel.open_design(design);
-        if equation_open {
-            harness.panel.explorer.open_note(SIZE_TAB_NOTE);
-        }
-        harness.frame(Vec::new());
-        // An Auto design: the solve runs once the design has been still for the debounce.
-        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
-        harness.frame(Vec::new());
-        assert_eq!(harness.panel.card_start, None, "no card drawn yet");
-        let deciding = harness.click_text(CentreView::SizeAndTorque.label());
-        assert!(
-            harness.panel.card_start.is_some(),
-            "the click's frame drew the card"
-        );
-        harness.frame_after(1.0, Vec::new());
-        harness.frame(Vec::new());
-        (harness, deciding)
-    }
-
-    /// Whether the torque card is open, as egui keeps it.
-    fn card_open(harness: &Harness) -> bool {
-        card_open_in(&harness.ctx)
-    }
-
-    /// Whether the torque card drawn in `ctx` is open, as egui keeps it: a panel drawn without
-    /// a [`Harness`], as inside an `egui::Window`, reads it here.
-    fn card_open_in(ctx: &egui::Context) -> bool {
-        egui::collapsing_header::CollapsingState::load(ctx, egui::Id::new(TORQUE_CARD_ID))
-            .expect("the card has been drawn")
-            .is_open()
-    }
-
-    /// The card's Why link in a frame: its text rect and where a click lands on its last
-    /// character. Of the Size tab's links to how the coupling makes torque, the card's is the
-    /// one at or right of the drawing's left edge (the other two are on the inputs side).
-    fn card_link(output: &egui::FullOutput) -> (egui::Rect, egui::Pos2) {
-        let text = why_note_text(reviewed_note(SIZE_TAB_NOTE).expect("the note is reviewed"));
-        let left = drawing_rect(output).left();
-        let rects: Vec<egui::Rect> = text_rects(output, &text)
-            .into_iter()
-            .filter(|rect| rect.left() >= left)
-            .collect();
-        let at: Vec<egui::Pos2> = last_characters(output, &text)
-            .into_iter()
-            .filter(|at| at.x >= left)
-            .collect();
-        assert_eq!((rects.len(), at.len()), (1, 1), "{rects:?}");
-        (rects[0], at[0])
-    }
-
-    /// The vertical item spacing in the harness's style (egui's default) [points]: the gap
-    /// between the card's header and its body, and between the card and the drawing.
-    fn item_spacing(harness: &Harness) -> f32 {
-        harness.ctx.style().spacing.item_spacing.y
-    }
-
-    /// Whether `drawing` keeps the drawing's floor, [`MIN_DRAWING_HEIGHT`] (slice 3 spec 6.2), to
-    /// within 0.01 point: a card body capped to the room over the floor leaves the drawing that
-    /// tall up to rounding in the cap's arithmetic. The card tests' one check of the floor.
-    fn keeps_its_floor(drawing: egui::Rect) -> bool {
-        drawing.height() >= MIN_DRAWING_HEIGHT - 0.01
-    }
-
-    /// The room at the torque card in `output` [points]: from its heading's top to the bottom
-    /// of the heading's clip, the centre view's region (`confined` clips to it). It is the
-    /// height that rule 3 reads at the card (`ui.available_height()`).
-    fn room_at_card(output: &egui::FullOutput) -> f32 {
-        let heading = text_rect(output, CARD_HEADING).expect("the heading");
-        text_clip_rect(output, CARD_HEADING).bottom() - heading.top()
-    }
-
-    /// The torque card's drawn height in `output` [points]: from its heading's top to the
-    /// drawing's top, less the item spacing between the card and the drawing.
-    fn drawn_card_height(harness: &Harness, output: &egui::FullOutput) -> f32 {
-        let heading = text_rect(output, CARD_HEADING).expect("the heading");
-        drawing_rect(output).top() - heading.top() - item_spacing(harness)
-    }
-
-    /// The card's pre-measure of `lines` ([`card_open_height`]) and the drawing's floor
-    /// ([`drawing_floor`]), measured as the panel measures them on a deciding frame, in a scratch
-    /// frame of a region `width` points wide in the harness's style (egui's default).
-    fn scratch_measure(width: f32, lines: &[String]) -> (f32, f32) {
-        let mut measured = (f32::NAN, f32::NAN);
-        let region = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, 4000.0));
-        crate::gui::test_support::region_frame(
-            &egui::Context::default(),
-            egui::vec2(width + 100.0, 4000.0),
-            region,
-            |ui| measured = (card_open_height(ui, lines), drawing_floor(ui)),
-        );
-        measured
-    }
-
-    /// What rule 3 leaves for the torque card in `output` (slice 3 spec 6.2) [points], as the
-    /// panel measures it on a deciding frame: the room at the card ([`room_at_card`]), less the
-    /// open card's pre-measure of the design shown's lines in the centre region's width (the
-    /// drawing's; [`scratch_measure`]), the item spacing before the drawing and the drawing's
-    /// floor. Rule 3 alone opens the card where it is not negative. This is the tests' one copy
-    /// of the rule in [`MagcouplingPanel::card_default`].
-    fn rule_three_margin(harness: &Harness, output: &egui::FullOutput) -> f32 {
-        let lines = card_lines(harness);
-        let (open_height, floor) = scratch_measure(drawing_rect(output).width(), &lines);
-        room_at_card(output) - open_height - item_spacing(harness) - floor
-    }
-
-    /// The height of the label the card replaced, laid out as it was under the readouts (a
-    /// wrapped label at the region's width `width`) in the harness's style [points].
-    fn replaced_label_height(harness: &Harness, width: f32) -> f32 {
-        let font = harness.ctx.style().text_styles[&egui::TextStyle::Body].clone();
-        harness
-            .ctx
-            .fonts(|f| f.layout(REPLACED_LABEL.to_owned(), font, egui::Color32::WHITE, width))
-            .size()
-            .y
-    }
-
-    #[test]
-    fn the_card_sits_between_the_readouts_and_the_drawing() {
-        // Slice 3 spec 8.5 test 19: at 1280 x 800, at the defaults and at the smoke design
-        // (Auto on the magnet length), the card's heading is under the Pull-out readout and
-        // above the drawing; the card starts open, every one of its lines is drawn, the drawing
-        // keeps its 160 points and the label the card replaced is gone.
-        for design in [design_of(DesignInputs::default()), smoke_design()] {
-            let (mut harness, _) = card_tab(egui::vec2(1280.0, 800.0), design, false);
-            let output = harness.frame(Vec::new());
-            let case = format!("{:?}", harness.panel.sizing);
-            assert!(card_open(&harness), "{case}");
-            let heading = text_rect(&output, CARD_HEADING).expect("the heading");
-            let label = pullout_label(harness.panel.results().metal.op_temp_C);
-            let pull_out = centre_rect(&output, &label);
-            let drawing = drawing_rect(&output);
-            assert!(
-                pull_out.bottom() <= heading.top(),
-                "{case}: {pull_out:?} {heading:?}"
-            );
-            assert!(
-                heading.bottom() <= drawing.top(),
-                "{case}: {heading:?} {drawing:?}"
-            );
-            let lines = card_lines(&harness);
-            for line in &lines {
-                assert_eq!(count(&output, line), 1, "{case}: {line}");
-            }
-            assert!(keeps_its_floor(drawing), "{case}: {drawing:?}");
-            assert_eq!(count(&output, REPLACED_LABEL), 0, "{case}");
-        }
-    }
-
-    #[test]
-    fn the_card_starts_closed_in_a_narrow_window_and_the_drawing_gains() {
-        // Slice 3 spec 8.5 test 20 (rule 2, T-10): at 930 x 800, with the Equation panel closed,
-        // the card starts closed at the defaults and at short magnets, whose one-line form rule
-        // 3 alone would open; closed, it is no taller than the label it replaced, laid out at the
-        // region's width, so the drawing is at least as tall as before the card. At 1280 x 800
-        // short magnets start open, and the card closed by its heading is again no taller than
-        // the label there.
-        let no_taller_than_the_label =
-            |harness: &Harness, output: &egui::FullOutput, what: &str| {
-                let closed = drawn_card_height(harness, output);
-                let label = replaced_label_height(harness, drawing_rect(output).width());
-                assert!(
-                    closed <= label,
-                    "{what}: closed {closed} against the label's {label}"
-                );
-            };
-        for inputs in [DesignInputs::default(), short_magnets()] {
-            let one_line = inputs == short_magnets();
-            let (mut harness, _) = card_tab(egui::vec2(930.0, 800.0), design_of(inputs), false);
-            let output = harness.frame(Vec::new());
-            let region = drawing_rect(&output).width();
-            assert!(!card_open(&harness), "one-line form {one_line}");
-            assert!(region < CARD_OPEN_MIN_WIDTH, "{region}");
-            no_taller_than_the_label(&harness, &output, &format!("one-line form {one_line}"));
-            if one_line {
-                // Rule 3 alone would open the one-line form here: the width rule closes it.
-                let margin = rule_three_margin(&harness, &output);
-                assert!(margin >= 0.0, "rule 3 leaves {margin}");
-            }
-        }
-        let (harness, _) = card_tab(egui::vec2(1280.0, 800.0), design_of(short_magnets()), false);
-        assert!(card_open(&harness), "the one-line form in a wide window");
-        let (mut harness, _) = card_tab(
-            egui::vec2(1280.0, 800.0),
-            design_of(DesignInputs::default()),
-            false,
-        );
-        let output = harness.frame(Vec::new());
-        harness.click(text_center(&output, CARD_HEADING));
-        let output = harness.frame_after(1.0, Vec::new());
-        assert!(!card_open(&harness));
-        no_taller_than_the_label(&harness, &output, "closed by its heading at 1280 x 800");
-        // At 930 x 800 the header row wraps (spec 6.1): the card's Why link continues under the
-        // heading inside the centre region, and a click on its last character opens how the
-        // coupling makes torque (test 21 clicks it in a wide window).
-        let (mut harness, _) = card_tab(
-            egui::vec2(930.0, 800.0),
-            design_of(DesignInputs::default()),
-            false,
-        );
-        let output = harness.frame(Vec::new());
-        let (link, at) = card_link(&output);
-        let heading = text_rect(&output, CARD_HEADING).expect("the heading");
-        assert!(
-            link.right() <= drawing_rect(&output).right(),
-            "{link:?} past {:?}",
-            drawing_rect(&output)
-        );
-        assert!(
-            link.bottom() > heading.bottom(),
-            "the link wraps under the heading"
-        );
-        harness.click(at);
-        assert_eq!(harness.panel.explorer.note(), Some(SIZE_TAB_NOTE));
-        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
-    }
-
-    #[test]
-    fn the_card_starts_closed_when_it_would_take_the_drawing_under_its_floor() {
-        // Slice 3 spec 8.5 test 20a (rule 3 deciding alone): at 1080 x 745, with the Equation
-        // panel closed and the welcome strip shown. On the deciding frame the view has the
-        // Equation panel closed and the centre region (the drawing's width: the drawing fills
-        // it) is at least CARD_OPEN_MIN_WIDTH wide, so rules 1 and 2 pass. No back iron's open
-        // card would take the drawing under its floor: it starts closed; the one-line form at
-        // short magnets leaves room: it starts open.
-        for (inputs, open) in [(no_back_iron(), false), (short_magnets(), true)] {
-            let (harness, deciding) = card_tab(egui::vec2(1080.0, 745.0), design_of(inputs), false);
-            let (view, default) = harness.panel.card_start.expect("decided");
-            assert!(!view.equation_open);
-            let region = drawing_rect(&deciding).width();
-            assert!(region >= CARD_OPEN_MIN_WIDTH, "{region}");
-            assert_eq!(count(&deciding, WELCOME), 1);
-            assert_eq!((default, card_open(&harness)), (open, open));
-            assert_eq!(harness.panel.card_choice, None);
-        }
-    }
-
-    #[test]
-    fn the_card_s_default_opens_at_each_rule_s_boundary() {
-        // T6 M-2 (the fold-in): spec 6.2's rules say "at least", so each opens the card at its
-        // boundary. Rule 2: a centre region 400 points wide (T-10) opens it, one 399.99 wide
-        // closes it. Rule 3: a region exactly as tall as the open card's pre-measure, the item
-        // spacing before the drawing and the drawing's floor opens it, one 0.01 point shorter
-        // closes it. Rule 1: the Equation panel open closes it where rules 2 and 3 pass.
-        // card_default decides in a scratch frame of the case's width and height (a region at
-        // the origin, so its available height is that height exactly), each case on a new
-        // panel, so no stored default answers.
-        let defaults = DesignInputs::default();
-        let lines = Consequences::of(&defaults, &compute_all(&defaults), None, true)
-            .card
-            .lines(None);
-        let decide = |equation_open: bool, width: f32, height: f32| {
-            let mut panel = MagcouplingPanel::new();
-            let card = CardFrame {
-                view: CardView {
-                    equation_open,
-                    screen_width: 1280,
-                    screen_height: 800,
-                },
-                region_width: width,
-            };
-            let region = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width, height));
-            let mut open = None;
-            crate::gui::test_support::region_frame(
-                &egui::Context::default(),
-                egui::vec2(width + 100.0, 4000.0),
-                region,
-                |ui| open = Some(panel.card_default(ui, card, &lines)),
-            );
-            open.expect("decided")
-        };
-        // Rule 2, with room to spare for rule 3.
-        assert!(decide(false, 400.0, 4000.0), "400 points wide");
-        assert!(!decide(false, 399.99, 4000.0), "399.99 points wide");
-        // Rule 3, in a region wide enough for rule 2.
-        let width = 600.0;
-        let (open_height, floor) = scratch_measure(width, &lines);
-        let spacing = egui::Context::default().style().spacing.item_spacing.y;
-        let exact = open_height + spacing + floor;
-        // The room the panel reads in a region `exact` tall is the open height to the bit, so
-        // the case below sits on the boundary.
-        assert_eq!(exact - spacing - floor, open_height, "{exact}");
-        assert!(decide(false, width, exact), "exactly the room: {exact}");
-        assert!(
-            !decide(false, width, exact - 0.01),
-            "0.01 point short of {exact}"
-        );
-        // Rule 1 closes it where rules 2 and 3 pass.
-        assert!(!decide(true, width, 4000.0), "the Equation panel open");
-    }
-
-    #[test]
-    fn the_card_starts_closed_while_the_equation_panel_is_open() {
-        // Slice 3 spec 8.5 test 21 (rule 1): at 1280 x 800 the card starts closed while the
-        // Equation panel is open, and so it does on a screen tall enough for the open card above
-        // the panel. Started open, a click on the card's own Why link opens the panel, and with
-        // no user choice the card closes (decision 4A); the panel closing opens it again.
-        let wide = egui::vec2(1280.0, 800.0);
-        let (harness, _) = card_tab(wide, design_of(DesignInputs::default()), true);
-        assert!(!card_open(&harness));
-        // On a tall screen the open card fits above the Equation panel, so rules 2 and 3 alone
-        // would open it there: rule 1 closes it on its own.
-        let (mut harness, _) = card_tab(
-            egui::vec2(1280.0, 2000.0),
-            design_of(DesignInputs::default()),
-            true,
-        );
-        assert!(!card_open(&harness));
-        let output = harness.frame(Vec::new());
-        let region = drawing_rect(&output).width();
-        assert!(region >= CARD_OPEN_MIN_WIDTH, "{region}");
-        let margin = rule_three_margin(&harness, &output);
-        assert!(margin >= 0.0, "rule 3 leaves {margin}");
-        let (mut harness, _) = card_tab(wide, design_of(DesignInputs::default()), false);
-        assert!(card_open(&harness));
-        let output = harness.frame(Vec::new());
-        let (_, at) = card_link(&output);
-        harness.click(at);
-        assert_eq!(harness.panel.explorer.note(), Some(SIZE_TAB_NOTE));
-        harness.frame_after(1.0, Vec::new());
-        assert!(
-            !card_open(&harness),
-            "the Equation panel's opening closes it"
-        );
-        assert_eq!(harness.panel.card_choice, None);
-        harness.panel.explorer.close();
-        harness.frame_after(1.0, Vec::new());
-        assert!(card_open(&harness), "and its closing opens it again");
-        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
-    }
-
-    #[test]
-    fn the_user_s_open_or_close_wins_for_the_session() {
-        // Slice 3 spec 8.5 test 22: at 930 x 800 the card starts closed; a click on its heading
-        // opens it, and it stays open after a design edit, a resize to 1280 x 800, the Equation
-        // panel opening, Reset all and a load. A click on its arrow then closes it and one on
-        // its heading opens it again: each is the user's choice.
-        let (mut harness, _) = card_tab(
-            egui::vec2(930.0, 800.0),
-            design_of(DesignInputs::default()),
-            false,
-        );
-        assert!(!card_open(&harness));
-        let output = harness.frame(Vec::new());
-        harness.click(text_center(&output, CARD_HEADING));
-        harness.frame_after(1.0, Vec::new());
-        assert_eq!(harness.panel.card_choice, Some(true));
-        // Open by the user's choice, and its body capped so the drawing keeps its 160 points,
-        // the Equation panel's opening at 1280 x 800 included.
-        let still_open = |harness: &mut Harness, what: &str| {
-            harness.frame_after(1.0, Vec::new());
-            let output = harness.frame(Vec::new());
-            assert!(card_open(harness), "{what}");
-            assert_eq!(harness.panel.card_choice, Some(true), "{what}");
-            let drawing = drawing_rect(&output);
-            assert!(keeps_its_floor(drawing), "{what}: {drawing:?}");
-        };
-        still_open(&mut harness, "the click");
-        harness.panel.inputs.metal.face_gap_mm = 2.0;
-        still_open(&mut harness, "a design edit");
-        harness.screen = egui::vec2(1280.0, 800.0);
-        still_open(&mut harness, "a resize");
-        harness.panel.explorer.open_note(SIZE_TAB_NOTE);
-        still_open(&mut harness, "the Equation panel opening");
-        harness.panel.explorer.close();
-        harness.click_text(RESET_ALL);
-        still_open(&mut harness, "Reset all");
-        harness
-            .panel
-            .load_design_file(&design_to_json(&design_of(with_poles(8))))
-            .expect("the file loads");
-        still_open(&mut harness, "a load");
-        // The arrow, half an indent left of the heading's text, closes it; the heading opens it.
-        let output = harness.frame(Vec::new());
-        let heading = text_rect(&output, CARD_HEADING).expect("the heading");
-        let indent = harness.ctx.style().spacing.indent;
-        harness.click(egui::pos2(
-            heading.left() - indent / 2.0,
-            heading.center().y,
-        ));
-        harness.frame_after(1.0, Vec::new());
-        assert_eq!(harness.panel.card_choice, Some(false));
-        assert!(!card_open(&harness));
-        let output = harness.frame(Vec::new());
-        harness.click(text_center(&output, CARD_HEADING));
-        harness.frame_after(1.0, Vec::new());
-        assert_eq!(harness.panel.card_choice, Some(true));
-        assert!(card_open(&harness));
-    }
-
-    #[test]
-    fn the_card_is_decided_again_when_the_window_is_resized_with_no_user_choice() {
-        // Slice 3 spec 6.2: with no user choice, the default is decided again when the view
-        // changes, and a resize of the window is one of its triggers (test 22 resizes only after
-        // the user's click, which wins). Started closed at 930 x 800 (rule 2), the card opens
-        // when the window widens to 1280 x 800 and closes when it narrows again. Then the height
-        // alone changes at 1080 points wide, where rules 1 and 2 pass and rule 3 decides: open at
-        // 1080 x 800, closed at 1080 x 700, where the defaults' open card would take the drawing
-        // under its floor, and open again at 800. Each time the view it was decided for is the
-        // new screen, and no user choice is recorded.
-        let (mut harness, _) = card_tab(
-            egui::vec2(930.0, 800.0),
-            design_of(DesignInputs::default()),
-            false,
-        );
-        assert!(!card_open(&harness));
-        for (width, height, open) in [
-            (1280.0, 800.0, true),
-            (930.0, 800.0, false),
-            (1080.0, 800.0, true),
-            (1080.0, 700.0, false),
-            (1080.0, 800.0, true),
-        ] {
-            harness.screen = egui::vec2(width, height);
-            harness.frame(Vec::new());
-            harness.frame_after(1.0, Vec::new());
-            let output = harness.frame(Vec::new());
-            let case = format!("{width} x {height}");
-            let (view, default) = harness.panel.card_start.expect("decided");
-            assert_eq!(
-                (view.screen_width, view.screen_height, default),
-                (width as u32, height as u32, open),
-                "{case}"
-            );
-            assert_eq!(card_open(&harness), open, "{case}");
-            assert_eq!(harness.panel.card_choice, None, "{case}");
-            // The rule that decides (the Equation panel stays closed, so rule 1 passes): rule 2
-            // in a region under 400 points, else rule 3.
-            let region = drawing_rect(&output).width();
-            if region < CARD_OPEN_MIN_WIDTH {
-                assert!(!open, "{case}: rule 2 closes it in {region} points");
-            } else {
-                let margin = rule_three_margin(&harness, &output);
-                assert_eq!(margin >= 0.0, open, "{case}: rule 3 leaves {margin}");
-            }
-        }
-        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
-    }
-
-    #[test]
-    fn the_card_never_opens_or_closes_under_a_drag() {
-        // Slice 3 spec 8.5 test 23: the card's default is decided for the view (the Equation
-        // panel and the screen), never on a design change. At 1280 x 800, from the defaults,
-        // open: twenty drag frames on the gap slider; the Outside diameter dragged down across
-        // the fit edge (the exploration line appears above the card); Required dragged across
-        // hot-low; an assumption changed, so the assumptions banner takes a line of the header
-        // and the region loses that height. Through each, on every frame of a drag and after it,
-        // the card stays open and the view it was decided for does not change.
-        let (mut harness, _) = card_tab(
-            egui::vec2(1280.0, 800.0),
-            design_of(DesignInputs::default()),
-            false,
-        );
-        assert!(card_open(&harness));
-        let start = harness.panel.card_start;
-        // The card as it was decided: open, for the view it was decided for, no user choice.
-        let as_decided = |harness: &Harness, what: &str| {
-            assert!(card_open(harness), "{what}");
-            assert_eq!(harness.panel.card_start, start, "{what}");
-            assert_eq!(harness.panel.card_choice, None, "{what}");
-        };
-        let holds = |harness: &mut Harness, what: &str| {
-            harness.frame_after(1.0, Vec::new());
-            let output = harness.frame(Vec::new());
-            as_decided(harness, what);
-            output
-        };
-        // A drag on a slider's rail: press, moves, release, a frame each, the card as decided on
-        // every one of them (spec 8.5: through the drag frames), so a flip that a later frame
-        // undoes fails here, not only one that outlasts the drag.
-        let drag = |harness: &mut Harness, from: egui::Pos2, moves: &[egui::Vec2], what: &str| {
-            let mut at = from;
-            let mut events = vec![egui::Event::PointerMoved(from), primary_button(from, true)];
-            for &step in moves {
-                at += step;
-                events.push(egui::Event::PointerMoved(at));
-            }
-            events.push(primary_button(at, false));
-            for (frame, event) in events.into_iter().enumerate() {
-                harness.frame(vec![event]);
-                as_decided(harness, &format!("{what}, drag frame {frame}"));
-            }
-        };
-        let gap = harness.size_widget(GAP).rect;
-        let to_and_fro: Vec<egui::Vec2> = (0..20)
-            .map(|i| egui::vec2(if i % 2 == 0 { 3.0 } else { -3.0 }, 0.0))
-            .collect();
-        let before = harness.panel.inputs().metal.face_gap_mm;
-        drag(
-            &mut harness,
-            gap.left_center() + egui::vec2(20.0, 0.0),
-            &to_and_fro,
-            "the gap",
-        );
-        assert_ne!(
-            harness.panel.inputs().metal.face_gap_mm,
-            before,
-            "the drag moved the gap"
-        );
-        holds(&mut harness, "twenty gap drag frames");
-        let diameter = harness.size_widget(DIAMETER).rect;
-        drag(
-            &mut harness,
-            diameter.left_center() + egui::vec2(2.0, 0.0),
-            &[egui::vec2(1.0, 0.0), egui::vec2(-1.0, 0.0)],
-            "the diameter",
-        );
-        let output = holds(&mut harness, "the diameter across the fit edge");
-        let fit = format!("{EXPLORATION_ONLY}{SIDE_DOES_NOT_FIT} at this diameter.");
-        assert_eq!(count(&output, &fit), 1, "the exploration line shows");
-        let required = harness
-            .ctx
-            .read_response(
-                harness
-                    .panel
-                    .requirement_widget
-                    .expect("the Required slider"),
-            )
-            .expect("drawn")
-            .rect;
-        let hot_low = harness.panel.results().metal.torque_hot_low_Nm;
-        assert!(harness.panel.inputs().metal.required_min_Nm > hot_low);
-        drag(
-            &mut harness,
-            required.left_center() + egui::vec2(2.0, 0.0),
-            &[egui::vec2(1.0, 0.0), egui::vec2(-1.0, 0.0)],
-            "Required",
-        );
-        assert!(
-            harness.panel.inputs().metal.required_min_Nm < hot_low,
-            "across hot-low"
-        );
-        holds(&mut harness, "Required across hot-low");
-        harness.panel.inputs.metal.variation = 0.2;
-        let output = holds(&mut harness, "the assumptions banner");
-        let banner = assumptions_banner(harness.panel.inputs(), true).expect("a banner");
-        assert_eq!(count(&output, &banner), 1);
-        // At 1080 x 800, from the defaults, open with no user choice: no back iron widens the
-        // dashboard to its content and the centre region narrows (428.0 to 425.7 points in the
-        // harness's style), where rule 3 would close the card; it stays open, its view unchanged.
-        let (mut harness, _) = card_tab(
-            egui::vec2(1080.0, 800.0),
-            design_of(DesignInputs::default()),
-            false,
-        );
-        assert!(card_open(&harness));
-        let start = harness.panel.card_start;
-        let wide = drawing_rect(&harness.frame(Vec::new())).width();
-        harness.panel.inputs.coupling.backiron = 0;
-        for _ in 0..6 {
-            harness.frame(Vec::new());
-        }
-        let output = harness.frame_after(1.0, Vec::new());
-        let narrow = drawing_rect(&output).width();
-        assert!(narrow < wide, "the region narrows: {wide} -> {narrow}");
-        assert!(card_open(&harness));
-        assert_eq!(harness.panel.card_start, start);
-        let margin = rule_three_margin(&harness, &output);
-        assert!(
-            margin < 0.0,
-            "rule 3 at no back iron would close it: it leaves {margin}"
-        );
-    }
-
-    #[test]
-    fn reset_all_and_a_load_keep_the_card_s_default_with_no_user_choice() {
-        // Slice 3 spec 6.2: the default decided for the view is kept by Reset all and every load,
-        // as the user's choice is (test 22). At 1080 x 800 no back iron's open card would take
-        // the drawing under its floor, so the card starts closed; Reset all (the defaults) and
-        // then a load of 8 magnets, whose open cards would leave the floor there, keep it
-        // closed. Started open at the defaults, a load of no back iron keeps it open. Each time
-        // the view it was decided for is unchanged and no user choice is recorded.
-        let screen = egui::vec2(1080.0, 800.0);
-        // The card as `start` decided it after `what`, past the collapse animation, and what
-        // rule 3 would leave it at the design now shown (`rule_three_margin`).
-        let kept = |harness: &mut Harness, start: Option<(CardView, bool)>, what: &str| {
-            harness.frame_after(1.0, Vec::new());
-            let output = harness.frame(Vec::new());
-            assert_eq!(harness.panel.card_start, start, "{what}");
-            assert_eq!(
-                Some(card_open(harness)),
-                start.map(|(_, open)| open),
-                "{what}"
-            );
-            assert_eq!(harness.panel.card_choice, None, "{what}");
-            rule_three_margin(harness, &output)
-        };
-        let (mut harness, _) = card_tab(screen, design_of(no_back_iron()), false);
-        let start = harness.panel.card_start;
-        assert_eq!(start.map(|(_, open)| open), Some(false), "no back iron");
-        harness.click_text(RESET_ALL);
-        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
-        let margin = kept(&mut harness, start, "Reset all");
-        assert!(margin >= 0.0, "rule 3 alone would open it: {margin}");
-        harness
-            .panel
-            .load_design_file(&design_to_json(&design_of(with_poles(8))))
-            .expect("the file loads");
-        let margin = kept(&mut harness, start, "a load of 8 magnets");
-        assert!(margin >= 0.0, "rule 3 alone would open it: {margin}");
-        let (mut harness, _) = card_tab(screen, design_of(DesignInputs::default()), false);
-        let start = harness.panel.card_start;
-        assert_eq!(start.map(|(_, open)| open), Some(true), "the defaults");
-        harness
-            .panel
-            .load_design_file(&design_to_json(&design_of(no_back_iron())))
-            .expect("the file loads");
-        let margin = kept(&mut harness, start, "a load of no back iron");
-        assert!(margin < 0.0, "rule 3 alone would close it: {margin}");
-    }
-
-    #[test]
-    fn the_card_body_scrolls_above_the_drawing_s_floor() {
-        // Slice 3 spec 8.5 test 24: opened by a click on its heading at 930 x 800, where rule 2
-        // starts it closed and its body is taller than the room, the card's body scrolls and the
-        // drawing keeps its 160 points, at the defaults and at no back iron (a taller card). So
-        // it does at 1280 x 800 at a design file's calibration coefficient of 1e300 (Review Focus
-        // 5), whose lines are the longest of the card's robustness values (`huge_calibration`):
-        // there rules 1 and 2 pass, and rule 3, reading the open card's height before it is
-        // drawn, starts it closed.
-        // Opened by a click on its heading, the body is capped, so its last row starts out of
-        // view (not painted, or cut by the body's clip); the mouse wheel over the body brings it
-        // into view, whole, and the drawing keeps its floor throughout.
-        let opened_scrolls = |harness: &mut Harness, case: &str| {
-            let output = harness.frame(Vec::new());
-            assert!(!card_open(harness), "{case}: starts closed");
-            harness.click(text_center(&output, CARD_HEADING));
-            let output = harness.frame_after(1.0, Vec::new());
-            assert!(card_open(harness), "{case}");
-            let drawing = drawing_rect(&output);
-            assert!(keeps_its_floor(drawing), "{case}: {drawing:?}");
-            let last = card_lines(harness).pop().expect("a row");
-            assert!(
-                text_rect(&output, &last)
-                    .is_none_or(|row| row.bottom() > text_clip_rect(&output, &last).bottom() + 1.0),
-                "{case}: nothing to scroll: {last}"
-            );
-            let body = text_center(&output, CAPTION);
-            harness.frame(vec![egui::Event::PointerMoved(body)]);
-            harness.frame(vec![egui::Event::MouseWheel {
-                unit: egui::MouseWheelUnit::Point,
-                delta: egui::vec2(0.0, -5000.0),
-                modifiers: egui::Modifiers::NONE,
-            }]);
-            // egui spreads a wheel step over several frames.
-            let mut output = harness.frame(Vec::new());
-            for _ in 0..20 {
-                output = harness.frame(Vec::new());
-            }
-            let row = text_rect(&output, &last).expect("the last row in view");
-            let clip = text_clip_rect(&output, &last);
-            assert!(clip.contains_rect(row), "{case}: {row:?} cut by {clip:?}");
-            let drawing = drawing_rect(&output);
-            assert!(keeps_its_floor(drawing), "{case}: {drawing:?}");
-            assert!(card_open(harness), "{case}");
-        };
-        let narrow = egui::vec2(930.0, 800.0);
-        let (mut harness, _) = card_tab(narrow, design_of(DesignInputs::default()), false);
-        opened_scrolls(&mut harness, "the defaults at 930 x 800");
-        let (mut harness, _) = card_tab(narrow, design_of(no_back_iron()), false);
-        opened_scrolls(&mut harness, "no back iron at 930 x 800");
-        let (mut harness, deciding) = card_tab(
-            egui::vec2(1280.0, 800.0),
-            design_of(huge_calibration()),
-            false,
-        );
-        let longest = card_lines(&harness)
-            .iter()
-            .map(|line| line.chars().count())
-            .max()
-            .expect("lines");
-        assert!(longest > 800, "{longest}");
-        let region = drawing_rect(&deciding).width();
-        assert!(region >= CARD_OPEN_MIN_WIDTH, "{region}");
-        let output = harness.frame(Vec::new());
-        let margin = rule_three_margin(&harness, &output);
-        assert!(margin < 0.0, "rule 3 leaves {margin}");
-        opened_scrolls(
-            &mut harness,
-            "a calibration coefficient of 1e300 at 1280 x 800",
-        );
-    }
-
-    #[test]
-    fn the_card_s_measured_height_is_the_drawn_height() {
-        // Slice 3 spec 8.5 test 25: the card's pre-measure, card_open_height in a scratch frame
-        // of the centre region's width, equals its drawn open height (the heading's top to the
-        // drawing's, less an item spacing) within a point, at the defaults and the smoke design,
-        // at 1280 x 800, where its header is one row, and at 930 x 1024, where the row wraps and
-        // a click on the heading opens the card (rule 2 starts it closed); the bodies are under
-        // their caps there. So it does at 1280 x 1024 at a design file's calibration coefficient
-        // of 1e300, whose lines are the longest of the card's robustness values (Review Focus 5,
-        // `huge_calibration`). At 930 x 800 the bodies are over the cap: the drawn body is the
-        // cap, the room at the card less the header, two item spacings and the drawing's floor.
-        let body_row = |harness: &Harness| {
-            let font = harness.ctx.style().text_styles[&egui::TextStyle::Body].clone();
-            harness.ctx.fonts(|f| f.row_height(&font))
-        };
-        let defaults = || design_of(DesignInputs::default());
-        // Each case: the screen, the design, and whether the body is over its cap there.
-        for (size, design, capped) in [
-            (egui::vec2(1280.0, 800.0), defaults(), false),
-            (egui::vec2(1280.0, 800.0), smoke_design(), false),
-            (egui::vec2(930.0, 1024.0), defaults(), false),
-            (egui::vec2(930.0, 1024.0), smoke_design(), false),
-            (
-                egui::vec2(1280.0, 1024.0),
-                design_of(huge_calibration()),
-                false,
-            ),
-            (egui::vec2(930.0, 800.0), defaults(), true),
-            (egui::vec2(930.0, 800.0), smoke_design(), true),
-        ] {
-            let (mut harness, _) = card_tab(size, design, false);
-            if !card_open(&harness) {
-                let output = harness.frame(Vec::new());
-                harness.click(text_center(&output, CARD_HEADING));
-                harness.frame_after(1.0, Vec::new());
-            }
-            let output = harness.frame(Vec::new());
-            let case = format!("{size:?} {:?}", harness.panel.sizing.mode);
-            let spacing = item_spacing(&harness);
-            let heading = text_rect(&output, CARD_HEADING).expect("the heading");
-            let drawing = drawing_rect(&output);
-            let drawn = drawn_card_height(&harness, &output);
-            let header = heading.bottom().max(card_link(&output).0.bottom()) - heading.top();
-            let body = drawn - header - spacing;
-            let lines = card_lines(&harness);
-            let (measured, floor) = scratch_measure(drawing.width(), &lines);
-            let room = room_at_card(&output);
-            let cap = (room - header - 2.0 * spacing - floor).max(body_row(&harness));
-            if capped {
-                assert!(measured > drawn + 1.0, "{case}: the body is capped");
-                assert!((body - cap).abs() <= 1.0, "{case}: body {body}, cap {cap}");
-            } else {
-                assert!(body < cap, "{case}: body {body} under the cap {cap}");
-                assert!(
-                    (measured - drawn).abs() <= 1.0,
-                    "{case}: measured {measured}, drawn {drawn}"
-                );
-            }
-        }
-    }
 
     #[test]
     fn size_tab_draws_each_what_moves_what_line_under_its_control() {
@@ -7380,7 +6597,8 @@ mod tests {
     fn size_tab_narrow_window_wraps_the_new_lines_inside_their_sides() {
         // Spec 5 "Narrow windows", at the M4-1 review's ~930 px window and the owner's 8 magnets:
         // the what-moves-what lines wrap inside the inputs side (its 320 points), one under the
-        // next, and the torque readouts stay in the centre region, left of the dashboard.
+        // next, the Required row is that side's too, and the tiles stay in the centre region,
+        // left of the right column.
         let mut harness = size_tab(egui::vec2(930.0, 1024.0), with_poles(8));
         let output = harness.frame(Vec::new());
         let side = |id: &str| {
@@ -7423,13 +6641,20 @@ mod tests {
             harness.panel.inputs().metal.required_min_Nm,
         );
         let label = pullout_label(results.metal.op_temp_C);
-        for text in [REQUIRED, HOT_LOW, gap.as_str(), label.as_str()] {
+        let pieces = crate::gui::tiles::gap_pieces(&gap);
+        let texts = [HOT_LOW, label.as_str()].into_iter();
+        for text in texts.chain(pieces.iter().map(String::as_str)) {
             let at = centre_rect(&output, text);
             assert!(
                 at.left() >= inputs_right - 1.0 && at.right() <= dashboard_left + 1.0,
                 "{text:?} at {at:?} runs out of the centre ({inputs_right} to {dashboard_left})"
             );
         }
+        let required = rect(REQUIRED);
+        assert!(
+            required.left() >= inputs_left - 1.0 && required.right() <= inputs_right + 1.0,
+            "{required:?}"
+        );
     }
 
     #[test]
@@ -7477,11 +6702,12 @@ mod tests {
             }
             texts.push(pullout_label(results.metal.op_temp_C));
             let hot_low = results.metal.torque_hot_low_Nm;
-            texts.push(if predicts(&results, hot_low) {
-                torque_gap_text(hot_low, shown.metal.required_min_Nm).0
+            if predicts(&results, hot_low) {
+                let gap = torque_gap_text(hot_low, shown.metal.required_min_Nm).0;
+                texts.extend(crate::gui::tiles::gap_pieces(&gap));
             } else {
-                NO_PREDICTION.to_owned()
-            });
+                texts.push(NO_PREDICTION.to_owned());
+            }
             let all = drawn_texts(&output);
             for text in &texts {
                 assert!(all.contains(text), "{text:?} is not drawn");
@@ -7500,7 +6726,7 @@ mod tests {
 
     #[test]
     fn torque_to_magnets_shows_the_solved_design() {
-        let mut harness = Harness::on_screen(TALL);
+        let mut harness = Harness::on_screen(TALL).on_results();
         let output = harness.size();
         let point = harness.solved();
         // The axial length (the default free variable) meets the 2.5 N\u{b7}m target.
@@ -7698,6 +6924,7 @@ mod tests {
     #[test]
     fn an_unreachable_target_shows_the_best_value_and_its_overshoot() {
         let mut harness = Harness::on_screen(TALL);
+        harness.select(SPACE_CLAIM_CHECK);
         harness.size();
         harness.panel.inputs.metal.required_min_Nm = 50.0;
         harness.frame(Vec::new());
@@ -8723,9 +7950,9 @@ mod tests {
     }
 
     #[test]
-    fn hovering_a_dashboard_value_shows_its_equation() {
+    fn hovering_a_headline_value_shows_its_equation() {
         use crate::gui::readouts::OPEN_HINT;
-        let mut harness = Harness::new();
+        let mut harness = Harness::new().on_results();
         tooltips_at_once(&harness.ctx);
         let output = harness.frame(Vec::new());
         let pullout = displayed_pullout(&DesignInputs::default());
@@ -8748,13 +7975,12 @@ mod tests {
 
     #[test]
     fn hovering_a_value_marks_its_terms_where_their_values_are_shown() {
-        // D_cup = 2 (r_corner + t_wall): hovering the cup OD on the dashboard frames the Key
-        // design row of the wall in its term's colour, from the next frame, and its tooltip
-        // draws t_wall in that colour; moving the pointer away clears every mark.
-        let mut harness = Harness::new();
+        // D_cup = 2 (r_corner + t_wall): hovering the cup OD in the Results tab's Headline group
+        // frames the Key design row of the wall in its term's colour, from the next frame, and
+        // its tooltip draws t_wall in that colour; moving the pointer away clears every mark.
+        let mut harness = Harness::new().on_results();
         tooltips_at_once(&harness.ctx);
-        // The dashboard settles its width on the second frame, and the check guides above the
-        // cup OD wrap to it: measure where the row rests.
+        // The right column settles its width on the second frame: measure where the row rests.
         harness.frame(Vec::new());
         let output = harness.frame(Vec::new());
         let cup_od = harness.panel.results().model.cup_od_mm;
@@ -8812,7 +8038,7 @@ mod tests {
     #[test]
     fn clicking_a_value_opens_it_and_a_term_drills_in_and_the_breadcrumb_returns() {
         use crate::gui::explorer::TERMS;
-        let mut harness = Harness::new();
+        let mut harness = Harness::new().on_results();
         harness.click_text(&displayed_pullout(&DesignInputs::default()));
         assert!(harness.panel.explorer.open);
         assert_eq!(harness.panel.explorer.trail(), ["model.pullout_Nm"]);
@@ -9107,18 +8333,6 @@ mod tests {
                     }
                 }
             }
-            // Slice 3 test 21: the Size tab's torque card closed, as the Equation panel's opening
-            // leaves it, and opened by the user; neither paints into the panel.
-            for choice in [None, Some(true)] {
-                harness.panel.card_choice = choice;
-                harness.panel.centre = CentreView::SizeAndTorque;
-                harness.frame_after(1.0, Vec::new());
-                let output = harness.frame(Vec::new());
-                let case = format!("{size:?}, dragged up {dragged}, the card's choice {choice:?}");
-                if let Some(overlap) = equation_panel_overlap(&harness.ctx, &output) {
-                    failures.push(format!("{case}: {overlap}"));
-                }
-            }
             assert_eq!(harness.panel.inputs(), &DesignInputs::default());
         }
         assert!(
@@ -9177,21 +8391,6 @@ mod tests {
                 }
                 assert_eq!(window().unwrap().size(), size, "{}", view.label());
             }
-            // The torque card opened by the user's choice, past the collapse animation (each
-            // frame here is egui's predicted 1/60 s later); the views above drew it closed.
-            panel.card_choice = Some(true);
-            panel.centre = CentreView::SizeAndTorque;
-            let mut output = frame(&mut panel, Vec::new());
-            for _ in 0..10 {
-                output = frame(&mut panel, Vec::new());
-            }
-            let case = format!("dragged up {dragged}, the card opened by the user");
-            assert!(card_open_in(&ctx), "{case}");
-            if let Some(overlap) = equation_panel_overlap(&ctx, &output) {
-                failures.push(format!("{case}: {overlap}"));
-            }
-            assert_eq!(window().unwrap().size(), size, "{case}");
-            panel.card_choice = None;
         }
         assert!(
             failures.is_empty(),
@@ -9413,28 +8612,19 @@ mod tests {
     #[test]
     fn the_dashboard_keeps_its_width_with_the_spreadsheet_details_on() {
         // Each value and its correction ids flow as one wrapped text: a long value (the cup
-        // wall's verdict in plain words, ruling R9) with its ids never runs past the row, which
-        // would widen the resizable dashboard a little more every frame.
+        // wall's verdict in plain words, ruling R9, among the numbers of its check's entry)
+        // with its ids never runs past the row, which would widen the resizable right column a
+        // little more every frame.
         for size in [egui::vec2(930.0, 1024.0), SCREEN] {
             let mut harness = Harness::on_screen(size);
             harness.panel.show_details = true;
+            harness.select("materials.cup_wall_check");
             let lefts: Vec<f32> = (0..4)
-                .map(|_| {
-                    let output = harness.frame(Vec::new());
-                    // The rightmost: the dashboard's row.
-                    text_rects(&output, label_for("model.pullout_Nm"))
-                        .into_iter()
-                        .map(|rect| rect.left())
-                        .fold(f32::NEG_INFINITY, f32::max)
-                })
+                .map(|_| right_column_left(&harness.frame(Vec::new())))
                 .collect();
             assert!(
-                lefts[0].is_finite(),
-                "{size:?}: the pull-out's row is drawn"
-            );
-            assert!(
                 lefts.iter().all(|&left| left == lefts[0]),
-                "{size:?}: the dashboard moved {lefts:?}"
+                "{size:?}: the right column moved {lefts:?}"
             );
         }
     }
@@ -9463,7 +8653,6 @@ mod tests {
             "rust-only",
         ];
         let mut texts: Vec<String> = [
-            WELCOME,
             RESET_ASSUMPTIONS,
             RESET_ASSUMPTIONS_HINT,
             ASSUMPTIONS_RESET,
@@ -9812,14 +9001,15 @@ mod tests {
             EXPLAIN, NO_NOTE, NoteFallback, START_HERE_HINT, note_fallback,
         };
         let mut harness = Harness::on_screen(TALL);
-        // The dashboard's Why links name notes too: the Equation panel's note is one more.
+        // A check's Explain entry names its note too: the Equation panel's note is one more.
         let pullout = note("pullout_angle").unwrap();
         let end = note("end_effect").unwrap();
-        let output = harness.frame(Vec::new());
+        let output = harness.select("model.end_effect_check");
         let (pullout_links, end_links) = (count(&output, pullout.title), count(&output, end.title));
-        assert!(
-            pullout_links >= 1 && end_links >= 1,
-            "the dashboard links both"
+        assert_eq!(
+            (pullout_links, end_links),
+            (0, 1),
+            "the end-effect check's entry links its note"
         );
         harness.panel.explorer.open_path("model.pullout_Nm");
         harness.frame(Vec::new());
@@ -10214,8 +9404,9 @@ mod tests {
         let ctx = egui::Context::default();
         let mut panel = MagcouplingPanel::new();
         // The Assumptions view is the inputs side of every view but Size and torque (which
-        // folds the inputs under "Detailed inputs"; a new panel opens there).
-        panel.centre = CentreView::Geometry;
+        // folds the inputs under "Detailed inputs"; a new panel opens there). The Results tab's
+        // Headline group lists the headline values.
+        panel.centre = CentreView::Results;
         let frame = |panel: &mut MagcouplingPanel, events: Vec<egui::Event>| {
             let input = egui::RawInput {
                 events,
@@ -10242,13 +9433,12 @@ mod tests {
             frame(panel, vec![primary_button(at, false)]);
             frame(panel, Vec::new())
         };
-        // A window sizes itself on its first frame and paints on the next; the check guides
-        // wrap to the dashboard's width as it settles, which a third frame takes in.
+        // A window sizes itself on its first frame and paints on the next; the right column
+        // settles its width, which a third frame takes in.
         frame(&mut panel, Vec::new());
         frame(&mut panel, Vec::new());
         let output = frame(&mut panel, Vec::new());
-        // The dashboard's top in view (its lower rows scroll, under the check guides): the
-        // status line and the first headline value.
+        // The check list's status line, and the table's first headline value.
         let defaults = DesignInputs::default();
         let status = design_status_text(&design_status(
             &defaults,
@@ -10288,27 +9478,30 @@ mod tests {
 
     #[test]
     fn a_fix_link_shows_its_input_s_row_in_either_view_and_edits_nothing() {
-        use crate::gui::guidance::{all_fixes, fix_text};
-        // Every fix of the workbook example's red checks, from the Geometry view (the input's
-        // group or the Assumptions view opens) and from Size and torque (its Detailed inputs
-        // open). Tall enough for every dashboard row.
+        use crate::gui::guidance::{CHECK_GUIDES, all_fixes, fix_text};
+        // Every fix of the workbook example's red checks, each in its check's Explain entry,
+        // from the Geometry view (the input's group or the Assumptions view opens) and from
+        // Size and torque (its Detailed inputs open).
         let mut harness = Harness::on_screen(TALL);
-        // The dashboard settles its width on the second frame, and the guides above a link wrap
-        // to it: click where the link rests.
-        harness.frame(Vec::new());
         let defaults = DesignInputs::default();
-        let fixes: std::collections::BTreeSet<(&str, String)> =
-            all_fixes(&defaults, &compute_all(&defaults), false)
-                .into_iter()
-                .flatten()
-                .map(|(path, dir)| (path, fix_text(path, dir)))
-                .collect();
+        let fixes: Vec<(&str, &str, String)> = CHECK_GUIDES
+            .iter()
+            .zip(all_fixes(&defaults, &compute_all(&defaults), false))
+            .flat_map(|(guide, fixes)| {
+                fixes
+                    .into_iter()
+                    .map(|(path, dir)| (guide.check, path, fix_text(path, dir)))
+            })
+            .collect();
         assert!(!fixes.is_empty(), "the red checks have fixes");
         for view in [CentreView::Geometry, CentreView::SizeAndTorque] {
-            for (path, text) in &fixes {
+            for (check, path, text) in &fixes {
                 // No frame left from the last fix.
                 harness.panel.explorer.close();
                 harness.panel.centre = view;
+                // The right column settles its width on the second frame: click where the link
+                // rests.
+                harness.select(check);
                 harness.click_text(text);
                 assert_eq!(
                     harness.panel.explorer.focus().map(|f| f.path.as_str()),
@@ -10343,6 +9536,61 @@ mod tests {
     }
 
     #[test]
+    fn a_fix_link_on_the_opening_tab_shows_its_row_inside_a_short_window() {
+        use crate::gui::guidance::{CHECK_GUIDES, all_fixes, fix_text};
+        // Plan review C-9: the Size column scrolls (decision D-7) and Detailed inputs keeps its
+        // own scroll area inside it. In a laptop window and in the smallest one, each fix link
+        // of the example's red checks that the Explain panel shows opens Detailed inputs and
+        // brings its input's row inside the window, not under its foot.
+        let defaults = DesignInputs::default();
+        let fixes: Vec<(&str, &str, String)> = CHECK_GUIDES
+            .iter()
+            .zip(all_fixes(&defaults, &compute_all(&defaults), false))
+            .flat_map(|(guide, fixes)| {
+                fixes
+                    .into_iter()
+                    .map(|(path, dir)| (guide.check, path, fix_text(path, dir)))
+            })
+            .collect();
+        for size in [egui::vec2(1280.0, 800.0), egui::vec2(1024.0, 700.0)] {
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+            let mut followed = 0;
+            for (check, path, text) in &fixes {
+                let mut harness = Harness::on_screen(size);
+                harness.select(check);
+                let output = harness.frame(Vec::new());
+                let link = text_rect(&output, text).unwrap_or_else(|| panic!("no {text:?}"));
+                if !screen.contains_rect(link) {
+                    continue;
+                }
+                harness.click(link.center());
+                assert_eq!(
+                    harness.panel.explorer.focus().map(|f| f.path.as_str()),
+                    Some(*path)
+                );
+                // The column scrolls there in an animation of up to half a second.
+                let mut output = harness.frame(Vec::new());
+                for _ in 0..40 {
+                    output = harness.frame(Vec::new());
+                }
+                let rows: Vec<egui::Rect> = text_rects(&output, label_for(path))
+                    .into_iter()
+                    .filter(|r| r.left() < INPUTS_WIDTH)
+                    .collect();
+                let focus = focus_rects(&output);
+                assert!(
+                    rows.iter()
+                        .any(|r| screen.contains_rect(*r)
+                            && focus.iter().any(|f| f.contains_rect(*r))),
+                    "{size:?} {path}: {rows:?} {focus:?}"
+                );
+                followed += 1;
+            }
+            assert!(followed > 0, "{size:?}: no fix link on screen");
+        }
+    }
+
+    #[test]
     fn an_outside_diameter_fix_opens_the_size_tab_and_edits_nothing() {
         use crate::gui::guidance::{Direction, all_fixes, fix_text};
         use crate::gui::size_controls::DIAMETER;
@@ -10362,7 +9610,7 @@ mod tests {
         let mut harness = Harness::on_screen(TALL);
         harness.panel.inputs = inputs.clone();
         harness.frame(Vec::new());
-        harness.frame(Vec::new());
+        harness.select(crate::gui::guidance::FIT_CHECK);
         let undo = harness.panel.history.undo_len();
         assert_eq!(harness.panel.centre, CentreView::Geometry);
         harness.click_text(&text);
@@ -10377,33 +9625,43 @@ mod tests {
     }
 
     #[test]
-    fn a_raised_minimum_od_takes_lower_outside_diameter_off_the_dashboard() {
+    fn a_raised_minimum_od_takes_lower_outside_diameter_off_the_space_claim_s_entry() {
         use crate::engine::size_controls::dimensions;
-        use crate::gui::guidance::{Direction, all_fixes, fix_text};
+        use crate::gui::guidance::{CHECK_GUIDES, Direction, all_fixes, fix_text};
         // The space claim of a 12 mm ring (the cup sets the diameter, past its claim) offers
         // "Lower Outside diameter"; with the Minimum OD at the diameter the slider cannot go
-        // down, so the link goes and the claim's other fixes stay.
+        // down, so the link goes and every other fix stays.
         let mut inputs = crate::gui::test_support::passing_design();
         inputs.coupling.inner_back_apothem_mm = 12.0;
         let ring = "coupling.inner_back_apothem_mm";
+        let claim = CHECK_GUIDES
+            .iter()
+            .position(|guide| guide.check == SPACE_CLAIM_CHECK)
+            .expect("the space claim's guide");
         let all = all_fixes(&inputs, &compute_all(&inputs), false);
         let lower = fix_text(ring, Direction::Lower);
-        let others: Vec<String> = all
+        let others: Vec<(&str, String)> = CHECK_GUIDES
             .iter()
-            .flatten()
-            .filter(|&&fix| fix != (ring, Direction::Lower))
-            .map(|&(path, dir)| fix_text(path, dir))
+            .zip(&all)
+            .flat_map(|(guide, fixes)| fixes.iter().map(move |&fix| (guide.check, fix)))
+            .filter(|&(_, fix)| fix != (ring, Direction::Lower))
+            .map(|(check, (path, dir))| (check, fix_text(path, dir)))
             .collect();
-        assert!(all.iter().flatten().any(|&f| f == (ring, Direction::Lower)));
-        assert!(!others.is_empty(), "the claim has another fix");
+        assert_eq!(all[claim], [(ring, Direction::Lower)]);
+        assert!(!others.is_empty(), "another check has a fix");
         let mut harness = Harness::on_screen(TALL);
         harness.panel.inputs = inputs.clone();
-        let output = harness.frame(Vec::new());
+        let output = harness.select(SPACE_CLAIM_CHECK);
         assert_eq!(count(&output, &lower), 1);
+        assert_eq!(count(&output, crate::gui::guidance::NO_FIX), 0);
         harness.panel.minimum_diameter_mm = Some(dimensions(&inputs).unwrap().diameter_mm);
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, &lower), 0);
-        for other in &others {
+        // Its one fix gone, the entry says no listed change helps; every other check keeps
+        // its fixes.
+        assert_eq!(count(&output, crate::gui::guidance::NO_FIX), 1);
+        for (check, other) in &others {
+            let output = harness.select(check);
             assert_eq!(count(&output, other), 1, "{other}");
         }
         assert_eq!(harness.panel.inputs(), &inputs);
@@ -10412,20 +9670,21 @@ mod tests {
     #[test]
     fn a_check_s_why_link_opens_its_note_in_the_equation_panel() {
         use crate::gui::guidance::{CHECK_GUIDES, Learn};
-        let notes: Vec<&'static str> = CHECK_GUIDES
+        let notes: Vec<(&'static str, &'static str)> = CHECK_GUIDES
             .iter()
             .filter_map(|g| match g.learn {
-                Learn::Note(id) => Some(id),
+                Learn::Note(id) => Some((g.check, id)),
                 _ => None,
             })
             .collect();
         assert!(!notes.is_empty(), "a guide links a reviewed note");
         let mut harness = Harness::on_screen(TALL);
-        // Click where the links rest (the dashboard settles its width on the second frame).
-        harness.frame(Vec::new());
-        for id in notes {
+        for (check, id) in notes {
             let note = crate::gui::explorer::reviewed_note(id).expect("a guide's note is reviewed");
             harness.panel.explorer.close();
+            // The lesson link of the check's Explain entry (the right column settles its width
+            // on the second frame: click where the link rests).
+            harness.select(check);
             harness.click_text(&crate::gui::typeset::glyph_safe(note.title));
             assert!(harness.panel.explorer.open, "{id}");
             assert_eq!(harness.panel.explorer.note(), Some(id));
@@ -10439,13 +9698,14 @@ mod tests {
     #[test]
     fn the_size_tab_s_why_links_open_their_notes() {
         // Spec 3.7 (S2-8): under Magnets per ring and Outside diameter, and on the torque card's
-        // heading (slice 3 spec 6.1, drawn open or closed), a link to how the coupling makes
-        // torque; at the end of the Required and Hot-low rows a link to the hot minimum check's
-        // note. Each opens its note on its own in the Equation panel.
+        // heading (slice 3 spec 6.1; in the Hot-low tile's Explain entry, which `size_tab`
+        // shows), a link to how the coupling makes torque; beside the Required row's label a
+        // link to the hot minimum check's note (the Hot-low tile's is its entry's lesson link).
+        // Each opens its note on its own in the Equation panel.
         use crate::gui::dashboard::why_note_text;
         use crate::gui::explorer::reviewed_note;
         let mut harness = size_tab(SCREEN, DesignInputs::default());
-        for (id, links) in [(SIZE_TAB_NOTE, 3), (TORQUE_BAND_NOTE, 2)] {
+        for (id, links) in [(SIZE_TAB_NOTE, 3), (TORQUE_BAND_NOTE, 1)] {
             let text =
                 why_note_text(reviewed_note(id).expect("a Size-tab link's note is reviewed"));
             for index in 0..links {
@@ -10482,9 +9742,9 @@ mod tests {
     }
 
     #[test]
-    fn the_end_effect_banner_links_to_its_note_over_the_dashboard_and_the_centre() {
-        // Spec 3.7 (CG-10): the link under each copy of the banner opens the end-effect check's
-        // note; without the banner there is no link.
+    fn the_end_effect_banner_links_to_its_note_over_the_centre() {
+        // Spec 3.7 (CG-10): the link under the banner opens the end-effect check's note;
+        // without the banner there is no link.
         use crate::gui::dashboard::why_note_text;
         use crate::gui::explorer::reviewed_note;
         use crate::gui::guidance::BANNER_NOTE;
@@ -10494,23 +9754,12 @@ mod tests {
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, &text), 0, "no banner, no link");
         harness.panel.inputs = short_magnets();
-        for index in 0..2 {
-            harness.panel.explorer = Explorer::default();
-            harness.frame(Vec::new());
-            let output = harness.frame(Vec::new());
-            let links = last_characters(&output, &text);
-            assert_eq!(
-                links.len(),
-                2,
-                "under the dashboard's banner and the centre region's"
-            );
-            harness.click(links[index]);
-            assert_eq!(
-                harness.panel.explorer.note(),
-                Some(BANNER_NOTE),
-                "link {index}"
-            );
-        }
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        let links = last_characters(&output, &text);
+        assert_eq!(links.len(), 1, "under the centre region's banner");
+        harness.click(links[0]);
+        assert_eq!(harness.panel.explorer.note(), Some(BANNER_NOTE));
         assert_eq!(harness.panel.inputs(), &short_magnets());
     }
 
@@ -10628,62 +9877,17 @@ mod tests {
         click_the_closest_note_link(path, note);
     }
 
-    #[test]
-    fn the_ripple_row_s_why_link_opens_the_slip_note() {
-        // F10: the note's first sentence is drawn as one label, once; the click edits nothing.
-        let mut harness = Harness::on_screen(TALL);
-        harness.frame(Vec::new());
-        let note = crate::gui::explorer::reviewed_note("when_slipping")
-            .expect("the slip note is reviewed");
-        harness.click_text(&crate::gui::typeset::glyph_safe(note.title));
-        assert!(harness.panel.explorer.open);
-        assert_eq!(harness.panel.explorer.note(), Some("when_slipping"));
-        harness.frame(Vec::new());
-        let output = harness.frame(Vec::new());
-        assert_eq!(count(&output, note.sentences[0]), 1);
-        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
-    }
-
-    /// A dashboard row's Why links, for the row-link tests (BL-059, BL-064): every copy of the
-    /// reviewed note `id`'s title drawn on the dashboard, in paint order (top first), and the
-    /// row's own copies, those under `check`'s label and above the next row's label. Each copy is
-    /// where a click lands on it, its last character (`last_characters`). A row draws its Why
-    /// line whether or not its check fails.
-    fn row_s_why_links(
-        output: &egui::FullOutput,
-        check: &str,
-        id: &str,
-    ) -> (Vec<egui::Pos2>, Vec<egui::Pos2>) {
-        use crate::gui::dashboard::DASHBOARD;
-        use crate::gui::typeset::glyph_safe;
+    /// Where a click lands on each copy of the reviewed note `id`'s title drawn in the right
+    /// column of `output`: its last character (`last_characters`). A check's Explain entry
+    /// draws its note's title as its lesson link.
+    fn lesson_links(output: &egui::FullOutput, id: &str) -> Vec<egui::Pos2> {
         let note = crate::gui::explorer::reviewed_note(id)
             .unwrap_or_else(|| panic!("the {id} note is reviewed"));
-        let on_dashboard = |x: f32| x > TALL.x - DASHBOARD_WIDTH;
-        let label_top = |path: &str| {
-            text_rects(output, label_for(path))
-                .into_iter()
-                .find(|r| on_dashboard(r.center().x))
-                .unwrap_or_else(|| panic!("{path} on the dashboard"))
-                .top()
-        };
-        let index = DASHBOARD
-            .iter()
-            .position(|&(path, _)| path == check)
-            .unwrap_or_else(|| panic!("{check} is a dashboard row"));
-        let (next_path, _) = DASHBOARD
-            .get(index + 1)
-            .unwrap_or_else(|| panic!("a dashboard row after {check}"));
-        let (row, next) = (label_top(check), label_top(next_path));
-        let copies: Vec<egui::Pos2> = last_characters(output, &glyph_safe(note.title))
+        let left = right_column_left(output);
+        last_characters(output, &crate::gui::typeset::glyph_safe(note.title))
             .into_iter()
-            .filter(|at| on_dashboard(at.x))
-            .collect();
-        let own = copies
-            .iter()
-            .copied()
-            .filter(|at| at.y > row && at.y < next)
-            .collect();
-        (copies, own)
+            .filter(|at| at.x > left)
+            .collect()
     }
 
     /// Clicks the note link at `at` and checks that the click opened note `id` in the explorer
@@ -10696,35 +9900,28 @@ mod tests {
     }
 
     #[test]
-    fn the_gearbox_row_s_own_why_link_opens_the_torque_band_note() {
-        // BL-059: the gearbox check's Why link leads to the torque-band note, as the hot-low,
-        // hot-minimum and cold-high rows above it do, so those rows draw the note's title first.
-        // The copy clicked is the gearbox row's own: on the dashboard, below the row's label and
-        // above the next row's. The click edits nothing.
+    fn the_gearbox_check_s_lesson_link_opens_the_torque_band_note() {
+        // BL-059: the gearbox check's lesson link leads to the torque-band note, as the hot
+        // minimum's does. Its Explain entry draws the note's title once; the click edits
+        // nothing.
         use crate::gui::guidance::TORQUE_BAND_NOTE;
         let mut harness = Harness::on_screen(TALL);
-        let output = harness.frame(Vec::new());
-        let (copies, own) = row_s_why_links(&output, GEARBOX_CHECK, TORQUE_BAND_NOTE);
-        assert_eq!(own.len(), 1, "one link under the gearbox row: {copies:?}");
-        assert!(
-            copies[0].y < own[0].y,
-            "the rows above draw it first: {copies:?}"
-        );
-        click_opens_note(&mut harness, own[0], TORQUE_BAND_NOTE);
+        let output = harness.select(GEARBOX_CHECK);
+        let links = lesson_links(&output, TORQUE_BAND_NOTE);
+        assert_eq!(links.len(), 1, "one link in the gearbox check's entry");
+        click_opens_note(&mut harness, links[0], TORQUE_BAND_NOTE);
     }
 
     #[test]
-    fn the_shaft_joint_row_s_why_link_opens_the_shaft_joint_note() {
-        // BL-064: the shaft-joint row's Why link leads to the shaft-joint note, which no other
-        // row links, so its title is drawn once on the dashboard, under the row's label and
-        // above the next row's. The click edits nothing.
+    fn the_shaft_joint_check_s_lesson_link_opens_the_shaft_joint_note() {
+        // BL-064: the shaft joints check's lesson link leads to the shaft-joint note. Its
+        // Explain entry draws the note's title once; the click edits nothing.
         const SHAFT_JOINT_CHECK: &str = "shaft_joint.check";
         let mut harness = Harness::on_screen(TALL);
-        let output = harness.frame(Vec::new());
-        let (copies, own) = row_s_why_links(&output, SHAFT_JOINT_CHECK, "shaft_joint");
-        assert_eq!(copies.len(), 1, "one link to the note: {copies:?}");
-        assert_eq!(own, copies, "under the shaft-joint row");
-        click_opens_note(&mut harness, own[0], "shaft_joint");
+        let output = harness.select(SHAFT_JOINT_CHECK);
+        let links = lesson_links(&output, "shaft_joint");
+        assert_eq!(links.len(), 1, "one link to the note");
+        click_opens_note(&mut harness, links[0], "shaft_joint");
     }
 
     #[test]
@@ -11001,7 +10198,7 @@ mod tests {
     }
 
     #[test]
-    fn a_narrow_window_wraps_the_check_guides_inside_the_dashboard() {
+    fn a_narrow_window_wraps_each_check_s_entry_inside_the_right_column() {
         // The M4-1 review's ~930 px window, tall enough for every row: every guide line of the
         // workbook example's red checks and the status line wrap inside the dashboard, never past
         // its right margin (a line past it would widen the dashboard into the centre region).
@@ -11010,35 +10207,37 @@ mod tests {
         };
         let width = 930.0;
         let mut harness = Harness::on_screen(egui::vec2(width, 3000.0));
-        // The dashboard settles its width on the second frame.
-        harness.frame(Vec::new());
-        let output = harness.frame(Vec::new());
         let inputs = DesignInputs::default();
         let results = harness.panel.results().clone();
         let fixes = all_fixes(&inputs, &results, false);
-        let mut texts = vec![design_status_text(&design_status(&inputs, &results, false))];
+        let status = design_status_text(&design_status(&inputs, &results, false));
+        let mut entries = 0;
         for (guide, fixes) in CHECK_GUIDES.iter().zip(&fixes) {
-            if level(guide, &inputs, &results) == Level::Bad {
-                texts.extend((guide.problem)(&inputs, &results));
-                texts.push(guide.why.to_owned());
-                texts.extend(fixes.iter().map(|&(path, dir)| fix_text(path, dir)));
+            if level(guide, &inputs, &results) != Level::Bad {
+                continue;
+            }
+            entries += 1;
+            // The right column settles its width on the second frame.
+            harness.select(guide.check);
+            let output = harness.frame(Vec::new());
+            let mut texts = vec![status.clone(), guide.why.to_owned()];
+            texts.extend((guide.problem)(&inputs, &results));
+            texts.extend(fixes.iter().map(|&(path, dir)| fix_text(path, dir)));
+            // Right, the side panel's margin inside the frame's (8 points each), give or take
+            // egui's rounding of a widget's edges (a line that wraps to the full width can end
+            // one rounding step past it).
+            let column = right_column_left(&output)..=width - 16.0 + egui::emath::GUI_ROUNDING;
+            for text in &texts {
+                let rects = text_rects(&output, text);
+                assert!(!rects.is_empty(), "{text:?} is drawn");
+                for rect in rects {
+                    assert!(
+                        column.contains(&rect.left()) && column.contains(&rect.right()),
+                        "{text:?} at {rect:?}, the right column {column:?}"
+                    );
+                }
             }
         }
-        // Left of its first label's badge; right, the side panel's margin inside the frame's
-        // (8 points each), give or take egui's rounding of a widget's edges (a line that wraps
-        // to the full width can end one rounding step past it).
-        let pullout = label_for("model.pullout_Nm");
-        let dashboard = text_rect(&output, pullout).unwrap().left() - 30.0
-            ..=width - 16.0 + egui::emath::GUI_ROUNDING;
-        for text in &texts {
-            let rects = text_rects(&output, text);
-            assert!(!rects.is_empty(), "{text:?} is drawn");
-            for rect in rects {
-                assert!(
-                    dashboard.contains(&rect.left()) && dashboard.contains(&rect.right()),
-                    "{text:?} at {rect:?}, the dashboard {dashboard:?}"
-                );
-            }
-        }
+        assert_eq!(entries, 4, "the example design's four red checks");
     }
 }

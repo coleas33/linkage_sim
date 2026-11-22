@@ -1,8 +1,12 @@
-//! The dashboard on the right (spec M4 "Layout": "headline numbers with green/amber/red
-//! badges derived from check verdicts; corrected values carry a 'corrected vs workbook' marker
-//! with the deviation in its tooltip").
+//! The dashboard's rows and their badges (spec M4 "Layout": "headline numbers with
+//! green/amber/red badges derived from check verdicts; corrected values carry a 'corrected vs
+//! workbook' marker with the deviation in its tooltip"). Since the UX overhaul (spec 4.5) no
+//! one list draws them all: the right column is the check list ([`crate::gui::checks`]) over
+//! the Explain panel ([`crate::gui::explain`]), which draws the rows a check's verdict badges
+//! as that check's numbers ([`line_ui`]); the Results tab's Headline group lists every row, and
+//! the spreadsheet's Summary writes them.
 //!
-//! [`DASHBOARD`] lists its rows: the 15 headline numbers in Python's order, then the shaft
+//! [`DASHBOARD`] lists the rows: the 15 headline numbers in Python's order, then the shaft
 //! joints check (BL-064), the gearbox check (BL-059), the A1 space claim badge and the audit M9
 //! end-effect flag. A row's badge comes from a check verdict ([`verdict_level`]); its marker
 //! from the deviation registry ([`crate::gui::corrections`]). Two notes from the user's
@@ -11,34 +15,32 @@
 //! - **End effect (audit M9).** When f_end ≤ 0 the pull-out and the numbers computed from it
 //!   ([`END_EFFECT_ROWS`]) are greyed, without a badge, under the banner "End-effect model out
 //!   of range", which carries a "Why: <note>" link to the end-effect check's note (slice-2 spec
-//!   3.7; `end_effect_banner_ui` draws it here and over the centre region).
+//!   3.7; `end_effect_banner_ui` draws it over the centre region).
 //! - **Stored 3D values.** The temperature rows and the shaft joints row that read the stored
 //!   3D fields ([`STORED_3D_ROWS`]; the shaft joints row through the inner ring's single-ring
 //!   onset, which caps the bonded inner hub's fitting temperature, owner R-15) carry the label
 //!   [`STORED_3D_LABEL`]: the fields ([`STORED_3D_INPUTS`]) are 3D results for the example
 //!   design or for the starting design ([`STARTING_3D_FIELDS`]) and stay fixed when the design
-//!   changes; no live 3D model runs.
+//!   changes; no live 3D model runs. The check list closes with the label, and the entries of
+//!   the two checks that read the fields repeat it.
 //!
-//! Over the rows, the material warnings that fire (spec Addendum A5: "plain language,
-//! colour-coded, linked to their teaching note"): each rule's text in its severity's colour (a
-//! warning red, a caution amber) with a link that opens its reviewed note in the Equation panel
-//! ([`warning_lines`], decision M43-8).
+//! Under the check list's rows, the material warnings that fire (spec Addendum A5: "plain
+//! language, colour-coded, linked to their teaching note"): each rule's text in its severity's
+//! colour (a warning red, a caution amber) with a link that opens its reviewed note in the
+//! Equation panel ([`warning_lines`], decision M43-8).
 //!
 //! [`result_tooltip`] is the hover text of every displayed result, keyed by result path: the
 //! text every readout hands to [`crate::gui::readouts::Readouts::show`], which adds the
-//! value's equation (plan M4-3). The dashboard builds a row's text only while it is hovered
+//! value's equation (plan M4-3). A row's text is built only while it is hovered
 //! ([`DashboardLine::tooltip`]).
 //!
 //! Check guides (guidance spec 3.1 and 3.4, [`crate::gui::guidance`]): the design status line
-//! tops the dashboard, and the Magnets fit row follows the end-effect flag (a GUI check of
-//! `model::blocks_fit`, so it is drawn apart from [`DASHBOARD`], whose paths are results). Under
-//! a guided check's own row, a red level opens its block: the problem from this design's
-//! results, the guide's sentence and its fixes (each a link that shows its input's row, the
-//! Outside diameter's the Size tab), or a line saying no listed change helps, then any
-//! trade-off and side-effect notes. An amber level keeps the block shut under a one-line header, so the
-//! dashboard stays short. Every row, at any level, has its Why line: a link to its reviewed
-//! note (opened in the Equation panel), a link to its assumption (its row shown, the rationale
-//! in the hover text) or "no note yet" ([`crate::gui::guidance::row_learn`]).
+//! tops the check list ([`status_ui`]), and the Magnets fit check closes its rows (a GUI check
+//! of `model::blocks_fit`, so it is apart from [`DASHBOARD`], whose paths are results). A
+//! check's problem, its guide's sentence, its fixes and their notes are its Explain entry. An
+//! entry's lesson link ([`learn_ui`]) is a link to its reviewed note (opened in the Equation
+//! panel), a link to its assumption (its row shown, the rationale in the hover text) or "no
+//! note yet".
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -55,10 +57,7 @@ use crate::gui::checks::state_mark;
 use crate::gui::corrections::{CorrectionIndex, Mark, marker_text, marker_tooltip};
 use crate::gui::explorer::reviewed_note;
 use crate::gui::format::{format_value, with_unit};
-use crate::gui::guidance::{
-    self, BANNER_NOTE, CHECK_GUIDES, CheckGuide, Direction, FIT_CHECK, Learn, NO_FIX,
-    design_status, fix_text, guide_notes, row_learn, status_line,
-};
+use crate::gui::guidance::{BANNER_NOTE, Learn, design_status, status_line};
 use crate::gui::look;
 use crate::gui::plain_text::{display_label, help_for, label_for};
 use crate::gui::readouts::Readouts;
@@ -105,26 +104,14 @@ pub const WARNINGS_HEADING: &str = "Material warnings";
 /// The start of a warning's link to its teaching note.
 pub const WHY: &str = "Why";
 
-/// The head of a red or opened amber check's problem line (guidance spec 3.4).
-pub const PROBLEM: &str = "Problem:";
-
-/// The head of a red or opened amber check's fix line: each fix a link that shows its input.
-pub const FIX: &str = "Fix:";
-
-/// The head of every row's Why line: under an open block the guide's sentence, then the link
-/// to read more.
-pub const WHY_LINK: &str = "Why:";
-
-/// What a Why line says when no reviewed note or assumption explains the row.
+/// What a lesson link says when no reviewed note or assumption explains the row.
 pub const NO_NOTE_YET: &str = "no note yet";
 
-/// The hover text of a Why line whose note is not reviewed (sent back to Draft): it never shows.
+/// The hover text of a lesson link whose note is not reviewed (sent back to Draft): it never
+/// shows.
 pub const NOTE_NOT_REVIEWED: &str = "Its teaching note has not passed review.";
 
-/// The one-line header an amber check's block is shut under: a click opens it.
-pub const CAUTION_DETAILS: &str = "Problem and fixes";
-
-/// The Magnets fit row's value: the blocks fit around the ring, or not.
+/// The Magnets fit check's value in its Explain entry: the blocks fit around the ring, or not.
 pub const FITS: &str = "Fit around the ring";
 pub const DOES_NOT_FIT: &str = "Do not fit around the ring";
 
@@ -733,62 +720,6 @@ pub fn shown_lines(results: &DesignResults, clamps_paused: bool) -> Vec<Dashboar
         .collect()
 }
 
-/// Draws the dashboard of `results`, computed from `inputs`: the design status line, the
-/// end-effect banner when f_end <= 0, then a row per line (badge and label, the label quieter
-/// than the value, [`look::quiet_text`]; then the value and,
-/// with the spreadsheet details, its correction ids under a one-line legend, so a narrow side
-/// still reads) with its Why line, a guided check's
-/// block over its Why line, the stored-3D label after the last stored-3D row, and the
-/// Magnets fit row last. `fixes` holds every guide's fixes in [`CHECK_GUIDES`]' order
-/// (`guidance::FixCache`). Each result row is a readout (`readouts`): its hover text and
-/// equation while hovered, a click opens it in the Equation panel. While the shaft-clamp
-/// section is paused (`clamps_paused`) its rows, their guide and their Why links are left out
-/// and the status line does not count its check. `baseline` is the session's baseline: the
-/// status line names the design against it ([`guidance::status_line`]).
-pub fn dashboard_ui(
-    ui: &mut egui::Ui,
-    inputs: &DesignInputs,
-    baseline: &DesignInputs,
-    results: &DesignResults,
-    fixes: &[Vec<(&'static str, Direction)>],
-    clamps_paused: bool,
-    readouts: &mut Readouts,
-) {
-    status_ui(ui, inputs, baseline, results, clamps_paused);
-    let lines = shown_lines(results, clamps_paused);
-    if end_effect_banner_ui(ui, results, readouts) {
-        ui.separator();
-    }
-    warnings_ui(ui, results, readouts);
-    // The correction ids beside the values, and what they are, only with the spreadsheet
-    // details (spec S2-5).
-    let show_details = readouts.show_details();
-    if show_details {
-        ui.add(egui::Label::new(egui::RichText::new(MARKER_LEGEND).small().weak()).wrap());
-    }
-    let last_3d = lines.iter().rposition(|line| line.stored_3d);
-    for (index, line) in lines.iter().enumerate() {
-        line_ui(ui, line, readouts);
-        // A check's block under its own row (the rows its verdict only badges have none), then
-        // every row's Why line.
-        match CHECK_GUIDES.iter().position(|g| g.check == line.path) {
-            Some(guide) => indexed_guide_ui(ui, guide, inputs, results, fixes, readouts),
-            None => {
-                let learn = row_learn(line.path).expect("every row has a Why link (guidance)");
-                why_line(ui, None, learn, readouts);
-            }
-        }
-        if Some(index) == last_3d {
-            ui.horizontal(|ui| {
-                ui.add_space(16.0);
-                ui.weak(STORED_3D_LABEL).on_hover_text(STORED_3D_NOTE);
-            });
-        }
-        ui.add_space(4.0);
-    }
-    fit_ui(ui, inputs, results, fixes, readouts);
-}
-
 /// Draws one dashboard row: its badge and label, the label quieter than the value
 /// ([`look::quiet_text`]), then its value and, with the spreadsheet details, its correction
 /// ids, so a narrow side still reads. The row is a readout
@@ -854,144 +785,7 @@ pub(crate) fn status_ui(
     ui.separator();
 }
 
-/// The Magnets fit row: its badge and label, whether the blocks fit (from the guide's level: red
-/// when they do not), then its guide.
-fn fit_ui(
-    ui: &mut egui::Ui,
-    inputs: &DesignInputs,
-    results: &DesignResults,
-    fixes: &[Vec<(&'static str, Direction)>],
-    readouts: &mut Readouts,
-) {
-    let index = CHECK_GUIDES
-        .iter()
-        .position(|g| g.check == FIT_CHECK)
-        .expect("the Magnets fit row has a guide");
-    let guide = &CHECK_GUIDES[index];
-    let level = guidance::level(guide, inputs, results);
-    ui.horizontal(|ui| {
-        state_mark(ui, Some(level));
-        let label = egui::RichText::new(guide.label).color(look::quiet_text(ui.visuals()));
-        ui.add(egui::Label::new(label).wrap());
-    });
-    ui.horizontal(|ui| {
-        ui.add_space(16.0);
-        let value = if level == Level::Bad {
-            DOES_NOT_FIT
-        } else {
-            FITS
-        };
-        ui.add(egui::Label::new(egui::RichText::new(value).strong()).wrap());
-    });
-    indexed_guide_ui(ui, index, inputs, results, fixes, readouts);
-}
-
-/// What a guide's lines are drawn with: its check's level, the fixes to show (empty: the
-/// no-fix line) and the notes under them ([`guide_notes`]).
-struct GuideShown<'a> {
-    level: Level,
-    fixes: &'a [(&'static str, Direction)],
-    /// Read only when the block is open (they are drawn under its fixes).
-    notes: &'a dyn Fn() -> Vec<String>,
-}
-
-/// The lines of the guide at `index` of [`CHECK_GUIDES`] in this design ([`guide_ui`]): its
-/// level, its fixes from `fixes`, and its notes ([`guide_notes`]).
-fn indexed_guide_ui(
-    ui: &mut egui::Ui,
-    index: usize,
-    inputs: &DesignInputs,
-    results: &DesignResults,
-    fixes: &[Vec<(&'static str, Direction)>],
-    readouts: &mut Readouts,
-) {
-    let guide = &CHECK_GUIDES[index];
-    let notes = || guide_notes(fixes, index, inputs, results);
-    let shown = GuideShown {
-        level: guidance::level(guide, inputs, results),
-        fixes: fixes.get(index).map_or(&[], Vec::as_slice),
-        notes: &notes,
-    };
-    guide_ui(ui, guide, &shown, inputs, results, readouts);
-}
-
-/// A guided check's lines under its row. Its block, open under red and under amber once its
-/// header is clicked: the problem (from `inputs` and `results`, in the level's colour), the
-/// Why line with the guide's sentence, and the Fix line ([`fix_line`]). Otherwise the Why
-/// line's link alone ([`why_line`]).
-fn guide_ui(
-    ui: &mut egui::Ui,
-    guide: &CheckGuide,
-    shown: &GuideShown,
-    inputs: &DesignInputs,
-    results: &DesignResults,
-    readouts: &mut Readouts,
-) {
-    let open = match shown.level {
-        Level::Bad => true,
-        Level::Caution => caution_header_ui(ui, guide.check),
-        Level::Good => false,
-    };
-    if open && let Some(problem) = (guide.problem)(inputs, results) {
-        guide_line(ui, PROBLEM, |ui| {
-            let text = egui::RichText::new(problem).color(shown.level.color(ui.visuals()));
-            ui.add(egui::Label::new(text).wrap());
-        });
-    }
-    why_line(ui, open.then_some(guide.why), guide.learn, readouts);
-    if open {
-        fix_line(ui, shown, readouts);
-    }
-}
-
-/// The header an amber check's block is shut under ([`CAUTION_DETAILS`]), shut at first: a
-/// click on it or on its arrow opens or shuts the block. Whether the block is open.
-fn caution_header_ui(ui: &mut egui::Ui, check: &str) -> bool {
-    let id = ui.make_persistent_id(("check_guide", check));
-    let mut state =
-        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false);
-    ui.horizontal(|ui| {
-        ui.add_space(16.0);
-        state.show_toggle_button(ui, egui::collapsing_header::paint_default_icon);
-        let header = egui::Label::new(CAUTION_DETAILS).sense(egui::Sense::click());
-        if ui.add(header).clicked() {
-            state.toggle(ui);
-        }
-    });
-    state.store(ui.ctx());
-    state.is_open()
-}
-
-/// The Fix line of an open block: a link per fix, which asks for its input's row (a two-pick
-/// magnet fix: its part's row), or [`NO_FIX`] when no listed change helps; then the notes
-/// ([`guide_notes`]).
-fn fix_line(ui: &mut egui::Ui, shown: &GuideShown, readouts: &mut Readouts) {
-    guide_line(ui, FIX, |ui| {
-        if shown.fixes.is_empty() {
-            ui.add(egui::Label::new(NO_FIX).wrap());
-        }
-        for &(path, direction) in shown.fixes {
-            if ui.link(fix_text(path, direction)).clicked() {
-                readouts.focus_input(path);
-            }
-        }
-        for note in (shown.notes)() {
-            ui.add(egui::Label::new(note).wrap());
-        }
-    });
-}
-
-/// A row's Why line: under an open block the guide's `sentence`, then the link ([`learn_ui`]).
-fn why_line(ui: &mut egui::Ui, sentence: Option<&str>, learn: Learn, readouts: &mut Readouts) {
-    guide_line(ui, WHY_LINK, |ui| {
-        if let Some(sentence) = sentence {
-            ui.add(egui::Label::new(sentence).wrap());
-        }
-        learn_ui(ui, learn, readouts);
-    });
-}
-
-/// The link at the end of a Why line: a reviewed note's title (it asks for the note in the
+/// The lesson link of an Explain entry: a reviewed note's title (it asks for the note in the
 /// Equation panel; a note not reviewed never shows), an assumption's label (it asks for its
 /// input's row; the rationale is its hover text), or [`NO_NOTE_YET`] with the reason as its
 /// hover text.
@@ -1024,16 +818,6 @@ pub(crate) fn learn_ui(ui: &mut egui::Ui, learn: Learn, readouts: &mut Readouts)
             ui.weak(NO_NOTE_YET).on_hover_text(reason);
         }
     }
-}
-
-/// One line of a row's guide, 16 points in under its row: `head`, a caption
-/// ([`look::quiet_text`]), then `body` in a column beside it that wraps within the width left.
-fn guide_line(ui: &mut egui::Ui, head: &str, body: impl FnOnce(&mut egui::Ui)) {
-    ui.horizontal_top(|ui| {
-        ui.add_space(16.0);
-        ui.colored_label(look::quiet_text(ui.visuals()), head);
-        ui.vertical(body);
-    });
 }
 
 /// The material warnings that fire: the severity's shape ([`state_mark`]) and the text in its
@@ -1071,15 +855,10 @@ mod tests {
     use crate::engine::api::HEADLINE;
     use crate::engine::meta::InputSet;
     use crate::gui::corrections::MARKER_HEADING;
-    use crate::gui::guidance::{
-        CHECK_GUIDES, Direction, Fixes, ROW_LEARN, all_fixes, design_status_text, trade_offs,
-    };
-    use crate::gui::readouts::ReadoutEvents;
+    use crate::gui::guidance::{self, CHECK_GUIDES, FIT_CHECK};
     use crate::gui::test_support::{
-        assert_glyphs, drawn_texts, hover_frames, hub_overstressed, only_the_clamp_fails,
-        only_the_gearbox_fails, only_the_joint_fails, passing_design, primary_button,
-        reversed_hub_band, short_magnets, sized_frame, text_center, text_color, text_rect,
-        tooltips_at_once, with_poles,
+        SCREEN, hub_overstressed, only_the_clamp_fails, only_the_joint_fails, passing_design,
+        reversed_hub_band, short_magnets, sized_frame, text_color, with_poles,
     };
     use std::collections::BTreeSet;
 
@@ -1867,31 +1646,6 @@ mod tests {
     }
 
     #[test]
-    fn the_stored_3d_label_is_drawn_once_under_the_shaft_joints_row() {
-        // Owner R-15: one label, after the last stored-3D row, now the shaft joints row: below
-        // its label and above the gearbox row's, whether the clamp section shows or not.
-        let ctx = egui::Context::default();
-        for paused in [true, false] {
-            let output = dashboard_frame_with(&ctx, &DesignInputs::default(), paused);
-            let texts = drawn_texts(&output);
-            let count = texts.iter().filter(|t| *t == STORED_3D_LABEL).count();
-            assert_eq!(count, 1, "paused {paused}");
-            let y = |text: &str| {
-                text_rect(&output, text)
-                    .unwrap_or_else(|| panic!("{text:?} drawn"))
-                    .center()
-                    .y
-            };
-            let label = y(STORED_3D_LABEL);
-            assert!(label > y(label_for("shaft_joint.check")), "paused {paused}");
-            assert!(
-                label < y(label_for("gearbox.cold_high_check")),
-                "paused {paused}"
-            );
-        }
-    }
-
-    #[test]
     fn out_of_range_end_effect_greys_the_pull_out_rows_without_badges() {
         let results = compute_all(&short_magnets());
         assert!(end_effect_out_of_range(&results).is_some_and(|f| f < 0.0));
@@ -2116,44 +1870,6 @@ mod tests {
     }
 
     #[test]
-    fn the_correction_ids_and_their_legend_show_only_with_the_spreadsheet_details() {
-        use crate::gui::typeset::TermColors;
-        let inputs = DesignInputs::default();
-        let results = compute_all(&inputs);
-        let fixes = all_fixes(&inputs, &results, false);
-        let markers: Vec<String> = dashboard_lines(&results)
-            .into_iter()
-            .map(|line| line.marker)
-            .filter(|marker| !marker.is_empty())
-            .collect();
-        assert!(!markers.is_empty(), "the defaults carry correction ids");
-        let status = design_status_text(&design_status(&inputs, &results, false));
-        for show_details in [false, true] {
-            let ctx = egui::Context::default();
-            let output = sized_frame(&ctx, egui::vec2(1280.0, 4000.0), Vec::new(), |ui| {
-                let mut readouts = Readouts::new(TermColors::default(), show_details);
-                dashboard_ui(
-                    ui,
-                    &inputs,
-                    &DesignInputs::default(),
-                    &results,
-                    &fixes,
-                    false,
-                    &mut readouts,
-                );
-            });
-            let texts = drawn_texts(&output);
-            for marker in &markers {
-                assert_eq!(texts.contains(marker), show_details, "{marker}");
-            }
-            let legends = texts.iter().filter(|t| *t == MARKER_LEGEND).count();
-            assert_eq!(legends, usize::from(show_details));
-            // The status line still tops the dashboard.
-            assert_eq!(texts.first(), Some(&status));
-        }
-    }
-
-    #[test]
     fn the_result_tooltip_names_the_path_cell_and_notes() {
         let info = result_info("model.pullout_Nm").unwrap();
         // With the spreadsheet details (spec S2-5).
@@ -2242,21 +1958,15 @@ mod tests {
     }
 
     #[test]
-    fn each_row_is_drawn_under_its_display_label_and_exported_under_its_catalogue_label() {
-        let ctx = egui::Context::default();
-        let texts = drawn_texts(&dashboard_frame(&ctx, &DesignInputs::default()));
+    fn each_row_is_exported_under_its_catalogue_label_and_four_have_a_display_label() {
+        // The Explain panel draws a check's rows under their display labels
+        // (explain.rs: the_numbers_behind_a_check_are_the_dashboard_rows_its_verdict_badges).
         let lines = dashboard_lines(&compute_all(&DesignInputs::default()));
         for line in &lines {
-            assert!(
-                texts.iter().any(|t| t == label_for(line.path)),
-                "{}",
-                line.path
-            );
             // The line keeps the catalogue label: the spreadsheet's Summary writes it.
             assert_eq!(line.label, result_info(line.path).unwrap().meta.label);
         }
-        // The overlay renames four rows (spec 3.5's three and BL-059's ripple row); their
-        // catalogue labels are not drawn.
+        // The overlay renames four rows (spec 3.5's three and BL-059's ripple row).
         let renamed: Vec<&str> = lines
             .iter()
             .filter(|line| label_for(line.path) != line.label)
@@ -2271,9 +1981,6 @@ mod tests {
                 "model.gearbox_input_ripple_Nm"
             ]
         );
-        for line in lines.iter().filter(|line| renamed.contains(&line.path)) {
-            assert!(!texts.iter().any(|t| t == line.label), "{}", line.path);
-        }
     }
 
     #[test]
@@ -2344,21 +2051,29 @@ mod tests {
     #[test]
     fn a_row_s_label_is_quieter_than_its_value_in_a_theme_and_in_egui_s_own_visuals() {
         // UX overhaul spec 6.1: labels and captions are quieter than values
-        // (`look::quiet_text`). The label, the value and the head of the Why line of the first
-        // row, at the example design.
+        // (`look::quiet_text`). The label and the value of the pull-out's row, as the Explain
+        // panel draws it under "Numbers behind this check", at the example design.
+        let results = compute_all(&DesignInputs::default());
+        let lines = shown_lines(&results, false);
+        let line = lines
+            .iter()
+            .find(|line| line.path == "model.pullout_Nm")
+            .expect("the pull-out has a row");
         let colours = |ctx: &egui::Context| {
-            let output = dashboard_frame(ctx, &DesignInputs::default());
-            [label_for("model.pullout_Nm"), "2.688 N·m", WHY_LINK].map(|text| {
+            let output = sized_frame(ctx, SCREEN, Vec::new(), |ui| {
+                line_ui(ui, line, &mut Readouts::default());
+            });
+            [label_for("model.pullout_Nm"), "2.688 N·m"].map(|text| {
                 text_color(&output, text).unwrap_or_else(|| panic!("no {text:?} drawn"))
             })
         };
-        // A theme that sets a weak colour (the standalone app's): the label and the head take
-        // it, the value keeps the strong colour.
+        // A theme that sets a weak colour (the standalone app's): the label takes it, the value
+        // keeps the strong colour.
         let themed = egui::Context::default();
         let weak = egui::Color32::from_rgb(1, 2, 3);
         themed.style_mut(|style| style.visuals.weak_text_color = Some(weak));
         let strong = themed.style().visuals.strong_text_color();
-        assert_eq!(colours(&themed), [weak, strong, weak]);
+        assert_eq!(colours(&themed), [weak, strong]);
         // egui's own visuals set none: their weak colour is too faint for a name (the text
         // colour at 60 %), and their text colour is already a step under the strong colour.
         let plain = egui::Context::default();
@@ -2367,11 +2082,7 @@ mod tests {
         assert_ne!(visuals.text_color(), visuals.strong_text_color());
         assert_eq!(
             colours(&plain),
-            [
-                visuals.text_color(),
-                visuals.strong_text_color(),
-                visuals.text_color()
-            ]
+            [visuals.text_color(), visuals.strong_text_color()]
         );
     }
 
@@ -2397,69 +2108,6 @@ mod tests {
         with_poles(40)
     }
 
-    /// The defaults under a 30 mm overall-length claim: the hot-low torque needs longer
-    /// magnets and the space claim shorter ones, both failing (a trade-off note in each).
-    fn length_conflict() -> DesignInputs {
-        design(|i| i.metal.max_overall_axial_mm = 30.0)
-    }
-
-    /// One frame of the dashboard of `inputs` at full width on a screen tall enough for every
-    /// row: what it drew.
-    fn dashboard_frame(ctx: &egui::Context, inputs: &DesignInputs) -> egui::FullOutput {
-        dashboard_frame_with(ctx, inputs, false)
-    }
-
-    /// [`dashboard_frame`] with the shaft-clamp section paused (`clamps_paused`) or not.
-    fn dashboard_frame_with(
-        ctx: &egui::Context,
-        inputs: &DesignInputs,
-        clamps_paused: bool,
-    ) -> egui::FullOutput {
-        let results = compute_all(inputs);
-        let fixes = all_fixes(inputs, &results, clamps_paused);
-        sized_frame(ctx, egui::vec2(1280.0, 4000.0), Vec::new(), |ui| {
-            dashboard_ui(
-                ui,
-                inputs,
-                &DesignInputs::default(),
-                &results,
-                &fixes,
-                clamps_paused,
-                &mut Readouts::default(),
-            );
-        })
-    }
-
-    #[test]
-    fn while_the_clamp_section_is_paused_its_row_and_guide_leave_the_dashboard() {
-        // Ruling 11: a design that fails only the clamp reads as passing while it is paused;
-        // with the section shown its row, its Problem and its Why sentence are drawn.
-        let ctx = egui::Context::default();
-        let inputs = only_the_clamp_fails();
-        let results = compute_all(&inputs);
-        let clamp = guidance::guide("clamps.recommended").expect("the clamp's guide");
-        let problem = (clamp.problem)(&inputs, &results).expect("the clamp fails");
-        for paused in [false, true] {
-            let output = dashboard_frame_with(&ctx, &inputs, paused);
-            let texts = drawn_texts(&output);
-            let count = |text: &str| texts.iter().filter(|t| *t == text).count();
-            let status = design_status_text(&design_status(&inputs, &results, paused));
-            assert_eq!(texts.first(), Some(&status), "paused {paused}");
-            let shown = usize::from(!paused);
-            assert_eq!(
-                count(label_for("clamps.recommended")),
-                shown,
-                "paused {paused}"
-            );
-            assert_eq!(count(&problem), shown, "paused {paused}");
-            assert_eq!(count(clamp.why), shown, "paused {paused}");
-        }
-        assert_eq!(
-            design_status_text(&design_status(&inputs, &results, true)),
-            "Your design: passes all 9 checks"
-        );
-    }
-
     #[test]
     fn while_the_clamp_section_is_paused_its_checks_leave_the_failing_list() {
         let results = compute_all(&only_the_clamp_fails());
@@ -2475,23 +2123,6 @@ mod tests {
             .collect();
         assert_eq!(failing_checks(&results, true), want);
         assert!(want.len() < shown.len());
-    }
-
-    /// The text of the Why link to `learn`, as a reader would name it: a reviewed note's title,
-    /// an assumption's label, else "no note yet".
-    fn learn_link_text(learn: Learn) -> String {
-        match learn {
-            Learn::Note(id) => {
-                reviewed_note(id).map_or(NO_NOTE_YET.to_owned(), |n| glyph_safe(n.title))
-            }
-            Learn::Assumption(id) => ASSUMPTIONS
-                .iter()
-                .find(|a| a.id == id)
-                .unwrap()
-                .label
-                .to_owned(),
-            Learn::None(_) => NO_NOTE_YET.to_owned(),
-        }
     }
 
     #[test]
@@ -2537,626 +2168,6 @@ mod tests {
                     );
                 }
             }
-        }
-    }
-
-    #[test]
-    fn a_red_check_shows_its_block_an_amber_one_its_header_and_every_row_its_why_link() {
-        let count = |texts: &[String], text: &str| texts.iter().filter(|t| *t == text).count();
-        // Every fix text any guide can show: the static lists, and the fixes of the designs.
-        let mut fix_texts: BTreeSet<String> = CHECK_GUIDES
-            .iter()
-            .filter_map(|g| match g.fixes {
-                Fixes::Static(list) => Some(list),
-                Fixes::PerTerm(_) => None,
-            })
-            .flatten()
-            .map(|&(path, dir)| fix_text(path, dir))
-            .collect();
-        let ctx = egui::Context::default();
-        for inputs in [
-            DesignInputs::default(),
-            short_magnets(),
-            passing_design(),
-            hot_day(),
-            too_many_poles(),
-            length_conflict(),
-            design(|i| i.metal.max_diameter_mm = f64::NAN),
-        ] {
-            let results = compute_all(&inputs);
-            let fixes = all_fixes(&inputs, &results, false);
-            fix_texts.extend(
-                fixes
-                    .iter()
-                    .flatten()
-                    .map(|&(path, dir)| fix_text(path, dir)),
-            );
-            let texts = drawn_texts(&dashboard_frame(&ctx, &inputs));
-            let level = |g: &CheckGuide| guidance::level(g, &inputs, &results);
-            // Red blocks are open; amber ones are shut under their header.
-            let open: Vec<usize> = (0..CHECK_GUIDES.len())
-                .filter(|&i| level(&CHECK_GUIDES[i]) == Level::Bad)
-                .collect();
-            let amber = CHECK_GUIDES
-                .iter()
-                .filter(|g| level(g) == Level::Caution)
-                .count();
-            assert_eq!(count(&texts, CAUTION_DETAILS), amber);
-            let problems: Vec<String> = open
-                .iter()
-                .filter_map(|&i| (CHECK_GUIDES[i].problem)(&inputs, &results))
-                .collect();
-            assert_eq!(count(&texts, PROBLEM), problems.len());
-            for problem in &problems {
-                assert_eq!(count(&texts, problem), 1, "{problem:?}");
-            }
-            for (i, guide) in CHECK_GUIDES.iter().enumerate() {
-                assert_eq!(
-                    count(&texts, guide.why),
-                    usize::from(open.contains(&i)),
-                    "{}",
-                    guide.check
-                );
-            }
-            // Each open block has its Fix line: its fixes, each once, or the no-fix line; then
-            // its notes (trade-offs and side effects).
-            assert_eq!(count(&texts, FIX), open.len());
-            let mut want: Vec<String> = open
-                .iter()
-                .flat_map(|&i| fixes[i].iter().map(|&(path, dir)| fix_text(path, dir)))
-                .collect();
-            let mut drawn: Vec<String> = texts
-                .iter()
-                .filter(|t| fix_texts.contains(*t))
-                .cloned()
-                .collect();
-            want.sort();
-            drawn.sort();
-            assert_eq!(drawn, want);
-            let no_fix = open.iter().filter(|&&i| fixes[i].is_empty()).count();
-            assert_eq!(count(&texts, guidance::NO_FIX), no_fix);
-            let notes: Vec<String> = open
-                .iter()
-                .flat_map(|&i| guide_notes(&fixes, i, &inputs, &results))
-                .collect();
-            for note in &notes {
-                assert_eq!(
-                    count(&texts, note),
-                    notes.iter().filter(|n| *n == note).count()
-                );
-            }
-            // Every row has its Why line, the fit row's included, each leading where
-            // `row_learn` (the fit row: its guide) says.
-            assert_eq!(count(&texts, WHY_LINK), DASHBOARD.len() + 1);
-            let fit = guidance::guide(FIT_CHECK).unwrap().learn;
-            let links: Vec<String> = ROW_LEARN
-                .iter()
-                .map(|&(_, learn)| learn)
-                .chain([fit])
-                .map(learn_link_text)
-                .collect();
-            for link in &links {
-                assert_eq!(
-                    count(&texts, link),
-                    links.iter().filter(|l| *l == link).count(),
-                    "{link:?}"
-                );
-            }
-        }
-        // The workbook example's four red checks are the ones with blocks.
-        let defaults = DesignInputs::default();
-        let results = compute_all(&defaults);
-        let red: BTreeSet<&str> = CHECK_GUIDES
-            .iter()
-            .filter(|g| guidance::level(g, &defaults, &results) == Level::Bad)
-            .map(|g| g.check)
-            .collect();
-        let want = [
-            "metal.hot_min_check",
-            "metal.clearance_check",
-            "materials.cup_wall_check",
-            "gearbox.cold_high_check",
-        ];
-        assert_eq!(red, BTreeSet::from(want));
-        // The designs above reach a trade-off note and an amber header.
-        let conflict = length_conflict();
-        let fixes = all_fixes(&conflict, &compute_all(&conflict), false);
-        assert!((0..CHECK_GUIDES.len()).any(|i| !trade_offs(&fixes, i).is_empty()));
-        let texts = drawn_texts(&dashboard_frame(&ctx, &hot_day()));
-        assert_eq!(count(&texts, CAUTION_DETAILS), 1);
-    }
-
-    #[test]
-    fn the_example_design_s_status_line_says_on_hover_where_its_values_come_from() {
-        // Spec S2-5: "Example design" at the defaults, its hover the original spreadsheet;
-        // "Your design" has no hover.
-        for (inputs, example) in [(DesignInputs::default(), true), (passing_design(), false)] {
-            let results = compute_all(&inputs);
-            let fixes = all_fixes(&inputs, &results, false);
-            let text = design_status_text(&design_status(&inputs, &results, false));
-            assert_eq!(
-                text.starts_with(guidance::EXAMPLE_DESIGN),
-                example,
-                "{text}"
-            );
-            let (_, output) = hover_frames(
-                &egui::Context::default(),
-                egui::vec2(1280.0, 4000.0),
-                |output| text_center(output, &text),
-                |ui| {
-                    dashboard_ui(
-                        ui,
-                        &inputs,
-                        &DesignInputs::default(),
-                        &results,
-                        &fixes,
-                        false,
-                        &mut Readouts::default(),
-                    )
-                },
-            );
-            let hover = guidance::EXAMPLE_DESIGN_HOVER.to_owned();
-            assert_eq!(drawn_texts(&output).contains(&hover), example, "{text}");
-        }
-    }
-
-    #[test]
-    fn the_starting_design_s_status_line_says_on_hover_what_it_is() {
-        // UX overhaul spec 7.1: at the session's baseline, when that is not the spreadsheet's
-        // design, the line reads "Starting design" and its hover says what the design is; the
-        // same design on a panel whose baseline is the spreadsheet's is "Your design", with no
-        // hover.
-        let inputs = passing_design();
-        let results = compute_all(&inputs);
-        let fixes = all_fixes(&inputs, &results, false);
-        for (baseline, name, starting) in [
-            (passing_design(), guidance::STARTING_DESIGN, true),
-            (DesignInputs::default(), guidance::YOUR_DESIGN, false),
-        ] {
-            let text = format!("{name}: passes all 10 checks");
-            let (_, output) = hover_frames(
-                &egui::Context::default(),
-                egui::vec2(1280.0, 4000.0),
-                |output| text_center(output, &text),
-                |ui| {
-                    dashboard_ui(
-                        ui,
-                        &inputs,
-                        &baseline,
-                        &results,
-                        &fixes,
-                        false,
-                        &mut Readouts::default(),
-                    )
-                },
-            );
-            let texts = drawn_texts(&output);
-            let hover = guidance::STARTING_DESIGN_HOVER.to_owned();
-            assert_eq!(texts.contains(&hover), starting, "{text}");
-            let example = guidance::EXAMPLE_DESIGN_HOVER.to_owned();
-            assert!(!texts.contains(&example), "{text}");
-        }
-    }
-
-    #[test]
-    fn the_status_line_counts_the_guided_checks_in_the_worst_level_s_colour() {
-        let ctx = egui::Context::default();
-        let visuals = ctx.style().visuals.clone();
-        let mut passing_hot_day = passing_design();
-        passing_hot_day.temperature.duty = hot_day().temperature.duty;
-        let mut passing_reversed = passing_design();
-        reversed_hub_band(&mut passing_reversed);
-        let cases = [
-            // The workbook example: four red checks.
-            (DesignInputs::default(), 4, 0, Level::Bad),
-            // One fixed: the cup wall at its rule's 2.0 mm and up.
-            (
-                design(|i| i.metal.cup_wall_corner_mm = 2.4),
-                3,
-                0,
-                Level::Bad,
-            ),
-            (passing_design(), 0, 0, Level::Good),
-            // The passing design with the example's gearbox rating: the gearbox check alone.
-            (only_the_gearbox_fails(), 1, 0, Level::Bad),
-            // The passing design with the inner hub's minimum at 8 µm: the shaft joints alone.
-            (only_the_joint_fails(), 1, 0, Level::Bad),
-            // The passing design with the inner hub's band reversed: the shaft joints ask for a
-            // look.
-            (passing_reversed, 0, 1, Level::Caution),
-            // The hot day's temperature verdict is amber, counted apart from the red.
-            (hot_day(), 4, 1, Level::Bad),
-            // The passing design on the hot day: amber alone.
-            (passing_hot_day, 0, 1, Level::Caution),
-        ];
-        for (inputs, bad, caution, colour) in cases {
-            let results = compute_all(&inputs);
-            let status = design_status(&inputs, &results, false);
-            assert_eq!((status.bad, status.caution), (bad, caution));
-            assert_eq!(status.total, CHECK_GUIDES.len());
-            assert_eq!(status.is_default, inputs == DesignInputs::default());
-            let output = dashboard_frame(&ctx, &inputs);
-            let text = design_status_text(&status);
-            assert_eq!(
-                drawn_texts(&output).first(),
-                Some(&text),
-                "the status line tops the dashboard"
-            );
-            assert_eq!(text_color(&output, &text), Some(colour.color(&visuals)));
-        }
-    }
-
-    #[test]
-    fn the_fit_row_says_whether_the_blocks_fit_and_guides_a_misfit() {
-        let ctx = egui::Context::default();
-        let fit = guidance::guide(FIT_CHECK).unwrap();
-        let count = |output: &egui::FullOutput, text: &str| {
-            drawn_texts(output).iter().filter(|t| *t == text).count()
-        };
-        let output = dashboard_frame(&ctx, &DesignInputs::default());
-        assert_eq!(count(&output, fit.label), 1);
-        assert_eq!((count(&output, FITS), count(&output, DOES_NOT_FIT)), (1, 0));
-        assert_eq!(count(&output, fit.why), 0);
-        // 40 poles: the blocks do not fit; a red badge, the problem and the guide's fixes.
-        let inputs = too_many_poles();
-        let results = compute_all(&inputs);
-        assert!(!crate::engine::model::blocks_fit(
-            &inputs.coupling,
-            &results.model
-        ));
-        assert_eq!(guidance::level(fit, &inputs, &results), Level::Bad);
-        let output = dashboard_frame(&ctx, &inputs);
-        assert_eq!((count(&output, FITS), count(&output, DOES_NOT_FIT)), (0, 1));
-        assert_eq!(count(&output, fit.why), 1);
-        let problem = (fit.problem)(&inputs, &results).expect("a misfit has a Problem");
-        assert_eq!(count(&output, &problem), 1);
-        // The last badge drawn is the fit row's, red.
-        let visuals = ctx.style().visuals.clone();
-        let last_badge = crate::gui::test_support::flat_shapes(&output)
-            .into_iter()
-            .rev()
-            .find_map(|shape| match shape {
-                egui::Shape::Circle(c) if c.radius == 5.0 => Some(c.fill),
-                _ => None,
-            });
-        assert_eq!(last_badge, Some(Level::Bad.color(&visuals)));
-    }
-
-    /// The cup wall fix the test guide offers.
-    const CUP_WALL_FIX: [(&str, Direction); 1] = [("metal.cup_wall_corner_mm", Direction::Raise)];
-
-    /// A guide of the cup wall check, the test's own, linking to `learn`.
-    fn guide_with(learn: Learn) -> CheckGuide {
-        CheckGuide {
-            check: "materials.cup_wall_check",
-            label: "Cup wall",
-            problem: |_, results| Some(results.materials.cup_wall_check.clone()),
-            why: "A test sentence.",
-            fixes: Fixes::Static(&CUP_WALL_FIX),
-            learn,
-        }
-    }
-
-    /// A test guide's lines at `level`, with the cup wall fix and no trade-off note.
-    fn shown_at(level: Level) -> GuideShown<'static> {
-        GuideShown {
-            level,
-            fixes: &CUP_WALL_FIX,
-            notes: &Vec::new,
-        }
-    }
-
-    /// Frames of `guide` drawn as `block` on the defaults in `ctx`, a first one with no input,
-    /// then one per entry of `events`: what the last drew and what the readouts heard in it.
-    fn guide_frames(
-        ctx: &egui::Context,
-        guide: &CheckGuide,
-        block: &GuideShown,
-        events: Vec<Vec<egui::Event>>,
-    ) -> (egui::FullOutput, ReadoutEvents) {
-        let inputs = DesignInputs::default();
-        let results = compute_all(&inputs);
-        let mut last = None;
-        for input in std::iter::once(Vec::new()).chain(events) {
-            let mut readouts = Readouts::default();
-            let output = sized_frame(ctx, egui::vec2(600.0, 400.0), input, |ui| {
-                guide_ui(ui, guide, block, &inputs, &results, &mut readouts);
-            });
-            last = Some((output, readouts.finish()));
-        }
-        last.expect("one frame at least")
-    }
-
-    /// Where `guide` drawn as `block` draws `text` on the defaults in `ctx`.
-    fn guide_text_at(
-        ctx: &egui::Context,
-        guide: &CheckGuide,
-        block: &GuideShown,
-        text: &str,
-    ) -> egui::Pos2 {
-        let (output, _) = guide_frames(ctx, guide, block, Vec::new());
-        text_rect(&output, text)
-            .unwrap_or_else(|| panic!("no {text:?} in {:?}", drawn_texts(&output)))
-            .center()
-    }
-
-    /// The frames of a click at `at` (move, press, release).
-    fn click_at(at: egui::Pos2) -> Vec<Vec<egui::Event>> {
-        vec![
-            vec![egui::Event::PointerMoved(at)],
-            vec![primary_button(at, true)],
-            vec![primary_button(at, false)],
-        ]
-    }
-
-    /// A click on `text` drawn by `guide` as `block`: what the readouts heard.
-    fn click_in_guide(guide: &CheckGuide, block: &GuideShown, text: &str) -> ReadoutEvents {
-        let ctx = egui::Context::default();
-        let at = guide_text_at(&ctx, guide, block, text);
-        guide_frames(&ctx, guide, block, click_at(at)).1
-    }
-
-    /// The texts drawn while `text` of `guide` as `block` is hovered, tooltips shown at once
-    /// (no delay, the pointer need not rest): its hover text among them.
-    fn hover_in_guide(guide: &CheckGuide, block: &GuideShown, text: &str) -> Vec<String> {
-        let ctx = egui::Context::default();
-        tooltips_at_once(&ctx);
-        let at = guide_text_at(&ctx, guide, block, text);
-        let hover = vec![vec![egui::Event::PointerMoved(at)], Vec::new()];
-        drawn_texts(&guide_frames(&ctx, guide, block, hover).0)
-    }
-
-    #[test]
-    fn a_why_link_asks_for_its_note_or_its_assumption_s_row_and_a_fix_for_its_input_s_row() {
-        let green = shown_at(Level::Good);
-        // A reviewed note: its title (glyph-safe) asks for the note.
-        let note = reviewed_note("end_effect").expect("a reviewed note");
-        let events = click_in_guide(
-            &guide_with(Learn::Note(note.id)),
-            &green,
-            &glyph_safe(note.title),
-        );
-        assert_eq!((events.note, events.focus), (Some(note.id), None));
-        // An assumption: its label asks for its first input's row; its hover text is the
-        // rationale.
-        let assumption = ASSUMPTIONS
-            .iter()
-            .find(|a| a.id == "production_variation")
-            .unwrap();
-        let guide = guide_with(Learn::Assumption(assumption.id));
-        let events = click_in_guide(&guide, &green, assumption.label);
-        assert_eq!(
-            (events.note, events.focus),
-            (None, Some(assumption.paths[0]))
-        );
-        let texts = hover_in_guide(&guide, &green, assumption.label);
-        assert!(texts.iter().any(|t| t == assumption.rationale));
-        // No note, or a note that has not passed review (no note has this id): "no note yet",
-        // which asks for nothing; its hover text says why.
-        for (learn, reason) in [
-            (Learn::None("A test reason."), "A test reason."),
-            (Learn::Note("no_such_note"), NOTE_NOT_REVIEWED),
-        ] {
-            let guide = guide_with(learn);
-            assert_eq!(
-                click_in_guide(&guide, &green, NO_NOTE_YET),
-                ReadoutEvents::default()
-            );
-            assert!(hover_in_guide(&guide, &green, NO_NOTE_YET).contains(&reason.to_owned()));
-        }
-        // A red row's fix asks for its input's row; a two-pick magnet fix for its part's row.
-        let guide = guide_with(Learn::None("A test reason."));
-        let fix = fix_text("metal.cup_wall_corner_mm", Direction::Raise);
-        let events = click_in_guide(&guide, &shown_at(Level::Bad), &fix);
-        assert_eq!(
-            (events.note, events.focus),
-            (None, Some("metal.cup_wall_corner_mm"))
-        );
-        let part = [("coupling.magnets.part_inner", Direction::CustomHotterGrade)];
-        let two_picks = GuideShown {
-            level: Level::Bad,
-            fixes: &part,
-            notes: &Vec::new,
-        };
-        let events = click_in_guide(&guide, &two_picks, &fix_text(part[0].0, part[0].1));
-        assert_eq!(events.focus, Some("coupling.magnets.part_inner"));
-    }
-
-    #[test]
-    fn the_block_is_open_under_red_shut_under_amber_until_asked_and_absent_under_green() {
-        let guide = guide_with(Learn::None("A test reason."));
-        let problem = compute_all(&DesignInputs::default())
-            .materials
-            .cup_wall_check;
-        let fix = fix_text("metal.cup_wall_corner_mm", Direction::Raise);
-        let ctx = egui::Context::default();
-        let visuals = ctx.style().visuals.clone();
-        let block_texts = [PROBLEM, problem.as_str(), guide.why, FIX, fix.as_str()];
-        let y = |output: &egui::FullOutput, text: &str| text_rect(output, text).unwrap().top();
-        // Red: open, in order (the problem in red, the sentence then its link, the fixes).
-        let (output, _) = guide_frames(&ctx, &guide, &shown_at(Level::Bad), Vec::new());
-        let texts = drawn_texts(&output);
-        for want in block_texts.iter().chain(&[WHY_LINK, NO_NOTE_YET]) {
-            assert!(texts.iter().any(|t| t == want), "no {want:?}");
-        }
-        assert!(!texts.iter().any(|t| t == CAUTION_DETAILS));
-        assert_eq!(
-            text_color(&output, &problem),
-            Some(Level::Bad.color(&visuals))
-        );
-        assert!(y(&output, &problem) < y(&output, guide.why));
-        assert!(y(&output, guide.why) < y(&output, NO_NOTE_YET));
-        assert!(y(&output, NO_NOTE_YET) < y(&output, &fix));
-        // Amber: a header and the Why link, the block shut; a click on the header opens it,
-        // the problem in amber, and the Why link stays.
-        let ctx = egui::Context::default();
-        let amber = shown_at(Level::Caution);
-        let (output, _) = guide_frames(&ctx, &guide, &amber, Vec::new());
-        assert_eq!(
-            drawn_texts(&output),
-            [CAUTION_DETAILS, WHY_LINK, NO_NOTE_YET]
-        );
-        let header = guide_text_at(&ctx, &guide, &amber, CAUTION_DETAILS);
-        let mut frames = click_at(header);
-        frames.push(Vec::new());
-        let (output, events) = guide_frames(&ctx, &guide, &amber, frames);
-        assert_eq!(events, ReadoutEvents::default(), "opening asks for nothing");
-        let texts = drawn_texts(&output);
-        for want in block_texts
-            .iter()
-            .chain(&[CAUTION_DETAILS, WHY_LINK, NO_NOTE_YET])
-        {
-            assert!(
-                texts.iter().any(|t| t == want),
-                "amber, opened: no {want:?}"
-            );
-        }
-        assert_eq!(
-            text_color(&output, &problem),
-            Some(Level::Caution.color(&visuals))
-        );
-        // Green: the Why line alone.
-        let (output, _) = guide_frames(&ctx, &guide, &shown_at(Level::Good), Vec::new());
-        assert_eq!(drawn_texts(&output), [WHY_LINK, NO_NOTE_YET]);
-    }
-
-    #[test]
-    fn a_red_block_without_a_fix_says_so_and_its_trade_off_notes_follow_the_fixes() {
-        let guide = guide_with(Learn::None("A test reason."));
-        let ctx = egui::Context::default();
-        let none = GuideShown {
-            level: Level::Bad,
-            fixes: &[],
-            notes: &Vec::new,
-        };
-        let (output, _) = guide_frames(&ctx, &guide, &none, Vec::new());
-        let texts = drawn_texts(&output);
-        assert!(texts.iter().any(|t| t == FIX));
-        assert!(texts.iter().any(|t| t == guidance::NO_FIX));
-        let note = "A test trade-off.".to_owned();
-        let notes = [note.clone()];
-        let noted = GuideShown {
-            level: Level::Bad,
-            fixes: &CUP_WALL_FIX,
-            notes: &|| notes.to_vec(),
-        };
-        let (output, _) = guide_frames(&ctx, &guide, &noted, Vec::new());
-        assert!(!drawn_texts(&output).iter().any(|t| t == guidance::NO_FIX));
-        let fix = fix_text(CUP_WALL_FIX[0].0, CUP_WALL_FIX[0].1);
-        let y = |text: &str| text_rect(&output, text).unwrap().top();
-        assert!(y(&fix) < y(&note));
-    }
-
-    #[test]
-    fn a_guide_reads_its_notes_only_when_its_block_is_open() {
-        let guide = guide_with(Learn::None("A test reason."));
-        let reads = std::cell::Cell::new(0);
-        let counting = || {
-            reads.set(reads.get() + 1);
-            vec!["A test trade-off.".to_owned()]
-        };
-        for (level, want) in [(Level::Good, 0), (Level::Caution, 0), (Level::Bad, 1)] {
-            reads.set(0);
-            let block = GuideShown {
-                level,
-                fixes: &CUP_WALL_FIX,
-                notes: &counting,
-            };
-            let ctx = egui::Context::default();
-            let (output, _) = guide_frames(&ctx, &guide, &block, Vec::new());
-            assert_eq!(reads.get(), want, "{level:?}");
-            let shown = drawn_texts(&output)
-                .iter()
-                .any(|t| t == "A test trade-off.");
-            assert_eq!(shown, want > 0, "{level:?}");
-        }
-    }
-
-    #[test]
-    fn every_guide_line_has_glyphs_in_the_default_fonts_and_plain_words() {
-        // On designs where each check fails: the status line, the fit row, every row's Why
-        // line, and each guide at red whatever the design (its problem, its sentence, its
-        // fixes for the design and its static ones, its notes); the fixed texts, and
-        // the hover texts.
-        let ctx = egui::Context::default();
-        let mut plain: Vec<String> = Vec::new();
-        for inputs in [
-            DesignInputs::default(),
-            short_magnets(),
-            passing_design(),
-            hot_day(),
-            too_many_poles(),
-            length_conflict(),
-            design(|i| {
-                i.clamps.boss_od_mm = 12.0;
-                i.clamps.clamp_length_mm = 3.0;
-            }),
-            design(|i| i.coupling.magnets.axial_length_mm = Some(50.8)),
-        ] {
-            let results = compute_all(&inputs);
-            let fixes = all_fixes(&inputs, &results, false);
-            let output = sized_frame(&ctx, egui::vec2(600.0, 8000.0), Vec::new(), |ui| {
-                let mut readouts = Readouts::default();
-                status_ui(ui, &inputs, &DesignInputs::default(), &results, false);
-                fit_ui(ui, &inputs, &results, &fixes, &mut readouts);
-                for &(_, learn) in &ROW_LEARN {
-                    why_line(ui, None, learn, &mut readouts);
-                }
-                for (i, guide) in CHECK_GUIDES.iter().enumerate() {
-                    let notes = guide_notes(&fixes, i, &inputs, &results);
-                    let listed = match guide.fixes {
-                        Fixes::Static(list) => list,
-                        Fixes::PerTerm(_) => &fixes[i][..],
-                    };
-                    for fixes in [&fixes[i][..], listed] {
-                        let shown = GuideShown {
-                            level: Level::Bad,
-                            fixes,
-                            notes: &|| notes.clone(),
-                        };
-                        guide_ui(ui, guide, &shown, &inputs, &results, &mut readouts);
-                    }
-                }
-            });
-            plain.extend(drawn_texts(&output));
-        }
-        plain.extend(
-            [
-                NOTE_NOT_REVIEWED,
-                FITS,
-                DOES_NOT_FIT,
-                CAUTION_DETAILS,
-                guidance::NO_FIX,
-            ]
-            .map(str::to_owned),
-        );
-        // An assumption's rationale is the hover text of its Why link: plain words too (spec
-        // 3.4, ruling R10; the slice-1 exemption for cells is gone). The branch stays even while
-        // no row links an assumption: it covers a row linked to one again.
-        let fit = guidance::guide(FIT_CHECK).unwrap().learn;
-        for learn in ROW_LEARN.iter().map(|&(_, learn)| learn).chain([fit]) {
-            match learn {
-                Learn::None(reason) => plain.push(reason.to_owned()),
-                Learn::Assumption(id) => plain.push(
-                    ASSUMPTIONS
-                        .iter()
-                        .find(|a| a.id == id)
-                        .unwrap()
-                        .rationale
-                        .to_owned(),
-                ),
-                Learn::Note(_) => {}
-            }
-        }
-        for text in &plain {
-            assert_glyphs(&ctx, text, "the check guides");
-        }
-        for text in &plain {
-            assert!(
-                guidance::plain_text_violations(text).is_empty(),
-                "{text:?}: {:?}",
-                guidance::plain_text_violations(text)
-            );
         }
     }
 
@@ -3256,24 +2267,6 @@ mod tests {
                 format_value(&value)
             );
         }
-    }
-
-    #[test]
-    fn the_dashboard_draws_the_cup_wall_verdict_in_plain_words() {
-        let ctx = egui::Context::default();
-        let results = compute_all(&DesignInputs::default());
-        let shown = verdict_display(
-            "materials.cup_wall_check",
-            &results.materials.cup_wall_check,
-        )
-        .expect("the default cup wall fails");
-        let texts = drawn_texts(&dashboard_frame(&ctx, &DesignInputs::default()));
-        assert_eq!(texts.iter().filter(|t| **t == shown).count(), 1, "{shown}");
-        let engine_words = CUP_WALL_TOO_THIN.trim_end();
-        assert!(
-            !texts.iter().any(|t| t.contains(engine_words)),
-            "the engine's cell-named verdict is drawn"
-        );
     }
 
     #[test]

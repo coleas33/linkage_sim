@@ -809,6 +809,33 @@ pub(crate) fn region_frame(
     (output, used)
 }
 
+/// What the Explain panel draws for the check `check` of `inputs` (whose results are `results`),
+/// handed every guide's `fixes` and the shaft-clamp section's pause, with the spreadsheet
+/// details off: one frame, tall enough for the whole entry.
+pub(crate) fn check_entry_texts(
+    inputs: &crate::DesignInputs,
+    results: &crate::DesignResults,
+    fixes: &[Vec<(&'static str, crate::gui::guidance::Direction)>],
+    clamps_paused: bool,
+    check: &'static str,
+) -> Vec<String> {
+    use crate::gui::explain::{Selection, Shown, explain_ui};
+    let ctx = egui::Context::default();
+    let output = sized_frame(&ctx, egui::vec2(320.0, 4000.0), Vec::new(), |ui| {
+        let shown = Shown {
+            inputs,
+            results,
+            fixes,
+            clamps_paused,
+            consequences: None,
+            auto: None,
+        };
+        let mut readouts = crate::gui::readouts::Readouts::default();
+        explain_ui(ui, Selection::Check(check), &shown, &mut readouts);
+    });
+    drawn_texts(&output)
+}
+
 /// A key event with no modifiers: a press, or (`pressed` false) its release.
 pub(crate) fn key_event(key: egui::Key, pressed: bool) -> egui::Event {
     egui::Event::Key {
@@ -1003,6 +1030,43 @@ pub(crate) fn cut_texts(output: &egui::FullOutput, screen: egui::Rect) -> Vec<St
             (cut > 1.0).then(|| format!("{:?} by {cut:.0} points", text.galley.text()))
         })
         .collect()
+}
+
+/// The rects of `text` where `output` draws it whole: inside its clip rect and inside `screen`.
+/// A text in a list scrolled past, or under a panel's edge, is left out.
+pub(crate) fn shown_whole(
+    output: &egui::FullOutput,
+    text: &str,
+    screen: egui::Rect,
+) -> Vec<egui::Rect> {
+    clipped_flat_shapes(output)
+        .into_iter()
+        .filter_map(|(clip, shape)| match shape {
+            egui::Shape::Text(shape) if shape.galley.text() == text => {
+                let rect = shape.visual_bounding_rect();
+                (clip.intersect(screen).expand(0.5).contains_rect(rect)).then_some(rect)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// The words `output` shows on `screen` (UX overhaul spec 2.1, goal G-1): every text that is
+/// drawn at least in part inside its clip rect and the screen, counted by whitespace.
+pub(crate) fn words_shown(output: &egui::FullOutput, screen: egui::Rect) -> usize {
+    clipped_flat_shapes(output)
+        .into_iter()
+        .filter_map(|(clip, shape)| match shape {
+            egui::Shape::Text(shape)
+                if clip
+                    .intersect(screen)
+                    .intersects(shape.visual_bounding_rect()) =>
+            {
+                Some(shape.galley.text().split_whitespace().count())
+            }
+            _ => None,
+        })
+        .sum()
 }
 
 /// A context whose fonts are loaded, for [`assert_glyphs`]: egui loads them on a context's first
