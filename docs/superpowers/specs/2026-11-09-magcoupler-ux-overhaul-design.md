@@ -473,7 +473,9 @@ gearbox input, as today.
 - It changes no assumption (the assumptions banner stays quiet) and uses only library parts and grades, at their
   stock length.
 - It differs from the spreadsheet's values in six inputs, and every differing value is one a slider step can
-  reach, so a user can walk from one to the other.
+  reach, so a user can walk from one to the other. (Amended 2026-11-22, BL-080, by the owner's rulings on register
+  rows A-17 and A-18: a seventh input, the keyway depth in the hub, 1.4 mm against 1.7 mm, and its fourteen stored
+  3D fields, computed for its own geometry; see the end of this section.)
 
 | Input (on-screen label) | Spreadsheet | Starting design |
 |---|---|---|
@@ -511,6 +513,8 @@ The magnets stay B842SH on both rings at the stock length.
   per ring is not; `docs/analyses/2026-11-17-magcoupler-slice-a-review.md`.)
 - **Example design.** The spreadsheet's values, `DesignInputs::default`, unchanged. Its name and every sentence
   that says "example design" today stay as they are, and stay true: the stored 3D fields do come from that design.
+  (Amended 2026-11-22, BL-080: the starting design now stores 3D fields of its own, so the texts about the stored
+  fields name both: "Fixed 3D fields: starting or example design".)
   One string changes: its hover, "The starting values from the original spreadsheet." (`EXAMPLE_DESIGN_HOVER`,
   `gui/guidance.rs`), loses the word "starting".
 - **Reaching the example design.** Slice A adds one button to today's top bar, "Open the example design"; slice B
@@ -542,8 +546,8 @@ The magnets stay B842SH on both rings at the stock length.
   design's is 0.90 mm on paper, with its thread below the cup body, which the drawing flags today. A thicker skirt
   needs a larger diameter claim. Section 12.4 files the missing check.
 - **Ring radius 9.00 mm is the slider's minimum.** A user cannot walk further down from it.
-- **The opening tab draws one amber line** (found by the slice A plan, 2026-11-17; register row A-17). At a ring radius of 9.00 mm the hub wall past the keyway is 2.25 mm, and the Size tab says so against its guidance of about 2.5 mm ("Wall past keyway: 2.25 mm; existing guidance is about 2.5 mm."). No counted check judges it, so the status line still reads "passes all 9 checks". A ring radius of 9.26 mm clears the line and takes the cap's skirt from 0.55 to 0.30 mm (with the cap thread at 42.2 mm; at 9.25 mm the wall computes a hair under 2.5 mm and the line still shows). The approved values are kept and the line stays visible until the owner rules.
-- **Two of its nine checks use the example design's 3D fields** (found by the slice A review, 2026-11-17; register row A-18). The temperature check, and the inner hub's fitting temperature inside the shaft joints check, read the stored reverse fields, which were computed in 3D for the example design's geometry and stay fixed for every design. Until slice A the page opened on the design those fields belong to. The dashboard says so under those checks ("Fixed 3D fields from the example design", with its hover); at 1280x800 that line is below the dashboard's first screen. With the four stored reverse fields raised by 10 % the starting design still passes all 9 checks with no caution; raised by 25 % the temperature check turns to a caution, and raised by 75 % the shaft joints check fails (probe of 2026-11-17, `docs/analyses/2026-11-17-magcoupler-slice-a-review.md`). Nothing is changed until the owner rules.
+- **The opening tab drew one amber line; answered 2026-11-22** (found by the slice A plan, 2026-11-17; register row A-17). The owner chose the standard keyway depth: the starting design's hub keyway is 1.4 mm (DIN 6885-1, t2 for a 3 x 3 mm key on a shaft over 8 up to 10 mm), the wall past it 2.55 mm, and the line is not drawn; every check keeps its verdict and margin (BL-080). As found: At a ring radius of 9.00 mm the hub wall past the keyway is 2.25 mm, and the Size tab says so against its guidance of about 2.5 mm ("Wall past keyway: 2.25 mm; existing guidance is about 2.5 mm."). No counted check judges it, so the status line still reads "passes all 9 checks". A ring radius of 9.26 mm clears the line and takes the cap's skirt from 0.55 to 0.30 mm (with the cap thread at 42.2 mm; at 9.25 mm the wall computes a hair under 2.5 mm and the line still shows). The approved values are kept and the line stays visible until the owner rules.
+- **Two of its nine checks used the example design's 3D fields; answered 2026-11-22** (found by the slice A review, 2026-11-17; register row A-18). The owner chose to compute them: the reference routine was run once for the starting design's geometry and its fourteen values are stored with it (`gui::dashboard::STARTING_3D_FIELDS`, BL-080). It still passes all 9 checks with no caution; the magnet limit goes from 93.06 to 94.94 °C and the inner hub's fitting margin stays 6.73 °C. The fields stay fixed under an edit, and the dashboard line reads "Fixed 3D fields: starting or example design". As found: The temperature check, and the inner hub's fitting temperature inside the shaft joints check, read the stored reverse fields, which were computed in 3D for the example design's geometry and stay fixed for every design. Until slice A the page opened on the design those fields belong to. The dashboard says so under those checks ("Fixed 3D fields from the example design", with its hover); at 1280x800 that line is below the dashboard's first screen. With the four stored reverse fields raised by 10 % the starting design still passes all 9 checks with no caution; raised by 25 % the temperature check turns to a caution, and raised by 75 % the shaft joints check fails (probe of 2026-11-17, `docs/analyses/2026-11-17-magcoupler-slice-a-review.md`). Nothing is changed until the owner rules.
 - **1.35 N·m is a choice inside a range, and the owner took it (O-9).** Anything up to 1.44 N·m passes on this design. The ceiling
   design's 1.69 N·m is the most the given facts allow; it is not taken because of its 0.15 mm skirt and its 0.6 %
   of gearbox margin.

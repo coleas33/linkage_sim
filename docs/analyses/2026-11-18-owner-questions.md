@@ -18,13 +18,17 @@ Written 2026-11-18. Updated as answers and new questions arrive.
 | P-n, L-n | The plans for slice A and for slice B stage 1, in `docs/superpowers/plans/` |
 | Three-letter codes (LGS-11, LFA-16) | The whole-project audit, `docs/analyses/2026-11-10-whole-project-audit.md` |
 
-Contents: part A, six answers that change what is built next. Part B, eight things only you can try. Part C, 28 calls to make when convenient. Part D, five that matter only if the tools stop being generic.
+Contents: part A, six answers that change what is built next. Part B, eight things only you can try. Part C, 29 calls to make when convenient (question 48 was added there on 2026-11-22). Part D, five that matter only if the tools stop being generic.
+
+Answered so far: 1, 2, 3, 4, 5 and 6 (2026-11-22). Each answer is written in bold under its question.
 
 ---
 
 ## A. Answers that change what is built next
 
 ### 1. What does "generic" mean for the calculator's wording?
+
+**Answered 2026-11-22: (a).** The wording stays as it is: your machine is the worked example.
 
 Your machine is the worked example today. The starting design is sized to its facts: a 5:1 gearbox rated 0.6 N·m and a 43 mm space. Labels on screen say "Wheel shaft temperature at fitting" and "Torque the coupling must carry for driving (at the wheel)". The layout stage rewrites the first screen's text, so now is the cheap time to change names.
 
@@ -37,6 +41,14 @@ Your machine is the worked example today. The starting design is sized to its fa
 Source: your message of 2026-11-18; design O-8, C-19, section 10.2.
 
 ### 2. Two of the starting design's nine checks use magnetic field numbers computed for a different design. Is a note enough?
+
+**Answered 2026-11-22: (b), "Compute for the starting design".** The reference engine's 3D routine was run once for the starting design and its numbers are stored with it, so "passes all 9 checks" rests on the starting design's own fields. The note stays, with other words: "Fixed 3D fields: starting or example design". The fields still do not follow an edit. Built as BL-080: the starting design now differs from the spreadsheet in its seven sized inputs and in fourteen stored 3D values (the four reverse fields and the ten slip-heating fields).
+
+The check run's result (2026-11-22; a second run by another method agreed):
+
+1. With fields computed for its own geometry the starting design still passes all 9 checks, with no caution.
+2. The two checks that read the fields barely move: the magnet temperature limit goes from 93.1 to 94.9 °C against a 65 °C hot-day start (margin 28.1 to 29.9 °C), and the inner hub's fitting temperature keeps its 6.7 °C margin.
+3. The field that sets the temperature limit would have to be about 23 % higher than computed before that check turns to a caution, and the field behind the hub fitting about 47 % higher before the shaft joints check fails.
 
 The calculator cannot compute 3D fields itself. The stored numbers belong to the example design (10 magnets, 10.15 mm ring radius, 1.40 mm gap). The starting design is 8 magnets, 9.00 mm and 1.80 mm, and it says "passes all 9 checks". The two checks are the temperature check and the inner hub's fitting temperature inside the shaft joints check.
 
@@ -53,6 +65,8 @@ Source: A-18.
 
 ### 3. The opening screen says "passes all 9 checks" and shows one amber line about the keyway wall. Keep it?
 
+**Answered 2026-11-22: (c), "Standard 1.4 mm keyway".** Run through the nine checks first, as promised: every verdict and every margin is the same with 1.4 mm as with 1.7 mm. The wall goes from 2.25 to 2.55 mm and the amber line is gone. The standard (DIN 6885-1 and BS 4235-1, 3 x 3 mm key on a shaft over 8 up to 10 mm) gives 1.8 mm in the shaft and 1.4 mm in the hub, each +0.1 mm; the calculator's input is the depth in the hub. At the deepest the tolerance allows, 1.5 mm, the wall would be 2.45 mm. The example design keeps 1.7 mm. Built as BL-080.
+
 The line reads "Wall past keyway: 2.25 mm; existing guidance is about 2.5 mm". No counted check judges it, so a first-time visitor sees a pass and an amber warning together. There are two ways to clear it.
 
 - **Larger ring.** Ring radius 9.00 to 9.26 mm and cap thread 41.7 to 42.2 mm. It still passes all 9 checks (hot-low torque 1.448 to 1.463 N·m; gearbox input 0.510 to 0.515 N·m against 0.60). But the cap's skirt wall thins from 0.55 to 0.30 mm, which no check judges (question 4).
@@ -68,6 +82,8 @@ Source: A-17, P-10, BL-064.
 
 ### 4. Should the calculator judge the cap's thin skirt wall, and below what thickness?
 
+**Answered 2026-11-22: (b).** An amber caution below a minimum of 0.5 mm (the controller's offer), so the starting design's 0.55 mm skirt stays clear. Filed as BL-082 (risk: physics); not built yet.
+
 The skirt is the wall of the cap beyond its thread. No check looks at it: a design with a 0.15 mm skirt passes all 9 checks. The starting design's skirt is 0.55 mm, and nobody has confirmed that a wall that thin can be made.
 
 A minimum between 0.55 and 0.70 mm forces a different starting design. A minimum of 0.70 mm or more cannot be met with stock-length magnets inside the 43 mm space (the design search found none). It would take custom-length magnets or a larger space.
@@ -80,6 +96,8 @@ A minimum between 0.55 and 0.70 mm forces a different starting design. A minimum
 Source: A-6; design section 12.4 item 1.
 
 ### 5. Do you want to see each stage of the redesign before it goes live, or after?
+
+**Answered 2026-11-22: (a).** A change goes live once the full test gate, the browser smoke test and the independent reviews pass; the report comes after.
 
 Every push to the main line publishes straight to colesorkness.com; a run takes 15 to 27 minutes. There is no preview step, so the first time you can open a stage in a browser it is already public.
 
@@ -94,6 +112,8 @@ The approved design says each stage stops for your OK. It also asks for your sig
 Source: design section 9.4; A-4; L-12.
 
 ### 6. Codex's October fixes for the linkage simulator were never merged. Bring them in, redo them, or drop them?
+
+**Answered 2026-11-22: (a).** The branch stays parked and untouched. Its fixes are reused one item at a time, each after a fresh physics review; the two confirmed faults go first. Recorded in `docs/ai/04-memory.yaml`.
 
 Codex's branch holds 78 changes, the last from 2026-10-11. It was built on the main line of 2026-10-06, and the main line has moved 528 changes since. Of the 33 linkage to-do items still open on the main line, that branch marks 24 fixed and 8 more in progress (the physics ones, each waiting for your review).
 
@@ -295,6 +315,19 @@ At a ring radius of 9.25 mm the wall computes as 2.4999999999999990 mm. The line
 - (c) Leave it.
 
 Source: BL-078.
+
+### 48. Should the torque model be checked against a real-iron 3D solve before the starting design is called passing?
+
+Added 2026-11-22 (it keeps the next free number, so the other questions keep theirs).
+
+The 3D routine that gave the starting design its stored fields also returns a pull-out torque. For the starting design it is 1.34 N·m at 20 °C, against the calculator's 1.83 N·m: a ratio of 0.73. For the example design the ratio is 0.76 (2.17 against 2.85 N·m). The reference engine's README calls that 3D figure a lower bound for real iron, because the routine models the steel as mirror images only. No check reads the 3D torque. But the starting design passes its hot torque check by only 7 % (1.448 against 1.35 N·m), so "passes all 9 checks" depends far more on the torque model than on the stored fields.
+
+- **If you do not answer:** nothing changes. The starting design keeps its name and its "passes all 9 checks", and the caveat stays in writing.
+- (a) Leave it as a written caveat.
+- (b) Check the torque model against a real-iron solve, together with the end-effect check of question 15, before the starting design is called passing.
+- (c) Until that check is done, lower the starting design's Required torque so that its margin covers the gap. Give the margin you want.
+
+Source: BL-080 (a by-product of the 3D run for A-18); BL-065; question 15.
 
 ### Linkage simulator
 
