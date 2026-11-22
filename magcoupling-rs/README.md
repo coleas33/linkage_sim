@@ -714,8 +714,13 @@ can name an input Auto holds; its link then frames a locked row (known limitatio
   (`Level::Good`). The accent marks two things and no more (decision C-5): the brand mark, a
   small square before the title, and a line under the active tab of the centre's row, whose
   name is in the strong text colour while the other tabs' are in the quiet colour, the theme's
-  muted (`look::mark_ui`, `look::tab_ui`, `look::quiet_text`). It is never a text colour and never on a value or a check: red means a
-  failing check and nothing else. In the plots the grid, the ticks, the axis labels and the value
+  muted (`look::mark_ui`, `look::tab_ui`, `look::quiet_text`). It is never a text colour and never on a value or a check;
+  a failing check is the theme's own red, `#ff4d57`, a lighter one. That red is not yet a
+  failing check and nothing else, as decision C-5 asks: the plots draw three reference lines in
+  it whatever the design's verdict (the required torque, the sweeps' required floor and slip
+  heating's governing limit, each with its legend dot), as they did before this stage, so a
+  design that passes every check shows red on those tabs. Stage 2, which rebuilds the Plots
+  tab, settles it (the plan's "What follows"). In the plots the grid, the ticks, the axis labels and the value
   label egui_plot draws at the pointer take the quiet colour too (egui_plot draws all four from
   the text colour, which is now as bright as a curve, and has no colour of its own for any of
   them). A host that sets no weak colour keeps its text colour for the tabs' names and the

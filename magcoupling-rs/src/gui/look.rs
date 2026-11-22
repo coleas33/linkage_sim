@@ -7,7 +7,8 @@
 //! the active tab of the centre's row ([`tab_ui`]).
 
 /// The brand accent, crimson (decision C-5). Never a text colour, and never on a value or a
-/// check: red means a failing check and nothing else.
+/// check: a failing check is the host's own red (`Visuals::error_fg_color`), which the plots'
+/// reference lines also take (`plots::reference_hline`; stage 2 of slice B settles that).
 pub const ACCENT: egui::Color32 = egui::Color32::from_rgb(0xc8, 0x10, 0x2e);
 
 /// A passing check, in a dark theme.
