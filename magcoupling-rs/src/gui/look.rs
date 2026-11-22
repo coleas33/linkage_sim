@@ -34,6 +34,15 @@ pub fn quiet_text(visuals: &egui::Visuals) -> egui::Color32 {
         .unwrap_or_else(|| visuals.text_color())
 }
 
+/// The colour of the panel's own marks of what is changed or traced: the changed dot, a
+/// trace's banner and frames, the frame around the input row an equation's term points at. It
+/// is the host's link colour (decision C-13: blue is what is clickable, selected or traced),
+/// not the colour of a selected choice's name, which a theme is free to set for its own
+/// selection fill.
+pub fn mark_color(visuals: &egui::Visuals) -> egui::Color32 {
+    visuals.hyperlink_color
+}
+
 /// The brand mark: a small square in the accent, at the middle of a heading's height. The
 /// title follows it.
 pub fn mark_ui(ui: &mut egui::Ui) {

@@ -10,7 +10,8 @@
 use egui::style::WidgetVisuals;
 use egui::{Color32, CornerRadius, Stroke};
 
-// The token table (spec 6.1). Every colour [`visuals`] sets is one of these.
+// The token table (spec 6.1). Every colour [`visuals`] sets is one of these, but the fill
+// behind what is selected ([`SELECTION`]).
 
 /// Behind the drawing and the plots; a field's background.
 pub const BG: Color32 = Color32::from_rgb(0x12, 0x14, 0x17);
@@ -18,7 +19,7 @@ pub const BG: Color32 = Color32::from_rgb(0x12, 0x14, 0x17);
 pub const PANEL: Color32 = Color32::from_rgb(0x18, 0x1b, 0x1f);
 /// A button at rest, a menu, a tooltip.
 pub const PANEL2: Color32 = Color32::from_rgb(0x1e, 0x22, 0x27);
-/// Hairlines; the fill of a pressed or hovered button and of a selected choice.
+/// Hairlines; the fill of a pressed or hovered button.
 pub const BORDER: Color32 = Color32::from_rgb(0x26, 0x2b, 0x31);
 /// Values, headings, body text.
 pub const TEXT: Color32 = Color32::from_rgb(0xe6, 0xe8, 0xeb);
@@ -36,6 +37,12 @@ pub const OK: Color32 = crate::gui::look::OK;
 /// A link, and the mark of what is selected or traced (decision C-13: egui's link blue, the
 /// hue of the drawing's dimension lines; blue means "click me").
 pub const LINK: Color32 = Color32::from_rgb(90, 170, 255);
+
+/// The fill behind selected text and of a selected choice: the one colour outside the spec's
+/// table (6.1), which names none that a reader can see behind text. A quiet blue, the hue of
+/// [`LINK`]: 3:1 or more against a field and the panel and 2.8:1 on a tooltip, with [`TEXT`]
+/// on it at 4.5:1 (the theme's tests pin each). Never the accent (decision C-5).
+pub const SELECTION: Color32 = Color32::from_rgb(0x46, 0x6a, 0x90);
 
 /// The corner radius of buttons, fields, menus and tooltips [points].
 pub const RADIUS: u8 = 4;
@@ -80,10 +87,12 @@ pub fn visuals() -> egui::Visuals {
     v.hyperlink_color = LINK;
     v.warn_fg_color = WARN;
     v.error_fg_color = BAD;
-    // A selected choice is a filled chip with its text in the link blue; selected text in a
-    // field sits on the same fill. The accent is not used here: it stays rare (decision C-5).
-    v.selection.bg_fill = BORDER;
-    v.selection.stroke = Stroke::new(1.0, LINK);
+    // egui has one fill for selected text and for a selected choice. It is a blue a reader can
+    // see behind text; a choice's name on it is the text colour, as a selected value's is (the
+    // link blue would be 2.3:1 there). A focused field's outline takes that stroke too. The
+    // accent is not used here: it stays rare (decision C-5).
+    v.selection.bg_fill = SELECTION;
+    v.selection.stroke = Stroke::new(1.0, TEXT);
     state(&mut v.widgets.noninteractive, PANEL2, PANEL2, hairline);
     state(&mut v.widgets.inactive, BORDER, PANEL2, hairline);
     state(
@@ -190,9 +199,10 @@ mod tests {
             (v.window_corner_radius, v.menu_corner_radius),
             (radius, radius)
         );
-        // What is selected: a chip on the border colour, its text in the link blue.
-        assert_eq!(v.selection.bg_fill, BORDER);
-        assert_eq!(v.selection.stroke, Stroke::new(1.0, LINK));
+        // What is selected: selected text and a selected choice on the selection fill, the
+        // choice's name in the text colour.
+        assert_eq!(v.selection.bg_fill, SELECTION);
+        assert_eq!(v.selection.stroke, Stroke::new(1.0, TEXT));
         // The widget states: fill, a button's fill, outline.
         let w = &v.widgets;
         for (name, state, fill, button, outline) in [
@@ -266,15 +276,17 @@ mod tests {
     fn every_text_token_reads_on_every_surface_it_is_drawn_on() {
         // UX overhaul spec 6.1 and goal G-7: at least 4.5:1, computed here by the WCAG
         // formula. Text and links are drawn on all four surfaces. Captions and the three
-        // level colours are not drawn on the border colour (a hovered button's and a selected
-        // chip's fill, whose text is the text colour and the link blue): there they are under
-        // 4.5:1, and the last assertions pin that so the rule is not lost.
+        // level colours are not drawn on the border colour (a hovered button's fill, whose
+        // text is the text colour): there they are under 4.5:1, and the last assertions pin
+        // that so the rule is not lost. The text colour is also the name of a selected choice
+        // and a selected value, on the selection fill.
         // Not counted: a disabled button's faded text (WCAG exempts an inactive control), and
-        // a caption while its text is selected with the pointer.
+        // a caption, a link or a level colour while its text is selected with the pointer
+        // (`selected_text_shows_on_every_surface_and_reads_on_its_fill`).
         let everywhere = [BG, PANEL, PANEL2, BORDER];
         let off_the_fill = [BG, PANEL, PANEL2];
         let drawn: [(&str, Color32, &[Color32]); 6] = [
-            ("text", TEXT, &everywhere),
+            ("text", TEXT, &[BG, PANEL, PANEL2, BORDER, SELECTION]),
             ("link", LINK, &everywhere),
             ("muted", MUTED, &off_the_fill),
             ("bad", BAD, &off_the_fill),
@@ -297,6 +309,32 @@ mod tests {
         assert_eq!(one_decimal(ACCENT, PANEL), 2.9);
         // Why captions and level colours stay off the border colour.
         assert!(contrast(MUTED, BORDER) < 4.5 && contrast(BAD, BORDER) < 4.5);
+    }
+
+    #[test]
+    fn selected_text_shows_on_every_surface_and_reads_on_its_fill() {
+        // The whole-branch review (C-1, R-3, E-5): with the border token as its fill a
+        // selection was 1.1:1 to 1.3:1, so a reader could not see what typing would replace.
+        // A field, the panel, a tooltip: where text is selected.
+        assert!(contrast(SELECTION, BG) >= 3.0);
+        assert!(contrast(SELECTION, PANEL) >= 3.0);
+        let one_decimal = |a, b| (contrast(a, b) * 10.0).round() / 10.0;
+        assert_eq!(one_decimal(SELECTION, PANEL2), 2.8);
+        // A selected value and a selected choice's name are the text colour, on the fill.
+        assert!(contrast(TEXT, SELECTION) >= 4.5);
+        // Why a tooltip gets 2.8:1 and not 3:1: the lightest fill that keeps the text colour at
+        // 4.5:1 is under 3:1 on the tooltip's surface. The text comes first.
+        let lightest_fill = (luminance(TEXT) + 0.05) / 4.5 - 0.05;
+        assert!((lightest_fill + 0.05) / (luminance(PANEL2) + 0.05) < 3.0);
+        // A blue, the hue of what is clickable, selected or traced (decision C-13): never the
+        // accent's crimson or a failing check's red (decision C-5).
+        let [r, g, b, _] = SELECTION.to_array();
+        assert!(b > g && g > r, "{SELECTION:?}");
+        // No other text colour reads on the fill, so none is the name of a selected choice
+        // (while one is selected with the pointer its band shows and its words are faint).
+        for token in [MUTED, LINK, BAD, WARN, OK] {
+            assert!(contrast(token, SELECTION) < 4.5, "{token:?}");
+        }
     }
 
     #[test]

@@ -129,7 +129,7 @@ pub fn input_row(
     ui.push_id(&entry.path, |ui| {
         ui.horizontal(|ui| {
             let dot = if changed { CHANGED_DOT } else { " " };
-            ui.colored_label(ui.visuals().selection.stroke.color, dot)
+            ui.colored_label(crate::gui::look::mark_color(ui.visuals()), dot)
                 .on_hover_text(CHANGED_FROM_DEFAULT);
             label_clicked = ui
                 .add(egui::Label::new(label_for(&entry.path)).sense(egui::Sense::click()))

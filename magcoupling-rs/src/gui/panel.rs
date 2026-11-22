@@ -425,7 +425,7 @@ pub struct MagcouplingPanel {
     /// (this frame marks its equation's terms) and the input row a leaf term highlights.
     explorer: Explorer,
     /// The input or result traced (decision O-8): a click on an input's label or on a result
-    /// sets it; every path it reaches is framed in the selection colour.
+    /// sets it; every path it reaches is framed in the panel's mark colour.
     trace: Option<Trace>,
     /// Whether the shaft-clamp section is paused ([`clamps::PAUSED`], which every panel starts
     /// from): the views leave it out. A field, not the constant, so a test draws either state.
@@ -745,7 +745,7 @@ impl MagcouplingPanel {
             let reached = trace.paths.iter().map(String::as_str);
             marks = marks.with_marked(
                 reached.chain([trace.source.as_str()]),
-                ui.visuals().selection.stroke.color,
+                look::mark_color(ui.visuals()),
             );
         }
         // The header's toggle as the frame begins: every view of this frame reads it here.
@@ -1489,7 +1489,7 @@ impl MagcouplingPanel {
                 }
                 ui.add(
                     egui::Label::new(
-                        egui::RichText::new(banner).color(ui.visuals().selection.stroke.color),
+                        egui::RichText::new(banner).color(look::mark_color(ui.visuals())),
                     )
                     .wrap(),
                 );
@@ -1526,7 +1526,7 @@ impl MagcouplingPanel {
                     ui.add_space(6.0);
                     ui.horizontal(|ui| {
                         let dot = if state.modified { CHANGED_DOT } else { " " };
-                        ui.colored_label(ui.visuals().selection.stroke.color, dot)
+                        ui.colored_label(look::mark_color(ui.visuals()), dot)
                             .on_hover_text(crate::gui::input_ui::CHANGED_FROM_DEFAULT);
                         ui.strong(assumption.label);
                     });
@@ -1744,7 +1744,7 @@ impl MagcouplingPanel {
             ui.painter().rect_stroke(
                 row.response.rect.expand(3.0),
                 3.0,
-                egui::Stroke::new(FOCUS_WIDTH, ui.visuals().selection.stroke.color),
+                egui::Stroke::new(FOCUS_WIDTH, look::mark_color(ui.visuals())),
                 egui::StrokeKind::Outside,
             );
             if self.explorer.take_scroll(&entry.path) {
@@ -3634,12 +3634,29 @@ mod tests {
         assert_eq!((in_table(Level::Bad), in_table(Level::Caution)), (7, 4));
     }
 
-    /// The mark rects of the trace (the selection colour) painted in a frame.
+    /// The mark rects of the trace (the panel's mark colour) painted in a frame.
     fn trace_marks(harness: &Harness, output: &egui::FullOutput) -> Vec<egui::Rect> {
-        mark_rects(
-            output,
-            Some(harness.ctx.style().visuals.selection.stroke.color),
-        )
+        mark_rects(output, Some(look::mark_color(&harness.ctx.style().visuals)))
+    }
+
+    #[test]
+    fn the_panel_s_marks_are_the_host_s_link_colour() {
+        // The changed dot and the trace's banner and frames are drawn in `look::mark_color`,
+        // the host's link colour, whatever colour the host gives the name of a selected choice
+        // (the standalone app's theme: the text colour, on its selection fill).
+        let mut harness = Harness::new();
+        let visuals = harness.ctx.style().visuals.clone();
+        let blue = visuals.hyperlink_color;
+        assert_ne!(blue, visuals.selection.stroke.color);
+        harness.focus(FACE_GAP);
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        let output = harness.frame(Vec::new());
+        assert_eq!(text_color(&output, CHANGED_DOT), Some(blue));
+        harness.click_text(label_for(FACE_GAP));
+        let banner = harness.panel.trace.clone().expect("a trace").banner(false);
+        let output = harness.frame(Vec::new());
+        assert_eq!(text_color(&output, &banner), Some(blue));
+        assert!(!mark_rects(&output, Some(blue)).is_empty());
     }
 
     #[test]
