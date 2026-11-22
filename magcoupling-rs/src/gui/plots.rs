@@ -75,6 +75,10 @@ pub const POINT_RADIUS: f32 = 4.0;
 /// The width of the line through a sweep's rows [points].
 pub const SWEEP_LINE_WIDTH: f32 = 1.5;
 
+/// How far left of a plot egui_plot draws its vertical axis' label, in rows of body text (its
+/// own `AXIS_LABEL_GAP`).
+pub const Y_LABEL_OVERHANG: f32 = 0.25;
+
 /// The plots, one tab each.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlotKind {
@@ -474,6 +478,13 @@ pub fn plot_ui(
         let (quiet, weak) = (look::quiet_text(visuals), visuals.weak_text_color());
         visuals.widgets.noninteractive.fg_stroke.color = quiet;
         visuals.weak_text_color = Some(weak);
+        // egui_plot draws the vertical axis' label a quarter of a row left of the plot, and
+        // the centre region clips at the plot's own left edge: the label's letters lost their
+        // tops (the T of "Torque" its bar). The plot may paint that far into the region's
+        // margin.
+        let mut clip = ui.clip_rect();
+        clip.min.x -= Y_LABEL_OVERHANG * ui.text_style_height(&egui::TextStyle::Body);
+        ui.set_clip_rect(clip);
         match kind {
             PlotKind::TorqueTemperature => torque_temperature_ui(ui, inputs, results),
             PlotKind::GapSweep => sweep_ui(

@@ -101,6 +101,19 @@ mod tests {
     }
 
     #[test]
+    fn a_character_outside_the_cut_is_drawn_by_a_built_in_font() {
+        // The fallback by a character, not by the list of names (the whole-branch review,
+        // R-7): a part name in Cyrillic, and an emoji egui carries. With the cut alone neither
+        // has a glyph, so a change that replaced the built-in fonts would fail here.
+        let (ctx, alone) = (installed(), inter_alone());
+        let font = FontId::proportional(14.0);
+        for c in ['\u{0416}', '\u{1F44D}'] {
+            assert!(ctx.fonts(|f| f.has_glyph(&font, c)), "{c:?}");
+            assert!(!alone.fonts(|f| f.has_glyph(&font, c)), "{c:?}");
+        }
+    }
+
+    #[test]
     fn the_ten_digits_have_one_advance_width() {
         // UX overhaul spec 8.1, test 7, at the sizes the app draws numbers in (small text, the
         // drawing's tags, body text, a term, a heading and the open equation), and at one, one

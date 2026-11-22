@@ -805,7 +805,11 @@ the exports' contents in slices A to C; the items of the fixes branch.
 - That egui 0.32 draws the frozen-`tnum` Inter subset correctly, and what it costs in wasm bytes (the spike).
   Checked 2026-11-17 in a headless render of the real app: the first view, the Geometry tab's drawing with its
   tags and one plot at 1280x800, and the Equation panel's equation at 1920x1080 (the pictures the stage 1 plan
-  lists); the file is 30,684 bytes. A browser's own drawing of it is the smoke run's `look`.
+  lists); the file is 30,684 bytes. A browser's own drawing of the look is the smoke run's `look`, which sees
+  the theme's marks there (the charcoal page, the crimson square, the line under the active tab). It cannot tell
+  Inter from egui's built-in font: both are one clean sans-serif face to the agent that judges the picture. That
+  the app installs Inter is held by the Rust tests (`the_app_draws_its_text_in_inter`), on the code path the web
+  build shares.
 - That the host serves an address of 2,700 characters (the limit of the Vercel edge was not found in its
   documentation; a Share link of that length has not been loaded on the live site in this work).
 - The live site against this checkout: the inventory read the code, not colesorkness.com.
