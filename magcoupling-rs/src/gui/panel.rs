@@ -3499,14 +3499,14 @@ mod tests {
                 .count();
             assert_eq!(drawn, want, "{check}");
         }
-        // Five red badges and three amber in the table, in the dashboard's colours: every badge
-        // drawn but the dashboard's own.
+        // Five red badges and three amber in the table, in the dashboard's shapes (decision
+        // C-4): every mark drawn but the dashboard's own.
         let visuals = harness.ctx.style().visuals.clone();
         let lines = crate::gui::dashboard::dashboard_lines(harness.panel.results());
         let table_badges = |level: Level| {
             let drawn = crate::gui::test_support::flat_shapes(&output)
                 .into_iter()
-                .filter(|shape| matches!(shape, egui::Shape::Circle(c) if c.fill == level.color(&visuals)))
+                .filter(|shape| mark_at(shape, &visuals).is_some_and(|(_, l)| l == level))
                 .count();
             drawn
                 - lines
@@ -3548,13 +3548,41 @@ mod tests {
             .into_iter()
             .filter(|level| {
                 shapes.iter().any(|shape| {
-                    matches!(shape, egui::Shape::Circle(c)
-                        if c.fill == level.color(visuals)
-                            && in_table(c.center.x)
-                            && (c.center.y - row.center().y).abs() < row.height())
+                    mark_at(shape, visuals).is_some_and(|(at, l)| {
+                        l == *level
+                            && in_table(at.x)
+                            && (at.y - row.center().y).abs() < row.height()
+                    })
                 })
             })
             .collect()
+    }
+
+    /// Where shape sits and the level it stands for, if it is a state's mark
+    /// (checks::state_mark, decision C-4): a filled disc fails, a triangle asks for a look,
+    /// a ring passes.
+    fn mark_at(shape: &egui::Shape, visuals: &egui::Visuals) -> Option<(egui::Pos2, Level)> {
+        match shape {
+            egui::Shape::Circle(c) if c.fill == Level::Bad.color(visuals) => {
+                Some((c.center, Level::Bad))
+            }
+            egui::Shape::Circle(c)
+                if c.fill == egui::Color32::TRANSPARENT
+                    && c.stroke.color == Level::Good.color(visuals) =>
+            {
+                Some((c.center, Level::Good))
+            }
+            egui::Shape::Path(p)
+                if p.closed && p.points.len() == 3 && p.fill == Level::Caution.color(visuals) =>
+            {
+                let sum = p
+                    .points
+                    .iter()
+                    .fold(egui::Vec2::ZERO, |s, q| s + q.to_vec2());
+                Some(((sum / 3.0).to_pos2(), Level::Caution))
+            }
+            _ => None,
+        }
     }
 
     #[test]
@@ -3621,13 +3649,12 @@ mod tests {
         };
         assert_eq!(drawn("metal.hot_min_check"), 0);
         assert_eq!(drawn("model.end_effect_check"), 1);
-        // Seven red badges and four amber in the table.
+        // Seven red badges and four amber in the table, in their shapes.
         let in_table = |level: Level| {
             flat_shapes(&output)
                 .into_iter()
                 .filter(|shape| {
-                    matches!(shape, egui::Shape::Circle(c)
-                        if c.fill == level.color(&visuals) && centre(c.center.x))
+                    mark_at(shape, &visuals).is_some_and(|(at, l)| l == level && centre(at.x))
                 })
                 .count()
         };

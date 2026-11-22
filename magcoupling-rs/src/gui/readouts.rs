@@ -122,12 +122,38 @@ impl Readouts {
         path: &str,
         text: impl FnOnce(bool) -> String,
     ) {
+        if response.clicked() {
+            self.events.clicked = Some(path.to_owned());
+        }
+        self.tip(ui, response, path, text, true);
+    }
+
+    /// [`Readouts::show`] without the click, for a value whose click is its owner's (a check's
+    /// row and a tile select it, UX overhaul spec 5.2): its mark, and while hovered
+    /// `text(show_details)` and its equation.
+    pub fn hover(
+        &mut self,
+        ui: &egui::Ui,
+        response: egui::Response,
+        path: &str,
+        text: impl FnOnce(bool) -> String,
+    ) {
+        self.tip(ui, response, path, text, false);
+    }
+
+    /// The mark of the value at `path` and, while `response` is hovered, its tooltip:
+    /// `text(show_details)`, its equation and, with `open_hint`, [`OPEN_HINT`].
+    fn tip(
+        &mut self,
+        ui: &egui::Ui,
+        response: egui::Response,
+        path: &str,
+        text: impl FnOnce(bool) -> String,
+        open_hint: bool,
+    ) {
         self.mark(ui, response.rect, path);
         if response.hovered() {
             self.events.hovered = Some(path.to_owned());
-        }
-        if response.clicked() {
-            self.events.clicked = Some(path.to_owned());
         }
         let show_details = self.show_details;
         response.on_hover_ui(|ui| {
@@ -140,7 +166,9 @@ impl Readouts {
                 let room = ui.ctx().screen_rect().width() - frame;
                 equation_ui(ui, registry(), eq, &TermColors::of(eq), TOOLTIP_SIZE, room);
             }
-            ui.weak(OPEN_HINT);
+            if open_hint {
+                ui.weak(OPEN_HINT);
+            }
         });
     }
 

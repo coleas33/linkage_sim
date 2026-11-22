@@ -51,6 +51,7 @@ use crate::engine::meta::{ResultMeta, ResultSet, Value, result_rows};
 use crate::engine::model::END_EFFECT_OUT_OF_RANGE;
 use crate::engine::shaft_joint;
 use crate::engine::warnings::{Severity, WARNING_RULES, WarningRule};
+use crate::gui::checks::state_mark;
 use crate::gui::corrections::{CorrectionIndex, Mark, marker_text, marker_tooltip};
 use crate::gui::explorer::reviewed_note;
 use crate::gui::format::{format_value, with_unit};
@@ -771,7 +772,7 @@ pub fn dashboard_ui(
         let quiet = look::quiet_text(ui.visuals());
         let tint = |rich: egui::RichText| if line.greyed { rich.color(weak) } else { rich };
         let title = ui.horizontal(|ui| {
-            badge(ui, line.level);
+            state_mark(ui, line.level);
             let label = egui::RichText::new(label_for(line.path)).color(quiet);
             ui.add(egui::Label::new(tint(label)).wrap());
         });
@@ -817,7 +818,7 @@ pub fn dashboard_ui(
 /// pause, `clamps_paused`), in the colour of the worst level, over a separator; at the example
 /// design and at the starting design its hover says what the design is (spec S2-5; UX overhaul
 /// spec 7.1).
-fn status_ui(
+pub(crate) fn status_ui(
     ui: &mut egui::Ui,
     inputs: &DesignInputs,
     baseline: &DesignInputs,
@@ -859,7 +860,7 @@ fn fit_ui(
     let guide = &CHECK_GUIDES[index];
     let level = guidance::level(guide, inputs, results);
     ui.horizontal(|ui| {
-        badge(ui, Some(level));
+        state_mark(ui, Some(level));
         let label = egui::RichText::new(guide.label).color(look::quiet_text(ui.visuals()));
         ui.add(egui::Label::new(label).wrap());
     });
@@ -1025,9 +1026,10 @@ fn guide_line(ui: &mut egui::Ui, head: &str, body: impl FnOnce(&mut egui::Ui)) {
     });
 }
 
-/// The material warnings that fire: a badge and the text in the severity's colour, then a link
+/// The material warnings that fire: the severity's shape ([`state_mark`]) and the text in its
+/// colour, then a link
 /// to the teaching note (it asks the panel to open the note).
-fn warnings_ui(ui: &mut egui::Ui, results: &DesignResults, readouts: &mut Readouts) {
+pub(crate) fn warnings_ui(ui: &mut egui::Ui, results: &DesignResults, readouts: &mut Readouts) {
     let lines = warning_lines(results);
     if lines.is_empty() {
         return;
@@ -1036,7 +1038,7 @@ fn warnings_ui(ui: &mut egui::Ui, results: &DesignResults, readouts: &mut Readou
     for (rule, text) in lines {
         let level = severity_level(rule.severity);
         ui.horizontal(|ui| {
-            badge(ui, Some(level));
+            state_mark(ui, Some(level));
             ui.add(
                 egui::Label::new(egui::RichText::new(text).color(level.color(ui.visuals()))).wrap(),
             );
@@ -1051,17 +1053,6 @@ fn warnings_ui(ui: &mut egui::Ui, results: &DesignResults, readouts: &mut Readou
         }
     }
     ui.separator();
-}
-
-/// A badge: a filled circle in the level's colour, or an empty cell (the results table's check
-/// rows draw it too).
-pub(crate) fn badge(ui: &mut egui::Ui, level: Option<Level>) {
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(12.0, 12.0), egui::Sense::hover());
-    if let Some(level) = level {
-        ui.painter()
-            .circle_filled(rect.center(), 5.0, level.color(ui.visuals()));
-        response.on_hover_text(level.word());
-    }
 }
 
 #[cfg(test)]

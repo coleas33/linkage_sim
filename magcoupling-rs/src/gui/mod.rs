@@ -6,6 +6,9 @@
 //! window and event loop. The engine stays pure std; nothing here is compiled
 //! without the feature.
 
+// Drawn by the panel from Task 5 of this stage's plan, which removes this allow.
+#[allow(dead_code)]
+pub mod checks;
 pub mod clamp_drawing;
 pub mod corrections;
 pub mod dashboard;
