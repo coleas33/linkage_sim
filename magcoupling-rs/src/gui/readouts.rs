@@ -8,7 +8,8 @@
 //! callouts, the clamp summary and screw table, the plot readouts. While the value is hovered
 //! the tooltip
 //! shows that text, then the value's equation typeset with its terms in colour
-//! ([`TermColors::of`]), no wider than the window; a click asks the panel to open it in the Equation panel. Both the
+//! ([`TermColors::of`]), no wider than the window; a click asks the panel to open it in the
+//! Equation panel. Both the
 //! text and the typesetting run only inside `on_hover_ui`, so a frame pays for the one value
 //! hovered. A value whose path is a term of the equation in view (the one hovered in the last
 //! frame, else the one open in the Equation panel) gets a frame in that term's colour, and so

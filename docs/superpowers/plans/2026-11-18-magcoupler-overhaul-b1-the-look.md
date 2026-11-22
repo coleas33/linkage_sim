@@ -2888,7 +2888,7 @@ with:
 
 ## After the whole-branch review: the fix wave (2026-11-22)
 
-Task 7's Step 4 ran on 2026-11-18 with three reviewers (conformance, regression, eyes) and a skeptic on every finding that is not a suggestion: 16 findings and 10 suggestions; one finding blocks the merge (E-1). The result is `.superpowers/sdd/2026-11-18-magcoupler-overhaul-b1/final-review.json` (gitignored). The fix wave is eight commits on the branch after `68b0dbc`. Tasks 1 to 6 above are left as they were applied: they are the record of what built `68b0dbc`, so a block's "with" text can differ from the file at the tip where the wave changed it (the README's theme and font paragraphs, the tracker's date, the design's 12.3).
+Task 7's Step 4 ran on 2026-11-18 with three reviewers (conformance, regression, eyes) and a skeptic on every finding that is not a suggestion: 16 findings and 10 suggestions; one finding blocks the merge (E-1). The result is `.superpowers/sdd/2026-11-18-magcoupler-overhaul-b1/final-review.json` (gitignored). The fix wave is the commits on the branch after `68b0dbc`. Tasks 1 to 6 above are left as they were applied: they are the record of what built `68b0dbc`, so a block's "with" text can differ from the file at the tip where the wave changed it (the README's theme and font paragraphs, the tracker's date, the design's 12.3).
 
 **Fixed, each with its red test first where a test can fail for it:**
 
