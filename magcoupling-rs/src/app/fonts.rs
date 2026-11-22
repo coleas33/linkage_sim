@@ -9,6 +9,9 @@
 //!   of the panel's tests refuse (`gui::test_support::assert_glyphs`).
 //! - Its ten digits are Inter's tabular ones, so numbers keep their columns: egui cannot
 //!   switch an OpenType feature on, so the file carries them as its default digits.
+//! - Its ascender, descender and line gap are those of egui's built-in font, so a row is as
+//!   tall as the font the panel's layout was built on made it (1.149 em; Inter's own rows are
+//!   1.21 em) and a text size is rounded to whole pixels as that font's is.
 //!
 //! One face. egui has no bold; a heavier face for numbers and headings is added only if a
 //! later slice needs it. The panel itself installs no font: in another host it is drawn in
@@ -124,6 +127,28 @@ mod tests {
                 // They are the cut's digits, not a built-in font's.
                 assert_eq!(drawn, widths(&alone), "{pixels_per_point} {size}");
             }
+        }
+    }
+
+    #[test]
+    fn a_row_is_as_tall_as_the_built_in_font_s() {
+        // The panel's layout was built on egui's built-in font, whose rows are 1.149 em.
+        // Inter's own are 1.21 em, 0.76 of a point more per row at body size, which cost the
+        // first view's drawing a sixth of its height at 1280 x 800 (the whole-branch review,
+        // E-3). The cut carries the built-in font's ascender, descender and line gap
+        // (`subset_inter.py`). egui rounds each of the three to 1/32 point, so the two heights
+        // can differ by a rounding step or two.
+        let ctx = installed();
+        let built_in = egui::Context::default();
+        let _ = built_in.run(egui::RawInput::default(), |_| {});
+        for size in [9.0, 11.0, 12.0, 12.5, 14.0, 15.0, 18.0, 22.0] {
+            let font = FontId::proportional(size);
+            let ours = ctx.fonts(|f| f.row_height(&font));
+            let theirs = built_in.fonts(|f| f.row_height(&font));
+            assert!(
+                (ours - theirs).abs() <= 2.0 / 32.0,
+                "{size}: {ours} {theirs}"
+            );
         }
     }
 

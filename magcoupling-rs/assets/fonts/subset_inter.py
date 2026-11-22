@@ -1,5 +1,5 @@
 """Builds the calculator's font: Inter Regular, cut to the characters the app draws, with
-tabular digits as its default digits.
+tabular digits as its default digits and the vertical metrics of egui's built-in font.
 
     python subset_inter.py Inter-Regular.ttf Inter-Regular.subset.ttf
 
@@ -7,6 +7,14 @@ Why a built file: egui cannot switch OpenType features, so the ten digits are re
 Inter's tabular ones (its `tnum` feature, the digits only: the whole feature would also widen
 every space, full stop, comma, colon, hyphen and bracket in running text). The app build runs
 no font tools; it embeds the built file (`src/app/fonts.rs`).
+
+Vertical metrics: egui takes a row's height from the first font of a family (ascender -
+descender + line gap), and draws a glyph at a whole number of pixels of ascender - descender.
+Inter's own rows are 1.21 em (1984 + 494 + 0 of 2048 units). egui's built-in font, which the
+panel's layout was built on, has 1.149 em (Ubuntu Light: 932 + 189 + 28 of 1000), 0.76 of a
+point less per row at body size. The cut carries the built-in font's three values, so a row is as tall
+and a size is rounded as that font's. No outline changes; Inter's capitals sit at the middle
+of such a row to within 0.01 em.
 
 Source: Inter 4.1, https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip
   (SHA-256 9883fdd4a49d4fb66bd8177ba6625ef9a64aa45899767dde3d36aa425756b11e),
@@ -23,6 +31,10 @@ from fontTools import subset
 from fontTools.ttLib import TTFont
 
 DIGITS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
+
+# Ubuntu Light's ascender, descender and line gap (932, -189 and 28 of 1000) in Inter's 2048
+# units: see "Vertical metrics" above.
+ASCENDER, DESCENDER, LINE_GAP = 1909, -387, 57
 
 # What the app draws (UX overhaul spec 6.2): Latin, Greek, the maths and unit signs in use.
 # A character outside these falls back to egui's built-in fonts.
@@ -60,6 +72,11 @@ def main(source: str, target: str) -> None:
     subsetter = subset.Subsetter(options)
     subsetter.populate(unicodes=UNICODES)
     subsetter.subset(font)
+
+    # Both tables: Inter sets USE_TYPO_METRICS, and a reader without it takes hhea.
+    hhea, os2 = font["hhea"], font["OS/2"]
+    hhea.ascent, hhea.descent, hhea.lineGap = ASCENDER, DESCENDER, LINE_GAP
+    os2.sTypoAscender, os2.sTypoDescender, os2.sTypoLineGap = ASCENDER, DESCENDER, LINE_GAP
 
     cmap = font.getBestCmap()
     widths = {font["hmtx"][cmap[ord(digit)]][0] for digit in "0123456789"}

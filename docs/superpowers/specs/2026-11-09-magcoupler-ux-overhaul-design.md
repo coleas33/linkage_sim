@@ -382,7 +382,9 @@ ahead of egui's built-in fonts, which stay as the fallback for any glyph outside
   command that made it are committed; the app build does not run font tools. (Built 2026-11-18,
   BL-079: the ten digits alone are remapped to their tabular forms. The whole feature also
   substitutes the space, the full stop, the comma, the colon, the hyphen and the brackets, which
-  would widen them in running text.)
+  would widen them in running text. Since the fix wave of that stage's review, 2026-11-22, the
+  built file also carries the ascender, descender and line gap of egui's built-in font, so a row
+  keeps the height the layout was built on.)
 - **Weights.** egui has no synthetic bold (`strong()` changes colour only). One face (Regular) is the default plan;
   a second (SemiBold, for tile numbers and headings) is added only if the spike shows the tiles need it.
 - **Cost.** About 0.1 MB per face after subsetting, against a 6.66 MB wasm file today.
