@@ -18,7 +18,7 @@ Written 2026-11-18. Updated as answers and new questions arrive.
 | P-n, L-n | The plans for slice A and for slice B stage 1, in `docs/superpowers/plans/` |
 | Three-letter codes (LGS-11, LFA-16) | The whole-project audit, `docs/analyses/2026-11-10-whole-project-audit.md` |
 
-Contents: part A, six answers that change what is built next. Part B, eight things only you can try. Part C, 29 calls to make when convenient (question 48 was added there on 2026-11-22). Part D, five that matter only if the tools stop being generic.
+Contents: part A, six answers that change what is built next. Part B, eight things only you can try. Part C, 30 calls to make when convenient (questions 48 and 49 were added there on 2026-11-22). Part D, five that matter only if the tools stop being generic.
 
 Answered so far: 1, 2, 3, 4, 5 and 6 (2026-11-22). Each answer is written in bold under its question.
 
@@ -332,6 +332,16 @@ The 3D routine that gave the starting design its stored fields also returns a pu
 - (c) Until that check is done, resize the starting design so its hot-low torque clears 1.35 N·m by a margin that covers the gap. Give the margin you want.
 
 Source: BL-080 (a by-product of the 3D run for A-18); BL-065; question 15.
+
+### 49. Should a check's row show a short form of its number, or only its state?
+
+Added 2026-11-22 (the next free number). Since the layout stage each check is one row in the right column: a shape, its name and a word (OK, Check or Fails). The design asked for the check's own number in short form on the row too, such as "0.26 / 0.20 mm" on Running clearance; the numbers are one click away, in the check's Explain entry.
+
+- **If you do not answer:** the row shows the shape, the name and the word.
+- (a) Shape, name and word, as now.
+- (b) Add a short form of the check's number to each row (nine new short texts, each with a physics review).
+
+Source: UX design section 4.5; A-20; BL-081 plan, decision D-2.
 
 ### Linkage simulator
 
