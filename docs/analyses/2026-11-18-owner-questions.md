@@ -86,7 +86,7 @@ Source: A-17, P-10, BL-064.
 
 ### 4. Should the calculator judge the cap's thin skirt wall, and below what thickness?
 
-**Answered 2026-11-22: (b) in this list.** The owner's words were "4a,6a, go!". The letter is the controller's dialog's, which put its recommendation first: (a) there was an amber caution below 0.5 mm, which is (b) here, not this list's (a), "leave it unjudged". So: an amber caution below a minimum of 0.5 mm (the controller's offer), and the starting design's 0.55 mm skirt stays clear. Filed as BL-082 (risk: physics); not built yet. The controller confirms this reading with the owner before BL-082 is built; if the owner meant this list's (a), BL-082 is closed.
+**Answered 2026-11-22: (b) in this list.** The owner's words were "4a,6a, go!". The letter is the controller's dialog's, which put its recommendation first: (a) there was an amber caution below 0.5 mm, which is (b) here, not this list's (a), "leave it unjudged". So: an amber caution below a minimum of 0.5 mm (the controller's offer), and the starting design's 0.55 mm skirt stays clear. Filed as BL-082 (risk: physics); not built yet. Reading confirmed by the controller 2026-11-22: the owner's 4a was the dialog's amber caution. BL-082 is ready to build.
 
 The skirt is the wall of the cap beyond its thread. No check looks at it: a design with a 0.15 mm skirt passes all 9 checks. The starting design's skirt is 0.55 mm, and nobody has confirmed that a wall that thin can be made.
 
@@ -329,7 +329,7 @@ The 3D routine that gave the starting design its stored fields also returns a pu
 - **If you do not answer:** nothing changes. The starting design keeps its name and its "passes all 9 checks", and the caveat stays in writing.
 - (a) Leave it as a written caveat.
 - (b) Check the torque model against a real-iron solve, together with the end-effect check of question 15, before the starting design is called passing.
-- (c) Until that check is done, lower the starting design's Required torque so that its margin covers the gap. Give the margin you want.
+- (c) Until that check is done, resize the starting design so its hot-low torque clears 1.35 N·m by a margin that covers the gap. Give the margin you want.
 
 Source: BL-080 (a by-product of the 3D run for A-18); BL-065; question 15.
 

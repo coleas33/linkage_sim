@@ -531,7 +531,7 @@ The magnets stay B842SH on both rings at the stock length.
   The app hands it the starting design through one new constructor. `MagcouplingPanel::new` keeps the
   spreadsheet's values as its baseline, so a host or a test that builds the panel that way sees today's behaviour.
   Nothing moves the baseline afterwards: not an undo, a file, a link or the example design. It is not in the undo
-  history and is not saved. The starting design itself is `DesignInputs::default()` with six values set, written
+  history and is not saved. The starting design itself is `DesignInputs::default()` with six values set (amended 2026-11-22, BL-080: twenty-one values, the seven it sizes and its fourteen stored 3D fields), written
   once in the app's code; where exactly is the plan's.
 - **What follows the baseline:** the changed dot, a row's reset, the "Default:" line of an input's tooltip, Reset
   all (slice B words it "Reset to the starting design") and the Equation panel's "changed" tags. Their words do not
@@ -542,7 +542,7 @@ The magnets stay B842SH on both rings at the stock length.
 - **The status word** is "Starting design" while the design equals the baseline and the baseline is not the
   spreadsheet's values, "Example design" while the design equals the spreadsheet's values (as today), and "Your
   design" otherwise.
-- At the example design the six inputs that differ from the starting design carry the changed dot. That is meant:
+- At the example design the six inputs (amended 2026-11-22, BL-080: twenty-one inputs, the seven it sizes and its fourteen stored 3D fields) that differ from the starting design carry the changed dot. That is meant:
   the dots show what the starting design changed.
 - A link or file made before this change opens to the same design as before. Only the address with no `?m=`
   changes what it opens. A link that carries the spreadsheet's values opens as "Example design".
@@ -619,7 +619,7 @@ the other three are dropped.
 ### 8.1 Slice A and the look
 
 1. The starting design passes every counted check with no caution and no material warning, pinned to
-   `compute_all`. It changes no assumption, and each of its six differing inputs sits on its slider's step.
+   `compute_all`. It changes no assumption, and each of its six differing inputs (amended 2026-11-22, BL-080: twenty-one inputs, the seven it sizes and its fourteen stored 3D fields) sits on its slider's step.
 2. `DesignInputs::default` is unchanged and the parity gates pass with no fixture re-blessed. A panel built with
    `MagcouplingPanel::new` behaves as today: the tests that read the status word and the default comparisons
    (`guidance.rs:8966`, `8982` and `8986`; `dashboard.rs:2532`; `panel.rs:4175` and `10214-10236`) keep their
@@ -629,9 +629,9 @@ the other three are dropped.
    dot is drawn; the Equation panel shows no "changed" tag; the tooltip of a differing input gives the starting
    design's value as its default.
 4. Baseline: after "Open the example design" the status reads "Example design: fails 4 of 9 checks" and exactly
-   the six differing inputs carry the dot; a row's reset returns the starting design's value; Reset all returns
+   the six differing inputs (amended 2026-11-22, BL-080: twenty-one inputs, the seven it sizes and its fourteen stored 3D fields) carry the dot; a row's reset returns the starting design's value; Reset all returns
    the starting design; the opening is one undo step, and undoing it gives "Starting design" with no dot. The
-   spreadsheet export still flags against the workbook: the six differing inputs at the starting design, none at
+   spreadsheet export still flags against the workbook: the six differing inputs (amended 2026-11-22, BL-080: twenty-one inputs, the seven it sizes and its fourteen stored 3D fields) at the starting design, none at
    the example design. The assumptions banner is quiet at both.
 5. Address: an edit changes the link; the starting design gives the clean address while Share returns a full
    `?m=` link; undo and redo move it; a decoded link equals the design that made it; a link that carries the

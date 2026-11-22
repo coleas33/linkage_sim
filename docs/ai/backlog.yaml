@@ -238,7 +238,7 @@
   acceptance: "A caution (amber, not counted as a failed check) when the cap skirt is under 0.5 mm, with a plain-words line naming the skirt and the minimum; the starting design (0.55 mm) draws none; a red test first at 0.49 and 0.50 mm; README and docs/ai updated; physics review."
   priority: 3
   status: open
-  notes: "Filed 2026-11-22 with the docs of BL-080; not built on that branch. Before it is built, the controller confirms with the owner that '4a' meant the dialog's first option (this amber caution, option (b) in the questions file) and not the file's (a), 'leave it unjudged'; if the file's (a), close this item. Where the caution is drawn (the Size tab's geometry lines, beside the keyway-wall line, or the dashboard) is the builder's call against the design's section 7.1. BL-081 is reserved for the slice B stage 2 plan."
+  notes: "Filed 2026-11-22 with the docs of BL-080; not built on that branch. Reading confirmed by the controller 2026-11-22: the owner's 4a was the dialog's amber caution (option (b) in the questions file, not the file's (a), 'leave it unjudged'). Ready to build. Where the caution is drawn (the Size tab's geometry lines, beside the keyway-wall line, or the dashboard) is the builder's call against the design's section 7.1. BL-081 is reserved for the slice B stage 2 plan."
 - id: BL-055
   title: "Magcoupler gives no cause, remedy or consequence on screen: two unlinked torque targets, an invisible size model, red checks without guidance"
   dimension: gui
