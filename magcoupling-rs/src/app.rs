@@ -1,10 +1,11 @@
 //! The standalone app (feature `app`): [`MagcouplingApp`] shows the panel as a full page,
 //! for the native binary `magcoupling-app` and the web binary `magcoupling-web` (served at
-//! `/tools/magcoupler/`). It applies the linkage app's theme ([`theme`]) and does the panel's
-//! platform work ([`files`]): saving files and picking a design file. The web entry also
-//! opens a share link's design (`?m=`).
+//! `/tools/magcoupler/`). It applies the calculator's theme ([`theme`]) and font ([`fonts`])
+//! and does the panel's platform work ([`files`]): saving files and picking a design file.
+//! The web entry also opens a share link's design (`?m=`).
 
 pub mod files;
+pub mod fonts;
 pub mod theme;
 
 use crate::DesignInputs;
@@ -120,9 +121,10 @@ pub struct MagcouplingApp {
 
 impl MagcouplingApp {
     /// The app at the starting design ([`starting_design`], the panel's baseline for the
-    /// session), with the linkage app's theme applied to `ctx`.
+    /// session), with the theme and the font applied to `ctx`.
     pub fn new(ctx: &egui::Context) -> Self {
         theme::apply(ctx);
+        fonts::install(ctx);
         let panel = MagcouplingPanel::with_baseline(starting_design());
         let address_design = panel.design();
         Self {
@@ -367,31 +369,30 @@ mod tests {
         WRITES.take()
     }
 
-    /// The laptop screen the app's tests draw on.
-    const LAPTOP: egui::Vec2 = egui::vec2(1280.0, 800.0);
-
-    /// One frame of `app` on a screen of `size` with `events`.
-    fn frame_on(
+    /// One frame of `app` on the laptop screen with `events`.
+    fn frame_output(
         ctx: &egui::Context,
         app: &mut MagcouplingApp,
-        size: egui::Vec2,
         events: Vec<egui::Event>,
     ) -> egui::FullOutput {
         let input = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1280.0, 800.0),
+            )),
             events,
             ..Default::default()
         };
         ctx.run(input, |ctx| app.ui(ctx))
     }
 
-    /// One frame of `app` on the laptop screen with `events`; the texts it drew.
+    /// [`frame_output`]; the texts it drew.
     fn frame_with(
         ctx: &egui::Context,
         app: &mut MagcouplingApp,
         events: Vec<egui::Event>,
     ) -> Vec<String> {
-        drawn_texts(&frame_on(ctx, app, LAPTOP, events))
+        drawn_texts(&frame_output(ctx, app, events))
     }
 
     /// One frame of `app` with no input; the texts it drew.
@@ -454,7 +455,193 @@ mod tests {
             texts.iter().any(|t| t == "Magnetic coupling calculator"),
             "{texts:?}"
         );
-        assert_eq!(ctx.style().visuals, theme::cad_dark_visuals());
+        assert_eq!(ctx.style().visuals, theme::visuals());
+    }
+
+    #[test]
+    fn the_app_draws_its_text_in_inter() {
+        // UX overhaul spec 6.2: the app installs its font; the panel alone does not.
+        let ctx = egui::Context::default();
+        let mut app = MagcouplingApp::new(&ctx);
+        frame_texts(&ctx, &mut app);
+        let first = |ctx: &egui::Context| {
+            ctx.fonts(|f| {
+                f.lock().fonts.definitions().families[&egui::FontFamily::Proportional][0].clone()
+            })
+        };
+        assert_eq!(first(&ctx), fonts::INTER_NAME);
+        // A number keeps its width whatever its digits (the cut's tabular digits).
+        let body = egui::TextStyle::Body.resolve(&ctx.style());
+        let width = |digit| ctx.fonts(|f| f.glyph_width(&body, digit));
+        assert_eq!(width('1'), width('8'));
+        // A panel in a context no app set up keeps egui's fonts.
+        let plain = egui::Context::default();
+        let mut panel = MagcouplingPanel::new();
+        let _ = plain.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| panel.ui(ui));
+        });
+        assert_ne!(first(&plain), fonts::INTER_NAME);
+    }
+
+    #[test]
+    fn the_accent_marks_the_brand_and_the_active_tab_and_nothing_else() {
+        // Decision C-5, in the app's own theme: crimson is never a text colour and never on a
+        // value or a check. At the starting design and at a failing one the accent is on two
+        // shapes, the brand mark and the line under the active tab.
+        use crate::gui::look::ACCENT;
+        use crate::gui::test_support::flat_shapes;
+        let ctx = egui::Context::default();
+        let mut app = MagcouplingApp::new(&ctx);
+        frame_texts(&ctx, &mut app);
+        for failing in [false, true] {
+            if failing {
+                app.panel.open_example_design();
+                assert!(frame_texts(&ctx, &mut app).contains(&EXAMPLE_STATUS.to_owned()));
+            }
+            let output = frame_output(&ctx, &mut app, Vec::new());
+            let mut marks = 0;
+            for shape in flat_shapes(&output) {
+                match shape {
+                    egui::Shape::Text(text) => {
+                        let mut colours = vec![text.fallback_color];
+                        colours.extend(text.override_text_color);
+                        colours.extend(text.galley.job.sections.iter().map(|s| s.format.color));
+                        assert!(!colours.contains(&ACCENT), "{:?}", text.galley.text());
+                    }
+                    egui::Shape::Rect(rect) if rect.fill == ACCENT => marks += 1,
+                    egui::Shape::LineSegment { stroke, .. } if stroke.color == ACCENT => marks += 1,
+                    egui::Shape::Circle(circle) => assert_ne!(circle.fill, ACCENT),
+                    _ => {}
+                }
+            }
+            assert_eq!(marks, 2, "failing: {failing}");
+        }
+        // A failing check is the theme's red, which is not the accent.
+        assert_ne!(theme::BAD, ACCENT);
+    }
+
+    #[test]
+    fn a_label_is_muted_and_its_value_is_in_the_text_colour() {
+        // UX overhaul spec 6.1: the muted token is for labels and captions, the text token for
+        // values. A reader scanning for a number finds it as the bright line of its row.
+        use crate::gui::test_support::text_colors;
+        let ctx = egui::Context::default();
+        let mut app = MagcouplingApp::new(&ctx);
+        frame_texts(&ctx, &mut app);
+        let all = |output: &egui::FullOutput, texts: &[&str], colour: egui::Color32| {
+            for text in texts {
+                let drawn = text_colors(output, text);
+                assert!(!drawn.is_empty(), "no {text:?} drawn");
+                assert!(drawn.iter().all(|&c| c == colour), "{text:?}: {drawn:?}");
+            }
+        };
+        // The starting design: a dashboard row's title and the head of its Why line; the Size
+        // tab's three readout labels ("Hot-low torque" is drawn as both). Then their values.
+        let output = frame_output(&ctx, &mut app, Vec::new());
+        let labels = [
+            "Pull-out torque (nominal)",
+            "Hot-low torque",
+            "Why:",
+            "Required torque",
+            "Pull-out torque (nominal, at 50 °C)",
+        ];
+        all(&output, &labels, theme::MUTED);
+        all(&output, &["1.704 N·m", "1.448 N·m"], theme::TEXT);
+        // A tab that is not the active one is quiet too; the active tab's name (drawn as the
+        // left side's heading as well) is the text colour.
+        all(&output, &["Gap sweep"], theme::MUTED);
+        all(&output, &["Size and torque"], theme::TEXT);
+        // The failing example design: the heads of an open block are captions too, and the
+        // Magnets fit row's title is a label (the dashboard scrolled to its foot).
+        app.panel.open_example_design();
+        frame_texts(&ctx, &mut app);
+        let output = frame_output(&ctx, &mut app, Vec::new());
+        all(&output, &["Problem:", "Fix:", "Why:"], theme::MUTED);
+        all(&output, &["2.688 N·m"], theme::TEXT);
+    }
+
+    /// One frame of `app` on a screen of `size` with `events`.
+    fn frame_on(
+        ctx: &egui::Context,
+        app: &mut MagcouplingApp,
+        size: egui::Vec2,
+        events: Vec<egui::Event>,
+    ) -> egui::FullOutput {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+            events,
+            ..Default::default()
+        };
+        ctx.run(input, |ctx| app.ui(ctx))
+    }
+
+    /// The two window sizes the look is checked at: the laptop screen and the smallest window
+    /// supported (decision C-18).
+    const WINDOWS: [egui::Vec2; 2] = [egui::vec2(1280.0, 800.0), egui::vec2(1024.0, 700.0)];
+
+    /// The laptop screen the app's tests draw on.
+    const LAPTOP: egui::Vec2 = WINDOWS[0];
+
+    #[test]
+    fn no_text_is_cut_in_any_tab_in_the_app_s_own_font() {
+        // The whole-branch review (R-4): Inter is about 13 % wider than egui's built-in font,
+        // which every panel layout test draws in, so a text that just fitted there can be cut
+        // here and no other test sees it (R-2: the Pole sweep's legend lost its first letters).
+        // The app as a browser draws it, in its theme and font, on every tab.
+        use crate::gui::CentreView;
+        use crate::gui::test_support::{cut_texts, last_characters, primary_button};
+        for size in WINDOWS {
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+            let ctx = egui::Context::default();
+            let mut app = MagcouplingApp::new(&ctx);
+            frame_on(&ctx, &mut app, size, Vec::new());
+            for view in CentreView::tabs(crate::engine::clamps::PAUSED) {
+                let output = frame_on(&ctx, &mut app, size, Vec::new());
+                let tab = last_characters(&output, view.label())[0];
+                for pressed in [true, false] {
+                    frame_on(&ctx, &mut app, size, vec![primary_button(tab, pressed)]);
+                }
+                // The pointer leaves, so no tooltip is in the picture; then the view settles.
+                frame_on(&ctx, &mut app, size, vec![egui::Event::PointerGone]);
+                frame_on(&ctx, &mut app, size, Vec::new());
+                let output = frame_on(&ctx, &mut app, size, Vec::new());
+                let cut = cut_texts(&output, screen);
+                assert!(cut.is_empty(), "{size:?}, {}: cut: {cut:#?}", view.label());
+            }
+        }
+    }
+
+    #[test]
+    fn the_widest_tooltip_stays_inside_the_window_in_the_app_s_own_font() {
+        // The whole-branch review (R-1): the Verdict row's equation is the widest a tooltip
+        // typesets, 1351 points at the tooltip's size in Inter, and ran off a 1280-point
+        // window with the hover text over it.
+        use crate::gui::dashboard::hover_text;
+        use crate::gui::readouts::{OPEN_HINT, Readouts};
+        use crate::gui::test_support::{cut_texts, hover_frames, text_center};
+        const VERDICT: &str = "temperature.summary.verdict";
+        for size in WINDOWS {
+            let ctx = egui::Context::default();
+            theme::apply(&ctx);
+            fonts::install(&ctx);
+            let (_, output) = hover_frames(
+                &ctx,
+                size,
+                |output| text_center(output, "a value"),
+                |ui| {
+                    let rect = ui.label("a value").rect;
+                    Readouts::default().show_over(ui, rect, VERDICT, |details| {
+                        hover_text(VERDICT, details).unwrap_or_default()
+                    });
+                },
+            );
+            // The tooltip is up, with its equation.
+            let texts = drawn_texts(&output);
+            assert!(texts.contains(&OPEN_HINT.to_owned()), "{size:?}: {texts:?}");
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+            let cut = cut_texts(&output, screen);
+            assert!(cut.is_empty(), "{size:?}: cut: {cut:#?}");
+        }
     }
 
     #[test]
@@ -1422,6 +1609,42 @@ mod tests {
                 "the reloaded page's console messages are collected before the close"
             );
         }
+        // UX overhaul slice B, stage 1 (spec 6): on the clean page the script reads the page's
+        // background, typed once as PAGE_BACKGROUND and equal to the theme's panel colour as a
+        // browser reports it, and judges the look in the screenshot: the brand mark before the
+        // title and the line under the active tab.
+        {
+            let [r, g, b, _] = theme::PANEL.to_array();
+            let background = format!("rgb({r}, {g}, {b})");
+            assert_eq!(
+                quoted("PAGE_BACKGROUND"),
+                background,
+                "the script's PAGE_BACKGROUND"
+            );
+            assert_eq!(
+                script.matches(background.as_str()).count(),
+                1,
+                "the smoke prompt types the page's background once, in PAGE_BACKGROUND"
+            );
+            let clean_page = between("starting_design=true", "it carries a share link");
+            for (what, text) in [
+                ("judges the look", "look=true only if"),
+                (
+                    "reads the page's background",
+                    "getComputedStyle(document.body).backgroundColor",
+                ),
+                ("names the title", "Magnetic coupling calculator"),
+                (
+                    "names the active tab",
+                    crate::gui::CentreView::SizeAndTorque.label(),
+                ),
+            ] {
+                assert!(
+                    clean_page.contains(text),
+                    "the clean page's step {what}: {text}"
+                );
+            }
+        }
         // The app opens the link and the solve succeeds after its debounce.
         let ctx = egui::Context::default();
         let mut app = MagcouplingApp::new(&ctx);
@@ -1436,6 +1659,15 @@ mod tests {
         let shown = app.panel().shown_inputs();
         let length = shown.coupling.magnets.axial_length_mm.expect("sized");
         assert!((14.0..14.5).contains(&length), "{length}");
+    }
+
+    #[test]
+    fn the_hub_page_does_not_name_the_paused_clamp_section() {
+        // UX overhaul spec 9.2 and 8.3: no "clamp" on screen while the section is paused
+        // (`engine::clamps::PAUSED`), and the hub's card for the calculator is a screen too.
+        let hub = include_str!("../../linkage-sim-rs/web/tools/index.html");
+        assert!(hub.contains("Magnetic Coupling Calculator"));
+        assert!(!hub.to_lowercase().contains("clamp"));
     }
 
     #[test]

@@ -1,12 +1,12 @@
 # Magcoupler overhaul: an instrument that teaches — design
 
-- Date: 2026-11-09. Base: `main` at 1048962. Status: **approved by the owner on 2026-11-16 ("Approve and yes. Stop asking for my direction and do what you think is best"); slice A is built on the branch `magcoupling/overhaul-a` (BL-077) and waits for the owner's review of its diff; slices B to F are not built.**
+- Date: 2026-11-09. Base: `main` at 1048962. Status: **approved by the owner on 2026-11-16 ("Approve and yes. Stop asking for my direction and do what you think is best"); slice A (BL-077) is merged (17e4638); slice B is built in stages, and its first, the look (section 6; BL-079), is built by the plan `docs/superpowers/plans/2026-11-18-magcoupler-overhaul-b1-the-look.md`; the rest of slice B (sections 4 and 5) and slices C to F are not built.**
 - Revised 2026-11-09 for the owner's ruling on the requirement (O-8, section 7.1) and for the builder check
   (section 12.5), and on 2026-11-10 for the owner's answer on the number (O-9) and the ruling on open questions (O-10).
 - This is an umbrella design for six slices (section 3). It is firm on slices A and B and lighter on C to F. Each
   slice gets its own plan and branch (`magcoupling/overhaul-<letter>-<name>`); slices C to F each get a short design
   addendum before their plan. After approval the next step is the plan for slice A, and nothing else.
-- Backlog: BL-077 is slice A's item (filed 2026-11-17 with its plan, `docs/superpowers/plans/2026-11-17-magcoupler-overhaul-a-first-arrival.md`). Each later slice's plan files one item with the next free id (`dimension: gui`; `risk: physics`
+- Backlog: BL-077 is slice A's item (filed 2026-11-17 with its plan, `docs/superpowers/plans/2026-11-17-magcoupler-overhaul-a-first-arrival.md`). BL-079 is the item of slice B's first stage, the look (filed 2026-11-18 with its plan). Each later plan files one item with the next free id (`dimension: gui`; `risk: physics`
   wherever a slice shows a new number or a new physical claim, `risk: mechanical` otherwise).
 - `M` = `magcoupling-rs`; code paths are under `M/src/` unless they say otherwise, and every `path:line` is at 1048962.
 - Inputs: the inventory `docs/analyses/2026-11-09-magcoupler-ux-inventory.md` (what is on screen today, with its
@@ -379,13 +379,19 @@ ahead of egui's built-in fonts, which stay as the fallback for any glyph outside
 - **Tabular digits.** egui cannot switch OpenType features, so the font file itself must carry tabular digits as
   its default digits. The font is built once, offline: subset to the characters the app draws (Latin, Greek, the
   maths and unit signs in use) with the `tnum` feature frozen in. The built file, its licence and the exact
-  command that made it are committed; the app build does not run font tools.
+  command that made it are committed; the app build does not run font tools. (Built 2026-11-18,
+  BL-079: the ten digits alone are remapped to their tabular forms. The whole feature also
+  substitutes the space, the full stop, the comma, the colon, the hyphen and the brackets, which
+  would widen them in running text. Since the fix wave of that stage's review, 2026-11-22, the
+  built file also carries the ascender, descender and line gap of egui's built-in font, so a row
+  keeps the height the layout was built on.)
 - **Weights.** egui has no synthetic bold (`strong()` changes colour only). One face (Regular) is the default plan;
   a second (SemiBold, for tile numbers and headings) is added only if the spike shows the tiles need it.
 - **Cost.** About 0.1 MB per face after subsetting, against a 6.66 MB wasm file today.
 - **Spike first.** Before the plan fixes sizes: build the subset, load it in the panel, and check the equations
   (`typeset.rs` and its `glyph_safe` substitutions were tuned to the built-in fonts), the drawing's tags and the
   plots at 1280x800 and 1920x1080. The spike is throwaway; its findings go into the slice B plan.
+  (Done 2026-11-17: the findings are in the stage 1 plan, under "What the spike found".)
 
 ### 6.3 Where the theme lives
 
@@ -802,6 +808,13 @@ the exports' contents in slices A to C; the items of the fixes branch.
 ### 12.3 Not verified
 
 - That egui 0.32 draws the frozen-`tnum` Inter subset correctly, and what it costs in wasm bytes (the spike).
+  Checked 2026-11-17 in a headless render of the real app: the first view, the Geometry tab's drawing with its
+  tags and one plot at 1280x800, and the Equation panel's equation at 1920x1080 (the pictures the stage 1 plan
+  lists); the file is 30,684 bytes. A browser's own drawing of the look is the smoke run's `look`, which sees
+  the theme's marks there (the charcoal page, the crimson square, the line under the active tab). It cannot tell
+  Inter from egui's built-in font: both are one clean sans-serif face to the agent that judges the picture. That
+  the app installs Inter is held by the Rust tests (`the_app_draws_its_text_in_inter`), on the code path the web
+  build shares.
 - That the host serves an address of 2,700 characters (the limit of the Vercel edge was not found in its
   documentation; a Share link of that length has not been loaded on the live site in this work).
 - The live site against this checkout: the inventory read the code, not colesorkness.com.

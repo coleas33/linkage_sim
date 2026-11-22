@@ -58,6 +58,7 @@ use crate::gui::guidance::{
     self, BANNER_NOTE, CHECK_GUIDES, CheckGuide, Direction, FIT_CHECK, Learn, NO_FIX,
     design_status, fix_text, guide_notes, row_learn, status_line,
 };
+use crate::gui::look;
 use crate::gui::plain_text::{display_label, help_for, label_for};
 use crate::gui::readouts::Readouts;
 use crate::gui::typeset::glyph_safe;
@@ -85,10 +86,11 @@ impl Level {
         }
     }
 
-    /// The badge colour: green, the theme's warning colour, the theme's error colour.
+    /// The badge colour: the panel's own green ([`crate::gui::look::OK`] in a dark theme), the
+    /// theme's warning colour, the theme's error colour.
     pub fn color(self, visuals: &egui::Visuals) -> egui::Color32 {
         match self {
-            Level::Good if visuals.dark_mode => egui::Color32::from_rgb(90, 200, 120),
+            Level::Good if visuals.dark_mode => crate::gui::look::OK,
             Level::Good => egui::Color32::from_rgb(20, 130, 60),
             Level::Caution => visuals.warn_fg_color,
             Level::Bad => visuals.error_fg_color,
@@ -731,7 +733,8 @@ pub fn shown_lines(results: &DesignResults, clamps_paused: bool) -> Vec<Dashboar
 }
 
 /// Draws the dashboard of `results`, computed from `inputs`: the design status line, the
-/// end-effect banner when f_end <= 0, then a row per line (badge and label, then the value and,
+/// end-effect banner when f_end <= 0, then a row per line (badge and label, the label quieter
+/// than the value, [`look::quiet_text`]; then the value and,
 /// with the spreadsheet details, its correction ids under a one-line legend, so a narrow side
 /// still reads) with its Why line, a guided check's
 /// block over its Why line, the stored-3D label after the last stored-3D row, and the
@@ -765,10 +768,12 @@ pub fn dashboard_ui(
     let last_3d = lines.iter().rposition(|line| line.stored_3d);
     for (index, line) in lines.iter().enumerate() {
         let weak = ui.visuals().weak_text_color();
+        let quiet = look::quiet_text(ui.visuals());
         let tint = |rich: egui::RichText| if line.greyed { rich.color(weak) } else { rich };
         let title = ui.horizontal(|ui| {
             badge(ui, line.level);
-            ui.add(egui::Label::new(tint(egui::RichText::new(label_for(line.path)))).wrap());
+            let label = egui::RichText::new(label_for(line.path)).color(quiet);
+            ui.add(egui::Label::new(tint(label)).wrap());
         });
         let value = ui.horizontal(|ui| {
             ui.add_space(16.0);
@@ -855,7 +860,8 @@ fn fit_ui(
     let level = guidance::level(guide, inputs, results);
     ui.horizontal(|ui| {
         badge(ui, Some(level));
-        ui.add(egui::Label::new(guide.label).wrap());
+        let label = egui::RichText::new(guide.label).color(look::quiet_text(ui.visuals()));
+        ui.add(egui::Label::new(label).wrap());
     });
     ui.horizontal(|ui| {
         ui.add_space(16.0);
@@ -1009,12 +1015,12 @@ fn learn_ui(ui: &mut egui::Ui, learn: Learn, readouts: &mut Readouts) {
     }
 }
 
-/// One line of a row's guide, 16 points in under its row: `head`, then `body` in a column
-/// beside it that wraps within the width left.
+/// One line of a row's guide, 16 points in under its row: `head`, a caption
+/// ([`look::quiet_text`]), then `body` in a column beside it that wraps within the width left.
 fn guide_line(ui: &mut egui::Ui, head: &str, body: impl FnOnce(&mut egui::Ui)) {
     ui.horizontal_top(|ui| {
         ui.add_space(16.0);
-        ui.label(head);
+        ui.colored_label(look::quiet_text(ui.visuals()), head);
         ui.vertical(body);
     });
 }
@@ -2318,6 +2324,54 @@ mod tests {
         for rule in &WARNING_RULES {
             assert_eq!(warning_note(rule).map(|n| n.id), Some(rule.note_id));
         }
+    }
+
+    #[test]
+    fn a_passing_check_is_the_ok_token_in_a_dark_theme() {
+        // UX overhaul spec 6.3: the panel's own green takes the token's value (#4cc38a). A
+        // light theme's green is not a token and stays.
+        assert_eq!(
+            Level::Good.color(&egui::Visuals::dark()),
+            crate::gui::look::OK
+        );
+        assert_eq!(
+            Level::Good.color(&egui::Visuals::light()),
+            egui::Color32::from_rgb(20, 130, 60)
+        );
+    }
+
+    #[test]
+    fn a_row_s_label_is_quieter_than_its_value_in_a_theme_and_in_egui_s_own_visuals() {
+        // UX overhaul spec 6.1: labels and captions are quieter than values
+        // (`look::quiet_text`). The label, the value and the head of the Why line of the first
+        // row, at the example design.
+        let colours = |ctx: &egui::Context| {
+            let output = dashboard_frame(ctx, &DesignInputs::default());
+            [label_for("model.pullout_Nm"), "2.688 N·m", WHY_LINK].map(|text| {
+                text_color(&output, text).unwrap_or_else(|| panic!("no {text:?} drawn"))
+            })
+        };
+        // A theme that sets a weak colour (the standalone app's): the label and the head take
+        // it, the value keeps the strong colour.
+        let themed = egui::Context::default();
+        let weak = egui::Color32::from_rgb(1, 2, 3);
+        themed.style_mut(|style| style.visuals.weak_text_color = Some(weak));
+        let strong = themed.style().visuals.strong_text_color();
+        assert_eq!(colours(&themed), [weak, strong, weak]);
+        // egui's own visuals set none: their weak colour is too faint for a name (the text
+        // colour at 60 %), and their text colour is already a step under the strong colour.
+        let plain = egui::Context::default();
+        let visuals = plain.style().visuals.clone();
+        assert_eq!(visuals.weak_text_color, None);
+        assert_ne!(visuals.text_color(), visuals.strong_text_color());
+        assert_eq!(
+            colours(&plain),
+            [
+                visuals.text_color(),
+                visuals.strong_text_color(),
+                visuals.text_color()
+            ]
+        );
     }
 
     #[test]

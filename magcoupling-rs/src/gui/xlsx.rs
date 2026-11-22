@@ -3,7 +3,7 @@
 //! Excel's 32,767 characters, as Excel counts them, ending with how long it was), a time as a
 //! date, each sheet's header rows frozen, its header's filter buttons and its columns' widths as
 //! the sheet asks, the headings bold (a group heading on a light grey), and a check's level
-//! filled with the standalone page's badge colour, a fixed dark-theme palette (decision X-11;
+//! filled from a fixed palette, the badge colours of egui's dark visuals (decision X-11;
 //! [`fill`]). Values only: no cell holds a formula (decision X-1).
 
 use rust_xlsxwriter::{
@@ -114,12 +114,16 @@ fn format_of(style: CellStyle) -> Format {
     }
 }
 
-/// The badge colour of `level` in egui's dark visuals, which the standalone page forces
-/// (decision X-11): green, the warning amber, the error red. Black text reads on each. A fixed
-/// palette: the linkage app's calculator window may draw in light visuals, whose badges differ
-/// (green 14823C, amber FF6400), and the fills do not follow them.
+/// The fill of `level` (decision X-11): green 5AC878, and the warning amber and the error red
+/// of egui's dark visuals. Black text reads on each. A fixed palette: it follows neither the
+/// standalone page's theme, whose badges moved to that theme's tokens (UX overhaul spec 6; the
+/// exports' contents stay as they are, spec 12.1), nor a host's light visuals (green 14823C,
+/// amber FF6400).
 pub fn fill(level: Level) -> Color {
-    let color = level.color(&egui::Visuals::dark());
+    let color = match level {
+        Level::Good => egui::Color32::from_rgb(90, 200, 120),
+        Level::Caution | Level::Bad => level.color(&egui::Visuals::dark()),
+    };
     Color::RGB((u32::from(color.r()) << 16) | (u32::from(color.g()) << 8) | u32::from(color.b()))
 }
 
@@ -346,7 +350,9 @@ mod tests {
     }
 
     #[test]
-    fn the_level_fills_are_the_page_s_badge_colours() {
+    fn the_level_fills_are_a_fixed_palette() {
+        // Renamed with the standalone page's own theme (UX overhaul spec 6): the fills were the
+        // page's badge colours until then, and the export keeps them (spec 12.1).
         assert_eq!(fill(Level::Good), Color::RGB(0x5A_C8_78));
         assert_eq!(fill(Level::Caution), Color::RGB(0xFF_8F_00));
         assert_eq!(fill(Level::Bad), Color::RGB(0xFF_00_00));

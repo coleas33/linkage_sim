@@ -1,6 +1,6 @@
 export const meta = {
   name: 'gui-smoke',
-  description: 'Smoke-test the locally served web build (the hub page at /tools/, the linkage app at /tools/linkage/, the calculator at /tools/magcoupler/): loads, canvas present, console clean; on the calculator the clean address opens the starting design, a Why link opens a note, an input tooltip shows no spreadsheet details, the dashboard scrolls at 1280x800, the torque card shows its rows between the readouts and the drawing, a drag of the gap slider is timed frame by frame (frame_check: true fails a p95 over one 60 fps frame), and the address follows that edit so a reload brings the design back',
+  description: 'Smoke-test the locally served web build (the hub page at /tools/, the linkage app at /tools/linkage/, the calculator at /tools/magcoupler/): loads, canvas present, console clean; on the calculator the clean address opens the starting design in its own look (a charcoal page, the brand mark, the underlined tab, the app font), a Why link opens a note, an input tooltip shows no spreadsheet details, the dashboard scrolls at 1280x800, the torque card shows its rows between the readouts and the drawing, a drag of the gap slider is timed frame by frame (frame_check: true fails a p95 over one 60 fps frame), and the address follows that edit so a reload brings the design back',
   whenToUse: 'Before merging a batch that touched src/gui/ or magcoupling-rs/src/gui/, and during Phase 1 audit',
   phases: [{ title: 'Smoke' }],
 }
@@ -19,12 +19,13 @@ const SMOKE_SCHEMA = {
 }
 
 const MAGCOUPLING_SCHEMA = {
-  type: 'object', required: ['passed', 'canvas_present', 'console_errors', 'starting_design', 'share_link_loaded', 'sizing_solved', 'design_file_loaded', 'first_view', 'explorer_ready', 'details_toggle', 'why_link_opened', 'tooltip_plain', 'dashboard_scrolls', 'torque_card', 'drag_moved', 'drag_frames_within_60fps', 'address_follows'],
+  type: 'object', required: ['passed', 'canvas_present', 'console_errors', 'starting_design', 'look', 'share_link_loaded', 'sizing_solved', 'design_file_loaded', 'first_view', 'explorer_ready', 'details_toggle', 'why_link_opened', 'tooltip_plain', 'dashboard_scrolls', 'torque_card', 'drag_moved', 'drag_frames_within_60fps', 'address_follows'],
   properties: {
     passed: { type: 'boolean' },
     canvas_present: { type: 'boolean' },
     console_errors: { type: 'array', items: { type: 'string' } },
     starting_design: { type: 'boolean' },
+    look: { type: 'boolean' },
     address_follows: { type: 'boolean' },
     first_view: { type: 'boolean' },
     explorer_ready: { type: 'boolean' },
@@ -80,6 +81,11 @@ const MAGCOUPLING_SMOKE_DESIGN_FILE = '{"format": "magcoupling-design", "version
 // starting design (UX overhaul spec 7.1): typed once here. app.rs's smoke test holds it equal to
 // the line the app draws for app::starting_design.
 const STARTING_STATUS = 'Starting design: passes all 9 checks'
+
+// The page's background as a browser reports it: the panel colour of the calculator's theme
+// (UX overhaul spec 6.1, #181b1f), typed once here. app.rs's smoke test holds it equal to
+// app::theme::PANEL.
+const PAGE_BACKGROUND = 'rgb(24, 27, 31)'
 
 // The torque card's heading, which the calculator's first view and its card step both look for:
 // typed once here. app.rs's smoke test holds it equal to gui::torque_card::CARD_HEADING.
@@ -141,7 +147,10 @@ passed=true only if: both pages loaded, hub_page, canvas present, title_warning=
 }
 
 // The magnetic coupling calculator. First (UX overhaul slice A, spec 7.1 and 7.2) the clean
-// address, with no share link: it opens the starting design and stays clean. Then
+// address, with no share link: it opens the starting design and stays clean, and (slice B,
+// stage 1, spec 6) the page wears the calculator's own look: its background is the theme's
+// panel colour, read from the page, and the screenshot shows the brand mark before the title,
+// the line under the active tab and text in the app's font. Then
 // deterministic state through its share link, checked in
 // the console (the page is one canvas). A new page opens on Size and torque under the welcome
 // strip (decision G-5), so the first screenshot shows both with no click. One click on the
@@ -171,7 +180,7 @@ if (ARGS.magcoupling !== false) {
   const page = `${url}/tools/magcoupler/?m=${MAGCOUPLING_SMOKE_PAYLOAD}`
   magcoupling = await agent(
     `Smoke-test the WASM magnetic coupling calculator using Playwright MCP tools (${MAGCOUPLING_TOOLS}).
-Steps: first set the window to 1280 x 800 CSS pixels with browser_resize (the laptop size the dashboard must scroll at). Then the starting design: navigate to ${url}/tools/magcoupler/ (the clean address, with no share link) and wait 8 seconds (WASM init). Take a screenshot and read the address's query with browser_run_code_unsafe, code: async (page) => page.evaluate(() => location.search). starting_design=true only if the dashboard (the right side) is topped by the line "${STARTING_STATUS}", the header row at the top of the page (it may wrap to a second line) shows the button "Open the example design" right after "Reset all", and the code returned an empty string (at the starting design the address stays clean). Collect the console messages at level "info" (this page's: the next step navigates away).
+Steps: first set the window to 1280 x 800 CSS pixels with browser_resize (the laptop size the dashboard must scroll at). Then the starting design: navigate to ${url}/tools/magcoupler/ (the clean address, with no share link) and wait 8 seconds (WASM init). Take a screenshot and read the address's query with browser_run_code_unsafe, code: async (page) => page.evaluate(() => location.search). starting_design=true only if the dashboard (the right side) is topped by the line "${STARTING_STATUS}", the header row at the top of the page (it may wrap to a second line) shows the button "Open the example design" right after "Reset all", and the code returned an empty string (at the starting design the address stays clean). Then the look: read the page's background with browser_run_code_unsafe, code: async (page) => page.evaluate(() => getComputedStyle(document.body).backgroundColor). look=true only if the code returned "${PAGE_BACKGROUND}" and the screenshot shows the calculator's own look: a charcoal page; at the top left a small crimson square right before the title "Magnetic coupling calculator"; in the row of tabs the selected tab, "Size and torque", marked by a crimson line under its name and not by a filled button; and every text drawn in one clean sans-serif face, with no empty box where a character should be. Collect the console messages at level "info" (this page's: the next step navigates away).
 Then navigate to this exact URL (copy it whole; it carries a share link): ${page}
 Wait 8 seconds (WASM init, then the sizing solve after its 0.25 s debounce). Snapshot the page and confirm a <canvas> element with id "magcoupling_canvas" exists. Collect the console messages at level "info" (it includes errors and warnings). Take a screenshot and judge whether it shows the calculator rendered in a dark theme (the size controls on the left, dashboard on the right, the Size and torque view in the middle) vs a blank page. first_view=true only if the middle region shows the first view with no click: at its top the line "Set the size -> read the torque -> open any red check to see why and what to change." with a "Hide" button, under it a row of tabs starting "Size and torque" (the selected tab), and under the tabs the torque readouts, then the heading "${CARD_HEADING}" with a link starting "Why:" beside it, open, with lines of text under it, then a drawing of two rings of coloured magnet blocks inside a grey cup around a shaft. details_toggle=true only if the header row at the top of the page (it may wrap to a second line) shows, after the "Equation panel" button, a checkbox labelled "Show spreadsheet details", unticked.
 Then the design file picker: write this text, exactly, to the file .playwright-mcp/magcoupling-smoke-design.json under the repository root (gitignored; the Playwright MCP uploads only files under the repository) and note its absolute path: ${MAGCOUPLING_SMOKE_DESIGN_FILE}
@@ -187,7 +196,7 @@ Then the drag: in a fresh screenshot find the handle of the "Magnet face gap" sl
 Collect the console messages at level "info" once more (it covers the reopened page and the drag).
 Then the address. The app rewrites it after every settled edit, and the drag was one. Read it, reload the page and read it again in one call of browser_run_code_unsafe, code: async (page) => { const before = await page.evaluate(() => location.href); await page.reload(); await page.waitForTimeout(8000); return { before, after: await page.evaluate(() => location.href) }; } Then take a screenshot. address_follows=true only if drag_moved, before contains "?m=" and is not the URL opened above (the drag's edit rewrote the address), after equals before, and on the reloaded page the Magnet face gap reads the value it read after the drag, not ${SMOKE_GAP_SHOWN} (the reload brought the edited design back). If drag_moved is false, address_follows=false: say so in notes. Collect the console messages at level "info" a last time (the reloaded page), then close the browser.
 share_link_loaded=true only if a console message contains "magcoupling: loaded the design from the share link". sizing_solved=true only if a console message contains "magcoupling sizing: Solved at". explorer_ready=true only if a console message contains "magcoupling explorer: " (the equation registry, built when the page starts).
-passed=true only if: page loaded, canvas present, starting_design, first_view, details_toggle, share_link_loaded, sizing_solved, design_file_loaded, explorer_ready, why_link_opened, tooltip_plain, dashboard_scrolls, torque_card, address_follows, and zero console messages of type error (warnings are OK — put them in notes); leave the drag's fields out of passed (this script judges them). List every console error string verbatim in console_errors. If navigation fails entirely, passed=false with the failure in notes — the server may not be running (serve linkage-sim-rs/web/ after running scripts/build_magcoupling_web.sh).`,
+passed=true only if: page loaded, canvas present, starting_design, look, first_view, details_toggle, share_link_loaded, sizing_solved, design_file_loaded, explorer_ready, why_link_opened, tooltip_plain, dashboard_scrolls, torque_card, address_follows, and zero console messages of type error (warnings are OK — put them in notes); leave the drag's fields out of passed (this script judges them). List every console error string verbatim in console_errors. If navigation fails entirely, passed=false with the failure in notes — the server may not be running (serve linkage-sim-rs/web/ after running scripts/build_magcoupling_web.sh).`,
     { label: 'gui-smoke-magcoupling', phase: 'Smoke', schema: MAGCOUPLING_SCHEMA, model: 'sonnet' },
   ) || noReading(MAGCOUPLING_SCHEMA)
   // The calculator's passed, checked again by this script from the agent's reading rather than
