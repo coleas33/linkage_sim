@@ -982,6 +982,29 @@ pub(crate) fn text_center(output: &egui::FullOutput, needle: &str) -> egui::Pos2
         .center()
 }
 
+/// The texts of a frame that are cut sideways: each drawn text whose ink runs more than a point
+/// past the left or right edge of what egui shows of it, the rect it is clipped to inside
+/// `screen`. Each is named with how far it runs out. A rotated text (a plot's vertical axis
+/// label) is measured as it is drawn. Left out: a text whose middle is above or below what
+/// shows (a list scrolls, and a row half out of view is not a cut).
+pub(crate) fn cut_texts(output: &egui::FullOutput, screen: egui::Rect) -> Vec<String> {
+    clipped_flat_shapes(output)
+        .into_iter()
+        .filter_map(|(clip, shape)| {
+            let egui::Shape::Text(text) = shape else {
+                return None;
+            };
+            let ink = text.visual_bounding_rect();
+            let shown = clip.intersect(screen);
+            if !shown.y_range().contains(ink.center().y) {
+                return None;
+            }
+            let cut = (ink.right() - shown.right()).max(shown.left() - ink.left());
+            (cut > 1.0).then(|| format!("{:?} by {cut:.0} points", text.galley.text()))
+        })
+        .collect()
+}
+
 /// A context whose fonts are loaded, for [`assert_glyphs`]: egui loads them on a context's first
 /// frame, so this runs one empty frame.
 pub(crate) fn glyph_context() -> egui::Context {
@@ -994,6 +1017,10 @@ pub(crate) fn glyph_context() -> egui::Context {
 /// at proportional 14 (the UI's criterion): egui draws an empty box for one it lacks. `what`
 /// names the text's source in the failure. The fonts load on `ctx`'s first frame
 /// ([`glyph_context`]).
+///
+/// With the app feature it also asserts that the standalone app's font holds the character
+/// (UX overhaul spec 8.1, test 7): the app draws one outside its cut of Inter in a built-in
+/// font, a different face in the middle of a word.
 pub(crate) fn assert_glyphs(ctx: &egui::Context, text: &str, what: &str) {
     let font = egui::FontId::proportional(14.0);
     for c in text.chars().filter(|c| !c.is_whitespace()) {
@@ -1002,20 +1029,33 @@ pub(crate) fn assert_glyphs(ctx: &egui::Context, text: &str, what: &str) {
             "{what}: no glyph for {c:?} (U+{:04X}) in {text:?}",
             c as u32
         );
+        #[cfg(feature = "app")]
+        assert!(
+            crate::app::fonts::cut_holds(c),
+            "{what}: {c:?} (U+{:04X}) in {text:?} is not in the app's font: add it to UNICODES in assets/fonts/subset_inter.py and build the cut again",
+            c as u32
+        );
     }
 }
 
-/// The colour of the first drawn text equal to `needle`: its override, else its first section's
-/// colour (a `RichText` colour or a painter text's), else the fallback colour.
+/// The colour of the first drawn text equal to `needle` ([`text_colors`]).
 pub(crate) fn text_color(output: &egui::FullOutput, needle: &str) -> Option<egui::Color32> {
-    text_shapes(output, needle).next().map(|(_, text)| {
-        text.override_text_color.unwrap_or_else(|| {
-            match text.galley.job.sections.first().map(|s| s.format.color) {
-                Some(color) if color != egui::Color32::PLACEHOLDER => color,
-                _ => text.fallback_color,
-            }
+    text_colors(output, needle).into_iter().next()
+}
+
+/// The colour of every drawn text equal to `needle`, in paint order: its override, else its
+/// first section's colour (a `RichText` colour or a painter text's), else the fallback colour.
+pub(crate) fn text_colors(output: &egui::FullOutput, needle: &str) -> Vec<egui::Color32> {
+    text_shapes(output, needle)
+        .map(|(_, text)| {
+            text.override_text_color.unwrap_or_else(|| {
+                match text.galley.job.sections.first().map(|s| s.format.color) {
+                    Some(color) if color != egui::Color32::PLACEHOLDER => color,
+                    _ => text.fallback_color,
+                }
+            })
         })
-    })
+        .collect()
 }
 
 /// Every sheet of an .xlsx file as calamine reads it: its name and its rows from A1 (calamine's

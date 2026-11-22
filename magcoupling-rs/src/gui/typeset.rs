@@ -996,17 +996,31 @@ pub fn paint(painter: &egui::Painter, origin: Pos2, laid: &Laid, ink: Color32) {
     }
 }
 
+/// The smallest text size [`equation_ui`] sets an equation in to fit its width [points].
+pub const SMALLEST_FITTED_SIZE: f32 = 8.0;
+
 /// Draws `eq` at text size `size` with its terms in `colors` (a tooltip's equation: it takes
-/// no clicks).
+/// no clicks), no wider than `max_width`: an equation too long for that at `size` is set
+/// smaller, down to [`SMALLEST_FITTED_SIZE`] (an equation does not wrap).
 pub fn equation_ui(
     ui: &mut egui::Ui,
     registry: &Registry,
     eq: &Equation,
     colors: &TermColors,
     size: f32,
+    max_width: f32,
 ) -> egui::Response {
     let ink = ui.visuals().text_color();
-    let laid = ui.fonts(|f| layout_equation(f, registry, eq, colors, size, ink));
+    let lay = |size: f32| ui.fonts(|f| layout_equation(f, registry, eq, colors, size, ink));
+    let (mut size, mut laid) = (size, lay(size));
+    // A width is not exactly in proportion to the size (egui rounds each glyph's advance to
+    // the pixel grid), so the size steps down until the equation fits.
+    while laid.size().x > max_width && size > SMALLEST_FITTED_SIZE {
+        size = (size * max_width / laid.size().x)
+            .min(size - 0.25)
+            .max(SMALLEST_FITTED_SIZE);
+        laid = lay(size);
+    }
     laid_ui(ui, &laid, ink, Sense::hover())
 }
 

@@ -50,6 +50,7 @@ use crate::gui::inputs::{
     ADVANCED_HEADING, FILTER_HINT, InputCatalogue, InputEntry, InputGroup, InputOrder,
     InputSection, KEY_DESIGN, filter_inputs, optional_seed,
 };
+use crate::gui::look;
 use crate::gui::plots::{PlotKind, plot_ui};
 use crate::gui::readouts::{Readouts, registry};
 use crate::gui::results_table::{
@@ -424,7 +425,7 @@ pub struct MagcouplingPanel {
     /// (this frame marks its equation's terms) and the input row a leaf term highlights.
     explorer: Explorer,
     /// The input or result traced (decision O-8): a click on an input's label or on a result
-    /// sets it; every path it reaches is framed in the selection colour.
+    /// sets it; every path it reaches is framed in the panel's mark colour.
     trace: Option<Trace>,
     /// Whether the shaft-clamp section is paused ([`clamps::PAUSED`], which every panel starts
     /// from): the views leave it out. A field, not the constant, so a test draws either state.
@@ -744,7 +745,7 @@ impl MagcouplingPanel {
             let reached = trace.paths.iter().map(String::as_str);
             marks = marks.with_marked(
                 reached.chain([trace.source.as_str()]),
-                ui.visuals().selection.stroke.color,
+                look::mark_color(ui.visuals()),
             );
         }
         // The header's toggle as the frame begins: every view of this frame reads it here.
@@ -981,7 +982,9 @@ impl MagcouplingPanel {
             }
             ui.horizontal_wrapped(|ui| {
                 for view in CentreView::tabs(self.clamps_paused) {
-                    ui.selectable_value(&mut self.centre, view, view.label());
+                    if look::tab_ui(ui, self.centre == view, view.label()).clicked() {
+                        self.centre = view;
+                    }
                 }
             });
             ui.separator();
@@ -992,7 +995,8 @@ impl MagcouplingPanel {
         });
     }
 
-    /// The Size tab's torque readouts (spec 3.2): the requirement's slider, an ordinary design
+    /// The Size tab's torque readouts (spec 3.2), each label quieter than its value
+    /// ([`look::quiet_text`]): the requirement's slider, an ordinary design
     /// edit (undo, files, links); the hot-low torque with its gap to the requirement, red short
     /// or green margin; the nominal pull-out at the operating temperature. The Required and
     /// Hot-low rows end with the Why link to the hot minimum check's note (spec 3.7). Where the
@@ -1005,7 +1009,7 @@ impl MagcouplingPanel {
         let range = entry.meta.range.expect("the requirement has a slider");
         let required = self.inputs.metal.required_min_Nm;
         ui.horizontal_wrapped(|ui| {
-            ui.label(size_controls::REQUIRED);
+            ui.colored_label(look::quiet_text(ui.visuals()), size_controls::REQUIRED);
             let mut value = required;
             let response = ui
                 .push_id(REQUIREMENT_INPUT, |ui| {
@@ -1035,7 +1039,7 @@ impl MagcouplingPanel {
         });
         let required = self.inputs.metal.required_min_Nm;
         ui.horizontal_wrapped(|ui| {
-            ui.label(size_controls::HOT_LOW);
+            ui.colored_label(look::quiet_text(ui.visuals()), size_controls::HOT_LOW);
             if let Some(hot_low) =
                 torque_readout(ui, &self.results, "metal.torque_hot_low_Nm", readouts)
             {
@@ -1048,7 +1052,10 @@ impl MagcouplingPanel {
             }
         });
         ui.horizontal_wrapped(|ui| {
-            ui.label(size_controls::pullout_label(self.results.metal.op_temp_C));
+            ui.colored_label(
+                look::quiet_text(ui.visuals()),
+                size_controls::pullout_label(self.results.metal.op_temp_C),
+            );
             torque_readout(ui, &self.results, "model.pullout_Nm", readouts);
         });
     }
@@ -1279,6 +1286,7 @@ impl MagcouplingPanel {
     fn header_ui(&mut self, ui: &mut egui::Ui) {
         let design = self.design();
         ui.horizontal_wrapped(|ui| {
+            look::mark_ui(ui);
             ui.heading(HEADING);
             ui.separator();
             let can_undo = self.history.can_undo(&design);
@@ -1481,7 +1489,7 @@ impl MagcouplingPanel {
                 }
                 ui.add(
                     egui::Label::new(
-                        egui::RichText::new(banner).color(ui.visuals().selection.stroke.color),
+                        egui::RichText::new(banner).color(look::mark_color(ui.visuals())),
                     )
                     .wrap(),
                 );
@@ -1518,7 +1526,7 @@ impl MagcouplingPanel {
                     ui.add_space(6.0);
                     ui.horizontal(|ui| {
                         let dot = if state.modified { CHANGED_DOT } else { " " };
-                        ui.colored_label(ui.visuals().selection.stroke.color, dot)
+                        ui.colored_label(look::mark_color(ui.visuals()), dot)
                             .on_hover_text(crate::gui::input_ui::CHANGED_FROM_DEFAULT);
                         ui.strong(assumption.label);
                     });
@@ -1736,7 +1744,7 @@ impl MagcouplingPanel {
             ui.painter().rect_stroke(
                 row.response.rect.expand(3.0),
                 3.0,
-                egui::Stroke::new(FOCUS_WIDTH, ui.visuals().selection.stroke.color),
+                egui::Stroke::new(FOCUS_WIDTH, look::mark_color(ui.visuals())),
                 egui::StrokeKind::Outside,
             );
             if self.explorer.take_scroll(&entry.path) {
@@ -1951,11 +1959,11 @@ mod tests {
     };
     use crate::gui::sizing::DEBOUNCE_S;
     use crate::gui::test_support::{
-        SCREEN, clamp_at_its_limit, drawing_rect, drawn_texts, hot_day, hub_overstressed,
-        key_event, key_tap, last_characters, no_back_iron, only_the_clamp_fails,
+        SCREEN, clamp_at_its_limit, drawing_rect, drawn_texts, flat_shapes, hot_day,
+        hub_overstressed, key_event, key_tap, last_characters, no_back_iron, only_the_clamp_fails,
         only_the_joint_fails, passing_design, primary_button, row_line, select_all, short_magnets,
-        sized_frame, sized_frame_at, smoke_inputs, text_center, text_clip_rect, text_rect,
-        text_rects, text_shapes, tooltips_at_once, with_poles,
+        sized_frame, sized_frame_at, smoke_inputs, text_center, text_clip_rect, text_color,
+        text_rect, text_rects, text_shapes, tooltips_at_once, with_poles,
     };
     use crate::gui::torque_card::{CAPTION, Control, held_line};
     use crate::headline;
@@ -3626,12 +3634,29 @@ mod tests {
         assert_eq!((in_table(Level::Bad), in_table(Level::Caution)), (7, 4));
     }
 
-    /// The mark rects of the trace (the selection colour) painted in a frame.
+    /// The mark rects of the trace (the panel's mark colour) painted in a frame.
     fn trace_marks(harness: &Harness, output: &egui::FullOutput) -> Vec<egui::Rect> {
-        mark_rects(
-            output,
-            Some(harness.ctx.style().visuals.selection.stroke.color),
-        )
+        mark_rects(output, Some(look::mark_color(&harness.ctx.style().visuals)))
+    }
+
+    #[test]
+    fn the_panel_s_marks_are_the_host_s_link_colour() {
+        // The changed dot and the trace's banner and frames are drawn in `look::mark_color`,
+        // the host's link colour, whatever colour the host gives the name of a selected choice
+        // (the standalone app's theme: the text colour, on its selection fill).
+        let mut harness = Harness::new();
+        let visuals = harness.ctx.style().visuals.clone();
+        let blue = visuals.hyperlink_color;
+        assert_ne!(blue, visuals.selection.stroke.color);
+        harness.focus(FACE_GAP);
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        let output = harness.frame(Vec::new());
+        assert_eq!(text_color(&output, CHANGED_DOT), Some(blue));
+        harness.click_text(label_for(FACE_GAP));
+        let banner = harness.panel.trace.clone().expect("a trace").banner(false);
+        let output = harness.frame(Vec::new());
+        assert_eq!(text_color(&output, &banner), Some(blue));
+        assert!(!mark_rects(&output, Some(blue)).is_empty());
     }
 
     #[test]
@@ -4730,6 +4755,102 @@ mod tests {
         assert_eq!(harness.panel.design(), Design::default());
         harness.panel.reset();
         assert_eq!(harness.panel.design(), design_at(&baseline));
+    }
+
+    /// The line segments drawn in the brand accent, each as (left, right, y).
+    fn accent_lines(output: &egui::FullOutput) -> Vec<(f32, f32, f32)> {
+        flat_shapes(output)
+            .into_iter()
+            .filter_map(|shape| match shape {
+                egui::Shape::LineSegment { points, stroke } if stroke.color == look::ACCENT => {
+                    Some((points[0].x, points[1].x, points[0].y))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_active_tab_is_underlined_in_the_accent_and_no_other() {
+        // UX overhaul spec 6.1 (the accent's role) and decision C-5: one line, under the active
+        // tab's label, as wide as the tab.
+        let under = |output: &egui::FullOutput, label: egui::Rect| {
+            let lines = accent_lines(output);
+            assert_eq!(lines.len(), 1, "{lines:?}");
+            let (left, right, y) = lines[0];
+            assert!(
+                left <= label.left() && label.right() <= right,
+                "{lines:?} {label:?}"
+            );
+            assert!(
+                label.bottom() <= y && y <= label.bottom() + 6.0,
+                "{lines:?} {label:?}"
+            );
+        };
+        let mut harness = Harness::first_view();
+        let output = harness.frame(Vec::new());
+        // The Size tab's name is drawn twice: the left side's heading, then the tab.
+        let size_tab = *text_rects(&output, CentreView::SizeAndTorque.label())
+            .last()
+            .expect("the tab");
+        under(&output, size_tab);
+        // A tab still answers a click, and the line follows it on the next frame.
+        let geometry = CentreView::Geometry.label();
+        harness.click_text(geometry);
+        assert_eq!(harness.panel.centre, CentreView::Geometry);
+        let output = harness.frame(Vec::new());
+        under(&output, text_rect(&output, geometry).expect("the tab"));
+        // The active tab's label is in the strong text colour, another's in the quiet one
+        // (`look::quiet_text`). egui's own visuals set no weak colour, and their weak text is
+        // about 2.6:1, too faint for a tab's name: there it is the text colour (the
+        // whole-branch review, R-5).
+        let visuals = harness.ctx.style().visuals.clone();
+        assert_eq!(visuals.weak_text_color, None);
+        assert_eq!(
+            text_color(&output, geometry),
+            Some(visuals.strong_text_color())
+        );
+        let other = PlotKind::GapSweep.label();
+        assert_eq!(text_color(&output, other), Some(visuals.text_color()));
+        // A theme that sets a weak colour (the standalone app's): another tab's name takes it.
+        let weak = egui::Color32::from_rgb(1, 2, 3);
+        harness
+            .ctx
+            .style_mut(|style| style.visuals.weak_text_color = Some(weak));
+        assert_eq!(text_color(&harness.frame(Vec::new()), other), Some(weak));
+        harness
+            .ctx
+            .style_mut(|style| style.visuals.weak_text_color = None);
+        // The row wraps at this width: a tab on its second line is underlined where it is.
+        let last = CentreView::Results.label();
+        harness.click_text(last);
+        let output = harness.frame(Vec::new());
+        let label = text_rect(&output, last).expect("the tab");
+        assert!(label.top() > size_tab.bottom(), "{label:?} {size_tab:?}");
+        under(&output, label);
+    }
+
+    #[test]
+    fn the_brand_mark_is_one_accent_square_before_the_title() {
+        let mut harness = Harness::first_view();
+        let output = harness.frame(Vec::new());
+        let marks: Vec<egui::Rect> = flat_shapes(&output)
+            .into_iter()
+            .filter_map(|shape| match shape {
+                egui::Shape::Rect(rect) if rect.fill == look::ACCENT => Some(rect.rect),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(marks.len(), 1, "{marks:?}");
+        let mark = marks[0];
+        assert_eq!(mark.size(), egui::Vec2::splat(look::MARK_SIDE));
+        // The title's rect starts at the row's left edge (a wrapping label is indented to
+        // where its text goes): its first glyph marks where the title begins.
+        let (_, title) = text_shapes(&output, HEADING).next().expect("the title");
+        let first = title.galley.rows[0].glyphs[0].pos.x + title.pos.x;
+        assert!(mark.right() < first, "{mark:?} {first}");
+        let middle = title.galley.rect.translate(title.pos.to_vec2()).center().y;
+        assert!((mark.center().y - middle).abs() <= 2.0, "{mark:?} {middle}");
     }
 
     #[test]
