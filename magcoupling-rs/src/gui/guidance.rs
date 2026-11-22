@@ -2677,6 +2677,22 @@ fn apart_from(results: &DesignResults, path: &str, bound: f64, above: bool) -> S
     }
 }
 
+/// Hot-low and the requirement as the Hot-low tile quotes the pair (UX overhaul spec 4.4): the
+/// rule the hot-minimum Problem quotes them by (BL-068, [`apart_from`]). Each reads as its
+/// readout shows it; where hot-low is under the requirement and both would read the same at
+/// four significant digits, hot-low is quoted one last digit below. So a failing tile never
+/// shows two equal numbers.
+pub(crate) fn hot_low_quotes(inputs: &DesignInputs, results: &DesignResults) -> (String, String) {
+    const HOT_LOW: &str = "metal.torque_hot_low_Nm";
+    let required = inputs.metal.required_min_Nm;
+    let hot_low = if result_number(results, HOT_LOW) < required {
+        apart_from(results, HOT_LOW, required, false)
+    } else {
+        result_text(results, HOT_LOW)
+    };
+    (hot_low, input_text(inputs, "metal.required_min_Nm"))
+}
+
 /// The gearbox check's Problem when it cannot be made (it asks for a look): a value it
 /// compares is not a number.
 const GEARBOX_UNKNOWN: &str = "The gearbox check cannot be made: cold-high at the gearbox input or the rating is not a number.";

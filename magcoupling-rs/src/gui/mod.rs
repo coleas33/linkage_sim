@@ -35,6 +35,9 @@ pub mod sizing;
 pub mod spreadsheet;
 #[cfg(test)]
 pub(crate) mod test_support;
+// Drawn by the panel from Task 5 of this stage's plan, which removes this allow.
+#[allow(dead_code)]
+pub mod tiles;
 pub mod torque_card;
 pub mod trace;
 pub mod typeset;
