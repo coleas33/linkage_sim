@@ -428,6 +428,10 @@ mod tests {
         ];
         all(&output, &labels, theme::MUTED);
         all(&output, &["1.704 N·m", "1.448 N·m"], theme::TEXT);
+        // A tab that is not the active one is quiet too; the active tab's name (drawn as the
+        // left side's heading as well) is the text colour.
+        all(&output, &["Gap sweep"], theme::MUTED);
+        all(&output, &["Size and torque"], theme::TEXT);
         // The failing example design: the heads of an open block are captions too, and the
         // Magnets fit row's title is a label (the dashboard scrolled to its foot).
         app.panel.open_example_design();

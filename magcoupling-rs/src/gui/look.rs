@@ -19,9 +19,9 @@ pub const MARK_SIDE: f32 = 8.0;
 /// The width of the line under the active tab [points].
 pub const UNDERLINE_WIDTH: f32 = 2.0;
 
-/// The colour of a label beside its value and of a caption's head ("Why:"): quieter than the
-/// value, and still easy to read (UX overhaul spec 6.1: muted is for labels and captions, text
-/// for values).
+/// The colour of a label beside its value, of a caption's head ("Why:"), of a tab that is not
+/// the active one and of a plot's axes: quieter than a value, and still easy to read (UX
+/// overhaul spec 6.1: muted is for labels and captions, text for values).
 ///
 /// A theme that sets a weak text colour chose it for this, and the label takes it (the
 /// standalone app's theme: the muted token, 5.4:1 on the panel). egui's own visuals set none:
@@ -54,14 +54,14 @@ pub fn mark_ui(ui: &mut egui::Ui) {
 
 /// A tab of the centre's row. The active tab is marked by a line in the accent under its
 /// label, not by a filled chip, and its label is in the strong text colour; the other tabs
-/// are in the weak text colour until the pointer is on them.
+/// are in the quiet text colour ([`quiet_text`]) until the pointer is on them.
 pub fn tab_ui(ui: &mut egui::Ui, selected: bool, label: &str) -> egui::Response {
     let visuals = ui.visuals_mut();
     let was = (visuals.selection, visuals.widgets.inactive);
     visuals.selection.bg_fill = egui::Color32::TRANSPARENT;
     visuals.selection.stroke.color = visuals.widgets.active.fg_stroke.color;
     visuals.widgets.inactive.bg_stroke = egui::Stroke::NONE;
-    visuals.widgets.inactive.fg_stroke.color = visuals.weak_text_color();
+    visuals.widgets.inactive.fg_stroke.color = quiet_text(visuals);
     let response = ui.selectable_label(selected, label);
     let visuals = ui.visuals_mut();
     (visuals.selection, visuals.widgets.inactive) = was;

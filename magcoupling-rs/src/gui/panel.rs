@@ -4800,16 +4800,27 @@ mod tests {
         assert_eq!(harness.panel.centre, CentreView::Geometry);
         let output = harness.frame(Vec::new());
         under(&output, text_rect(&output, geometry).expect("the tab"));
-        // The active tab's label is in the strong text colour, another's in the weak one.
+        // The active tab's label is in the strong text colour, another's in the quiet one
+        // (`look::quiet_text`). egui's own visuals set no weak colour, and their weak text is
+        // about 2.6:1, too faint for a tab's name: there it is the text colour (the
+        // whole-branch review, R-5).
         let visuals = harness.ctx.style().visuals.clone();
+        assert_eq!(visuals.weak_text_color, None);
         assert_eq!(
             text_color(&output, geometry),
             Some(visuals.strong_text_color())
         );
-        assert_eq!(
-            text_color(&output, PlotKind::GapSweep.label()),
-            Some(visuals.weak_text_color())
-        );
+        let other = PlotKind::GapSweep.label();
+        assert_eq!(text_color(&output, other), Some(visuals.text_color()));
+        // A theme that sets a weak colour (the standalone app's): another tab's name takes it.
+        let weak = egui::Color32::from_rgb(1, 2, 3);
+        harness
+            .ctx
+            .style_mut(|style| style.visuals.weak_text_color = Some(weak));
+        assert_eq!(text_color(&harness.frame(Vec::new()), other), Some(weak));
+        harness
+            .ctx
+            .style_mut(|style| style.visuals.weak_text_color = None);
         // The row wraps at this width: a tab on its second line is underlined where it is.
         let last = CentreView::Results.label();
         harness.click_text(last);

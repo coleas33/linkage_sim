@@ -49,6 +49,7 @@ use crate::engine::model::{end_effect_in_range, harmonic_count, ring_pair_factor
 use crate::engine::sweeps::{STATUS_BELOW_MINIMUM, STATUS_NOMINAL, SweepRow};
 use crate::gui::dashboard::{Level, end_effect_out_of_range, hover_text, result_info};
 use crate::gui::format::{format_value, with_unit};
+use crate::gui::look;
 use crate::gui::plain_text::{PULL_OUT_NOMINAL, REQUIRED_TORQUE, label_for};
 use crate::gui::readouts::Readouts;
 use crate::{DesignInputs, DesignResults};
@@ -459,12 +460,20 @@ pub fn plot_ui(
     readouts: &mut Readouts,
 ) {
     readouts_ui(ui, kind, results, readouts);
-    // egui_plot draws the grid, the ticks and the axis labels from the text colour. Under a
-    // theme whose body text is as bright as its values the grid is as loud as the curves, so
-    // the plot takes the weak text colour for them. (A legend entry is a button: its text
-    // keeps the button's colour.)
+    // egui_plot draws the grid, the ticks, the axis labels and the value label at the pointer
+    // from the text colour. Under a theme whose body text is as bright as its values the grid
+    // is as loud as the curves, so the plot takes the quiet text colour for them
+    // (`look::quiet_text`: a theme's own weak colour; a host that sets none keeps its text
+    // colour). (A legend entry is a button: its text keeps the button's colour.)
     ui.scope(|ui| {
-        ui.visuals_mut().widgets.noninteractive.fg_stroke.color = ui.visuals().weak_text_color();
+        let visuals = ui.visuals_mut();
+        // Both colours are read before either is set, and the weak one is pinned: a host that
+        // sets none derives it from the text colour, so the plot's own weak marks (the
+        // operating temperature's line, a greyed series, the out-of-range points, "nothing to
+        // plot") would be faded a second time.
+        let (quiet, weak) = (look::quiet_text(visuals), visuals.weak_text_color());
+        visuals.widgets.noninteractive.fg_stroke.color = quiet;
+        visuals.weak_text_color = Some(weak);
         match kind {
             PlotKind::TorqueTemperature => torque_temperature_ui(ui, inputs, results),
             PlotKind::GapSweep => sweep_ui(
@@ -1399,6 +1408,35 @@ mod tests {
             .find(|t| t.starts_with(&format!("{PULL_OUT}: ")))
             .expect("the pull-out's readout");
         assert_eq!(text_color(&output, &readout), Some(text));
+        // A host that sets no weak colour (egui's own visuals): its weak colour is its text
+        // colour at 60 %, about 2.6:1, too faint for an axis. The axes keep the text colour
+        // there, and the plot's own weak marks (here the operating temperature's dashed line)
+        // are that weak colour, not faded a second time (the whole-branch review, C-2, R-5).
+        let plain = egui::Context::default();
+        let visuals = plain.style().visuals.clone();
+        assert_eq!(visuals.weak_text_color, None);
+        let output = draw_in(
+            &plain,
+            PlotKind::TorqueTemperature,
+            &DesignInputs::default(),
+        );
+        for label in ["Magnet temperature [°C]", "Torque [N·m]"] {
+            assert_eq!(
+                text_color(&output, label),
+                Some(visuals.text_color()),
+                "{label}"
+            );
+        }
+        let dashes: Vec<Color32> = flat_shapes(&output)
+            .into_iter()
+            .filter_map(|shape| match shape {
+                egui::Shape::LineSegment { stroke, .. } => Some(stroke.color),
+                _ => None,
+            })
+            .collect();
+        let weak = visuals.weak_text_color();
+        assert!(dashes.contains(&weak), "{weak:?} in {dashes:?}");
+        assert!(!dashes.contains(&weak.gamma_multiply(0.6)), "{dashes:?}");
     }
 
     #[test]
