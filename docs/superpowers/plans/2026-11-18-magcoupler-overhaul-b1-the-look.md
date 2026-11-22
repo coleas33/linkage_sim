@@ -31,6 +31,12 @@ So stage 1 is the look, which is visible on its own and changes no position. **W
 3. The slip-heating readout's stray unit (the design's 9.2: "never: steady state stays below the limit s"). The unit is appended wherever a result's value is formatted with its unit, in the dashboard, the plots, the results table and the Equation panel; stage 2 rebuilds the Plots tab that shows it.
 4. The accent's third use, the one primary button (**Learn**), and state by shape as well as colour (C-4): both belong to widgets stage 2 adds.
 5. **Red on a passing design: the plots' reference lines** (added by the whole-branch review, finding C-3). The Torque vs temperature plot draws the Required torque line, the two sweeps their Required floor and Slip heating its Governing limit in the failing red, with their legend dots, whatever the design's verdict (`plots::reference_hline`; older than stage 1, which does not change them). Decision C-5 says red means a failing check and nothing else. Stage 2 rebuilds the Plots tab: either those lines leave the red, or the owner accepts "red is also a limit line" and C-5's sentence is narrowed.
+6. **The controls' outlines** (findings E-4 and R-6). An unticked checkbox's box and a slider's rail are the border colour on the panel, 1.21:1, with an outline of the same colour (1.32:1 on `main`); a button and a value box at rest are 1.08:1 with a 1.21:1 hairline (1.48:1 on `main`); the slider's handle changes only its ring's width between rest, hover, drag and focus. No token gives a 3:1 outline without other damage (muted as a fill puts the tick at 2.6:1; muted as the inactive outline rings every button). Stage 2 draws its own controls and moves one of the two first-view checkboxes into a menu (C-12): it settles the outline there, with one more colour of about `#626973` if the owner agrees to it.
+7. **A second face** (suggestion S-1): Inter SemiBold for the title and the two headings, cut by the same script, about 30 KB (the design's 6.2 allows it; the chosen mockup's title is weight 600). The values wait for the tiles.
+8. **The top bar's buttons without a box at rest** (suggestion S-3): nine equal boxes in a row are the most toolkit-looking part of the first view. Stage 2 rebuilds the top bar.
+9. **The page shell** (suggestion S-4): `lang`, `theme-color`, `color-scheme: dark` and one muted loading line while the 6.7 MB wasm file loads, in `linkage-sim-rs/web/tools/magcoupler/index.html`. The line is a new on-screen string and a script change that only a browser run can check.
+10. **Stage 2's layout and word-budget tests run in the app's own font** (finding C-6): tests 8 and 15 of the design's 8.2 in a context with `app::theme::apply` and `app::fonts::install`, at 1280 x 800 and 1024 x 700. The app tests' `frame_on`, `WINDOWS` and `test_support::cut_texts` are there for it.
+11. **In the Plots tab** (finding E-7 and suggestion S-5): egui_plot fades a tick number in as the ticks spread, down to 1.3:1 (a zero-width `AxisHints::label_spacing` makes a number full strength or absent); and, once words may change, the real arrow and minus signs the cut already holds, for "->" and "-1 mm" in the welcome line and the torque card.
 
 ## What the spike found
 
@@ -2879,6 +2885,50 @@ with:
   Commit it (`docs(magcoupler): BL-079 fixed: the gate, the smoke run and the whole-branch review passed`), then merge the branch into `main` with a merge commit whose message lists the tasks' commit subjects. Remove the worktree with `git worktree remove`, never `git worktree prune`.
 
 - [ ] **Step 7: Report, then the push (the controller's call).** A push to `main` deploys the site. The report to the owner holds: what changed on screen, in three sentences; the two pictures to look at (the first view, and the failing example design for "crimson beside red"); the decisions L-1 to L-14, one line each; what follows as stage 2, with the fixed-3D line of register row A-18 named; and what was not verified (Safari and Firefox; the release build's size). After a push, when the `deploy-web.yml` run is green, run the smoke workflow with `{"url": "https://colesorkness.com"}` and report the result. If it fails, say so plainly: the site is live with the change.
+
+## After the whole-branch review: the fix wave (2026-11-22)
+
+Task 7's Step 4 ran on 2026-11-18 with three reviewers (conformance, regression, eyes) and a skeptic on every finding that is not a suggestion: 16 findings and 10 suggestions; one finding blocks the merge (E-1). The result is `.superpowers/sdd/2026-11-18-magcoupler-overhaul-b1/final-review.json` (gitignored). The fix wave is eight commits on the branch after `68b0dbc`. Tasks 1 to 6 above are left as they were applied: they are the record of what built `68b0dbc`, so a block's "with" text can differ from the file at the tip where the wave changed it (the README's theme and font paragraphs, the tracker's date, the design's 12.3).
+
+**Fixed, each with its red test first where a test can fail for it:**
+
+| Finding | What changed | The test that holds it |
+|---|---|---|
+| E-1 (blocks the merge) | A label beside its value and a caption's head are muted; the value keeps the text colour (`look::quiet_text`; decision L-2 as amended). | `app::tests::a_label_is_muted_and_its_value_is_in_the_text_colour`; `dashboard::tests::a_row_s_label_is_quieter_than_its_value_in_a_theme_and_in_egui_s_own_visuals` |
+| C-1, R-3, E-5 | The selection has its own fill, `theme::SELECTION` (decision L-3 as changed; register row A-19); the panel's marks read `look::mark_color`. | `theme::tests::selected_text_shows_on_every_surface_and_reads_on_its_fill`, `the_visuals_are_the_token_table`; `panel::tests::the_panel_s_marks_are_the_host_s_link_colour` |
+| R-4 | A test draws the app in its theme and font in every tab at 1280 x 800 and 1024 x 700 and fails on a text cut sideways. It failed on the tip. | `app::tests::no_text_is_cut_in_any_tab_in_the_app_s_own_font` |
+| R-2, E-2 | The Pole sweep's line is named in a wrapping caption over its plot (decision L-15). A plot readout longer than a row wraps. | The R-4 test; `plots::tests::the_pole_sweep_s_line_is_named_over_the_plot_on_as_many_rows_as_it_needs`, `a_readout_longer_than_a_row_wraps_on_rows_of_its_own` |
+| R-1 | A tooltip's equation wider than the window is set smaller (decision L-15). | `app::tests::the_widest_tooltip_stays_inside_the_window_in_the_app_s_own_font`; `readouts::tests::an_equation_wider_than_the_window_is_set_smaller_and_another_keeps_its_size` |
+| C-2, R-5 | The plot reads the quiet and the weak colour before it sets either and pins the weak one; the tabs and the axes take `look::quiet_text` (decision L-9 as amended). | `plots::tests::the_axes_take_the_weak_text_colour_and_the_readouts_do_not`; `panel::tests::the_active_tab_is_underlined_in_the_accent_and_no_other` |
+| C-3, C-4 | Four doc sentences made true of the tip; the plots' red reference lines are item 5 of "What follows". | None: texts. |
+| E-3, S-5 | The font cut carries the built-in font's ascender, descender and line gap (decision L-16). | `fonts::tests::a_row_is_as_tall_as_the_built_in_font_s` |
+| R-8, E-7 (b) | A plot may paint its vertical axis label a quarter row into the centre region's margin, so the label keeps its letters' tops. | The R-4 test, whose `cut_texts` measures a rotated text as drawn. |
+| R-7 | The font fallback is tested by a character. | `fonts::tests::a_character_outside_the_cut_is_drawn_by_a_built_in_font` |
+| C-5 | The design's 12.3, the README and decision L-14 say what the smoke run's `look` sees. | None: texts. |
+
+**Existing tests the wave edits, and how.** No assertion is weakened.
+- `theme::tests::the_visuals_are_the_token_table`: its two selection assertions hold the new fill and stroke. `every_text_token_reads_on_every_surface_it_is_drawn_on`: the text colour is also held on the selection fill; the link blue keeps the border colour among its surfaces.
+- `panel::tests::the_active_tab_is_underlined_in_the_accent_and_no_other`: it held another tab's name to egui's own weak colour, which is the behaviour finding R-5 reports. It now holds the text colour in egui's own visuals and a theme's weak colour when one is set.
+- `plots::tests::the_axes_take_the_weak_text_colour_and_the_readouts_do_not` gains the case of a context with no weak colour.
+- Helpers: `test_support::text_color` reads the first of the new `text_colors`; `plots::tests::draw_sweep` passes `LineName::Legend`; `panel::tests::trace_marks` reads `look::mark_color`.
+
+**Declined in this stage, and why:**
+
+| Finding | Why not here | Where it goes |
+|---|---|---|
+| E-4, R-6: checkbox boxes, slider rails and value boxes at 1.1:1 to 1.2:1 | A 3:1 outline needs a second colour outside the token table and changes every slider and checkbox of the page. All were under 3:1 on `main` too. | "What follows", item 6 |
+| E-6, S-2: the brand mark may read as a status light; a bar instead of a square | The mark is the chosen mockup's: 8 by 8 points, corner radius 2, before the title. Whether it reads as a brand or as a light is the owner's eye on the failing-design picture (the design's risk "Crimson beside red"). The underline's 2.94:1 follows from the approved accent value. | The report to the owner (Task 7, Step 7) |
+| E-7 (a): egui_plot's fading tick numbers | Older than this stage and no worse; egui_plot's own drawing. | "What follows", item 11 |
+| E-7 (c): the white N and S on the diagrams' pole colours, 3.3:1 and 3.8:1 | `diagrams.rs` is not touched by this stage (decision L-11). | Slice C, with the drawing |
+| S-1: a second font face | Stage 2 rebuilds the top bar and the headings. | "What follows", item 7 |
+| S-3: the top bar's buttons without a box | Stage 2 rebuilds the top bar. | "What follows", item 8 |
+| S-4: the page shell and a loading line | A new on-screen string and a script change that only a browser run can check; this wave ran no browser. | "What follows", item 9 |
+| C-6: stage 2's layout tests in the app's font | It is a rule for stage 2's plan. | "What follows", item 10 |
+| S-5, second part: the real arrow and minus signs | No on-screen string changes in this stage. | "What follows", item 11 |
+
+**Pictures.** The stage's pictures drawn again at the wave's tip by the headless renderer of the spike are in `.superpowers/sdd/2026-11-18-magcoupler-overhaul-b1/after-fix/` of the worktree (gitignored).
+
+**Not run by the wave:** `gate.sh`, the release WASM build, the browser smoke run. Task 7's Steps 2 and 3 run again on the tip before the merge (its Step 5).
 
 ## What this plan covers of the design
 
