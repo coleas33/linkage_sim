@@ -16,7 +16,8 @@
 //!   3D fields ([`STORED_3D_ROWS`]; the shaft joints row through the inner ring's single-ring
 //!   onset, which caps the bonded inner hub's fitting temperature, owner R-15) carry the label
 //!   [`STORED_3D_LABEL`]: the fields ([`STORED_3D_INPUTS`]) are 3D results for the example
-//!   design and stay fixed when the design changes; no live 3D model runs.
+//!   design or for the starting design ([`STARTING_3D_FIELDS`]) and stay fixed when the design
+//!   changes; no live 3D model runs.
 //!
 //! Over the rows, the material warnings that fire (spec Addendum A5: "plain language,
 //! colour-coded, linked to their teaching note"): each rule's text in its severity's colour (a
@@ -225,17 +226,20 @@ pub const STORED_3D_ROWS: [&str; 4] = [
     "shaft_joint.check",
 ];
 
-/// The label of the stored-3D rows.
-pub const STORED_3D_LABEL: &str = "Fixed 3D fields from the example design";
+/// The label of the stored-3D rows. It names both designs that come with stored fields (the
+/// example design's are the inputs' defaults, the starting design's [`STARTING_3D_FIELDS`]),
+/// so it is true at each of them and at a design edited away from either: an edit never moves
+/// the fields.
+pub const STORED_3D_LABEL: &str = "Fixed 3D fields: starting or example design";
 
 /// Its hover text.
-pub const STORED_3D_NOTE: &str = "The temperature checks use the demagnetization reverse fields and the slip-heating fields, computed in 3D for the example design. The bonded inner hub's allowed fitting temperature, on the shaft joints row, uses one of the reverse fields too. Those fields stay fixed when you change the geometry, magnet count or grade; for another design, enter its own 3D fields to check the limits.";
+pub const STORED_3D_NOTE: &str = "The temperature checks use the demagnetization reverse fields and the slip-heating fields, computed in 3D for the starting design and for the example design, each for its own geometry. The bonded inner hub's allowed fitting temperature, on the shaft joints row, uses one of the reverse fields too. Those fields stay fixed when you change the geometry, magnet count or grade; for another design, enter its own 3D fields to check the limits.";
 
 /// The stored 3D inputs: the four reverse fields of the demagnetization check and the
-/// slip-loss fields (the steel circuit's eleven, and the three free-space ones). They are 3D
-/// results for the example design and stay fixed when the design changes
-/// ([`STORED_3D_SENTENCE`]); [`STORED_3D_ROWS`] are the dashboard rows that move with them:
-/// the temperature rows and the shaft joints row.
+/// slip-loss fields (the steel circuit's seven, and the three free-space ones). They are 3D
+/// results for a named design, the example design or the starting design, and stay fixed when
+/// the design changes ([`STORED_3D_SENTENCE`]); [`STORED_3D_ROWS`] are the dashboard rows that
+/// move with them: the temperature rows and the shaft joints row.
 pub const STORED_3D_INPUTS: [&str; 14] = [
     "temperature.demag.h_rev_aligned_kA_m",
     "temperature.demag.h_rev_pullout_kA_m",
@@ -251,6 +255,18 @@ pub const STORED_3D_INPUTS: [&str; 14] = [
     "temperature.slip_loss.b_hub_free_T",
     "temperature.slip_loss.b_cup_free_T",
     "temperature.slip_loss.web_integral_free_T2m2",
+];
+
+/// The 3D fields the standalone app's starting design stores (`app::starting_design`; backlog
+/// BL-080), in [`STORED_3D_INPUTS`]' order: the reference routine's results for its geometry
+/// (8 magnets, ring radius 9.00 mm, face gap 1.80 mm), where the inputs' defaults are the
+/// example design's. A test of the app holds them to a recorded run of the routine
+/// (`the_starting_design_stores_the_3d_fields_of_its_own_geometry`, which says how to run it
+/// again). They are here, not beside the design, because the temperature Problem names the
+/// design whose fields a design holds (`guidance`).
+pub const STARTING_3D_FIELDS: [f64; 14] = [
+    386.0, 748.0, 850.0, 585.0, 0.202, 0.207, 0.335, 0.349, 4.04e-10, 4.405e-5, 0.17, 0.07416,
+    0.08099, 6.039e-6,
 ];
 
 /// The sentence the on-screen help of every stored 3D input ends with, whether the overlay
@@ -1685,9 +1701,11 @@ mod tests {
     #[test]
     fn the_stored_3d_label_and_note_say_the_fields_are_fixed_in_plain_words() {
         // Spec 3.8: "3D values from the workbook ... until M3" becomes a plain statement that
-        // the values are the example design's and do not follow the design; no live 3D model is
+        // the values are a named design's and do not follow the design; no live 3D model is
         // promised (section 8, slice-1 trap 6). Amendment A-7: "example design", the name the
-        // screen gives the defaults.
+        // screen gives the spreadsheet's values. BL-080: the starting design stores the fields
+        // of its own geometry, so each text names both designs; with the example design alone
+        // it would be false on the design the app opens on.
         for text in [STORED_3D_LABEL, STORED_3D_NOTE, STORED_3D_SENTENCE] {
             assert_eq!(
                 guidance::plain_text_violations(text),
@@ -1695,7 +1713,35 @@ mod tests {
                 "{text}"
             );
             assert!(text.contains("example design"), "{text}");
+            assert!(text.contains("starting"), "{text}");
             assert!(!text.contains("live"), "{text}");
+        }
+        assert_eq!(
+            STORED_3D_LABEL,
+            "Fixed 3D fields: starting or example design"
+        );
+        assert_eq!(
+            STORED_3D_SENTENCE,
+            "Stored 3D value, starting or example design; it does not follow yours."
+        );
+        assert!(
+            STORED_3D_NOTE.contains(
+                "computed in 3D for the starting design and for the example design, each for its own geometry."
+            ),
+            "{STORED_3D_NOTE}"
+        );
+        // The two headings over the fields' input rows say the same.
+        for section in ["calibration.stored_demag", "calibration.stored_slip"] {
+            let label = crate::gui::inputs::WORKFLOW
+                .iter()
+                .flat_map(|group| group.sections)
+                .find(|s| s.id == section)
+                .unwrap_or_else(|| panic!("no section {section}"))
+                .label;
+            assert!(
+                label.ends_with("from 3D analysis (starting or example design)"),
+                "{label}"
+            );
         }
         assert!(STORED_3D_NOTE.contains("stay fixed"), "{STORED_3D_NOTE}");
         assert!(
@@ -1752,7 +1798,7 @@ mod tests {
     }
 
     #[test]
-    fn every_stored_3d_input_says_it_is_the_example_design_s_and_stays_fixed() {
+    fn every_stored_3d_input_says_whose_it_is_and_stays_fixed() {
         // The help on screen of every stored 3D input ends with one sentence, whether the
         // overlay or the engine words it.
         let catalogue = crate::gui::inputs::InputCatalogue::get();

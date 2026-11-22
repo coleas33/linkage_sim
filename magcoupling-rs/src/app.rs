@@ -9,6 +9,8 @@ pub mod fonts;
 pub mod theme;
 
 use crate::DesignInputs;
+use crate::engine::meta::{InputSet, Value};
+use crate::gui::dashboard::{STARTING_3D_FIELDS, STORED_3D_INPUTS};
 use crate::gui::session::{Design, LoadError, share_link};
 use crate::gui::sizing::SizingState;
 use crate::gui::{MagcouplingPanel, PanelRequest};
@@ -31,27 +33,42 @@ pub const DESIGN_FILE_LOADED: &str = "magcoupling: loaded a design file";
 /// spec 7.1; owner rulings O-8 and O-9). It keeps the example design's given facts (the
 /// 0.6 N·m gearbox input rating at 5:1, the 43 mm space claim, B842SH magnets at their stock
 /// length on both rings, the sleeve, the liner, the allowances and every assumption) and is
-/// sized inside them to pass every check. Six inputs differ from the spreadsheet's, each on its
-/// slider's step.
+/// sized inside them to pass every check. The seven inputs that size it and its fourteen 3D
+/// fields differ from the spreadsheet's, each on its slider's step.
 ///
 /// Required torque is 1.35 N·m: 0.35 N·m of hot wheel-bearing drag plus 1.00 N·m to accelerate
 /// the wheel (the owner's figures; the tool takes the requirement as one number). The design
 /// passes every check up to a Required torque of 1.44 N·m.
 ///
-/// One line of the opening tab is outside the counted checks: the hub wall past the keyway is
-/// 2.25 mm, under the Size tab's guidance of about 2.5 mm, and the tab says so in the caution
-/// colour (register row A-17 in `docs/analyses/2026-11-10-conservative-assumptions.md`; a test
-/// pins the line). Its temperature check and the inner hub's fitting temperature use the 3D
-/// fields stored for the example design, as every design's do; they were not computed for this
-/// geometry (row A-18).
+/// The keyway depth is 1.4 mm, the standard hub keyway of a 3 x 3 mm parallel key on a 10 mm
+/// shaft (DIN 6885-1 and BS 4235-1: 1.4 mm, +0.1), where the spreadsheet has 1.7 mm (the
+/// owner's ruling of 2026-11-22, backlog BL-080; register row A-17 in
+/// `docs/analyses/2026-11-10-conservative-assumptions.md`). The hub wall past it is 2.55 mm,
+/// so the Size tab's amber line for a wall under about 2.5 mm is not drawn; no check's verdict
+/// or margin depends on which of the two depths is in.
+///
+/// Its temperature check and the inner hub's fitting temperature read 3D fields computed for
+/// this geometry ([`STARTING_3D_FIELDS`]: the reference routine `fields3d.run`, run once; the
+/// owner's ruling of 2026-11-22, row A-18), where every other design the spreadsheet's values
+/// start reads the example design's. The tool cannot compute them, so they are fixed numbers
+/// like the example design's: they do not follow an edit, and a change to the geometry above
+/// needs a new run (the test that pins them says how). The keyway is no part of the field
+/// model: the routine reads the magnets, the bondlines, the steel surfaces behind the magnets,
+/// the sleeve, the liner and the cap.
 pub fn starting_design() -> DesignInputs {
     let mut inputs = DesignInputs::default();
     inputs.coupling.npole = 8;
     inputs.coupling.inner_back_apothem_mm = 9.0;
+    inputs.coupling.keyway_depth_mm = 1.4;
     inputs.metal.face_gap_mm = 1.8;
     inputs.metal.cup_wall_corner_mm = 2.2;
     inputs.metal.cap_thread_dia_mm = 41.7;
     inputs.metal.required_min_Nm = 1.35;
+    for (path, field) in STORED_3D_INPUTS.into_iter().zip(STARTING_3D_FIELDS) {
+        inputs
+            .set(path, Value::Num(field))
+            .expect("every stored 3D field is a number input");
+    }
     inputs
 }
 
@@ -223,28 +240,114 @@ pub fn run_native() -> eframe::Result<()> {
 mod tests {
     use super::*;
     use crate::compute_all;
-    use crate::engine::meta::{InputSet, Value};
     use crate::gui::dashboard::{Level, warning_lines};
     use crate::gui::guidance::{counted_guides, design_status, level};
     use crate::gui::inputs::InputCatalogue;
     use crate::gui::session::{Design, encode_share_payload};
-    use crate::gui::test_support::drawn_texts;
+    use crate::gui::test_support::{drawn_texts, texts_in_colors};
 
     /// The status line at the starting design and at the example design, with the shaft-clamp
     /// section paused as the app runs it (nine counted checks).
     const STARTING_STATUS: &str = "Starting design: passes all 9 checks";
     const EXAMPLE_STATUS: &str = "Example design: fails 4 of 9 checks";
 
-    /// The six inputs the starting design changes (UX overhaul spec 7.1): the path, the
-    /// spreadsheet's value and the starting design's.
-    const STARTING_CHANGES: [(&str, f64, f64); 6] = [
+    /// The seven inputs the starting design sizes (UX overhaul spec 7.1; the keyway depth by the
+    /// owner's ruling of 2026-11-22, BL-080): the path, the spreadsheet's value and the starting
+    /// design's.
+    const STARTING_CHANGES: [(&str, f64, f64); 7] = [
         ("coupling.npole", 10.0, 8.0),
         ("coupling.inner_back_apothem_mm", 10.15, 9.0),
+        ("coupling.keyway_depth_mm", 1.7, 1.4),
         ("metal.required_min_Nm", 2.5, 1.35),
         ("metal.face_gap_mm", 1.4, 1.8),
         ("metal.cup_wall_corner_mm", 1.8, 2.2),
         ("metal.cap_thread_dia_mm", 41.0, 41.7),
     ];
+
+    /// A run of the reference 3D routine (`fields3d.run`) for the starting design's geometry
+    /// (BL-080): the output of `reference/magcoupling-py/tools/starting_design_fields.py` on
+    /// 2026-11-22 (magpylib 5.2.3). `RECORDED_READS` is its `reads` list: everything the routine
+    /// read, by this engine's paths. `RECORDED_FIELDS` is its `raw` list: the fourteen fields at
+    /// full precision, in `STORED_3D_INPUTS`' order.
+    ///
+    /// To regenerate, after the starting design's geometry or the engine's reading of it has
+    /// moved: run the script (its header says how), copy both lists here, and copy its
+    /// `entered` list into `gui::dashboard::STARTING_3D_FIELDS`.
+    const RECORDED_READS: [(&str, f64); 17] = [
+        ("coupling.npole", 8.0),
+        ("coupling.backiron", 1.0),
+        ("coupling.inner_back_apothem_mm", 9.0),
+        ("metal.bond_inner_mm", 0.05),
+        ("metal.bond_outer_mm", 0.05),
+        ("metal.cap_od_mm", 42.8),
+        ("model.inner_length_mm", 12.7),
+        ("model.inner_width_mm", 6.35),
+        ("model.inner_thickness_mm", 3.17),
+        ("model.outer_thickness_mm", 3.17),
+        ("model.inner_br_T", 1.3),
+        ("model.outer_face_apothem_mm", 13.97),
+        ("model.outer_back_apothem_mm", 17.14),
+        ("retainers.sleeve_id_mm", 25.204683460540704),
+        ("retainers.sleeve_od_mm", 25.404683460540703),
+        ("retainers.liner_id_mm", 27.490000000000002),
+        ("retainers.liner_od_mm", 27.89),
+    ];
+    const RECORDED_FIELDS: [(&str, f64); 14] = [
+        ("temperature.demag.h_rev_aligned_kA_m", 385.6470213208602),
+        ("temperature.demag.h_rev_pullout_kA_m", 747.7472260964677),
+        ("temperature.demag.h_rev_likepole_kA_m", 850.3845814018983),
+        ("temperature.demag.h_rev_single_ring_kA_m", 585.433721206525),
+        ("temperature.slip_loss.b_hub_T", 0.20209600565582997),
+        ("temperature.slip_loss.b_cup_T", 0.20673376294569007),
+        ("temperature.slip_loss.b_sleeve_T", 0.3349760675891163),
+        ("temperature.slip_loss.b_liner_T", 0.3489279494170646),
+        (
+            "temperature.slip_loss.cap_integral_T2m4",
+            4.043941097754211e-10,
+        ),
+        (
+            "temperature.slip_loss.web_integral_T2m2",
+            4.4050607298969813e-05,
+        ),
+        ("temperature.slip_loss.b_magnet_T", 0.17259565415202785),
+        ("temperature.slip_loss.b_hub_free_T", 0.07416352937255892),
+        ("temperature.slip_loss.b_cup_free_T", 0.0809945861055586),
+        (
+            "temperature.slip_loss.web_integral_free_T2m2",
+            6.039253748156894e-06,
+        ),
+    ];
+
+    /// A recorded field as the starting design stores it. The routine's eleven as
+    /// `fields3d.apply_to_inputs` rounds them: whole kA/m; three decimals for a field, two for
+    /// the field inside the blocks; three significant figures for the cap integral and four for
+    /// the web's. The three free-space fields to four significant figures, as the engine's own
+    /// defaults are held (correction E17).
+    fn as_entered(path: &str, raw: f64) -> f64 {
+        let name = path.rsplit('.').next().expect("a path");
+        let significant = |figures: usize| format!("{raw:.*e}", figures - 1);
+        let text = match name {
+            _ if name.starts_with("h_rev") => format!("{raw:.0}"),
+            "b_magnet_T" => format!("{raw:.2}"),
+            "cap_integral_T2m4" => significant(3),
+            _ if name.contains("free") || name == "web_integral_T2m2" => significant(4),
+            _ => format!("{raw:.3}"),
+        };
+        text.parse().expect("a number")
+    }
+
+    /// Every input in which the starting design differs from the example design, sorted: the
+    /// seven it sizes and its fourteen 3D fields.
+    fn starting_differences() -> Vec<String> {
+        let mut paths: Vec<String> = STARTING_CHANGES
+            .iter()
+            .map(|(path, _, _)| *path)
+            .chain(crate::gui::dashboard::STORED_3D_INPUTS)
+            .map(str::to_owned)
+            .collect();
+        paths.sort();
+        paths
+    }
 
     thread_local! {
         /// The addresses this test asked the page to take, in order, refused ones included.
@@ -316,6 +419,22 @@ mod tests {
             sizing: SizingState::default(),
         }
     }
+
+    /// The starting design as slice A shipped it (main 2ca65ee; live from 2026-11-17 until
+    /// BL-080): the spreadsheet's keyway depth and the example design's 3D fields.
+    fn first_starting_design() -> DesignInputs {
+        let mut inputs = DesignInputs::default();
+        inputs.coupling.npole = 8;
+        inputs.coupling.inner_back_apothem_mm = 9.0;
+        inputs.metal.face_gap_mm = 1.8;
+        inputs.metal.cup_wall_corner_mm = 2.2;
+        inputs.metal.cap_thread_dia_mm = 41.7;
+        inputs.metal.required_min_Nm = 1.35;
+        inputs
+    }
+
+    /// The Size tab's amber line at the first starting design's hub wall.
+    const FIRST_KEYWAY_LINE: &str = "Wall past keyway: 2.25 mm; existing guidance is about 2.5 mm.";
 
     /// The number at `path` of `inputs`.
     fn number(inputs: &DesignInputs, path: &str) -> f64 {
@@ -460,6 +579,9 @@ mod tests {
     /// supported (decision C-18).
     const WINDOWS: [egui::Vec2; 2] = [egui::vec2(1280.0, 800.0), egui::vec2(1024.0, 700.0)];
 
+    /// The laptop screen the app's tests draw on.
+    const LAPTOP: egui::Vec2 = WINDOWS[0];
+
     #[test]
     fn no_text_is_cut_in_any_tab_in_the_app_s_own_font() {
         // The whole-branch review (R-4): Inter is about 13 % wider than egui's built-in font,
@@ -566,6 +688,20 @@ mod tests {
         assert_eq!(inputs.coupling.gearbox_input_rating_Nm, 0.6);
         assert!(close(results.model.pullout_Nm, 1.704, 0.0005));
         assert!(close(results.metal.torque_cold_high_Nm, 2.423, 0.0005));
+        // The two checks that read its 3D fields (BL-080: its own since 2026-11-22). The
+        // temperature check: the magnet limit and its margin over the hot-day start. The shaft
+        // joints check: the bonded inner hub's fitting temperature, which the input caps, not
+        // the single-ring field (its cap is the onset less the cure margin).
+        let summary = &results.temperature.summary;
+        assert!(close(summary.magnet_limit_C, 94.94, 0.005));
+        assert!(close(summary.margin_hot_day_C, 29.94, 0.005));
+        assert!(close(results.temperature.slip_loss.total_W, 2.252, 0.0005));
+        let joint = &results.shaft_joint;
+        assert!(close(joint.hub_fit_temp_C, 93.27, 0.005));
+        assert_eq!(joint.hub_fit_allowed_C, inputs.shaft_joint.hub_fit_max_C);
+        let field_cap = results.temperature.demag.inner_onset_single_ring_C
+            - crate::engine::temperature::CURE_MARGIN_MIN_C;
+        assert!(close(field_cap, 131.28, 0.005), "{field_cap}");
         // It passes up to a Required torque of 1.44 N·m, and not at 1.45.
         for (required, bad) in [(1.44, 0), (1.45, 1)] {
             let mut asked = starting_design();
@@ -576,9 +712,10 @@ mod tests {
     }
 
     #[test]
-    fn the_starting_design_changes_six_inputs_on_their_slider_steps_and_no_assumption() {
-        // UX overhaul spec 7.1: six inputs differ from the spreadsheet's, each one a value a
-        // slider step reaches, so a user can walk from one design to the other.
+    fn the_starting_design_differs_from_the_example_on_slider_steps_and_in_no_assumption() {
+        // UX overhaul spec 7.1, with the keyway depth and the 3D fields of BL-080: the seven
+        // inputs it sizes and its fourteen 3D fields differ from the spreadsheet's, each one a
+        // value a slider step reaches, so a user can walk from one design to the other.
         let (start, example) = (starting_design(), DesignInputs::default());
         let mut differing = Vec::new();
         start.visit("", &mut |path, _, value| {
@@ -587,10 +724,10 @@ mod tests {
             }
         });
         differing.sort();
-        let mut want = STARTING_CHANGES.map(|(path, _, _)| path.to_owned());
-        want.sort();
-        assert_eq!(differing, want);
-        for (path, from, to) in STARTING_CHANGES {
+        assert_eq!(differing, starting_differences());
+        let fields = RECORDED_FIELDS
+            .map(|(path, raw)| (path, number(&example, path), as_entered(path, raw)));
+        for (path, from, to) in STARTING_CHANGES.into_iter().chain(fields) {
             assert_eq!(number(&example, path), from, "{path}");
             assert_eq!(number(&start, path), to, "{path}");
             let range = InputCatalogue::get()
@@ -657,25 +794,128 @@ mod tests {
     }
 
     #[test]
-    fn the_starting_design_draws_one_advisory_on_the_opening_tab() {
-        // A finding of the slice A plan (2026-11-17), kept visible on purpose: at a ring radius
-        // of 9.00 mm the hub wall past the keyway is 2.25 mm, under the Size tab's guidance of
-        // about 2.5 mm, so the opening tab draws that one amber line. No counted check judges
-        // it. A ring radius of 9.26 mm with a 42.2 mm cap thread clears it and takes the cap
-        // skirt from 0.55 to 0.30 mm.
+    fn the_starting_design_draws_no_caution_on_its_opening_tab() {
+        // The owner's ruling of 2026-11-22 (BL-080; register row A-17). Until then the opening
+        // tab drew one amber line, "Wall past keyway: 2.25 mm; existing guidance is about
+        // 2.5 mm.", which no counted check judges. The starting design's keyway is now the
+        // standard hub keyway of a 3 x 3 mm key on a 10 mm shaft (t2 = 1.4 mm, +0.1; DIN 6885-1
+        // and BS 4235-1) in place of the spreadsheet's 1.7 mm, so the wall is 2.55 mm and
+        // nothing on the opening tab is drawn in the caution or the failure colour: on the
+        // laptop screen, and on a page tall enough to draw both side columns whole.
         let inputs = starting_design();
+        assert_eq!(inputs.coupling.keyway_depth_mm, 1.4);
         let wall = compute_all(&inputs).model.hub_wall_past_key_mm;
-        assert!((wall - 2.25).abs() < 1e-9, "{wall}");
-        let ctx = egui::Context::default();
-        let mut app = MagcouplingApp::new(&ctx);
-        frame_texts(&ctx, &mut app);
-        let texts = frame_texts(&ctx, &mut app);
-        let advisory = "Wall past keyway: 2.25 mm; existing guidance is about 2.5 mm.";
-        assert!(texts.iter().any(|t| t == advisory), "{texts:?}");
-        assert!(
-            !texts.iter().any(|t| t.starts_with("Exploration only")),
-            "{texts:?}"
+        assert!((wall - 2.55).abs() < 1e-9, "{wall}");
+        for size in [LAPTOP, egui::vec2(LAPTOP.x, 20_000.0)] {
+            let ctx = egui::Context::default();
+            let mut app = MagcouplingApp::new(&ctx);
+            frame_on(&ctx, &mut app, size, Vec::new());
+            let output = frame_on(&ctx, &mut app, size, Vec::new());
+            let texts = drawn_texts(&output);
+            assert!(texts.iter().any(|t| t == STARTING_STATUS), "{texts:?}");
+            for start in ["Wall past keyway", "Exploration only"] {
+                assert!(!texts.iter().any(|t| t.starts_with(start)), "{texts:?}");
+            }
+            let visuals = ctx.style().visuals.clone();
+            assert_eq!(
+                texts_in_colors(&output, &[visuals.warn_fg_color, visuals.error_fg_color]),
+                Vec::<String>::new(),
+                "at {size:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_standard_keyway_depth_moves_no_check_of_the_starting_design() {
+        // The owner's condition for the 1.4 mm keyway (2026-11-22): no verdict changes. With
+        // the spreadsheet's 1.7 mm back in, every counted check has the same level and the same
+        // terms with the same margins: the key bears on its 1.2 mm contact height under either
+        // depth, and both walls stay closed. What the depth moves is the wall past it, and the
+        // amber line with it.
+        use crate::gui::guidance::check_terms;
+        let start = starting_design();
+        let mut deeper = start.clone();
+        deeper.coupling.keyway_depth_mm = 1.7;
+        let (results, results_deeper) = (compute_all(&start), compute_all(&deeper));
+        for guide in counted_guides(false) {
+            assert_eq!(
+                level(guide, &start, &results),
+                level(guide, &deeper, &results_deeper),
+                "{}",
+                guide.label
+            );
+            assert_eq!(
+                check_terms(guide.check, &start, &results),
+                check_terms(guide.check, &deeper, &results_deeper),
+                "{}",
+                guide.label
+            );
+        }
+        assert!(start.shaft_joint.key_contact_mm < start.coupling.keyway_depth_mm);
+        let (wall, wall_deeper) = (
+            results.model.hub_wall_past_key_mm,
+            results_deeper.model.hub_wall_past_key_mm,
         );
+        assert!(wall >= 2.5 && wall_deeper < 2.5, "{wall}, {wall_deeper}");
+    }
+
+    #[test]
+    fn a_link_and_a_file_saved_from_the_first_starting_design_open_it_as_it_was() {
+        // BL-080 changed the starting design. A link and a design file name every input, so one
+        // saved before the change opens the design it was saved from, with that design's
+        // numbers. `tests/data/saved_designs/` holds the link Share copied and the file Save
+        // wrote at the first starting design, both written by the code of main 2ca65ee.
+        use crate::gui::session::{
+            PUBLIC_BASE_URL, SHARE_PARAM, decode_share_payload, design_from_json,
+        };
+        let link = include_str!("../tests/data/saved_designs/starting_design_2ca65ee.link.txt");
+        let file = include_str!("../tests/data/saved_designs/starting_design_2ca65ee.design.json");
+        let payload = link
+            .strip_prefix(&format!("{PUBLIC_BASE_URL}?{SHARE_PARAM}="))
+            .expect("a share link");
+        let first = Design {
+            inputs: first_starting_design(),
+            sizing: SizingState::default(),
+        };
+        assert_eq!(decode_share_payload(payload).unwrap(), first);
+        assert_eq!(design_from_json(file).unwrap(), first);
+        assert!(
+            first != starting(),
+            "it is not the starting design any more"
+        );
+        // Its numbers as they were: the wall past the 1.7 mm keyway, and the temperature margin
+        // from the example design's 3D fields.
+        let results = compute_all(&first.inputs);
+        let close = |got: f64, want: f64| (got - want).abs() < 0.005;
+        assert!(close(results.model.hub_wall_past_key_mm, 2.25));
+        assert!(close(results.metal.torque_hot_low_Nm, 1.448));
+        assert!(close(results.temperature.summary.margin_hot_day_C, 28.06));
+        // In the app each opens that design, named "Your design" now, with its amber line; the
+        // link stays the page's address.
+        type Open = fn(&mut MagcouplingApp, &str);
+        let opens: [(Open, &str); 2] = [
+            (|app, link| app.open_share_payload(link).unwrap(), payload),
+            (|app, file| app.open_picked_file(Ok(file.to_owned())), file),
+        ];
+        for (open, saved) in opens {
+            let ctx = egui::Context::default();
+            let mut app = MagcouplingApp::new(&ctx);
+            open(&mut app, saved);
+            assert_eq!(app.panel().design(), first);
+            frame_texts(&ctx, &mut app);
+            let output = frame_on(&ctx, &mut app, LAPTOP, Vec::new());
+            let texts = drawn_texts(&output);
+            let count = |text: &str| texts.iter().filter(|t| *t == text).count();
+            assert_eq!(count("Your design: passes all 9 checks"), 1, "{texts:?}");
+            // The amber line is the one text in the caution colour (so the colour probe of
+            // the_starting_design_draws_no_caution_on_its_opening_tab does see such a line).
+            let visuals = ctx.style().visuals.clone();
+            assert_eq!(
+                texts_in_colors(&output, &[visuals.warn_fg_color, visuals.error_fg_color]),
+                [FIRST_KEYWAY_LINE]
+            );
+            assert_eq!(app.address_design, first);
+        }
     }
 
     #[test]
@@ -720,9 +960,9 @@ mod tests {
     #[test]
     fn the_spreadsheet_export_still_flags_against_the_workbook() {
         // UX overhaul spec 7.1 (C-22) and 8.1, test 4: in the export "changed" means "differs
-        // from the workbook", whatever the panel's baseline: the six inputs at the starting
-        // design, none at the example design. The export's code is not changed by this slice;
-        // this pins it.
+        // from the workbook", whatever the panel's baseline: every input the starting design
+        // changes at the starting design, none at the example design. The export's code is not
+        // changed by this slice; this pins it.
         use crate::gui::spreadsheet::{CellValue, INPUT_COLUMNS, INPUTS_SHEET, YES, sheets};
         use crate::gui::test_support::snapshot;
         let column = |name: &str| {
@@ -754,10 +994,87 @@ mod tests {
             paths.sort();
             paths
         };
-        let mut want = STARTING_CHANGES.map(|(path, _, _)| path.to_owned());
-        want.sort();
-        assert_eq!(flagged(&starting_design()), want);
+        assert_eq!(flagged(&starting_design()), starting_differences());
         assert_eq!(flagged(&DesignInputs::default()), Vec::<String>::new());
+    }
+
+    #[test]
+    fn the_starting_design_stores_the_3d_fields_of_its_own_geometry() {
+        // The owner's ruling of 2026-11-22 (BL-080; register row A-18): "passes all 9 checks"
+        // rests on 3D fields computed for the starting design, not on the example design's.
+        // The tool cannot compute them (the 3D routine is not ported), so they are held to a
+        // recorded run of the reference routine.
+        use crate::engine::meta::ResultSet;
+        use crate::engine::size_controls::{dimensions, resize_diameter, resize_length};
+        use crate::gui::dashboard::{STARTING_3D_FIELDS, STORED_3D_INPUTS};
+        let start = starting_design();
+        let results = compute_all(&start);
+        // The run is of this geometry: everything the routine read is what the engine has now.
+        // The routine gives both rings the inner ring's length, width and Br.
+        for (path, read) in RECORDED_READS {
+            let now = match start.get(path).or_else(|| results.get(path)) {
+                Some(Value::Num(x)) => x,
+                Some(Value::Int(i)) => i as f64,
+                other => panic!("{path}: {other:?}"),
+            };
+            assert!(
+                (now - read).abs() < 1e-9,
+                "{path}: {now}, the run read {read}"
+            );
+        }
+        let model = &results.model;
+        assert_eq!(
+            (
+                model.outer_length_mm,
+                model.outer_width_mm,
+                model.outer_br_T
+            ),
+            (
+                model.inner_length_mm,
+                model.inner_width_mm,
+                model.inner_br_T
+            )
+        );
+        // Every stored 3D field holds the run's value as entered, its own and not the example
+        // design's, whose values this does not move.
+        assert_eq!(RECORDED_FIELDS.map(|(path, _)| path), STORED_3D_INPUTS);
+        let example = DesignInputs::default();
+        for ((path, raw), stored) in RECORDED_FIELDS.into_iter().zip(STARTING_3D_FIELDS) {
+            assert_eq!(stored, as_entered(path, raw), "{path}");
+            assert_eq!(number(&start, path), stored, "{path}");
+            assert_ne!(number(&example, path), stored, "{path}");
+        }
+        assert_eq!(
+            number(&example, "temperature.demag.h_rev_likepole_kA_m"),
+            863.0
+        );
+        // The fields never follow an edit: the Size tab's diameter and length sliders move
+        // several inputs at once, and none of them is a 3D field.
+        let size = dimensions(&start).expect("the starting design has a size");
+        let edits = [
+            resize_diameter(&start, size.diameter_mm + 1.0),
+            resize_length(&start, size.overall_length_mm + 1.0),
+        ];
+        for edited in edits {
+            let edited = edited.expect("a size inside its slider's range");
+            assert!(edited != start, "the slider moved the design");
+            for path in STORED_3D_INPUTS {
+                assert_eq!(edited.get(path), start.get(path), "{path}");
+            }
+        }
+        // The temperature Problem names the design whose fields it read, here the starting
+        // design's, on a design edited away from it.
+        let mut hot = start.clone();
+        crate::gui::test_support::hot_day(&mut hot);
+        let guide = crate::gui::guidance::guide(crate::gui::guidance::TEMPERATURE)
+            .expect("the temperature guide");
+        let problem = (guide.problem)(&hot, &compute_all(&hot)).expect("a hot day fails it");
+        assert!(
+            problem.ends_with(
+                "(slip fields from the starting design; enter this design's own to confirm)."
+            ),
+            "{problem}"
+        );
     }
 
     #[test]

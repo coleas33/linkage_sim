@@ -1043,17 +1043,34 @@ pub(crate) fn text_color(output: &egui::FullOutput, needle: &str) -> Option<egui
     text_colors(output, needle).into_iter().next()
 }
 
-/// The colour of every drawn text equal to `needle`, in paint order: its override, else its
-/// first section's colour (a `RichText` colour or a painter text's), else the fallback colour.
+/// The colour of every drawn text equal to `needle`, in paint order ([`shape_color`]).
 pub(crate) fn text_colors(output: &egui::FullOutput, needle: &str) -> Vec<egui::Color32> {
     text_shapes(output, needle)
-        .map(|(_, text)| {
-            text.override_text_color.unwrap_or_else(|| {
-                match text.galley.job.sections.first().map(|s| s.format.color) {
-                    Some(color) if color != egui::Color32::PLACEHOLDER => color,
-                    _ => text.fallback_color,
-                }
-            })
+        .map(|(_, text)| shape_color(text))
+        .collect()
+}
+
+/// The colour a text shape is drawn in: its override, else its first section's colour (a
+/// `RichText` colour or a painter text's), else the fallback colour.
+fn shape_color(text: &egui::epaint::TextShape) -> egui::Color32 {
+    text.override_text_color.unwrap_or_else(|| {
+        match text.galley.job.sections.first().map(|s| s.format.color) {
+            Some(color) if color != egui::Color32::PLACEHOLDER => color,
+            _ => text.fallback_color,
+        }
+    })
+}
+
+/// Every drawn text of a frame whose colour ([`text_color`]'s rule) is one of `colors`, in
+/// paint order: with the visuals' caution and failure colours, every line that asks for a look.
+pub(crate) fn texts_in_colors(output: &egui::FullOutput, colors: &[egui::Color32]) -> Vec<String> {
+    flat_shapes(output)
+        .into_iter()
+        .filter_map(|shape| match shape {
+            egui::Shape::Text(text) if colors.contains(&shape_color(text)) => {
+                Some(text.galley.text().to_owned())
+            }
+            _ => None,
         })
         .collect()
 }

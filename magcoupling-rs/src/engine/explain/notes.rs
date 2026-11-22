@@ -646,11 +646,11 @@ pub const NOTES: &[Note] = &[
                 input: "temperature.demag.h_rev_likepole_kA_m",
                 step: Step::Enter,
                 aim: None,
-                text: "enter it from a 3D field calculation of your design, which needs an outside solver; the stored value belongs to the example design.",
+                text: "enter it from a 3D field calculation of your design, which needs an outside solver; the stored value belongs to the starting or example design.",
             },
         ],
         watch_out: &[
-            "The reverse fields are stored from the example design's 3D model: they ignore magnet count, ring radius, gap, block size and grade, reading low for stronger grades.",
+            "The reverse fields are stored from the starting or example design's 3D model: they ignore magnet count, ring radius, gap, block size and grade, reading low for stronger grades.",
             "N52, N50, N50M, N38UH, N35EH and 2:17 SmCo are rated hotter than the model's reference onset, so limits come from the model alone; onsets past tested ranges are extrapolated.",
         ],
         diagram: Some(Diagram::DemagKnee),
@@ -705,11 +705,11 @@ pub const NOTES: &[Note] = &[
                 input: "temperature.demag.h_rev_likepole_kA_m",
                 step: Step::Enter,
                 aim: None,
-                text: "enter your ferrite design's own value from a 3D field calculation; the stored one is the NdFeB example's, and yours may still fail.",
+                text: "enter your ferrite design's own value from a 3D field calculation; the stored one is an NdFeB design's, and yours may still fail.",
             },
         ],
         watch_out: &[
-            "The default reverse field for slipping, from the NdFeB example design, exceeds a Y30 knee at every temperature Y30 is rated for, so the check always fails with it.",
+            "The default reverse field for slipping, from an NdFeB design, exceeds a Y30 knee at every temperature Y30 is rated for, so the check always fails with it.",
             "Y30's temperature coefficients are measured only from 20 to 120 °C; the cold check extrapolates them to the coldest temperature.",
         ],
         diagram: None,
@@ -752,7 +752,7 @@ pub const NOTES: &[Note] = &[
         ],
         watch_out: &[
             "The gearbox output carries these swings; cold they can reach cold-high, {metal.cold_high_input_Nm} at the gearbox input here; the gearbox check compares only that torque with the input rating.",
-            "The drag, the heating and the magnets' limits use fields stored from the example design's 3D model; those fields do not follow your geometry or magnet grade.",
+            "The drag, the heating and the magnets' limits use fields stored from the starting or example design's 3D model; those fields do not follow your geometry or magnet grade.",
         ],
         diagram: None,
         sources: &[
@@ -820,7 +820,7 @@ pub const NOTES: &[Note] = &[
             },
         ],
         watch_out: &[
-            "The losses use fields stored from a 3D model of the example design; those fields do not follow your magnet count, ring radius, gap, magnet size or grade.",
+            "The losses use fields stored from a 3D model of the starting or example design; those fields do not follow your magnet count, ring radius, gap, magnet size or grade.",
             "Until a drag is measured, the high case, here {temperature.slip_loss.high_W}, is the estimate times an allowance for the model's errors; the temperature check uses it.",
         ],
         diagram: None,
@@ -1129,7 +1129,7 @@ pub const NOTES: &[Note] = &[
             },
         ],
         watch_out: &[
-            "The field at each shell is an entered value from the example design's 3D model; it does not follow your gap, magnets or pole count.",
+            "The field at each shell is an entered value from the starting or example design's 3D model; it does not follow your gap, magnets or pole count.",
         ],
         diagram: None,
         sources: &[

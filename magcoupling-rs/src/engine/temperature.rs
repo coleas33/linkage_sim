@@ -54,13 +54,15 @@ use super::meta::{
 use super::model::ring_pair_factor;
 
 /// The last sentence of the on-screen help of every stored 3D field (spec 3.8, amendment A-7):
-/// the value is the example design's and stays fixed when the design changes. A macro, not a
-/// `const`, so that `concat!` can end a help with it: the free-space fields here, the GUI
+/// the value is a named design's and stays fixed when the design changes. The inputs' defaults
+/// are the example design's; the calculator's starting design stores its own
+/// (`gui::dashboard::STARTING_3D_FIELDS`, backlog BL-080), so the sentence names both. A macro,
+/// not a `const`, so that `concat!` can end a help with it: the free-space fields here, the GUI
 /// overlay's rows (`gui::plain_text`) and `gui::dashboard::STORED_3D_SENTENCE` all read this one
 /// literal.
 macro_rules! stored_3d_sentence {
     () => {
-        "Stored 3D value for the example design; it does not follow yours."
+        "Stored 3D value, starting or example design; it does not follow yours."
     };
 }
 pub(crate) use stored_3d_sentence;
