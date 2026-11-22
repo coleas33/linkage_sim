@@ -1008,14 +1008,33 @@ pub(crate) fn assert_glyphs(ctx: &egui::Context, text: &str, what: &str) {
 /// The colour of the first drawn text equal to `needle`: its override, else its first section's
 /// colour (a `RichText` colour or a painter text's), else the fallback colour.
 pub(crate) fn text_color(output: &egui::FullOutput, needle: &str) -> Option<egui::Color32> {
-    text_shapes(output, needle).next().map(|(_, text)| {
-        text.override_text_color.unwrap_or_else(|| {
-            match text.galley.job.sections.first().map(|s| s.format.color) {
-                Some(color) if color != egui::Color32::PLACEHOLDER => color,
-                _ => text.fallback_color,
-            }
-        })
+    text_shapes(output, needle)
+        .next()
+        .map(|(_, text)| shape_color(text))
+}
+
+/// The colour a text shape is drawn in ([`text_color`]'s rule).
+fn shape_color(text: &egui::epaint::TextShape) -> egui::Color32 {
+    text.override_text_color.unwrap_or_else(|| {
+        match text.galley.job.sections.first().map(|s| s.format.color) {
+            Some(color) if color != egui::Color32::PLACEHOLDER => color,
+            _ => text.fallback_color,
+        }
     })
+}
+
+/// Every drawn text of a frame whose colour ([`text_color`]'s rule) is one of `colors`, in
+/// paint order: with the visuals' caution and failure colours, every line that asks for a look.
+pub(crate) fn texts_in_colors(output: &egui::FullOutput, colors: &[egui::Color32]) -> Vec<String> {
+    flat_shapes(output)
+        .into_iter()
+        .filter_map(|shape| match shape {
+            egui::Shape::Text(text) if colors.contains(&shape_color(text)) => {
+                Some(text.galley.text().to_owned())
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 /// Every sheet of an .xlsx file as calamine reads it: its name and its rows from A1 (calamine's

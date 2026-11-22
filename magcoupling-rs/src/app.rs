@@ -30,23 +30,26 @@ pub const DESIGN_FILE_LOADED: &str = "magcoupling: loaded a design file";
 /// spec 7.1; owner rulings O-8 and O-9). It keeps the example design's given facts (the
 /// 0.6 N·m gearbox input rating at 5:1, the 43 mm space claim, B842SH magnets at their stock
 /// length on both rings, the sleeve, the liner, the allowances and every assumption) and is
-/// sized inside them to pass every check. Six inputs differ from the spreadsheet's, each on its
-/// slider's step.
+/// sized inside them to pass every check. Seven inputs differ from the spreadsheet's, each on
+/// its slider's step.
 ///
 /// Required torque is 1.35 N·m: 0.35 N·m of hot wheel-bearing drag plus 1.00 N·m to accelerate
 /// the wheel (the owner's figures; the tool takes the requirement as one number). The design
 /// passes every check up to a Required torque of 1.44 N·m.
 ///
-/// One line of the opening tab is outside the counted checks: the hub wall past the keyway is
-/// 2.25 mm, under the Size tab's guidance of about 2.5 mm, and the tab says so in the caution
-/// colour (register row A-17 in `docs/analyses/2026-11-10-conservative-assumptions.md`; a test
-/// pins the line). Its temperature check and the inner hub's fitting temperature use the 3D
-/// fields stored for the example design, as every design's do; they were not computed for this
-/// geometry (row A-18).
+/// The keyway depth is 1.4 mm, the standard hub keyway of a 3 x 3 mm parallel key on a 10 mm
+/// shaft (DIN 6885-1 and BS 4235-1: 1.4 mm, +0.1), where the spreadsheet has 1.7 mm (the
+/// owner's ruling of 2026-11-22, backlog BL-080; register row A-17 in
+/// `docs/analyses/2026-11-10-conservative-assumptions.md`). The hub wall past it is 2.55 mm,
+/// so the Size tab's amber line for a wall under about 2.5 mm is not drawn; no check's verdict
+/// or margin depends on which of the two depths is in. Its temperature check and the inner
+/// hub's fitting temperature use the 3D fields stored for the example design, as every
+/// design's do; they were not computed for this geometry (row A-18).
 pub fn starting_design() -> DesignInputs {
     let mut inputs = DesignInputs::default();
     inputs.coupling.npole = 8;
     inputs.coupling.inner_back_apothem_mm = 9.0;
+    inputs.coupling.keyway_depth_mm = 1.4;
     inputs.metal.face_gap_mm = 1.8;
     inputs.metal.cup_wall_corner_mm = 2.2;
     inputs.metal.cap_thread_dia_mm = 41.7;
@@ -226,18 +229,20 @@ mod tests {
     use crate::gui::guidance::{counted_guides, design_status, level};
     use crate::gui::inputs::InputCatalogue;
     use crate::gui::session::{Design, encode_share_payload};
-    use crate::gui::test_support::drawn_texts;
+    use crate::gui::test_support::{drawn_texts, texts_in_colors};
 
     /// The status line at the starting design and at the example design, with the shaft-clamp
     /// section paused as the app runs it (nine counted checks).
     const STARTING_STATUS: &str = "Starting design: passes all 9 checks";
     const EXAMPLE_STATUS: &str = "Example design: fails 4 of 9 checks";
 
-    /// The six inputs the starting design changes (UX overhaul spec 7.1): the path, the
-    /// spreadsheet's value and the starting design's.
-    const STARTING_CHANGES: [(&str, f64, f64); 6] = [
+    /// The seven inputs the starting design sizes (UX overhaul spec 7.1; the keyway depth by the
+    /// owner's ruling of 2026-11-22, BL-080): the path, the spreadsheet's value and the starting
+    /// design's.
+    const STARTING_CHANGES: [(&str, f64, f64); 7] = [
         ("coupling.npole", 10.0, 8.0),
         ("coupling.inner_back_apothem_mm", 10.15, 9.0),
+        ("coupling.keyway_depth_mm", 1.7, 1.4),
         ("metal.required_min_Nm", 2.5, 1.35),
         ("metal.face_gap_mm", 1.4, 1.8),
         ("metal.cup_wall_corner_mm", 1.8, 2.2),
@@ -264,21 +269,31 @@ mod tests {
         WRITES.take()
     }
 
+    /// The laptop screen the app's tests draw on.
+    const LAPTOP: egui::Vec2 = egui::vec2(1280.0, 800.0);
+
+    /// One frame of `app` on a screen of `size` with `events`.
+    fn frame_on(
+        ctx: &egui::Context,
+        app: &mut MagcouplingApp,
+        size: egui::Vec2,
+        events: Vec<egui::Event>,
+    ) -> egui::FullOutput {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+            events,
+            ..Default::default()
+        };
+        ctx.run(input, |ctx| app.ui(ctx))
+    }
+
     /// One frame of `app` on the laptop screen with `events`; the texts it drew.
     fn frame_with(
         ctx: &egui::Context,
         app: &mut MagcouplingApp,
         events: Vec<egui::Event>,
     ) -> Vec<String> {
-        let input = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(1280.0, 800.0),
-            )),
-            events,
-            ..Default::default()
-        };
-        drawn_texts(&ctx.run(input, |ctx| app.ui(ctx)))
+        drawn_texts(&frame_on(ctx, app, LAPTOP, events))
     }
 
     /// One frame of `app` with no input; the texts it drew.
@@ -305,6 +320,22 @@ mod tests {
             sizing: SizingState::default(),
         }
     }
+
+    /// The starting design as slice A shipped it (main 2ca65ee; live from 2026-11-17 until
+    /// BL-080): the spreadsheet's keyway depth and the example design's 3D fields.
+    fn first_starting_design() -> DesignInputs {
+        let mut inputs = DesignInputs::default();
+        inputs.coupling.npole = 8;
+        inputs.coupling.inner_back_apothem_mm = 9.0;
+        inputs.metal.face_gap_mm = 1.8;
+        inputs.metal.cup_wall_corner_mm = 2.2;
+        inputs.metal.cap_thread_dia_mm = 41.7;
+        inputs.metal.required_min_Nm = 1.35;
+        inputs
+    }
+
+    /// The Size tab's amber line at the first starting design's hub wall.
+    const FIRST_KEYWAY_LINE: &str = "Wall past keyway: 2.25 mm; existing guidance is about 2.5 mm.";
 
     /// The number at `path` of `inputs`.
     fn number(inputs: &DesignInputs, path: &str) -> f64 {
@@ -382,9 +413,10 @@ mod tests {
     }
 
     #[test]
-    fn the_starting_design_changes_six_inputs_on_their_slider_steps_and_no_assumption() {
-        // UX overhaul spec 7.1: six inputs differ from the spreadsheet's, each one a value a
-        // slider step reaches, so a user can walk from one design to the other.
+    fn the_starting_design_differs_from_the_example_on_slider_steps_and_in_no_assumption() {
+        // UX overhaul spec 7.1, with the keyway depth of BL-080: seven inputs differ from the
+        // spreadsheet's, each one a value a slider step reaches, so a user can walk from one
+        // design to the other.
         let (start, example) = (starting_design(), DesignInputs::default());
         let mut differing = Vec::new();
         start.visit("", &mut |path, _, value| {
@@ -463,25 +495,128 @@ mod tests {
     }
 
     #[test]
-    fn the_starting_design_draws_one_advisory_on_the_opening_tab() {
-        // A finding of the slice A plan (2026-11-17), kept visible on purpose: at a ring radius
-        // of 9.00 mm the hub wall past the keyway is 2.25 mm, under the Size tab's guidance of
-        // about 2.5 mm, so the opening tab draws that one amber line. No counted check judges
-        // it. A ring radius of 9.26 mm with a 42.2 mm cap thread clears it and takes the cap
-        // skirt from 0.55 to 0.30 mm.
+    fn the_starting_design_draws_no_caution_on_its_opening_tab() {
+        // The owner's ruling of 2026-11-22 (BL-080; register row A-17). Until then the opening
+        // tab drew one amber line, "Wall past keyway: 2.25 mm; existing guidance is about
+        // 2.5 mm.", which no counted check judges. The starting design's keyway is now the
+        // standard hub keyway of a 3 x 3 mm key on a 10 mm shaft (t2 = 1.4 mm, +0.1; DIN 6885-1
+        // and BS 4235-1) in place of the spreadsheet's 1.7 mm, so the wall is 2.55 mm and
+        // nothing on the opening tab is drawn in the caution or the failure colour: on the
+        // laptop screen, and on a page tall enough to draw both side columns whole.
         let inputs = starting_design();
+        assert_eq!(inputs.coupling.keyway_depth_mm, 1.4);
         let wall = compute_all(&inputs).model.hub_wall_past_key_mm;
-        assert!((wall - 2.25).abs() < 1e-9, "{wall}");
-        let ctx = egui::Context::default();
-        let mut app = MagcouplingApp::new(&ctx);
-        frame_texts(&ctx, &mut app);
-        let texts = frame_texts(&ctx, &mut app);
-        let advisory = "Wall past keyway: 2.25 mm; existing guidance is about 2.5 mm.";
-        assert!(texts.iter().any(|t| t == advisory), "{texts:?}");
-        assert!(
-            !texts.iter().any(|t| t.starts_with("Exploration only")),
-            "{texts:?}"
+        assert!((wall - 2.55).abs() < 1e-9, "{wall}");
+        for size in [LAPTOP, egui::vec2(LAPTOP.x, 20_000.0)] {
+            let ctx = egui::Context::default();
+            let mut app = MagcouplingApp::new(&ctx);
+            frame_on(&ctx, &mut app, size, Vec::new());
+            let output = frame_on(&ctx, &mut app, size, Vec::new());
+            let texts = drawn_texts(&output);
+            assert!(texts.iter().any(|t| t == STARTING_STATUS), "{texts:?}");
+            for start in ["Wall past keyway", "Exploration only"] {
+                assert!(!texts.iter().any(|t| t.starts_with(start)), "{texts:?}");
+            }
+            let visuals = ctx.style().visuals.clone();
+            assert_eq!(
+                texts_in_colors(&output, &[visuals.warn_fg_color, visuals.error_fg_color]),
+                Vec::<String>::new(),
+                "at {size:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_standard_keyway_depth_moves_no_check_of_the_starting_design() {
+        // The owner's condition for the 1.4 mm keyway (2026-11-22): no verdict changes. With
+        // the spreadsheet's 1.7 mm back in, every counted check has the same level and the same
+        // terms with the same margins: the key bears on its 1.2 mm contact height under either
+        // depth, and both walls stay closed. What the depth moves is the wall past it, and the
+        // amber line with it.
+        use crate::gui::guidance::check_terms;
+        let start = starting_design();
+        let mut deeper = start.clone();
+        deeper.coupling.keyway_depth_mm = 1.7;
+        let (results, results_deeper) = (compute_all(&start), compute_all(&deeper));
+        for guide in counted_guides(false) {
+            assert_eq!(
+                level(guide, &start, &results),
+                level(guide, &deeper, &results_deeper),
+                "{}",
+                guide.label
+            );
+            assert_eq!(
+                check_terms(guide.check, &start, &results),
+                check_terms(guide.check, &deeper, &results_deeper),
+                "{}",
+                guide.label
+            );
+        }
+        assert!(start.shaft_joint.key_contact_mm < start.coupling.keyway_depth_mm);
+        let (wall, wall_deeper) = (
+            results.model.hub_wall_past_key_mm,
+            results_deeper.model.hub_wall_past_key_mm,
         );
+        assert!(wall >= 2.5 && wall_deeper < 2.5, "{wall}, {wall_deeper}");
+    }
+
+    #[test]
+    fn a_link_and_a_file_saved_from_the_first_starting_design_open_it_as_it_was() {
+        // BL-080 changed the starting design. A link and a design file name every input, so one
+        // saved before the change opens the design it was saved from, with that design's
+        // numbers. `tests/data/saved_designs/` holds the link Share copied and the file Save
+        // wrote at the first starting design, both written by the code of main 2ca65ee.
+        use crate::gui::session::{
+            PUBLIC_BASE_URL, SHARE_PARAM, decode_share_payload, design_from_json,
+        };
+        let link = include_str!("../tests/data/saved_designs/starting_design_2ca65ee.link.txt");
+        let file = include_str!("../tests/data/saved_designs/starting_design_2ca65ee.design.json");
+        let payload = link
+            .strip_prefix(&format!("{PUBLIC_BASE_URL}?{SHARE_PARAM}="))
+            .expect("a share link");
+        let first = Design {
+            inputs: first_starting_design(),
+            sizing: SizingState::default(),
+        };
+        assert_eq!(decode_share_payload(payload).unwrap(), first);
+        assert_eq!(design_from_json(file).unwrap(), first);
+        assert!(
+            first != starting(),
+            "it is not the starting design any more"
+        );
+        // Its numbers as they were: the wall past the 1.7 mm keyway, and the temperature margin
+        // from the example design's 3D fields.
+        let results = compute_all(&first.inputs);
+        let close = |got: f64, want: f64| (got - want).abs() < 0.005;
+        assert!(close(results.model.hub_wall_past_key_mm, 2.25));
+        assert!(close(results.metal.torque_hot_low_Nm, 1.448));
+        assert!(close(results.temperature.summary.margin_hot_day_C, 28.06));
+        // In the app each opens that design, named "Your design" now, with its amber line; the
+        // link stays the page's address.
+        type Open = fn(&mut MagcouplingApp, &str);
+        let opens: [(Open, &str); 2] = [
+            (|app, link| app.open_share_payload(link).unwrap(), payload),
+            (|app, file| app.open_picked_file(Ok(file.to_owned())), file),
+        ];
+        for (open, saved) in opens {
+            let ctx = egui::Context::default();
+            let mut app = MagcouplingApp::new(&ctx);
+            open(&mut app, saved);
+            assert_eq!(app.panel().design(), first);
+            frame_texts(&ctx, &mut app);
+            let output = frame_on(&ctx, &mut app, LAPTOP, Vec::new());
+            let texts = drawn_texts(&output);
+            let count = |text: &str| texts.iter().filter(|t| *t == text).count();
+            assert_eq!(count("Your design: passes all 9 checks"), 1, "{texts:?}");
+            // The amber line is the one text in the caution colour (so the colour probe of
+            // the_starting_design_draws_no_caution_on_its_opening_tab does see such a line).
+            let visuals = ctx.style().visuals.clone();
+            assert_eq!(
+                texts_in_colors(&output, &[visuals.warn_fg_color, visuals.error_fg_color]),
+                [FIRST_KEYWAY_LINE]
+            );
+            assert_eq!(app.address_design, first);
+        }
     }
 
     #[test]
@@ -526,9 +661,9 @@ mod tests {
     #[test]
     fn the_spreadsheet_export_still_flags_against_the_workbook() {
         // UX overhaul spec 7.1 (C-22) and 8.1, test 4: in the export "changed" means "differs
-        // from the workbook", whatever the panel's baseline: the six inputs at the starting
-        // design, none at the example design. The export's code is not changed by this slice;
-        // this pins it.
+        // from the workbook", whatever the panel's baseline: every input the starting design
+        // changes at the starting design, none at the example design. The export's code is not
+        // changed by this slice; this pins it.
         use crate::gui::spreadsheet::{CellValue, INPUT_COLUMNS, INPUTS_SHEET, YES, sheets};
         use crate::gui::test_support::snapshot;
         let column = |name: &str| {
