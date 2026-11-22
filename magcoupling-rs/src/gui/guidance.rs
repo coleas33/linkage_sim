@@ -10194,6 +10194,28 @@ mod tests {
                 .label,
         );
         emit("panel/welcome strip", crate::gui::panel::WELCOME);
+        {
+            use crate::gui::explain as ex;
+            emit("explain/orientation", ex::ORIENTATION);
+            for (index, step) in ex::STEPS.iter().enumerate() {
+                emit(&format!("explain/orientation step {}", index + 1), step);
+            }
+            for (tag, text) in [
+                ("heading", ex::HEADING),
+                ("about", ex::ABOUT),
+                ("what it is", ex::WHAT_IT_IS),
+                ("what sets it", ex::WHAT_SETS_IT),
+                ("what a change does", ex::WHAT_A_CHANGE_DOES),
+                ("checks it touches", ex::CHECKS_IT_TOUCHES),
+                ("numbers", ex::NUMBERS),
+                ("full lesson", ex::FULL_LESSON),
+                ("equation", ex::EQUATION),
+            ] {
+                emit(&format!("explain/{tag}"), text);
+            }
+            emit("checks/heading", crate::gui::checks::HEADING);
+            emit("tiles/needs", crate::gui::tiles::NEEDS);
+        }
 
         // The solved change of each free variable, from the default to each end of its slider,
         // built as the panel builds the design shown (the ring radius moves the cap with the

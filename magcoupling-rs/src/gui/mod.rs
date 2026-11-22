@@ -13,6 +13,9 @@ pub mod clamp_drawing;
 pub mod corrections;
 pub mod dashboard;
 pub mod diagrams;
+// Drawn by the panel from Task 5 of this stage's plan, which removes this allow.
+#[allow(dead_code)]
+pub mod explain;
 pub mod explorer;
 mod format;
 pub mod geometry;

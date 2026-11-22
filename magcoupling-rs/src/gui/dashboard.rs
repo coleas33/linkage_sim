@@ -768,31 +768,7 @@ pub fn dashboard_ui(
     }
     let last_3d = lines.iter().rposition(|line| line.stored_3d);
     for (index, line) in lines.iter().enumerate() {
-        let weak = ui.visuals().weak_text_color();
-        let quiet = look::quiet_text(ui.visuals());
-        let tint = |rich: egui::RichText| if line.greyed { rich.color(weak) } else { rich };
-        let title = ui.horizontal(|ui| {
-            state_mark(ui, line.level);
-            let label = egui::RichText::new(label_for(line.path)).color(quiet);
-            ui.add(egui::Label::new(tint(label)).wrap());
-        });
-        let value = ui.horizontal(|ui| {
-            ui.add_space(16.0);
-            // One wrapped flow, indented: the correction ids follow the value on its last line
-            // or the next. Beside a value wrapped to the full width they would run past the row,
-            // and the resizable dashboard would widen every frame.
-            ui.horizontal_wrapped(|ui| {
-                let value = egui::RichText::new(line.shown_value()).strong();
-                ui.add(egui::Label::new(tint(value)).wrap());
-                if show_details && !line.marker.is_empty() {
-                    ui.add(egui::Label::new(egui::RichText::new(&line.marker).small()).extend());
-                }
-            });
-        });
-        let rect = title.response.rect.union(value.response.rect);
-        readouts.show_over(ui, rect, line.path, |show_details| {
-            line.tooltip(show_details)
-        });
+        line_ui(ui, line, readouts);
         // A check's block under its own row (the rows its verdict only badges have none), then
         // every row's Why line.
         match CHECK_GUIDES.iter().position(|g| g.check == line.path) {
@@ -811,6 +787,40 @@ pub fn dashboard_ui(
         ui.add_space(4.0);
     }
     fit_ui(ui, inputs, results, fixes, readouts);
+}
+
+/// Draws one dashboard row: its badge and label, the label quieter than the value
+/// ([`look::quiet_text`]), then its value and, with the spreadsheet details, its correction
+/// ids, so a narrow side still reads. The row is a readout
+/// (`readouts`): its hover text and equation while hovered, a click opens it in the Equation
+/// panel. The Explain panel draws a check's rows with it (UX overhaul spec 4.5: "Numbers behind
+/// this check").
+pub(crate) fn line_ui(ui: &mut egui::Ui, line: &DashboardLine, readouts: &mut Readouts) {
+    let show_details = readouts.show_details();
+    let weak = ui.visuals().weak_text_color();
+    let tint = |rich: egui::RichText| if line.greyed { rich.color(weak) } else { rich };
+    let title = ui.horizontal(|ui| {
+        state_mark(ui, line.level);
+        let label = egui::RichText::new(label_for(line.path)).color(look::quiet_text(ui.visuals()));
+        ui.add(egui::Label::new(tint(label)).wrap());
+    });
+    let value = ui.horizontal(|ui| {
+        ui.add_space(16.0);
+        // One wrapped flow, indented: the correction ids follow the value on its last line
+        // or the next. Beside a value wrapped to the full width they would run past the row,
+        // and the resizable side would widen every frame.
+        ui.horizontal_wrapped(|ui| {
+            let value = egui::RichText::new(line.shown_value()).strong();
+            ui.add(egui::Label::new(tint(value)).wrap());
+            if show_details && !line.marker.is_empty() {
+                ui.add(egui::Label::new(egui::RichText::new(&line.marker).small()).extend());
+            }
+        });
+    });
+    let rect = title.response.rect.union(value.response.rect);
+    readouts.show_over(ui, rect, line.path, |show_details| {
+        line.tooltip(show_details)
+    });
 }
 
 /// The design status line (guidance spec 3.1): whose design it is against the session's
@@ -985,7 +995,7 @@ fn why_line(ui: &mut egui::Ui, sentence: Option<&str>, learn: Learn, readouts: &
 /// Equation panel; a note not reviewed never shows), an assumption's label (it asks for its
 /// input's row; the rationale is its hover text), or [`NO_NOTE_YET`] with the reason as its
 /// hover text.
-fn learn_ui(ui: &mut egui::Ui, learn: Learn, readouts: &mut Readouts) {
+pub(crate) fn learn_ui(ui: &mut egui::Ui, learn: Learn, readouts: &mut Readouts) {
     match learn {
         Learn::Note(id) => match reviewed_note(id) {
             Some(note) => {
