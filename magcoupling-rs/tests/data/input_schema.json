@@ -2530,7 +2530,7 @@
       "cell": null,
       "choices": [],
       "default": 0.07832,
-      "help": "The opposite ring's field at the hub when there is no back iron, for slip heating. Stored 3D value for the example design; it does not follow yours.",
+      "help": "The opposite ring's field at the hub when there is no back iron, for slip heating. Stored 3D value, starting or example design; it does not follow yours.",
       "label": "Opposite-ring field at an aluminium hub (fundamental, free space)",
       "path": "temperature.slip_loss.b_hub_free_T",
       "range": {
@@ -2548,7 +2548,7 @@
       "cell": null,
       "choices": [],
       "default": 0.08764,
-      "help": "The opposite ring's field at the cup when there is no back iron, for slip heating. Stored 3D value for the example design; it does not follow yours.",
+      "help": "The opposite ring's field at the cup when there is no back iron, for slip heating. Stored 3D value, starting or example design; it does not follow yours.",
       "label": "Opposite-ring field at an aluminium cup (fundamental, free space)",
       "path": "temperature.slip_loss.b_cup_free_T",
       "range": {
@@ -2566,7 +2566,7 @@
       "cell": null,
       "choices": [],
       "default": 6.837e-6,
-      "help": "The end field on the rear web when there is no back iron, for slip heating. Stored 3D value for the example design; it does not follow yours.",
+      "help": "The end field on the rear web when there is no back iron, for slip heating. Stored 3D value, starting or example design; it does not follow yours.",
       "label": "Rear-web end field of an aluminium web, ∫B² dA (free space)",
       "path": "temperature.slip_loss.web_integral_free_T2m2",
       "range": {

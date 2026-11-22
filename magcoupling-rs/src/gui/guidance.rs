@@ -60,7 +60,7 @@ use crate::engine::size_controls::{
 };
 use crate::engine::sizing::FreeVariable;
 use crate::engine::temperature::{CURE_MARGIN_MIN_C, DemagInputs};
-use crate::gui::dashboard::{DASHBOARD, Level, check_level, result_info};
+use crate::gui::dashboard::{DASHBOARD, Level, STARTING_3D_FIELDS, check_level, result_info};
 use crate::gui::format::{
     SIGNIFICANT_DIGITS, fewest_decimals_apart, fixed, format_value, last_digit_step, with_unit,
 };
@@ -1731,16 +1731,20 @@ fn temperature_sentences(inputs: &DesignInputs, results: &DesignResults) -> Vec<
             )
         })
         .collect();
-    // The cold limit comes from the reverse-field inputs. Their defaults are 3D results for the
-    // example NdFeB design and follow neither this design's geometry nor its grade (spec
-    // section 8, trap 6): while they are in use the sentence says so and asks for the design's
-    // own; once a user has entered their own, it says nothing about where they came from.
+    // The cold limit comes from the reverse-field inputs. The two stored sets are 3D results for
+    // an NdFeB design, the example design or the starting design, and follow neither this
+    // design's geometry nor its grade (spec section 8, trap 6): while one is in use the
+    // sentence says whose and asks for the design's own; once a user has entered their own, it
+    // says nothing about where they came from.
     if !cold_limits.is_empty() {
-        let source = if default_reverse_fields(inputs) {
-            " (from the default reverse-field inputs: 3D results for the example NdFeB design, not for this design's geometry or grade). Enter this design's own reverse fields to check the cold limit."
-        } else {
-            "."
-        };
+        let source = stored_reverse_fields(inputs).map_or_else(
+            || ".".to_owned(),
+            |design| {
+                format!(
+                    " (from the {design} design's reverse-field inputs: 3D results for that NdFeB design, not for this design's geometry or grade). Enter this design's own reverse fields to check the cold limit."
+                )
+            },
+        );
         sentences.push(format!(
             "The minimum magnet temperature {} is below {}{source}",
             input_text(inputs, "metal.min_temp_C"),
@@ -1768,12 +1772,11 @@ fn magnet_limit_sentence(
         .collect();
     let margin = input_text(inputs, "temperature.demag.design_margin_C");
     // The onset comes from the stored reverse fields, as the cold limit does (physics review
-    // 3, S16): while they hold the example design's, the sentence says so.
-    let source = if default_reverse_fields(inputs) {
-        " (slip fields from the example design; enter this design's own to confirm)"
-    } else {
-        ""
-    };
+    // 3, S16): while they hold the example design's or the starting design's, the sentence
+    // says whose.
+    let source = stored_reverse_fields(inputs).map_or_else(String::new, |design| {
+        format!(" (slip fields from the {design} design; enter this design's own to confirm)")
+    });
     match onset_rings[..] {
         [] => None,
         [ring] => Some(format!(
@@ -1786,9 +1789,11 @@ fn magnet_limit_sentence(
     }
 }
 
-/// Whether all four reverse-field inputs of the demagnetization check hold their defaults: the
-/// 3D results for the example NdFeB design.
-fn default_reverse_fields(inputs: &DesignInputs) -> bool {
+/// The design whose stored 3D results all four reverse-field inputs of the demagnetization
+/// check hold: "example" for their defaults (the spreadsheet's, for the example NdFeB design),
+/// "starting" for the starting design's ([`STARTING_3D_FIELDS`], for its own geometry; backlog
+/// BL-080). `None` for any other values: a user's own.
+fn stored_reverse_fields(inputs: &DesignInputs) -> Option<&'static str> {
     let fields = |d: &DemagInputs| {
         [
             d.h_rev_aligned_kA_m,
@@ -1797,7 +1802,14 @@ fn default_reverse_fields(inputs: &DesignInputs) -> bool {
             d.h_rev_single_ring_kA_m,
         ]
     };
-    fields(&inputs.temperature.demag) == fields(&DemagInputs::default())
+    let held = fields(&inputs.temperature.demag);
+    if held == fields(&DemagInputs::default()) {
+        Some("example")
+    } else if held == STARTING_3D_FIELDS[..4] {
+        Some("starting")
+    } else {
+        None
+    }
 }
 
 /// The single-ring onset the cure margin is measured from, as (path, value): the lower of both
@@ -7845,16 +7857,76 @@ mod tests {
         );
         assert_eq!(
             problem(TEMPERATURE, &design(ferrite)).unwrap(),
-            "The minimum magnet temperature -40.00 °C is below the inner magnets' 335.7 °C cold demagnetization limit and the outer magnets' 335.7 °C cold demagnetization limit (from the default reverse-field inputs: 3D results for the example NdFeB design, not for this design's geometry or grade). Enter this design's own reverse fields to check the cold limit."
+            "The minimum magnet temperature -40.00 °C is below the inner magnets' 335.7 °C cold demagnetization limit and the outer magnets' 335.7 °C cold demagnetization limit (from the example design's reverse-field inputs: 3D results for that NdFeB design, not for this design's geometry or grade). Enter this design's own reverse fields to check the cold limit."
         );
         assert_eq!(problem(TEMPERATURE, &DesignInputs::default()), None);
     }
 
+    /// `inputs` with the starting design's stored reverse fields in place of the example
+    /// design's (`dashboard::STARTING_3D_FIELDS`, whose first four they are).
+    fn starting_reverse_fields(inputs: &mut DesignInputs) {
+        let [aligned, pullout, likepole, single_ring, ..] =
+            crate::gui::dashboard::STARTING_3D_FIELDS;
+        let demag = &mut inputs.temperature.demag;
+        demag.h_rev_aligned_kA_m = aligned;
+        demag.h_rev_pullout_kA_m = pullout;
+        demag.h_rev_likepole_kA_m = likepole;
+        demag.h_rev_single_ring_kA_m = single_ring;
+    }
+
     #[test]
-    fn the_cold_limit_names_its_source_only_while_the_reverse_fields_are_the_defaults() {
-        // Spec section 8, trap 6: the default reverse fields are 3D results for the default
+    fn a_temperature_problem_names_the_design_whose_stored_fields_it_read() {
+        // BL-080: the starting design stores the reverse fields of its own geometry, so a
+        // design edited from it reads those, and the two source clauses name the starting
+        // design where a design edited from the example names the example. "Default" is not
+        // the word: on screen that is the session's baseline.
+        assert_eq!(
+            stored_reverse_fields(&DesignInputs::default()),
+            Some("example")
+        );
+        assert_eq!(
+            stored_reverse_fields(&design(starting_reverse_fields)),
+            Some("starting")
+        );
+        let hot = problem(
+            TEMPERATURE,
+            &design(|i| {
+                hot_day(i);
+                starting_reverse_fields(i);
+            }),
+        )
+        .unwrap();
+        assert!(
+            hot.ends_with(
+                "(slip fields from the starting design; enter this design's own to confirm)."
+            ),
+            "{hot}"
+        );
+        let cold = problem(
+            TEMPERATURE,
+            &design(|i| {
+                ferrite(i);
+                starting_reverse_fields(i);
+            }),
+        )
+        .unwrap();
+        assert!(
+            cold.ends_with(
+                "cold demagnetization limit (from the starting design's reverse-field inputs: 3D results for that NdFeB design, not for this design's geometry or grade). Enter this design's own reverse fields to check the cold limit."
+            ),
+            "{cold}"
+        );
+        for text in [&hot, &cold] {
+            assert!(!text.contains("default"), "{text}");
+            assert_eq!(plain_text_violations(text), Vec::<&str>::new(), "{text}");
+        }
+    }
+
+    #[test]
+    fn the_cold_limit_names_its_source_only_while_the_reverse_fields_are_a_stored_set() {
+        // Spec section 8, trap 6: the example design's reverse fields are 3D results for that
         // NdFeB design. Once a user enters this design's own, the caveat would be false.
-        let caveat = "(from the default reverse-field inputs";
+        let caveat = "(from the example design's reverse-field inputs";
         let with_default_fields = problem(TEMPERATURE, &design(ferrite)).unwrap();
         assert!(
             with_default_fields.contains(caveat),
@@ -7871,7 +7943,7 @@ mod tests {
                 ferrite(i);
                 edit(i);
             });
-            assert!(!default_reverse_fields(&own));
+            assert_eq!(stored_reverse_fields(&own), None);
             // A 1 kA/m step leaves the cold check failing; its sentence now ends at the limits,
             // with neither the caveat nor the request to enter the fields.
             let text = problem(TEMPERATURE, &own).expect("the cold check still fails");
@@ -7879,8 +7951,13 @@ mod tests {
             assert!(text.ends_with("cold demagnetization limit."), "{text}");
             assert!(!text.contains(caveat), "{text}");
             assert!(!text.contains("reverse fields"), "{text}");
+            // The same step off the starting design's set: no stored set either.
+            let own = design(|i| {
+                starting_reverse_fields(i);
+                edit(i);
+            });
+            assert_eq!(stored_reverse_fields(&own), None);
         }
-        assert!(default_reverse_fields(&DesignInputs::default()));
     }
 
     #[test]

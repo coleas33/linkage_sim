@@ -570,7 +570,7 @@ pub const WORKFLOW: [WorkflowGroup; 8] = [
             },
             WorkflowSection {
                 id: "calibration.stored_demag",
-                label: "Reverse fields from 3D analysis (example design)",
+                label: "Reverse fields from 3D analysis (starting or example design)",
                 advanced: false,
                 paths: &[
                     "temperature.demag.h_rev_aligned_kA_m",
@@ -581,7 +581,7 @@ pub const WORKFLOW: [WorkflowGroup; 8] = [
             },
             WorkflowSection {
                 id: "calibration.stored_slip",
-                label: "Slip-loss fields from 3D analysis (example design)",
+                label: "Slip-loss fields from 3D analysis (starting or example design)",
                 advanced: false,
                 paths: &[
                     "temperature.slip_loss.b_hub_T",

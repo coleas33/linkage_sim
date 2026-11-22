@@ -8,6 +8,8 @@ pub mod files;
 pub mod theme;
 
 use crate::DesignInputs;
+use crate::engine::meta::{InputSet, Value};
+use crate::gui::dashboard::{STARTING_3D_FIELDS, STORED_3D_INPUTS};
 use crate::gui::session::{Design, LoadError, share_link};
 use crate::gui::sizing::SizingState;
 use crate::gui::{MagcouplingPanel, PanelRequest};
@@ -30,8 +32,8 @@ pub const DESIGN_FILE_LOADED: &str = "magcoupling: loaded a design file";
 /// spec 7.1; owner rulings O-8 and O-9). It keeps the example design's given facts (the
 /// 0.6 N·m gearbox input rating at 5:1, the 43 mm space claim, B842SH magnets at their stock
 /// length on both rings, the sleeve, the liner, the allowances and every assumption) and is
-/// sized inside them to pass every check. Seven inputs differ from the spreadsheet's, each on
-/// its slider's step.
+/// sized inside them to pass every check. The seven inputs that size it and its fourteen 3D
+/// fields differ from the spreadsheet's, each on its slider's step.
 ///
 /// Required torque is 1.35 N·m: 0.35 N·m of hot wheel-bearing drag plus 1.00 N·m to accelerate
 /// the wheel (the owner's figures; the tool takes the requirement as one number). The design
@@ -42,9 +44,16 @@ pub const DESIGN_FILE_LOADED: &str = "magcoupling: loaded a design file";
 /// owner's ruling of 2026-11-22, backlog BL-080; register row A-17 in
 /// `docs/analyses/2026-11-10-conservative-assumptions.md`). The hub wall past it is 2.55 mm,
 /// so the Size tab's amber line for a wall under about 2.5 mm is not drawn; no check's verdict
-/// or margin depends on which of the two depths is in. Its temperature check and the inner
-/// hub's fitting temperature use the 3D fields stored for the example design, as every
-/// design's do; they were not computed for this geometry (row A-18).
+/// or margin depends on which of the two depths is in.
+///
+/// Its temperature check and the inner hub's fitting temperature read 3D fields computed for
+/// this geometry ([`STARTING_3D_FIELDS`]: the reference routine `fields3d.run`, run once; the
+/// owner's ruling of 2026-11-22, row A-18), where every other design the spreadsheet's values
+/// start reads the example design's. The tool cannot compute them, so they are fixed numbers
+/// like the example design's: they do not follow an edit, and a change to the geometry above
+/// needs a new run (the test that pins them says how). The keyway is no part of the field
+/// model: the routine reads the magnets, the bondlines, the steel surfaces behind the magnets,
+/// the sleeve, the liner and the cap.
 pub fn starting_design() -> DesignInputs {
     let mut inputs = DesignInputs::default();
     inputs.coupling.npole = 8;
@@ -54,6 +63,11 @@ pub fn starting_design() -> DesignInputs {
     inputs.metal.cup_wall_corner_mm = 2.2;
     inputs.metal.cap_thread_dia_mm = 41.7;
     inputs.metal.required_min_Nm = 1.35;
+    for (path, field) in STORED_3D_INPUTS.into_iter().zip(STARTING_3D_FIELDS) {
+        inputs
+            .set(path, Value::Num(field))
+            .expect("every stored 3D field is a number input");
+    }
     inputs
 }
 
@@ -224,7 +238,6 @@ pub fn run_native() -> eframe::Result<()> {
 mod tests {
     use super::*;
     use crate::compute_all;
-    use crate::engine::meta::{InputSet, Value};
     use crate::gui::dashboard::{Level, warning_lines};
     use crate::gui::guidance::{counted_guides, design_status, level};
     use crate::gui::inputs::InputCatalogue;
@@ -248,6 +261,91 @@ mod tests {
         ("metal.cup_wall_corner_mm", 1.8, 2.2),
         ("metal.cap_thread_dia_mm", 41.0, 41.7),
     ];
+
+    /// A run of the reference 3D routine (`fields3d.run`) for the starting design's geometry
+    /// (BL-080): the output of `reference/magcoupling-py/tools/starting_design_fields.py` on
+    /// 2026-11-22 (magpylib 5.2.3). `RECORDED_READS` is its `reads` list: everything the routine
+    /// read, by this engine's paths. `RECORDED_FIELDS` is its `raw` list: the fourteen fields at
+    /// full precision, in `STORED_3D_INPUTS`' order.
+    ///
+    /// To regenerate, after the starting design's geometry or the engine's reading of it has
+    /// moved: run the script (its header says how), copy both lists here, and copy its
+    /// `entered` list into `gui::dashboard::STARTING_3D_FIELDS`.
+    const RECORDED_READS: [(&str, f64); 17] = [
+        ("coupling.npole", 8.0),
+        ("coupling.backiron", 1.0),
+        ("coupling.inner_back_apothem_mm", 9.0),
+        ("metal.bond_inner_mm", 0.05),
+        ("metal.bond_outer_mm", 0.05),
+        ("metal.cap_od_mm", 42.8),
+        ("model.inner_length_mm", 12.7),
+        ("model.inner_width_mm", 6.35),
+        ("model.inner_thickness_mm", 3.17),
+        ("model.outer_thickness_mm", 3.17),
+        ("model.inner_br_T", 1.3),
+        ("model.outer_face_apothem_mm", 13.97),
+        ("model.outer_back_apothem_mm", 17.14),
+        ("retainers.sleeve_id_mm", 25.204683460540704),
+        ("retainers.sleeve_od_mm", 25.404683460540703),
+        ("retainers.liner_id_mm", 27.490000000000002),
+        ("retainers.liner_od_mm", 27.89),
+    ];
+    const RECORDED_FIELDS: [(&str, f64); 14] = [
+        ("temperature.demag.h_rev_aligned_kA_m", 385.6470213208602),
+        ("temperature.demag.h_rev_pullout_kA_m", 747.7472260964677),
+        ("temperature.demag.h_rev_likepole_kA_m", 850.3845814018983),
+        ("temperature.demag.h_rev_single_ring_kA_m", 585.433721206525),
+        ("temperature.slip_loss.b_hub_T", 0.20209600565582997),
+        ("temperature.slip_loss.b_cup_T", 0.20673376294569007),
+        ("temperature.slip_loss.b_sleeve_T", 0.3349760675891163),
+        ("temperature.slip_loss.b_liner_T", 0.3489279494170646),
+        (
+            "temperature.slip_loss.cap_integral_T2m4",
+            4.043941097754211e-10,
+        ),
+        (
+            "temperature.slip_loss.web_integral_T2m2",
+            4.4050607298969813e-05,
+        ),
+        ("temperature.slip_loss.b_magnet_T", 0.17259565415202785),
+        ("temperature.slip_loss.b_hub_free_T", 0.07416352937255892),
+        ("temperature.slip_loss.b_cup_free_T", 0.0809945861055586),
+        (
+            "temperature.slip_loss.web_integral_free_T2m2",
+            6.039253748156894e-06,
+        ),
+    ];
+
+    /// A recorded field as the starting design stores it. The routine's eleven as
+    /// `fields3d.apply_to_inputs` rounds them: whole kA/m; three decimals for a field, two for
+    /// the field inside the blocks; three significant figures for the cap integral and four for
+    /// the web's. The three free-space fields to four significant figures, as the engine's own
+    /// defaults are held (correction E17).
+    fn as_entered(path: &str, raw: f64) -> f64 {
+        let name = path.rsplit('.').next().expect("a path");
+        let significant = |figures: usize| format!("{raw:.*e}", figures - 1);
+        let text = match name {
+            _ if name.starts_with("h_rev") => format!("{raw:.0}"),
+            "b_magnet_T" => format!("{raw:.2}"),
+            "cap_integral_T2m4" => significant(3),
+            _ if name.contains("free") || name == "web_integral_T2m2" => significant(4),
+            _ => format!("{raw:.3}"),
+        };
+        text.parse().expect("a number")
+    }
+
+    /// Every input in which the starting design differs from the example design, sorted: the
+    /// seven it sizes and its fourteen 3D fields.
+    fn starting_differences() -> Vec<String> {
+        let mut paths: Vec<String> = STARTING_CHANGES
+            .iter()
+            .map(|(path, _, _)| *path)
+            .chain(crate::gui::dashboard::STORED_3D_INPUTS)
+            .map(str::to_owned)
+            .collect();
+        paths.sort();
+        paths
+    }
 
     thread_local! {
         /// The addresses this test asked the page to take, in order, refused ones included.
@@ -403,6 +501,20 @@ mod tests {
         assert_eq!(inputs.coupling.gearbox_input_rating_Nm, 0.6);
         assert!(close(results.model.pullout_Nm, 1.704, 0.0005));
         assert!(close(results.metal.torque_cold_high_Nm, 2.423, 0.0005));
+        // The two checks that read its 3D fields (BL-080: its own since 2026-11-22). The
+        // temperature check: the magnet limit and its margin over the hot-day start. The shaft
+        // joints check: the bonded inner hub's fitting temperature, which the input caps, not
+        // the single-ring field (its cap is the onset less the cure margin).
+        let summary = &results.temperature.summary;
+        assert!(close(summary.magnet_limit_C, 94.94, 0.005));
+        assert!(close(summary.margin_hot_day_C, 29.94, 0.005));
+        assert!(close(results.temperature.slip_loss.total_W, 2.252, 0.0005));
+        let joint = &results.shaft_joint;
+        assert!(close(joint.hub_fit_temp_C, 93.27, 0.005));
+        assert_eq!(joint.hub_fit_allowed_C, inputs.shaft_joint.hub_fit_max_C);
+        let field_cap = results.temperature.demag.inner_onset_single_ring_C
+            - crate::engine::temperature::CURE_MARGIN_MIN_C;
+        assert!(close(field_cap, 131.28, 0.005), "{field_cap}");
         // It passes up to a Required torque of 1.44 N·m, and not at 1.45.
         for (required, bad) in [(1.44, 0), (1.45, 1)] {
             let mut asked = starting_design();
@@ -414,9 +526,9 @@ mod tests {
 
     #[test]
     fn the_starting_design_differs_from_the_example_on_slider_steps_and_in_no_assumption() {
-        // UX overhaul spec 7.1, with the keyway depth of BL-080: seven inputs differ from the
-        // spreadsheet's, each one a value a slider step reaches, so a user can walk from one
-        // design to the other.
+        // UX overhaul spec 7.1, with the keyway depth and the 3D fields of BL-080: the seven
+        // inputs it sizes and its fourteen 3D fields differ from the spreadsheet's, each one a
+        // value a slider step reaches, so a user can walk from one design to the other.
         let (start, example) = (starting_design(), DesignInputs::default());
         let mut differing = Vec::new();
         start.visit("", &mut |path, _, value| {
@@ -425,10 +537,10 @@ mod tests {
             }
         });
         differing.sort();
-        let mut want = STARTING_CHANGES.map(|(path, _, _)| path.to_owned());
-        want.sort();
-        assert_eq!(differing, want);
-        for (path, from, to) in STARTING_CHANGES {
+        assert_eq!(differing, starting_differences());
+        let fields = RECORDED_FIELDS
+            .map(|(path, raw)| (path, number(&example, path), as_entered(path, raw)));
+        for (path, from, to) in STARTING_CHANGES.into_iter().chain(fields) {
             assert_eq!(number(&example, path), from, "{path}");
             assert_eq!(number(&start, path), to, "{path}");
             let range = InputCatalogue::get()
@@ -695,10 +807,87 @@ mod tests {
             paths.sort();
             paths
         };
-        let mut want = STARTING_CHANGES.map(|(path, _, _)| path.to_owned());
-        want.sort();
-        assert_eq!(flagged(&starting_design()), want);
+        assert_eq!(flagged(&starting_design()), starting_differences());
         assert_eq!(flagged(&DesignInputs::default()), Vec::<String>::new());
+    }
+
+    #[test]
+    fn the_starting_design_stores_the_3d_fields_of_its_own_geometry() {
+        // The owner's ruling of 2026-11-22 (BL-080; register row A-18): "passes all 9 checks"
+        // rests on 3D fields computed for the starting design, not on the example design's.
+        // The tool cannot compute them (the 3D routine is not ported), so they are held to a
+        // recorded run of the reference routine.
+        use crate::engine::meta::ResultSet;
+        use crate::engine::size_controls::{dimensions, resize_diameter, resize_length};
+        use crate::gui::dashboard::{STARTING_3D_FIELDS, STORED_3D_INPUTS};
+        let start = starting_design();
+        let results = compute_all(&start);
+        // The run is of this geometry: everything the routine read is what the engine has now.
+        // The routine gives both rings the inner ring's length, width and Br.
+        for (path, read) in RECORDED_READS {
+            let now = match start.get(path).or_else(|| results.get(path)) {
+                Some(Value::Num(x)) => x,
+                Some(Value::Int(i)) => i as f64,
+                other => panic!("{path}: {other:?}"),
+            };
+            assert!(
+                (now - read).abs() < 1e-9,
+                "{path}: {now}, the run read {read}"
+            );
+        }
+        let model = &results.model;
+        assert_eq!(
+            (
+                model.outer_length_mm,
+                model.outer_width_mm,
+                model.outer_br_T
+            ),
+            (
+                model.inner_length_mm,
+                model.inner_width_mm,
+                model.inner_br_T
+            )
+        );
+        // Every stored 3D field holds the run's value as entered, its own and not the example
+        // design's, whose values this does not move.
+        assert_eq!(RECORDED_FIELDS.map(|(path, _)| path), STORED_3D_INPUTS);
+        let example = DesignInputs::default();
+        for ((path, raw), stored) in RECORDED_FIELDS.into_iter().zip(STARTING_3D_FIELDS) {
+            assert_eq!(stored, as_entered(path, raw), "{path}");
+            assert_eq!(number(&start, path), stored, "{path}");
+            assert_ne!(number(&example, path), stored, "{path}");
+        }
+        assert_eq!(
+            number(&example, "temperature.demag.h_rev_likepole_kA_m"),
+            863.0
+        );
+        // The fields never follow an edit: the Size tab's diameter and length sliders move
+        // several inputs at once, and none of them is a 3D field.
+        let size = dimensions(&start).expect("the starting design has a size");
+        let edits = [
+            resize_diameter(&start, size.diameter_mm + 1.0),
+            resize_length(&start, size.overall_length_mm + 1.0),
+        ];
+        for edited in edits {
+            let edited = edited.expect("a size inside its slider's range");
+            assert!(edited != start, "the slider moved the design");
+            for path in STORED_3D_INPUTS {
+                assert_eq!(edited.get(path), start.get(path), "{path}");
+            }
+        }
+        // The temperature Problem names the design whose fields it read, here the starting
+        // design's, on a design edited away from it.
+        let mut hot = start.clone();
+        crate::gui::test_support::hot_day(&mut hot);
+        let guide = crate::gui::guidance::guide(crate::gui::guidance::TEMPERATURE)
+            .expect("the temperature guide");
+        let problem = (guide.problem)(&hot, &compute_all(&hot)).expect("a hot day fails it");
+        assert!(
+            problem.ends_with(
+                "(slip fields from the starting design; enter this design's own to confirm)."
+            ),
+            "{problem}"
+        );
     }
 
     #[test]

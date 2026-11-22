@@ -80,9 +80,9 @@ const LABELS: &[(&str, &str)] = &[
 // The caveats that end the help of every row in four clusters of `HELP` rows. Each is a macro,
 // not a `const`, so that `concat!` can build the rows from it: each caveat is typed once.
 
-/// The last sentence of every stored 3D field's help (amendment A-7): the value is the example
-/// design's and stays fixed when the design changes. The engine's sentence, which its own
-/// free-space fields end with too.
+/// The last sentence of every stored 3D field's help (amendment A-7): the value is the
+/// starting design's or the example design's and stays fixed when the design changes. The
+/// engine's sentence, which its own free-space fields end with too.
 macro_rules! stored_3d_caveat {
     () => {
         crate::engine::temperature::stored_3d_sentence!()
