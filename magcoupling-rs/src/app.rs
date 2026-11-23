@@ -1610,11 +1610,54 @@ mod tests {
         assert!(script.contains(DESIGN_FILE_LOADED));
         // The equation registry's log line, built when the panel starts.
         assert!(script.contains(crate::gui::readouts::REGISTRY_LOG_PREFIX));
-        // The header's Show spreadsheet details toggle (spec S2-5), which the first view shows.
+        // The Show spreadsheet details toggle (spec S2-5), in the Design menu (UX overhaul
+        // decision C-12).
         assert!(
             script.contains(crate::gui::SHOW_DETAILS),
-            "the smoke prompt names the header's toggle"
+            "the smoke prompt names the details toggle"
         );
+        // UX overhaul spec 4.2: the prompt names the top bar's buttons by the words the page
+        // draws, finds the menu's items under Design, and no longer looks for the buttons that
+        // left the bar.
+        {
+            use crate::gui::explain::LEARN;
+            use crate::gui::{EXPORT, LOAD_DESIGN, RESET_TO_START, SHARE};
+            for (what, text) in [
+                ("the Design menu", crate::gui::DESIGN_MENU),
+                ("the reset", RESET_TO_START),
+                ("the file's load", LOAD_DESIGN),
+                ("Share", SHARE),
+                ("Export", EXPORT),
+                ("Learn", LEARN),
+            ] {
+                assert!(
+                    script.contains(&format!("\"{text}\"")),
+                    "the smoke prompt names {what}: {text:?}"
+                );
+            }
+            for gone in [
+                "\"Reset all\"",
+                "\"Copy share link\"",
+                "\"Equation panel\" button",
+                "after \"Reset all\"",
+            ] {
+                assert!(
+                    !script.contains(gone),
+                    "the smoke prompt still names {gone}"
+                );
+            }
+            // The lesson link shows its note in the Explain panel (decision C-11), where the
+            // step looks for it.
+            let link = script
+                .find("lesson_link_opened=true")
+                .expect("the link's verdict");
+            let verdict = &script[link..];
+            let verdict = &verdict[..verdict.find('.').unwrap_or(verdict.len())];
+            assert!(
+                verdict.contains("Explain panel") && !verdict.contains("Equation panel"),
+                "the note is judged in the Explain panel: {verdict}"
+            );
+        }
         // Spec R14 (guidance slice 2): the steps name a note's What to change and its sources
         // fold, the Geometry tab and the check list's last row as the page draws them, so the
         // prompt cannot go stale unnoticed.
