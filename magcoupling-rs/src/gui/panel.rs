@@ -40,6 +40,7 @@ use crate::gui::explorer::{
     EQUATION_PANEL, Explorer, FOCUS_WIDTH, explorer_ui, held_reason, panel_heights,
 };
 use crate::gui::format::search_needle;
+use crate::gui::geometry::wall_cautions;
 use crate::gui::geometry_view::geometry_ui;
 use crate::gui::guidance::{
     ConsequenceCache, Consequences, Direction, EXAMPLE_DESIGN_HOVER, FixCache, SIZE_TAB_ALIASES,
@@ -1022,13 +1023,9 @@ impl MagcouplingPanel {
                         ui.visuals().error_fg_color,
                         format!("{EXPLORATION_ONLY}{KEYWAY_BREAKS_THROUGH}."),
                     );
-                } else if key_wall < 2.5 {
-                    ui.colored_label(
-                        ui.visuals().warn_fg_color,
-                        format!(
-                            "Wall past keyway: {key_wall:.2} mm; existing guidance is about 2.5 mm."
-                        ),
-                    );
+                }
+                for line in wall_cautions(shown, &self.results) {
+                    ui.colored_label(ui.visuals().warn_fg_color, line);
                 }
                 geometry_ui(ui, shown, &self.results, self.clamps_paused, readouts);
             }
@@ -5767,6 +5764,87 @@ mod tests {
             ),
             1
         );
+    }
+
+    use crate::gui::geometry::{MIN_CAP_SKIRT_MM, SKIRT_CAUTION_START};
+
+    /// The example design with its cap's outside and thread diameters set (BL-082 tests).
+    fn with_cap(od_mm: f64, thread_mm: f64) -> DesignInputs {
+        let mut inputs = DesignInputs::default();
+        inputs.metal.cap_od_mm = od_mm;
+        inputs.metal.cap_thread_dia_mm = thread_mm;
+        inputs
+    }
+
+    fn skirt_caution(inputs: &DesignInputs) -> Vec<String> {
+        wall_cautions(inputs, &compute_all(inputs))
+            .into_iter()
+            .filter(|line| line.starts_with(SKIRT_CAUTION_START))
+            .collect()
+    }
+
+    #[test]
+    fn a_cap_skirt_under_the_minimum_draws_one_caution_naming_it() {
+        // BL-082 (owner answer 4a, 2026-11-22): a 0.49 mm skirt, (42.8 - 41.82) / 2, draws the
+        // line, its skirt quoted at four significant digits as every readout is.
+        assert_eq!(
+            skirt_caution(&with_cap(42.8, 41.82)),
+            vec![
+                "Cap wall past its thread (skirt): 0.4900 mm; guide minimum is 0.5 mm.".to_owned()
+            ]
+        );
+        // A thread above the outside diameter is a skirt below zero, still under the minimum.
+        assert_eq!(skirt_caution(&with_cap(42.0, 42.2)).len(), 1);
+    }
+
+    #[test]
+    fn a_cap_skirt_at_the_minimum_draws_no_caution() {
+        // 0.50 mm, (43.0 - 42.0) / 2 and (42.8 - 41.8) / 2; and a hair under 0.5 that reads
+        // 0.5000 mm: compared as quoted, so a skirt never reads equal to the minimum beside a
+        // line that says it is under it (owner question 22's rule for the keyway line).
+        let hair = 41.8 + 1e-11;
+        assert!((42.8 - hair) / 2.0 < MIN_CAP_SKIRT_MM);
+        for (od, thread) in [(43.0, 42.0), (42.8, 41.8), (42.8, hair), (42.8, 41.0)] {
+            assert_eq!(
+                skirt_caution(&with_cap(od, thread)),
+                Vec::<String>::new(),
+                "{od} {thread}"
+            );
+        }
+        // A diameter that is not a number draws nothing (it cannot be compared).
+        assert!(skirt_caution(&with_cap(f64::NAN, 41.0)).is_empty());
+    }
+
+    #[test]
+    fn the_skirt_caution_is_drawn_amber_on_the_opening_tab_and_counts_no_check() {
+        use crate::gui::guidance::{counted_guides, level};
+        let mut harness = Harness::new();
+        harness.panel.inputs = with_cap(42.8, 41.82);
+        harness.click_text("Size and torque");
+        let output = harness.frame(Vec::new());
+        let warn = harness.ctx.style().visuals.warn_fg_color;
+        let amber = crate::gui::test_support::texts_in_colors(&output, &[warn]);
+        assert_eq!(
+            amber
+                .iter()
+                .filter(|t| t.starts_with(SKIRT_CAUTION_START))
+                .count(),
+            1,
+            "{amber:?}"
+        );
+        // Not a counted check: no check's level moves with the skirt.
+        let thin = harness.panel.inputs.clone();
+        let mut thick = thin.clone();
+        thick.metal.cap_thread_dia_mm = 41.8;
+        let (thin_results, thick_results) = (compute_all(&thin), compute_all(&thick));
+        for guide in counted_guides(false) {
+            assert_eq!(
+                level(guide, &thin, &thin_results),
+                level(guide, &thick, &thick_results),
+                "{}",
+                guide.label
+            );
+        }
     }
 
     #[test]
