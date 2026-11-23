@@ -723,13 +723,13 @@ mod tests {
     }
 
     #[test]
-    fn the_first_view_draws_at_most_four_hundred_and_fifty_words_at_1280_by_800() {
+    fn the_first_view_draws_at_most_four_hundred_and_thirty_words_at_1280_by_800() {
         // UX overhaul spec 2.1 (goal G-1) and 8.2, test 8, measured as the inventory did: the
         // words the opening screen shows. 608 before this stage (the dashboard's rows, the
-        // torque readouts and the welcome strip); 443 after it, the callout list under the
-        // drawing kept until its tags are selections (decision D-19). The design's 250 needs
-        // the top bar, the Size column and the callout list of the stage's second part, which
-        // lowers this ceiling.
+        // torque readouts and the welcome strip); 443 after its part 1, the callout list under
+        // the drawing kept until its tags are selections (decision D-19); 427 after part 2a's
+        // top bar. The design's 250 needs the Size column and the callout list of part 2b,
+        // which lowers this ceiling.
         use crate::gui::test_support::words_shown;
         let size = WINDOWS[0];
         let ctx = egui::Context::default();
@@ -739,7 +739,53 @@ mod tests {
         }
         let output = frame_on(&ctx, &mut app, size, Vec::new());
         let words = words_shown(&output, egui::Rect::from_min_size(egui::Pos2::ZERO, size));
-        assert!(words <= 450, "{words} words on the first view");
+        assert!(words <= 430, "{words} words on the first view");
+    }
+
+    #[test]
+    fn every_start_here_step_s_lesson_line_is_drawn_whole_in_the_app_s_own_font() {
+        // Plan review UXP-1 (BL-085): the lesson line under the open equation ("Full lesson:"
+        // and the note's title, a link) ran past the Equation panel's edge at 1024 x 700 on
+        // the long titles (steps 3, 7 and 12). Each step of the walk, at the three window
+        // sizes, in the app's theme and font: no text of the line is cut.
+        use crate::engine::explain::notes::START_HERE;
+        use crate::gui::explain::FULL_LESSON;
+        use crate::gui::explorer::{NEXT, START_HERE_BUTTON, reviewed_note};
+        use crate::gui::test_support::{cut_texts, primary_button, text_center};
+        use crate::gui::typeset::glyph_safe;
+        for size in [WINDOWS[1], WINDOWS[0], egui::vec2(1920.0, 1080.0)] {
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+            let ctx = egui::Context::default();
+            let mut app = MagcouplingApp::new(&ctx);
+            let click = |app: &mut MagcouplingApp, text: &str| {
+                let output = frame_on(&ctx, app, size, Vec::new());
+                let at = text_center(&output, text);
+                frame_on(&ctx, app, size, vec![egui::Event::PointerMoved(at)]);
+                for pressed in [true, false] {
+                    frame_on(&ctx, app, size, vec![primary_button(at, pressed)]);
+                }
+                frame_on(&ctx, app, size, vec![egui::Event::PointerGone]);
+                frame_on(&ctx, app, size, Vec::new());
+                frame_on(&ctx, app, size, Vec::new())
+            };
+            frame_on(&ctx, &mut app, size, Vec::new());
+            let mut output = click(&mut app, START_HERE_BUTTON);
+            for (step, &(id, _)) in START_HERE.iter().enumerate() {
+                if step > 0 {
+                    output = click(&mut app, NEXT);
+                }
+                let title = glyph_safe(reviewed_note(id).expect("a reviewed note").title);
+                let line = [FULL_LESSON, title.as_str()];
+                let cut: Vec<String> = cut_texts(&output, screen)
+                    .into_iter()
+                    .filter(|cut| {
+                        line.iter()
+                            .any(|text| cut.starts_with(&format!("{text:?} by")))
+                    })
+                    .collect();
+                assert!(cut.is_empty(), "{size:?}, step {}: cut: {cut:#?}", step + 1);
+            }
+        }
     }
 
     #[test]

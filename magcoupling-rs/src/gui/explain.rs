@@ -12,8 +12,15 @@
 //! with the links it had; a tile's entry holds its result's help text and, for the hot-low
 //! torque, the torque card (decision C-10).
 //!
+//! A teaching note shows here too (decision C-11): the top bar's [`LEARN`] lists every note
+//! shown by its title, and a title, a lesson link anywhere on the page or a step of the Start
+//! here walk (spec 5.5) selects the note. Its entry is the links to the equations it explains,
+//! then the note as the Equation panel drew it ([`note_ui`]).
+//!
 //! The selection is view state: in no design file, share link or undo step.
 
+use crate::engine::explain::notes::Note;
+use crate::engine::explain::notes::{NOTES, shown_when};
 use crate::engine::sizing::FreeVariable;
 use crate::gui::checks::{mark_level, state_mark};
 use crate::gui::dashboard::why_note_link;
@@ -21,7 +28,10 @@ use crate::gui::dashboard::{
     DOES_NOT_FIT, FITS, Level, MARKER_LEGEND, STORED_3D_LABEL, STORED_3D_NOTE, badging_check,
     learn_ui, line_ui, result_info, shown_lines,
 };
-use crate::gui::explorer::{START_HERE_BUTTON, WATCH_OUT, WHAT_TO_CHANGE, start_here_hover};
+use crate::gui::explorer::{
+    NoteLink, NoteView, START_HERE_BUTTON, WATCH_OUT, WHAT_TO_CHANGE, explains_ui, note_ui,
+    reviewed_note, start_here_hover,
+};
 use crate::gui::guidance::{
     self, CHECK_GUIDES, CheckGuide, Consequences, Direction, FIT_CHECK, Learn, NO_FIX,
     SIZE_TAB_NOTE, fix_text, guide_notes, row_learn,
@@ -32,6 +42,7 @@ use crate::gui::plain_text::help_for;
 use crate::gui::readouts::Readouts;
 use crate::gui::tiles::Tile;
 use crate::gui::torque_card::CARD_HEADING;
+use crate::gui::typeset::glyph_safe;
 use crate::{DesignInputs, DesignResults};
 
 /// The heading of the Explain panel.
@@ -65,6 +76,10 @@ pub const FULL_LESSON: &str = "Full lesson:";
 /// The foot link that opens the entry's result in the Equation panel (decision C-11).
 pub const EQUATION: &str = "Equation";
 
+/// The top bar's button that lists the teaching notes here, and the list's heading (UX
+/// overhaul spec 4.2).
+pub const LEARN: &str = "Learn";
+
 /// What the Explain panel shows (spec 5.1).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Selection {
@@ -75,6 +90,10 @@ pub enum Selection {
     Check(&'static str),
     /// A result, by its path: one of the four tiles ([`Tile::path`]).
     Result(&'static str),
+    /// A teaching note, by its id.
+    Note(&'static str),
+    /// The list of the teaching notes ([`LEARN`]).
+    NoteList,
 }
 
 impl Selection {
@@ -82,7 +101,7 @@ impl Selection {
     pub fn check(self) -> Option<&'static str> {
         match self {
             Selection::Check(check) => Some(check),
-            Selection::Nothing | Selection::Result(_) => None,
+            _ => None,
         }
     }
 
@@ -90,7 +109,7 @@ impl Selection {
     pub fn tile(self) -> Option<Tile> {
         match self {
             Selection::Result(path) => Tile::ALL.into_iter().find(|tile| tile.path() == path),
-            Selection::Nothing | Selection::Check(_) => None,
+            _ => None,
         }
     }
 
@@ -116,7 +135,8 @@ pub(crate) enum Asked {
 /// What the entries are drawn from: the design shown, its results, every guide's fixes in
 /// [`CHECK_GUIDES`]' order and the shaft-clamp section's pause; for an entry that reads them
 /// ([`Selection::reads_consequences`]), the Size tab's consequences of the design, with the
-/// size Auto sets while it is on.
+/// size Auto sets while it is on; and why an input is not free on the design shown, for a
+/// note's change entries ([`NoteView::held`]).
 pub(crate) struct Shown<'a> {
     pub inputs: &'a DesignInputs,
     pub results: &'a DesignResults,
@@ -124,6 +144,7 @@ pub(crate) struct Shown<'a> {
     pub clamps_paused: bool,
     pub consequences: Option<&'a Consequences>,
     pub auto: Option<FreeVariable>,
+    pub held: &'a dyn Fn(&str) -> Option<String>,
 }
 
 /// Draws the Explain panel: [`HEADING`], with [`ABOUT`] beside it while something is selected,
@@ -149,8 +170,54 @@ pub(crate) fn explain_ui(
         Selection::Nothing => orientation_ui(ui, shown.clamps_paused),
         Selection::Check(check) => check_ui(ui, check, shown, readouts),
         Selection::Result(path) => result_ui(ui, path, shown, readouts),
+        Selection::Note(id) => note_entry_ui(ui, id, shown, readouts),
+        Selection::NoteList => note_list_ui(ui, shown.clamps_paused),
     };
     asked.or(entry)
+}
+
+/// The teaching notes shown, in their order ([`NOTES`]): every reviewed note but the one the
+/// paused shaft-clamp section takes with it.
+pub fn shown_notes(clamps_paused: bool) -> impl Iterator<Item = &'static Note> {
+    NOTES
+        .iter()
+        .filter(move |note| shown_when(note.id, clamps_paused) && reviewed_note(note.id).is_some())
+}
+
+/// The note list ([`LEARN`]): each note shown, by its title, a link that selects it.
+fn note_list_ui(ui: &mut egui::Ui, clamps_paused: bool) -> Option<Asked> {
+    heading(ui, LEARN);
+    let mut asked = None;
+    for note in shown_notes(clamps_paused) {
+        if ui.link(glyph_safe(note.title)).clicked() {
+            asked = Some(Asked::Select(Selection::Note(note.id)));
+        }
+    }
+    asked
+}
+
+/// A teaching note's entry: the links to the equations it explains ([`explains_ui`]), then the
+/// note ([`note_ui`]) on the design shown. A change entry's input link shows its row, as a
+/// check's fix does. Nothing for a note that is not reviewed.
+fn note_entry_ui(
+    ui: &mut egui::Ui,
+    id: &'static str,
+    shown: &Shown<'_>,
+    readouts: &mut Readouts,
+) -> Option<Asked> {
+    let note = reviewed_note(id)?;
+    let equation = explains_ui(ui, note);
+    let view = NoteView {
+        inputs: shown.inputs,
+        results: shown.results,
+        held: shown.held,
+    };
+    match note_ui(ui, note, &view) {
+        Some(NoteLink::Input(path)) => readouts.focus_input(path),
+        Some(NoteLink::Note(id)) => return Some(Asked::Select(Selection::Note(id))),
+        None => {}
+    }
+    equation.map(Asked::Equation)
 }
 
 /// The orientation (spec 5.4): what the thing is, the three moves, and the link to the Start
@@ -447,6 +514,7 @@ mod tests {
                     clamps_paused: false,
                     consequences: None,
                     auto: None,
+                    held: &|_| None,
                 };
                 asked = explain_ui(ui, selection, &shown, &mut readouts);
             });
@@ -532,6 +600,7 @@ mod tests {
             NUMBERS,
             FULL_LESSON,
             EQUATION,
+            LEARN,
             crate::gui::checks::HEADING,
         ];
         texts.extend(STEPS);
@@ -549,6 +618,81 @@ mod tests {
         for words in ["without touching", "pull-out torque", "slip"] {
             assert!(ORIENTATION.contains(words), "{words}");
         }
+    }
+
+    // ------------------------------------------------------------------ the notes
+
+    #[test]
+    fn learn_lists_every_shown_note_by_title_and_a_title_selects_it() {
+        // UX overhaul spec 4.2: Learn lists the shown notes by title here; a title opens the
+        // note here. The paused shaft-clamp section takes its note with it.
+        use crate::engine::explain::notes::PAUSED_NOTE;
+        let ctx = egui::Context::default();
+        let inputs = DesignInputs::default();
+        let (output, asked, _) = frames(&ctx, &inputs, Selection::NoteList, false, vec![]);
+        assert_eq!(asked, None);
+        let mut want = vec![HEADING.to_owned(), ABOUT.to_owned(), LEARN.to_owned()];
+        want.extend(shown_notes(false).map(|note| glyph_safe(note.title)));
+        assert_eq!(drawn_texts(&output), want);
+        // Every reviewed note, in the notes' order; while paused, all but the clamp's.
+        let reviewed: Vec<&str> = NOTES
+            .iter()
+            .filter(|n| reviewed_note(n.id).is_some())
+            .map(|n| n.id)
+            .collect();
+        assert_eq!(
+            shown_notes(false).map(|n| n.id).collect::<Vec<_>>(),
+            reviewed
+        );
+        let paused: Vec<&str> = shown_notes(true).map(|n| n.id).collect();
+        assert!(!paused.contains(&PAUSED_NOTE));
+        assert_eq!(paused.len(), reviewed.len() - 1);
+        // A title selects its note.
+        let first = shown_notes(false).next().unwrap();
+        let (asked, events) = click(&inputs, Selection::NoteList, &glyph_safe(first.title));
+        assert_eq!(asked, Some(Asked::Select(Selection::Note(first.id))));
+        assert_eq!(events, ReadoutEvents::default());
+    }
+
+    #[test]
+    fn a_note_s_entry_is_the_note_with_the_links_to_its_equations() {
+        // Decision C-11: the note as the Equation panel drew it, after the links to the
+        // equations it explains; an equation link opens it in the Equation panel and leaves
+        // the selection; a change entry's input shows its row, as a check's fix does.
+        use crate::gui::explorer::{EXPLAINS, WHERE_FROM, crumb};
+        let ctx = egui::Context::default();
+        let inputs = DesignInputs::default();
+        let note = reviewed_note("pullout_angle").unwrap();
+        let selection = Selection::Note(note.id);
+        let (output, asked, _) = frames(&ctx, &inputs, selection, false, vec![]);
+        assert_eq!(asked, None);
+        let texts = drawn_texts(&output);
+        for text in [EXPLAINS, WHAT_TO_CHANGE, WHERE_FROM] {
+            assert_eq!(count(&texts, text), 1, "{text} in {texts:?}");
+        }
+        assert_eq!(count(&texts, &glyph_safe(note.title)), 1, "{texts:?}");
+        // The first equation it explains that has a record (a family's template has none).
+        let equation = *note
+            .equations
+            .iter()
+            .find(|p| crate::gui::readouts::registry().equation_for(p).is_some())
+            .unwrap();
+        let (asked, events) = click(&inputs, selection, &crumb(equation));
+        assert_eq!(asked, Some(Asked::Equation(equation)));
+        assert_eq!(events, ReadoutEvents::default());
+        let input = note.change[0].input;
+        let (asked, events) = click(&inputs, selection, &glyph_safe(label_for(input)));
+        assert_eq!(asked, None);
+        assert_eq!(events.focus, Some(input));
+        // A note that is not reviewed, or no note: the heading and the way back alone.
+        let (output, _, _) = frames(
+            &ctx,
+            &inputs,
+            Selection::Note("no.such.note"),
+            false,
+            vec![],
+        );
+        assert_eq!(drawn_texts(&output), [HEADING, ABOUT]);
     }
 
     #[test]
@@ -617,6 +761,7 @@ mod tests {
                     clamps_paused: false,
                     consequences: None,
                     auto: None,
+                    held: &|_| None,
                 };
                 asked = entry_ui(ui, entry, &shown, &mut readouts);
             });
@@ -1080,6 +1225,7 @@ mod tests {
                         clamps_paused: false,
                         consequences: None,
                         auto: None,
+                        held: &|_| None,
                     };
                     entry_ui(ui, &red, &shown, &mut Readouts::default());
                 });

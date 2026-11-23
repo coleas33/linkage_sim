@@ -35,7 +35,7 @@ use crate::engine::sizing::{FreeVariable, SizingOutcome};
 use crate::gui::checks::{CHECKS_SHARE, checks_ui};
 use crate::gui::clamp_drawing::clamp_ui;
 use crate::gui::dashboard::{Level, end_effect_banner_ui, why_note_link};
-use crate::gui::explain::{Asked, Selection, explain_ui};
+use crate::gui::explain::{Asked, LEARN, Selection, explain_ui};
 use crate::gui::explorer::{Explorer, FOCUS_WIDTH, explorer_ui, held_reason, panel_heights};
 use crate::gui::format::search_needle;
 use crate::gui::geometry::wall_cautions;
@@ -744,6 +744,12 @@ impl MagcouplingPanel {
                 .show_inside(ui, |ui| self.centre_ui(ui, &shown, &mut readouts));
         });
         let mut events = readouts.finish();
+        // A note asked for anywhere (a Why link, a warning's link, an entry's lesson link)
+        // shows in the Explain panel (UX overhaul spec 5.2, decision C-11).
+        if let Some(id) = events.note.take() {
+            self.selection = Selection::Note(id);
+            ui.ctx().request_repaint();
+        }
         // A fix on an input the Size tab names (the Outside diameter, contract C-4) opens that
         // tab, where its slider is, instead of the input's row.
         if events
@@ -823,6 +829,10 @@ impl MagcouplingPanel {
         }
         let asked = explain_scroll
             .show(ui, |ui| {
+                // A note's change entry names an input Auto or a part pick holds as plain
+                // text, on the design shown.
+                let sizing = self.sizing;
+                let held = |path: &str| held_reason(&sizing, shown, path);
                 let shown = crate::gui::explain::Shown {
                     inputs: shown,
                     results: &self.results,
@@ -830,6 +840,7 @@ impl MagcouplingPanel {
                     clamps_paused: self.clamps_paused,
                     consequences,
                     auto,
+                    held: &held,
                 };
                 explain_ui(ui, self.selection, &shown, readouts)
             })
@@ -837,7 +848,11 @@ impl MagcouplingPanel {
         match asked {
             Some(Asked::Select(selection)) => self.selection = selection,
             Some(Asked::Equation(path)) => self.explorer.open_path(path),
-            Some(Asked::StartHere) => self.explorer.start(0),
+            Some(Asked::StartHere) => {
+                if let Some(id) = self.explorer.start(0) {
+                    self.selection = Selection::Note(id);
+                }
+            }
             None => {}
         }
         if asked.is_some() {
@@ -966,15 +981,11 @@ impl MagcouplingPanel {
         let show_details = readouts.show_details();
         if self.explorer.open {
             let (range, start) = panel_heights(ui.available_rect_before_wrap().height());
-            egui::TopBottomPanel::bottom(EQUATION_PANEL_ID)
+            let note = egui::TopBottomPanel::bottom(EQUATION_PANEL_ID)
                 .resizable(true)
                 .default_height(start)
                 .height_range(range)
                 .show_inside(ui, |ui| {
-                    // A note's change entry names an input Auto or a part pick holds as plain
-                    // text, on the design shown.
-                    let sizing = self.sizing;
-                    let held = |path: &str| held_reason(&sizing, shown, path);
                     explorer_ui(
                         ui,
                         &mut self.explorer,
@@ -982,10 +993,15 @@ impl MagcouplingPanel {
                         &self.results,
                         &self.baseline,
                         show_details,
-                        &held,
                         self.clamps_paused,
-                    );
-                });
+                    )
+                })
+                .inner;
+            // A lesson link or a Start here step: its note in the Explain panel (spec 5.5).
+            if let Some(id) = note {
+                self.selection = Selection::Note(id);
+                ui.ctx().request_repaint();
+            }
         }
         // egui's panel only shrinks the region's cursor: a widget laid out after it may still
         // run past its top edge, and it paints over the panel with a clip rect covering it. So
@@ -1154,6 +1170,10 @@ impl MagcouplingPanel {
             {
                 self.export_spreadsheet();
             }
+            ui.separator();
+            if ui.add(bar_button(LEARN)).clicked() {
+                self.selection = Selection::NoteList;
+            }
         });
         // Spec Addendum A3: the banner while any assumption differs from its workbook default.
         let banner = assumptions_banner(&self.inputs, self.clamps_paused);
@@ -1316,7 +1336,7 @@ impl MagcouplingPanel {
         let output = size_controls::controls_ui(ui, &shown, minimum, consequences, auto);
         // A Why link under Magnets per ring or Outside diameter (spec 3.7) opens its note.
         if let Some(id) = output.note {
-            self.explorer.open_note(id);
+            self.selection = Selection::Note(id);
             ui.ctx().request_repaint();
         }
         // The lines under the controls were drawn from the design before this frame's edit:
@@ -1367,7 +1387,7 @@ impl MagcouplingPanel {
         ui.horizontal_wrapped(|ui| {
             ui.colored_label(look::quiet_text(ui.visuals()), size_controls::REQUIRED);
             if why_note_link(ui, TORQUE_BAND_NOTE) {
-                self.explorer.open_note(TORQUE_BAND_NOTE);
+                self.selection = Selection::Note(TORQUE_BAND_NOTE);
                 ui.ctx().request_repaint();
             }
         });
@@ -2283,13 +2303,23 @@ mod tests {
 
     #[test]
     fn the_check_list_and_the_explain_panel_compute_nothing_on_an_idle_frame() {
-        // Spec 8.2, test 14: with nothing selected, with a failing check's entry open and with
-        // the Hot-low tile's (the torque card: its consequences are 30 compute_all runs), a
-        // frame in which nothing changed runs no fix search and no results of its own.
+        // Spec 8.2, test 14: with nothing selected, with a failing check's entry open, with
+        // the Hot-low tile's (the torque card: its consequences are 30 compute_all runs), with
+        // a note's entry (its diagram) and with the note list (plan review COV-1), a frame in
+        // which nothing changed runs no fix search and no results of its own.
+        use crate::engine::explain::notes::START_HERE;
         let mut harness = Harness::first_view();
         let hot_low = Selection::Result(crate::gui::tiles::Tile::HotLow.path());
         let checks = [HOT_MIN_CHECK, GEARBOX_CHECK].map(|check| Some(Selection::Check(check)));
-        for check in [None, checks[0], checks[1], Some(hot_low)] {
+        let note = Some(Selection::Note(START_HERE[0].0));
+        for check in [
+            None,
+            checks[0],
+            checks[1],
+            Some(hot_low),
+            note,
+            Some(Selection::NoteList),
+        ] {
             match check {
                 Some(Selection::Check(path)) => {
                     harness.select(path);
@@ -2319,15 +2349,15 @@ mod tests {
     #[test]
     fn a_new_panel_opens_on_size_and_torque_with_the_tiles_over_the_drawing() {
         // Decision G-5 (spec 3.1, reversing M42-2) and UX overhaul spec 4.4: the first view is
-        // the Size tab, its four tiles over the drawing; showing them edits nothing, and
-        // Explain stays off (M43-2). The welcome strip is gone: the Explain panel's orientation
-        // says what to do first.
+        // the Size tab, its four tiles over the drawing; showing them edits nothing, and the
+        // Explain panel shows no note (M43-2). The welcome strip is gone: the Explain panel's
+        // orientation says what to do first.
         use crate::gui::guidance::{design_status, design_status_text};
         use crate::gui::size_controls::{DIAMETER, GAP, LENGTH, MAGNETS};
         use crate::gui::tiles::Tile;
         let panel = MagcouplingPanel::new();
         assert_eq!(panel.centre, CentreView::SizeAndTorque);
-        assert!(!panel.explorer.explain);
+        assert_eq!(panel.selection, Selection::Nothing);
         assert_eq!(
             MagcouplingPanel::default().centre,
             CentreView::SizeAndTorque
@@ -2369,7 +2399,7 @@ mod tests {
     }
 
     #[test]
-    fn the_top_bar_is_undo_redo_design_share_and_export_and_the_menu_holds_the_rest() {
+    fn the_top_bar_is_undo_redo_design_share_export_and_learn_and_the_menu_holds_the_rest() {
         // UX overhaul spec 4.2: the reset, the example design, the file's save and load and
         // the details toggle in the Design menu; Share and Export on the bar; no Equation panel
         // button (decision C-11).
@@ -2380,7 +2410,7 @@ mod tests {
         let in_bar = |output: &egui::FullOutput, text: &str| {
             text_rect(output, text).is_some_and(|r| (r.center().y - bar.center().y).abs() < 20.0)
         };
-        for text in [UNDO, REDO, DESIGN_MENU, SHARE, EXPORT] {
+        for text in [UNDO, REDO, DESIGN_MENU, SHARE, EXPORT, LEARN] {
             assert!(in_bar(&output, text), "{text} on the bar");
         }
         let menu = [
@@ -2393,8 +2423,8 @@ mod tests {
         for text in menu.iter().chain(&[EQUATION_PANEL, RESET_ALL]) {
             assert_eq!(count(&output, text), 0, "{text} not on the first view");
         }
-        // Left to right: Undo, Redo, Design, Share, Export.
-        let lefts: Vec<f32> = [UNDO, REDO, DESIGN_MENU, SHARE, EXPORT]
+        // Left to right: Undo, Redo, Design, Share, Export, Learn.
+        let lefts: Vec<f32> = [UNDO, REDO, DESIGN_MENU, SHARE, EXPORT, LEARN]
             .iter()
             .map(|t| text_rect(&output, t).unwrap().left())
             .collect();
@@ -2436,6 +2466,37 @@ mod tests {
         let output = harness.frame(Vec::new());
         assert!(boxed(&output, SHARE), "Share hovered");
         assert!(!boxed(&output, EXPORT), "Export not hovered");
+    }
+
+    #[test]
+    fn learn_lists_the_notes_in_the_explain_panel_and_a_title_shows_its_note() {
+        // UX overhaul spec 4.2: Learn, on the top bar, lists the shown notes by title in the
+        // Explain panel; a title shows the note there; Esc returns the orientation (5.1).
+        use crate::gui::explain::{ORIENTATION, shown_notes};
+        use crate::gui::typeset::glyph_safe;
+        let mut harness = Harness::on_screen(TALL);
+        harness.click_text(LEARN);
+        assert_eq!(harness.panel.selection, Selection::NoteList);
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        let left = right_column_left(&output);
+        for note in shown_notes(harness.panel.clamps_paused) {
+            let title = glyph_safe(note.title);
+            assert!(
+                text_rects(&output, &title).iter().any(|r| r.left() > left),
+                "{title} in the Explain panel"
+            );
+        }
+        let note = shown_notes(harness.panel.clamps_paused).nth(3).unwrap();
+        harness.click_text(&glyph_safe(note.title));
+        assert_eq!(harness.panel.selection, Selection::Note(note.id));
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, ORIENTATION), 0);
+        harness.frame(key_tap(egui::Key::Escape));
+        assert_eq!(harness.panel.selection, Selection::Nothing);
+        assert!(!harness.panel.explorer.open, "Learn opens no equation");
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
     }
 
     #[test]
@@ -8404,7 +8465,7 @@ mod tests {
                 .panel
                 .explorer
                 .open_path("temperature.summary.governing_limit_C");
-            harness.panel.explorer.explain = true;
+            harness.panel.selection = Selection::Note("br_temperature");
             for view in CentreView::ALL {
                 harness.panel.centre = view;
                 for _ in 0..3 {
@@ -9261,42 +9322,45 @@ mod tests {
     }
 
     #[test]
-    fn the_explain_toggle_shows_the_open_equation_s_note_and_follows_it() {
+    fn the_open_equation_s_lesson_line_shows_its_note_in_the_explain_panel() {
+        // Decision C-11: the Equation panel's Explain toggle is gone. Under the open equation
+        // its note's title follows "Full lesson:", and a click shows the note in the Explain
+        // panel; the equation stays open (C-25). The line follows the equation.
         use crate::engine::explain::notes::{note, note_for};
-        use crate::gui::explorer::{
-            EXPLAIN, NO_NOTE, NoteFallback, START_HERE_HINT, note_fallback,
-        };
+        use crate::gui::explain::FULL_LESSON;
+        use crate::gui::explorer::{NO_NOTE, NoteFallback, START_HERE_HINT, note_fallback};
         let mut harness = Harness::on_screen(TALL);
-        // A check's Explain entry names its note too: the Equation panel's note is one more.
         let pullout = note("pullout_angle").unwrap();
         let end = note("end_effect").unwrap();
-        let output = harness.select("model.end_effect_check");
-        let (pullout_links, end_links) = (count(&output, pullout.title), count(&output, end.title));
-        assert_eq!(
-            (pullout_links, end_links),
-            (0, 1),
-            "the end-effect check's entry links its note"
-        );
         harness.panel.explorer.open_path("model.pullout_Nm");
         harness.frame(Vec::new());
         let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, "Explain"), 0, "no toggle");
+        assert_eq!(count(&output, FULL_LESSON), 1);
+        assert_eq!(count(&output, pullout.title), 1, "the lesson line alone");
+        assert_eq!(count(&output, pullout.sentences[0]), 0);
         assert_eq!(
-            count(&output, pullout.title),
-            pullout_links,
-            "hidden by default"
+            diagram_points(&output),
+            0,
+            "no diagram in the Equation panel"
         );
-        harness.click_text(EXPLAIN);
-        assert!(harness.panel.explorer.explain);
+        harness.click_text(pullout.title);
+        assert_eq!(harness.panel.selection, Selection::Note(pullout.id));
+        assert_eq!(harness.panel.explorer.current(), Some("model.pullout_Nm"));
+        harness.frame(Vec::new());
         let output = harness.frame(Vec::new());
-        assert_eq!(count(&output, pullout.title), pullout_links + 1);
-        assert_eq!(count(&output, pullout.sentences[0]), 1);
+        assert_eq!(
+            count(&output, pullout.sentences[0]),
+            1,
+            "in the Explain panel"
+        );
         assert!(diagram_points(&output) >= 1, "its torque-angle diagram");
-        // Drill to f_end (its term row is below the note now): the note follows the equation.
+        // Drill to f_end: the line names its note; the Explain panel keeps the pull-out's.
         harness.panel.explorer.drill("model.f_end");
         harness.frame(Vec::new());
         let output = harness.frame(Vec::new());
-        assert_eq!(count(&output, end.title), end_links + 1);
-        assert_eq!(count(&output, pullout.title), pullout_links);
+        assert_eq!(count(&output, end.title), 1);
+        assert_eq!(harness.panel.selection, Selection::Note(pullout.id));
         // A value no reviewed note explains, with nothing upstream that has a note or an
         // assumption (never a dashboard row, spec 3.7): the reason and where the notes are.
         let bare = registry()
@@ -9310,33 +9374,41 @@ mod tests {
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, NO_NOTE), 1);
         assert_eq!(count(&output, START_HERE_HINT), 1);
-        // Off again: no note.
-        harness.click_text(EXPLAIN);
-        let output = harness.frame(Vec::new());
-        assert_eq!(count(&output, NO_NOTE), 0);
-        assert_eq!(count(&output, START_HERE_HINT), 0);
     }
 
     #[test]
     fn start_here_opens_the_matching_equations_in_turn() {
         use crate::engine::explain::notes::{START_HERE, note};
         use crate::gui::explorer::{NEXT, PREVIOUS, START_HERE_BUTTON, STOP, start_here_text};
-        // The Explain panel's orientation starts the walk.
+        // The Explain panel's orientation starts the walk; each step opens its equation and
+        // selects its note, which the Explain panel shows (UX overhaul spec 5.5).
         let mut harness = Harness::new();
         harness.click_text(START_HERE_BUTTON);
         assert_eq!(harness.panel.explorer.current(), Some(START_HERE[0].1));
+        assert_eq!(harness.panel.selection, Selection::Note(START_HERE[0].0));
+        harness.frame(Vec::new());
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, &start_here_text(0)), 1);
-        assert_eq!(count(&output, note(START_HERE[0].0).unwrap().title), 1);
+        let first = note(START_HERE[0].0).unwrap();
+        // The note's title heads its entry, and the lesson line under the equation names it.
+        assert_eq!(count(&output, first.title), 2);
+        assert_eq!(
+            count(&output, first.sentences[0]),
+            1,
+            "the note in the Explain panel"
+        );
         harness.click_text(NEXT);
         assert_eq!(harness.panel.explorer.current(), Some(START_HERE[1].1));
+        assert_eq!(harness.panel.selection, Selection::Note(START_HERE[1].0));
         harness.click_text(NEXT);
         assert_eq!(harness.panel.explorer.current(), Some(START_HERE[2].1));
         harness.click_text(PREVIOUS);
         assert_eq!(harness.panel.explorer.start_here(), Some(1));
+        assert_eq!(harness.panel.selection, Selection::Note(START_HERE[1].0));
         harness.click_text(STOP);
         assert_eq!(harness.panel.explorer.start_here(), None);
         assert_eq!(harness.panel.explorer.current(), Some(START_HERE[1].1));
+        assert_eq!(harness.panel.selection, Selection::Note(START_HERE[1].0));
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
     }
 
@@ -9360,7 +9432,7 @@ mod tests {
                 variable: FreeVariable::AxialLength,
             }
         );
-        harness.panel.explorer.open_note(id);
+        harness.panel.selection = Selection::Note(id);
         harness.frame(Vec::new());
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, &format!(" ({HELD_BY_AUTO})")), 1);
@@ -9392,8 +9464,8 @@ mod tests {
             "a held input is no link"
         );
         assert_eq!(
-            harness.panel.explorer.note(),
-            Some(id),
+            harness.panel.selection,
+            Selection::Note(id),
             "the note stays open"
         );
     }
@@ -9424,14 +9496,14 @@ mod tests {
 
     #[test]
     fn every_teaching_note_shows_with_glyphs_in_the_default_fonts() {
-        // Each note opened alone, then its sources fold opened (it starts closed): every drawn
-        // text, sources included, has glyphs.
+        // Each note selected (the Explain panel draws it), then its sources fold opened (it
+        // starts closed): every drawn text, sources included, has glyphs.
         use crate::engine::explain::notes::NOTES;
         use crate::gui::explorer::WHERE_FROM;
         use crate::gui::typeset::glyph_safe;
         let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0));
         for note in NOTES {
-            harness.panel.explorer.open_note(note.id);
+            harness.panel.selection = Selection::Note(note.id);
             harness.frame(Vec::new());
             let output = harness.frame(Vec::new());
             let texts = drawn_texts(&output);
@@ -9639,8 +9711,7 @@ mod tests {
             "{WHY}: {}",
             crate::gui::typeset::glyph_safe(note.title)
         ));
-        assert!(harness.panel.explorer.open);
-        assert_eq!(harness.panel.explorer.note(), Some(rule.note_id));
+        assert_eq!(harness.panel.selection, Selection::Note(rule.note_id));
         harness.frame(Vec::new());
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, note.sentences[0]), 1);
@@ -9648,9 +9719,11 @@ mod tests {
             diagram_points(&output) == 0,
             "the flux-path diagram marks no point"
         );
-        // Its one equation is a link: the circuit in effect, opened like a value.
+        // Its one equation is a link: the circuit in effect, opened like a value in the
+        // Equation panel; the note stays selected (decision C-25).
         harness.click_text("circuit");
-        assert_eq!(harness.panel.explorer.note(), None);
+        assert!(harness.panel.explorer.open);
+        assert_eq!(harness.panel.selection, Selection::Note(rule.note_id));
         assert_eq!(
             harness.panel.explorer.trail(),
             ["materials.circuit_backiron"]
@@ -9934,7 +10007,7 @@ mod tests {
     }
 
     #[test]
-    fn a_check_s_why_link_opens_its_note_in_the_equation_panel() {
+    fn a_check_s_lesson_link_shows_its_note_in_the_explain_panel() {
         use crate::gui::guidance::{CHECK_GUIDES, Learn};
         let notes: Vec<(&'static str, &'static str)> = CHECK_GUIDES
             .iter()
@@ -9952,8 +10025,7 @@ mod tests {
             // on the second frame: click where the link rests).
             harness.select(check);
             harness.click_text(&crate::gui::typeset::glyph_safe(note.title));
-            assert!(harness.panel.explorer.open, "{id}");
-            assert_eq!(harness.panel.explorer.note(), Some(id));
+            assert_eq!(harness.panel.selection, Selection::Note(id));
             harness.frame(Vec::new());
             let output = harness.frame(Vec::new());
             assert_eq!(count(&output, note.sentences[0]), 1, "{id}");
@@ -9967,22 +10039,26 @@ mod tests {
         // heading (slice 3 spec 6.1; in the Hot-low tile's Explain entry, which `size_tab`
         // shows), a link to how the coupling makes torque; beside the Required row's label a
         // link to the hot minimum check's note (the Hot-low tile's is its entry's lesson link).
-        // Each opens its note on its own in the Equation panel.
+        // Each shows its note in the Explain panel (spec 5.2).
         use crate::gui::dashboard::why_note_text;
         use crate::gui::explorer::reviewed_note;
         let mut harness = size_tab(SCREEN, DesignInputs::default());
+        let tile = harness.panel.selection;
         for (id, links) in [(SIZE_TAB_NOTE, 3), (TORQUE_BAND_NOTE, 1)] {
             let text =
                 why_note_text(reviewed_note(id).expect("a Size-tab link's note is reviewed"));
             for index in 0..links {
-                harness.panel.explorer = Explorer::default();
+                harness.panel.selection = tile;
                 let output = harness.frame(Vec::new());
                 // The Required and Hot-low links end wrapped rows: click their text.
                 let at = last_characters(&output, &text);
                 assert_eq!(at.len(), links, "{text}");
                 harness.click(at[index]);
-                assert!(harness.panel.explorer.open, "{text} #{index}");
-                assert_eq!(harness.panel.explorer.note(), Some(id), "{text} #{index}");
+                assert_eq!(
+                    harness.panel.selection,
+                    Selection::Note(id),
+                    "{text} #{index}"
+                );
             }
         }
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
@@ -10025,20 +10101,19 @@ mod tests {
         let links = last_characters(&output, &text);
         assert_eq!(links.len(), 1, "under the centre region's banner");
         harness.click(links[0]);
-        assert_eq!(harness.panel.explorer.note(), Some(BANNER_NOTE));
+        assert_eq!(harness.panel.selection, Selection::Note(BANNER_NOTE));
         assert_eq!(harness.panel.inputs(), &short_magnets());
     }
 
-    /// Opens `path` with Explain on and clicks its closest-note link: the one copy of `note`'s
-    /// title on the lead's line, left of the dashboard (whose rows draw note titles in their Why
-    /// lines), clicked on its text (it ends a wrapped row). A second copy there would make the
-    /// click ambiguous: the helper says so rather than pass. The click opens `note` on its own
-    /// and edits nothing.
+    /// Opens `path` and clicks its closest-note link: the one copy of `note`'s title on the
+    /// lead's line, left of the right column (whose entries draw note titles in their lesson
+    /// links), clicked on its text (it ends a wrapped row). A second copy there would make the
+    /// click ambiguous: the helper says so rather than pass. The click shows `note` in the
+    /// Explain panel and edits nothing.
     fn click_the_closest_note_link(path: &str, note: &crate::engine::explain::notes::Note) {
         use crate::gui::explorer::NEAREST_NOTE;
         use crate::gui::typeset::glyph_safe;
         let mut harness = Harness::on_screen(TALL);
-        harness.panel.explorer.explain = true;
         harness.panel.explorer.open_path(path);
         harness.frame(Vec::new());
         let output = harness.frame(Vec::new());
@@ -10055,15 +10130,15 @@ mod tests {
             "{path}: the link beside the lead: {beside:?}"
         );
         harness.click(beside[0]);
-        assert_eq!(harness.panel.explorer.note(), Some(note.id), "{path}");
+        assert_eq!(harness.panel.selection, Selection::Note(note.id), "{path}");
         assert_eq!(harness.panel.inputs(), &DesignInputs::default(), "{path}");
     }
 
     #[test]
     fn explain_offers_the_gearbox_row_its_why_note_and_the_link_opens_it() {
-        // BL-059: the gearbox check has no equation and no note of its own. With Explain on,
-        // its row offers the note its Why link leads to, the torque band (a row's own link comes
-        // first), and the link beside the lead opens it on its own. Its "no note" and lead counts
+        // BL-059: the gearbox check has no equation and no note of its own. Its row offers
+        // the note its Why link leads to, the torque band (a row's own link comes
+        // first), and the link beside the lead shows it in the Explain panel. Its "no note" and lead counts
         // are the dashboard loop's (`explain_never_shows_no_teaching_note_on_a_dashboard_row`).
         use crate::engine::explain::notes::note_for;
         use crate::gui::explorer::{NoteFallback, note_fallback};
@@ -10082,7 +10157,7 @@ mod tests {
 
     #[test]
     fn explain_never_shows_no_teaching_note_on_a_dashboard_row() {
-        // Spec section 6 test 11: each dashboard row opened with Explain on shows its note, the
+        // Spec section 6 test 11: each dashboard row opened shows its note's lesson line, the
         // closest note, an assumption's rationale, or its own reason with where the notes are.
         use crate::engine::explain::notes::note_for;
         use crate::gui::dashboard::DASHBOARD;
@@ -10091,7 +10166,6 @@ mod tests {
         };
         use crate::gui::typeset::glyph_safe;
         let mut harness = Harness::on_screen(TALL);
-        harness.panel.explorer.explain = true;
         for &(path, _) in &DASHBOARD {
             harness.panel.explorer.open_path(path);
             harness.frame(Vec::new());
@@ -10124,7 +10198,7 @@ mod tests {
     #[test]
     fn the_closest_note_link_opens_that_note() {
         // TC-29a: a dashboard row whose equation has no note and whose Why link leads to none
-        // offers the closest note upstream; its link opens it on its own.
+        // offers the closest note upstream; its link shows it in the Explain panel.
         use crate::engine::explain::notes::note_for;
         use crate::gui::dashboard::DASHBOARD;
         use crate::gui::explorer::{NoteFallback, note_fallback};
@@ -10156,12 +10230,11 @@ mod tests {
             .collect()
     }
 
-    /// Clicks the note link at `at` and checks that the click opened note `id` in the explorer
-    /// and edited no input. The harness must hold the default design.
-    fn click_opens_note(harness: &mut Harness, at: egui::Pos2, id: &str) {
+    /// Clicks the note link at `at` and checks that the click selected note `id` (the Explain
+    /// panel shows it) and edited no input. The harness must hold the default design.
+    fn click_opens_note(harness: &mut Harness, at: egui::Pos2, id: &'static str) {
         harness.click(at);
-        assert!(harness.panel.explorer.open, "{id}");
-        assert_eq!(harness.panel.explorer.note(), Some(id));
+        assert_eq!(harness.panel.selection, Selection::Note(id));
         assert_eq!(harness.panel.inputs(), &DesignInputs::default(), "{id}");
     }
 

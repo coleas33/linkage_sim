@@ -185,7 +185,8 @@ impl Readouts {
         self.show(ui, response, path, text);
     }
 
-    /// Asks for the teaching note `id` (a warning's link).
+    /// Asks for the teaching note `id` (a warning's link, a lesson link), which the panel shows
+    /// in the Explain panel.
     pub fn open_note(&mut self, id: &'static str) {
         self.events.note = Some(id);
     }
