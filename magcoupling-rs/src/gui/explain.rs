@@ -18,8 +18,8 @@ use crate::engine::sizing::FreeVariable;
 use crate::gui::checks::{mark_level, state_mark};
 use crate::gui::dashboard::why_note_link;
 use crate::gui::dashboard::{
-    DASHBOARD, DOES_NOT_FIT, FITS, Level, MARKER_LEGEND, STORED_3D_LABEL, STORED_3D_NOTE, learn_ui,
-    line_ui, result_info, shown_lines,
+    DOES_NOT_FIT, FITS, Level, MARKER_LEGEND, STORED_3D_LABEL, STORED_3D_NOTE, badging_check,
+    learn_ui, line_ui, result_info, shown_lines,
 };
 use crate::gui::explorer::{START_HERE_BUTTON, WATCH_OUT, WHAT_TO_CHANGE, start_here_hover};
 use crate::gui::guidance::{
@@ -279,11 +279,7 @@ fn numbers_ui(
     }
     let mut stored_3d = false;
     for line in shown_lines(shown.results, shown.clamps_paused) {
-        let badged_by = DASHBOARD
-            .iter()
-            .find(|&&(path, _)| path == line.path)
-            .and_then(|&(_, check)| check);
-        if badged_by == Some(guide.check) {
+        if badging_check(line.path) == Some(guide.check) {
             line_ui(ui, &line, readouts);
             stored_3d |= line.stored_3d;
         }
@@ -323,11 +319,7 @@ fn result_ui(
         card_ui(ui, consequences, shown.auto, readouts);
     }
     let mut asked = None;
-    let check = DASHBOARD
-        .iter()
-        .find(|&&(row, _)| row == path)
-        .and_then(|&(_, check)| check);
-    if let Some(guide) = check.and_then(guidance::guide) {
+    if let Some(guide) = badging_check(path).and_then(guidance::guide) {
         heading(ui, CHECKS_IT_TOUCHES);
         ui.horizontal_wrapped(|ui| {
             let mark = mark_level(guide, shown.inputs, shown.results);
@@ -387,7 +379,9 @@ mod tests {
     use crate::compute_all;
     use crate::engine::assumptions::ASSUMPTIONS;
     use crate::engine::explain::plain::mentions_gearbox_protection;
-    use crate::gui::dashboard::{NO_NOTE_YET, NOTE_NOT_REVIEWED, dashboard_lines, verdict_display};
+    use crate::gui::dashboard::{
+        DASHBOARD, NO_NOTE_YET, NOTE_NOT_REVIEWED, dashboard_lines, verdict_display,
+    };
     use crate::gui::explorer::reviewed_note;
     use crate::gui::guidance::{Fixes, all_fixes, counted_guides, plain_text_violations};
     use crate::gui::plain_text::label_for;

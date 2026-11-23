@@ -188,8 +188,11 @@ fn tile_ui(
     inputs: &DesignInputs,
     results: &DesignResults,
 ) -> (f32, egui::Response) {
+    let id = ui.id().with(("magcoupling_tile", tile.path()));
+    // A tile the keyboard reached is outlined as a selected one is.
+    let focused = ui.memory(|memory| memory.has_focus(id));
     let visuals = ui.visuals();
-    let stroke = if selected {
+    let stroke = if selected || focused {
         egui::Stroke::new(1.0, visuals.strong_text_color())
     } else {
         visuals.widgets.noninteractive.bg_stroke
@@ -245,7 +248,6 @@ fn tile_ui(
         ui.set_min_height(size.1);
         content
     });
-    let id = ui.id().with(("magcoupling_tile", tile.path()));
     let response = ui.interact(inner.response.rect, id, egui::Sense::click());
     (inner.inner, response)
 }
@@ -257,9 +259,9 @@ mod tests {
     use crate::gui::dashboard::END_EFFECT_BANNER;
     use crate::gui::guidance::plain_text_violations;
     use crate::gui::test_support::{
-        assert_glyphs, drawn_texts, flat_shapes, glyph_context, hover_frames, no_back_iron,
-        passing_design, primary_button, short_magnets, sized_frame, text_color, text_rect,
-        zero_torque,
+        assert_glyphs, drawn_texts, flat_shapes, glyph_context, hover_frames, key_tap,
+        no_back_iron, passing_design, primary_button, short_magnets, sized_frame, text_color,
+        text_rect, zero_torque,
     };
 
     /// Frames of the tiles of `inputs` in a region `width` points wide in `ctx`, with
@@ -592,16 +594,24 @@ mod tests {
         let help = hover_text(Tile::Mass.path(), false).unwrap();
         assert!(drawn_texts(&hover).contains(&help), "{help}");
         // The outline.
-        let outlined = |selected| {
+        let outlined = |selected, events| {
             let ctx = egui::Context::default();
             let stroke = ctx.style().visuals.strong_text_color();
-            let (output, _) = frames(&ctx, &inputs, 700.0, selected, Vec::new());
+            let (output, _) = frames(&ctx, &inputs, 700.0, selected, events);
             flat_shapes(&output)
                 .into_iter()
                 .filter(|shape| matches!(shape, egui::Shape::Rect(r) if r.stroke.color == stroke))
                 .count()
         };
-        assert_eq!((outlined(None), outlined(Some(Tile::Pullout))), (0, 1));
+        assert_eq!(
+            (
+                outlined(None, Vec::new()),
+                outlined(Some(Tile::Pullout), Vec::new())
+            ),
+            (0, 1)
+        );
+        // A tile the keyboard reached is outlined too (review UXQ-3).
+        assert_eq!(outlined(None, vec![key_tap(egui::Key::Tab), Vec::new()]), 1);
     }
 
     #[test]

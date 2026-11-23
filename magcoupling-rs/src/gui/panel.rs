@@ -4,8 +4,8 @@
 //! then every input by package group, [`crate::gui::inputs`]), the check list over the Explain
 //! panel on the right ([`crate::gui::checks`], [`crate::gui::explain`]: UX overhaul spec 4.5) and
 //! the centre region between them ([`CentreView`]: one tab row, the results table last;
-//! decision M42-1), opening on Size and torque under a welcome strip the session can hide
-//! (decision G-5, which reverses M42-2). Every result is recomputed with every approved correction
+//! decision M42-1), opening on Size and torque with the four tiles over the drawing (decision
+//! G-5, which reverses M42-2). Every result is recomputed with every approved correction
 //! on ([`compute_all`]) each frame after the inputs are drawn, so the readouts show this
 //! frame's edits.
 //!
@@ -369,6 +369,9 @@ pub struct MagcouplingPanel {
     /// (the orientation). View state: in no design file, link or undo step, and kept by reset
     /// all and every load.
     selection: Selection,
+    /// The selection the Explain panel drew last frame: when [`Self::selection`] differs, the
+    /// new entry opens at its top (spec 5.1), not at the last entry's scroll offset.
+    explain_drawn: Selection,
     /// Whether a text field had the keyboard as the last frame ended: Esc is then the field's,
     /// not the Explain panel's.
     typing: bool,
@@ -427,6 +430,7 @@ impl MagcouplingPanel {
             trace: None,
             clamps_paused: clamps::PAUSED,
             selection: Selection::default(),
+            explain_drawn: Selection::default(),
             typing: false,
         }
     }
@@ -799,9 +803,14 @@ impl MagcouplingPanel {
             self.consequences
                 .get(shown, results, self.minimum_diameter_mm, self.clamps_paused)
         });
-        let asked = egui::ScrollArea::vertical()
+        let mut explain_scroll = egui::ScrollArea::vertical()
             .id_salt("magcoupling_explain_scroll")
-            .auto_shrink([false, false])
+            .auto_shrink([false, false]);
+        if self.selection != self.explain_drawn {
+            explain_scroll = explain_scroll.vertical_scroll_offset(0.0);
+            self.explain_drawn = self.selection;
+        }
+        let asked = explain_scroll
             .show(ui, |ui| {
                 let shown = crate::gui::explain::Shown {
                     inputs: shown,
@@ -1734,8 +1743,8 @@ mod tests {
         SCREEN, clamp_at_its_limit, drawing_rect, drawn_texts, flat_shapes, hot_day,
         hub_overstressed, key_event, key_tap, last_characters, only_the_clamp_fails,
         only_the_joint_fails, passing_design, primary_button, row_line, select_all, short_magnets,
-        sized_frame, sized_frame_at, smoke_inputs, text_center, text_clip_rect, text_color,
-        text_rect, text_rects, text_shapes, tooltips_at_once, with_poles,
+        shown_whole, sized_frame, sized_frame_at, smoke_inputs, text_center, text_clip_rect,
+        text_color, text_rect, text_rects, text_shapes, tooltips_at_once, with_poles,
     };
     use crate::gui::torque_card::{CAPTION, CARD_HEADING, Control, held_line};
     use crate::headline;
@@ -1973,7 +1982,7 @@ mod tests {
     #[test]
     fn the_geometry_view_follows_the_design_shown() {
         // The harness opens on the Geometry tab (a new panel opens on Size and torque:
-        // a_new_panel_opens_on_size_and_torque_under_the_welcome_strip).
+        // a_new_panel_opens_on_size_and_torque_with_the_tiles_over_the_drawing).
         let mut harness = Harness::new();
         let output = harness.frame(Vec::new());
         let texts = drawn_texts(&output);
@@ -2034,7 +2043,9 @@ mod tests {
         use crate::gui::explorer::START_HERE_BUTTON;
         use crate::gui::guidance::counted_guides;
         use crate::gui::{checks, explain};
-        let mut harness = Harness::first_view();
+        let size = egui::vec2(1280.0, 800.0);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+        let mut harness = Harness::of(MagcouplingPanel::new(), size);
         let first = harness.frame(Vec::new());
         assert_eq!(count(&first, explain::ORIENTATION), 1, "on the first frame");
         let output = harness.frame(Vec::new());
@@ -2052,20 +2063,66 @@ mod tests {
                 .into_iter()
                 .find(|rect| rect.left() > left)
                 .unwrap_or_else(|| panic!("{text:?} in the right column"));
+            // In view inside its own scroll area's clip (the list's or the Explain panel's).
             assert!(
-                text_clip_rect(&output, STORED_3D_LABEL).contains_rect(rect),
+                shown_whole(&output, text, screen)
+                    .iter()
+                    .any(|whole| whole.left() > left),
                 "{text:?} is in view at {rect:?}"
             );
             assert!(rect.top() > last, "{text:?} is under the text before it");
             last = rect.top();
         }
-        assert!(in_view(&output, STORED_3D_LABEL, SCREEN), "row A-18");
+        assert!(in_view(&output, STORED_3D_LABEL, size), "row A-18");
         // The list never takes more than its share of the column: the Explain panel's heading
         // starts above the middle of the screen.
         let explain = text_rect(&output, explain::HEADING).unwrap();
-        assert!(explain.top() < SCREEN.y / 2.0, "{explain:?}");
+        assert!(explain.top() < size.y / 2.0, "{explain:?}");
         assert_eq!(harness.panel.design(), Design::default());
         assert_eq!(harness.panel.history.undo_len(), 0);
+    }
+
+    #[test]
+    fn each_explain_entry_opens_at_its_top_whatever_the_last_one_was_scrolled_to() {
+        // Spec 5.1 and goal G-8 (review CR-1): an entry scrolled to its foot, then another red
+        // check's row clicked: the new entry's title and "What it is" are in view, not left
+        // above the view at the last entry's scroll offset.
+        use crate::gui::explain;
+        use crate::gui::guidance::guide;
+        let size = egui::vec2(1024.0, 700.0);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+        let mut harness = Harness::on_screen(size);
+        harness.panel.open_example_design();
+        harness.frame(Vec::new());
+        harness.click_text(guide(GEARBOX_CHECK).unwrap().label);
+        let output = harness.frame(Vec::new());
+        let inside = text_center(&output, explain::WHAT_IT_IS) + egui::vec2(0.0, 60.0);
+        harness.frame(vec![egui::Event::PointerMoved(inside)]);
+        harness.frame(vec![egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -5000.0),
+            modifiers: egui::Modifiers::NONE,
+        }]);
+        let mut output = harness.frame(Vec::new());
+        for _ in 0..20 {
+            output = harness.frame(Vec::new());
+        }
+        assert!(
+            shown_whole(&output, explain::WHAT_IT_IS, screen).is_empty(),
+            "the gearbox entry is scrolled past its top"
+        );
+        harness.frame(vec![egui::Event::PointerGone]);
+        harness.click_text(guide(HOT_MIN_CHECK).unwrap().label);
+        assert_eq!(harness.panel.selection, Selection::Check(HOT_MIN_CHECK));
+        let mut output = harness.frame(Vec::new());
+        for _ in 0..3 {
+            output = harness.frame(Vec::new());
+        }
+        assert_eq!(
+            shown_whole(&output, explain::WHAT_IT_IS, screen).len(),
+            1,
+            "the hot-low entry opens at its top"
+        );
     }
 
     #[test]
@@ -8633,7 +8690,7 @@ mod tests {
     fn the_panel_s_own_strings_read_in_plain_words() {
         // Spec 3.8 (map-locks J1-J3, J7, J8, J10, J12, J13, J16; map-jargon C-4 to C-6, C-8,
         // C-11, A-10): the panel's own words name no spreadsheet cell, correction, file or code,
-        // and none of the engine's internal words. The welcome strip is pinned unchanged (R14).
+        // and none of the engine's internal words.
         use crate::engine::explain::{TermKind, TermStyle};
         use crate::gui::clamp_drawing::ONE_PIECE_ONLY;
         use crate::gui::dashboard::END_EFFECT_GREYED;

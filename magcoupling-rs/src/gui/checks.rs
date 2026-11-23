@@ -119,15 +119,28 @@ pub(crate) fn checks_ui(
             ui.id().with(("check_row", guide.check)),
             egui::Sense::click(),
         );
-        if selected == Some(guide.check) || response.hovered() {
-            ui.painter().set(
-                background,
-                egui::Shape::rect_filled(
-                    rect.expand2(egui::vec2(2.0, 1.0)),
-                    4.0,
-                    ui.visuals().faint_bg_color,
-                ),
+        // Selected (or keyboard-focused): outlined as a selected tile is; hovered: the faint fill.
+        let outlined = selected == Some(guide.check) || response.has_focus();
+        if outlined || response.hovered() {
+            let visuals = ui.visuals();
+            let fill = if response.hovered() {
+                visuals.faint_bg_color
+            } else {
+                egui::Color32::TRANSPARENT
+            };
+            let stroke = if outlined {
+                egui::Stroke::new(1.0, visuals.strong_text_color())
+            } else {
+                egui::Stroke::NONE
+            };
+            let shape = egui::epaint::RectShape::new(
+                rect.expand2(egui::vec2(2.0, 1.0)),
+                4.0,
+                fill,
+                stroke,
+                egui::StrokeKind::Inside,
             );
+            ui.painter().set(background, shape);
         }
         if response.clicked() {
             clicked = Some(guide.check);
@@ -154,9 +167,10 @@ mod tests {
         YOUR_DESIGN, design_status, design_status_text,
     };
     use crate::gui::test_support::{
-        drawn_texts, flat_shapes, hover_frames, only_the_clamp_fails, only_the_gearbox_fails,
-        only_the_joint_fails, passing_design, primary_button, reversed_hub_band, short_magnets,
-        sized_frame, text_center, text_color, text_rect, with_poles,
+        drawn_texts, flat_shapes, hover_frames, key_tap, only_the_clamp_fails,
+        only_the_gearbox_fails, only_the_joint_fails, passing_design, primary_button,
+        reversed_hub_band, short_magnets, sized_frame, text_center, text_color, text_rect,
+        with_poles,
     };
 
     /// The defaults with `edit` applied.
@@ -393,21 +407,45 @@ mod tests {
         ];
         let (_, clicked) = frames(&ctx, &inputs, false, None, click);
         assert_eq!(clicked, Some(gearbox.check));
-        // The selected row sits on the raised panel colour, and no other does.
-        let raised = |selected| {
+        // The selected row is outlined in the strong text colour, as a selected tile is, and no
+        // other is (review UXQ-2); a hover fills a row faintly and outlines nothing.
+        let row_marks = |selected, events: Vec<Vec<egui::Event>>, label: &str| {
             let ctx = egui::Context::default();
-            let fill = ctx.style().visuals.faint_bg_color;
-            let (output, _) = frames(&ctx, &inputs, false, selected, Vec::new());
-            let label = text_rect(&output, gearbox.label).unwrap();
-            flat_shapes(&output)
+            let visuals = ctx.style().visuals.clone();
+            let (output, _) = frames(&ctx, &inputs, false, selected, events);
+            let label = text_rect(&output, label).unwrap();
+            let rects: Vec<_> = flat_shapes(&output)
                 .into_iter()
-                .filter(|shape| {
-                    matches!(shape, egui::Shape::Rect(r) if r.fill == fill && r.rect.contains_rect(label))
+                .filter_map(|shape| match shape {
+                    egui::Shape::Rect(r) if r.rect.contains_rect(label) => Some(r),
+                    _ => None,
                 })
-                .count()
+                .collect();
+            let outlined = rects
+                .iter()
+                .filter(|r| r.stroke == egui::Stroke::new(1.0, visuals.strong_text_color()))
+                .count();
+            let filled = rects
+                .iter()
+                .filter(|r| r.fill == visuals.faint_bg_color)
+                .count();
+            (outlined, filled)
         };
-        assert_eq!((raised(None), raised(Some(gearbox.check))), (0, 1));
-        assert_eq!(raised(Some("metal.hot_min_check")), 0);
+        assert_eq!(row_marks(None, Vec::new(), gearbox.label), (0, 0));
+        assert_eq!(
+            row_marks(Some(gearbox.check), Vec::new(), gearbox.label),
+            (1, 0)
+        );
+        assert_eq!(
+            row_marks(Some("metal.hot_min_check"), Vec::new(), gearbox.label),
+            (0, 0)
+        );
+        let hover = vec![vec![egui::Event::PointerMoved(at)]];
+        assert_eq!(row_marks(None, hover, gearbox.label), (0, 1));
+        // A row the keyboard reached is outlined too (review UXQ-3): Tab focuses the first row.
+        let first = CHECK_GUIDES[0].label;
+        let tab = vec![key_tap(egui::Key::Tab), Vec::new()];
+        assert_eq!(row_marks(None, tab, first), (1, 0));
     }
 
     #[test]

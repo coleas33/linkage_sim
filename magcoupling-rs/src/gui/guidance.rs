@@ -1,8 +1,9 @@
 //! Check guides (guidance slice 1, spec 3.4 and 4.1): under a dashboard check that fails or
 //! asks for a look, what is wrong in this design's numbers (the Problem), why the check
 //! matters (the Why, one plain sentence) and which inputs to move which way (the Fix); where
-//! each dashboard row's "Why:" link leads ([`Learn`], [`row_learn`]); and the design status
-//! line that counts the failing checks ([`design_status`]).
+//! each dashboard row's "Full lesson:" link leads in its Explain entry ([`Learn`],
+//! [`row_learn`]); and the design status line that counts the failing checks
+//! ([`design_status`]).
 //!
 //! [`CHECK_GUIDES`] holds one guide per check of the dashboard's rows
 //! ([`crate::gui::dashboard::DASHBOARD`]) and one for the Magnets fit row ([`FIT_CHECK`]),
@@ -97,7 +98,7 @@ impl Direction {
     }
 }
 
-/// Where a dashboard row's "Why:" link leads.
+/// Where a dashboard row's "Full lesson:" link (in its Explain entry) leads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Learn {
     /// A teaching note by id; every one named here has passed the accuracy gate
@@ -135,7 +136,7 @@ pub struct CheckGuide {
     pub why: &'static str,
     /// The inputs to move and which way; [`fixes`] gives the ones to show for a design.
     pub fixes: Fixes,
-    /// Where the row's "Why:" link leads.
+    /// Where the row's "Full lesson:" link (in its Explain entry) leads.
     pub learn: Learn,
 }
 
@@ -574,8 +575,8 @@ pub static CHECK_GUIDES: [CheckGuide; 10] = [
     FIT_GUIDE,
 ];
 
-/// Where each dashboard row's "Why:" link leads, in [`DASHBOARD`]'s order (spec 3.4: every
-/// row has one). A row with a check leads where its guide does; a value row to the reviewed
+/// Where each dashboard row's "Full lesson:" link leads, in [`DASHBOARD`]'s order (spec 3.4:
+/// every row has one). A row with a check leads where its guide does; a value row to the reviewed
 /// note that explains its equation, an assumption's rationale, or the reason there is none.
 pub static ROW_LEARN: [(&str, Learn); DASHBOARD.len()] = [
     ("model.pullout_Nm", Learn::Note("pullout_angle")),
@@ -620,8 +621,8 @@ pub static ROW_LEARN: [(&str, Learn); DASHBOARD.len()] = [
     (END_EFFECT, END_EFFECT_GUIDE.learn),
 ];
 
-/// Where the "Why:" link of the dashboard row at `path` leads ([`ROW_LEARN`]); `None` for a
-/// path that is no dashboard row.
+/// Where the "Full lesson:" link of the dashboard row at `path` leads ([`ROW_LEARN`]); `None`
+/// for a path that is no dashboard row.
 pub fn row_learn(path: &str) -> Option<Learn> {
     ROW_LEARN
         .iter()

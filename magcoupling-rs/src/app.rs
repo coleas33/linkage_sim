@@ -694,11 +694,13 @@ mod tests {
                         "{size:?}: a tile's number {number:?} between {size_column:?} and {checks:?}"
                     );
                 }
-                // The four tiles take one row where the centre holds four of the narrowest, else
-                // two rows of two.
+                // The four tiles take one row where the centre holds four of the narrowest (the
+                // laptop and the desktop windows: the smoke run's "four tiles side by side"),
+                // else two rows of two (review TQ-1).
                 let tops: std::collections::BTreeSet<i32> =
                     numbers.iter().map(|n| n.top().round() as i32).collect();
-                assert!(tops.len() <= 2, "{size:?}: {numbers:?}");
+                let rows = if size.x >= WINDOWS[0].x { 1 } else { 2 };
+                assert_eq!(tops.len(), rows, "{size:?}: {numbers:?}");
                 // The drawing: the largest plate in the background colour.
                 let drawing = flat_shapes(&output)
                     .into_iter()
@@ -1606,6 +1608,13 @@ mod tests {
             }
             let hot_low = crate::gui::guidance::guide("metal.hot_min_check").expect("its guide");
             assert!(script.contains(hot_low.label), "the check the step opens");
+            // The link the step clicks opens a reviewed note with "What to change" lines, not
+            // the plain "no note yet" text, which is no link (review TQ-3).
+            let crate::gui::guidance::Learn::Note(id) = hot_low.learn else {
+                panic!("the hot-low check's lesson is a note: {:?}", hot_low.learn);
+            };
+            let note = crate::gui::explorer::reviewed_note(id).expect("a reviewed note");
+            assert!(!note.change.is_empty(), "{id}: its What to change lines");
             let entry = script
                 .find("check_entry=true")
                 .expect("the entry's verdict");

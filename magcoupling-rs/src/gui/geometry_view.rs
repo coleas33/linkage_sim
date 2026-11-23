@@ -228,7 +228,7 @@ fn drawing_height(available: f32, list: f32, row: f32) -> f32 {
 
 /// The height of a row of the callout list under the drawing [points]: a body text row and the
 /// item spacing, as [`geometry_ui`] reserves it.
-pub(crate) fn list_row(ui: &egui::Ui) -> f32 {
+fn list_row(ui: &egui::Ui) -> f32 {
     ui.text_style_height(&egui::TextStyle::Body) + ui.spacing().item_spacing.y
 }
 

@@ -682,6 +682,15 @@ pub(crate) fn end_effect_banner_ui(
     true
 }
 
+/// The check whose level badges the dashboard row at `path`; `None` for a row with no badge
+/// or a path that is no row.
+pub(crate) fn badging_check(path: &str) -> Option<&'static str> {
+    DASHBOARD
+        .iter()
+        .find(|&&(row, _)| row == path)
+        .and_then(|&(_, check)| check)
+}
+
 /// The dashboard rows of `results`.
 pub fn dashboard_lines(results: &DesignResults) -> Vec<DashboardLine> {
     DASHBOARD
