@@ -36,9 +36,7 @@ use crate::gui::checks::{CHECKS_SHARE, checks_ui};
 use crate::gui::clamp_drawing::clamp_ui;
 use crate::gui::dashboard::{Level, end_effect_banner_ui, why_note_link};
 use crate::gui::explain::{Asked, Selection, explain_ui};
-use crate::gui::explorer::{
-    EQUATION_PANEL, Explorer, FOCUS_WIDTH, explorer_ui, held_reason, panel_heights,
-};
+use crate::gui::explorer::{Explorer, FOCUS_WIDTH, explorer_ui, held_reason, panel_heights};
 use crate::gui::format::search_needle;
 use crate::gui::geometry::wall_cautions;
 use crate::gui::geometry_view::geometry_ui;
@@ -77,11 +75,20 @@ use crate::{DesignInputs, DesignResults, compute_all};
 /// The heading of the panel.
 pub const HEADING: &str = "Magnetic coupling calculator";
 
-/// The label of the button that restores the default design.
+/// The top bar's menu of the actions on the whole design (UX overhaul spec 4.2): the reset,
+/// the example design, the file's save and load, and the details toggle (decision C-12).
+pub const DESIGN_MENU: &str = "Design";
+
+/// The Design menu's item that restores the baseline on a panel whose baseline is the
+/// spreadsheet's design (a host's, or a test's, panel built with `MagcouplingPanel::new`).
 pub const RESET_ALL: &str = "Reset all";
 
-/// The header button that opens the spreadsheet's design (UX overhaul spec 7.1), shown on a
-/// panel whose baseline is another design: there Reset all no longer reaches it.
+/// The same item on a panel whose baseline is another design: the app's, which opens on the
+/// starting design (UX overhaul spec 4.2 and 7.1).
+pub const RESET_TO_START: &str = "Reset to the starting design";
+
+/// The Design menu's item that opens the spreadsheet's design (UX overhaul spec 7.1), shown on
+/// a panel whose baseline is another design: there the reset no longer reaches it.
 pub const OPEN_EXAMPLE: &str = "Open the example design";
 
 /// The status line after [`OPEN_EXAMPLE`].
@@ -92,7 +99,10 @@ pub const UNDO: &str = "Undo";
 pub const REDO: &str = "Redo";
 pub const SAVE_DESIGN: &str = "Save design";
 pub const LOAD_DESIGN: &str = "Load design";
-pub const COPY_SHARE_LINK: &str = "Copy share link";
+
+/// The top bar's button that copies the link of the design shown (UX overhaul spec 4.2: the
+/// action of the button it replaces, "Copy share link").
+pub const SHARE: &str = "Share";
 
 /// The header's toggle of the provenance lines (spec S2-5), off when a panel opens: with it on,
 /// the hover texts add the internal name, the original spreadsheet cell and note and the
@@ -104,9 +114,9 @@ pub const SHOW_DETAILS: &str = "Show spreadsheet details";
 /// The hover text of [`SHOW_DETAILS`].
 pub const SHOW_DETAILS_HINT: &str = "Show where each value comes from in the original spreadsheet: its cell, its internal name, the corrections that change it and each assumption's source";
 
-/// The header's spreadsheet button (decision X-8; the results table has its own, beside the CSV
-/// and JSON exports).
-pub const EXPORT_SPREADSHEET: &str = "Export spreadsheet";
+/// The top bar's spreadsheet button (decision X-8; UX overhaul spec 4.2 shortens its name from
+/// "Export spreadsheet"; the results table has its own, beside the CSV and JSON exports).
+pub const EXPORT: &str = "Export";
 
 /// The file name a saved design suggests.
 pub const DESIGN_FILE_NAME: &str = "magcoupling-design.json";
@@ -1106,7 +1116,7 @@ impl MagcouplingPanel {
             ui.separator();
             let can_undo = self.history.can_undo(&design);
             if ui
-                .add_enabled(can_undo, egui::Button::new(UNDO))
+                .add_enabled(can_undo, bar_button(UNDO))
                 .on_hover_text("Ctrl+Z")
                 .clicked()
             {
@@ -1114,39 +1124,17 @@ impl MagcouplingPanel {
             }
             let can_redo = self.history.can_redo(&design);
             if ui
-                .add_enabled(can_redo, egui::Button::new(REDO))
+                .add_enabled(can_redo, bar_button(REDO))
                 .on_hover_text("Ctrl+Shift+Z or Ctrl+Y")
                 .clicked()
             {
                 self.redo();
             }
-            if ui.button(RESET_ALL).clicked() {
-                self.reset();
-                self.status = Some("Default design restored".to_owned());
-            }
-            // Where the baseline is the spreadsheet's design, Reset all already opens it.
-            if self.baseline != *workbook_defaults()
-                && ui
-                    .button(OPEN_EXAMPLE)
-                    .on_hover_text(EXAMPLE_DESIGN_HOVER)
-                    .clicked()
-            {
-                self.open_example_design();
-                self.status = Some(EXAMPLE_OPENED.to_owned());
-            }
             ui.separator();
-            if ui.button(SAVE_DESIGN).clicked() {
-                self.requests.push(PanelRequest::SaveFile {
-                    file_name: DESIGN_FILE_NAME.to_owned(),
-                    mime: "application/json",
-                    contents: design_to_json(&design).into_bytes(),
-                });
-            }
-            if ui.button(LOAD_DESIGN).clicked() {
-                self.requests.push(PanelRequest::OpenDesign);
-            }
+            egui::containers::menu::MenuButton::from_button(bar_button(DESIGN_MENU))
+                .ui(ui, |ui| self.design_menu_ui(ui, &design));
             if ui
-                .button(COPY_SHARE_LINK)
+                .add(bar_button(SHARE))
                 .on_hover_text("A link that opens this design, sizing state included")
                 .clicked()
             {
@@ -1158,35 +1146,13 @@ impl MagcouplingPanel {
                 ui.ctx().copy_text(link);
             }
             if ui
-                .button(EXPORT_SPREADSHEET)
+                .add(bar_button(EXPORT))
                 .on_hover_text(
                     "This design and its results as an .xlsx workbook laid out as this page (values, no formulas)",
                 )
                 .clicked()
             {
                 self.export_spreadsheet();
-            }
-            ui.separator();
-            if ui
-                .selectable_label(self.explorer.open, EQUATION_PANEL)
-                .on_hover_text("Show or hide the equation of the value clicked")
-                .clicked()
-            {
-                if self.explorer.open {
-                    self.explorer.close();
-                } else {
-                    self.explorer.open = true;
-                }
-            }
-            ui.separator();
-            // The frame's readouts were set up before the header: the next frame draws every
-            // view with the new setting.
-            if ui
-                .checkbox(&mut self.show_details, SHOW_DETAILS)
-                .on_hover_text(SHOW_DETAILS_HINT)
-                .changed()
-            {
-                ui.ctx().request_repaint();
             }
         });
         // Spec Addendum A3: the banner while any assumption differs from its workbook default.
@@ -1213,6 +1179,58 @@ impl MagcouplingPanel {
             ui.colored_label(ui.visuals().error_fg_color, error);
         } else if let Some(status) = &self.status {
             ui.weak(status);
+        }
+    }
+
+    /// The Design menu (UX overhaul spec 4.2): the reset to the baseline, the example design
+    /// where the baseline is another, the file's save and load of `design`, and the details
+    /// toggle (decision C-12). A click on an item closes the menu.
+    fn design_menu_ui(&mut self, ui: &mut egui::Ui, design: &Design) {
+        if ui.button(self.reset_label()).clicked() {
+            self.reset();
+            self.status = Some("Default design restored".to_owned());
+        }
+        // Where the baseline is the spreadsheet's design, the reset already opens it.
+        if self.baseline != *workbook_defaults()
+            && ui
+                .button(OPEN_EXAMPLE)
+                .on_hover_text(EXAMPLE_DESIGN_HOVER)
+                .clicked()
+        {
+            self.open_example_design();
+            self.status = Some(EXAMPLE_OPENED.to_owned());
+        }
+        ui.separator();
+        if ui.button(SAVE_DESIGN).clicked() {
+            self.requests.push(PanelRequest::SaveFile {
+                file_name: DESIGN_FILE_NAME.to_owned(),
+                mime: "application/json",
+                contents: design_to_json(design).into_bytes(),
+            });
+        }
+        if ui.button(LOAD_DESIGN).clicked() {
+            self.requests.push(PanelRequest::OpenDesign);
+        }
+        ui.separator();
+        // The frame's readouts were set up before the header: the next frame draws every
+        // view with the new setting.
+        if ui
+            .checkbox(&mut self.show_details, SHOW_DETAILS)
+            .on_hover_text(SHOW_DETAILS_HINT)
+            .changed()
+        {
+            ui.ctx().request_repaint();
+        }
+    }
+
+    /// The Design menu's reset: [`RESET_TO_START`] where the baseline is not the spreadsheet's
+    /// design, [`RESET_ALL`] where it is (there the starting design and the example design are
+    /// one).
+    fn reset_label(&self) -> &'static str {
+        if self.baseline == *workbook_defaults() {
+            RESET_ALL
+        } else {
+            RESET_TO_START
         }
     }
 
@@ -1671,6 +1689,12 @@ pub(crate) fn assumptions_banner(inputs: &DesignInputs, clamps_paused: bool) -> 
     })
 }
 
+/// A button of the top bar: its words alone at rest, its box while the pointer is on it (stage 1
+/// review S-3; UX overhaul spec 4.1's bar of words).
+fn bar_button(text: &str) -> egui::Button<'_> {
+    egui::Button::new(text).frame_when_inactive(false)
+}
+
 /// The colour of a sizing status line ([`SizingRunner::status`]): good when solved, weak while
 /// solving, bad otherwise (not reachable, no valid value, refused).
 fn status_color(status: &str, visuals: &egui::Visuals) -> egui::Color32 {
@@ -1904,6 +1928,12 @@ mod tests {
             let output = self.frame(Vec::new());
             let rect = text_rect(&output, text).unwrap_or_else(|| panic!("no text {text:?}"));
             self.click(rect.center())
+        }
+
+        /// Opens the top bar's Design menu and clicks its item `item` (UX overhaul spec 4.2).
+        fn menu(&mut self, item: &str) -> egui::FullOutput {
+            self.click_text(DESIGN_MENU);
+            self.click_text(item)
         }
 
         fn number(&self, path: &str) -> f64 {
@@ -2339,21 +2369,98 @@ mod tests {
     }
 
     #[test]
+    fn the_top_bar_is_undo_redo_design_share_and_export_and_the_menu_holds_the_rest() {
+        // UX overhaul spec 4.2: the reset, the example design, the file's save and load and
+        // the details toggle in the Design menu; Share and Export on the bar; no Equation panel
+        // button (decision C-11).
+        use crate::gui::explorer::EQUATION_PANEL;
+        let mut harness = Harness::with_baseline(passing_design(), SCREEN);
+        let output = harness.frame(Vec::new());
+        let bar = text_rect(&output, HEADING).expect("the title");
+        let in_bar = |output: &egui::FullOutput, text: &str| {
+            text_rect(output, text).is_some_and(|r| (r.center().y - bar.center().y).abs() < 20.0)
+        };
+        for text in [UNDO, REDO, DESIGN_MENU, SHARE, EXPORT] {
+            assert!(in_bar(&output, text), "{text} on the bar");
+        }
+        let menu = [
+            RESET_TO_START,
+            OPEN_EXAMPLE,
+            SAVE_DESIGN,
+            LOAD_DESIGN,
+            SHOW_DETAILS,
+        ];
+        for text in menu.iter().chain(&[EQUATION_PANEL, RESET_ALL]) {
+            assert_eq!(count(&output, text), 0, "{text} not on the first view");
+        }
+        // Left to right: Undo, Redo, Design, Share, Export.
+        let lefts: Vec<f32> = [UNDO, REDO, DESIGN_MENU, SHARE, EXPORT]
+            .iter()
+            .map(|t| text_rect(&output, t).unwrap().left())
+            .collect();
+        assert!(lefts.windows(2).all(|w| w[0] < w[1]), "{lefts:?}");
+        // The menu, under its button, top to bottom.
+        harness.click_text(DESIGN_MENU);
+        let output = harness.frame(Vec::new());
+        let tops: Vec<f32> = menu
+            .iter()
+            .map(|t| text_rect(&output, t).unwrap_or_else(|| panic!("{t}")).top())
+            .collect();
+        assert!(tops.windows(2).all(|w| w[0] < w[1]), "{tops:?}");
+        assert!(tops[0] > bar.bottom(), "under the bar");
+        // Opening the menu edits nothing.
+        assert_eq!(harness.panel.history.undo_len(), 0);
+    }
+
+    #[test]
+    fn the_top_bar_s_buttons_show_their_box_only_under_the_pointer() {
+        // Stage 1 review S-3: a word at rest, a box while hovered.
+        use crate::gui::test_support::flat_shapes;
+        let boxed = |output: &egui::FullOutput, text: &str| {
+            let at = text_rect(output, text).unwrap();
+            flat_shapes(output).iter().any(|shape| match shape {
+                // A button's box, not the bar's own fill behind it.
+                egui::Shape::Rect(r) => {
+                    r.rect.contains_rect(at) && r.rect.width() < 200.0 && r.fill.a() > 0
+                }
+                _ => false,
+            })
+        };
+        let mut harness = Harness::new();
+        let output = harness.frame(Vec::new());
+        for text in [DESIGN_MENU, SHARE, EXPORT] {
+            assert!(!boxed(&output, text), "{text} at rest");
+        }
+        let at = text_rect(&output, SHARE).unwrap().center();
+        harness.frame(vec![egui::Event::PointerMoved(at)]);
+        let output = harness.frame(Vec::new());
+        assert!(boxed(&output, SHARE), "Share hovered");
+        assert!(!boxed(&output, EXPORT), "Export not hovered");
+    }
+
+    #[test]
     fn the_details_toggle_starts_off_and_a_click_turns_it_on_and_off() {
         let mut harness = Harness::new();
         assert!(!harness.panel.show_details);
         assert!(!MagcouplingPanel::default().show_details);
         tooltips_at_once(&harness.ctx);
+        // In the Design menu (decision C-12), not on the bar.
+        assert_eq!(count(&harness.frame(Vec::new()), SHOW_DETAILS), 0);
+        harness.click_text(DESIGN_MENU);
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, SHOW_DETAILS), 1);
         // Its hover says what it shows.
+        // egui holds a tooltip back while the click that opened the menu is newer than the
+        // pointer's last move: the move comes a second later.
         let at = text_rect(&output, SHOW_DETAILS).unwrap().center();
-        harness.frame(vec![egui::Event::PointerMoved(at)]);
+        harness.frame_after(1.0, vec![egui::Event::PointerMoved(at)]);
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, SHOW_DETAILS_HINT), 1);
         harness.click_text(SHOW_DETAILS);
         assert!(harness.panel.show_details);
-        harness.click_text(SHOW_DETAILS);
+        // The click closed the menu.
+        assert_eq!(count(&harness.frame(Vec::new()), SHOW_DETAILS), 0);
+        harness.menu(SHOW_DETAILS);
         assert!(!harness.panel.show_details);
     }
 
@@ -2391,7 +2498,7 @@ mod tests {
         let mut harness = Harness::new();
         let file = design_to_json(&harness.panel.design());
         let link = harness.panel.share_link();
-        harness.click_text(SHOW_DETAILS);
+        harness.menu(SHOW_DETAILS);
         assert!(harness.panel.show_details);
         assert_eq!(harness.panel.design(), Design::default());
         assert_eq!(design_to_json(&harness.panel.design()), file);
@@ -2406,7 +2513,7 @@ mod tests {
         harness.click_text(UNDO);
         assert_eq!(harness.panel.design(), Design::default());
         kept(&mut harness, "undo");
-        harness.click_text(RESET_ALL);
+        harness.menu(RESET_ALL);
         kept(&mut harness, "reset all");
         harness
             .panel
@@ -4272,8 +4379,8 @@ mod tests {
         assert!(harness.panel.take_requests().is_empty());
         harness.focus(FACE_GAP);
         harness.frame(key_tap(egui::Key::ArrowRight));
-        // The header's button, then the results table's.
-        harness.click_text(EXPORT_SPREADSHEET);
+        // The top bar's button, then the results table's.
+        harness.click_text(EXPORT);
         harness.click_text(CentreView::Results.label());
         harness.click_text(EXPORT_XLSX);
         let books = queued_spreadsheets(&mut harness);
@@ -4306,7 +4413,7 @@ mod tests {
         let mut harness = Harness::new();
         // The workbook order: the Inputs sheet's first heading is the first package group's.
         harness.click_text(InputOrder::Workbook.label());
-        harness.click_text(EXPORT_SPREADSHEET);
+        harness.click_text(EXPORT);
         let books = queued_spreadsheets(&mut harness);
         let first_group = InputCatalogue::get().groups[0].label;
         assert_eq!(
@@ -4315,7 +4422,7 @@ mod tests {
         );
         // Torque -> Magnets: the solved length, noted, and the sizing on the Summary.
         harness.size();
-        harness.click_text(EXPORT_SPREADSHEET);
+        harness.click_text(EXPORT);
         let books = queued_spreadsheets(&mut harness);
         let (summary, inputs) = (&books[0][0].1, &books[0][1].1);
         assert_eq!(
@@ -4351,7 +4458,7 @@ mod tests {
         harness.frame(key_tap(egui::Key::ArrowRight));
         assert_ne!(harness.panel.inputs(), &DesignInputs::default());
 
-        harness.click_text(RESET_ALL);
+        harness.menu(RESET_ALL);
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
         assert_eq!(
             harness.panel.results(),
@@ -4638,7 +4745,7 @@ mod tests {
         let mut harness = Harness::new();
         harness.focus(FACE_GAP);
         harness.frame(key_tap(egui::Key::ArrowRight));
-        harness.click_text(RESET_ALL);
+        harness.menu(RESET_ALL);
         assert_eq!(harness.panel.design(), Design::default());
         harness.click_text(UNDO);
         assert_eq!(harness.panel.design(), gap_design(1.41));
@@ -4679,7 +4786,7 @@ mod tests {
         harness.panel.set_sizing_mode(SizingMode::TorqueToMagnets);
         harness.frame(Vec::new());
         assert_ne!(harness.panel.design(), start);
-        harness.click_text(RESET_ALL);
+        harness.menu(RESET_TO_START);
         assert_eq!(harness.panel.design(), start);
         assert_eq!(harness.panel.results(), &compute_all(&baseline));
         // Reset all is an edit like any other: Undo brings the changed design back.
@@ -4697,7 +4804,7 @@ mod tests {
         harness.panel.inputs.metal.cup_wall_corner_mm = 2.05;
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, "Your design: passes all 10 checks"), 1);
-        harness.click_text(RESET_ALL);
+        harness.menu(RESET_TO_START);
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, "Starting design: passes all 10 checks"), 1);
     }
@@ -4708,7 +4815,7 @@ mod tests {
         // then show what the baseline changed; Reset all still returns to the baseline.
         let baseline = passing_design();
         let mut harness = Harness::with_baseline(baseline.clone(), SCREEN);
-        harness.click_text(OPEN_EXAMPLE);
+        harness.menu(OPEN_EXAMPLE);
         assert_eq!(harness.panel.design(), Design::default());
         assert_eq!(harness.panel.history.undo_len(), 1);
         let output = harness.frame(Vec::new());
@@ -4724,7 +4831,7 @@ mod tests {
         assert_eq!(count(&output, CHANGED_DOT), 0);
         harness.click_text(REDO);
         assert_eq!(harness.panel.design(), Design::default());
-        harness.click_text(RESET_ALL);
+        harness.menu(RESET_TO_START);
         assert_eq!(harness.panel.design(), design_at(&baseline));
     }
 
@@ -4741,6 +4848,10 @@ mod tests {
             EXAMPLE_DESIGN_HOVER,
             OPEN_EXAMPLE,
             EXAMPLE_OPENED,
+            DESIGN_MENU,
+            RESET_TO_START,
+            SHARE,
+            EXPORT,
         ] {
             assert_eq!(plain_text_violations(text), Vec::<&str>::new(), "{text:?}");
             assert!(!mentions_gearbox_protection(text), "{text:?}");
@@ -4761,11 +4872,24 @@ mod tests {
 
     #[test]
     fn a_panel_whose_baseline_is_the_spreadsheet_s_design_has_no_example_button() {
-        // Reset all already opens it there, and the header stays as it was (spec 8.1, test 2).
+        // Reset all already opens it there, and the Design menu keeps the reset's old name
+        // (spec 8.1, test 2).
         let mut harness = Harness::new();
-        assert_eq!(count(&harness.frame(Vec::new()), OPEN_EXAMPLE), 0);
+        harness.click_text(DESIGN_MENU);
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, OPEN_EXAMPLE), 0);
+        assert_eq!(
+            (count(&output, RESET_ALL), count(&output, RESET_TO_START)),
+            (1, 0)
+        );
         let mut harness = Harness::with_baseline(passing_design(), SCREEN);
-        assert_eq!(count(&harness.frame(Vec::new()), OPEN_EXAMPLE), 1);
+        harness.click_text(DESIGN_MENU);
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, OPEN_EXAMPLE), 1);
+        assert_eq!(
+            (count(&output, RESET_ALL), count(&output, RESET_TO_START)),
+            (0, 1)
+        );
     }
 
     #[test]
@@ -4786,7 +4910,7 @@ mod tests {
         harness.frame(Vec::new());
         harness.click_text(UNDO);
         harness.click_text(REDO);
-        harness.click_text(RESET_ALL);
+        harness.menu(RESET_TO_START);
         harness
             .panel
             .open_share_payload(&encode_share_payload(&Design::default()))
@@ -4899,8 +5023,8 @@ mod tests {
         let mut harness = Harness::new();
         harness.focus(FACE_GAP);
         harness.frame(key_tap(egui::Key::ArrowRight));
-        harness.click_text(SAVE_DESIGN);
-        harness.click_text(LOAD_DESIGN);
+        harness.menu(SAVE_DESIGN);
+        harness.menu(LOAD_DESIGN);
         assert_eq!(
             harness.panel.take_requests(),
             vec![
@@ -4959,7 +5083,7 @@ mod tests {
         harness
             .panel
             .set_share_base("http://localhost:8080/tools/magcoupler/");
-        let output = harness.click_text(COPY_SHARE_LINK);
+        let output = harness.click_text(SHARE);
         let copied: Vec<&String> = output
             .platform_output
             .commands
@@ -5311,6 +5435,7 @@ mod tests {
         }
         texts.push(crate::gui::results_table::CLEAR_TO_CLOSE.to_owned());
         texts.extend([SHOW_DETAILS, SHOW_DETAILS_HINT].map(str::to_owned));
+        texts.extend([RESET_ALL, RESET_TO_START, SAVE_DESIGN, LOAD_DESIGN].map(str::to_owned));
         texts.push(crate::gui::dashboard::MARKER_LEGEND.to_owned());
         texts.push(crate::gui::guidance::EXAMPLE_DESIGN_HOVER.to_owned());
         // The starting design's name and hover, and the example design's button and status
@@ -8159,16 +8284,18 @@ mod tests {
     }
 
     #[test]
-    fn the_equation_panel_starts_closed_and_its_header_button_toggles_it() {
-        use crate::gui::explorer::{CLOSE, EMPTY_TEXT};
+    fn the_equation_panel_starts_closed_with_no_button_on_the_bar_and_a_value_opens_it() {
+        // Decision C-11: the Equation panel opens from a value (a click on a readout, an Explain
+        // entry's Equation link), not from the top bar; its Close button closes it.
+        use crate::gui::explorer::{CLOSE, EQUATION_PANEL};
         let mut harness = Harness::new();
         assert!(!harness.panel.explorer.open);
         let output = harness.frame(Vec::new());
-        assert_eq!(count(&output, EMPTY_TEXT), 0);
-        harness.click_text(EQUATION_PANEL);
-        assert!(harness.panel.explorer.open);
+        assert_eq!(count(&output, EQUATION_PANEL), 0);
+        harness.panel.explorer.open_path("model.pullout_Nm");
+        harness.frame(Vec::new());
         let output = harness.frame(Vec::new());
-        assert_eq!(count(&output, EMPTY_TEXT), 1);
+        assert_eq!(count(&output, EQUATION_PANEL), 1);
         harness.click_text(CLOSE);
         assert!(!harness.panel.explorer.open);
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
@@ -9090,9 +9217,10 @@ mod tests {
     #[test]
     fn closing_the_equation_panel_clears_the_input_row_s_frame() {
         // Decision M43-12: a leaf term frames its row while its equation is shown; closing
-        // the panel, by its Close button or the header's toggle, takes the frame away.
+        // the panel, by its Close button (the only one: decision C-11), takes the frame away.
         use crate::gui::explorer::CLOSE;
-        for close in [CLOSE, EQUATION_PANEL] {
+        {
+            let close = CLOSE;
             let mut harness = Harness::new();
             harness
                 .panel
@@ -9112,8 +9240,7 @@ mod tests {
             let output = harness.frame(Vec::new());
             assert!(focus_rects(&output).is_empty(), "{close}");
             // Shown again, the panel keeps its equation but frames no row.
-            harness.click_text(EQUATION_PANEL);
-            assert!(harness.panel.explorer.open);
+            harness.panel.explorer.open = true;
             assert_eq!(
                 harness.panel.explorer.trail(),
                 ["model.gearbox_input_ripple_Nm"]
@@ -9194,8 +9321,8 @@ mod tests {
     fn start_here_opens_the_matching_equations_in_turn() {
         use crate::engine::explain::notes::{START_HERE, note};
         use crate::gui::explorer::{NEXT, PREVIOUS, START_HERE_BUTTON, STOP, start_here_text};
+        // The Explain panel's orientation starts the walk.
         let mut harness = Harness::new();
-        harness.click_text(EQUATION_PANEL);
         harness.click_text(START_HERE_BUTTON);
         assert_eq!(harness.panel.explorer.current(), Some(START_HERE[0].1));
         let output = harness.frame(Vec::new());
@@ -10130,7 +10257,7 @@ mod tests {
         assert_eq!((status.bad, status.is_default), (3, false));
         assert_eq!(count(&output, &design_status_text(&status)), 1);
         // Reset all: the example again.
-        harness.click_text(RESET_ALL);
+        harness.menu(RESET_ALL);
         let output = harness.frame(Vec::new());
         let status = design_status(harness.panel.inputs(), harness.panel.results(), false);
         assert_eq!((status.bad, status.is_default), (4, true));

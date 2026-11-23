@@ -906,11 +906,9 @@ mod tests {
         let count = |text: &str| texts.iter().filter(|t| *t == text).count();
         assert_eq!(count(STARTING_STATUS), 1, "{texts:?}");
         assert_eq!(count(CHANGED_DOT), 0, "no input is changed at the baseline");
-        assert_eq!(
-            count(crate::gui::OPEN_EXAMPLE),
-            1,
-            "the example design's button"
-        );
+        // The example design is an item of the Design menu, not on the first view.
+        assert_eq!(count(crate::gui::OPEN_EXAMPLE), 0, "{texts:?}");
+        assert_eq!(count(crate::gui::DESIGN_MENU), 1, "{texts:?}");
         // The readouts show the requirement and its margin.
         assert_eq!(count("1.35 N·m"), 1, "{texts:?}");
         // The gap breaks only between its torque and its percent.
