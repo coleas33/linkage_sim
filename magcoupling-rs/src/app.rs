@@ -1851,9 +1851,30 @@ mod tests {
             &script[start..end]
         };
         assert!(
-            between("tooltip_plain=true was judged", "page.goto(").contains(collect),
+            between("input_entry=true was judged", "page.goto(").contains(collect),
             "the first page's console messages are collected before the link is opened again"
         );
+        // UX overhaul slice B, stage 2, part 2b-ii (spec 5.2): after the tooltip a click on the
+        // label it showed beside selects that input, and the step finds the input's entry in the
+        // Explain panel by its trace link, typed once as TRACE_LINK.
+        {
+            use crate::gui::explain::TRACE_LINK;
+            assert_eq!(quoted("TRACE_LINK"), TRACE_LINK, "the script's TRACE_LINK");
+            assert_eq!(
+                script.matches(TRACE_LINK).count(),
+                1,
+                "the smoke prompt types the trace link once, in TRACE_LINK"
+            );
+            assert!(
+                between("tooltip_plain=true only if", "input_entry=true only if")
+                    .contains("click that label"),
+                "the input's entry is judged after the tooltip, from a click on its label"
+            );
+            assert!(
+                between("input_entry=true only if", "page.goto(").contains("Explain panel"),
+                "the input's entry is judged in the Explain panel"
+            );
+        }
         assert!(
             between("drag_moved=true", "then close the browser").contains(collect),
             "the console messages of the page opened again are collected after the drag"
