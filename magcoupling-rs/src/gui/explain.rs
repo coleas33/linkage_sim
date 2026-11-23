@@ -223,10 +223,11 @@ pub(crate) fn explain_ui(
 
 /// The entry of the Size column's row `key` (spec 5.3's input column): its value and its
 /// label; what it is (its label's hover); what sets it (its hint, its what-moves-what lines,
-/// for Minimum OD the floor line, for the four size controls the footnote on what they move);
-/// what a change does (its torque-card row); the checks whose fixes name its input; where two
-/// of them move it opposite ways, the sentence that says so ("Watch out"); and the foot (its Why link's note, and with the spreadsheet details the cell of a row that is one
-/// input). Nothing for a key that is no row's.
+/// for Minimum OD the floor line, for Outside diameter and Overall length the footnote on what
+/// the controls move); what a change does (its torque-card row); the checks whose fixes name
+/// its input; where two of them move it opposite ways, the sentence that says so ("Watch
+/// out"); and the foot (its Why link's note, and with the spreadsheet details the cell of a
+/// row that is one input). Nothing for a key that is no row's.
 fn input_ui(
     ui: &mut egui::Ui,
     key: &'static str,
@@ -325,8 +326,8 @@ fn row_value(row: &SizeRow, shown: &Shown<'_>) -> Option<String> {
 }
 
 /// The lines the Size column drew under the row (spec 4.3): its hint; its what-moves-what lines
-/// ([`Consequences`]); for Minimum OD the diameter range's floor; for the four controls the
-/// torque card steps, [`LINKED_HOUSING`].
+/// ([`Consequences`]); for Minimum OD the diameter range's floor; for Outside diameter and
+/// Overall length, [`LINKED_HOUSING`] unless Auto sets the magnet count.
 fn sets_it_lines(row: &SizeRow, shown: &Shown<'_>) -> Vec<String> {
     let mut lines: Vec<String> = hint_for(row.key).map(str::to_owned).into_iter().collect();
     if let Some(consequences) = shown.consequences {
@@ -344,7 +345,11 @@ fn sets_it_lines(row: &SizeRow, shown: &Shown<'_>) -> Vec<String> {
     {
         lines.push(floor_line(size.minimum_diameter_range.min));
     }
-    if row.card.is_some() {
+    // Its last clause says the magnet count stays, which is false while Auto sets the count;
+    // the gap's and the count's own entries learn nothing from it (owner question 52).
+    if matches!(row.key, DIAMETER_HINT_KEY | LENGTH_HINT_KEY)
+        && shown.auto != Some(FreeVariable::MagnetsPerRing)
+    {
         lines.push(LINKED_HOUSING.to_owned());
     }
     lines
@@ -1518,8 +1523,9 @@ mod tests {
     fn each_size_row_s_entry_is_its_help_its_lines_its_card_row_and_its_lesson() {
         // UX overhaul spec 4.3 and 5.3, test 11 of 8.2 for the size controls: a row's entry is
         // its title, "What it is" (its label's hover), "What sets it" (the lines the column
-        // drew under it: its hint, its what-moves-what lines, Minimum OD's floor, the footnote
-        // on what the four size controls move), "What a change does" (its torque-card row,
+        // drew under it: its hint, its what-moves-what lines, Minimum OD's floor, for Outside
+        // diameter and Overall length the footnote on what the controls move), "What a change
+        // does" (its torque-card row,
         // under the card's heading and caption), then "Full lesson:" and the note its Why link
         // opened, in that order; a heading with nothing under it is left out ("Checks it
         // touches" and "Watch out" have their own test). At the failing example design and at
@@ -1548,7 +1554,7 @@ mod tests {
                     }
                     _ => {}
                 }
-                if row.card.is_some() {
+                if matches!(row.key, DIAMETER_HINT_KEY | LENGTH_HINT_KEY) {
                     lines.push(LINKED_HOUSING.to_owned());
                 }
                 assert_eq!(has(WHAT_SETS_IT), !lines.is_empty(), "{label}");
@@ -1591,12 +1597,47 @@ mod tests {
     }
 
     #[test]
+    fn the_footnote_on_what_the_controls_move_is_in_the_diameter_and_length_entries_alone() {
+        // PT-1 of the 2026-11-23 review: LINKED_HOUSING says nothing new for the gap and the
+        // magnet count, and its "magnet count stay as you set them" is false while Auto sets
+        // the count, so no entry draws it beside the card's Auto line then.
+        let inputs = DesignInputs::default();
+        for auto in [
+            None,
+            Some(FreeVariable::AxialLength),
+            Some(FreeVariable::RingRadius),
+            Some(FreeVariable::MagnetsPerRing),
+        ] {
+            for row in SIZE_ROWS {
+                let ctx = egui::Context::default();
+                let (output, _) = input_frames(&ctx, &inputs, row.key, false, None, auto, vec![]);
+                let texts = drawn_texts(&output);
+                let want = matches!(row.key, DIAMETER_HINT_KEY | LENGTH_HINT_KEY)
+                    && auto != Some(FreeVariable::MagnetsPerRing);
+                assert_eq!(
+                    texts.contains(&LINKED_HOUSING.to_owned()),
+                    want,
+                    "{} under {auto:?}: {texts:?}",
+                    row.label
+                );
+                if auto.is_some() && row.card.is_some() {
+                    assert!(
+                        texts.iter().any(|t| t.contains("Auto")),
+                        "{} under {auto:?}: the card says what Auto does: {texts:?}",
+                        row.label
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
     fn a_size_row_s_title_leads_with_its_value() {
         // Spec 5.3: "Title, with the live value leading", in the panel's number format: an
         // input's value with its unit; Outside diameter, Overall length and Minimum OD the sizes
-        // their sliders set, Minimum OD at the person's preference where one is set. An odd magnet count has no size
-        // controls: Outside diameter's entry has no value and no card row, and keeps its help
-        // and lines.
+        // their sliders set, Minimum OD at the person's preference where one is set. An odd
+        // magnet count has no size controls: Outside diameter's entry has no value and no card
+        // row, and keeps its help and lines.
         let inputs = DesignInputs::default();
         let size = dimensions(&inputs).expect("size controls");
         let mm = |x: f64| value_with_unit(&Value::Num(x), format_value(&Value::Num(x)), "mm");
@@ -1641,7 +1682,8 @@ mod tests {
         // Spec 5.3, "Checks it touches" for an input: the guides whose fixes name it, on the
         // design shown, each with its state's mark and word, a link that selects the check. At
         // the example design the running clearance's and the gearbox input's fixes name the face
-        // gap; a passing design has no fixes, so no entry draws the heading. Minimum OD writes no input and names none.
+        // gap; a passing design has no fixes, so no entry draws the heading. Minimum OD writes
+        // no input and names none.
         let inputs = DesignInputs::default();
         let results = compute_all(&inputs);
         let fixes = all_fixes(&inputs, &results, false);

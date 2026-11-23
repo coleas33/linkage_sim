@@ -302,9 +302,10 @@ click or drag of the slider, an edit, or the keyboard's focus arriving; a hover 
 selects its row: the Explain panel shows the row's entry (`explain::Selection::Input`, keyed by
 `size_controls::SIZE_ROWS`: the input path where the row is one input, the hint key otherwise).
 The entry leads with the value and the label, then "What it is" (the label's hover text), "What
-sets it" (the lines below, which the column drew under the control until then, and for the four
-size controls the line "Outside diameter moves the ring radius; ...", once the column's
-footnote), "What a change does" (the control's row of the torque card, under the card's heading
+sets it" (the lines below, which the column drew under the control until then, and for Outside
+diameter and Overall length the line "Outside diameter moves the ring radius; ...", once the
+column's footnote, left out while Auto sets the magnet count, whose count its last clause says
+stays: owner question 52), "What a change does" (the control's row of the torque card, under the card's heading
 and caption: `TorqueCard::control_lines`), "Checks it touches" (the checks whose fixes on the
 design shown name its input, each a link that selects the check), "Watch out" (where two of those
 checks move it opposite ways, the "pulls two ways" sentence of their entries:

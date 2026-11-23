@@ -39,7 +39,8 @@ pub const LENGTH: &str = "Overall length";
 pub const GAP: &str = "Magnet face gap";
 pub const MAGNETS: &str = "Magnets per ring";
 /// What the size controls move (O-7; [`crate::engine::size_controls`]): the footnote under the
-/// Size column until UX overhaul spec 4.3, a line of each size control's Explain entry since.
+/// Size column until UX overhaul spec 4.3, a line of the Outside diameter and Overall length
+/// Explain entries since, left out while Auto sets the magnet count (owner question 52).
 pub const LINKED_HOUSING: &str = "Outside diameter moves the ring radius; the cap and its thread follow the cup. Overall length sets both rings' magnet length, and the housing follows. Gap and magnet count stay as you set them.";
 
 /// The hover text of the Minimum OD control: what it does.
@@ -162,10 +163,16 @@ pub(crate) fn touched(response: &egui::Response) -> bool {
     response.clicked() || response.drag_started() || response.changed() || response.gained_focus()
 }
 
-/// A control's label, which shows `hover` and selects its row on a click.
-pub(crate) fn row_label(ui: &mut egui::Ui, row: &SizeRow, hover: &str) -> bool {
-    ui.add(egui::Label::new(row.label).sense(egui::Sense::click()))
-        .on_hover_text(hover)
+/// A control's label, in `color` where one is given, which shows its row's help
+/// ([`row_help`]) on hover and selects its row on a click. No Tab stop: the slider after it
+/// takes the keyboard's focus, as egui's own clickable labels do.
+pub(crate) fn row_label(ui: &mut egui::Ui, row: &SizeRow, color: Option<egui::Color32>) -> bool {
+    let mut text = egui::RichText::new(row.label);
+    if let Some(color) = color {
+        text = text.color(color);
+    }
+    ui.add(egui::Label::new(text).sense(egui::Sense::CLICK))
+        .on_hover_text(row_help(row.key))
         .clicked()
 }
 
@@ -424,7 +431,7 @@ pub(crate) fn controls_ui(
                 .expect("the diameter has input metadata");
             let range = legacy.minimum_diameter_range;
             let mut minimum = slider_minimum(&legacy, minimum_diameter_mm);
-            let clicked = row_label(ui, row(MINIMUM_OD_HINT_KEY), MINIMUM_HOVER);
+            let clicked = row_label(ui, row(MINIMUM_OD_HINT_KEY), None);
             let response = ui
                 .push_id("minimum_diameter_mm", |ui| {
                     ui.add(slider(&mut minimum, entry.meta, range))
@@ -447,17 +454,15 @@ pub(crate) fn controls_ui(
             // preference itself is local to this view, like the input ordering preference.
             let size = dimensions_with_minimum_diameter(inputs, minimum)
                 .expect("a bounded minimum defines a diameter range");
-            for (key, hover, mut value, range, mapping) in [
+            for (key, mut value, range, mapping) in [
                 (
                     DIAMETER_HINT_KEY,
-                    DIAMETER_HOVER,
                     size.diameter_mm,
                     size.diameter_range,
                     SliderMapping::Diameter { minimum },
                 ),
                 (
                     LENGTH_HINT_KEY,
-                    LENGTH_HOVER,
                     size.overall_length_mm,
                     size.length_range,
                     SliderMapping::Length,
@@ -465,7 +470,7 @@ pub(crate) fn controls_ui(
             ] {
                 let row = row(key);
                 let path = row.input.expect("a size control writes an input");
-                let clicked = row_label(ui, row, hover);
+                let clicked = row_label(ui, row, None);
                 let entry = catalogue
                     .entry(path)
                     .expect("a size control has input metadata");
@@ -508,7 +513,7 @@ pub(crate) fn controls_ui(
                 Value::Int(value) => value as f64,
                 _ => unreachable!("the gap and magnet count are numbers"),
             };
-            let clicked = row_label(ui, row, help_for(path));
+            let clicked = row_label(ui, row, None);
             let range = slider_range(path).expect("a size control has a slider");
             let response = size_slider(
                 ui,

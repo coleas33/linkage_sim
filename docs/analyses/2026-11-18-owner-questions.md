@@ -363,6 +363,16 @@ Added 2026-11-23 (the next free number). With Auto on, the slider of the size Au
 
 Source: UX design section 4.3; A-26; BL-090 plan, decision D-37.
 
+### 52. Should the sentence on what the size controls move be cut where it repeats the control's own hover?
+
+Added 2026-11-23 (the next free number). The sentence "Outside diameter moves the ring radius; the cap and its thread follow the cup. Overall length sets both rings' magnet length, and the housing follows. Gap and magnet count stay as you set them." was a footnote under the Size column; part 2b-i puts it in the Outside diameter and Overall length entries of the Explain panel. There its first two clauses repeat each control's hover word for word, and its last clause is false while Auto sets the magnet count, so it is left out then. Four hint lines (Minimum OD, Outside diameter, Magnet face gap, Magnets per ring) also say what their hover already says.
+
+- **If you do not answer:** the whole sentence stays in those two entries (not while Auto sets the count), and the four hint lines stay.
+- (a) As the default.
+- (b) Cut the sentence to "Gap and magnet count stay as you set them." and drop the four hint lines.
+
+Source: A-28; BL-090 review of 2026-11-23, findings PT-1 and PT-2.
+
 ### Linkage simulator
 
 ### 23. After the calculator's redesign, should the linkage simulator get a design pass of its own?

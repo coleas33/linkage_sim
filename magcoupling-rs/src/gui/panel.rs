@@ -1324,7 +1324,12 @@ impl MagcouplingPanel {
                 ui.separator();
                 match self.inputs_view {
                     InputsView::Design => self.design_inputs_ui(ui, readouts),
-                    InputsView::Assumptions => self.assumptions_ui(ui, readouts),
+                    InputsView::Assumptions => {
+                        egui::ScrollArea::vertical()
+                            .id_salt("magcoupling_assumptions_scroll")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| self.assumptions_ui(ui, readouts));
+                    }
                 }
             });
         });
@@ -1409,15 +1414,8 @@ impl MagcouplingPanel {
             .expect("the requirement has input metadata");
         let range = entry.meta.range.expect("the requirement has a slider");
         let required = self.inputs.metal.required_min_Nm;
-        let clicked = ui
-            .add(
-                egui::Label::new(
-                    egui::RichText::new(size_controls::REQUIRED)
-                        .color(look::quiet_text(ui.visuals())),
-                )
-                .sense(egui::Sense::click()),
-            )
-            .clicked();
+        let row = size_controls::size_row(REQUIREMENT_INPUT).expect("the requirement has its row");
+        let clicked = size_controls::row_label(ui, row, Some(look::quiet_text(ui.visuals())));
         let mut value = required;
         let response = ui
             .push_id(REQUIREMENT_INPUT, |ui| {
@@ -1438,50 +1436,44 @@ impl MagcouplingPanel {
     /// The Assumptions view (spec Addendum A3 "Toggle panel"): each assumption with its
     /// changed-from-default dot, the rows of its inputs (value, unit, reset: the inputs' own
     /// rows, so an edit here is an edit like any other), its rationale and, with the
-    /// spreadsheet details (spec S2-5), its source.
+    /// spreadsheet details (spec S2-5), its source. No scroll area of its own: the Size
+    /// column's fold scrolls with the column, the inputs side wraps it in one.
     fn assumptions_ui(&mut self, ui: &mut egui::Ui, readouts: &Readouts) {
         let catalogue = InputCatalogue::get();
         let clamps_paused = self.clamps_paused;
-        egui::ScrollArea::vertical()
-            .id_salt("magcoupling_assumptions_scroll")
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                ui.add(egui::Label::new(egui::RichText::new(ASSUMPTIONS_NOTE).weak()).wrap());
-                for state in assumptions::states(&self.inputs) {
-                    let assumption = state.assumption;
-                    // The paused shaft-clamp section's assumptions are left out with it.
-                    if !assumption.shown(clamps_paused) {
-                        continue;
-                    }
-                    ui.add_space(6.0);
-                    ui.horizontal(|ui| {
-                        let dot = if state.modified { CHANGED_DOT } else { " " };
-                        ui.colored_label(look::mark_color(ui.visuals()), dot)
-                            .on_hover_text(crate::gui::input_ui::CHANGED_FROM_DEFAULT);
-                        ui.strong(assumption.label);
-                    });
-                    for path in assumption.paths {
-                        let entry = catalogue
-                            .entry(path)
-                            .expect("an assumption path is an input (tests/assumptions.rs)");
-                        let widget = self.input_row_ui(ui, entry, readouts);
-                        self.design_widgets.push(widget);
-                    }
-                    ui.add(
-                        egui::Label::new(egui::RichText::new(assumption.rationale).weak()).wrap(),
-                    );
-                    if readouts.show_details() {
-                        ui.add(
-                            egui::Label::new(
-                                egui::RichText::new(format!("{SOURCE}: {}", assumption.source))
-                                    .small()
-                                    .weak(),
-                            )
-                            .wrap(),
-                        );
-                    }
-                }
+        ui.add(egui::Label::new(egui::RichText::new(ASSUMPTIONS_NOTE).weak()).wrap());
+        for state in assumptions::states(&self.inputs) {
+            let assumption = state.assumption;
+            // The paused shaft-clamp section's assumptions are left out with it.
+            if !assumption.shown(clamps_paused) {
+                continue;
+            }
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                let dot = if state.modified { CHANGED_DOT } else { " " };
+                ui.colored_label(look::mark_color(ui.visuals()), dot)
+                    .on_hover_text(crate::gui::input_ui::CHANGED_FROM_DEFAULT);
+                ui.strong(assumption.label);
             });
+            for path in assumption.paths {
+                let entry = catalogue
+                    .entry(path)
+                    .expect("an assumption path is an input (tests/assumptions.rs)");
+                let widget = self.input_row_ui(ui, entry, readouts);
+                self.design_widgets.push(widget);
+            }
+            ui.add(egui::Label::new(egui::RichText::new(assumption.rationale).weak()).wrap());
+            if readouts.show_details() {
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(format!("{SOURCE}: {}", assumption.source))
+                            .small()
+                            .weak(),
+                    )
+                    .wrap(),
+                );
+            }
+        }
     }
 
     /// The design inputs: the order toggle and the filter box, then the Key design group (each
@@ -6807,6 +6799,22 @@ mod tests {
             harness.frame(Vec::new());
             assert_eq!(harness.panel.selection, tile, "a hover on {:?}", row.label);
         }
+        // The six sliders: the four controls, Minimum OD, then Required (size_column_ui).
+        let sliders: Vec<egui::Id> = harness.panel.design_widgets[..6].to_vec();
+        for id in sliders {
+            let at = harness
+                .ctx
+                .read_response(id)
+                .expect("the slider has a response")
+                .rect
+                .center();
+            harness.frame(vec![egui::Event::PointerMoved(at)]);
+            harness.frame(Vec::new());
+            assert_eq!(
+                harness.panel.selection, tile,
+                "a hover on the slider at {at:?}"
+            );
+        }
         for row in size_controls::SIZE_ROWS {
             harness.panel.selection = Selection::Nothing;
             let output = harness.frame(Vec::new());
@@ -6826,21 +6834,22 @@ mod tests {
         harness.panel.selection = Selection::Nothing;
         harness.frame(Vec::new());
         // Tab from the slider before it (a focus requested between frames is not one that
-        // arrives) onto the gap's slider.
+        // arrives) onto the gap's slider: two presses, its value box then the gap's slider, so
+        // the gap's label takes no Tab stop.
         let gap = harness.size_widget(GAP).id;
         let length = harness.size_widget(LENGTH).id;
         harness.ctx.memory_mut(|m| m.request_focus(length));
         harness.frame(Vec::new());
         harness.panel.selection = Selection::Nothing;
-        for _ in 0..6 {
-            if harness.ctx.memory(|m| m.has_focus(gap)) {
-                break;
-            }
-            harness.frame(key_tap(egui::Key::Tab));
-        }
+        harness.frame(key_tap(egui::Key::Tab));
+        assert!(
+            !harness.ctx.memory(|m| m.has_focus(gap)),
+            "one press: the value box"
+        );
+        harness.frame(key_tap(egui::Key::Tab));
         assert!(
             harness.ctx.memory(|m| m.has_focus(gap)),
-            "Tab reaches the gap"
+            "Tab reaches the gap in two presses"
         );
         harness.frame(Vec::new());
         assert_eq!(
@@ -6915,6 +6924,48 @@ mod tests {
             0,
             "the Assumptions fold starts closed"
         );
+    }
+
+    #[test]
+    fn the_assumptions_fold_scrolls_with_the_size_column_to_its_last_assumption() {
+        // UXQ-2 of the 2026-11-23 review: the fold drew the Assumptions view's own scroll area
+        // inside the column's, a pane of two rationales at 1024x700 the column could not scroll
+        // past. Opened at 1024x700, a wheel over the column brings the last assumption's
+        // rationale into the window.
+        let size = egui::vec2(1024.0, 700.0);
+        let mut harness = size_tab(size, DesignInputs::default());
+        let output = harness.frame(Vec::new());
+        let header = text_rects(&output, ASSUMPTIONS_FOLD)
+            .into_iter()
+            .find(|rect| rect.right() <= INPUTS_WIDTH)
+            .expect("the fold's header in the Size column");
+        harness.click(header.center());
+        let paused = harness.panel.clamps_paused;
+        let last = assumptions::states(&harness.panel.inputs)
+            .into_iter()
+            .rev()
+            .find(|state| state.assumption.shown(paused))
+            .expect("an assumption is shown")
+            .assumption
+            .rationale;
+        let output = harness.frame(Vec::new());
+        assert!(
+            text_rect(&output, last).is_none_or(|rect| rect.top() > size.y),
+            "the last rationale is in view before a scroll: the test would prove nothing"
+        );
+        harness.frame(vec![egui::Event::PointerMoved(header.center())]);
+        harness.frame(vec![egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -20000.0),
+            modifiers: egui::Modifiers::NONE,
+        }]);
+        // egui spreads a wheel step over several frames.
+        let mut output = harness.frame(Vec::new());
+        for _ in 0..20 {
+            output = harness.frame(Vec::new());
+        }
+        let rect = text_rect(&output, last).expect("the last rationale is drawn");
+        assert!(rect.bottom() <= size.y, "{rect:?} below the window's foot");
     }
 
     #[test]
@@ -7149,8 +7200,9 @@ mod tests {
     fn size_tab_magnet_slider_ends_show_only_the_neighbour_in_range() {
         // Spec 5, as the torque card's count row has it (slice 3, decision 7A): at 4 or 40
         // magnets per ring the side past the slider reads END_OF_RANGE, drawn in the control's
-        // entry as its card row, the side inside it is a step, and no text names 2 or 42 magnets. The default blocks do
-        // not fit 40 magnets (the card reads its one line there); forty narrow blocks do.
+        // entry as its card row, the side inside it is a step, and no text names 2 or 42
+        // magnets. The default blocks do not fit 40 magnets (the card reads its one line
+        // there); forty narrow blocks do.
         use crate::gui::test_support::forty_narrow_magnets;
         use crate::gui::torque_card::END_OF_RANGE;
         for (inputs, past, inside) in [
