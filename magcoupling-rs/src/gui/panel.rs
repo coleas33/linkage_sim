@@ -87,6 +87,12 @@ pub const RESET_ALL: &str = "Reset all";
 /// starting design (UX overhaul spec 4.2 and 7.1).
 pub const RESET_TO_START: &str = "Reset to the starting design";
 
+/// The status line after [`RESET_ALL`].
+const DEFAULT_RESTORED: &str = "Default design restored";
+
+/// The status line after [`RESET_TO_START`]: the item's name for the design.
+const STARTING_RESTORED: &str = "Starting design restored";
+
 /// The Design menu's item that opens the spreadsheet's design (UX overhaul spec 7.1), shown on
 /// a panel whose baseline is another design: there the reset no longer reaches it.
 pub const OPEN_EXAMPLE: &str = "Open the example design";
@@ -747,8 +753,7 @@ impl MagcouplingPanel {
         // A note asked for anywhere (a Why link, a warning's link, an entry's lesson link)
         // shows in the Explain panel (UX overhaul spec 5.2, decision C-11).
         if let Some(id) = events.note.take() {
-            self.selection = Selection::Note(id);
-            ui.ctx().request_repaint();
+            self.show_note(ui.ctx(), id);
         }
         // A fix on an input the Size tab names (the Outside diameter, contract C-4) opens that
         // tab, where its slider is, instead of the input's row.
@@ -850,7 +855,7 @@ impl MagcouplingPanel {
             Some(Asked::Equation(path)) => self.explorer.open_path(path),
             Some(Asked::StartHere) => {
                 if let Some(id) = self.explorer.start(0) {
-                    self.selection = Selection::Note(id);
+                    self.show_note(ui.ctx(), id);
                 }
             }
             None => {}
@@ -999,8 +1004,7 @@ impl MagcouplingPanel {
                 .inner;
             // A lesson link or a Start here step: its note in the Explain panel (spec 5.5).
             if let Some(id) = note {
-                self.selection = Selection::Note(id);
-                ui.ctx().request_repaint();
+                self.show_note(ui.ctx(), id);
             }
         }
         // egui's panel only shrinks the region's cursor: a widget laid out after it may still
@@ -1204,11 +1208,19 @@ impl MagcouplingPanel {
 
     /// The Design menu (UX overhaul spec 4.2): the reset to the baseline, the example design
     /// where the baseline is another, the file's save and load of `design`, and the details
-    /// toggle (decision C-12). A click on an item closes the menu.
+    /// toggle (decision C-12). Running an item, by click or from the keyboard, closes the menu
+    /// (egui closes it on a pointer click only, so each item calls `ui.close()`).
     fn design_menu_ui(&mut self, ui: &mut egui::Ui, design: &Design) {
-        if ui.button(self.reset_label()).clicked() {
+        let reset_label = self.reset_label();
+        if ui.button(reset_label).clicked() {
             self.reset();
-            self.status = Some("Default design restored".to_owned());
+            let restored = if reset_label == RESET_ALL {
+                DEFAULT_RESTORED
+            } else {
+                STARTING_RESTORED
+            };
+            self.status = Some(restored.to_owned());
+            ui.close();
         }
         // Where the baseline is the spreadsheet's design, the reset already opens it.
         if self.baseline != *workbook_defaults()
@@ -1219,6 +1231,7 @@ impl MagcouplingPanel {
         {
             self.open_example_design();
             self.status = Some(EXAMPLE_OPENED.to_owned());
+            ui.close();
         }
         ui.separator();
         if ui.button(SAVE_DESIGN).clicked() {
@@ -1227,9 +1240,11 @@ impl MagcouplingPanel {
                 mime: "application/json",
                 contents: design_to_json(design).into_bytes(),
             });
+            ui.close();
         }
         if ui.button(LOAD_DESIGN).clicked() {
             self.requests.push(PanelRequest::OpenDesign);
+            ui.close();
         }
         ui.separator();
         // The frame's readouts were set up before the header: the next frame draws every
@@ -1240,7 +1255,15 @@ impl MagcouplingPanel {
             .changed()
         {
             ui.ctx().request_repaint();
+            ui.close();
         }
+    }
+
+    /// Shows the teaching note `id` in the Explain panel, drawn on the next frame (decision
+    /// C-11): the one place a note asked for anywhere becomes the selection.
+    fn show_note(&mut self, ctx: &egui::Context, id: &'static str) {
+        self.selection = Selection::Note(id);
+        ctx.request_repaint();
     }
 
     /// The Design menu's reset: [`RESET_TO_START`] where the baseline is not the spreadsheet's
@@ -1336,8 +1359,7 @@ impl MagcouplingPanel {
         let output = size_controls::controls_ui(ui, &shown, minimum, consequences, auto);
         // A Why link under Magnets per ring or Outside diameter (spec 3.7) opens its note.
         if let Some(id) = output.note {
-            self.selection = Selection::Note(id);
-            ui.ctx().request_repaint();
+            self.show_note(ui.ctx(), id);
         }
         // The lines under the controls were drawn from the design before this frame's edit:
         // one more frame shows the edited design's.
@@ -1387,8 +1409,7 @@ impl MagcouplingPanel {
         ui.horizontal_wrapped(|ui| {
             ui.colored_label(look::quiet_text(ui.visuals()), size_controls::REQUIRED);
             if why_note_link(ui, TORQUE_BAND_NOTE) {
-                self.selection = Selection::Note(TORQUE_BAND_NOTE);
-                ui.ctx().request_repaint();
+                self.show_note(ui.ctx(), TORQUE_BAND_NOTE);
             }
         });
         let mut value = required;
@@ -4871,6 +4892,49 @@ mod tests {
     }
 
     #[test]
+    fn the_reset_s_status_names_the_design_its_item_names() {
+        // The click and its confirmation use one name for the design.
+        let mut harness = Harness::with_baseline(passing_design(), SCREEN);
+        harness.menu(RESET_TO_START);
+        assert_eq!(harness.panel.status.as_deref(), Some(STARTING_RESTORED));
+        let mut harness = Harness::new();
+        harness.menu(RESET_ALL);
+        assert_eq!(harness.panel.status.as_deref(), Some(DEFAULT_RESTORED));
+    }
+
+    #[test]
+    fn a_design_menu_item_run_from_the_keyboard_closes_the_menu() {
+        // As a click on an item does: Tab to Save design, Enter.
+        let mut harness = Harness::new();
+        harness.click_text(DESIGN_MENU);
+        let output = harness.frame(Vec::new());
+        let save = text_rect(&output, SAVE_DESIGN).unwrap().center();
+        let load = text_rect(&output, LOAD_DESIGN).unwrap().center();
+        // Not the menu's own frame, which holds every item and takes a Tab stop too.
+        let on_save = |harness: &Harness| {
+            harness
+                .ctx
+                .memory(|m| m.focused())
+                .and_then(|id| harness.ctx.read_response(id))
+                .is_some_and(|r| r.rect.contains(save) && !r.rect.contains(load))
+        };
+        for _ in 0..12 {
+            if on_save(&harness) {
+                break;
+            }
+            harness.frame(key_tap(egui::Key::Tab));
+        }
+        assert!(on_save(&harness), "Tab reaches Save design");
+        harness.frame(key_tap(egui::Key::Enter));
+        assert!(matches!(
+            harness.panel.take_requests().as_slice(),
+            [PanelRequest::SaveFile { .. }]
+        ));
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, SHOW_DETAILS), 0, "the menu closed");
+    }
+
+    #[test]
     fn open_the_example_design_is_one_undo_step_and_keeps_the_baseline() {
         // UX overhaul spec 7.1: the button opens the spreadsheet's design as an edit; the dots
         // then show what the baseline changed; Reset all still returns to the baseline.
@@ -4911,6 +4975,8 @@ mod tests {
             EXAMPLE_OPENED,
             DESIGN_MENU,
             RESET_TO_START,
+            STARTING_RESTORED,
+            DEFAULT_RESTORED,
             SHARE,
             EXPORT,
         ] {
@@ -9280,36 +9346,33 @@ mod tests {
         // Decision M43-12: a leaf term frames its row while its equation is shown; closing
         // the panel, by its Close button (the only one: decision C-11), takes the frame away.
         use crate::gui::explorer::CLOSE;
-        {
-            let close = CLOSE;
-            let mut harness = Harness::new();
-            harness
-                .panel
-                .explorer
-                .open_path("model.gearbox_input_ripple_Nm");
-            harness.frame(Vec::new());
-            harness.click_text("Gearbox ratio");
-            let mut output = harness.frame(Vec::new());
-            for _ in 0..3 {
-                output = harness.frame(Vec::new());
-            }
-            assert_eq!(focus_rects(&output).len(), 1, "{close}: the row is framed");
-            harness.click_text(close);
-            assert!(!harness.panel.explorer.open, "{close}");
-            assert_eq!(harness.panel.explorer.focus(), None, "{close}");
-            // The inputs side paints before the dock: the frame goes on the next frame.
-            let output = harness.frame(Vec::new());
-            assert!(focus_rects(&output).is_empty(), "{close}");
-            // Shown again, the panel keeps its equation but frames no row.
-            harness.panel.explorer.open = true;
-            assert_eq!(
-                harness.panel.explorer.trail(),
-                ["model.gearbox_input_ripple_Nm"]
-            );
-            let output = harness.frame(Vec::new());
-            assert!(focus_rects(&output).is_empty(), "{close}: shown again");
-            assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+        let mut harness = Harness::new();
+        harness
+            .panel
+            .explorer
+            .open_path("model.gearbox_input_ripple_Nm");
+        harness.frame(Vec::new());
+        harness.click_text("Gearbox ratio");
+        let mut output = harness.frame(Vec::new());
+        for _ in 0..3 {
+            output = harness.frame(Vec::new());
         }
+        assert_eq!(focus_rects(&output).len(), 1, "the row is framed");
+        harness.click_text(CLOSE);
+        assert!(!harness.panel.explorer.open);
+        assert_eq!(harness.panel.explorer.focus(), None);
+        // The inputs side paints before the dock: the frame goes on the next frame.
+        let output = harness.frame(Vec::new());
+        assert!(focus_rects(&output).is_empty());
+        // Shown again, the panel keeps its equation but frames no row.
+        harness.panel.explorer.open = true;
+        assert_eq!(
+            harness.panel.explorer.trail(),
+            ["model.gearbox_input_ripple_Nm"]
+        );
+        let output = harness.frame(Vec::new());
+        assert!(focus_rects(&output).is_empty(), "shown again");
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
     }
 
     /// Every painted shape that is a diagram's: the frames of the term marks and the panel's

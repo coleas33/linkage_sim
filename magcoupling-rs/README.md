@@ -357,8 +357,10 @@ teaching notes by title in the Explain panel), each a word with no box until the
 (stage 1 review S-3). The **Design** menu holds the reset (**Reset to the starting design** on a
 panel whose baseline is not the spreadsheet's design, Reset all on one whose baseline is),
 **Open the example design** (where the baseline is not the spreadsheet's), **Save design**,
-**Load design** and the **Show spreadsheet details** toggle (decision C-12); a click on an item
-closes the menu. The bar has no Equation panel button (decision C-11). The status line of a file
+**Load design** and the **Show spreadsheet details** toggle (decision C-12); running an item, by
+a click or from the keyboard (Enter or Space), closes the menu. The reset's status line names the
+design as its item does: "Starting design restored", or "Default design restored" after Reset
+all. The bar has no Equation panel button (decision C-11). The status line of a file
 or a link stays under the bar (the plan's decision D-22). The toggle (slice 2, S2-5:
 off by default; a view choice, in no design file, share link or undo step, kept by loads, undo
 and reset all; with it on, the hover texts add the path, the original spreadsheet cell and,

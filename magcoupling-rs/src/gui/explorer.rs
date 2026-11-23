@@ -84,7 +84,9 @@ pub const EQUATION_PANEL: &str = "Equation panel";
 pub const CLOSE: &str = "Close";
 
 /// What the panel says before anything is opened (spec 3.7, TC-29b): how to open an equation,
-/// and the walk through the teaching notes, by its button's name (a test checks).
+/// and the walk through the teaching notes, by its button's name (a test checks). Since the
+/// panel's toggle went (part 2a), every way the app opens the panel sets a trail first, so this
+/// is only a fallback for a panel opened with none; BL-089 decides whether it goes.
 pub const EMPTY_TEXT: &str = "Hover a value to see its equation; click it to open it here, then click a term to follow it. Start here walks the main teaching notes in a suggested order.";
 
 /// The heading of the term list.
@@ -1701,6 +1703,16 @@ mod tests {
         assert_eq!(
             value_text("coupling.max_harmonic", &Value::Int(4), "-"),
             "4"
+        );
+        // A text result (the time to the limit with no drag) takes no unit after it.
+        let never = crate::engine::temperature::NEVER;
+        assert_eq!(
+            value_text(
+                "temperature.thermal.time_to_limit_high",
+                &Value::Text(never.to_owned()),
+                "s"
+            ),
+            never
         );
         let (_, results) = design();
         let cell_only = table_entries()

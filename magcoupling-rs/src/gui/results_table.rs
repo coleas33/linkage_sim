@@ -1068,6 +1068,30 @@ mod tests {
     }
 
     #[test]
+    fn a_text_result_s_row_puts_no_unit_after_it() {
+        use crate::gui::test_support::{SCREEN, drawn_texts, sized_frame};
+        // With no drag the time to the limit is the engine's words, not "... the limit s".
+        let mut inputs = DesignInputs::default();
+        inputs.metal.measured_drag_Nm = Some(0.0);
+        let results = compute_all(&inputs);
+        let ctx = egui::Context::default();
+        let mut table = ResultsTable {
+            query: "time_to_limit_high".to_owned(),
+            ..ResultsTable::default()
+        };
+        let mut output = None;
+        for _ in 0..2 {
+            output = Some(sized_frame(&ctx, SCREEN, Vec::new(), |ui| {
+                table.ui(ui, &results, None, false, &mut Readouts::default());
+            }));
+        }
+        let texts = drawn_texts(&output.unwrap());
+        let never = crate::engine::temperature::NEVER;
+        assert!(texts.iter().any(|t| t == never), "{texts:?}");
+        assert!(texts.iter().all(|t| !t.ends_with(" limit s")), "{texts:?}");
+    }
+
+    #[test]
     fn the_cup_wall_verdict_is_drawn_with_the_wall_input_s_label_and_exported_as_the_engine_s() {
         use crate::engine::materials::CUP_WALL_TOO_THIN;
         use crate::gui::dashboard::verdict_display;

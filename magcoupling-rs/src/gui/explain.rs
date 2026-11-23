@@ -101,7 +101,10 @@ impl Selection {
     pub fn check(self) -> Option<&'static str> {
         match self {
             Selection::Check(check) => Some(check),
-            _ => None,
+            Selection::Nothing
+            | Selection::Result(_)
+            | Selection::Note(_)
+            | Selection::NoteList => None,
         }
     }
 
@@ -109,7 +112,10 @@ impl Selection {
     pub fn tile(self) -> Option<Tile> {
         match self {
             Selection::Result(path) => Tile::ALL.into_iter().find(|tile| tile.path() == path),
-            _ => None,
+            Selection::Nothing
+            | Selection::Check(_)
+            | Selection::Note(_)
+            | Selection::NoteList => None,
         }
     }
 

@@ -257,6 +257,24 @@
   priority: 4
   status: open
   notes: "Filed 2026-11-22 from the BL-081 review; new on-screen text, so slice F or stage 2 part 2."
+- id: BL-089
+  title: "Magcoupler: the Equation panel's empty text (EMPTY_TEXT) can no longer be seen in the app"
+  dimension: gui
+  risk: mechanical
+  evidence: "BL-085 whole-branch review CT-1 (2026-11-23): with the panel's toggle gone, only Explorer::open_path and Explorer::start set open = true, and both set a trail first; close() keeps the trail. EMPTY_TEXT (magcoupling-rs/src/gui/explorer.rs), its TC-29b test and its plain-words and glyph rows in guidance.rs now guard a string no user sees. The Explain panel's orientation and its Start here link carry that guidance now."
+  acceptance: "Either the text, its test and its guard rows go (the panel draws nothing, or never opens, without a trail), or a way to open the panel empty comes back; decide in part 2b; gate green."
+  priority: 4
+  status: open
+  notes: "Filed 2026-11-23 from the BL-085 fix wave; the doc comment on EMPTY_TEXT now says it is only a fallback."
+- id: BL-088
+  title: "Magcoupler: the teaching-note drawing (note_ui, explains_ui, change_ui, NoteView, NoteLink, held_reason) still lives in the Equation panel's module"
+  dimension: quality
+  risk: mechanical
+  evidence: "BL-085 whole-branch review MOD-1 (2026-11-23): after decision C-11 the Explain panel draws the notes and the Equation panel shows only a one-line lesson link, yet the note drawing stays in magcoupling-rs/src/gui/explorer.rs (over 2,800 lines) and gui/explain.rs imports it from there."
+  acceptance: "The note drawing moves to its own gui/notes_view.rs (or into explain.rs), explorer.rs keeps lesson_ui and note_fallback_ui; a pure move, no text or behaviour change; gate green."
+  priority: 4
+  status: open
+  notes: "Filed 2026-11-23 from the BL-085 fix wave for part 2b; nothing is broken, the module docs say where the code lives."
 - id: BL-087
   title: "Magcoupler: a cap thread at or past the cap's outside diameter reads as an amber skirt caution with a wall at or below zero"
   dimension: gui
