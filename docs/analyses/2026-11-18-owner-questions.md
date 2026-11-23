@@ -18,7 +18,7 @@ Written 2026-11-18. Updated as answers and new questions arrive.
 | P-n, L-n | The plans for slice A and for slice B stage 1, in `docs/superpowers/plans/` |
 | Three-letter codes (LGS-11, LFA-16) | The whole-project audit, `docs/analyses/2026-11-10-whole-project-audit.md` |
 
-Contents: part A, six answers that change what is built next. Part B, eight things only you can try. Part C, 32 calls to make when convenient (questions 48, 49 and 50 were added there on 2026-11-22, question 51 on 2026-11-23). Part D, five that matter only if the tools stop being generic.
+Contents: part A, six answers that change what is built next. Part B, eight things only you can try. Part C, 35 calls to make when convenient (questions 48, 49 and 50 were added there on 2026-11-22, questions 51, 53, 54 and 55 on 2026-11-23). Part D, five that matter only if the tools stop being generic.
 
 Answered so far: 1, 2, 3, 4, 5 and 6 (2026-11-22). Each answer is written in bold under its question.
 
@@ -372,6 +372,36 @@ Added 2026-11-23 (the next free number). The sentence "Outside diameter moves th
 - (b) Cut the sentence to "Gap and magnet count stay as you set them." and drop the four hint lines.
 
 Source: A-28; BL-090 review of 2026-11-23, findings PT-1 and PT-2.
+
+### 53. What should a row's label hover say now that a click on the label shows the input's entry?
+
+Added 2026-11-23 (the next free number). The hover over a Detailed inputs row's label ended "Click the label to highlight the results it drives that have an equation". Part 2b-ii-a makes the click select the input (the design's 5.2); the highlighting is the link "Highlight the results this drives" at the top of the input's entry. The old line would be false, so it goes.
+
+- **If you do not answer:** the hover ends at its Default line (and its spreadsheet lines), with no line about the click.
+- (a) As the default.
+- (b) A last line such as "Click the label to show its entry".
+
+Source: UX design section 5.2; A-31; BL-092 plan, decision D-53.
+
+### 54. Should a teaching note's input links select the input, as a check's fix links now do?
+
+Added 2026-11-23 (the next free number). In a check's entry a fix link ("Raise Magnet face gap") now selects the input, so the Explain panel shows the input's entry, and shows its row. A teaching note's "What to change" lines link to inputs too; part 2b-ii-a leaves them as they were: the row shows and the note stays in the Explain panel.
+
+- **If you do not answer:** a note's input links show the row and keep the note.
+- (a) As the default.
+- (b) They select the input, as a fix link does (the note gives way to the input's entry; "Checks it touches" and Learn lead back).
+
+Source: UX design section 5.2; A-32; BL-092 plan, decision D-55.
+
+### 55. Should a trace started on the opening tab keep an off switch in view?
+
+Added 2026-11-23 (the next free number). Part 2b-ii-a moves the trace from a row's label to the link "Highlight the results this drives" in the input's Explain entry; a second click on the link ends it. On the opening tab the trace draws its frames and no banner or Clear trace (as since part 2b-i). Once you select something else there, the trace stays on with no off switch in view: select the input again and click its link, or open another tab for Clear trace. An input whose results have no equation record (the drive torque) traces none, and on the opening tab nothing says so. Part 2b-ii-c, which keeps the left column the same on every tab, places the banner anyway.
+
+- **If you do not answer:** as described, until part 2b-ii-c.
+- (a) As the default.
+- (b) While the selected input is the one traced, its entry also shows the banner and Clear trace under the link (no new text; a second copy of the banner).
+
+Source: UX design section 5.2; A-30; BL-092 plan, decision D-52; plan review UXP-3.
 
 ### Linkage simulator
 

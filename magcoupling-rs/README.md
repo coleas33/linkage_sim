@@ -314,6 +314,19 @@ Outside diameter, Magnets per ring), and with Show spreadsheet details on a weak
 "Spreadsheet cell: ..." for a row that is one input. The line "Set by Auto; turn Auto off to edit"
 stays under the slider Auto locks (decision D-37, register row A-26).
 
+Since BL-092 every input is a selection: touching a row of Detailed inputs or Assumptions (a
+click on its label, a drag of its slider, focus in its field, an edit or a reset, on the opening
+tab and on the other tabs) selects its input, keyed by its path, so
+the face gap's Key design row selects the Size column's gap entry. The entry leads with the value
+(a blank, a selector's choice or a text in words: `inputs::value_text`) and the label, then "What
+it is" (the row's help), "What sets it" (its hint, where it has one), "Checks it touches",
+"Watch out" and, with Show spreadsheet details on, its cell; it has no torque-card row and no
+lesson. Every input's entry starts with the link "Highlight the results this drives"
+(`explain::TRACE_LINK`), which traces the input (see the inputs side below). A check's fix link
+selects its input as well as showing its row (the ring radius's selects Outside diameter's row),
+and with Show spreadsheet details on a tile's and a check's entry end with "Spreadsheet cell: ..."
+(the Magnets fit check, which is no result, has none).
+
 Each of the five controls (Minimum OD, Outside diameter, Overall length, Magnet face gap and
 Magnets per ring) has a hint of at most 12 words that says what it does, the first line under its
 entry's "What sets it" (`gui::plain_text::HINTS`, slice 2; the gap's and the magnet count's are
@@ -435,12 +448,13 @@ scroll-area floor lowered to none).
   grade or not). Each row shows a dot when changed from the default, a
   reset button, and a tooltip with help (the overlay's where it has a row, `plain_text::help_for`), slider range and default (with Show spreadsheet details on, also the original spreadsheet note where the help replaces it, the path and the workbook cell). A row's label is its on-screen name (`plain_text::label_for`, spec 3.5: Ring radius, Magnets per ring, Magnet face gap, Required torque, Production variation allowance); the exports keep the original labels. A tab
   row above them switches to the **Assumptions** view (decision M43-7). A click on a row's label
-  traces the input (decision O-8, `trace.rs`): every explained result its value flows into (the
+  selects its input (since BL-092), and the link "Highlight the results this drives" at the top
+  of its Explain entry traces it (decision O-8, `trace.rs`): every explained result its value flows into (the
   registry's `downstream`; the registry explains 416 of the 1112 results, so an input such as the
   drive torque reaches none, and its banner says so) is framed wherever it is drawn, in the
   panel's mark colour (`look::mark_color`, the host's link colour), with a banner and a Clear trace button at the foot of the inputs side (so a
-  trace moves no row above it, and a second click on the label ends it; the locked free
-  variable's label traces too); a click on a result (it still opens the Equation panel) traces
+  trace moves no row above it); a second click on the link ends it, and the locked free
+  variable's label selects it too; a click on a result (it still opens the Equation panel) traces
   the inputs it reads (`upstream_inputs`), unless an input's trace marks it or it has no equation
   record: the trace then stays. Each group heading counts the rows the trace frames.
 - **Dashboard rows** (`dashboard.rs`; since BL-081 no one list draws them all: the check list
@@ -860,10 +874,11 @@ reads its Explain entry down to "Full lesson:" (`check_entry`), and opens a teac
 through that lesson link (`lesson_link_opened`: the Explain panel shows "What to change" and the closed "Where this
 comes from" fold), hovers the first Key design row on the Geometry tab (the tooltip shows the help and its default
 and no path or spreadsheet cell, the Design menu's "Show spreadsheet details" toggle being off, as `details_toggle`
-checks); then (slice 3) it opens the link again with a timer on every frame the app draws (eframe asks for an animation frame at every display refresh; the timer keeps those that make a WebGL draw call), clicks the Hot-low tile and checks the torque card's heading with its Why link, caption, Auto line and four rows in its Explain entry (the Overall length row held by Auto among them), and drags the Magnet face gap slider's handle, moving the pointer 60 times, 50 ms apart, alternately 3 px right and 3 px left of where it pressed: the drag's drawn-frame count, median, p95 and slowest frame are recorded on every run, and with `frame_check: true` (the release run) a drag that moved the gap, at least 30 frames and a p95 within one 60 fps frame (16.7 ms) are required; last (slice A, `address_follows`) it reads the address, which the app rewrote after the drag's settled edit, reloads the page and checks that the address is the same and the edited design is back (the one check of the `history.replaceState` call); `frame_check` is `true`, `false` or absent (any other value stops the run before its first step), and the calculator's result records it, so a run shows whether its check applied; the script checks the calculator agent's `passed` again from the agent's own fields (every check its schema requires true, the drag's two judged by the frame rule, no console error listed), and a step whose agent returns nothing reads every field its schema requires as false or empty; all with zero console
+checks) and clicks its label (`input_entry`, since BL-092: the Explain panel shows the input's entry, its title, the link
+"Highlight the results this drives" and "What it is"); then (slice 3) it opens the link again with a timer on every frame the app draws (eframe asks for an animation frame at every display refresh; the timer keeps those that make a WebGL draw call), clicks the Hot-low tile and checks the torque card's heading with its Why link, caption, Auto line and four rows in its Explain entry (the Overall length row held by Auto among them), and drags the Magnet face gap slider's handle, moving the pointer 60 times, 50 ms apart, alternately 3 px right and 3 px left of where it pressed: the drag's drawn-frame count, median, p95 and slowest frame are recorded on every run, and with `frame_check: true` (the release run) a drag that moved the gap, at least 30 frames and a p95 within one 60 fps frame (16.7 ms) are required; last (slice A, `address_follows`) it reads the address, which the app rewrote after the drag's settled edit, reloads the page and checks that the address is the same and the edited design is back (the one check of the `history.replaceState` call); `frame_check` is `true`, `false` or absent (any other value stops the run before its first step), and the calculator's result records it, so a run shows whether its check applied; the script checks the calculator agent's `passed` again from the agent's own fields (every check its schema requires true, the drag's two judged by the frame rule, no console error listed), and a step whose agent returns nothing reads every field its schema requires as false or empty; all with zero console
 errors (a test decodes the pinned link and the design file, and checks that the steps name the right column's
 headings, the orientation, the entry's headings and its lesson link, and no dashboard, the
-toggle, the note's parts, the Geometry tab, the last row and the card's heading, caption, Auto line, held row and row starts as the page draws them). Its other step checks the hub page at `/tools/` and the linkage
+toggle, the note's parts, the Geometry tab, the trace link, the last row and the card's heading, caption, Auto line, held row and row starts as the page draws them). Its other step checks the hub page at `/tools/` and the linkage
 app at `/tools/linkage/`. Gate 13 of `gate.sh` runs the script's own rules under node with a stub agent and no browser
 (`linkage-sim-rs/scripts/gui_smoke_verdict_test.cjs`; a SKIP line without node): the frame timer keeps only the
 frames that draw, the drag's verdict holds at its bounds, `frame_check` is refused unless it is absent, `true` or `false`, the
