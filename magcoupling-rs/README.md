@@ -349,7 +349,17 @@ range the diameter slider shows; the other inverse-sizing variables keep their b
 M4-1 (plan `docs/superpowers/plans/2026-10-01-magcoupling-m4-1-gui-inputs-dashboard-session.md`),
 M4-2 (plan `docs/superpowers/plans/2026-10-01-magcoupling-m4-2-geometry-plots-clamp.md`) and M4-3
 (plan `docs/superpowers/plans/2026-10-01-magcoupling-m4-3-explorer-assumptions-notes-pickers.md`).
-A header with the session buttons and the **Show spreadsheet details** toggle (slice 2, S2-5:
+A top bar (since slice B, stage 2, part 2a of the UX overhaul, BL-085, plan
+`docs/superpowers/plans/2026-11-22-magcoupler-overhaul-b2-part2a-top-bar-and-notes.md`, design section 4.2): the brand mark
+and the title, then **Undo**, **Redo**, **Design**, **Share** (the full link of the design shown,
+to the clipboard, as Copy share link did), **Export** (the spreadsheet) and **Learn** (the
+teaching notes by title in the Explain panel), each a word with no box until the pointer is on it
+(stage 1 review S-3). The **Design** menu holds the reset (**Reset to the starting design** on a
+panel whose baseline is not the spreadsheet's design, Reset all on one whose baseline is),
+**Open the example design** (where the baseline is not the spreadsheet's), **Save design**,
+**Load design** and the **Show spreadsheet details** toggle (decision C-12); a click on an item
+closes the menu. The bar has no Equation panel button (decision C-11). The status line of a file
+or a link stays under the bar (the plan's decision D-22). The toggle (slice 2, S2-5:
 off by default; a view choice, in no design file, share link or undo step, kept by loads, undo
 and reset all; with it on, the hover texts add the path, the original spreadsheet cell and,
 where the GUI's help replaced it, the original spreadsheet note, and the corrections that change
@@ -508,7 +518,7 @@ can name an input Auto holds; its link then frames a locked row (known limitatio
   scrolling.
 - **Spreadsheet export** (`spreadsheet.rs`, `xlsx.rs`; plan
   `docs/superpowers/plans/2026-10-03-magcoupling-xlsx-export.md`, decisions X-1 to X-12): "Export
-  spreadsheet" in the header and "Export XLSX" beside the CSV and JSON exports save the design
+  spreadsheet" in the header (since BL-085 **Export** on the top bar) and "Export XLSX" beside the CSV and JSON exports save the design
   shown as `magcoupling-results.xlsx`, laid out as the page. Sheets: **Summary** (the title, the
   UTC export time, the app version, the share link as text (about 2,650 characters, over Excel's
   2,080-character hyperlink limit: paste it into a browser), the sizing state, the end-effect and
@@ -606,8 +616,9 @@ can name an input Auto holds; its link then frames a locked row (known limitatio
   before the body's terms as the registry lists them); from the next frame every value and input
   row of a term of that equation is framed in the term's colour, a Σ's term by the harmonics the
   design sums. A click opens the value in the
-  **Equation panel**, docked at the bottom of the centre region and closed until then (its header
-  button toggles it; M43-1, M43-2; it opens at 45 % of the region's height, at least
+  **Equation panel**, docked at the bottom of the centre region and closed until then (since
+  BL-085 no button on the bar opens it: a value's click or an Explain entry's Equation link does,
+  and its Close button closes it, decision C-11; M43-1, M43-2; it opens at 45 % of the region's height, at least
   `MIN_PANEL_HEIGHT` 120 points, and its drag stops `VIEW_STRIP` 160 points below the region's
   top so the tab row and a small view always keep their strip, except in a region too short for
   both, where the panel keeps its 120 points: `explorer::panel_heights`): the equation large, its label, value and (with Show spreadsheet details) workbook cell and the
@@ -654,9 +665,16 @@ can name an input Auto holds; its link then frames a locked row (known limitatio
   `engine::picks::set_by_pick`), or at the top or bottom of its slider the entry's way (`SliderRange::step_from`).
   A note quotes live values of the design (`{result.path}` placeholders, `engine::explain::note_text`,
   `explorer::live_value`), "no prediction" where there is none (a value that is not a finite number, or one computed
-  from an out-of-range end effect), never in its first sentence or its title. The Explain toggle (off by default)
-  shows under the open equation's value its reviewed note (`notes::note_for`; a note shown by id, a warning's or a
-  start-here step's, goes through `explorer::reviewed_note`) with its diagram painted with egui (the square wave and
+  from an out-of-range end effect), never in its first sentence or its title. Since BL-085 (decision C-11) the
+  Explain panel draws the notes and the Equation panel's Explain toggle is gone: under the open equation the lesson
+  line names its reviewed note after "Full lesson:" (`notes::note_for`), on its own row so a long title wraps, a link
+  that selects the note
+  (`explain::Selection::Note`), and every other note link on the page (a Why link, a warning's link, an Explain
+  entry's lesson link) selects its note too; **Learn** on the top bar selects the list of the notes shown
+  (`Selection::NoteList`, `explain::shown_notes`: every reviewed note, the paused clamp section's left out), each
+  title a link to its note. A note's entry is the links to the equations it explains ("Explains",
+  `explorer::explains_ui`: one opens the Equation panel and leaves the selection, C-25) and the note
+  (`explorer::note_ui`; a note shown by id goes through `explorer::reviewed_note`) with its diagram painted with egui (the square wave and
   the sum of its harmonics, the flux paths with and without back iron with each block lettered N or S, torque
   against angle with the fundamental alone dashed at 90° beside a sum with a strong third harmonic, the end fringing
   with the length lost at each end bracketed, the demagnetization knee with load lines, first-order heating with
@@ -664,9 +682,10 @@ can name an input Auto holds; its link then frames a locked row (known limitatio
   clamp section is paused (the full order, `notes::START_HERE_ALL`, has 15, the shaft-joint note just before the
   clamp note, the clamp note last; `notes::start_here_for(clamps::PAUSED)`), from how the coupling makes torque to
   the shaft joints' keyed shrink fits,
-  each step opening its equation with Explain on (Previous, Next, Stop); the ferrite step's bar adds "(ferrite rings
+  each step opening its equation and selecting its note in the Explain panel (Previous, Next, Stop; spec 5.5,
+  `Explorer::start` returns the step's note); the ferrite step's bar adds "(ferrite rings
   only)" (`explorer::FERRITE_ONLY`): its check reads n/a on NdFeB rings. The empty Equation panel names Start here
-  and Explain (TC-29b). Under an equation no reviewed note explains, or a value with no equation, Explain offers the
+  (TC-29b). Under an equation no reviewed note explains, or a value with no equation, the lesson line offers the
   next best read (`explorer::note_fallback`, TC-29a, TC-30): the dashboard row's own Why note or assumption, else
   the closest reviewed note upstream (fewest steps down the equation's terms; a link that opens it), else the
   closest assumption and its rationale, else the row's own reason or "No teaching note is shown here for this
@@ -683,15 +702,15 @@ can name an input Auto holds; its link then frames a locked row (known limitatio
   rating and grade), and under each grade's a "Pick a grade" drop-down lists "Blank" and the 17
   grades, each with its row on hover; the text fields stay for typed names. The material
   warnings that fire show at the top of the dashboard in their severity's colour, each with a
-  "Why: <note>" link that opens its reviewed note on its own in the Equation panel, with links to
-  the equations it explains.
+  "Why: <note>" link that shows its reviewed note in the Explain panel (since BL-085), with links
+  to the equations it explains.
 - **Session** (`session.rs`, `history.rs`): undo and redo (buttons, Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y)
   of every change to the design, one step per settled edit (a drag, a typed value, a part name
   typed letter by letter), one per arrow nudge and one for a held arrow key's whole auto-repeat
   run (M41-14): an edit is in progress while a pointer button is down, a key is held down or a
   text field of an input row has focus (the results search is no edit); reset all (back to the baseline, below); save and load
   a design file; a share link copied to the clipboard. A link the web app opens at start-up is
-  the session's start (`open_share_payload`: the first Undo keeps it). The web app also writes the design into the page's address (UX overhaul slice A, design section 7.2): after every settled edit, undo, redo, load or opened example design, `MagcouplingApp::ui` rewrites the address with `history.replaceState` to `app::address_of` the settled design (`MagcouplingPanel::settled_design`, the undo history's current state). It waits while a key is held: a held Ctrl+Z or Ctrl+Y undoes or redoes a step at every key repeat, and the whole run gives one write at the key's release. A write the browser refuses (Safari refuses more than about 100 in 10 seconds) is asked again on the next frame. The address written is the clean address at the starting design and the link Copy share link copies for any other design, so a reload or a bookmark brings the design back, and the browser's Back still leaves the tool (Undo is the tool's). Copy share link copies the full link at the starting design too. A link that cannot be read changes nothing, says why in the header, and leaves the address as it was until the first edit. The native app writes nothing. The Size tab's Minimum OD is a view preference, not a design input: a reload does not bring it back. A host with its own undo
+  the session's start (`open_share_payload`: the first Undo keeps it). The web app also writes the design into the page's address (UX overhaul slice A, design section 7.2): after every settled edit, undo, redo, load or opened example design, `MagcouplingApp::ui` rewrites the address with `history.replaceState` to `app::address_of` the settled design (`MagcouplingPanel::settled_design`, the undo history's current state). It waits while a key is held: a held Ctrl+Z or Ctrl+Y undoes or redoes a step at every key repeat, and the whole run gives one write at the key's release. A write the browser refuses (Safari refuses more than about 100 in 10 seconds) is asked again on the next frame. The address written is the clean address at the starting design and the link Share copies for any other design, so a reload or a bookmark brings the design back, and the browser's Back still leaves the tool (Undo is the tool's). Share copies the full link at the starting design too. A link that cannot be read changes nothing, says why in the header, and leaves the address as it was until the first edit. The native app writes nothing. The Size tab's Minimum OD is a view preference, not a design input: a reload does not bring it back. A host with its own undo
   can keep the keys (`set_keyboard_shortcuts(false)`: M5's linkage window). One format for files and links: JSON
   `{"format": "magcoupling-design", "version": 1, "inputs": {path: value}, "sizing": {...}}` with
   every input (M41-5) and the sizing state (M41-4); a link is that JSON deflated and URL-safe
@@ -701,7 +720,7 @@ can name an input Auto holds; its link then frames a locked row (known limitatio
   sizing state's. A later version that renames or removes an input path adds a
   `session::PATH_MIGRATIONS` entry and bumps `DESIGN_VERSION`, so older files and links keep
   opening.
-- **Baseline** (UX overhaul slice A, BL-077; design `docs/superpowers/specs/2026-11-09-magcoupler-ux-overhaul-design.md`, section 7.1): a panel holds one baseline design, set when it is built and fixed for the session. `MagcouplingPanel::with_baseline(inputs)` opens on it; `MagcouplingPanel::new()` keeps the spreadsheet's values as its baseline. On screen "the default" is the baseline's value: the changed dot, a row's reset and its hover, the "Default:" line of an input's tooltip, Reset all and the Equation panel's "changed" tag compare with it. The spreadsheet export's "Changed from default" column, the assumptions banner and the dots of the Assumptions view still compare with the spreadsheet's values. No undo, redo, file, link or opened design moves the baseline, and it is in no design file, link or undo step. On a panel whose baseline is not the spreadsheet's design the header shows **Open the example design** after Reset all: it opens the spreadsheet's values as one undo step (its hover: "The values from the original spreadsheet."), and Reset all still returns to the baseline. A panel built with `new()` has no such button: there Reset all already opens the example design.
+- **Baseline** (UX overhaul slice A, BL-077; design `docs/superpowers/specs/2026-11-09-magcoupler-ux-overhaul-design.md`, section 7.1): a panel holds one baseline design, set when it is built and fixed for the session. `MagcouplingPanel::with_baseline(inputs)` opens on it; `MagcouplingPanel::new()` keeps the spreadsheet's values as its baseline. On screen "the default" is the baseline's value: the changed dot, a row's reset and its hover, the "Default:" line of an input's tooltip, Reset all and the Equation panel's "changed" tag compare with it. The spreadsheet export's "Changed from default" column, the assumptions banner and the dots of the Assumptions view still compare with the spreadsheet's values. No undo, redo, file, link or opened design moves the baseline, and it is in no design file, link or undo step. On a panel whose baseline is not the spreadsheet's design the Design menu shows **Open the example design** under the reset, which it names **Reset to the starting design**: it opens the spreadsheet's values as one undo step (its hover: "The values from the original spreadsheet."), and the reset still returns to the baseline. A panel built with `new()` has no such item and its reset keeps the name Reset all: there it already opens the example design.
 - **Sizing** (`sizing.rs`, Addendum A1; the Size tab's Auto since slice 1): Auto on the Size tab is Torque -> Magnets (the Key design group shows
   only a status line, the solve's status and a button to the tab). In it the free variable (axial length, magnets per ring, ring radius) and the
   requirement `metal.required_min_Nm` (decision G-2: the one torque number; 2.5 N·m, the
@@ -812,12 +831,12 @@ go. The web smoke test is the `gui-smoke` workflow (`.claude/workflows/gui-smoke
 four tiles over the drawing and the check list over the Explain panel's orientation in the first screenshot (the first view: no click; since BL-081), the console lines
 `magcoupling: loaded the design from the share link`, `magcoupling sizing: Solved at` and
 `magcoupling explorer: ` (the equation registry built in the browser), then
-clicks "Load design" once (found in a screenshot), uploads a pinned design file through rfd's web
+opens the Design menu and clicks its "Load design" (found in screenshots; since BL-085 the first screenshot also checks the top bar's Undo, Redo, Design, Share, Export and Learn, and `details_toggle` the Design menu's items), uploads a pinned design file through rfd's web
 picker and checks `magcoupling: loaded a design file`; then it clicks the check row "Hot-low torque" and
 reads its Explain entry down to "Full lesson:" (`check_entry`), and opens a teaching note
-through that lesson link (`lesson_link_opened`: the Equation panel shows "What to change" and the closed "Where this
+through that lesson link (`lesson_link_opened`: the Explain panel shows "What to change" and the closed "Where this
 comes from" fold), hovers the first Key design row on the Geometry tab (the tooltip shows the help and its default
-and no path or spreadsheet cell, the header's "Show spreadsheet details" toggle being off, as the first screenshot
+and no path or spreadsheet cell, the Design menu's "Show spreadsheet details" toggle being off, as `details_toggle`
 checks); then (slice 3) it opens the link again with a timer on every frame the app draws (eframe asks for an animation frame at every display refresh; the timer keeps those that make a WebGL draw call), clicks the Hot-low tile and checks the torque card's heading with its Why link, caption, Auto line and four rows in its Explain entry (the Overall length row held by Auto among them), and drags the Magnet face gap slider's handle, moving the pointer 60 times, 50 ms apart, alternately 3 px right and 3 px left of where it pressed: the drag's drawn-frame count, median, p95 and slowest frame are recorded on every run, and with `frame_check: true` (the release run) a drag that moved the gap, at least 30 frames and a p95 within one 60 fps frame (16.7 ms) are required; last (slice A, `address_follows`) it reads the address, which the app rewrote after the drag's settled edit, reloads the page and checks that the address is the same and the edited design is back (the one check of the `history.replaceState` call); `frame_check` is `true`, `false` or absent (any other value stops the run before its first step), and the calculator's result records it, so a run shows whether its check applied; the script checks the calculator agent's `passed` again from the agent's own fields (every check its schema requires true, the drag's two judged by the frame rule, no console error listed), and a step whose agent returns nothing reads every field its schema requires as false or empty; all with zero console
 errors (a test decodes the pinned link and the design file, and checks that the steps name the right column's
 headings, the orientation, the entry's headings and its lesson link, and no dashboard, the
