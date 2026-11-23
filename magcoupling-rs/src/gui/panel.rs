@@ -381,8 +381,8 @@ pub struct MagcouplingPanel {
     /// The Equation panel: the equation open, its trail, the readout hovered in the last frame
     /// (this frame marks its equation's terms) and the input row a leaf term highlights.
     explorer: Explorer,
-    /// The input or result traced (decision O-8): a click on an input's label or on a result
-    /// sets it; every path it reaches is framed in the panel's mark colour.
+    /// The input or result traced (decision O-8): the link in an input's Explain entry or a
+    /// click on a result sets it; every path it reaches is framed in the panel's mark colour.
     trace: Option<Trace>,
     /// Whether the shaft-clamp section is paused ([`clamps::PAUSED`], which every panel starts
     /// from): the views leave it out. A field, not the constant, so a test draws either state.
@@ -766,9 +766,9 @@ impl MagcouplingPanel {
                 self.trace = Some(trace);
             }
         }
-        // After every change of the trace this frame (Clear trace, a label click, a result
-        // click), whichever view the centre region shows: the results table's trace filter goes
-        // off with an input's trace even while the table is not drawn.
+        // After every change of the trace this frame (Clear trace, an entry's trace link, a
+        // result click), whichever view the centre region shows: the results table's trace
+        // filter goes off with an input's trace even while the table is not drawn.
         self.results_table.sync_trace_filter(self.trace.as_ref());
         self.explorer.end_frame(ui.ctx(), events);
         // One undo step per settled edit.
@@ -853,6 +853,7 @@ impl MagcouplingPanel {
                     self.show_note(ui.ctx(), id);
                 }
             }
+            Some(Asked::Trace(path)) => self.toggle_trace(path),
             None => {}
         }
         if asked.is_some() {
@@ -1303,8 +1304,7 @@ impl MagcouplingPanel {
             }
         });
         // The trace's banner at the foot of the side, laid out bottom up first so the view takes
-        // the room above it in the same frame: a trace moves no row above it, so a second click
-        // on the label lands on the label again (decision O-8).
+        // the room above it in the same frame: a trace moves no row above it (decision O-8).
         let clamps_paused = self.clamps_paused;
         let banner = self.trace.as_ref().map(|trace| trace.banner(clamps_paused));
         ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
@@ -1635,7 +1635,8 @@ impl MagcouplingPanel {
     /// One input row; applies its edit. Returns the id of its main widget. In Torque →
     /// Magnets the rows of the inputs Auto sets ([`held_by_auto`]: the free variable's, and for
     /// ring size the cap OD and thread that follow it) show the value the panel shows, locked
-    /// (the label still traces the input). The row is framed in its term's colour while the equation in view
+    /// (the label still selects the input). A click on a row's label selects its input (spec
+    /// 5.2). The row is framed in its term's colour while the equation in view
     /// reads the input (`readouts`).
     fn input_row_ui(
         &mut self,
@@ -1674,10 +1675,11 @@ impl MagcouplingPanel {
             }
         }
         let output = row.inner;
-        if output.label_clicked {
-            // A second click on the source's label ends the trace.
-            let same = self.trace.as_ref().is_some_and(|t| t.source == entry.path);
-            self.trace = if same { None } else { Trace::of(&entry.path) };
+        // Spec 5.2: touching an input (its label's click, its widget's click, drag or focus, an
+        // edit or a reset) selects it, as a Size control's touch does; its entry holds the
+        // trace's link. A locked row's widget is disabled: only its label touches it.
+        if output.label_clicked || output.edit.is_some() || size_controls::touched(&output.widget) {
+            self.selection = Selection::Input(entry.path.as_str());
             ui.ctx().request_repaint();
         }
         if locked {
@@ -1698,6 +1700,13 @@ impl MagcouplingPanel {
             ui.ctx().request_repaint();
         }
         output.widget.id
+    }
+
+    /// Traces the input at `path`, or ends the trace if `path` is its source: a second click
+    /// ends it (decision O-8).
+    fn toggle_trace(&mut self, path: &str) {
+        let same = self.trace.as_ref().is_some_and(|t| t.source == path);
+        self.trace = if same { None } else { Trace::of(path) };
     }
 
     /// Where an optional input starts when a value is entered: the result it overrides,
@@ -1970,6 +1979,13 @@ mod tests {
             self.click(rect.center())
         }
 
+        /// Traces the input labelled `label` as a person does (UX overhaul spec 5.2): a click on
+        /// its label selects it, then a click on its Explain entry's trace link.
+        fn trace_input(&mut self, label: &str) -> egui::FullOutput {
+            self.click_text(label);
+            self.click_text(crate::gui::explain::TRACE_LINK)
+        }
+
         /// Opens the top bar's Design menu and clicks its item `item` (UX overhaul spec 4.2).
         fn menu(&mut self, item: &str) -> egui::FullOutput {
             self.click_text(DESIGN_MENU);
@@ -2239,8 +2255,10 @@ mod tests {
         harness.select(GEARBOX_CHECK);
         harness.focus(PART_INNER);
         harness.frame(vec![egui::Event::Text("X".to_owned())]);
+        // Spec 5.2: typing in the field touches its input, which it selects.
+        assert_eq!(harness.panel.selection, Selection::Input(PART_INNER));
         harness.frame(key_tap(egui::Key::Escape));
-        assert_eq!(harness.panel.selection, Selection::Check(GEARBOX_CHECK));
+        assert_eq!(harness.panel.selection, Selection::Input(PART_INNER));
         // The field let go of the keyboard: the next Esc is the panel's.
         harness.frame(key_tap(egui::Key::Escape));
         assert_eq!(harness.panel.selection, Selection::Nothing);
@@ -2284,11 +2302,14 @@ mod tests {
         harness.focus(FACE_GAP);
         harness.frame(key_tap(egui::Key::ArrowRight));
         harness.frame(Vec::new());
+        // Spec 5.2: the nudge touches the gap, which it selects; the undo, reset all and the
+        // load keep that selection.
+        assert_eq!(harness.panel.selection, Selection::Input(FACE_GAP));
         harness.panel.undo();
-        assert_eq!(harness.panel.selection, Selection::Check(GEARBOX_CHECK));
+        assert_eq!(harness.panel.selection, Selection::Input(FACE_GAP));
         harness.panel.reset();
         harness.panel.load_design_file(&file).unwrap();
-        assert_eq!(harness.panel.selection, Selection::Check(GEARBOX_CHECK));
+        assert_eq!(harness.panel.selection, Selection::Input(FACE_GAP));
     }
 
     #[test]
@@ -2325,8 +2346,9 @@ mod tests {
     fn the_check_list_and_the_explain_panel_compute_nothing_on_an_idle_frame() {
         // Spec 8.2, test 14: with nothing selected, with a failing check's entry open, with
         // the Hot-low tile's (the torque card: its consequences are 30 compute_all runs), with
-        // a note's entry (its diagram) and with the note list (plan review COV-1), a frame in
-        // which nothing changed runs no fix search and no results of its own.
+        // a note's entry (its diagram), with the note list (plan review COV-1) and with a
+        // Detailed input's entry (decision D-59), a frame in which nothing changed runs no fix
+        // search and no results of its own.
         use crate::engine::explain::notes::START_HERE;
         let mut harness = Harness::first_view();
         let hot_low = Selection::Result(crate::gui::tiles::Tile::HotLow.path());
@@ -2339,6 +2361,7 @@ mod tests {
             Some(hot_low),
             note,
             Some(Selection::NoteList),
+            Some(Selection::Input("coupling.op_temp_C")),
         ] {
             match check {
                 Some(Selection::Check(path)) => {
@@ -2647,7 +2670,6 @@ mod tests {
 
     #[test]
     fn an_input_row_s_hover_names_its_path_and_cell_only_with_the_spreadsheet_details() {
-        use crate::gui::input_ui::TRACE_HINT;
         use crate::gui::inputs::input_tooltip;
         let entry = InputCatalogue::get().entry(FACE_GAP).unwrap();
         let cell = entry.meta.cell.expect("the face gap has a cell");
@@ -2662,10 +2684,7 @@ mod tests {
             harness.frame(vec![egui::Event::PointerMoved(rect.center())]);
             harness.frame(Vec::new());
             let output = harness.frame(Vec::new());
-            let want = format!(
-                "{}\n{TRACE_HINT}",
-                input_tooltip(entry, &entry.default, show_details)
-            );
+            let want = input_tooltip(entry, &entry.default, show_details);
             assert!(drawn_texts(&output).contains(&want), "{want:?}");
             assert_eq!(want.lines().any(|line| line == FACE_GAP), show_details);
             assert_eq!(want.lines().any(|line| line == cell), show_details);
@@ -3093,7 +3112,6 @@ mod tests {
     #[test]
     fn the_changed_dot_a_row_s_reset_and_the_default_line_follow_the_baseline() {
         // UX overhaul spec 7.1 (C-22): on screen "the default" is the baseline's value.
-        use crate::gui::input_ui::TRACE_HINT;
         use crate::gui::inputs::input_tooltip;
         // The passing test design: its face gap is 1.8 mm, the spreadsheet's 1.4 mm.
         let baseline = passing_design();
@@ -3113,8 +3131,7 @@ mod tests {
         harness.frame(vec![egui::Event::PointerMoved(at)]);
         harness.frame(Vec::new());
         let output = harness.frame(Vec::new());
-        let want = format!("{tooltip}\n{TRACE_HINT}");
-        assert!(drawn_texts(&output).contains(&want), "{want:?}");
+        assert!(drawn_texts(&output).contains(&tooltip), "{tooltip:?}");
         // One step off the baseline: the dot and the reset, whose hover names the baseline's
         // value; the reset returns it, not the spreadsheet's.
         harness.focus(FACE_GAP);
@@ -3882,7 +3899,7 @@ mod tests {
         harness.frame(key_tap(egui::Key::ArrowRight));
         let output = harness.frame(Vec::new());
         assert_eq!(text_color(&output, CHANGED_DOT), Some(blue));
-        harness.click_text(label_for(FACE_GAP));
+        harness.trace_input(label_for(FACE_GAP));
         let banner = harness.panel.trace.clone().expect("a trace").banner(false);
         let output = harness.frame(Vec::new());
         assert_eq!(text_color(&output, &banner), Some(blue));
@@ -3890,12 +3907,18 @@ mod tests {
     }
 
     #[test]
-    fn clicking_an_input_s_label_frames_the_results_it_drives_until_a_second_click() {
+    fn tracing_an_input_frames_the_results_it_drives_until_a_second_click() {
+        use crate::gui::explain::TRACE_LINK;
         use crate::gui::guidance::counted_guides;
         use crate::gui::trace::TraceKind;
+        // Spec 5.2: a click on the label selects the input and traces nothing; its entry's link
+        // traces it.
         let mut harness = Harness::new();
         let gap = label_for(FACE_GAP);
         harness.click_text(gap);
+        assert_eq!(harness.panel.trace, None);
+        assert_eq!(harness.panel.selection, Selection::Input(FACE_GAP));
+        harness.click_text(TRACE_LINK);
         let trace = harness.panel.trace.clone().expect("a trace");
         assert_eq!(
             (trace.kind, trace.source.as_str()),
@@ -3924,11 +3947,144 @@ mod tests {
             .collect();
         assert_eq!(on_inputs.len(), 1);
         assert!(on_inputs[0].contains_rect(row));
-        // A second click on the label ends the trace and its frames.
-        harness.click_text(gap);
+        // A second click on the link ends the trace and its frames.
+        harness.click_text(TRACE_LINK);
         assert_eq!(harness.panel.trace, None);
         let output = harness.frame(Vec::new());
         assert!(trace_marks(&harness, &output).is_empty());
+        assert_eq!(harness.panel.design(), Design::default());
+        assert_eq!(harness.panel.history.undo_len(), 0);
+    }
+
+    #[test]
+    fn a_click_on_an_input_row_s_label_selects_its_input_and_a_hover_selects_nothing() {
+        use crate::gui::explain::TRACE_LINK;
+        // Spec 5.1 and 5.2: a click on the label of a row of the detailed inputs or the
+        // assumptions selects its input, whose entry the Explain panel shows in the same frame;
+        // a hover shows the row's tooltip and selects nothing (C-2). The face gap's Key design
+        // row selects the entry the Size column's gap row selects (decision D-35). No click
+        // traces, edits the design or makes an undo step.
+        let op_temp = "coupling.op_temp_C";
+        let label = label_for(op_temp);
+        let mut harness = Harness::new();
+        tooltips_at_once(&harness.ctx);
+        let output = harness.frame(Vec::new());
+        let at = text_rect(&output, label).expect("its row").center();
+        harness.frame(vec![egui::Event::PointerMoved(at)]);
+        harness.frame(Vec::new());
+        assert_eq!(harness.panel.selection, Selection::Nothing, "a hover");
+        let output = harness.click(at);
+        assert_eq!(harness.panel.selection, Selection::Input(op_temp));
+        let checks_left = right_column_left(&output);
+        let in_explain = |text: &str| {
+            text_rects(&output, text)
+                .into_iter()
+                .any(|r| r.left() > checks_left)
+        };
+        assert!(in_explain(label), "its entry, in the click's frame");
+        assert!(in_explain(TRACE_LINK));
+        harness.click_text(label_for(FACE_GAP));
+        assert_eq!(harness.panel.selection, Selection::Input(FACE_GAP));
+        // An assumption's row, in the Assumptions view.
+        let assumption = ASSUMPTIONS[0].paths[0];
+        harness.click_text(InputsView::Assumptions.label());
+        harness.click_text(label_for(assumption));
+        assert_eq!(harness.panel.selection, Selection::Input(assumption));
+        // On the opening tab, in the Detailed inputs fold (a tall window: its row in view).
+        let mut first = Harness::of(MagcouplingPanel::new(), TALL);
+        first.click_text(DETAILED_INPUTS);
+        first.click_text(label);
+        assert_eq!(first.panel.selection, Selection::Input(op_temp));
+        for harness in [&harness, &first] {
+            assert_eq!(harness.panel.trace, None);
+            assert_eq!(
+                harness.panel.design(),
+                harness.panel.settled_design().clone()
+            );
+            assert_eq!(harness.panel.history.undo_len(), 0);
+        }
+    }
+
+    #[test]
+    fn touching_a_detailed_row_s_widget_selects_its_input() {
+        // Spec 5.2: touching an input selects it, as part 2b-i's touches do for the Size
+        // column (size_controls::touched): the keyboard's focus arriving on a Key design row's
+        // slider (a focus that edits nothing), a drag of it, and a click on its reset. A hover
+        // over the slider selects nothing (C-2).
+        let op_temp = "coupling.op_temp_C";
+        let before = KEY_DESIGN[KEY_DESIGN.iter().position(|p| *p == op_temp).unwrap() - 1];
+        let mut harness = Harness::new();
+        let target = harness.widget(op_temp).id;
+        let at = harness.widget(op_temp).rect.left_center() + egui::vec2(20.0, 0.0);
+        harness.frame(vec![egui::Event::PointerMoved(at)]);
+        harness.frame(Vec::new());
+        assert_eq!(harness.panel.selection, Selection::Nothing, "a hover");
+        // Tab from the row before (a focus requested between frames is not one that arrives).
+        harness.focus(before);
+        harness.panel.selection = Selection::Nothing;
+        for _ in 0..6 {
+            harness.frame(key_tap(egui::Key::Tab));
+            if harness.ctx.memory(|m| m.has_focus(target)) {
+                break;
+            }
+        }
+        assert!(
+            harness.ctx.memory(|m| m.has_focus(target)),
+            "Tab reaches it"
+        );
+        harness.frame(Vec::new());
+        assert_eq!(
+            harness.panel.selection,
+            Selection::Input(op_temp),
+            "the focus"
+        );
+        assert_eq!(
+            harness.panel.history.undo_len(),
+            0,
+            "the focus edits nothing"
+        );
+        harness.ctx.memory_mut(|m| m.surrender_focus(target));
+        harness.panel.selection = Selection::Nothing;
+        harness.frame(Vec::new());
+        harness.frame(vec![egui::Event::PointerMoved(at)]);
+        harness.frame(vec![primary_button(at, true)]);
+        harness.frame(vec![egui::Event::PointerMoved(at + egui::vec2(12.0, 0.0))]);
+        harness.frame(vec![primary_button(at + egui::vec2(12.0, 0.0), false)]);
+        assert_eq!(harness.panel.selection, Selection::Input(op_temp), "a drag");
+        assert_ne!(harness.panel.design(), Design::default(), "the drag edits");
+        harness.panel.selection = Selection::Nothing;
+        harness.click_text(RESET_LABEL);
+        assert_eq!(
+            harness.panel.selection,
+            Selection::Input(op_temp),
+            "a reset"
+        );
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
+    fn an_input_s_entry_link_traces_it_until_a_second_click_and_edits_nothing() {
+        use crate::gui::explain::TRACE_LINK;
+        use crate::gui::trace::TraceKind;
+        // Spec 5.2: the trace is a link in the input's Explain entry. A click traces the input,
+        // a second click ends it (decision O-8); neither edits the design or makes an undo step,
+        // and the selection stays.
+        let mut harness = Harness::new();
+        harness.panel.selection = Selection::Input(FACE_GAP);
+        harness.click_text(TRACE_LINK);
+        let trace = harness.panel.trace.clone().expect("a trace");
+        assert_eq!(
+            (trace.kind, trace.source.as_str()),
+            (TraceKind::Input, FACE_GAP)
+        );
+        let output = harness.frame(Vec::new());
+        assert!(
+            !trace_marks(&harness, &output).is_empty(),
+            "its frames show"
+        );
+        harness.click_text(TRACE_LINK);
+        assert_eq!(harness.panel.trace, None);
+        assert_eq!(harness.panel.selection, Selection::Input(FACE_GAP));
         assert_eq!(harness.panel.design(), Design::default());
         assert_eq!(harness.panel.history.undo_len(), 0);
     }
@@ -3994,7 +4150,7 @@ mod tests {
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, &format!("{total} of {total} results")), 1);
         // Trace the face gap and show only the results it drives.
-        harness.click_text(label_for(FACE_GAP));
+        harness.trace_input(label_for(FACE_GAP));
         harness.click_text(TRACED_ONLY);
         let output = harness.frame(Vec::new());
         let trace = harness.panel.trace.clone().unwrap();
@@ -4033,7 +4189,7 @@ mod tests {
             harness.frame(Vec::new());
         }
         let drive = "coupling.drive_torque_Nm";
-        harness.click_text(InputCatalogue::get().entry(drive).unwrap().meta.label);
+        harness.trace_input(InputCatalogue::get().entry(drive).unwrap().meta.label);
         let trace = harness.panel.trace.clone().expect("a trace");
         assert_eq!(trace.source, drive);
         assert!(trace.paths.is_empty());
@@ -4056,7 +4212,7 @@ mod tests {
         let output = harness.frame(Vec::new());
         assert_eq!(harness.panel.trace, None);
         assert_eq!(count(&output, &format!("{total} of {total} results")), 1);
-        harness.click_text(label_for(FACE_GAP));
+        harness.trace_input(label_for(FACE_GAP));
         let output = harness.frame(Vec::new());
         assert!(harness.panel.trace.is_some());
         assert_eq!(count(&output, &format!("{total} of {total} results")), 1);
@@ -4067,13 +4223,13 @@ mod tests {
         use crate::gui::results_table::{TRACED_ONLY, table_entries};
         use crate::gui::trace::CLEAR_TRACE;
         // "Traced only" goes off with the trace even when the table is not on screen: Clear
-        // trace and a click on another input's label, both with the Geometry view showing, must
-        // not leave the box ticked for the new trace (it would filter the table unasked).
+        // trace and a trace of another input, both with the Geometry view showing, must not
+        // leave the box ticked for the new trace (it would filter the table unasked).
         let entries = table_entries();
         let total = entries.len();
         let mut harness = Harness::new();
         harness.click_text(CentreView::Results.label());
-        harness.click_text(label_for(FACE_GAP));
+        harness.trace_input(label_for(FACE_GAP));
         harness.click_text(TRACED_ONLY);
         let gap = harness.panel.trace.clone().expect("a trace");
         let gap_rows = entries.iter().filter(|e| gap.marks(&e.path)).count();
@@ -4084,7 +4240,7 @@ mod tests {
         harness.click_text(CentreView::Geometry.label());
         harness.click_text(CLEAR_TRACE);
         assert_eq!(harness.panel.trace, None);
-        harness.click_text(label_for(POLES));
+        harness.trace_input(label_for(POLES));
         let poles = harness.panel.trace.clone().expect("a trace");
         assert_eq!(poles.source, POLES);
         let pole_rows = entries.iter().filter(|e| poles.marks(&e.path)).count();
@@ -4117,7 +4273,7 @@ mod tests {
         let total = entries.len();
         let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0));
         harness.click_text(CentreView::Results.label());
-        harness.click_text(label_for(FACE_GAP));
+        harness.trace_input(label_for(FACE_GAP));
         harness.click_text(TRACED_ONLY);
         let gap = harness.panel.trace.clone().expect("a trace");
         harness.click_text(CentreView::Geometry.label());
@@ -4144,7 +4300,7 @@ mod tests {
             (replaced.kind, replaced.source.as_str()),
             (TraceKind::Result, outside.path)
         );
-        harness.click_text(label_for(POLES));
+        harness.trace_input(label_for(POLES));
         let poles = harness.panel.trace.clone().expect("a trace");
         assert_eq!(
             (poles.kind, poles.source.as_str()),
@@ -4172,7 +4328,7 @@ mod tests {
         let total = entries.len();
         let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0));
         harness.click_text(CentreView::Results.label());
-        harness.click_text(label_for(FACE_GAP));
+        harness.trace_input(label_for(FACE_GAP));
         harness.click_text(TRACED_ONLY);
         let trace = harness.panel.trace.clone().unwrap();
         let traced = entries.iter().filter(|e| trace.marks(&e.path)).count();
@@ -4252,7 +4408,7 @@ mod tests {
         let total = entries.len();
         let mut harness = Harness::new();
         harness.click_text(CentreView::Results.label());
-        harness.click_text(label_for(FACE_GAP));
+        harness.trace_input(label_for(FACE_GAP));
         let trace = harness.panel.trace.clone().expect("a trace");
         // A search for one row the trace marks: the headline's heading counts the traced rows
         // it shows, not every row of the group the trace marks.
@@ -4288,11 +4444,12 @@ mod tests {
     }
 
     #[test]
-    fn a_trace_moves_no_input_row_so_a_second_click_on_the_label_ends_it() {
+    fn a_trace_moves_no_input_row_and_a_second_click_on_the_label_traces_nothing() {
+        use crate::gui::explain::TRACE_LINK;
         use crate::gui::trace::CLEAR_TRACE;
-        // The banner sits at the foot of the inputs side: a trace moves no row above it, so the
-        // second click of "a second click on the label ends the trace" lands on the label again,
-        // not on whatever a banner on top would have pushed under the pointer.
+        // The banner sits at the foot of the inputs side: a trace moves no row above it (decision
+        // O-8). The label selects its input (spec 5.2): a second click on it lands on it again
+        // and keeps the trace, which the entry's link ends.
         let mut harness = Harness::new();
         let gap = label_for(FACE_GAP);
         let on_inputs_side = |output: &egui::FullOutput, text: &str| {
@@ -4308,6 +4465,8 @@ mod tests {
             on_inputs_side(&output, toggle),
         );
         harness.click(label.center());
+        assert_eq!(harness.panel.trace, None, "the label traces nothing");
+        harness.click_text(TRACE_LINK);
         let trace = harness.panel.trace.clone().expect("a trace");
         // The strip sizes from the last frame: let it settle.
         harness.frame(Vec::new());
@@ -4316,8 +4475,11 @@ mod tests {
         assert_eq!(on_inputs_side(&output, gap), label);
         assert_eq!(on_inputs_side(&output, toggle), toggle_at);
         assert!(on_inputs_side(&output, CLEAR_TRACE).top() > label.bottom());
-        // The second click, at the same point.
+        // The second click, at the same point: the label again, the trace kept.
         harness.click(label.center());
+        assert_eq!(harness.panel.trace.as_ref(), Some(&trace));
+        assert_eq!(harness.panel.selection, Selection::Input(FACE_GAP));
+        harness.click_text(TRACE_LINK);
         assert_eq!(harness.panel.trace, None);
         let output = harness.frame(Vec::new());
         assert_eq!(on_inputs_side(&output, gap), label);
@@ -4326,10 +4488,11 @@ mod tests {
     }
 
     #[test]
-    fn the_locked_free_variable_s_label_still_traces_it() {
+    fn the_locked_free_variable_s_label_still_selects_it_and_its_entry_traces_it() {
+        use crate::gui::explain::TRACE_LINK;
         use crate::gui::trace::TraceKind;
         // In Torque -> Magnets the free variable's row is locked (its value widgets disabled);
-        // its label still traces the input, as every row's does.
+        // its label still selects the input and its entry traces it, as every row's does.
         let mut harness = Harness::new();
         harness.size();
         assert!(!harness.widget(AXIAL_LENGTH).enabled(), "locked");
@@ -4340,13 +4503,15 @@ mod tests {
             .meta
             .label;
         harness.click_text(label);
+        assert_eq!(harness.panel.selection, Selection::Input(AXIAL_LENGTH));
+        harness.click_text(TRACE_LINK);
         let trace = harness.panel.trace.clone().expect("a trace");
         assert_eq!(
             (trace.kind, trace.source.as_str()),
             (TraceKind::Input, AXIAL_LENGTH)
         );
-        // A second click ends it; neither click edits the design or makes an undo step.
-        harness.click_text(label);
+        // A second click ends it; no click edits the design or makes an undo step.
+        harness.click_text(TRACE_LINK);
         assert_eq!(harness.panel.trace, None);
         assert_eq!(harness.panel.design(), design);
         assert_eq!(harness.panel.history.undo_len(), undo);
@@ -5564,7 +5729,7 @@ mod tests {
         texts.push(crate::gui::results_table::NOTHING_FAILS.to_owned());
         texts.push(crate::gui::results_table::NO_RESULT.to_owned());
         texts.push(crate::gui::results_table::TRACED_ONLY.to_owned());
-        texts.push(crate::gui::input_ui::TRACE_HINT.to_owned());
+        texts.push(crate::gui::explain::TRACE_LINK.to_owned());
         texts.push(crate::gui::trace::CLEAR_TRACE.to_owned());
         texts.push(crate::gui::results_table::NOTHING_TRACED.to_owned());
         for path in [FACE_GAP, "model.pullout_Nm", "coupling.drive_torque_Nm"] {
@@ -9323,8 +9488,9 @@ mod tests {
         use crate::engine::explain::{TermKind, TermStyle};
         use crate::gui::clamp_drawing::ONE_PIECE_ONLY;
         use crate::gui::dashboard::END_EFFECT_GREYED;
+        use crate::gui::explain::TRACE_LINK;
         use crate::gui::explorer::{NO_EQUATION, term_tag};
-        use crate::gui::input_ui::{CHANGED_FROM_DEFAULT, OUTSIDE_RANGE_HINT, TRACE_HINT};
+        use crate::gui::input_ui::{CHANGED_FROM_DEFAULT, OUTSIDE_RANGE_HINT};
         use crate::gui::inputs::ASSUMPTION_LINE;
         use crate::gui::plain_text::NO_SPREADSHEET_CELL;
         use crate::gui::results_table::NOTHING_TRACED;
@@ -9344,7 +9510,7 @@ mod tests {
             ASSUMPTIONS_RESET,
             CHANGED_FROM_DEFAULT,
             NO_EQUATION,
-            TRACE_HINT,
+            TRACE_LINK,
             OUTSIDE_RANGE_HINT,
             NOTHING_TRACED,
             ONE_PIECE_ONLY,
@@ -10173,7 +10339,8 @@ mod tests {
 
     #[test]
     fn a_fix_link_shows_its_input_s_row_in_either_view_and_edits_nothing() {
-        use crate::gui::guidance::{CHECK_GUIDES, all_fixes, fix_text};
+        use crate::gui::explain::CHECKS_IT_TOUCHES;
+        use crate::gui::guidance::{CHECK_GUIDES, all_fixes, fix_text, guide};
         // Every fix of the workbook example's red checks, each in its check's Explain entry,
         // from the Geometry view (the input's group or the Assumptions view opens) and from
         // Size and torque (its Detailed inputs open).
@@ -10203,6 +10370,8 @@ mod tests {
                     Some(*path),
                     "{view:?}"
                 );
+                // Spec 5.2: the link selects its input too.
+                assert_eq!(harness.panel.selection, Selection::Input(path), "{view:?}");
                 assert!(
                     !harness.panel.explorer.open,
                     "the Equation panel stays shut"
@@ -10222,6 +10391,20 @@ mod tests {
                     rows.iter()
                         .any(|r| focus.iter().any(|f| f.contains_rect(*r))),
                     "{view:?} {path}: {rows:?} {focus:?}"
+                );
+                // Decision D-54: the input's entry links back to the check under "Checks it
+                // touches"; a click on it selects the check again.
+                let heading = text_rect(&output, CHECKS_IT_TOUCHES)
+                    .unwrap_or_else(|| panic!("{view:?} {path}: no {CHECKS_IT_TOUCHES:?}"));
+                let back = text_rects(&output, guide(check).expect("a guide").label)
+                    .into_iter()
+                    .find(|r| r.top() >= heading.bottom())
+                    .unwrap_or_else(|| panic!("{view:?} {path}: no link back to {check}"));
+                harness.click(back.center());
+                assert_eq!(
+                    harness.panel.selection,
+                    Selection::Check(check),
+                    "{view:?} {path}"
                 );
             }
         }
@@ -10311,6 +10494,8 @@ mod tests {
         harness.click_text(&text);
         assert_eq!(harness.panel.centre, CentreView::SizeAndTorque);
         assert_eq!(harness.panel.explorer.focus(), None, "no row is asked for");
+        // Spec 5.2: the link selects the control it shows.
+        assert_eq!(harness.panel.selection, Selection::Input(DIAMETER_HINT_KEY));
         assert!(!harness.panel.explorer.open);
         for _ in 0..5 {
             harness.frame(Vec::new());

@@ -1,13 +1,13 @@
-//! Tracing between the inputs and the results (decision O-8): a click on an input's label
-//! traces the results its value flows into (the registry's `downstream`), a click on a result
-//! (any readout: a dashboard row, a table row, a callout) traces the inputs it reads (its
-//! `upstream_inputs`). The panel frames every traced path where it is drawn, as the Equation
-//! panel frames an equation's terms, in the panel's mark colour (`look::mark_color`, the colour
-//! of the frame a leaf
-//! term draws around its input row), under the equation's own term colours. The registry knows
-//! the dependencies of the results it explains (the A-3 scope: 416 of the 1112 results), so a
-//! result without an equation record traces nothing, and an input whose results have none (the
-//! drive torque, the adhesive's inputs) reaches no result: its banner says so.
+//! Tracing between the inputs and the results (decision O-8): the link in an input's Explain entry
+//! (UX overhaul spec 5.2; a click on its label selects it) traces the results its value flows into
+//! (the registry's `downstream`), a click on a result (any readout: a dashboard row, a table row, a
+//! callout) traces the inputs it reads (its `upstream_inputs`). The panel frames every traced path
+//! where it is drawn, as the Equation panel frames an equation's terms, in the panel's mark colour
+//! (`look::mark_color`, the colour of the frame a leaf term draws around its input row), under the
+//! equation's own term colours. The registry knows the dependencies of the results it explains (the
+//! A-3 scope: 416 of the 1112 results), so a result without an equation record traces nothing, and
+//! an input whose results have none (the drive torque, the adhesive's inputs) reaches no result:
+//! its banner says so.
 
 use std::collections::BTreeSet;
 
@@ -193,7 +193,7 @@ mod tests {
             .filter(|e| registry().equation_for(&e.path).is_some())
             .count();
         assert_eq!((explained, table_entries().len()), (421, 1120));
-        // Every input is a leaf of the registry: a click on any input's label traces it.
+        // Every input is a leaf of the registry: any input's entry links to its trace.
         for entry in crate::gui::inputs::InputCatalogue::get().all() {
             let trace = Trace::of(&entry.path).unwrap_or_else(|| panic!("{}", entry.path));
             assert_eq!(trace.kind, TraceKind::Input, "{}", entry.path);

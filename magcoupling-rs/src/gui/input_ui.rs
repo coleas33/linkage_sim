@@ -32,11 +32,6 @@ pub const OUTSIDE_RANGE_NOTE: &str = "outside the slider range";
 /// The text of a blank optional input.
 pub const BLANK_TEXT: &str = "blank";
 
-/// The line the label's hover text ends with: a click on the label traces the input
-/// (decision O-8).
-pub const TRACE_HINT: &str =
-    "Click the label to highlight the results it drives that have an equation";
-
 /// The hover text of the changed-from-default dot, on an input row and an assumption alike.
 pub const CHANGED_FROM_DEFAULT: &str = "Changed from the default";
 
@@ -58,7 +53,8 @@ pub struct RowOutput {
     pub edit: Option<RowEdit>,
     /// The row's main widget (the slider, drop-down, checkbox or text field).
     pub widget: egui::Response,
-    /// The label was clicked: trace the input (decision O-8).
+    /// The label was clicked: select the input, whose Explain entry traces it (UX overhaul spec
+    /// 5.2).
     pub label_clicked: bool,
 }
 
@@ -108,7 +104,7 @@ fn typed(meta: &InputMeta, x: f64) -> Value {
 /// hover and the tooltip's Default line compare with and show: the session's baseline value
 /// (UX overhaul spec 7.1, C-22). `seed` is where an optional input starts when the
 /// user enters a value (`inputs::OPTIONAL_SEEDS`). A `locked` row (Torque -> Magnets' free
-/// variable) disables everything but its dot and label: the label still traces the input.
+/// variable) disables everything but its dot and label: the label still selects the input.
 /// `show_details` (the header's Show spreadsheet details) adds the path, the cell and the
 /// original spreadsheet note to the tooltip.
 pub fn input_row(
@@ -134,7 +130,7 @@ pub fn input_row(
             label_clicked = ui
                 .add(egui::Label::new(label_for(&entry.path)).sense(egui::Sense::click()))
                 .on_hover_ui(|ui| {
-                    ui.add(egui::Label::new(format!("{}\n{TRACE_HINT}", tooltip())));
+                    ui.add(egui::Label::new(tooltip()));
                 })
                 .clicked();
             ui.add_enabled_ui(!locked, |ui| {

@@ -16,7 +16,11 @@
 //! (its label's hover), the lines the column drew under it (its hint, what sets it, the floor,
 //! the footnote on what the controls move), its torque-card row, the checks whose fixes name
 //! it, where two of them pull it opposite ways the sentence that says so, its Why link's note
-//! and, with the spreadsheet details, its input's cell.
+//! and, with the spreadsheet details, its input's cell. A row of the detailed inputs or the
+//! assumptions selects the same form, keyed by its input's path: its value and label, its help,
+//! its hint, its checks, its "Watch out" and its cell. An input's entry leads with the link that
+//! traces it ([`TRACE_LINK`]), and a check's fix link selects its input (spec 5.2). With the
+//! spreadsheet details a result's and a check's entry end with their cell too.
 //!
 //! A teaching note shows here too (decision C-11): the top bar's [`LEARN`] lists every note
 //! shown by its title, and a title, a lesson link anywhere on the page or a step of the Start
@@ -43,18 +47,18 @@ use crate::gui::explorer::{
 use crate::gui::format::{format_value, value_with_unit};
 use crate::gui::guidance::{
     self, CHECK_GUIDES, CheckGuide, Consequences, Direction, FIT_CHECK, Learn, NO_FIX,
-    SIZE_TAB_NOTE, fix_text, guide_notes, input_trade_offs, row_learn,
+    SIZE_TAB_ALIASES, SIZE_TAB_NOTE, fix_text, guide_notes, input_trade_offs, row_learn,
 };
 use crate::gui::input_ui::weak_line;
-use crate::gui::inputs::InputCatalogue;
+use crate::gui::inputs::{InputCatalogue, value_text};
 use crate::gui::look;
 use crate::gui::plain_text::{
     DIAMETER_HINT_KEY, LENGTH_HINT_KEY, MINIMUM_OD_HINT_KEY, NO_SPREADSHEET_CELL, help_for,
-    hint_for,
+    hint_for, label_for,
 };
-use crate::gui::readouts::Readouts;
+use crate::gui::readouts::{Readouts, registry};
 use crate::gui::size_controls::{
-    LINKED_HOUSING, SizeRow, floor_line, row_help, size_row, slider_minimum,
+    LINKED_HOUSING, SIZE_ROWS, SizeRow, floor_line, row_help, size_row, slider_minimum,
 };
 use crate::gui::tiles::Tile;
 use crate::gui::torque_card::CARD_HEADING;
@@ -92,9 +96,13 @@ pub const FULL_LESSON: &str = "Full lesson:";
 /// The foot link that opens the entry's result in the Equation panel (decision C-11).
 pub const EQUATION: &str = "Equation";
 
-/// The head of an input's foot line with the spreadsheet details on (spec 5.3): its workbook
+/// The head of an entry's foot line with the spreadsheet details on (spec 5.3): its workbook
 /// cell, or the line that says the spreadsheet has none.
 pub const SPREADSHEET_CELL: &str = "Spreadsheet cell:";
+
+/// An input's link that traces it (spec 5.2): it frames the results the input drives, and a
+/// second click ends the trace (decision O-8).
+pub const TRACE_LINK: &str = "Highlight the results this drives";
 
 /// The top bar's button that lists the teaching notes here, and the list's heading (UX
 /// overhaul spec 4.2).
@@ -114,7 +122,8 @@ pub enum Selection {
     Note(&'static str),
     /// The list of the teaching notes ([`LEARN`]).
     NoteList,
-    /// A row of the Size column, by its key ([`SizeRow::key`]).
+    /// An input: a row of the Size column, by its key ([`SizeRow::key`]), or a row of the
+    /// detailed inputs or the assumptions, by its input's path.
     Input(&'static str),
 }
 
@@ -143,7 +152,7 @@ impl Selection {
         }
     }
 
-    /// The key of the Size column's row selected, if one is.
+    /// The key of the input selected, if one is.
     pub fn input(self) -> Option<&'static str> {
         match self {
             Selection::Input(key) => Some(key),
@@ -157,9 +166,10 @@ impl Selection {
 
     /// Whether the entry reads the Size tab's consequences ([`Shown::consequences`]): the
     /// panel asks its cache for them only then. A Size column row's entry draws its
-    /// what-moves-what lines and its torque-card row from them.
+    /// what-moves-what lines and its torque-card row from them; another input's entry reads
+    /// none.
     pub fn reads_consequences(self) -> bool {
-        self.tile() == Some(Tile::HotLow) || self.input().is_some()
+        self.tile() == Some(Tile::HotLow) || self.input().and_then(size_row).is_some()
     }
 }
 
@@ -173,6 +183,9 @@ pub(crate) enum Asked {
     Equation(&'static str),
     /// Start the Start here walk (spec 5.4).
     StartHere,
+    /// Trace the input at this path, or end its trace if it is the one traced (spec 5.2,
+    /// decision O-8).
+    Trace(&'static str),
 }
 
 /// What the entries are drawn from: the design shown, its results, every guide's fixes in
@@ -221,29 +234,40 @@ pub(crate) fn explain_ui(
     asked.or(entry)
 }
 
-/// The entry of the Size column's row `key` (spec 5.3's input column): its value and its
-/// label; what it is (its label's hover); what sets it (its hint, its what-moves-what lines,
-/// for Minimum OD the floor line, for Outside diameter and Overall length the footnote on what
-/// the controls move); what a change does (its torque-card row); the checks whose fixes name
-/// its input; where two of them move it opposite ways, the sentence that says so ("Watch
-/// out"); and the foot (its Why link's note, and with the spreadsheet details the cell of a
-/// row that is one input). Nothing for a key that is no row's.
+/// The entry of the input `key` (spec 5.3's input column): its value and its label; for an
+/// input the trace knows, the link that traces it ([`TRACE_LINK`]); what it is (its label's
+/// hover); what sets it (its hint, its what-moves-what lines, for Minimum OD the floor line,
+/// for Outside diameter and Overall length the footnote on what the controls move); what a
+/// change does (its torque-card row); the checks whose fixes name its input; where two of them
+/// move it opposite ways, the sentence that says so ("Watch out"); and the foot (its Why
+/// link's note, and with the spreadsheet details the cell of a row that is one input). `key`
+/// is a Size column row's ([`size_row`]) or an input's path ([`input_row`]); nothing for
+/// another.
 fn input_ui(
     ui: &mut egui::Ui,
     key: &'static str,
     shown: &Shown<'_>,
     readouts: &mut Readouts,
 ) -> Option<Asked> {
-    let row = size_row(key)?;
+    let row = size_row(key).copied().or_else(|| input_row(key))?;
     ui.horizontal_wrapped(|ui| {
-        if let Some(value) = row_value(row, shown) {
+        if let Some(value) = row_value(&row, shown) {
             ui.strong(value);
         }
         ui.colored_label(look::quiet_text(ui.visuals()), row.label);
     });
-    heading(ui, WHAT_IT_IS);
-    ui.add(egui::Label::new(row_help(key)).wrap());
-    let lines = sets_it_lines(row, shown);
+    let mut asked = None;
+    if let Some(input) = row.input.filter(|input| registry().is_leaf_input(input))
+        && ui.link(TRACE_LINK).clicked()
+    {
+        asked = Some(Asked::Trace(input));
+    }
+    let help = row_help(key);
+    if !help.is_empty() {
+        heading(ui, WHAT_IT_IS);
+        ui.add(egui::Label::new(help).wrap());
+    }
+    let lines = sets_it_lines(&row, shown);
     if !lines.is_empty() {
         heading(ui, WHAT_SETS_IT);
         for line in &lines {
@@ -261,7 +285,6 @@ fn input_ui(
             weak_line(ui, line);
         }
     }
-    let mut asked = None;
     let touched: Vec<&CheckGuide> = row.input.map_or_else(Vec::new, |input| {
         CHECK_GUIDES
             .iter()
@@ -288,11 +311,11 @@ fn input_ui(
     // The cell of a row that is one input; Outside diameter and Overall length are sizes the
     // spreadsheet has no cell for, though their sliders write an input.
     let cell = (readouts.show_details() && row.input == Some(row.key)).then(|| {
-        let cell = InputCatalogue::get()
-            .entry(row.key)
-            .and_then(|entry| entry.meta.cell)
-            .unwrap_or(NO_SPREADSHEET_CELL);
-        format!("{SPREADSHEET_CELL} {cell}")
+        cell_line(
+            InputCatalogue::get()
+                .entry(row.key)
+                .and_then(|entry| entry.meta.cell),
+        )
     });
     asked.or(foot_ui(
         ui,
@@ -303,9 +326,41 @@ fn input_ui(
     ))
 }
 
-/// The row's value as its slider shows it, with its unit: the input's value, or for the
-/// controls that are no one input the size the slider shows (`dimensions`); none where the
-/// design has no size controls.
+/// The entry of a row of the detailed inputs or the assumptions, drawn as a Size column row of
+/// its own: keyed by its input's path, its label the inputs side's ([`label_for`]), no
+/// torque-card row and no lesson. `None` for a path that is no input.
+fn input_row(path: &str) -> Option<SizeRow> {
+    let path = InputCatalogue::get().entry(path)?.path.as_str();
+    Some(SizeRow {
+        key: path,
+        label: label_for(path),
+        input: Some(path),
+        card: None,
+        lesson: None,
+    })
+}
+
+/// What an input's fix link selects (spec 5.2): the input, by its path, or for an input the
+/// Size column shows under its own name ([`SIZE_TAB_ALIASES`]: the ring radius) that control's
+/// row, whose slider the link shows.
+fn fix_selection(path: &'static str) -> Selection {
+    let key = SIZE_TAB_ALIASES
+        .iter()
+        .find(|&&(aliased, _)| aliased == path)
+        .and_then(|&(_, label)| SIZE_ROWS.iter().find(|row| row.label == label))
+        .map_or(path, |row| row.key);
+    Selection::Input(key)
+}
+
+/// An entry's foot line with the spreadsheet details on: [`SPREADSHEET_CELL`] and `cell`, or
+/// the line that says the spreadsheet has none.
+fn cell_line(cell: Option<&str>) -> String {
+    format!("{SPREADSHEET_CELL} {}", cell.unwrap_or(NO_SPREADSHEET_CELL))
+}
+
+/// The row's value as its slider shows it, with its unit: the input's value (a blank, a
+/// selector's choice or a text in words: [`value_text`]), or for the controls that are no one
+/// input the size the slider shows (`dimensions`); none where the design has no size controls.
 fn row_value(row: &SizeRow, shown: &Shown<'_>) -> Option<String> {
     let mm = |x: f64| value_with_unit(&Value::Num(x), format_value(&Value::Num(x)), "mm");
     match row.key {
@@ -319,8 +374,14 @@ fn row_value(row: &SizeRow, shown: &Shown<'_>) -> Option<String> {
         }
         path => {
             let value = shown.inputs.get(path)?;
-            let unit = InputCatalogue::get().entry(path)?.meta.unit;
-            Some(value_with_unit(&value, format_value(&value), unit))
+            let meta = InputCatalogue::get().entry(path)?.meta;
+            let text = value_text(&value, meta);
+            Some(match value {
+                Value::Num(_) | Value::Int(_) if meta.choices.is_empty() => {
+                    value_with_unit(&value, text, meta.unit)
+                }
+                _ => text,
+            })
         }
     }
 }
@@ -474,9 +535,10 @@ fn check_ui(
 }
 
 /// A check's entry: its state and name; why it matters; then, where it does not pass, what is
-/// wrong in this design (in the level's colour), the fixes, each a link that shows its input's
-/// row, or the line saying no listed change helps, and the notes on those fixes; the numbers
-/// the check reads, each a readout; and the foot links.
+/// wrong in this design (in the level's colour), the fixes, each a link that selects its input
+/// and shows its row ([`fix_selection`]), or the line saying no listed change helps, and the
+/// notes on those fixes; the numbers the check reads, each a readout; and the foot links, with
+/// the spreadsheet details the cell of a check that is a result.
 fn entry_ui(
     ui: &mut egui::Ui,
     entry: &Entry<'_>,
@@ -484,6 +546,7 @@ fn entry_ui(
     readouts: &mut Readouts,
 ) -> Option<Asked> {
     let guide = entry.guide;
+    let mut asked = None;
     ui.horizontal_wrapped(|ui| {
         state_mark(ui, entry.mark);
         ui.strong(guide.label);
@@ -506,6 +569,7 @@ fn entry_ui(
         for &(path, direction) in entry.fixes {
             if ui.link(fix_text(path, direction)).clicked() {
                 readouts.focus_input(path);
+                asked = Some(Asked::Select(fix_selection(path)));
             }
         }
         let notes = (entry.notes)();
@@ -518,8 +582,12 @@ fn entry_ui(
     }
     heading(ui, NUMBERS);
     numbers_ui(ui, guide, entry.level, shown, readouts);
-    let equation = result_info(guide.check).map(|_| guide.check);
-    foot_ui(ui, Some(guide.learn), equation, None, readouts)
+    let info = result_info(guide.check);
+    let equation = info.map(|_| guide.check);
+    let cell = info
+        .filter(|_| readouts.show_details())
+        .map(|info| cell_line(info.cell.as_deref()));
+    asked.or(foot_ui(ui, Some(guide.learn), equation, cell, readouts))
 }
 
 /// The numbers behind `guide`'s check: the dashboard rows its verdict badges, drawn as the
@@ -559,7 +627,7 @@ fn numbers_ui(
 /// The entry of the result at `path`, one of the tiles' (spec 5.3): its number and its name;
 /// what it is (the result's help text); for the hot-low torque, what a change does (the
 /// torque card, [`card_ui`]); the check that badges its row, a link that selects it; and the
-/// foot links. Nothing for a path that is no tile's.
+/// foot links, with the spreadsheet details its cell. Nothing for a path that is no tile's.
 fn result_ui(
     ui: &mut egui::Ui,
     path: &'static str,
@@ -591,7 +659,10 @@ fn result_ui(
         asked = check_link_ui(ui, guide, shown);
     }
     let learn = row_learn(path).unwrap_or(Learn::None(""));
-    asked.or(foot_ui(ui, Some(learn), Some(path), None, readouts))
+    let cell = readouts
+        .show_details()
+        .then(|| cell_line(result_info(path).and_then(|info| info.cell.as_deref())));
+    asked.or(foot_ui(ui, Some(learn), Some(path), cell, readouts))
 }
 
 /// The torque card (slice 3 spec 6.1; decision C-10 puts it here): its heading with the Why
@@ -847,7 +918,9 @@ mod tests {
             FULL_LESSON,
             EQUATION,
             LEARN,
+            TRACE_LINK,
             crate::gui::checks::HEADING,
+            crate::gui::results_table::TRACED_ONLY_HELP,
         ];
         texts.extend(STEPS);
         for text in texts {
@@ -859,6 +932,11 @@ mod tests {
                 assert!(!lower.contains(banned), "{text:?} says {banned:?}");
             }
         }
+        // A label's click selects an input; only its entry's link traces it (spec 5.2).
+        assert!(
+            !crate::gui::results_table::TRACED_ONLY_HELP.contains("label"),
+            "the trace filter's hover names the link, not the label"
+        );
         // The orientation says what the notes say: torque across a gap without touching, and
         // slip past the pull-out torque.
         for words in ["without touching", "pull-out torque", "slip"] {
@@ -1849,5 +1927,197 @@ mod tests {
                 assert_glyphs(&ctx, &text, row.label);
             }
         }
+    }
+
+    // ------------------------------------------------------------------ any input's entry
+
+    /// The inputs of the detailed inputs that the tests below select: every Key design input
+    /// that is no Size column row's key, and each assumption's first input.
+    fn detailed_inputs() -> Vec<&'static str> {
+        let catalogue = crate::gui::inputs::InputCatalogue::get();
+        catalogue
+            .key_design
+            .iter()
+            .map(|entry| entry.path.as_str())
+            .filter(|path| size_row(path).is_none())
+            .chain(ASSUMPTIONS.iter().map(|a| a.paths[0]))
+            .collect()
+    }
+
+    #[test]
+    fn a_detailed_input_s_entry_is_its_value_label_help_hint_checks_and_cell() {
+        // Spec 5.1 to 5.3 for a row of the detailed inputs or the assumptions: the input's
+        // value leading its label, "What it is" (its help, as its row's hover shows it), "What
+        // sets it" (its hint, as the Key design row draws it), the checks whose fixes name it
+        // and, with the spreadsheet details, its cell. It has no torque-card row and no lesson,
+        // and its selection reads no consequences. A selector's value is its choice in words.
+        let inputs = DesignInputs::default();
+        let results = compute_all(&inputs);
+        let fixes = all_fixes(&inputs, &results, false);
+        for path in detailed_inputs() {
+            let meta = crate::gui::inputs::InputCatalogue::get()
+                .entry(path)
+                .expect("an input")
+                .meta;
+            let texts = input_texts(&inputs, path, false);
+            let has = |text: &str| texts.iter().any(|t| t == text);
+            assert!(has(label_for(path)), "{path}: {texts:?}");
+            let help = help_for(path);
+            assert_eq!(has(WHAT_IT_IS), !help.is_empty(), "{path}");
+            assert!(help.is_empty() || has(help), "{path}: {texts:?}");
+            let hint = hint_for(path);
+            assert_eq!(has(WHAT_SETS_IT), hint.is_some(), "{path}");
+            assert!(hint.is_none_or(has), "{path}: {texts:?}");
+            for absent in [WHAT_A_CHANGE_DOES, CARD_HEADING, FULL_LESSON] {
+                assert!(!has(absent), "{path}: {absent}");
+            }
+            let named = CHECK_GUIDES
+                .iter()
+                .zip(&fixes)
+                .filter(|(_, list)| list.iter().any(|&(p, _)| p == path))
+                .count();
+            assert_eq!(has(CHECKS_IT_TOUCHES), named > 0, "{path}");
+            let cells: Vec<String> = input_texts(&inputs, path, true)
+                .into_iter()
+                .filter(|t| t.starts_with(SPREADSHEET_CELL))
+                .collect();
+            assert_eq!(cells, [cell_line(meta.cell)], "{path}");
+            assert!(!Selection::Input(path).reads_consequences(), "{path}");
+        }
+        let op_temp = "coupling.op_temp_C";
+        let value = inputs.get(op_temp).unwrap();
+        let unit = crate::gui::inputs::InputCatalogue::get()
+            .entry(op_temp)
+            .unwrap()
+            .meta
+            .unit;
+        let want = value_with_unit(&value, format_value(&value), unit);
+        assert!(
+            input_texts(&inputs, op_temp, false).contains(&want),
+            "{want}"
+        );
+        let backiron = "coupling.backiron";
+        let meta = crate::gui::inputs::InputCatalogue::get()
+            .entry(backiron)
+            .unwrap()
+            .meta;
+        let choice = value_text(&inputs.get(backiron).unwrap(), meta);
+        assert!(choice.contains(" = "), "{choice}");
+        assert!(input_texts(&inputs, backiron, false).contains(&choice));
+        // A blank optional input's value is the word the tooltip's Default line uses.
+        let drag = "metal.measured_drag_Nm";
+        assert_eq!(inputs.get(drag), Some(Value::None));
+        assert!(input_texts(&inputs, drag, false).contains(&"blank".to_owned()));
+        // A path that is no input draws the heading and the way back alone.
+        assert_eq!(
+            input_texts(&inputs, "no.such.input", false),
+            [HEADING, ABOUT]
+        );
+    }
+
+    #[test]
+    fn an_input_s_entry_leads_with_the_link_that_traces_it() {
+        // Spec 5.2: tracing stays, as a link in the input's entry, right under its title. A
+        // click asks the panel to trace the input (a second click on it ends the trace, decision
+        // O-8); Outside diameter and Overall length trace the input their slider writes, and
+        // Minimum OD, which writes none, has no link.
+        let inputs = DesignInputs::default();
+        let mut keys: Vec<&'static str> = SIZE_ROWS.iter().map(|row| row.key).collect();
+        keys.extend(detailed_inputs());
+        for key in keys {
+            let input = size_row(key).map_or(Some(key), |row| row.input);
+            let ctx = egui::Context::default();
+            let (output, asked) = input_frames(&ctx, &inputs, key, false, None, None, vec![]);
+            assert_eq!(asked, None);
+            let texts = drawn_texts(&output);
+            let links = texts.iter().filter(|t| *t == TRACE_LINK).count();
+            assert_eq!(links, usize::from(input.is_some()), "{key}: {texts:?}");
+            let Some(input) = input else { continue };
+            let link = text_rect(&output, TRACE_LINK).unwrap();
+            let label = size_row(key).map_or_else(|| label_for(key), |row| row.label);
+            let title = crate::gui::test_support::last_characters(&output, label)[0];
+            assert!(title.y < link.top(), "{key}: the title leads");
+            if let Some(what) = text_rect(&output, WHAT_IT_IS) {
+                assert!(
+                    link.bottom() <= what.top(),
+                    "{key}: the link before What it is"
+                );
+            }
+            let (_, asked) = input_frames(
+                &ctx,
+                &inputs,
+                key,
+                false,
+                None,
+                None,
+                click_at(link.center()),
+            );
+            assert_eq!(asked, Some(Asked::Trace(input)), "{key}");
+        }
+    }
+
+    #[test]
+    fn a_fix_link_selects_its_input_and_asks_for_its_row() {
+        // Spec 5.2: a fix link selects and focuses its input. The input the Size column shows
+        // under its own name (the ring radius, under Outside diameter) selects that row.
+        let none: &dyn Fn() -> Vec<String> = &Vec::new;
+        let guide = guide_with(Learn::None("A test reason."));
+        let red = entry_at(&guide, Level::Bad, &CUP_WALL_FIX, none);
+        let fix = fix_text("metal.cup_wall_corner_mm", Direction::Raise);
+        let (asked, events) = click_in_entry(&red, &fix);
+        assert_eq!(
+            asked,
+            Some(Asked::Select(Selection::Input("metal.cup_wall_corner_mm")))
+        );
+        assert_eq!(events.focus, Some("metal.cup_wall_corner_mm"));
+        let (ring, _) = SIZE_TAB_ALIASES[0];
+        let ring_fix = [(ring, Direction::Raise)];
+        let red = entry_at(&guide, Level::Bad, &ring_fix, none);
+        let (asked, events) = click_in_entry(&red, &fix_text(ring, Direction::Raise));
+        assert_eq!(
+            asked,
+            Some(Asked::Select(Selection::Input(DIAMETER_HINT_KEY)))
+        );
+        assert_eq!(events.focus, Some(ring));
+        assert_eq!(fix_selection(FACE_GAP), Selection::Input(FACE_GAP));
+    }
+
+    #[test]
+    fn a_result_s_and_a_check_s_entry_show_their_cell_only_with_the_spreadsheet_details() {
+        // Spec 5.3's "Spreadsheet cell" foot for a result and a check, shown only with the
+        // details on: the result's cell, or the line that says the spreadsheet has none; a
+        // check that is no result (the magnets fit) has no cell line, as it has no Equation
+        // link.
+        let ctx = egui::Context::default();
+        let inputs = DesignInputs::default();
+        let cells = |selection: Selection, details: bool| -> Vec<String> {
+            let (output, _, _) = frames(&ctx, &inputs, selection, details, vec![]);
+            drawn_texts(&output)
+                .into_iter()
+                .filter(|t| t.starts_with(SPREADSHEET_CELL))
+                .collect()
+        };
+        for tile in Tile::ALL {
+            let selection = Selection::Result(tile.path());
+            assert!(cells(selection, false).is_empty(), "{tile:?}");
+            let info = result_info(tile.path()).expect("a result");
+            assert_eq!(
+                cells(selection, true),
+                [cell_line(info.cell.as_deref())],
+                "{tile:?}"
+            );
+        }
+        for guide in counted_guides(false) {
+            let selection = Selection::Check(guide.check);
+            assert!(cells(selection, false).is_empty(), "{}", guide.check);
+            let want: Vec<String> = result_info(guide.check)
+                .map(|info| cell_line(info.cell.as_deref()))
+                .into_iter()
+                .collect();
+            assert_eq!(cells(selection, true), want, "{}", guide.check);
+        }
+        assert!(result_info(FIT_CHECK).is_none());
+        let pullout = result_info(Tile::Pullout.path()).and_then(|info| info.cell.clone());
+        assert!(pullout.is_some(), "the pull-out has a cell");
     }
 }
