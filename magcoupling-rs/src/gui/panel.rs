@@ -853,6 +853,7 @@ impl MagcouplingPanel {
                     self.show_note(ui.ctx(), id);
                 }
             }
+            Some(Asked::Trace(path)) => self.toggle_trace(path),
             None => {}
         }
         if asked.is_some() {
@@ -1675,9 +1676,7 @@ impl MagcouplingPanel {
         }
         let output = row.inner;
         if output.label_clicked {
-            // A second click on the source's label ends the trace.
-            let same = self.trace.as_ref().is_some_and(|t| t.source == entry.path);
-            self.trace = if same { None } else { Trace::of(&entry.path) };
+            self.toggle_trace(&entry.path);
             ui.ctx().request_repaint();
         }
         if locked {
@@ -1698,6 +1697,13 @@ impl MagcouplingPanel {
             ui.ctx().request_repaint();
         }
         output.widget.id
+    }
+
+    /// Traces the input at `path`, or ends the trace if `path` is its source: a second click
+    /// ends it (decision O-8).
+    fn toggle_trace(&mut self, path: &str) {
+        let same = self.trace.as_ref().is_some_and(|t| t.source == path);
+        self.trace = if same { None } else { Trace::of(path) };
     }
 
     /// Where an optional input starts when a value is entered: the result it overrides,
@@ -3929,6 +3935,33 @@ mod tests {
         assert_eq!(harness.panel.trace, None);
         let output = harness.frame(Vec::new());
         assert!(trace_marks(&harness, &output).is_empty());
+        assert_eq!(harness.panel.design(), Design::default());
+        assert_eq!(harness.panel.history.undo_len(), 0);
+    }
+
+    #[test]
+    fn an_input_s_entry_link_traces_it_until_a_second_click_and_edits_nothing() {
+        use crate::gui::explain::TRACE_LINK;
+        use crate::gui::trace::TraceKind;
+        // Spec 5.2: the trace is a link in the input's Explain entry. A click traces the input,
+        // a second click ends it (decision O-8); neither edits the design or makes an undo step,
+        // and the selection stays.
+        let mut harness = Harness::new();
+        harness.panel.selection = Selection::Input(FACE_GAP);
+        harness.click_text(TRACE_LINK);
+        let trace = harness.panel.trace.clone().expect("a trace");
+        assert_eq!(
+            (trace.kind, trace.source.as_str()),
+            (TraceKind::Input, FACE_GAP)
+        );
+        let output = harness.frame(Vec::new());
+        assert!(
+            !trace_marks(&harness, &output).is_empty(),
+            "its frames show"
+        );
+        harness.click_text(TRACE_LINK);
+        assert_eq!(harness.panel.trace, None);
+        assert_eq!(harness.panel.selection, Selection::Input(FACE_GAP));
         assert_eq!(harness.panel.design(), Design::default());
         assert_eq!(harness.panel.history.undo_len(), 0);
     }
@@ -10203,6 +10236,8 @@ mod tests {
                     Some(*path),
                     "{view:?}"
                 );
+                // Spec 5.2: the link selects its input too.
+                assert_eq!(harness.panel.selection, Selection::Input(path), "{view:?}");
                 assert!(
                     !harness.panel.explorer.open,
                     "the Equation panel stays shut"
@@ -10311,6 +10346,8 @@ mod tests {
         harness.click_text(&text);
         assert_eq!(harness.panel.centre, CentreView::SizeAndTorque);
         assert_eq!(harness.panel.explorer.focus(), None, "no row is asked for");
+        // Spec 5.2: the link selects the control it shows.
+        assert_eq!(harness.panel.selection, Selection::Input(DIAMETER_HINT_KEY));
         assert!(!harness.panel.explorer.open);
         for _ in 0..5 {
             harness.frame(Vec::new());

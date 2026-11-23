@@ -1037,7 +1037,18 @@ pub fn input_tooltip(entry: &InputEntry, default: &Value, show_details: bool) ->
             r.min, r.max, r.step
         ));
     }
-    let default = match (default, meta.ty) {
+    lines.push(format!("Default: {}", value_text(default, meta)));
+    if meta.assumption {
+        lines.push(ASSUMPTION_LINE.to_owned());
+    }
+    lines.join("\n")
+}
+
+/// An input's value as the tooltip's Default line and an input's Explain entry write it:
+/// "blank" for a blank optional or text input, a selector's code with its choice ("1 = ..."),
+/// else the value as the panel formats it, without its unit.
+pub fn value_text(value: &Value, meta: &InputMeta) -> String {
+    match (value, meta.ty) {
         (Value::None, FieldType::OptF64) => "blank".to_owned(),
         (Value::Text(text), _) if text.is_empty() => "blank".to_owned(),
         (Value::Int(code), _) if !meta.choices.is_empty() => {
@@ -1045,12 +1056,7 @@ pub fn input_tooltip(entry: &InputEntry, default: &Value, show_details: bool) ->
             choice.map_or_else(|| code.to_string(), |(c, text)| format!("{c} = {text}"))
         }
         (value, _) => crate::gui::format::format_value(value),
-    };
-    lines.push(format!("Default: {default}"));
-    if meta.assumption {
-        lines.push(ASSUMPTION_LINE.to_owned());
     }
-    lines.join("\n")
 }
 
 #[cfg(test)]
