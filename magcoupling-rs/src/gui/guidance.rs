@@ -630,13 +630,14 @@ pub fn row_learn(path: &str) -> Option<Learn> {
         .map(|&(_, learn)| learn)
 }
 
-/// Where the Size tab's Why links under Magnets per ring and Outside diameter (spec 3.7) and on
-/// the torque card's heading (slice 3 spec 6.1) lead: how the coupling makes torque, Start
-/// here's first step.
+/// Where the Why links of Magnets per ring and Outside diameter (spec 3.7; their Explain
+/// entries' lessons since UX overhaul spec 4.3) and the torque card's heading's (slice 3 spec
+/// 6.1) lead: how the coupling makes torque, Start here's first step.
 pub const SIZE_TAB_NOTE: &str = "torque_from_shear";
 
-/// Where the Why links at the end of the Size tab's Required and Hot-low rows lead: the hot
-/// minimum check's note (a test keeps it [`HOT_MIN_GUIDE`]'s).
+/// Where the Why links of the Required torque row (its Explain entry's lesson since UX overhaul
+/// spec 4.3) and of the hot-low torque lead: the hot minimum check's note (a test keeps it
+/// [`HOT_MIN_GUIDE`]'s).
 pub const TORQUE_BAND_NOTE: &str = "hot_low_cold_high";
 
 /// Where the Why link under the end-effect banner leads: the end-effect check's note (a test

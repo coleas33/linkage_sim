@@ -3,12 +3,13 @@
 //! Auto (spec guidance 3.5) runs the inverse sizing from here: it locks the slider of the size it
 //! sets ([`variable_slider`]) at the value shown and names the change ([`change_text`]).
 //!
-//! Under each control, its hint line ([`hint_line`], slice 2 spec 3.5) and its what-moves-what
-//! lines (spec 3.3: [`Consequences`], computed by the guidance layer); the lines for two magnets
-//! fewer and two more are the torque card's count row since slice 3 (decision 7A). The panel's
-//! centre view draws the torque readouts (spec 3.2) with the texts here: [`REQUIRED`],
-//! [`HOT_LOW`] with [`torque_gap_text`], [`pullout_label`], and [`NO_PREDICTION`] or
-//! [`NO_TORQUE`] where the model makes none ([`predicts`]), then the torque card.
+//! Each control is its label and its slider (UX overhaul spec 4.3); touching one ([`touched`])
+//! selects it, and its hint line, its what-moves-what lines (spec 3.3, computed by the guidance
+//! layer), its floor line, [`LINKED_HOUSING`] and its Why link show in the Explain panel's entry
+//! of its row ([`SIZE_ROWS`]). The lines for two magnets fewer and two more are the torque
+//! card's count row since slice 3 (decision 7A). The tiles draw the torques with the texts
+//! here: [`REQUIRED`], [`HOT_LOW`] with [`torque_gap_text`], [`pullout_label`], and
+//! [`NO_PREDICTION`] or [`NO_TORQUE`] where the model makes none ([`predicts`]).
 
 use crate::engine::meta::{InputMeta, InputSet, SliderRange, Value};
 use crate::engine::size_controls::{
@@ -16,12 +17,12 @@ use crate::engine::size_controls::{
     resize_length,
 };
 use crate::engine::sizing::FreeVariable;
-use crate::gui::dashboard::{end_effect_out_of_range, why_note_link};
+use crate::gui::dashboard::end_effect_out_of_range;
 use crate::gui::format::{
     fixed, shared_torque_precision, signed_percent, signed_torque_change, torque_shortfall,
 };
-use crate::gui::guidance::{Consequences, FACE_GAP, SIZE_TAB_NOTE, TORQUE_BAND_NOTE};
-use crate::gui::input_ui::{hint_line, slider, weak_line};
+use crate::gui::guidance::{FACE_GAP, SIZE_TAB_NOTE, TORQUE_BAND_NOTE};
+use crate::gui::input_ui::slider;
 use crate::gui::inputs::{InputCatalogue, slider_range};
 use crate::gui::plain_text::{
     DIAMETER_HINT_KEY, HOT_LOW_TORQUE, LENGTH_HINT_KEY, MINIMUM_OD_HINT_KEY, REQUIRED_TORQUE,
@@ -37,8 +38,8 @@ pub const DIAMETER: &str = "Outside diameter";
 pub const LENGTH: &str = "Overall length";
 pub const GAP: &str = "Magnet face gap";
 pub const MAGNETS: &str = "Magnets per ring";
-/// The Size tab's footnote (O-7): what the diameter and length sliders move
-/// ([`crate::engine::size_controls`]).
+/// What the size controls move (O-7; [`crate::engine::size_controls`]): the footnote under the
+/// Size column until UX overhaul spec 4.3, a line of each size control's Explain entry since.
 pub const LINKED_HOUSING: &str = "Outside diameter moves the ring radius; the cap and its thread follow the cup. Overall length sets both rings' magnet length, and the housing follows. Gap and magnet count stay as you set them.";
 
 /// The hover text of the Minimum OD control: what it does.
@@ -153,6 +154,19 @@ pub(crate) fn row_help(key: &str) -> &'static str {
 /// The line on the diameter range's floor, in Minimum OD's entry.
 pub(crate) fn floor_line(floor_mm: f64) -> String {
     format!("Shaft and housing range floor: {floor_mm:.1} mm")
+}
+
+/// Whether a person touched a control this frame (UX overhaul spec 5.2): a click, the start of
+/// a drag, a change (an arrow key, a typed value) or the keyboard's focus arriving.
+pub(crate) fn touched(response: &egui::Response) -> bool {
+    response.clicked() || response.drag_started() || response.changed() || response.gained_focus()
+}
+
+/// A control's label, which shows `hover` and selects its row on a click.
+pub(crate) fn row_label(ui: &mut egui::Ui, row: &SizeRow, hover: &str) -> bool {
+    ui.add(egui::Label::new(row.label).sense(egui::Sense::click()))
+        .on_hover_text(hover)
+        .clicked()
 }
 
 /// The Size-tab slider a free variable sets, by its label: Auto locks it.
@@ -378,20 +392,18 @@ pub(crate) struct ControlsOutput {
     pub minimum_diameter_mm: Option<f64>,
     pub widgets: Vec<egui::Id>,
     pub error: Option<String>,
-    /// The note a Why link under Magnets per ring or Outside diameter asked for this frame.
-    pub note: Option<&'static str>,
+    /// The key of the row a person touched this frame ([`touched`], [`SizeRow::key`]).
+    pub touched: Option<&'static str>,
 }
 
 /// Draw before computing the panel's results, so the readouts reflect this frame's edits.
-/// `inputs` is the design shown. `consequences` are its what-moves-what lines (spec 3.3), each
-/// drawn under its control: they show the design before this frame's edit, and the panel asks
-/// for the next frame. With `auto`, the slider of the size Auto sets ([`variable_slider`]) is
-/// locked at its value there: disabled, saying why.
+/// `inputs` is the design shown. Each control is its label and its slider; the lines about it
+/// are its row's Explain entry. With `auto`, the slider of the size Auto sets
+/// ([`variable_slider`]) is locked at its value there: disabled, saying why.
 pub(crate) fn controls_ui(
     ui: &mut egui::Ui,
     inputs: &DesignInputs,
     minimum_diameter_mm: Option<f64>,
-    consequences: &Consequences,
     auto: Option<FreeVariable>,
 ) -> ControlsOutput {
     let is_locked = |label: &str| auto.is_some_and(|variable| variable_slider(variable) == label);
@@ -400,8 +412,9 @@ pub(crate) fn controls_ui(
         minimum_diameter_mm,
         widgets: Vec::new(),
         error: None,
-        note: None,
+        touched: None,
     };
+    let row = |key: &str| size_row(key).expect("every control has its row");
     let catalogue = InputCatalogue::get();
     ui.push_id("direct_size_controls", |ui| {
         let mut minimum_widget = None;
@@ -411,14 +424,16 @@ pub(crate) fn controls_ui(
                 .expect("the diameter has input metadata");
             let range = legacy.minimum_diameter_range;
             let mut minimum = slider_minimum(&legacy, minimum_diameter_mm);
-            ui.label(MINIMUM).on_hover_text(MINIMUM_HOVER);
+            let clicked = row_label(ui, row(MINIMUM_OD_HINT_KEY), MINIMUM_HOVER);
             let response = ui
                 .push_id("minimum_diameter_mm", |ui| {
                     ui.add(slider(&mut minimum, entry.meta, range))
                 })
                 .inner;
             minimum_widget = Some(response.id);
-            hint_line(ui, MINIMUM_OD_HINT_KEY);
+            if clicked || touched(&response) {
+                output.touched = Some(MINIMUM_OD_HINT_KEY);
+            }
             if response.changed() {
                 output.minimum_diameter_mm = Some(minimum);
             } else if minimum_diameter_mm.is_none()
@@ -432,67 +447,55 @@ pub(crate) fn controls_ui(
             // preference itself is local to this view, like the input ordering preference.
             let size = dimensions_with_minimum_diameter(inputs, minimum)
                 .expect("a bounded minimum defines a diameter range");
-            for (label, hover, path, hint, mut value, range, mapping, line) in [
+            for (key, hover, mut value, range, mapping) in [
                 (
-                    DIAMETER,
-                    DIAMETER_HOVER,
-                    "coupling.inner_back_apothem_mm",
                     DIAMETER_HINT_KEY,
+                    DIAMETER_HOVER,
                     size.diameter_mm,
                     size.diameter_range,
                     SliderMapping::Diameter { minimum },
-                    consequences.diameter_line(),
                 ),
                 (
-                    LENGTH,
-                    LENGTH_HOVER,
-                    "coupling.magnets.axial_length_mm",
                     LENGTH_HINT_KEY,
+                    LENGTH_HOVER,
                     size.overall_length_mm,
                     size.length_range,
                     SliderMapping::Length,
-                    consequences.length_line(),
                 ),
             ] {
-                ui.label(label).on_hover_text(hover);
+                let row = row(key);
+                let path = row.input.expect("a size control writes an input");
+                let clicked = row_label(ui, row, hover);
                 let entry = catalogue
                     .entry(path)
                     .expect("a size control has input metadata");
-                let response =
-                    size_slider(ui, path, &mut value, entry.meta, range, is_locked(label));
+                let response = size_slider(
+                    ui,
+                    path,
+                    &mut value,
+                    entry.meta,
+                    range,
+                    is_locked(row.label),
+                );
                 output.widgets.push(response.id);
-                hint_line(ui, hint);
+                if clicked || touched(&response) {
+                    output.touched = Some(row.key);
+                }
                 if response.changed() {
                     match mapping.design(&output.inputs, value) {
                         Ok(resized) => output.inputs = resized,
                         Err(error) => output.error = Some(error),
                     }
                 }
-                if let Some(line) = line {
-                    weak_line(ui, &line);
-                }
-                if label == DIAMETER && why_note_link(ui, SIZE_TAB_NOTE) {
-                    output.note = Some(SIZE_TAB_NOTE);
-                }
             }
-            ui.weak(format!(
-                "Shaft and housing range floor: {:.1} mm",
-                range.min
-            ));
         } else {
             ui.colored_label(
                 ui.visuals().warn_fg_color,
                 "Size controls unavailable for these dimensions. Check the detailed inputs.",
             );
         }
-        for (label, path, lines) in [
-            (GAP, FACE_GAP, Vec::new()),
-            (
-                MAGNETS,
-                FreeVariable::MagnetsPerRing.path(),
-                consequences.magnet_lines(inputs.coupling.npole, auto),
-            ),
-        ] {
+        for path in [FACE_GAP, FreeVariable::MagnetsPerRing.path()] {
+            let row = row(path);
             let entry = catalogue
                 .entry(path)
                 .expect("a size control has input metadata");
@@ -505,22 +508,25 @@ pub(crate) fn controls_ui(
                 Value::Int(value) => value as f64,
                 _ => unreachable!("the gap and magnet count are numbers"),
             };
-            ui.label(label).on_hover_text(help_for(path));
+            let clicked = row_label(ui, row, help_for(path));
             let range = slider_range(path).expect("a size control has a slider");
-            let response = size_slider(ui, path, &mut value, entry.meta, range, is_locked(label));
+            let response = size_slider(
+                ui,
+                path,
+                &mut value,
+                entry.meta,
+                range,
+                is_locked(row.label),
+            );
             output.widgets.push(response.id);
-            hint_line(ui, path);
+            if clicked || touched(&response) {
+                output.touched = Some(row.key);
+            }
             if response.changed() {
                 match (SliderMapping::Input { path }).design(&output.inputs, value) {
                     Ok(design) => output.inputs = design,
                     Err(error) => output.error = Some(error),
                 }
-            }
-            for line in &lines {
-                weak_line(ui, line);
-            }
-            if label == MAGNETS && why_note_link(ui, SIZE_TAB_NOTE) {
-                output.note = Some(SIZE_TAB_NOTE);
             }
         }
         if let Some(widget) = minimum_widget {
@@ -912,15 +918,9 @@ mod tests {
         // the slider's minimum; the defaults pin none.
         let ctx = egui::Context::default();
         let pinned = |inputs: &DesignInputs| {
-            let consequences = Consequences::of(
-                inputs,
-                &compute_all(inputs),
-                None,
-                crate::engine::clamps::PAUSED,
-            );
             let mut minimum = None;
             sized_frame(&ctx, SCREEN, Vec::new(), |ui| {
-                minimum = controls_ui(ui, inputs, None, &consequences, None).minimum_diameter_mm;
+                minimum = controls_ui(ui, inputs, None, None).minimum_diameter_mm;
             });
             minimum
         };
