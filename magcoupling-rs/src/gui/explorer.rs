@@ -11,31 +11,32 @@
 //! (decision M43-12); a crumb goes back to its step; "used by" goes up the chain. A result
 //! without an equation record shows its label, value and (with the spreadsheet details) its
 //! workbook cell. The panel docks at the
-//! bottom of the centre region, closed until a value is clicked or its header button is
-//! pressed (decisions M43-1, M43-2).
+//! bottom of the centre region, closed until a value is clicked or an Explain entry's Equation
+//! link is followed (decisions M43-1, M43-2; UX overhaul decision C-11 took its button off the
+//! top bar).
 //!
 //! The terms the panel or the hovered readout shows are marked on screen in their colours
 //! ([`Explorer::marks`]): the hovered readout's equation wins, else the open one's. While the
 //! marks are another equation's, the term list's swatches fade ([`SWATCH_DIM`]). A long trail
 //! shows its last [`SHOWN_CRUMBS`] crumbs after one [`ELIDED`].
 //!
-//! Teaching notes (spec Addendum A4): the Explain toggle, off by default, shows under the open
-//! equation the reviewed note that explains it ([`notes::note_for`]: only notes a physics
-//! reviewer has checked), with its diagram ([`crate::gui::diagrams`]), its "What to change"
-//! entries, its "Watch out" lines and its sources under a "Where this comes from" fold that
-//! starts closed ([`note_ui`]), so it follows what the user investigates. Under an equation
-//! without one it offers the next best read ([`note_fallback`], slice-2 spec 3.7): the closest
-//! reviewed note upstream as a link, an assumption's rationale, or why there is none and where
-//! the notes are; never "No teaching note" on a dashboard row. A `{result.path}` in a
-//! note's text is drawn as that result's number on the design shown ([`live_value`]), or as
-//! "no prediction" where it has none. An entry's input is a link to its row, or plain text with
-//! the reason where the input is not free on the design shown ([`held_reason`]: Auto holds it
-//! or a part pick sets it; or the slider is at its end that way). "Start here" walks the
-//! suggested order ([`notes::START_HERE`]): each step opens its equation with Explain on. A warning's link
-//! opens its note on its own ([`Explorer::open_note`]; five of the six warning notes explain
-//! no single equation), with links to the equations it does explain. Every note the panel
-//! names or draws by id goes through [`reviewed_note`], so a note sent back to Draft never
-//! shows.
+//! Teaching notes (spec Addendum A4; UX overhaul decision C-11): the Explain panel draws them,
+//! not this panel. Under the open equation the lesson line names the reviewed note explaining
+//! it ([`notes::note_for`]: only notes a physics reviewer has checked) after "Full lesson:", a link
+//! that shows the note in the Explain panel ([`lesson_ui`]). Under an equation without one it
+//! offers the next best read ([`note_fallback`], slice-2 spec 3.7): the closest reviewed note
+//! upstream as a link, an assumption's rationale, or why there is none and where the notes are;
+//! never "No teaching note" on a dashboard row. A note itself ([`note_ui`], which the Explain
+//! panel calls) has its diagram ([`crate::gui::diagrams`]), its "What to change" entries, its
+//! "Watch out" lines and its sources under a "Where this comes from" fold that starts closed. A
+//! `{result.path}` in a note's text is drawn as that result's number on the design shown
+//! ([`live_value`]), or as "no prediction" where it has none. An entry's input is a link to its
+//! row, or plain text with the reason where the input is not free on the design shown
+//! ([`held_reason`]: Auto holds it or a part pick sets it; or the slider is at its end that
+//! way); the links to the equations a note explains are [`explains_ui`]'s. "Start here" walks
+//! the suggested order ([`notes::START_HERE`]): each step opens its equation here and its note
+//! in the Explain panel (UX overhaul spec 5.5). Every note named or drawn by id goes through
+//! [`reviewed_note`], so a note sent back to Draft never shows.
 //!
 //! Assumptions (spec Addendum A3 "Traceability"): an assumption term is tagged as one in the
 //! term list, with the changed-from-default dot when it differs from its workbook default; a
@@ -63,7 +64,8 @@ use crate::gui::dashboard::{
     end_effect_out_of_range, greyed_by_end_effect, result_info, shown_text,
 };
 use crate::gui::diagrams::diagram_ui;
-use crate::gui::format::with_unit;
+use crate::gui::explain::FULL_LESSON;
+use crate::gui::format::value_with_unit;
 use crate::gui::guidance::{Learn, result_text, result_unit, row_learn};
 use crate::gui::input_ui::CHANGED_DOT;
 use crate::gui::inputs::InputCatalogue;
@@ -75,15 +77,17 @@ use crate::gui::typeset::{
 };
 use crate::{DesignInputs, DesignResults};
 
-/// The header button that shows or hides the panel.
+/// The panel's heading.
 pub const EQUATION_PANEL: &str = "Equation panel";
 
 /// The panel's close button.
 pub const CLOSE: &str = "Close";
 
 /// What the panel says before anything is opened (spec 3.7, TC-29b): how to open an equation,
-/// and the two ways to the teaching notes, by their buttons' names (a test checks).
-pub const EMPTY_TEXT: &str = "Hover a value to see its equation; click it to open it here, then click a term to follow it. Start here walks the main teaching notes in a suggested order; Explain shows the note under the open equation.";
+/// and the walk through the teaching notes, by its button's name (a test checks). Since the
+/// panel's toggle went (part 2a), every way the app opens the panel sets a trail first, so this
+/// is only a fallback for a panel opened with none; BL-089 decides whether it goes.
+pub const EMPTY_TEXT: &str = "Hover a value to see its equation; click it to open it here, then click a term to follow it. Start here walks the main teaching notes in a suggested order.";
 
 /// The heading of the term list.
 pub const TERMS: &str = "Terms";
@@ -102,9 +106,6 @@ pub const DEPENDS_ON_MODIFIED: &str = "Depends on modified assumptions";
 
 /// The term list's tag of an assumption.
 pub const ASSUMPTION_TAG: &str = "assumption: click to find its row";
-
-/// The toggle of the teaching note under the open equation.
-pub const EXPLAIN: &str = "Explain";
 
 /// The button that starts the suggested reading order.
 pub const START_HERE_BUTTON: &str = "Start here";
@@ -167,7 +168,7 @@ pub const AT_TOP: &str = "at the top of its range";
 /// Why a Lower entry's input is plain text: it is at the bottom of its slider.
 pub const AT_BOTTOM: &str = "at the bottom of its range";
 
-/// The start of the links under a note opened on its own.
+/// The start of the links at the head of a note to the equations it explains.
 pub const EXPLAINS: &str = "Explains";
 
 /// The note `id` if a physics reviewer has checked it (spec A4 "Accuracy gate"), as
@@ -348,12 +349,8 @@ pub struct Explorer {
     hovered: Option<String>,
     /// The input row a leaf term highlights.
     focus: Option<Focus>,
-    /// Whether the teaching note of the open equation is shown (off by default: spec A4).
-    pub explain: bool,
     /// The start-here step shown, if the user is walking the suggested order.
     start_here: Option<usize>,
-    /// A teaching note opened on its own (a warning's link), by id.
-    note: Option<&'static str>,
 }
 
 impl Explorer {
@@ -377,16 +374,6 @@ impl Explorer {
         self.trail = vec![path.to_owned()];
         self.open = true;
         self.focus = None;
-        self.note = None;
-        self.start_here = None;
-    }
-
-    /// Opens the teaching note `id` on its own (a warning's link).
-    pub fn open_note(&mut self, id: &'static str) {
-        self.note = Some(id);
-        self.trail.clear();
-        self.open = true;
-        self.focus = None;
         self.start_here = None;
     }
 
@@ -398,22 +385,16 @@ impl Explorer {
         self.focus = None;
     }
 
-    /// The note opened on its own, if any.
-    pub fn note(&self) -> Option<&'static str> {
-        self.note
-    }
-
-    /// Opens start-here step `step` (its equation, Explain on); a step past the last one
-    /// changes nothing.
-    pub fn start(&mut self, step: usize) {
-        if let Some(&(_, path)) = START_HERE.get(step) {
-            self.trail = vec![path.to_owned()];
-            self.open = true;
-            self.focus = None;
-            self.note = None;
-            self.explain = true;
-            self.start_here = Some(step);
-        }
+    /// Opens start-here step `step`'s equation and returns its note, which the panel shows in
+    /// the Explain panel (UX overhaul spec 5.5); a step past the last one changes nothing and
+    /// returns none.
+    pub fn start(&mut self, step: usize) -> Option<&'static str> {
+        let &(id, path) = START_HERE.get(step)?;
+        self.trail = vec![path.to_owned()];
+        self.open = true;
+        self.focus = None;
+        self.start_here = Some(step);
+        Some(id)
     }
 
     /// The start-here step shown, if any.
@@ -452,13 +433,16 @@ impl Explorer {
         });
     }
 
-    /// Follows a link clicked in a teaching note or in Explain's line under an equation without
-    /// one: an input's row is highlighted and scrolled to, as a leaf term's is, and the note
-    /// stays open; a note is opened on its own ([`Explorer::open_note`]).
-    pub fn follow_note_link(&mut self, link: NoteLink) {
+    /// Follows a link clicked in a teaching note or in the lesson line under an equation: an
+    /// input's row is highlighted and scrolled to, as a leaf term's is; a note is returned, for
+    /// the panel to show in the Explain panel (decision C-11).
+    pub fn follow_note_link(&mut self, link: NoteLink) -> Option<&'static str> {
         match link {
-            NoteLink::Input(path) => self.focus_input(path),
-            NoteLink::Note(id) => self.open_note(id),
+            NoteLink::Input(path) => {
+                self.focus_input(path);
+                None
+            }
+            NoteLink::Note(id) => Some(id),
         }
     }
 
@@ -511,7 +495,8 @@ impl Explorer {
 
     /// Takes in what the user did with the readouts this frame: the value hovered marks its
     /// terms from the next frame (asked for at once); a value clicked opens here; a check
-    /// guide's link highlights its input's row, as a leaf term does.
+    /// guide's link highlights its input's row, as a leaf term does. A note asked for is the
+    /// Explain panel's: the panel takes it before this.
     pub fn end_frame(&mut self, ctx: &egui::Context, events: ReadoutEvents) {
         if events.hovered != self.hovered {
             self.hovered = events.hovered;
@@ -519,10 +504,6 @@ impl Explorer {
         }
         if let Some(path) = events.clicked {
             self.open_path(&path);
-            ctx.request_repaint();
-        }
-        if let Some(id) = events.note {
-            self.open_note(id);
             ctx.request_repaint();
         }
         if let Some(path) = events.focus {
@@ -564,7 +545,7 @@ pub fn plain_symbol(markup: &str) -> String {
 }
 
 /// The plain symbol of `path`, its label for a path without one.
-fn crumb(path: &str) -> String {
+pub(crate) fn crumb(path: &str) -> String {
     registry()
         .symbol(path)
         .map_or_else(|| term_label(path).to_owned(), plain_symbol)
@@ -574,7 +555,7 @@ fn crumb(path: &str) -> String {
 /// (`1: steel circuit`, and `5: 1, 3, 5 (default)` without nested parentheses); the cup wall's
 /// failing verdict with its input's label ([`shown_text`], ruling R9).
 fn value_text(path: &str, value: &Value, unit: &str) -> String {
-    let text = with_unit(shown_text(path, value), unit);
+    let text = value_with_unit(value, shown_text(path, value), unit);
     match value {
         Value::Int(code) => registry()
             .choices(path)
@@ -607,15 +588,14 @@ fn unsummed(eq: &Equation, terms: &Design<'_>) -> Vec<String> {
         .collect()
 }
 
-/// Draws the Equation panel: its header row (heading, breadcrumb, close), then the path shown;
-/// with `show_details` (the header's Show spreadsheet details, spec S2-5) also the value's
-/// workbook cell, the corrections its equation embodies and each term's internal name on hover.
-/// `baseline` is the session's baseline (UX overhaul spec 7.1, C-22): an input term carries the
-/// changed tag while it differs from the baseline's value.
-/// `held` says why an input is not free on the design shown ([`held_reason`]), for the notes'
-/// change entries. `clamps_paused` is the panel's pause of the shaft-clamp section: the Start here
-/// hover and the Used by links leave the clamp out while it holds.
-#[allow(clippy::too_many_arguments)] // the design shown, its results and its baseline, then the view's switches
+/// Draws the Equation panel: its header row (heading, breadcrumb, Start here, close), then the
+/// path shown; with `show_details` (the Design menu's Show spreadsheet details, spec S2-5) also
+/// the value's workbook cell, the corrections its equation embodies and each term's internal
+/// name on hover. `baseline` is the session's baseline (UX overhaul spec 7.1, C-22): an input
+/// term carries the changed tag while it differs from the baseline's value. `clamps_paused` is
+/// the panel's pause of the shaft-clamp section: the Start here hover and the Used by links
+/// leave the clamp out while it holds. Returns the note asked for, which the Explain panel
+/// shows (decision C-11): a lesson link's, or a Start here step's (spec 5.5).
 pub fn explorer_ui(
     ui: &mut egui::Ui,
     explorer: &mut Explorer,
@@ -623,23 +603,15 @@ pub fn explorer_ui(
     results: &DesignResults,
     baseline: &DesignInputs,
     show_details: bool,
-    held: &dyn Fn(&str) -> Option<String>,
     clamps_paused: bool,
-) {
+) -> Option<&'static str> {
     let terms = Design { inputs, results };
-    let view = NoteView {
-        inputs,
-        results,
-        held,
-    };
+    let mut asked = None;
     ui.horizontal_wrapped(|ui| {
         // Whole crumbs move to the next row (a wrapped text would start mid-row).
         ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
         ui.strong(EQUATION_PANEL);
         ui.separator();
-        if let Some(note) = explorer.note.and_then(reviewed_note) {
-            let _ = ui.selectable_label(true, glyph_safe(note.title));
-        }
         let mut back = None;
         let last = explorer.trail.len().saturating_sub(1);
         let first = explorer.trail.len().saturating_sub(SHOWN_CRUMBS);
@@ -672,10 +644,8 @@ pub fn explorer_ui(
                 .on_hover_text(start_here_hover(clamps_paused))
                 .clicked()
             {
-                explorer.start(0);
+                asked = explorer.start(0);
             }
-            ui.checkbox(&mut explorer.explain, EXPLAIN)
-                .on_hover_text("The teaching note of the open equation");
         });
     });
     if let Some(step) = explorer.start_here {
@@ -686,13 +656,13 @@ pub fn explorer_ui(
                 .add_enabled(step > 0, egui::Button::new(PREVIOUS))
                 .clicked()
             {
-                explorer.start(step - 1);
+                asked = explorer.start(step - 1);
             }
             if ui
                 .add_enabled(step + 1 < START_HERE.len(), egui::Button::new(NEXT))
                 .clicked()
             {
-                explorer.start(step + 1);
+                asked = explorer.start(step + 1);
             }
             if ui.button(STOP).clicked() {
                 explorer.stop();
@@ -704,16 +674,6 @@ pub fn explorer_ui(
         .id_salt("magcoupling_equation_scroll")
         .auto_shrink([false, false])
         .show(ui, |ui| {
-            if let Some(note) = explorer.note.and_then(reviewed_note) {
-                let (equation, link) = note_alone_ui(ui, note, &view);
-                if let Some(link) = link {
-                    explorer.follow_note_link(link);
-                }
-                if let Some(path) = equation {
-                    explorer.open_path(&path);
-                }
-                return;
-            }
             let Some(path) = explorer.current().map(str::to_owned) else {
                 ui.weak(EMPTY_TEXT);
                 return;
@@ -721,28 +681,14 @@ pub fn explorer_ui(
             // The marks on screen are another equation's while its value is hovered.
             let others_marked = explorer.hovered().is_some_and(|h| h != path);
             let (follow, link) = match registry().equation_for(&path) {
-                Some(eq) => equation_body(
-                    ui,
-                    eq,
-                    &terms,
-                    baseline,
-                    others_marked,
-                    explorer.explain,
-                    show_details,
-                    &view,
-                ),
+                Some(eq) => equation_body(ui, eq, &terms, baseline, others_marked, show_details),
                 None => {
                     no_equation_body(ui, &path, results, show_details);
-                    let link = if explorer.explain {
-                        note_fallback_ui(ui, &path)
-                    } else {
-                        None
-                    };
-                    (None, link)
+                    (None, note_fallback_ui(ui, &path))
                 }
             };
             if let Some(link) = link {
-                explorer.follow_note_link(link);
+                asked = asked.or(explorer.follow_note_link(link));
             }
             ui.add_space(6.0);
             let users = used_by_shown(&path, clamps_paused);
@@ -768,6 +714,7 @@ pub fn explorer_ui(
                 explorer.drill(&user);
             }
         });
+    asked
 }
 
 /// What a note's change entries are drawn against: the design shown, its results, and why an
@@ -779,13 +726,14 @@ pub struct NoteView<'a> {
     pub held: &'a dyn Fn(&str) -> Option<String>,
 }
 
-/// What a click in a teaching note, or in Explain's line under an equation without one, asks
-/// for ([`Explorer::follow_note_link`]).
+/// What a click in a teaching note, or in the lesson line under an equation, asks for
+/// ([`Explorer::follow_note_link`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NoteLink {
     /// Highlight this input's row, as a leaf term does.
     Input(&'static str),
-    /// Open this reviewed note on its own (Explain's closest note, [`note_fallback`]).
+    /// Show this reviewed note in the Explain panel (an equation's lesson, [`lesson_ui`], or
+    /// its closest note, [`note_fallback`]).
     Note(&'static str),
 }
 
@@ -921,14 +869,11 @@ fn change_ui(ui: &mut egui::Ui, change: &Change, view: &NoteView<'_>) -> bool {
     clicked
 }
 
-/// A note opened on its own: links to the equations it explains (a family's template is left
-/// out), then the note. Returns the equation clicked and the note's link clicked.
-fn note_alone_ui(
-    ui: &mut egui::Ui,
-    note: &Note,
-    view: &NoteView<'_>,
-) -> (Option<String>, Option<NoteLink>) {
-    let paths: Vec<&str> = note
+/// The links at the head of a note in the Explain panel to the equations it explains (a
+/// family's template is left out), after [`EXPLAINS`]; nothing for a note that explains none.
+/// Returns the equation clicked, which the panel opens here.
+pub fn explains_ui(ui: &mut egui::Ui, note: &Note) -> Option<&'static str> {
+    let paths: Vec<&'static str> = note
         .equations
         .iter()
         .copied()
@@ -945,35 +890,29 @@ fn note_alone_ui(
                     .on_hover_text(term_label(path))
                     .clicked()
                 {
-                    clicked = Some(path.to_owned());
+                    clicked = Some(path);
                 }
             }
         });
     }
-    let link = note_ui(ui, note, view);
-    (clicked, link)
+    clicked
 }
 
 /// The open equation: its label (and with `show_details` its cell), the equation large (a term
 /// clicked is followed), the value, with `show_details` the corrections it embodies (their
-/// titles on hover), with `explain` its teaching note (drawn against `view`) or, without one,
-/// Explain's next best read ([`note_fallback_ui`]), then the term list, its swatches faded while
-/// `others_marked`, a term's internal name on hover with `show_details`. An input term carries
-/// the changed tag while it differs from `baseline`'s value. Returns the term clicked and the
-/// link clicked in the note or in the next best read.
-#[allow(clippy::too_many_arguments)] // the equation, its design and baseline, then the view's switches
+/// titles on hover), its lesson line ([`lesson_ui`]), then the term list, its swatches faded
+/// while `others_marked`, a term's internal name on hover with `show_details`. An input term
+/// carries the changed tag while it differs from `baseline`'s value. Returns the term clicked
+/// and the link clicked in the lesson line.
 fn equation_body(
     ui: &mut egui::Ui,
     eq: &Equation,
     terms: &Design<'_>,
     baseline: &DesignInputs,
     others_marked: bool,
-    explain: bool,
     show_details: bool,
-    view: &NoteView<'_>,
 ) -> (Option<String>, Option<NoteLink>) {
     let mut clicked = None;
-    let mut link = None;
     if show_details {
         ui.weak(format!(
             "{} ({})",
@@ -1019,16 +958,9 @@ fn equation_body(
         ui.weak(format!("{CORRECTIONS}: {}", ids.join(", ")))
             .on_hover_text(titles.join("\n"));
     }
-    if explain {
-        ui.separator();
-        match notes::note_for(&eq.target) {
-            Some(note) => link = note_ui(ui, note, view),
-            None => {
-                link = note_fallback_ui(ui, &eq.target);
-            }
-        }
-        ui.separator();
-    }
+    ui.separator();
+    let link = lesson_ui(ui, &eq.target);
+    ui.separator();
     ui.add_space(6.0);
     ui.strong(TERMS);
     let hidden = unsummed(eq, terms);
@@ -1153,9 +1085,23 @@ fn no_equation_body(ui: &mut egui::Ui, path: &str, results: &DesignResults, show
     ui.weak(NO_EQUATION);
 }
 
-/// Explain's lines under an equation no reviewed note explains ([`note_fallback`]): the closest
-/// note as a link, an assumption's label and rationale, or the reason and where the notes are.
-/// Returns the note asked for ([`NoteLink::Note`]).
+/// The lesson line under the equation of `path` (decision C-11): [`FULL_LESSON`], then on the
+/// row under it the title of the reviewed note that explains it, a link that shows the note in
+/// the Explain panel (its own row, so a long title wraps inside the panel: plan review UXP-1);
+/// for an equation no note explains, the next best read ([`note_fallback_ui`]). Returns the
+/// link clicked.
+fn lesson_ui(ui: &mut egui::Ui, path: &str) -> Option<NoteLink> {
+    let Some(note) = notes::note_for(path) else {
+        return note_fallback_ui(ui, path);
+    };
+    ui.label(FULL_LESSON);
+    ui.link(glyph_safe(note.title))
+        .clicked()
+        .then_some(NoteLink::Note(note.id))
+}
+
+/// The next best read under an equation no reviewed note explains ([`note_fallback`]): the
+/// closest note, a link; an assumption's rationale; or why there is none.
 fn note_fallback_ui(ui: &mut egui::Ui, path: &str) -> Option<NoteLink> {
     match note_fallback(path) {
         NoteFallback::Note(note) => {
@@ -1187,6 +1133,7 @@ mod tests {
     use crate::compute_all;
     use crate::engine::meta::ResultSet;
     use crate::gui::format::format_value;
+    use crate::gui::format::with_unit;
     use crate::gui::results_table::table_entries;
 
     fn design() -> (DesignInputs, DesignResults) {
@@ -1371,7 +1318,6 @@ mod tests {
                 &results,
                 &DesignInputs::default(),
                 false,
-                &nothing_held,
                 clamps::PAUSED,
             );
         });
@@ -1448,15 +1394,16 @@ mod tests {
 
     #[test]
     fn start_here_walks_the_suggested_order_and_a_click_leaves_it() {
+        // Each step opens its equation and names its note, which the panel shows in the
+        // Explain panel (UX overhaul spec 5.5).
         let mut explorer = Explorer::default();
-        assert!(!explorer.explain, "Explain is off by default");
-        explorer.start(0);
+        assert_eq!(explorer.start(0), Some(START_HERE[0].0));
         assert_eq!(explorer.start_here(), Some(0));
-        assert!(explorer.explain && explorer.open);
+        assert!(explorer.open);
         assert_eq!(explorer.current(), Some(START_HERE[0].1));
         let last = START_HERE.len() - 1;
-        explorer.start(last);
-        explorer.start(last + 1);
+        assert_eq!(explorer.start(last), Some(START_HERE[last].0));
+        assert_eq!(explorer.start(last + 1), None);
         assert_eq!(
             explorer.start_here(),
             Some(last),
@@ -1551,7 +1498,6 @@ mod tests {
                     &results,
                     &DesignInputs::default(),
                     false,
-                    &nothing_held,
                     paused,
                 );
             });
@@ -1626,18 +1572,77 @@ mod tests {
     }
 
     #[test]
-    fn a_note_opened_alone_replaces_the_trail_until_a_value_is_opened() {
+    fn the_lesson_line_names_the_open_equation_s_note_and_asks_for_it() {
+        // Decision C-11: the note itself is the Explain panel's; under the equation the lesson
+        // line names it after "Full lesson:", a link that returns it, and nothing of the note is
+        // drawn here.
+        use crate::engine::explain::notes::note_for;
+        use crate::gui::test_support::{
+            SCREEN, drawn_texts, primary_button, sized_frame, text_rect,
+        };
+        let path = "model.pullout_Nm";
+        let note = note_for(path).expect("the pull-out's note");
+        let (inputs, results) = design();
+        let ctx = egui::Context::default();
+        let mut explorer = Explorer::default();
+        explorer.open_path(path);
+        let frame = |events: Vec<egui::Event>, explorer: &mut Explorer| {
+            let mut asked = None;
+            let output = sized_frame(&ctx, SCREEN, events, |ui| {
+                asked = explorer_ui(
+                    ui,
+                    explorer,
+                    &inputs,
+                    &results,
+                    &DesignInputs::default(),
+                    false,
+                    clamps::PAUSED,
+                );
+            });
+            (output, asked)
+        };
+        frame(Vec::new(), &mut explorer);
+        let (output, asked) = frame(Vec::new(), &mut explorer);
+        assert_eq!(asked, None);
+        let texts = drawn_texts(&output);
+        let title = glyph_safe(note.title);
+        assert_eq!(
+            texts.iter().filter(|t| **t == title).count(),
+            1,
+            "{texts:?}"
+        );
+        assert!(texts.iter().any(|t| t == FULL_LESSON), "{texts:?}");
+        assert!(
+            !texts.contains(&note_text_on(
+                note.sentences[0],
+                &NoteView {
+                    inputs: &inputs,
+                    results: &results,
+                    held: &nothing_held,
+                }
+            )),
+            "the note's sentences are the Explain panel's"
+        );
+        let at = text_rect(&output, &title).unwrap().center();
+        frame(vec![egui::Event::PointerMoved(at)], &mut explorer);
+        frame(vec![primary_button(at, true)], &mut explorer);
+        let (_, asked) = frame(vec![primary_button(at, false)], &mut explorer);
+        assert_eq!(asked, Some(note.id));
+        assert_eq!(explorer.current(), Some(path), "the equation stays open");
+    }
+
+    #[test]
+    fn a_note_link_is_the_explain_panel_s_and_leaves_the_open_equation() {
+        // Decision C-11: a note asked for under an equation is returned for the Explain panel;
+        // the equation stays open (decision C-25).
         let mut explorer = Explorer::default();
         explorer.open_path("model.f_end");
-        explorer.open_note("a5.low_saturation");
-        assert_eq!(explorer.note(), Some("a5.low_saturation"));
-        assert_eq!(explorer.current(), None);
+        assert_eq!(
+            explorer.follow_note_link(NoteLink::Note("a5.low_saturation")),
+            Some("a5.low_saturation")
+        );
+        assert_eq!(explorer.current(), Some("model.f_end"));
         assert!(explorer.open);
-        explorer.open_path("materials.circuit_backiron");
-        assert_eq!(explorer.note(), None);
-        explorer.open_note("a5.low_saturation");
-        explorer.start(0);
-        assert_eq!(explorer.note(), None);
     }
 
     #[test]
@@ -1699,6 +1704,16 @@ mod tests {
             value_text("coupling.max_harmonic", &Value::Int(4), "-"),
             "4"
         );
+        // A text result (the time to the limit with no drag) takes no unit after it.
+        let never = crate::engine::temperature::NEVER;
+        assert_eq!(
+            value_text(
+                "temperature.thermal.time_to_limit_high",
+                &Value::Text(never.to_owned()),
+                "s"
+            ),
+            never
+        );
         let (_, results) = design();
         let cell_only = table_entries()
             .iter()
@@ -1729,9 +1744,8 @@ mod tests {
                     &results,
                     &DesignInputs::default(),
                     show_details,
-                    &nothing_held,
                     clamps::PAUSED,
-                )
+                );
             },
         )
     }
@@ -1793,7 +1807,6 @@ mod tests {
                     &results,
                     &DesignInputs::default(),
                     false,
-                    &nothing_held,
                     clamps::PAUSED,
                 );
             });
@@ -2655,10 +2668,12 @@ mod tests {
     }
 
     #[test]
-    fn a_note_s_link_highlights_its_input_s_row_and_keeps_the_note_open() {
+    fn a_note_s_link_highlights_its_input_s_row_and_asks_for_no_note() {
         let mut explorer = Explorer::default();
-        explorer.open_note("a5.low_saturation");
-        explorer.follow_note_link(NoteLink::Input("metal.cup_wall_corner_mm"));
+        assert_eq!(
+            explorer.follow_note_link(NoteLink::Input("metal.cup_wall_corner_mm")),
+            None
+        );
         assert_eq!(
             explorer.focus(),
             Some(&Focus {
@@ -2666,15 +2681,15 @@ mod tests {
                 scroll: true,
             })
         );
-        assert_eq!(explorer.note(), Some("a5.low_saturation"));
-        assert!(explorer.open);
     }
 
     #[test]
     fn the_empty_text_and_explain_s_own_lines_name_the_buttons_in_plain_words() {
-        // TC-29b: the empty panel names both ways to the notes by the buttons' own names; the
-        // fallback lines read as plain words in egui's default fonts.
-        assert!(EMPTY_TEXT.contains(START_HERE_BUTTON) && EMPTY_TEXT.contains(EXPLAIN));
+        // TC-29b: the empty panel names the walk through the notes by its button's own name
+        // (the Explain toggle it also named went with decision C-11); the fallback lines read
+        // as plain words in egui's default fonts.
+        assert!(EMPTY_TEXT.contains(START_HERE_BUTTON));
+        assert!(!EMPTY_TEXT.contains("Explain"), "{EMPTY_TEXT}");
         assert!(START_HERE_HINT.contains(START_HERE_BUTTON));
         let ctx = egui::Context::default();
         crate::gui::test_support::sized_frame(
@@ -2851,8 +2866,8 @@ mod tests {
 
     #[test]
     fn a_wrapped_change_entry_stays_inside_a_narrow_panel_and_its_label_links() {
-        // Amendment A-25 T-6 (spec section 5, a narrow window): the pull-out note opened on its
-        // own in a panel 400 points wide. Every change entry's input label is drawn inside the
+        // Amendment A-25 T-6 (spec section 5, a narrow window): the pull-out note drawn alone in
+        // a panel 400 points wide. Every change entry's input label is drawn inside the
         // panel, and a click on the last character of the inner magnet part's label, laid out in
         // a wrapped row, asks for that input's row.
         use crate::gui::test_support::{last_characters, primary_button, sized_frame, text_rects};
@@ -2868,7 +2883,7 @@ mod tests {
         let frame = |events: Vec<egui::Event>| {
             let mut link = None;
             let output = sized_frame(&ctx, size, events, |ui| {
-                link = note_alone_ui(ui, note, &view).1;
+                link = note_ui(ui, note, &view);
             });
             (output, link)
         };

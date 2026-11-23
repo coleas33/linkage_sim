@@ -18,7 +18,7 @@ Written 2026-11-18. Updated as answers and new questions arrive.
 | P-n, L-n | The plans for slice A and for slice B stage 1, in `docs/superpowers/plans/` |
 | Three-letter codes (LGS-11, LFA-16) | The whole-project audit, `docs/analyses/2026-11-10-whole-project-audit.md` |
 
-Contents: part A, six answers that change what is built next. Part B, eight things only you can try. Part C, 30 calls to make when convenient (questions 48 and 49 were added there on 2026-11-22). Part D, five that matter only if the tools stop being generic.
+Contents: part A, six answers that change what is built next. Part B, eight things only you can try. Part C, 31 calls to make when convenient (questions 48, 49 and 50 were added there on 2026-11-22). Part D, five that matter only if the tools stop being generic.
 
 Answered so far: 1, 2, 3, 4, 5 and 6 (2026-11-22). Each answer is written in bold under its question.
 
@@ -342,6 +342,16 @@ Added 2026-11-22 (the next free number). Since the layout stage each check is on
 - (b) Add a short form of the check's number to each row (nine new short texts, each with a physics review).
 
 Source: UX design section 4.5; A-20; BL-081 plan, decision D-2.
+
+### 50. Should the status line of a file or a link sit at the right end of the top bar?
+
+Added 2026-11-22 (the next free number). The design puts the line that reports a saved or loaded file or a copied link ("Share link copied to the clipboard (2,690 characters)") at the right end of the top bar. Today it is a line under the bar, and part 2a keeps it there.
+
+- **If you do not answer:** it stays under the bar.
+- (a) Under the bar, as now.
+- (b) At the right end of the bar (a long line wraps the bar onto a second row at 1280 points).
+
+Source: UX design section 4.2; A-24; BL-085 plan, decision D-22.
 
 ### Linkage simulator
 

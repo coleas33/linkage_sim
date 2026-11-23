@@ -23,7 +23,7 @@ use crate::gui::corrections::{CorrectionIndex, marker_text};
 use crate::gui::dashboard::{
     CHECKS, Level, ResultInfo, check_level, failing_checks, hover_text, result_info, shown_text,
 };
-use crate::gui::format::{non_finite_text, search_haystack, search_needle, with_unit};
+use crate::gui::format::{non_finite_text, search_haystack, search_needle, value_with_unit};
 use crate::gui::plain_text::display_label;
 use crate::gui::readouts::Readouts;
 use crate::gui::result_groups::{OTHER_RESULTS, result_groups};
@@ -774,7 +774,11 @@ fn row_ui(
         cell(
             ui,
             number,
-            &with_unit(shown_text(&entry.path, &value), entry.info.meta.unit),
+            &value_with_unit(
+                &value,
+                shown_text(&entry.path, &value),
+                entry.info.meta.unit,
+            ),
             level,
         );
         if show_details {
@@ -795,7 +799,7 @@ fn row_ui(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gui::format::format_value;
+    use crate::gui::format::{format_value, with_unit};
 
     /// A positive beta typed in for manual magnets with no grade (E20): no hot limit, +inf, and
     /// no torque at it, NaN (`tests/robustness.rs`).
@@ -1061,6 +1065,30 @@ mod tests {
             .find(|l| l.starts_with("housing.space_claim_check,"))
             .unwrap();
         assert!(claim.ends_with(",Inside the space claim,,"), "{claim}");
+    }
+
+    #[test]
+    fn a_text_result_s_row_puts_no_unit_after_it() {
+        use crate::gui::test_support::{SCREEN, drawn_texts, sized_frame};
+        // With no drag the time to the limit is the engine's words, not "... the limit s".
+        let mut inputs = DesignInputs::default();
+        inputs.metal.measured_drag_Nm = Some(0.0);
+        let results = compute_all(&inputs);
+        let ctx = egui::Context::default();
+        let mut table = ResultsTable {
+            query: "time_to_limit_high".to_owned(),
+            ..ResultsTable::default()
+        };
+        let mut output = None;
+        for _ in 0..2 {
+            output = Some(sized_frame(&ctx, SCREEN, Vec::new(), |ui| {
+                table.ui(ui, &results, None, false, &mut Readouts::default());
+            }));
+        }
+        let texts = drawn_texts(&output.unwrap());
+        let never = crate::engine::temperature::NEVER;
+        assert!(texts.iter().any(|t| t == never), "{texts:?}");
+        assert!(texts.iter().all(|t| !t.ends_with(" limit s")), "{texts:?}");
     }
 
     #[test]

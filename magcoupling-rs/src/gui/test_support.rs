@@ -829,6 +829,7 @@ pub(crate) fn check_entry_texts(
             clamps_paused,
             consequences: None,
             auto: None,
+            held: &|_| None,
         };
         let mut readouts = crate::gui::readouts::Readouts::default();
         explain_ui(ui, Selection::Check(check), &shown, &mut readouts);

@@ -26,8 +26,8 @@
 //!
 //! Under the check list's rows, the material warnings that fire (spec Addendum A5: "plain
 //! language, colour-coded, linked to their teaching note"): each rule's text in its severity's
-//! colour (a warning red, a caution amber) with a link that opens its reviewed note in the
-//! Equation panel ([`warning_lines`], decision M43-8).
+//! colour (a warning red, a caution amber) with a link that shows its reviewed note in the
+//! Explain panel ([`warning_lines`], decision M43-8; UX overhaul decision C-11).
 //!
 //! [`result_tooltip`] is the hover text of every displayed result, keyed by result path: the
 //! text every readout hands to [`crate::gui::readouts::Readouts::show`], which adds the
@@ -56,7 +56,7 @@ use crate::engine::warnings::{Severity, WARNING_RULES, WarningRule};
 use crate::gui::checks::state_mark;
 use crate::gui::corrections::{CorrectionIndex, Mark, marker_text, marker_tooltip};
 use crate::gui::explorer::reviewed_note;
-use crate::gui::format::{format_value, with_unit};
+use crate::gui::format::{format_value, value_with_unit};
 use crate::gui::guidance::{BANNER_NOTE, Learn, design_status, status_line};
 use crate::gui::look;
 use crate::gui::plain_text::{display_label, help_for, label_for};
@@ -710,7 +710,7 @@ pub fn dashboard_lines(results: &DesignResults) -> Vec<DashboardLine> {
             DashboardLine {
                 path,
                 label: info.meta.label,
-                value: with_unit(format_value(&value), info.meta.unit),
+                value: value_with_unit(&value, format_value(&value), info.meta.unit),
                 level,
                 greyed,
                 stored_3d,
@@ -794,8 +794,8 @@ pub(crate) fn status_ui(
     ui.separator();
 }
 
-/// The lesson link of an Explain entry: a reviewed note's title (it asks for the note in the
-/// Equation panel; a note not reviewed never shows), an assumption's label (it asks for its
+/// The lesson link of an Explain entry: a reviewed note's title (it asks for the note, which the
+/// Explain panel then shows; a note not reviewed never shows), an assumption's label (it asks for its
 /// input's row; the rationale is its hover text), or [`NO_NOTE_YET`] with the reason as its
 /// hover text.
 pub(crate) fn learn_ui(ui: &mut egui::Ui, learn: Learn, readouts: &mut Readouts) {

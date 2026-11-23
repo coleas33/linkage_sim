@@ -723,13 +723,13 @@ mod tests {
     }
 
     #[test]
-    fn the_first_view_draws_at_most_four_hundred_and_fifty_words_at_1280_by_800() {
+    fn the_first_view_draws_at_most_four_hundred_and_thirty_words_at_1280_by_800() {
         // UX overhaul spec 2.1 (goal G-1) and 8.2, test 8, measured as the inventory did: the
         // words the opening screen shows. 608 before this stage (the dashboard's rows, the
-        // torque readouts and the welcome strip); 443 after it, the callout list under the
-        // drawing kept until its tags are selections (decision D-19). The design's 250 needs
-        // the top bar, the Size column and the callout list of the stage's second part, which
-        // lowers this ceiling.
+        // torque readouts and the welcome strip); 443 after its part 1, the callout list under
+        // the drawing kept until its tags are selections (decision D-19); 427 after part 2a's
+        // top bar. The design's 250 needs the Size column and the callout list of part 2b,
+        // which lowers this ceiling.
         use crate::gui::test_support::words_shown;
         let size = WINDOWS[0];
         let ctx = egui::Context::default();
@@ -739,7 +739,53 @@ mod tests {
         }
         let output = frame_on(&ctx, &mut app, size, Vec::new());
         let words = words_shown(&output, egui::Rect::from_min_size(egui::Pos2::ZERO, size));
-        assert!(words <= 450, "{words} words on the first view");
+        assert!(words <= 430, "{words} words on the first view");
+    }
+
+    #[test]
+    fn every_start_here_step_s_lesson_line_is_drawn_whole_in_the_app_s_own_font() {
+        // Plan review UXP-1 (BL-085): the lesson line under the open equation ("Full lesson:"
+        // and the note's title, a link) ran past the Equation panel's edge at 1024 x 700 on
+        // the long titles (steps 3, 7 and 12). Each step of the walk, at the three window
+        // sizes, in the app's theme and font: no text of the line is cut.
+        use crate::engine::explain::notes::START_HERE;
+        use crate::gui::explain::FULL_LESSON;
+        use crate::gui::explorer::{NEXT, START_HERE_BUTTON, reviewed_note};
+        use crate::gui::test_support::{cut_texts, primary_button, text_center};
+        use crate::gui::typeset::glyph_safe;
+        for size in [WINDOWS[1], WINDOWS[0], egui::vec2(1920.0, 1080.0)] {
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+            let ctx = egui::Context::default();
+            let mut app = MagcouplingApp::new(&ctx);
+            let click = |app: &mut MagcouplingApp, text: &str| {
+                let output = frame_on(&ctx, app, size, Vec::new());
+                let at = text_center(&output, text);
+                frame_on(&ctx, app, size, vec![egui::Event::PointerMoved(at)]);
+                for pressed in [true, false] {
+                    frame_on(&ctx, app, size, vec![primary_button(at, pressed)]);
+                }
+                frame_on(&ctx, app, size, vec![egui::Event::PointerGone]);
+                frame_on(&ctx, app, size, Vec::new());
+                frame_on(&ctx, app, size, Vec::new())
+            };
+            frame_on(&ctx, &mut app, size, Vec::new());
+            let mut output = click(&mut app, START_HERE_BUTTON);
+            for (step, &(id, _)) in START_HERE.iter().enumerate() {
+                if step > 0 {
+                    output = click(&mut app, NEXT);
+                }
+                let title = glyph_safe(reviewed_note(id).expect("a reviewed note").title);
+                let line = [FULL_LESSON, title.as_str()];
+                let cut: Vec<String> = cut_texts(&output, screen)
+                    .into_iter()
+                    .filter(|cut| {
+                        line.iter()
+                            .any(|text| cut.starts_with(&format!("{text:?} by")))
+                    })
+                    .collect();
+                assert!(cut.is_empty(), "{size:?}, step {}: cut: {cut:#?}", step + 1);
+            }
+        }
     }
 
     #[test]
@@ -906,11 +952,9 @@ mod tests {
         let count = |text: &str| texts.iter().filter(|t| *t == text).count();
         assert_eq!(count(STARTING_STATUS), 1, "{texts:?}");
         assert_eq!(count(CHANGED_DOT), 0, "no input is changed at the baseline");
-        assert_eq!(
-            count(crate::gui::OPEN_EXAMPLE),
-            1,
-            "the example design's button"
-        );
+        // The example design is an item of the Design menu, not on the first view.
+        assert_eq!(count(crate::gui::OPEN_EXAMPLE), 0, "{texts:?}");
+        assert_eq!(count(crate::gui::DESIGN_MENU), 1, "{texts:?}");
         // The readouts show the requirement and its margin.
         assert_eq!(count("1.35 N·m"), 1, "{texts:?}");
         // The gap breaks only between its torque and its percent.
@@ -1566,11 +1610,54 @@ mod tests {
         assert!(script.contains(DESIGN_FILE_LOADED));
         // The equation registry's log line, built when the panel starts.
         assert!(script.contains(crate::gui::readouts::REGISTRY_LOG_PREFIX));
-        // The header's Show spreadsheet details toggle (spec S2-5), which the first view shows.
+        // The Show spreadsheet details toggle (spec S2-5), in the Design menu (UX overhaul
+        // decision C-12).
         assert!(
             script.contains(crate::gui::SHOW_DETAILS),
-            "the smoke prompt names the header's toggle"
+            "the smoke prompt names the details toggle"
         );
+        // UX overhaul spec 4.2: the prompt names the top bar's buttons by the words the page
+        // draws, finds the menu's items under Design, and no longer looks for the buttons that
+        // left the bar.
+        {
+            use crate::gui::explain::LEARN;
+            use crate::gui::{EXPORT, LOAD_DESIGN, RESET_TO_START, SHARE};
+            for (what, text) in [
+                ("the Design menu", crate::gui::DESIGN_MENU),
+                ("the reset", RESET_TO_START),
+                ("the file's load", LOAD_DESIGN),
+                ("Share", SHARE),
+                ("Export", EXPORT),
+                ("Learn", LEARN),
+            ] {
+                assert!(
+                    script.contains(&format!("\"{text}\"")),
+                    "the smoke prompt names {what}: {text:?}"
+                );
+            }
+            for gone in [
+                "\"Reset all\"",
+                "\"Copy share link\"",
+                "\"Equation panel\" button",
+                "after \"Reset all\"",
+            ] {
+                assert!(
+                    !script.contains(gone),
+                    "the smoke prompt still names {gone}"
+                );
+            }
+            // The lesson link shows its note in the Explain panel (decision C-11), where the
+            // step looks for it.
+            let link = script
+                .find("lesson_link_opened=true")
+                .expect("the link's verdict");
+            let verdict = &script[link..];
+            let verdict = &verdict[..verdict.find('.').unwrap_or(verdict.len())];
+            assert!(
+                verdict.contains("Explain panel") && !verdict.contains("Equation panel"),
+                "the note is judged in the Explain panel: {verdict}"
+            );
+        }
         // Spec R14 (guidance slice 2): the steps name a note's What to change and its sources
         // fold, the Geometry tab and the check list's last row as the page draws them, so the
         // prompt cannot go stale unnoticed.
