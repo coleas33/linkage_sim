@@ -250,6 +250,40 @@ pub const DESIGN_CHECK: &str = "Design check";
 /// The start of the wall-rule line: what the cup wall check asks for at the pocket corners.
 pub const WALL_RULE: &str = "Wall rule";
 
+/// The thinnest cap skirt (the cap's wall past its thread) drawn without a caution [mm]: owner
+/// answer 4a of 2026-11-22, a conservative guide value, not a tested making limit (register A-22).
+pub const MIN_CAP_SKIRT_MM: f64 = 0.5;
+
+/// The start of the cap's skirt caution (BL-082).
+pub const SKIRT_CAUTION_START: &str = "Cap wall past its thread (skirt)";
+
+/// The Size tab's amber lines: walls thinner than a guide value that no counted check judges, so
+/// the status line's count does not move. The wall past the keyway while it stands (a keyway
+/// that breaks through is an exploration line in the error colour instead), and the cap's nominal
+/// skirt, (cap outside diameter - cap thread diameter) / 2 (BL-082): the thread's nominal diameter
+/// is the least root a tapped thread has, so the real wall is a few hundredths of a mm thinner.
+/// The skirt is compared as quoted, at four significant digits, so it never reads equal to the
+/// minimum beside its caution.
+pub fn wall_cautions(inputs: &DesignInputs, results: &DesignResults) -> Vec<String> {
+    let mut lines = Vec::new();
+    let key_wall = results.model.hub_wall_past_key_mm;
+    if key_wall.is_finite() && key_wall > 0.0 && key_wall < 2.5 {
+        lines.push(format!(
+            "Wall past keyway: {key_wall:.2} mm; existing guidance is about 2.5 mm."
+        ));
+    }
+    let md = &inputs.metal;
+    let skirt = (md.cap_od_mm - md.cap_thread_dia_mm) / 2.0;
+    let quoted: f64 = format_value(&Value::Num(skirt)).parse().unwrap_or(skirt);
+    if quoted < MIN_CAP_SKIRT_MM {
+        lines.push(format!(
+            "{SKIRT_CAUTION_START}: {}; guide minimum is {MIN_CAP_SKIRT_MM} mm.",
+            mm(skirt)
+        ));
+    }
+    lines
+}
+
 /// Whether both coordinates of `p` are finite.
 pub(crate) fn finite(p: Mm) -> bool {
     p[0].is_finite() && p[1].is_finite()

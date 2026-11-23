@@ -943,6 +943,17 @@ mod tests {
         assert_eq!(inputs.coupling.keyway_depth_mm, 1.4);
         let wall = compute_all(&inputs).model.hub_wall_past_key_mm;
         assert!((wall - 2.55).abs() < 1e-9, "{wall}");
+        // Nor the cap's skirt caution (BL-082): its skirt, 0.55 mm, is over the minimum.
+        use crate::gui::geometry::{MIN_CAP_SKIRT_MM, SKIRT_CAUTION_START, wall_cautions};
+        let skirt = (inputs.metal.cap_od_mm - inputs.metal.cap_thread_dia_mm) / 2.0;
+        assert!(
+            (skirt - 0.55).abs() < 1e-9 && skirt > MIN_CAP_SKIRT_MM,
+            "{skirt}"
+        );
+        assert_eq!(
+            wall_cautions(&inputs, &compute_all(&inputs)),
+            Vec::<String>::new()
+        );
         for size in [LAPTOP, egui::vec2(LAPTOP.x, 20_000.0)] {
             let ctx = egui::Context::default();
             let mut app = MagcouplingApp::new(&ctx);
@@ -950,7 +961,7 @@ mod tests {
             let output = frame_on(&ctx, &mut app, size, Vec::new());
             let texts = drawn_texts(&output);
             assert!(texts.iter().any(|t| t == STARTING_STATUS), "{texts:?}");
-            for start in ["Wall past keyway", "Exploration only"] {
+            for start in ["Wall past keyway", "Exploration only", SKIRT_CAUTION_START] {
                 assert!(!texts.iter().any(|t| t.starts_with(start)), "{texts:?}");
             }
             let visuals = ctx.style().visuals.clone();
