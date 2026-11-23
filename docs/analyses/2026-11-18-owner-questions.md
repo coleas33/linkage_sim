@@ -401,7 +401,9 @@ Added 2026-11-23 (the next free number). Part 2b-ii-a moves the trace from a row
 - (a) As the default.
 - (b) While the selected input is the one traced, its entry also shows the banner and Clear trace under the link (no new text; a second copy of the banner).
 
-Source: UX design section 5.2; A-30; BL-092 plan, decision D-52; plan review UXP-3.
+Two more points for the same ruling (BL-092 review, PT-2 and UXC-2). The link's words do not change once the trace is on: the second click that ends the trace is on a link that still says "Highlight the results this drives". And the link promises more than it marks: it highlights only results with an equation record (416 of 1112), so on the drive torque's entry it highlights nothing while the entry above it says the drive torque moves the nominal pull-out. Either could be worded on the link itself ("Stop highlighting" while traced; "... that have an equation"), or (b) above covers both, since the banner says each.
+
+Source: UX design section 5.2; A-30; BL-092 plan, decision D-52; plan review UXP-3; BL-092 review PT-2 and UXC-2.
 
 ### Linkage simulator
 

@@ -920,6 +920,7 @@ mod tests {
             LEARN,
             TRACE_LINK,
             crate::gui::checks::HEADING,
+            crate::gui::results_table::TRACED_ONLY_HELP,
         ];
         texts.extend(STEPS);
         for text in texts {
@@ -931,6 +932,11 @@ mod tests {
                 assert!(!lower.contains(banned), "{text:?} says {banned:?}");
             }
         }
+        // A label's click selects an input; only its entry's link traces it (spec 5.2).
+        assert!(
+            !crate::gui::results_table::TRACED_ONLY_HELP.contains("label"),
+            "the trace filter's hover names the link, not the label"
+        );
         // The orientation says what the notes say: torque across a gap without touching, and
         // slip past the pull-out torque.
         for words in ["without touching", "pull-out torque", "slip"] {

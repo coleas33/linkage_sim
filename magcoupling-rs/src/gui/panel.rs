@@ -381,8 +381,8 @@ pub struct MagcouplingPanel {
     /// The Equation panel: the equation open, its trail, the readout hovered in the last frame
     /// (this frame marks its equation's terms) and the input row a leaf term highlights.
     explorer: Explorer,
-    /// The input or result traced (decision O-8): a click on an input's label or on a result
-    /// sets it; every path it reaches is framed in the panel's mark colour.
+    /// The input or result traced (decision O-8): the link in an input's Explain entry or a
+    /// click on a result sets it; every path it reaches is framed in the panel's mark colour.
     trace: Option<Trace>,
     /// Whether the shaft-clamp section is paused ([`clamps::PAUSED`], which every panel starts
     /// from): the views leave it out. A field, not the constant, so a test draws either state.
@@ -767,8 +767,8 @@ impl MagcouplingPanel {
             }
         }
         // After every change of the trace this frame (Clear trace, an entry's trace link, a
-        // result click), whichever view the centre region shows: the results table's trace filter goes
-        // off with an input's trace even while the table is not drawn.
+        // result click), whichever view the centre region shows: the results table's trace
+        // filter goes off with an input's trace even while the table is not drawn.
         self.results_table.sync_trace_filter(self.trace.as_ref());
         self.explorer.end_frame(ui.ctx(), events);
         // One undo step per settled edit.

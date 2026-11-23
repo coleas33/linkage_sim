@@ -62,6 +62,11 @@ pub const FAILING_ONLY: &str = "Failing checks only";
 /// The trace filter's checkbox (decision O-8): the rows an input's trace marks alone.
 pub const TRACED_ONLY: &str = "Traced only";
 
+/// The trace filter's hover: how an input's trace starts (spec 5.2: its entry's link; a click
+/// on its label only selects it).
+pub const TRACED_ONLY_HELP: &str =
+    "The results an input's trace marks: select the input and click its entry's link";
+
 /// What the table says when the trace itself marks none of the rows the failing filter lets
 /// through ([`empty_text`]): the trace reaches only results with an equation record, and an input
 /// may reach none of them.
@@ -502,7 +507,7 @@ impl ResultsTable {
                 input_traced,
                 egui::Checkbox::new(&mut self.traced_only, TRACED_ONLY),
             )
-            .on_hover_text("The results an input's trace marks: click the input's label");
+            .on_hover_text(TRACED_ONLY_HELP);
             if self.matches.is_none()
                 || self.query != self.matched_query
                 || self.matched_paused != clamps_paused
