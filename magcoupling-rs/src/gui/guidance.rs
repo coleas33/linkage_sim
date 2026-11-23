@@ -1,8 +1,9 @@
 //! Check guides (guidance slice 1, spec 3.4 and 4.1): under a dashboard check that fails or
 //! asks for a look, what is wrong in this design's numbers (the Problem), why the check
 //! matters (the Why, one plain sentence) and which inputs to move which way (the Fix); where
-//! each dashboard row's "Why:" link leads ([`Learn`], [`row_learn`]); and the design status
-//! line that counts the failing checks ([`design_status`]).
+//! each dashboard row's "Full lesson:" link leads in its Explain entry ([`Learn`],
+//! [`row_learn`]); and the design status line that counts the failing checks
+//! ([`design_status`]).
 //!
 //! [`CHECK_GUIDES`] holds one guide per check of the dashboard's rows
 //! ([`crate::gui::dashboard::DASHBOARD`]) and one for the Magnets fit row ([`FIT_CHECK`]),
@@ -97,7 +98,7 @@ impl Direction {
     }
 }
 
-/// Where a dashboard row's "Why:" link leads.
+/// Where a dashboard row's "Full lesson:" link (in its Explain entry) leads.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Learn {
     /// A teaching note by id; every one named here has passed the accuracy gate
@@ -135,7 +136,7 @@ pub struct CheckGuide {
     pub why: &'static str,
     /// The inputs to move and which way; [`fixes`] gives the ones to show for a design.
     pub fixes: Fixes,
-    /// Where the row's "Why:" link leads.
+    /// Where the row's "Full lesson:" link (in its Explain entry) leads.
     pub learn: Learn,
 }
 
@@ -574,8 +575,8 @@ pub static CHECK_GUIDES: [CheckGuide; 10] = [
     FIT_GUIDE,
 ];
 
-/// Where each dashboard row's "Why:" link leads, in [`DASHBOARD`]'s order (spec 3.4: every
-/// row has one). A row with a check leads where its guide does; a value row to the reviewed
+/// Where each dashboard row's "Full lesson:" link leads, in [`DASHBOARD`]'s order (spec 3.4:
+/// every row has one). A row with a check leads where its guide does; a value row to the reviewed
 /// note that explains its equation, an assumption's rationale, or the reason there is none.
 pub static ROW_LEARN: [(&str, Learn); DASHBOARD.len()] = [
     ("model.pullout_Nm", Learn::Note("pullout_angle")),
@@ -620,8 +621,8 @@ pub static ROW_LEARN: [(&str, Learn); DASHBOARD.len()] = [
     (END_EFFECT, END_EFFECT_GUIDE.learn),
 ];
 
-/// Where the "Why:" link of the dashboard row at `path` leads ([`ROW_LEARN`]); `None` for a
-/// path that is no dashboard row.
+/// Where the "Full lesson:" link of the dashboard row at `path` leads ([`ROW_LEARN`]); `None`
+/// for a path that is no dashboard row.
 pub fn row_learn(path: &str) -> Option<Learn> {
     ROW_LEARN
         .iter()
@@ -2677,6 +2678,22 @@ fn apart_from(results: &DesignResults, path: &str, bound: f64, above: bool) -> S
     }
 }
 
+/// Hot-low and the requirement as the Hot-low tile quotes the pair (UX overhaul spec 4.4): the
+/// rule the hot-minimum Problem quotes them by (BL-068, [`apart_from`]). Each reads as its
+/// readout shows it; where hot-low is under the requirement and both would read the same at
+/// four significant digits, hot-low is quoted one last digit below. So a failing tile never
+/// shows two equal numbers.
+pub(crate) fn hot_low_quotes(inputs: &DesignInputs, results: &DesignResults) -> (String, String) {
+    const HOT_LOW: &str = "metal.torque_hot_low_Nm";
+    let required = inputs.metal.required_min_Nm;
+    let hot_low = if result_number(results, HOT_LOW) < required {
+        apart_from(results, HOT_LOW, required, false)
+    } else {
+        result_text(results, HOT_LOW)
+    };
+    (hot_low, input_text(inputs, "metal.required_min_Nm"))
+}
+
 /// The gearbox check's Problem when it cannot be made (it asks for a look): a value it
 /// compares is not a number.
 const GEARBOX_UNKNOWN: &str = "The gearbox check cannot be made: cold-high at the gearbox input or the rating is not a number.";
@@ -3166,16 +3183,15 @@ mod tests {
     use crate::engine::model::ring_fits;
     use crate::engine::shaft_joint::CAUSES;
     use crate::engine::sizing::{SizingOutcome, solve};
-    use crate::gui::dashboard::{CHECKS, DASHBOARD, FIX, dashboard_ui};
+    use crate::gui::dashboard::{CHECKS, DASHBOARD};
     use crate::gui::explorer::reviewed_note;
     use crate::gui::plain_text::label_for;
-    use crate::gui::readouts::Readouts;
     use crate::gui::test_support::{
-        QUOTED_UNITS, assert_glyphs, auto_states, clamp_at_its_limit, drawn_texts, end_effect_edge,
-        glyph_context, hot_day, hub_overstressed, is_shaft_joint, keyway_through, mixed_rings,
-        n42_parts, only_the_clamp_fails, only_the_gearbox_fails, only_the_joint_fails,
+        QUOTED_UNITS, assert_glyphs, auto_states, check_entry_texts, clamp_at_its_limit,
+        end_effect_edge, glyph_context, hot_day, hub_overstressed, is_shaft_joint, keyway_through,
+        mixed_rings, n42_parts, only_the_clamp_fails, only_the_gearbox_fails, only_the_joint_fails,
         passing_design, reversed_hub_band, shaft_joint_input_rows, shaft_joint_result_rows,
-        short_magnets, sized_frame, slider_range, small_boss, with_magnets, with_poles,
+        short_magnets, slider_range, small_boss, with_magnets, with_poles,
     };
     use std::collections::BTreeSet;
 
@@ -5465,10 +5481,10 @@ mod tests {
 
     /// Asserts that the guide at `guide_index` of [`CHECK_GUIDES`] has no fix to show in this
     /// design (`inputs`, whose results are `results`) with the shaft-clamp section paused or
-    /// shown (`paused`), and that the dashboard, fed the fixes as the panel hands them to it (no
-    /// Minimum OD set), draws [`NO_FIX`] right after the Fix label of the guide's open block,
-    /// found by its `problem`: `dashboard::fix_line` draws it for an open block whose fixes are
-    /// empty (ruling B-4).
+    /// shown (`paused`), and that the check's Explain entry, fed the fixes as the panel hands
+    /// them to it (no Minimum OD set), draws [`NO_FIX`] right under its What to change heading,
+    /// after its `problem`: the entry draws it for a failing check whose fixes are empty
+    /// (ruling B-4).
     fn assert_open_block_draws_no_fix(
         inputs: &DesignInputs,
         results: &DesignResults,
@@ -5476,31 +5492,20 @@ mod tests {
         problem: &str,
         paused: bool,
     ) {
+        use crate::gui::explorer::WHAT_TO_CHANGE;
         let all = within_minimum_diameter(&all_fixes(inputs, results, paused), inputs, None);
         assert_eq!(all[guide_index], [], "paused {paused}");
-        let output = sized_frame(
-            &egui::Context::default(),
-            egui::vec2(1280.0, 4000.0),
-            Vec::new(),
-            |ui| {
-                dashboard_ui(
-                    ui,
-                    inputs,
-                    &DesignInputs::default(),
-                    results,
-                    &all,
-                    paused,
-                    &mut Readouts::default(),
-                )
-            },
-        );
-        let texts = drawn_texts(&output);
         let check = CHECK_GUIDES[guide_index].check;
+        let texts = check_entry_texts(inputs, results, &all, paused, check);
         let open = texts
             .iter()
             .position(|t| t == problem)
-            .unwrap_or_else(|| panic!("the block of {check} is open, paused {paused}"));
-        let fix = open + texts[open..].iter().position(|t| t == FIX).unwrap();
+            .unwrap_or_else(|| panic!("the entry of {check} has its problem, paused {paused}"));
+        let fix = open
+            + texts[open..]
+                .iter()
+                .position(|t| t == WHAT_TO_CHANGE)
+                .unwrap();
         assert_eq!(texts[fix + 1], NO_FIX, "paused {paused}");
     }
 
@@ -10177,7 +10182,28 @@ mod tests {
                 .unwrap()
                 .label,
         );
-        emit("panel/welcome strip", crate::gui::panel::WELCOME);
+        {
+            use crate::gui::explain as ex;
+            emit("explain/orientation", ex::ORIENTATION);
+            for (index, step) in ex::STEPS.iter().enumerate() {
+                emit(&format!("explain/orientation step {}", index + 1), step);
+            }
+            for (tag, text) in [
+                ("heading", ex::HEADING),
+                ("about", ex::ABOUT),
+                ("what it is", ex::WHAT_IT_IS),
+                ("what sets it", ex::WHAT_SETS_IT),
+                ("what a change does", ex::WHAT_A_CHANGE_DOES),
+                ("checks it touches", ex::CHECKS_IT_TOUCHES),
+                ("numbers", ex::NUMBERS),
+                ("full lesson", ex::FULL_LESSON),
+                ("equation", ex::EQUATION),
+            ] {
+                emit(&format!("explain/{tag}"), text);
+            }
+            emit("checks/heading", crate::gui::checks::HEADING);
+            emit("tiles/needs", crate::gui::tiles::NEEDS);
+        }
 
         // The solved change of each free variable, from the default to each end of its slider,
         // built as the panel builds the design shown (the ring radius moves the cap with the

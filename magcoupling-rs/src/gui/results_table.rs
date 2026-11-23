@@ -18,10 +18,10 @@ use serde_json::{Map, Value as Json};
 
 use crate::engine::clamps;
 use crate::engine::meta::{ResultSet, Value, result_rows};
+use crate::gui::checks::state_mark;
 use crate::gui::corrections::{CorrectionIndex, marker_text};
 use crate::gui::dashboard::{
-    CHECKS, Level, ResultInfo, badge, check_level, failing_checks, hover_text, result_info,
-    shown_text,
+    CHECKS, Level, ResultInfo, check_level, failing_checks, hover_text, result_info, shown_text,
 };
 use crate::gui::format::{non_finite_text, search_haystack, search_needle, with_unit};
 use crate::gui::plain_text::display_label;
@@ -716,7 +716,7 @@ fn group_heading_ui(ui: &mut egui::Ui, line: &HeadingLine, size: egui::Vec2) -> 
         let mut badge_ui = ui.new_child(
             egui::UiBuilder::new().max_rect(egui::Rect::from_min_size(at, egui::vec2(12.0, 12.0))),
         );
-        badge(&mut badge_ui, line.level);
+        state_mark(&mut badge_ui, line.level);
     }
     response
         .on_hover_text(if line.searching {
@@ -762,7 +762,7 @@ fn row_ui(
             ui.allocate_ui_with_layout(egui::vec2(width, height), layout, |ui| {
                 ui.set_min_width(width);
                 if level.is_some() {
-                    badge(ui, level);
+                    state_mark(ui, level);
                 }
                 ui.add(egui::Label::new(text).truncate());
             });

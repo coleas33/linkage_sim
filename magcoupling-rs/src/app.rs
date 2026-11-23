@@ -535,29 +535,50 @@ mod tests {
                 assert!(drawn.iter().all(|&c| c == colour), "{text:?}: {drawn:?}");
             }
         };
-        // The starting design: a dashboard row's title and the head of its Why line; the Size
-        // tab's three readout labels ("Hot-low torque" is drawn as both). Then their values.
+        // The starting design: the right column's two headings and two of the Size tab's
+        // readout labels. Then their values.
         let output = frame_output(&ctx, &mut app, Vec::new());
         let labels = [
-            "Pull-out torque (nominal)",
-            "Hot-low torque",
-            "Why:",
+            crate::gui::checks::HEADING,
+            crate::gui::explain::HEADING,
             "Required torque",
             "Pull-out torque (nominal, at 50 °C)",
         ];
         all(&output, &labels, theme::MUTED);
         all(&output, &["1.704 N·m", "1.448 N·m"], theme::TEXT);
+        // A check's name is what its row says: the text colour.
+        all(&output, &["Running clearance"], theme::TEXT);
         // A tab that is not the active one is quiet too; the active tab's name (drawn as the
         // left side's heading as well) is the text colour.
         all(&output, &["Gap sweep"], theme::MUTED);
         all(&output, &["Size and torque"], theme::TEXT);
-        // The failing example design: the heads of an open block are captions too, and the
-        // Magnets fit row's title is a label (the dashboard scrolled to its foot).
+        // The failing example design with its Running clearance check selected: the entry's
+        // headings are captions, and under the last a row's label is muted and its value is
+        // not.
+        use crate::gui::explain::{NUMBERS, WHAT_IT_IS, WHAT_SETS_IT};
+        use crate::gui::explorer::WHAT_TO_CHANGE;
+        use crate::gui::test_support::{primary_button, text_center};
         app.panel.open_example_design();
         frame_texts(&ctx, &mut app);
-        let output = frame_output(&ctx, &mut app, Vec::new());
-        all(&output, &["Problem:", "Fix:", "Why:"], theme::MUTED);
-        all(&output, &["2.688 N·m"], theme::TEXT);
+        let laptop = WINDOWS[0];
+        let output = frame_on(&ctx, &mut app, laptop, Vec::new());
+        let row = text_center(&output, "Running clearance");
+        frame_on(&ctx, &mut app, laptop, vec![egui::Event::PointerMoved(row)]);
+        for pressed in [true, false] {
+            frame_on(&ctx, &mut app, laptop, vec![primary_button(row, pressed)]);
+        }
+        frame_on(&ctx, &mut app, laptop, vec![egui::Event::PointerGone]);
+        let output = frame_on(&ctx, &mut app, laptop, Vec::new());
+        let headings = [WHAT_IT_IS, WHAT_SETS_IT, WHAT_TO_CHANGE, NUMBERS];
+        all(&output, &headings, theme::MUTED);
+        const CLEARANCE: &str = "metal.min_running_clearance_mm";
+        let label = crate::gui::plain_text::label_for(CLEARANCE);
+        all(&output, &[label], theme::MUTED);
+        let results = compute_all(&DesignInputs::default());
+        let lines = crate::gui::dashboard::shown_lines(&results, crate::engine::clamps::PAUSED);
+        let line = lines.iter().find(|line| line.path == CLEARANCE);
+        let value = line.expect("the clearance has a row").shown_value();
+        all(&output, &[value.as_str()], theme::TEXT);
     }
 
     /// One frame of `app` on a screen of `size` with `events`.
@@ -609,6 +630,116 @@ mod tests {
                 assert!(cut.is_empty(), "{size:?}, {}: cut: {cut:#?}", view.label());
             }
         }
+    }
+
+    #[test]
+    fn the_first_view_keeps_its_three_columns_its_tiles_and_the_fixed_3d_line_in_the_app_s_own_font()
+     {
+        // UX overhaul spec 8.2, test 15, and the stage 1 review's C-6: in the app's theme and
+        // font, at the smallest window supported, the laptop screen and a desktop one. The four
+        // tile numbers are drawn whole, between the Size column and the check list; the drawing
+        // keeps its least height; the check list shows the line that says two checks read
+        // stored 3D fields (register row A-18; spec 2.3: it stays visible), and the Explain
+        // panel its orientation. The line is found by its constant, whatever its words.
+        use crate::gui::dashboard::STORED_3D_LABEL;
+        use crate::gui::explain::ORIENTATION;
+        use crate::gui::geometry_view::MIN_DRAWING_HEIGHT;
+        use crate::gui::test_support::{flat_shapes, shown_whole};
+        use crate::gui::tiles::Tile;
+        // The starting design, then the failing example design (its longer entries and
+        // lines).
+        for example in [false, true] {
+            let inputs = if example {
+                DesignInputs::default()
+            } else {
+                starting_design()
+            };
+            let results = compute_all(&inputs);
+            for size in [WINDOWS[1], WINDOWS[0], egui::vec2(1920.0, 1080.0)] {
+                let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+                let ctx = egui::Context::default();
+                let mut app = MagcouplingApp::new(&ctx);
+                if example {
+                    app.panel.open_example_design();
+                }
+                for _ in 0..3 {
+                    frame_on(&ctx, &mut app, size, Vec::new());
+                }
+                let output = frame_on(&ctx, &mut app, size, Vec::new());
+                let whole = |text: &str| {
+                    let rects = shown_whole(&output, text, screen);
+                    assert_eq!(
+                        rects.len(),
+                        1,
+                        "{size:?}: {text:?} drawn whole once: {rects:?}"
+                    );
+                    rects[0]
+                };
+                whole(STORED_3D_LABEL);
+                whole(ORIENTATION);
+                let size_column = whole("Required torque");
+                // The fold of the detailed inputs, the way to the other inputs, on the first view
+                // where the window is at least the laptop's height (plan review E-4).
+                if size.y >= WINDOWS[0].y {
+                    whole("Detailed inputs");
+                }
+                let checks = whole(crate::gui::checks::HEADING);
+                let numbers: Vec<egui::Rect> = Tile::ALL
+                    .iter()
+                    .map(|tile| whole(&tile.number(&inputs, &results).unwrap()))
+                    .collect();
+                for number in &numbers {
+                    assert!(
+                        size_column.right() < number.left() && number.right() < checks.left(),
+                        "{size:?}: a tile's number {number:?} between {size_column:?} and {checks:?}"
+                    );
+                }
+                // The four tiles take one row where the centre holds four of the narrowest (the
+                // laptop and the desktop windows: the smoke run's "four tiles side by side"),
+                // else two rows of two (review TQ-1).
+                let tops: std::collections::BTreeSet<i32> =
+                    numbers.iter().map(|n| n.top().round() as i32).collect();
+                let rows = if size.x >= WINDOWS[0].x { 1 } else { 2 };
+                assert_eq!(tops.len(), rows, "{size:?}: {numbers:?}");
+                // The drawing: the largest plate in the background colour.
+                let drawing = flat_shapes(&output)
+                    .into_iter()
+                    .filter_map(|shape| match shape {
+                        egui::Shape::Rect(r) if r.fill == theme::BG => Some(r.rect),
+                        _ => None,
+                    })
+                    .max_by(|a, b| a.area().total_cmp(&b.area()))
+                    .expect("the drawing's plate");
+                assert!(
+                    drawing.height() >= MIN_DRAWING_HEIGHT && drawing.bottom() <= size.y,
+                    "{size:?}: {drawing:?}"
+                );
+                assert!(
+                    numbers.iter().all(|n| n.bottom() < drawing.top()),
+                    "{size:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_first_view_draws_at_most_four_hundred_and_fifty_words_at_1280_by_800() {
+        // UX overhaul spec 2.1 (goal G-1) and 8.2, test 8, measured as the inventory did: the
+        // words the opening screen shows. 608 before this stage (the dashboard's rows, the
+        // torque readouts and the welcome strip); 443 after it, the callout list under the
+        // drawing kept until its tags are selections (decision D-19). The design's 250 needs
+        // the top bar, the Size column and the callout list of the stage's second part, which
+        // lowers this ceiling.
+        use crate::gui::test_support::words_shown;
+        let size = WINDOWS[0];
+        let ctx = egui::Context::default();
+        let mut app = MagcouplingApp::new(&ctx);
+        for _ in 0..3 {
+            frame_on(&ctx, &mut app, size, Vec::new());
+        }
+        let output = frame_on(&ctx, &mut app, size, Vec::new());
+        let words = words_shown(&output, egui::Rect::from_min_size(egui::Pos2::ZERO, size));
+        assert!(words <= 450, "{words} words on the first view");
     }
 
     #[test]
@@ -782,9 +913,15 @@ mod tests {
         );
         // The readouts show the requirement and its margin.
         assert_eq!(count("1.35 N·m"), 1, "{texts:?}");
-        assert_eq!(count("margin +0.10 N·m (+7.3 %)"), 1, "{texts:?}");
-        // The header takes a second row at this width; the torque card still opens.
-        assert_eq!(count(crate::gui::torque_card::CAPTION), 1, "{texts:?}");
+        // The gap breaks only between its torque and its percent.
+        assert_eq!(count("margin +0.10 N·m"), 1, "{texts:?}");
+        assert_eq!(count("(+7.3 %)"), 1, "{texts:?}");
+        // The Hot-low tile says what it must reach, and the Explain panel is on its
+        // orientation: the torque card is one click away, on that tile.
+        assert_eq!(count(crate::gui::tiles::NEEDS), 1, "{texts:?}");
+        assert_eq!(count("1.350 N·m"), 1, "{texts:?}");
+        assert_eq!(count(crate::gui::explain::ORIENTATION), 1, "{texts:?}");
+        assert_eq!(count(crate::gui::torque_card::CAPTION), 0, "{texts:?}");
         // An edit, then Reset all: the starting design again, not the spreadsheet's.
         app.panel
             .load_design_file(&crate::gui::session::design_to_json(&Design::default()))
@@ -1423,10 +1560,9 @@ mod tests {
             script.contains(crate::gui::SHOW_DETAILS),
             "the smoke prompt names the header's toggle"
         );
-        // Spec R14 (guidance slice 2): the steps name the welcome strip, a note's What to change
-        // and its sources fold, the Geometry tab and the dashboard's last row as the page draws
-        // them, so the prompt cannot go stale unnoticed.
-        assert!(script.contains(crate::gui::WELCOME), "the welcome strip");
+        // Spec R14 (guidance slice 2): the steps name a note's What to change and its sources
+        // fold, the Geometry tab and the check list's last row as the page draws them, so the
+        // prompt cannot go stale unnoticed.
         assert!(
             script.contains(crate::gui::explorer::WHAT_TO_CHANGE),
             "a note's What to change"
@@ -1441,7 +1577,57 @@ mod tests {
         );
         let fit =
             crate::gui::guidance::guide(crate::gui::guidance::FIT_CHECK).expect("the fit guide");
-        assert!(script.contains(fit.label), "the dashboard's last row");
+        assert!(script.contains(fit.label), "the check list's last row");
+        // UX overhaul slice B, stage 2 (spec 4.4, 4.5 and 5): the first view and the check's
+        // entry are named by the words the page draws: the right column's two headings, the
+        // orientation's opening words, the Hot-low tile's line, the entry's headings and its
+        // lesson link; and the card step looks for the card under its heading in the entry.
+        {
+            use crate::gui::explain::{
+                FULL_LESSON, NUMBERS, ORIENTATION, WHAT_A_CHANGE_DOES, WHAT_IT_IS,
+            };
+            let opening: String = ORIENTATION
+                .split_whitespace()
+                .take(3)
+                .collect::<Vec<_>>()
+                .join(" ");
+            for (what, text) in [
+                ("the check list's heading", crate::gui::checks::HEADING),
+                ("the Explain panel's heading", crate::gui::explain::HEADING),
+                ("the orientation's opening words", opening.as_str()),
+                ("the Hot-low tile's line", crate::gui::tiles::NEEDS),
+                ("the entry's first heading", WHAT_IT_IS),
+                ("the entry's numbers", NUMBERS),
+                ("the entry's lesson link", FULL_LESSON),
+                ("the tile's entry's card heading", WHAT_A_CHANGE_DOES),
+            ] {
+                assert!(
+                    script.contains(text),
+                    "the smoke prompt names {what}: {text}"
+                );
+            }
+            let hot_low = crate::gui::guidance::guide("metal.hot_min_check").expect("its guide");
+            assert!(script.contains(hot_low.label), "the check the step opens");
+            // The link the step clicks opens a reviewed note with "What to change" lines, not
+            // the plain "no note yet" text, which is no link (review TQ-3).
+            let crate::gui::guidance::Learn::Note(id) = hot_low.learn else {
+                panic!("the hot-low check's lesson is a note: {:?}", hot_low.learn);
+            };
+            let note = crate::gui::explorer::reviewed_note(id).expect("a reviewed note");
+            assert!(!note.change.is_empty(), "{id}: its What to change lines");
+            let entry = script
+                .find("check_entry=true")
+                .expect("the entry's verdict");
+            let link = script
+                .find("lesson_link_opened=true")
+                .expect("the link's verdict");
+            assert!(
+                entry < link && script[entry..link].contains(FULL_LESSON),
+                "the check's entry is judged before its lesson link is clicked"
+            );
+            // The dashboard is gone: the prompt does not send the agent looking for it.
+            assert!(!script.to_lowercase().contains("dashboard"));
+        }
         // Slice 3 (spec 8.6, test 26): the card step quotes the torque card whole as the page
         // draws it at the smoke design (Auto on the magnet length): the heading, the caption, the
         // Auto line and the held row; it names the other three rows by their starts. The G-3
@@ -1566,7 +1752,7 @@ mod tests {
             &script[start..end]
         };
         assert!(
-            between("dashboard_scrolls=true", "page.goto(").contains(collect),
+            between("tooltip_plain=true was judged", "page.goto(").contains(collect),
             "the first page's console messages are collected before the link is opened again"
         );
         assert!(

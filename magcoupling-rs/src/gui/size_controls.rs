@@ -157,8 +157,8 @@ pub(crate) fn auto_ui(ui: &mut egui::Ui, state: SizingState) -> SizingState {
 /// The label of the requirement's slider (`metal.required_min_Nm`): the input's display label.
 pub const REQUIRED: &str = REQUIRED_TORQUE;
 
-/// The label of the hot-low torque (`metal.torque_hot_low_Nm`), its gap to the requirement
-/// beside it ([`torque_gap_text`]): the dashboard row's display label.
+/// The label of the hot-low torque's tile (`metal.torque_hot_low_Nm`), what it must reach and
+/// its gap to the requirement under it ([`torque_gap_text`]): the result's display label.
 pub const HOT_LOW: &str = HOT_LOW_TORQUE;
 
 /// What a torque readout shows, the gap left out, where the end effect is outside the model's
@@ -439,7 +439,6 @@ pub(crate) fn controls_ui(
         if let Some(widget) = minimum_widget {
             output.widgets.push(widget);
         }
-        ui.label(LINKED_HOUSING);
     });
     output
 }

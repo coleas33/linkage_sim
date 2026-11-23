@@ -1,6 +1,6 @@
 # Magcoupler overhaul: an instrument that teaches — design
 
-- Date: 2026-11-09. Base: `main` at 1048962. Status: **approved by the owner on 2026-11-16 ("Approve and yes. Stop asking for my direction and do what you think is best"); slice A (BL-077) is merged (17e4638); slice B is built in stages, and its first, the look (section 6; BL-079), is built by the plan `docs/superpowers/plans/2026-11-18-magcoupler-overhaul-b1-the-look.md`; the rest of slice B (sections 4 and 5) and slices C to F are not built.**
+- Date: 2026-11-09. Base: `main` at 1048962. Status: **approved by the owner on 2026-11-16 ("Approve and yes. Stop asking for my direction and do what you think is best"); slice A (BL-077) is merged (17e4638); slice B is built in stages, and its first, the look (section 6; BL-079), is built by the plan `docs/superpowers/plans/2026-11-18-magcoupler-overhaul-b1-the-look.md`; the second stage, sections 4 and 5, is built in two parts, and its first (the check list, the Explain panel, the tiles; BL-081) by the plan `docs/superpowers/plans/2026-11-22-magcoupler-overhaul-b2-the-instrument.md`; the second part and slices C to F are not built.**
 - Revised 2026-11-09 for the owner's ruling on the requirement (O-8, section 7.1) and for the builder check
   (section 12.5), and on 2026-11-10 for the owner's answer on the number (O-9) and the ruling on open questions (O-10).
 - This is an umbrella design for six slices (section 3). It is firm on slices A and B and lighter on C to F. Each
