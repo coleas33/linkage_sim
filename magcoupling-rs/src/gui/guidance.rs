@@ -630,13 +630,14 @@ pub fn row_learn(path: &str) -> Option<Learn> {
         .map(|&(_, learn)| learn)
 }
 
-/// Where the Size tab's Why links under Magnets per ring and Outside diameter (spec 3.7) and on
-/// the torque card's heading (slice 3 spec 6.1) lead: how the coupling makes torque, Start
-/// here's first step.
+/// Where the Why links of Magnets per ring and Outside diameter (spec 3.7; their Explain
+/// entries' lessons since UX overhaul spec 4.3) and the torque card's heading's (slice 3 spec
+/// 6.1) lead: how the coupling makes torque, Start here's first step.
 pub const SIZE_TAB_NOTE: &str = "torque_from_shear";
 
-/// Where the Why links at the end of the Size tab's Required and Hot-low rows lead: the hot
-/// minimum check's note (a test keeps it [`HOT_MIN_GUIDE`]'s).
+/// Where the Why links of the Required torque row (its Explain entry's lesson since UX overhaul
+/// spec 4.3) and of the hot-low torque lead: the hot minimum check's note (a test keeps it
+/// [`HOT_MIN_GUIDE`]'s).
 pub const TORQUE_BAND_NOTE: &str = "hot_low_cold_high";
 
 /// Where the Why link under the end-effect banner leads: the end-effect check's note (a test
@@ -920,10 +921,49 @@ pub const NO_FIX: &str = "No listed change helps from here: each is at its slide
 /// settles one check and sets the other back. Two checks already failing are the only way
 /// there: a fix whose step turns a passing check red is not offered ([`helps`]).
 pub fn trade_offs(all: &[Vec<(&'static str, Direction)>], index: usize) -> Vec<String> {
+    trade_off_pairs(all, index)
+        .into_iter()
+        .map(|(path, raising, lowering)| trade_off_text(path, raising, lowering))
+        .collect()
+}
+
+/// The [`trade_offs`] that name the input `path`, each once (UX overhaul spec 5.3: an input's
+/// Explain entry's "Watch out"): the same sentence the two checks' blocks draw.
+pub fn input_trade_offs(all: &[Vec<(&'static str, Direction)>], path: &str) -> Vec<String> {
+    let mut notes: Vec<String> = Vec::new();
+    for index in 0..CHECK_GUIDES.len() {
+        for (input, raising, lowering) in trade_off_pairs(all, index) {
+            let note = trade_off_text(input, raising, lowering);
+            if input == path && !notes.contains(&note) {
+                notes.push(note);
+            }
+        }
+    }
+    notes
+}
+
+/// The sentence of one trade-off: `raising`'s check needs the input at `path` raised and
+/// `lowering`'s lowered.
+fn trade_off_text(path: &str, raising: &CheckGuide, lowering: &CheckGuide) -> String {
+    format!(
+        "One input pulls two ways ({}): {} needs it raised and {} needs it lowered, so change another input to settle one of them.",
+        fix_label(path),
+        raising.label,
+        lowering.label
+    )
+}
+
+/// The trade-offs of the guide at `index` ([`trade_offs`]): each input its fixes move that
+/// another failing check's fix moves the other way, with the guide that raises it and the one
+/// that lowers it.
+fn trade_off_pairs(
+    all: &[Vec<(&'static str, Direction)>],
+    index: usize,
+) -> Vec<(&'static str, &'static CheckGuide, &'static CheckGuide)> {
     let (Some(own), Some(guide)) = (all.get(index), CHECK_GUIDES.get(index)) else {
         return Vec::new();
     };
-    let mut notes = Vec::new();
+    let mut pairs = Vec::new();
     for &(path, direction) in own {
         let opposite = match direction {
             Direction::Raise => Direction::Lower,
@@ -938,15 +978,10 @@ pub fn trade_offs(all: &[Vec<(&'static str, Direction)>], index: usize) -> Vec<S
                 Direction::Raise => (guide, other),
                 _ => (other, guide),
             };
-            notes.push(format!(
-                "One input pulls two ways ({}): {} needs it raised and {} needs it lowered, so change another input to settle one of them.",
-                fix_label(path),
-                raising.label,
-                lowering.label
-            ));
+            pairs.push((path, raising, lowering));
         }
     }
-    notes
+    pairs
 }
 
 /// A fix that also sets back another guide's check, by physics the fix's own check does not
@@ -10156,6 +10191,7 @@ mod tests {
         }
         emit("size tab/Required label", sc::REQUIRED);
         emit("size tab/Hot-low label", sc::HOT_LOW);
+        emit("size tab/Minimum OD hover", sc::MINIMUM_HOVER);
         emit("size tab/Outside diameter hover", sc::DIAMETER_HOVER);
         emit("size tab/Overall length hover", sc::LENGTH_HOVER);
         emit("size tab/footnote", sc::LINKED_HOUSING);
@@ -10198,6 +10234,7 @@ mod tests {
                 ("numbers", ex::NUMBERS),
                 ("full lesson", ex::FULL_LESSON),
                 ("equation", ex::EQUATION),
+                ("spreadsheet cell", ex::SPREADSHEET_CELL),
             ] {
                 emit(&format!("explain/{tag}"), text);
             }

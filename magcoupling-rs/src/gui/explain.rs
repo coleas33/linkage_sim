@@ -12,6 +12,12 @@
 //! with the links it had; a tile's entry holds its result's help text and, for the hot-low
 //! torque, the torque card (decision C-10).
 //!
+//! A row of the Size column selects its entry when touched (spec 4.3, 5.2): what the control is
+//! (its label's hover), the lines the column drew under it (its hint, what sets it, the floor,
+//! the footnote on what the controls move), its torque-card row, the checks whose fixes name
+//! it, where two of them pull it opposite ways the sentence that says so, its Why link's note
+//! and, with the spreadsheet details, its input's cell.
+//!
 //! A teaching note shows here too (decision C-11): the top bar's [`LEARN`] lists every note
 //! shown by its title, and a title, a lesson link anywhere on the page or a step of the Start
 //! here walk (spec 5.5) selects the note. Its entry is the links to the equations it explains,
@@ -21,6 +27,8 @@
 
 use crate::engine::explain::notes::Note;
 use crate::engine::explain::notes::{NOTES, shown_when};
+use crate::engine::meta::{InputSet, Value};
+use crate::engine::size_controls::dimensions;
 use crate::engine::sizing::FreeVariable;
 use crate::gui::checks::{mark_level, state_mark};
 use crate::gui::dashboard::why_note_link;
@@ -32,14 +40,22 @@ use crate::gui::explorer::{
     NoteLink, NoteView, START_HERE_BUTTON, WATCH_OUT, WHAT_TO_CHANGE, explains_ui, note_ui,
     reviewed_note, start_here_hover,
 };
+use crate::gui::format::{format_value, value_with_unit};
 use crate::gui::guidance::{
     self, CHECK_GUIDES, CheckGuide, Consequences, Direction, FIT_CHECK, Learn, NO_FIX,
-    SIZE_TAB_NOTE, fix_text, guide_notes, row_learn,
+    SIZE_TAB_NOTE, fix_text, guide_notes, input_trade_offs, row_learn,
 };
 use crate::gui::input_ui::weak_line;
+use crate::gui::inputs::InputCatalogue;
 use crate::gui::look;
-use crate::gui::plain_text::help_for;
+use crate::gui::plain_text::{
+    DIAMETER_HINT_KEY, LENGTH_HINT_KEY, MINIMUM_OD_HINT_KEY, NO_SPREADSHEET_CELL, help_for,
+    hint_for,
+};
 use crate::gui::readouts::Readouts;
+use crate::gui::size_controls::{
+    LINKED_HOUSING, SizeRow, floor_line, row_help, size_row, slider_minimum,
+};
 use crate::gui::tiles::Tile;
 use crate::gui::torque_card::CARD_HEADING;
 use crate::gui::typeset::glyph_safe;
@@ -76,6 +92,10 @@ pub const FULL_LESSON: &str = "Full lesson:";
 /// The foot link that opens the entry's result in the Equation panel (decision C-11).
 pub const EQUATION: &str = "Equation";
 
+/// The head of an input's foot line with the spreadsheet details on (spec 5.3): its workbook
+/// cell, or the line that says the spreadsheet has none.
+pub const SPREADSHEET_CELL: &str = "Spreadsheet cell:";
+
 /// The top bar's button that lists the teaching notes here, and the list's heading (UX
 /// overhaul spec 4.2).
 pub const LEARN: &str = "Learn";
@@ -94,6 +114,8 @@ pub enum Selection {
     Note(&'static str),
     /// The list of the teaching notes ([`LEARN`]).
     NoteList,
+    /// A row of the Size column, by its key ([`SizeRow::key`]).
+    Input(&'static str),
 }
 
 impl Selection {
@@ -104,7 +126,8 @@ impl Selection {
             Selection::Nothing
             | Selection::Result(_)
             | Selection::Note(_)
-            | Selection::NoteList => None,
+            | Selection::NoteList
+            | Selection::Input(_) => None,
         }
     }
 
@@ -115,14 +138,28 @@ impl Selection {
             Selection::Nothing
             | Selection::Check(_)
             | Selection::Note(_)
+            | Selection::NoteList
+            | Selection::Input(_) => None,
+        }
+    }
+
+    /// The key of the Size column's row selected, if one is.
+    pub fn input(self) -> Option<&'static str> {
+        match self {
+            Selection::Input(key) => Some(key),
+            Selection::Nothing
+            | Selection::Check(_)
+            | Selection::Result(_)
+            | Selection::Note(_)
             | Selection::NoteList => None,
         }
     }
 
     /// Whether the entry reads the Size tab's consequences ([`Shown::consequences`]): the
-    /// panel asks its cache for them only then.
+    /// panel asks its cache for them only then. A Size column row's entry draws its
+    /// what-moves-what lines and its torque-card row from them.
     pub fn reads_consequences(self) -> bool {
-        self.tile() == Some(Tile::HotLow)
+        self.tile() == Some(Tile::HotLow) || self.input().is_some()
     }
 }
 
@@ -141,8 +178,8 @@ pub(crate) enum Asked {
 /// What the entries are drawn from: the design shown, its results, every guide's fixes in
 /// [`CHECK_GUIDES`]' order and the shaft-clamp section's pause; for an entry that reads them
 /// ([`Selection::reads_consequences`]), the Size tab's consequences of the design, with the
-/// size Auto sets while it is on; and why an input is not free on the design shown, for a
-/// note's change entries ([`NoteView::held`]).
+/// size Auto sets while it is on; why an input is not free on the design shown, for a note's
+/// change entries ([`NoteView::held`]); and the Size column's Minimum OD preference.
 pub(crate) struct Shown<'a> {
     pub inputs: &'a DesignInputs,
     pub results: &'a DesignResults,
@@ -151,6 +188,7 @@ pub(crate) struct Shown<'a> {
     pub consequences: Option<&'a Consequences>,
     pub auto: Option<FreeVariable>,
     pub held: &'a dyn Fn(&str) -> Option<String>,
+    pub minimum_diameter_mm: Option<f64>,
 }
 
 /// Draws the Explain panel: [`HEADING`], with [`ABOUT`] beside it while something is selected,
@@ -178,8 +216,164 @@ pub(crate) fn explain_ui(
         Selection::Result(path) => result_ui(ui, path, shown, readouts),
         Selection::Note(id) => note_entry_ui(ui, id, shown, readouts),
         Selection::NoteList => note_list_ui(ui, shown.clamps_paused),
+        Selection::Input(key) => input_ui(ui, key, shown, readouts),
     };
     asked.or(entry)
+}
+
+/// The entry of the Size column's row `key` (spec 5.3's input column): its value and its
+/// label; what it is (its label's hover); what sets it (its hint, its what-moves-what lines,
+/// for Minimum OD the floor line, for Outside diameter and Overall length the footnote on what
+/// the controls move); what a change does (its torque-card row); the checks whose fixes name
+/// its input; where two of them move it opposite ways, the sentence that says so ("Watch
+/// out"); and the foot (its Why link's note, and with the spreadsheet details the cell of a
+/// row that is one input). Nothing for a key that is no row's.
+fn input_ui(
+    ui: &mut egui::Ui,
+    key: &'static str,
+    shown: &Shown<'_>,
+    readouts: &mut Readouts,
+) -> Option<Asked> {
+    let row = size_row(key)?;
+    ui.horizontal_wrapped(|ui| {
+        if let Some(value) = row_value(row, shown) {
+            ui.strong(value);
+        }
+        ui.colored_label(look::quiet_text(ui.visuals()), row.label);
+    });
+    heading(ui, WHAT_IT_IS);
+    ui.add(egui::Label::new(row_help(key)).wrap());
+    let lines = sets_it_lines(row, shown);
+    if !lines.is_empty() {
+        heading(ui, WHAT_SETS_IT);
+        for line in &lines {
+            weak_line(ui, line);
+        }
+    }
+    let card = match (row.card, shown.consequences) {
+        (Some(control), Some(consequences)) => consequences.card.control_lines(control, shown.auto),
+        _ => Vec::new(),
+    };
+    if !card.is_empty() {
+        heading(ui, WHAT_A_CHANGE_DOES);
+        ui.label(CARD_HEADING);
+        for line in &card {
+            weak_line(ui, line);
+        }
+    }
+    let mut asked = None;
+    let touched: Vec<&CheckGuide> = row.input.map_or_else(Vec::new, |input| {
+        CHECK_GUIDES
+            .iter()
+            .zip(shown.fixes)
+            .filter(|(_, fixes)| fixes.iter().any(|&(path, _)| path == input))
+            .map(|(guide, _)| guide)
+            .collect()
+    });
+    if !touched.is_empty() {
+        heading(ui, CHECKS_IT_TOUCHES);
+        for guide in touched {
+            asked = asked.or(check_link_ui(ui, guide, shown));
+        }
+    }
+    let pulls = row
+        .input
+        .map_or_else(Vec::new, |input| input_trade_offs(shown.fixes, input));
+    if !pulls.is_empty() {
+        heading(ui, WATCH_OUT);
+        for note in pulls {
+            ui.add(egui::Label::new(note).wrap());
+        }
+    }
+    // The cell of a row that is one input; Outside diameter and Overall length are sizes the
+    // spreadsheet has no cell for, though their sliders write an input.
+    let cell = (readouts.show_details() && row.input == Some(row.key)).then(|| {
+        let cell = InputCatalogue::get()
+            .entry(row.key)
+            .and_then(|entry| entry.meta.cell)
+            .unwrap_or(NO_SPREADSHEET_CELL);
+        format!("{SPREADSHEET_CELL} {cell}")
+    });
+    asked.or(foot_ui(
+        ui,
+        row.lesson.map(Learn::Note),
+        None,
+        cell,
+        readouts,
+    ))
+}
+
+/// The row's value as its slider shows it, with its unit: the input's value, or for the
+/// controls that are no one input the size the slider shows (`dimensions`); none where the
+/// design has no size controls.
+fn row_value(row: &SizeRow, shown: &Shown<'_>) -> Option<String> {
+    let mm = |x: f64| value_with_unit(&Value::Num(x), format_value(&Value::Num(x)), "mm");
+    match row.key {
+        MINIMUM_OD_HINT_KEY | DIAMETER_HINT_KEY | LENGTH_HINT_KEY => {
+            let size = dimensions(shown.inputs)?;
+            Some(mm(match row.key {
+                MINIMUM_OD_HINT_KEY => slider_minimum(&size, shown.minimum_diameter_mm),
+                DIAMETER_HINT_KEY => size.diameter_mm,
+                _ => size.overall_length_mm,
+            }))
+        }
+        path => {
+            let value = shown.inputs.get(path)?;
+            let unit = InputCatalogue::get().entry(path)?.meta.unit;
+            Some(value_with_unit(&value, format_value(&value), unit))
+        }
+    }
+}
+
+/// The lines the Size column drew under the row (spec 4.3): its hint; its what-moves-what lines
+/// ([`Consequences`]); for Minimum OD the diameter range's floor; for Outside diameter and
+/// Overall length, [`LINKED_HOUSING`] unless Auto sets the magnet count.
+fn sets_it_lines(row: &SizeRow, shown: &Shown<'_>) -> Vec<String> {
+    let mut lines: Vec<String> = hint_for(row.key).map(str::to_owned).into_iter().collect();
+    if let Some(consequences) = shown.consequences {
+        match row.key {
+            DIAMETER_HINT_KEY => lines.extend(consequences.diameter_line()),
+            LENGTH_HINT_KEY => lines.extend(consequences.length_line()),
+            key if key == FreeVariable::MagnetsPerRing.path() => {
+                lines.extend(consequences.magnet_lines(shown.inputs.coupling.npole, shown.auto))
+            }
+            _ => {}
+        }
+    }
+    if row.key == MINIMUM_OD_HINT_KEY
+        && let Some(size) = dimensions(shown.inputs)
+    {
+        lines.push(floor_line(size.minimum_diameter_range.min));
+    }
+    // Its last clause says the magnet count stays, which is false while Auto sets the count;
+    // the gap's and the count's own entries learn nothing from it (owner question 52).
+    if matches!(row.key, DIAMETER_HINT_KEY | LENGTH_HINT_KEY)
+        && shown.auto != Some(FreeVariable::MagnetsPerRing)
+    {
+        lines.push(LINKED_HOUSING.to_owned());
+    }
+    lines
+}
+
+/// A check named in an entry: its state's mark, its label, a link that selects it, and its
+/// state's word. Returns the selection a click asked for.
+fn check_link_ui(
+    ui: &mut egui::Ui,
+    guide: &'static CheckGuide,
+    shown: &Shown<'_>,
+) -> Option<Asked> {
+    let mut asked = None;
+    ui.horizontal_wrapped(|ui| {
+        let mark = mark_level(guide, shown.inputs, shown.results);
+        state_mark(ui, mark);
+        if ui.link(guide.label).clicked() {
+            asked = Some(Asked::Select(Selection::Check(guide.check)));
+        }
+        if let Some(mark) = mark {
+            ui.colored_label(mark.color(ui.visuals()), mark.word());
+        }
+    });
+    asked
 }
 
 /// The teaching notes shown, in their order ([`NOTES`]): every reviewed note but the one the
@@ -325,7 +519,7 @@ fn entry_ui(
     heading(ui, NUMBERS);
     numbers_ui(ui, guide, entry.level, shown, readouts);
     let equation = result_info(guide.check).map(|_| guide.check);
-    foot_ui(ui, guide.learn, equation, readouts)
+    foot_ui(ui, Some(guide.learn), equation, None, readouts)
 }
 
 /// The numbers behind `guide`'s check: the dashboard rows its verdict badges, drawn as the
@@ -394,19 +588,10 @@ fn result_ui(
     let mut asked = None;
     if let Some(guide) = badging_check(path).and_then(guidance::guide) {
         heading(ui, CHECKS_IT_TOUCHES);
-        ui.horizontal_wrapped(|ui| {
-            let mark = mark_level(guide, shown.inputs, shown.results);
-            state_mark(ui, mark);
-            if ui.link(guide.label).clicked() {
-                asked = Some(Asked::Select(Selection::Check(guide.check)));
-            }
-            if let Some(mark) = mark {
-                ui.colored_label(mark.color(ui.visuals()), mark.word());
-            }
-        });
+        asked = check_link_ui(ui, guide, shown);
     }
     let learn = row_learn(path).unwrap_or(Learn::None(""));
-    asked.or(foot_ui(ui, learn, Some(path), readouts))
+    asked.or(foot_ui(ui, Some(learn), Some(path), None, readouts))
 }
 
 /// The torque card (slice 3 spec 6.1; decision C-10 puts it here): its heading with the Why
@@ -429,21 +614,29 @@ fn card_ui(
     }
 }
 
-/// An entry's foot: [`FULL_LESSON`] and where `learn` leads ([`learn_ui`]), then, for an entry
-/// with a result (`equation`), the [`EQUATION`] link. Returns what the Equation link asked.
+/// An entry's foot: [`FULL_LESSON`] and where `learn` leads ([`learn_ui`]), for an entry
+/// that has a lesson; for an entry with a result (`equation`), the [`EQUATION`] link; then its
+/// `cell` line, weak. Returns what the Equation link asked.
 fn foot_ui(
     ui: &mut egui::Ui,
-    learn: Learn,
+    learn: Option<Learn>,
     equation: Option<&'static str>,
+    cell: Option<String>,
     readouts: &mut Readouts,
 ) -> Option<Asked> {
     ui.separator();
-    ui.horizontal_wrapped(|ui| {
-        ui.label(FULL_LESSON);
-        learn_ui(ui, learn, readouts);
-    });
-    let path = equation?;
-    ui.link(EQUATION).clicked().then_some(Asked::Equation(path))
+    if let Some(learn) = learn {
+        ui.horizontal_wrapped(|ui| {
+            ui.label(FULL_LESSON);
+            learn_ui(ui, learn, readouts);
+        });
+    }
+    let asked =
+        equation.and_then(|path| ui.link(EQUATION).clicked().then_some(Asked::Equation(path)));
+    if let Some(cell) = cell {
+        ui.add(egui::Label::new(egui::RichText::new(cell).small().weak()).wrap());
+    }
+    asked
 }
 
 #[cfg(test)]
@@ -456,9 +649,11 @@ mod tests {
         DASHBOARD, NO_NOTE_YET, NOTE_NOT_REVIEWED, dashboard_lines, verdict_display,
     };
     use crate::gui::explorer::reviewed_note;
+    use crate::gui::guidance::FACE_GAP;
     use crate::gui::guidance::{Fixes, all_fixes, counted_guides, plain_text_violations};
     use crate::gui::plain_text::label_for;
     use crate::gui::readouts::ReadoutEvents;
+    use crate::gui::size_controls::{MINIMUM_HOVER, SIZE_ROWS};
     use crate::gui::test_support::{
         assert_glyphs, drawn_texts, flat_shapes, glyph_context, passing_design, primary_button,
         short_magnets, sized_frame, text_color, text_rect, tooltips_at_once, with_poles,
@@ -521,12 +716,57 @@ mod tests {
                     consequences: None,
                     auto: None,
                     held: &|_| None,
+                    minimum_diameter_mm: None,
                 };
                 asked = explain_ui(ui, selection, &shown, &mut readouts);
             });
             last = Some((output, asked, readouts.finish()));
         }
         last.expect("one frame at least")
+    }
+
+    /// Frames of the entry of the Size column's row `key` on `inputs` in `ctx`, with the Size
+    /// tab's consequences at the Minimum OD `minimum`, Auto on `auto` (`None`: off) and the
+    /// spreadsheet details `show_details`: a first one with no input, then one per entry of
+    /// `events`. What the last drew and what it asked for.
+    fn input_frames(
+        ctx: &egui::Context,
+        inputs: &DesignInputs,
+        key: &'static str,
+        show_details: bool,
+        minimum: Option<f64>,
+        auto: Option<FreeVariable>,
+        events: Vec<Vec<egui::Event>>,
+    ) -> (egui::FullOutput, Option<Asked>) {
+        let results = compute_all(inputs);
+        let fixes = all_fixes(inputs, &results, false);
+        let consequences = Consequences::of(inputs, &results, minimum, false);
+        let mut last = None;
+        for input in std::iter::once(Vec::new()).chain(events) {
+            let mut readouts = Readouts::new(TermColors::default(), show_details);
+            let mut asked = None;
+            let output = sized_frame(ctx, egui::vec2(320.0, 4000.0), input, |ui| {
+                let shown = Shown {
+                    inputs,
+                    results: &results,
+                    fixes: &fixes,
+                    clamps_paused: false,
+                    consequences: Some(&consequences),
+                    auto,
+                    held: &|_| None,
+                    minimum_diameter_mm: minimum,
+                };
+                asked = explain_ui(ui, Selection::Input(key), &shown, &mut readouts);
+            });
+            last = Some((output, asked));
+        }
+        last.expect("one frame at least")
+    }
+
+    /// What the entry of the Size column's row `key` draws on `inputs` ([`input_frames`]).
+    fn input_texts(inputs: &DesignInputs, key: &'static str, show_details: bool) -> Vec<String> {
+        let ctx = egui::Context::default();
+        drawn_texts(&input_frames(&ctx, inputs, key, show_details, None, None, vec![]).0)
     }
 
     /// What the entry of `check` draws on `inputs`.
@@ -768,6 +1008,7 @@ mod tests {
                     consequences: None,
                     auto: None,
                     held: &|_| None,
+                    minimum_diameter_mm: None,
                 };
                 asked = entry_ui(ui, entry, &shown, &mut readouts);
             });
@@ -1232,6 +1473,7 @@ mod tests {
                         consequences: None,
                         auto: None,
                         held: &|_| None,
+                        minimum_diameter_mm: None,
                     };
                     entry_ui(ui, &red, &shown, &mut Readouts::default());
                 });
@@ -1261,6 +1503,351 @@ mod tests {
                 "{text:?}: {:?}",
                 plain_text_violations(text)
             );
+        }
+    }
+
+    #[test]
+    fn a_size_row_s_selection_reads_the_consequences_and_is_no_check_or_tile() {
+        // UX overhaul spec 5.1: an input is one more kind of selection. Its entry draws its
+        // what-moves-what lines and its torque-card row, so the panel asks its cache for them.
+        for row in SIZE_ROWS {
+            let selection = Selection::Input(row.key);
+            assert_eq!(selection.input(), Some(row.key));
+            assert!(selection.reads_consequences(), "{}", row.label);
+            assert_eq!((selection.check(), selection.tile()), (None, None));
+        }
+        assert_eq!(Selection::Nothing.input(), None);
+    }
+
+    #[test]
+    fn each_size_row_s_entry_is_its_help_its_lines_its_card_row_and_its_lesson() {
+        // UX overhaul spec 4.3 and 5.3, test 11 of 8.2 for the size controls: a row's entry is
+        // its title, "What it is" (its label's hover), "What sets it" (the lines the column
+        // drew under it: its hint, its what-moves-what lines, Minimum OD's floor, for Outside
+        // diameter and Overall length the footnote on what the controls move), "What a change
+        // does" (its torque-card row,
+        // under the card's heading and caption), then "Full lesson:" and the note its Why link
+        // opened, in that order; a heading with nothing under it is left out ("Checks it
+        // touches" and "Watch out" have their own test). At the failing example design and at
+        // a passing one.
+        use crate::gui::torque_card::CAPTION;
+        for inputs in [DesignInputs::default(), passing_design()] {
+            let results = compute_all(&inputs);
+            let consequences = Consequences::of(&inputs, &results, None, false);
+            let size = dimensions(&inputs).expect("size controls");
+            for row in SIZE_ROWS {
+                let ctx = egui::Context::default();
+                let (output, _) = input_frames(&ctx, &inputs, row.key, false, None, None, vec![]);
+                let texts = drawn_texts(&output);
+                let has = |text: &str| texts.iter().any(|t| t == text);
+                let label = row.label;
+                assert!(has(label), "{label}: {texts:?}");
+                assert!(has(row_help(row.key)), "{label}: {texts:?}");
+                let mut lines: Vec<String> =
+                    hint_for(row.key).map(str::to_owned).into_iter().collect();
+                match row.key {
+                    DIAMETER_HINT_KEY => lines.extend(consequences.diameter_line()),
+                    LENGTH_HINT_KEY => lines.extend(consequences.length_line()),
+                    MINIMUM_OD_HINT_KEY => lines.push(floor_line(size.minimum_diameter_range.min)),
+                    key if key == FreeVariable::MagnetsPerRing.path() => {
+                        lines.extend(consequences.magnet_lines(inputs.coupling.npole, None))
+                    }
+                    _ => {}
+                }
+                if matches!(row.key, DIAMETER_HINT_KEY | LENGTH_HINT_KEY) {
+                    lines.push(LINKED_HOUSING.to_owned());
+                }
+                assert_eq!(has(WHAT_SETS_IT), !lines.is_empty(), "{label}");
+                for line in &lines {
+                    assert!(has(line), "{label}: no {line:?} in {texts:?}");
+                }
+                let card = row
+                    .card
+                    .map(|control| consequences.card.control_lines(control, None))
+                    .unwrap_or_default();
+                assert_eq!(has(WHAT_A_CHANGE_DOES), !card.is_empty(), "{label}");
+                assert_eq!(has(CARD_HEADING), !card.is_empty(), "{label}");
+                if row.card.is_some() {
+                    assert_eq!(card.len(), 2, "{label}: the caption and the row: {card:?}");
+                    assert_eq!(card[0], CAPTION);
+                }
+                for line in &card {
+                    assert!(has(line), "{label}: no {line:?}");
+                }
+                assert_eq!(has(FULL_LESSON), row.lesson.is_some(), "{label}");
+                if let Some(id) = row.lesson {
+                    let note = reviewed_note(id).expect("a Why link's note is reviewed");
+                    assert!(has(&glyph_safe(note.title)), "{label}: {texts:?}");
+                }
+                let tops: Vec<f32> = [WHAT_IT_IS, WHAT_SETS_IT, WHAT_A_CHANGE_DOES, FULL_LESSON]
+                    .into_iter()
+                    .filter_map(|heading| text_rect(&output, heading))
+                    .map(|rect| rect.top())
+                    .collect();
+                assert!(
+                    tops.is_sorted(),
+                    "{label}: the headings out of order: {tops:?}"
+                );
+                assert!(
+                    text_rect(&output, label).expect("its title").top() < tops[0],
+                    "{label}: the title leads"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_footnote_on_what_the_controls_move_is_in_the_diameter_and_length_entries_alone() {
+        // PT-1 of the 2026-11-23 review: LINKED_HOUSING says nothing new for the gap and the
+        // magnet count, and its "magnet count stay as you set them" is false while Auto sets
+        // the count, so no entry draws it beside the card's Auto line then.
+        let inputs = DesignInputs::default();
+        for auto in [
+            None,
+            Some(FreeVariable::AxialLength),
+            Some(FreeVariable::RingRadius),
+            Some(FreeVariable::MagnetsPerRing),
+        ] {
+            for row in SIZE_ROWS {
+                let ctx = egui::Context::default();
+                let (output, _) = input_frames(&ctx, &inputs, row.key, false, None, auto, vec![]);
+                let texts = drawn_texts(&output);
+                let want = matches!(row.key, DIAMETER_HINT_KEY | LENGTH_HINT_KEY)
+                    && auto != Some(FreeVariable::MagnetsPerRing);
+                assert_eq!(
+                    texts.contains(&LINKED_HOUSING.to_owned()),
+                    want,
+                    "{} under {auto:?}: {texts:?}",
+                    row.label
+                );
+                if auto.is_some() && row.card.is_some() {
+                    assert!(
+                        texts.iter().any(|t| t.contains("Auto")),
+                        "{} under {auto:?}: the card says what Auto does: {texts:?}",
+                        row.label
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_size_row_s_title_leads_with_its_value() {
+        // Spec 5.3: "Title, with the live value leading", in the panel's number format: an
+        // input's value with its unit; Outside diameter, Overall length and Minimum OD the sizes
+        // their sliders set, Minimum OD at the person's preference where one is set. An odd
+        // magnet count has no size controls: Outside diameter's entry has no value and no card
+        // row, and keeps its help and lines.
+        let inputs = DesignInputs::default();
+        let size = dimensions(&inputs).expect("size controls");
+        let mm = |x: f64| value_with_unit(&Value::Num(x), format_value(&Value::Num(x)), "mm");
+        let gap = Value::Num(inputs.metal.face_gap_mm);
+        for (key, minimum, want) in [
+            (DIAMETER_HINT_KEY, None, mm(size.diameter_mm)),
+            (LENGTH_HINT_KEY, None, mm(size.overall_length_mm)),
+            (MINIMUM_OD_HINT_KEY, None, mm(slider_minimum(&size, None))),
+            (MINIMUM_OD_HINT_KEY, Some(38.0), mm(38.0)),
+            (
+                FACE_GAP,
+                None,
+                value_with_unit(&gap, format_value(&gap), "mm"),
+            ),
+        ] {
+            let ctx = egui::Context::default();
+            let (output, _) = input_frames(&ctx, &inputs, key, false, minimum, None, vec![]);
+            let label = size_row(key).expect("a row").label;
+            let value = text_rect(&output, &want)
+                .unwrap_or_else(|| panic!("{key}: no {want:?} in {:?}", drawn_texts(&output)));
+            // The label follows the value on its row: a label in a wrapping row is laid out
+            // from the row's start, so its last character marks where it is.
+            let end = crate::gui::test_support::last_characters(&output, label)[0];
+            assert!(value.right() < end.x, "{key}: the value leads");
+            assert!(value.y_range().contains(end.y), "{key}: one line");
+        }
+        let odd = with_poles(7);
+        assert!(dimensions(&odd).is_none());
+        let texts = input_texts(&odd, DIAMETER_HINT_KEY, false);
+        let value = |t: &String| t.ends_with(" mm") && t.starts_with(|c: char| c.is_ascii_digit());
+        assert!(!texts.iter().any(value), "no value: {texts:?}");
+        assert!(!texts.contains(&WHAT_A_CHANGE_DOES.to_owned()), "{texts:?}");
+        assert!(
+            texts.contains(&row_help(DIAMETER_HINT_KEY).to_owned()),
+            "{texts:?}"
+        );
+        assert!(texts.contains(&LINKED_HOUSING.to_owned()), "{texts:?}");
+    }
+
+    #[test]
+    fn a_size_row_s_entry_names_the_checks_whose_fixes_name_its_input_and_a_click_selects_one() {
+        // Spec 5.3, "Checks it touches" for an input: the guides whose fixes name it, on the
+        // design shown, each with its state's mark and word, a link that selects the check. At
+        // the example design the running clearance's and the gearbox input's fixes name the face
+        // gap; a passing design has no fixes, so no entry draws the heading. Minimum OD writes
+        // no input and names none.
+        let inputs = DesignInputs::default();
+        let results = compute_all(&inputs);
+        let fixes = all_fixes(&inputs, &results, false);
+        let named = |input: Option<&str>| -> Vec<&'static CheckGuide> {
+            CHECK_GUIDES
+                .iter()
+                .zip(&fixes)
+                .filter(|(_, list)| input.is_some_and(|i| list.iter().any(|&(p, _)| p == i)))
+                .map(|(guide, _)| guide)
+                .collect()
+        };
+        for row in SIZE_ROWS {
+            let texts = input_texts(&inputs, row.key, false);
+            let guides = named(row.input);
+            assert_eq!(
+                texts.contains(&CHECKS_IT_TOUCHES.to_owned()),
+                !guides.is_empty(),
+                "{}",
+                row.label
+            );
+            for guide in guides {
+                assert!(
+                    texts.contains(&guide.label.to_owned()),
+                    "{}: {}",
+                    row.label,
+                    guide.label
+                );
+            }
+        }
+        assert!(named(None).is_empty());
+        let gap = named(Some(FACE_GAP));
+        let first = gap
+            .first()
+            .expect("a failing check's fix names the face gap");
+        let ctx = egui::Context::default();
+        let (output, _) = input_frames(&ctx, &inputs, FACE_GAP, false, None, None, vec![]);
+        let at = text_rect(&output, first.label)
+            .expect("the check's link")
+            .center();
+        let (_, asked) = input_frames(&ctx, &inputs, FACE_GAP, false, None, None, click_at(at));
+        assert_eq!(asked, Some(Asked::Select(Selection::Check(first.check))));
+        for row in SIZE_ROWS {
+            let texts = input_texts(&passing_design(), row.key, false);
+            assert!(
+                !texts.contains(&CHECKS_IT_TOUCHES.to_owned()),
+                "{}",
+                row.label
+            );
+        }
+    }
+
+    #[test]
+    fn a_size_row_s_entry_warns_when_two_failing_checks_pull_its_input_opposite_ways() {
+        // Spec 5.3, "Watch out" for an input: each "pulls two ways" sentence the two checks'
+        // blocks draw, once. Under a 30 mm overall-length claim the hot-low torque needs longer
+        // magnets and the space claim (and the gearbox input) shorter ones: Overall length's
+        // entry says so, after its checks; the face gap, which no two checks pull apart, has no
+        // "Watch out".
+        let inputs = length_conflict();
+        let results = compute_all(&inputs);
+        let fixes = all_fixes(&inputs, &results, false);
+        let length = size_row(LENGTH_HINT_KEY).expect("a row");
+        let notes = input_trade_offs(&fixes, length.input.expect("an input"));
+        assert!(!notes.is_empty());
+        let ctx = egui::Context::default();
+        let (output, _) = input_frames(&ctx, &inputs, LENGTH_HINT_KEY, false, None, None, vec![]);
+        let texts = drawn_texts(&output);
+        for note in &notes {
+            assert_eq!(
+                texts.iter().filter(|t| *t == note).count(),
+                1,
+                "{note}: {texts:?}"
+            );
+        }
+        let rect = |text: &str| text_rect(&output, text).expect(text);
+        assert!(rect(CHECKS_IT_TOUCHES).top() < rect(WATCH_OUT).top());
+        assert!(rect(WATCH_OUT).bottom() <= rect(&notes[0]).top() + 0.5);
+        assert!(input_trade_offs(&fixes, FACE_GAP).is_empty());
+        assert!(!input_texts(&inputs, FACE_GAP, false).contains(&WATCH_OUT.to_owned()));
+    }
+
+    #[test]
+    fn a_size_row_s_entry_shows_its_input_s_cell_only_with_the_spreadsheet_details() {
+        // Spec 5.3's "Spreadsheet cell" foot, shown only with the details on: the cell of a row
+        // that is one input (Required torque, Magnet face gap, Magnets per ring). Minimum OD,
+        // Outside diameter and Overall length are sizes the spreadsheet has no cell for.
+        for row in SIZE_ROWS {
+            let cell = |texts: &[String]| -> Vec<String> {
+                texts
+                    .iter()
+                    .filter(|t| t.starts_with(SPREADSHEET_CELL))
+                    .cloned()
+                    .collect()
+            };
+            assert!(cell(&input_texts(&DesignInputs::default(), row.key, false)).is_empty());
+            let on = cell(&input_texts(&DesignInputs::default(), row.key, true));
+            if row.input == Some(row.key) {
+                let meta = crate::gui::inputs::InputCatalogue::get()
+                    .entry(row.key)
+                    .expect("an input")
+                    .meta;
+                let want = format!(
+                    "{SPREADSHEET_CELL} {}",
+                    meta.cell.unwrap_or(NO_SPREADSHEET_CELL)
+                );
+                assert_eq!(on, [want], "{}", row.label);
+            } else {
+                assert!(on.is_empty(), "{}: {on:?}", row.label);
+            }
+        }
+    }
+
+    #[test]
+    fn a_size_row_s_card_row_keeps_the_auto_line_while_auto_is_on() {
+        // Owner ruling 5A, as the Hot-low tile's card draws it: while Auto is on, the Auto line
+        // stands between the caption and a row, since an edit of the row makes Auto re-solve.
+        // With Auto on the magnet length, Outside diameter's entry draws that line once,
+        // between the caption and its row; with Auto off, none.
+        use crate::gui::torque_card::{AUTO_HOLDS_LENGTH, CAPTION, Control};
+        let inputs = DesignInputs::default();
+        let results = compute_all(&inputs);
+        let card = Consequences::of(&inputs, &results, None, false).card;
+        let auto = Some(FreeVariable::AxialLength);
+        let lines = card.control_lines(Control::OutsideDiameter, auto);
+        assert_eq!(lines.len(), 3, "{lines:?}");
+        assert_eq!(lines[..2], [CAPTION, AUTO_HOLDS_LENGTH]);
+        let ctx = egui::Context::default();
+        let (output, _) = input_frames(&ctx, &inputs, DIAMETER_HINT_KEY, false, None, auto, vec![]);
+        let texts = drawn_texts(&output);
+        let tops: Vec<f32> = lines
+            .iter()
+            .map(|line| {
+                let n = texts.iter().filter(|t| *t == line).count();
+                assert_eq!(n, 1, "{line:?} in {texts:?}");
+                text_rect(&output, line).expect("drawn").top()
+            })
+            .collect();
+        assert!(tops.is_sorted(), "out of order: {tops:?}");
+        let off = input_texts(&inputs, DIAMETER_HINT_KEY, false);
+        assert!(!off.contains(&AUTO_HOLDS_LENGTH.to_owned()), "{off:?}");
+    }
+
+    #[test]
+    fn the_size_rows_new_texts_have_glyphs_and_plain_words() {
+        // Spec 8.3: the entry's new words, the foot line's head and Minimum OD's hover (a
+        // string the column drew before, now a constant), pass the plain-words guard, say
+        // nothing of protecting the gearbox and have glyphs in the default fonts; so does every
+        // text each row's entry draws, with the details on.
+        let ctx = glyph_context();
+        let floor = floor_line(
+            dimensions(&DesignInputs::default())
+                .unwrap()
+                .minimum_diameter_range
+                .min,
+        );
+        for text in [SPREADSHEET_CELL, MINIMUM_HOVER, floor.as_str()] {
+            assert!(plain_text_violations(text).is_empty(), "{text:?}");
+            assert!(!mentions_gearbox_protection(text), "{text:?}");
+            assert_glyphs(&ctx, text, "a Size row's entry");
+        }
+        for row in SIZE_ROWS {
+            for text in input_texts(&DesignInputs::default(), row.key, true) {
+                assert_glyphs(&ctx, &text, row.label);
+            }
         }
     }
 }

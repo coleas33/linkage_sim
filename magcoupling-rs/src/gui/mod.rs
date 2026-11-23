@@ -43,8 +43,9 @@ pub mod xlsx;
 pub use format::{SIGNIFICANT_DIGITS, format_value, with_unit};
 pub use inputs::KEY_DESIGN;
 pub use panel::{
-    CentreView, DESIGN_MENU, EXPORT, LOAD_DESIGN, MagcouplingPanel, OPEN_EXAMPLE, PanelRequest,
-    RESET_TO_START, SHARE, SHOW_DETAILS, SIZING_LOG_PREFIX,
+    ASSUMPTIONS_FOLD, CentreView, DESIGN_MENU, DETAILED_INPUTS, EXPORT, LOAD_DESIGN,
+    MagcouplingPanel, OPEN_EXAMPLE, PanelRequest, RESET_TO_START, SHARE, SHOW_DETAILS,
+    SIZING_LOG_PREFIX,
 };
 // The Size tab's gap text, public for the slice-3 screen dump (`size_controls` is private).
 pub use size_controls::torque_gap_text;

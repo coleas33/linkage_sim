@@ -18,7 +18,7 @@ Written 2026-11-18. Updated as answers and new questions arrive.
 | P-n, L-n | The plans for slice A and for slice B stage 1, in `docs/superpowers/plans/` |
 | Three-letter codes (LGS-11, LFA-16) | The whole-project audit, `docs/analyses/2026-11-10-whole-project-audit.md` |
 
-Contents: part A, six answers that change what is built next. Part B, eight things only you can try. Part C, 31 calls to make when convenient (questions 48, 49 and 50 were added there on 2026-11-22). Part D, five that matter only if the tools stop being generic.
+Contents: part A, six answers that change what is built next. Part B, eight things only you can try. Part C, 32 calls to make when convenient (questions 48, 49 and 50 were added there on 2026-11-22, question 51 on 2026-11-23). Part D, five that matter only if the tools stop being generic.
 
 Answered so far: 1, 2, 3, 4, 5 and 6 (2026-11-22). Each answer is written in bold under its question.
 
@@ -352,6 +352,26 @@ Added 2026-11-22 (the next free number). The design puts the line that reports a
 - (b) At the right end of the bar (a long line wraps the bar onto a second row at 1280 points).
 
 Source: UX design section 4.2; A-24; BL-085 plan, decision D-22.
+
+### 51. Should "Set by Auto; turn Auto off to edit" stay under the slider Auto locks?
+
+Added 2026-11-23 (the next free number). With Auto on, the slider of the size Auto sets cannot be dragged, and a line under it says so. Part 2b-i moves every other line under the Size controls into the Explain panel (the design's 4.3) and keeps this one under the slider.
+
+- **If you do not answer:** it stays under the slider.
+- (a) Under the slider, as now.
+- (b) In the control's Explain entry only (a click on the locked slider shows it).
+
+Source: UX design section 4.3; A-26; BL-090 plan, decision D-37.
+
+### 52. Should the sentence on what the size controls move be cut where it repeats the control's own hover?
+
+Added 2026-11-23 (the next free number). The sentence "Outside diameter moves the ring radius; the cap and its thread follow the cup. Overall length sets both rings' magnet length, and the housing follows. Gap and magnet count stay as you set them." was a footnote under the Size column; part 2b-i puts it in the Outside diameter and Overall length entries of the Explain panel. There its first two clauses repeat each control's hover word for word, and its last clause is false while Auto sets the magnet count, so it is left out then. Four hint lines (Minimum OD, Outside diameter, Magnet face gap, Magnets per ring) also say what their hover already says.
+
+- **If you do not answer:** the whole sentence stays in those two entries (not while Auto sets the count), and the four hint lines stay.
+- (a) As the default.
+- (b) Cut the sentence to "Gap and magnet count stay as you set them." and drop the four hint lines.
+
+Source: A-28; BL-090 review of 2026-11-23, findings PT-1 and PT-2.
 
 ### Linkage simulator
 

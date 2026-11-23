@@ -34,15 +34,15 @@ use crate::engine::meta::{InputSet, ResultSet, SliderRange, Value};
 use crate::engine::sizing::{FreeVariable, SizingOutcome};
 use crate::gui::checks::{CHECKS_SHARE, checks_ui};
 use crate::gui::clamp_drawing::clamp_ui;
-use crate::gui::dashboard::{Level, end_effect_banner_ui, why_note_link};
+use crate::gui::dashboard::{Level, end_effect_banner_ui};
 use crate::gui::explain::{Asked, LEARN, Selection, explain_ui};
 use crate::gui::explorer::{Explorer, FOCUS_WIDTH, explorer_ui, held_reason, panel_heights};
 use crate::gui::format::search_needle;
 use crate::gui::geometry::wall_cautions;
 use crate::gui::geometry_view::geometry_ui;
 use crate::gui::guidance::{
-    ConsequenceCache, Consequences, Direction, EXAMPLE_DESIGN_HOVER, FixCache, SIZE_TAB_ALIASES,
-    TORQUE_BAND_NOTE, within_minimum_diameter,
+    ConsequenceCache, Direction, EXAMPLE_DESIGN_HOVER, FixCache, SIZE_TAB_ALIASES,
+    within_minimum_diameter,
 };
 use crate::gui::history::History;
 use crate::gui::input_ui::{CHANGED_DOT, RowEdit, hint_line, input_row, slider};
@@ -183,6 +183,11 @@ pub const ASSUMPTIONS_NOTE: &str = "The model's assumptions, apart from the desi
 /// change of those words reaches both (slice 3 spec 4.2).
 const EXPLORATION_ONLY: &str = "Exploration only: ";
 
+/// The Size column's fold of every design input (UX overhaul spec 4.3), over its fold of the
+/// model's assumptions, which bears the Assumptions view's name.
+pub const DETAILED_INPUTS: &str = "Detailed inputs";
+pub const ASSUMPTIONS_FOLD: &str = InputsView::Assumptions.label();
+
 /// What the inputs side shows (decision M43-7): the design inputs, or the model assumptions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InputsView {
@@ -213,10 +218,10 @@ const DASHBOARD_WIDTH: f32 = 300.0;
 /// panel's rect under it, and its resize handle's id derives from it.
 const EQUATION_PANEL_ID: &str = "magcoupling_equation_panel";
 
-/// The results of the design the Size tab last asked its [`ConsequenceCache`] about, kept with
-/// that design (slice 3 spec 3.5): the lines under the controls and the torque card each ask
-/// once a frame, mostly about one design, so its `compute_all` runs once per design, not once
-/// per ask.
+/// The results of the design the Explain panel last asked its [`ConsequenceCache`] about, kept
+/// with that design (slice 3 spec 3.5): a Size control's entry and the Hot-low tile's ask once
+/// a frame, mostly about one design, so its `compute_all` runs once per design, not once per
+/// ask.
 #[derive(Default)]
 struct ResultsCache {
     last: Option<(DesignInputs, DesignResults)>,
@@ -355,11 +360,11 @@ pub struct MagcouplingPanel {
     minimum_diameter_mm: Option<f64>,
     /// The Size tab's what-moves-what lines (spec 3.3) and its torque card (slice 3) for the
     /// design shown, the minimum OD and the shaft-clamp pause, recomputed only when one of the
-    /// three changes: view state, in no design file, link or undo step. Asked only through
-    /// [`MagcouplingPanel::size_tab_consequences`].
+    /// three changes: view state, in no design file, link or undo step. Asked only by the
+    /// Explain panel, for an entry that reads them (`checks_and_explain_ui`).
     consequences: ConsequenceCache,
-    /// The results [`MagcouplingPanel::size_tab_consequences`] hands `consequences`, kept with
-    /// the design they were computed for: a cache like it, in no design file, link or undo step.
+    /// The results the Explain panel hands `consequences`, kept with the design they were
+    /// computed for: a cache like it, in no design file, link or undo step.
     size_tab_results: ResultsCache,
     /// Every check guide's fixes for the design shown (spec 3.4), recomputed only when it
     /// changes: each fix runs `compute_all` on the design its move reaches.
@@ -500,22 +505,6 @@ impl MagcouplingPanel {
     /// read from the inputs, never the design shown, so a solve cannot move its own range.
     fn sizing_range(&self) -> SliderRange {
         sizing_range(&self.inputs, self.sizing.variable, self.minimum_diameter_mm)
-    }
-
-    /// The Size tab's what-moves-what lines and torque card for `shown`, the design shown (slice
-    /// 3 spec 3.5): the one cache ask of the lines under the controls (the design before this
-    /// frame's edits) and of the card (the design after them), so both ask with one key, the
-    /// design, the panel's Minimum OD and its shaft-clamp pause (spec 3.2). The cache is handed
-    /// that design's own results, not `self.results`, which can lag the inputs by a frame (the
-    /// header's assumptions reset edits them after the last compute): a lagging number would
-    /// stick in the lines until the next edit. `size_tab_results` keeps them with their design,
-    /// so they are computed once per design, not once per ask: none on an idle frame, one on an
-    /// edit's. The torque card's stepped runs and the fit search rerun only when the design, the
-    /// minimum or the pause changes.
-    fn size_tab_consequences(&mut self, shown: &DesignInputs) -> &Consequences {
-        let results = self.size_tab_results.get(shown);
-        self.consequences
-            .get(shown, results, self.minimum_diameter_mm, self.clamps_paused)
     }
 
     /// The Size tab's Auto outcome line and its colour: what the solve changed, from the
@@ -818,8 +807,13 @@ impl MagcouplingPanel {
             });
         ui.separator();
         let auto = self.auto();
-        // Asked as the Size column asks (`size_tab_consequences`), and only for an entry that
-        // reads them: the cache computes once per design.
+        // The Size tab's what-moves-what lines and torque card for the design shown (slice 3
+        // spec 3.5), asked only for an entry that reads them, with one key: the design, the
+        // panel's Minimum OD and its shaft-clamp pause (spec 3.2). The cache is handed that
+        // design's own results, not `self.results`, which can lag the inputs by a frame (the
+        // header's assumptions reset edits them after the last compute). `size_tab_results`
+        // keeps them with their design, so they are computed once per design, not once per
+        // ask: none on an idle frame, one on an edit's.
         let consequences = self.selection.reads_consequences().then(|| {
             let results = self.size_tab_results.get(shown);
             self.consequences
@@ -846,6 +840,7 @@ impl MagcouplingPanel {
                     consequences,
                     auto,
                     held: &held,
+                    minimum_diameter_mm: self.minimum_diameter_mm,
                 };
                 explain_ui(ui, self.selection, &shown, readouts)
             })
@@ -1329,18 +1324,24 @@ impl MagcouplingPanel {
                 ui.separator();
                 match self.inputs_view {
                     InputsView::Design => self.design_inputs_ui(ui, readouts),
-                    InputsView::Assumptions => self.assumptions_ui(ui, readouts),
+                    InputsView::Assumptions => {
+                        egui::ScrollArea::vertical()
+                            .id_salt("magcoupling_assumptions_scroll")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| self.assumptions_ui(ui, readouts));
+                    }
                 }
             });
         });
     }
 
-    /// The Size column of the opening tab: its heading, the Required torque row, Auto and its
-    /// outcome, the size controls with their lines, the detailed inputs, folded, then the
-    /// footnote on what the size controls move.
+    /// The Size column of the opening tab (UX overhaul spec 4.3): its heading, the Required
+    /// torque row, Auto and its outcome, the size controls, then two folds, both closed until a
+    /// fix link or a term asks for a row in one: the detailed inputs and the assumptions. A
+    /// control touched selects its row, whose lines show in the Explain panel.
     fn size_column_ui(&mut self, ui: &mut egui::Ui, readouts: &Readouts) {
         ui.heading(crate::gui::size_controls::HEADING);
-        let requirement = self.requirement_ui(ui);
+        let (requirement, required_touched) = self.requirement_ui(ui);
         // Auto (spec guidance 3.5) is the solver's one home. Turning it off adopts the value
         // shown (decision M41-7) through the mode switch.
         let asked = size_controls::auto_ui(ui, self.sizing);
@@ -1353,16 +1354,14 @@ impl MagcouplingPanel {
             ui.add(egui::Label::new(egui::RichText::new(line).color(color)).wrap());
         }
         let minimum = self.minimum_diameter_mm;
-        // Asked before the controls write the minimum back, with the design before this
-        // frame's edits.
-        let consequences = self.size_tab_consequences(&shown);
-        let output = size_controls::controls_ui(ui, &shown, minimum, consequences, auto);
-        // A Why link under Magnets per ring or Outside diameter (spec 3.7) opens its note.
-        if let Some(id) = output.note {
-            self.show_note(ui.ctx(), id);
+        let output = size_controls::controls_ui(ui, &shown, minimum, auto);
+        let touched = output
+            .touched
+            .or(required_touched.then_some(REQUIREMENT_INPUT));
+        if let Some(key) = touched {
+            self.selection = Selection::Input(key);
         }
-        // The lines under the controls were drawn from the design before this frame's edit:
-        // one more frame shows the edited design's.
+        // The top bar was drawn before this frame's edit: one more frame shows its state.
         if output.inputs != shown || output.minimum_diameter_mm != minimum {
             ui.ctx().request_repaint();
         }
@@ -1382,36 +1381,41 @@ impl MagcouplingPanel {
             self.last_error = output.error;
         }
         ui.separator();
-        egui::CollapsingHeader::new("Detailed inputs")
+        // A row asked for (a fix link, a term) opens the fold that holds it: an assumption's
+        // row is in the Assumptions fold, every other in the detailed inputs.
+        let assumption = self
+            .explorer
+            .focus()
+            .filter(|focus| focus.scroll)
+            .map(|focus| {
+                ASSUMPTIONS
+                    .iter()
+                    .any(|a| a.paths.contains(&focus.path.as_str()))
+            });
+        egui::CollapsingHeader::new(DETAILED_INPUTS)
             .default_open(false)
-            .open(
-                self.explorer
-                    .focus()
-                    .filter(|focus| focus.scroll)
-                    .map(|_| true),
-            )
+            .open((assumption == Some(false)).then_some(true))
             .show(ui, |ui| self.design_inputs_ui(ui, readouts));
-        // Under the fold, so the fold is on the first view (plan review E-4).
-        ui.label(size_controls::LINKED_HOUSING);
+        egui::CollapsingHeader::new(ASSUMPTIONS_FOLD)
+            .default_open(false)
+            .open((assumption == Some(true)).then_some(true))
+            .show(ui, |ui| self.assumptions_ui(ui, readouts));
     }
 
     /// The Required torque row that leads the Size column (UX overhaul spec 4.3; it was the
     /// first of the Size tab's readouts): its label, quieter than the value in the slider's box
-    /// ([`look::quiet_text`]), with the Why link to the hot minimum check's note (spec 3.7),
-    /// then the requirement's slider, an ordinary design edit (undo, files, links). Returns the
-    /// slider's widget: its value box is a text field of the design, as an input row's is.
-    fn requirement_ui(&mut self, ui: &mut egui::Ui) -> egui::Id {
+    /// ([`look::quiet_text`]), then the requirement's slider, an ordinary design edit (undo,
+    /// files, links). Its Why link is its Explain entry's lesson. Returns the slider's widget
+    /// (its value box is a text field of the design, as an input row's is) and whether a person
+    /// touched the row ([`size_controls::touched`]).
+    fn requirement_ui(&mut self, ui: &mut egui::Ui) -> (egui::Id, bool) {
         let entry = InputCatalogue::get()
             .entry(REQUIREMENT_INPUT)
             .expect("the requirement has input metadata");
         let range = entry.meta.range.expect("the requirement has a slider");
         let required = self.inputs.metal.required_min_Nm;
-        ui.horizontal_wrapped(|ui| {
-            ui.colored_label(look::quiet_text(ui.visuals()), size_controls::REQUIRED);
-            if why_note_link(ui, TORQUE_BAND_NOTE) {
-                self.show_note(ui.ctx(), TORQUE_BAND_NOTE);
-            }
-        });
+        let row = size_controls::size_row(REQUIREMENT_INPUT).expect("the requirement has its row");
+        let clicked = size_controls::row_label(ui, row, Some(look::quiet_text(ui.visuals())));
         let mut value = required;
         let response = ui
             .push_id(REQUIREMENT_INPUT, |ui| {
@@ -1426,56 +1430,50 @@ impl MagcouplingPanel {
                 .map(|e| e.to_string());
             ui.ctx().request_repaint();
         }
-        response.id
+        (response.id, clicked || size_controls::touched(&response))
     }
 
     /// The Assumptions view (spec Addendum A3 "Toggle panel"): each assumption with its
     /// changed-from-default dot, the rows of its inputs (value, unit, reset: the inputs' own
     /// rows, so an edit here is an edit like any other), its rationale and, with the
-    /// spreadsheet details (spec S2-5), its source.
+    /// spreadsheet details (spec S2-5), its source. No scroll area of its own: the Size
+    /// column's fold scrolls with the column, the inputs side wraps it in one.
     fn assumptions_ui(&mut self, ui: &mut egui::Ui, readouts: &Readouts) {
         let catalogue = InputCatalogue::get();
         let clamps_paused = self.clamps_paused;
-        egui::ScrollArea::vertical()
-            .id_salt("magcoupling_assumptions_scroll")
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                ui.add(egui::Label::new(egui::RichText::new(ASSUMPTIONS_NOTE).weak()).wrap());
-                for state in assumptions::states(&self.inputs) {
-                    let assumption = state.assumption;
-                    // The paused shaft-clamp section's assumptions are left out with it.
-                    if !assumption.shown(clamps_paused) {
-                        continue;
-                    }
-                    ui.add_space(6.0);
-                    ui.horizontal(|ui| {
-                        let dot = if state.modified { CHANGED_DOT } else { " " };
-                        ui.colored_label(look::mark_color(ui.visuals()), dot)
-                            .on_hover_text(crate::gui::input_ui::CHANGED_FROM_DEFAULT);
-                        ui.strong(assumption.label);
-                    });
-                    for path in assumption.paths {
-                        let entry = catalogue
-                            .entry(path)
-                            .expect("an assumption path is an input (tests/assumptions.rs)");
-                        let widget = self.input_row_ui(ui, entry, readouts);
-                        self.design_widgets.push(widget);
-                    }
-                    ui.add(
-                        egui::Label::new(egui::RichText::new(assumption.rationale).weak()).wrap(),
-                    );
-                    if readouts.show_details() {
-                        ui.add(
-                            egui::Label::new(
-                                egui::RichText::new(format!("{SOURCE}: {}", assumption.source))
-                                    .small()
-                                    .weak(),
-                            )
-                            .wrap(),
-                        );
-                    }
-                }
+        ui.add(egui::Label::new(egui::RichText::new(ASSUMPTIONS_NOTE).weak()).wrap());
+        for state in assumptions::states(&self.inputs) {
+            let assumption = state.assumption;
+            // The paused shaft-clamp section's assumptions are left out with it.
+            if !assumption.shown(clamps_paused) {
+                continue;
+            }
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                let dot = if state.modified { CHANGED_DOT } else { " " };
+                ui.colored_label(look::mark_color(ui.visuals()), dot)
+                    .on_hover_text(crate::gui::input_ui::CHANGED_FROM_DEFAULT);
+                ui.strong(assumption.label);
             });
+            for path in assumption.paths {
+                let entry = catalogue
+                    .entry(path)
+                    .expect("an assumption path is an input (tests/assumptions.rs)");
+                let widget = self.input_row_ui(ui, entry, readouts);
+                self.design_widgets.push(widget);
+            }
+            ui.add(egui::Label::new(egui::RichText::new(assumption.rationale).weak()).wrap());
+            if readouts.show_details() {
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(format!("{SOURCE}: {}", assumption.source))
+                            .small()
+                            .weak(),
+                    )
+                    .wrap(),
+                );
+            }
+        }
     }
 
     /// The design inputs: the order toggle and the filter box, then the Key design group (each
@@ -1785,7 +1783,8 @@ mod tests {
     };
     use crate::gui::format::{format_value, with_unit};
     use crate::gui::guidance::{
-        Consequences, FACE_GAP, RING_SIZE_STAYS, SIZE_TAB_NOTE, plain_text_violations,
+        Consequences, FACE_GAP, RING_SIZE_STAYS, SIZE_TAB_NOTE, TORQUE_BAND_NOTE,
+        plain_text_violations,
     };
     use crate::gui::input_ui::{BLANK_TEXT, CHANGED_DOT, OUTSIDE_RANGE_NOTE, RESET_LABEL};
     use crate::gui::inputs::WORKFLOW;
@@ -2732,6 +2731,7 @@ mod tests {
         // or a dashboard fix (spec 3.4) naming an input opens them and frames its row, for a
         // Key design input, an assumption and an input under an Advanced heading alike. A tall
         // screen draws every row.
+        let mut assumptions = 0;
         for path in [FACE_GAP, "coupling.c_end", "coupling.mu0"] {
             let mut harness = Harness::of(MagcouplingPanel::new(), egui::vec2(1280.0, 3000.0));
             harness.panel.explorer.focus_input(path);
@@ -2751,8 +2751,18 @@ mod tests {
                     .any(|r| focus.iter().any(|f| f.contains_rect(*r))),
                 "{path}: {rows:?} {focus:?}"
             );
+            // An assumption's row is the Assumptions fold's (UX overhaul spec 4.3), which
+            // opens with its rationale; any other row's fold is the detailed inputs.
+            let assumption = ASSUMPTIONS.iter().find(|a| a.paths.contains(&path));
+            assert_eq!(
+                assumption.map(|a| count(&output, a.rationale)),
+                assumption.map(|_| 1),
+                "{path}"
+            );
+            assumptions += usize::from(assumption.is_some());
             assert_eq!(harness.panel.inputs(), &DesignInputs::default(), "{path}");
         }
+        assert_eq!(assumptions, 1, "one of the paths is an assumption");
     }
 
     #[test]
@@ -5318,8 +5328,8 @@ mod tests {
                 crate::gui::test_support::assert_glyphs(&harness.ctx, text, "the panel");
             }
             if clamps_paused {
-                // The check list and each check's Explain entry on designs failing every check,
-                // the clamp's too.
+                // The check list, each check's Explain entry and each Size row's (BL-090) on
+                // designs failing every check, the clamp's too.
                 let mut hot = DesignInputs::default();
                 hot_day(&mut hot);
                 for inputs in [
@@ -5332,6 +5342,10 @@ mod tests {
                     harness.panel.inputs = inputs;
                     for guide in crate::gui::guidance::counted_guides(true) {
                         harness.select(guide.check);
+                        texts.extend(drawn_texts(&harness.frame(Vec::new())));
+                    }
+                    for row in size_controls::SIZE_ROWS {
+                        harness.panel.selection = Selection::Input(row.key);
                         texts.extend(drawn_texts(&harness.frame(Vec::new())));
                     }
                 }
@@ -6185,6 +6199,23 @@ mod tests {
         harness
     }
 
+    /// Shows the entry of the Size column's row `key` (UX overhaul spec 4.3), as touching its
+    /// control does: the Explain panel draws it in the frame this returns.
+    fn entry(harness: &mut Harness, key: &'static str) -> egui::FullOutput {
+        harness.panel.selection = Selection::Input(key);
+        harness.frame(Vec::new())
+    }
+
+    /// The rect of `text` drawn in the right column (the check list over the Explain panel):
+    /// an entry's copy, where the Size column draws the same words.
+    fn explain_rect(output: &egui::FullOutput, text: &str) -> egui::Rect {
+        let left = right_column_left(output);
+        text_rects(output, text)
+            .into_iter()
+            .find(|rect| rect.left() >= left - 1.0)
+            .unwrap_or_else(|| panic!("no {text:?} in the right column"))
+    }
+
     /// The what-moves-what lines and the torque card of the design the panel shows, as the Size
     /// tab computes them: that design, its own results, the panel's Minimum OD and its
     /// shaft-clamp pause.
@@ -6527,28 +6558,51 @@ mod tests {
     }
 
     #[test]
-    fn a_required_edit_reaches_the_card_in_its_own_frame() {
-        // Slice 3 spec 3.5: the card draws the design shown after the frame's edits, the Required
-        // slider's included, which the readouts above it make. At the defaults (hot-low
-        // 2.29 N·m), Required 2.4 N·m lies under the Overall length +1 mm side's hot-low
-        // (2.49 N·m), so that side's Hot-low torque flips: the frame that applies the typed
-        // value draws the edited design's card, not the one before the edit.
+    fn a_size_control_s_edit_reaches_its_entry_in_its_own_frame() {
+        // Slice 3 spec 3.5 and UX overhaul spec 5.2: an edit of a Size control selects it, and
+        // the frame that applies the edit draws the edited design in the control's entry, not
+        // the design before it. The Required box typed into: its entry's title reads the typed
+        // 2.4 N·m in the frame that applies it. An arrow key on Magnets per ring: its lines and
+        // its torque-card row are the edited design's in the frame of the key.
         let mut harness = size_tab(SCREEN, DesignInputs::default());
         harness.panel.clamps_paused = true;
         let output = harness.frame(Vec::new());
-        let before = card_lines(&harness);
         let value_box = required_box(&output);
         harness.click(value_box.center());
+        assert_eq!(harness.panel.selection, Selection::Input(REQUIREMENT_INPUT));
         harness.frame([select_all(), vec![egui::Event::Text("2.4".to_owned())]].concat());
         let output = harness.frame(key_tap(egui::Key::Enter));
         assert_eq!(harness.panel.inputs().metal.required_min_Nm, 2.4);
-        let after = card_lines(&harness);
+        let unit = InputCatalogue::get()
+            .entry(REQUIREMENT_INPUT)
+            .expect("the requirement has input metadata")
+            .meta
+            .unit;
+        let typed = Value::Num(2.4);
+        let title = crate::gui::format::value_with_unit(&typed, format_value(&typed), unit);
+        explain_rect(&output, &title);
+        let before = shown_consequences(&harness);
+        let magnets = harness.panel.design_widgets[3];
+        harness.ctx.memory_mut(|m| m.request_focus(magnets));
+        harness.frame(Vec::new());
+        let output = harness.frame(key_tap(egui::Key::ArrowLeft));
+        assert_eq!(harness.panel.inputs().coupling.npole, 8);
+        assert_eq!(harness.panel.selection, Selection::Input(POLES));
+        let after = shown_consequences(&harness);
+        let row = |c: &Consequences| c.card.control_lines(Control::MagnetsPerRing, None);
         assert_ne!(
-            after, before,
-            "Required 2.4 N·m moves a Hot-low torque flip"
+            row(&after),
+            row(&before),
+            "two magnets fewer move the count row"
         );
-        for line in &after {
+        for line in row(&after).iter().chain(&after.magnet_lines(8, None)) {
             assert_eq!(count(&output, line), 1, "{line}");
+        }
+        for line in row(&before)
+            .iter()
+            .filter(|line| !row(&after).contains(line))
+        {
+            assert_eq!(count(&output, line), 0, "stale: {line}");
         }
     }
 
@@ -6557,38 +6611,43 @@ mod tests {
     // its default (`card_tab`), and steps frames past the collapse animation before it measures.
 
     #[test]
-    fn size_tab_draws_each_what_moves_what_line_under_its_control() {
-        // Spec 3.3 at the default design: the Set-by line under Outside diameter, the length
-        // split under Overall length, and the magnet count's lines under Magnets per ring, the
-        // ring-size line first, each under the one before.
+    fn each_size_control_s_entry_draws_its_what_moves_what_lines_under_what_sets_it() {
+        // Spec 3.3 at the default design, in the Explain panel since UX overhaul spec 4.3: the
+        // Set-by line in Outside diameter's entry, the length split in Overall length's, and the
+        // magnet count's lines in Magnets per ring's, the ring-size line first, each under the
+        // one before and under the entry's "What sets it". The Size column draws none of them.
+        use crate::gui::explain::WHAT_SETS_IT;
         let mut harness = size_tab(SCREEN, DesignInputs::default());
-        let output = harness.frame(Vec::new());
         let consequences = shown_consequences(&harness);
-        let rect = |text: &str| text_rect(&output, text).unwrap_or_else(|| panic!("no {text:?}"));
         let diameter = consequences
             .diameter_line()
             .expect("the default design has a breakdown");
         let length = consequences.length_line().expect("and a length split");
-        assert_eq!(count(&output, &diameter), 1);
-        assert_eq!(count(&output, &length), 1);
-        assert!(rect(DIAMETER).bottom() <= rect(diameter.as_str()).top());
-        assert!(rect(diameter.as_str()).bottom() <= rect(LENGTH).top());
-        assert!(rect(LENGTH).bottom() <= rect(length.as_str()).top());
-        assert!(rect(length.as_str()).bottom() <= rect(GAP).top());
-        let lines = consequences.magnet_lines(10, None);
-        assert_eq!(lines.first().map(String::as_str), Some(RING_SIZE_STAYS));
+        let magnets = consequences.magnet_lines(10, None);
+        assert_eq!(magnets.first().map(String::as_str), Some(RING_SIZE_STAYS));
         // The ring-size line and the fit line (slice 3, decision 7A: the lines for two magnets
         // fewer and two more are the torque card's count row).
-        assert_eq!(lines.len(), 2, "{lines:?}");
-        let mut above = rect(MAGNETS);
-        for line in &lines {
-            assert_eq!(count(&output, line), 1, "{line}");
-            let at = rect(line.as_str());
-            assert!(
-                above.bottom() <= at.top() + 0.5,
-                "{line:?} is not under the line above it"
-            );
-            above = at;
+        assert_eq!(magnets.len(), 2, "{magnets:?}");
+        let column = harness.frame(Vec::new());
+        for (key, lines) in [
+            (DIAMETER_HINT_KEY, vec![diameter]),
+            (LENGTH_HINT_KEY, vec![length]),
+            (POLES, magnets),
+        ] {
+            for line in &lines {
+                assert_eq!(count(&column, line), 0, "the column draws no {line:?}");
+            }
+            let output = entry(&mut harness, key);
+            let mut above = explain_rect(&output, WHAT_SETS_IT);
+            for line in &lines {
+                assert_eq!(count(&output, line), 1, "{key}: {line}");
+                let at = explain_rect(&output, line);
+                assert!(
+                    above.bottom() <= at.top() + 0.5,
+                    "{key}: {line:?} is not under the line above it"
+                );
+                above = at;
+            }
         }
         assert_eq!(
             harness.panel.inputs(),
@@ -6597,8 +6656,8 @@ mod tests {
         );
     }
 
-    /// The Size tab's five controls in drawing order, each with its hint key (spec 3.5): the gap
-    /// and the magnet count draw their Key design rows' hints.
+    /// The Size column's five controls in drawing order, each with its hint key (spec 3.5), which
+    /// is its row's key: the gap and the magnet count's hints are their Key design rows'.
     const SIZE_TAB_HINTS: [(&str, &str); 5] = [
         (MINIMUM, MINIMUM_OD_HINT_KEY),
         (DIAMETER, DIAMETER_HINT_KEY),
@@ -6648,26 +6707,27 @@ mod tests {
     }
 
     #[test]
-    fn size_tab_draws_each_hint_line_under_its_control() {
-        // Slice 2 spec 3.5 (S2-7): one weak line under each of the five Size-tab controls,
-        // under its label and above the next control's.
+    fn each_size_control_s_entry_draws_its_hint_under_what_sets_it() {
+        // Slice 2 spec 3.5 (S2-7), moved by UX overhaul spec 4.3: each of the five controls'
+        // hints shows once, in its entry, under the entry's title and its "What sets it"; the
+        // Size column draws none of them.
+        use crate::gui::explain::WHAT_SETS_IT;
         let mut harness = size_tab(SCREEN, DesignInputs::default());
-        let output = harness.frame(Vec::new());
-        let rect = |text: &str| text_rect(&output, text).unwrap_or_else(|| panic!("no {text:?}"));
-        for (i, &(label, key)) in SIZE_TAB_HINTS.iter().enumerate() {
+        let column = harness.frame(Vec::new());
+        for (label, key) in SIZE_TAB_HINTS {
             let hint = hint_for(key).unwrap_or_else(|| panic!("{key} has no hint"));
+            assert_eq!(count(&column, hint), 0, "{label}: the column draws no hint");
+            let output = entry(&mut harness, key);
             assert_eq!(count(&output, hint), 1, "{label}: {hint}");
-            let at = rect(hint);
+            let heading = explain_rect(&output, WHAT_SETS_IT);
             assert!(
-                rect(label).bottom() <= at.top() + 0.5,
-                "{label}: the hint is not under its control"
+                explain_rect(&output, label).bottom() <= heading.top() + 0.5,
+                "{label}: the entry's title leads"
             );
-            if let Some(&(next, _)) = SIZE_TAB_HINTS.get(i + 1) {
-                assert!(
-                    at.bottom() <= rect(next).top() + 0.5,
-                    "{label}: the hint runs past {next}"
-                );
-            }
+            assert!(
+                heading.bottom() <= explain_rect(&output, hint).top() + 0.5,
+                "{label}: the hint is not under its heading"
+            );
         }
         assert_eq!(
             harness.panel.inputs(),
@@ -6677,35 +6737,38 @@ mod tests {
     }
 
     #[test]
-    fn hint_lines_stay_inside_the_inputs_side_in_a_narrow_window() {
+    fn hint_lines_stay_inside_their_sides_in_a_narrow_window() {
         // Spec 5 "A narrow window: hint lines wrap": at the M4-1 review's 930-point window every
-        // hint, on the Size tab and in the Key design group, wraps inside the inputs side.
+        // hint wraps inside its side: the Key design group's in the inputs side, each Size
+        // control's in its entry in the right column (UX overhaul spec 4.3).
         let narrow = egui::vec2(930.0, 3000.0);
-        let size_keys: Vec<&str> = SIZE_TAB_HINTS.iter().map(|&(_, key)| key).collect();
-        let views = [
-            (size_tab(narrow, DesignInputs::default()), size_keys),
-            (Harness::on_screen(narrow), KEY_DESIGN.to_vec()),
-        ];
+        let side = |harness: &Harness, id: &str| {
+            egui::containers::panel::PanelState::load(&harness.ctx, egui::Id::new(id))
+                .unwrap_or_else(|| panic!("{id} is drawn"))
+                .rect
+        };
         let mut wrapped = false;
-        for (mut harness, keys) in views {
-            let output = harness.frame(Vec::new());
-            let left = egui::containers::panel::PanelState::load(
-                &harness.ctx,
-                egui::Id::new("magcoupling_inputs"),
-            )
-            .expect("the inputs side is drawn")
-            .rect
-            .left();
-            let right = left + INPUTS_WIDTH;
-            for key in keys {
-                let hint = hint_for(key).unwrap_or_else(|| panic!("{key} has no hint"));
-                let at = text_rect(&output, hint).unwrap_or_else(|| panic!("no {hint:?}"));
-                assert!(
-                    at.left() >= left - 1.0 && at.right() <= right + 1.0,
-                    "{hint:?} at {at:?} runs out of the inputs side ({left} to {right})"
-                );
-                wrapped |= rows(&output, hint) > 1;
-            }
+        let mut inside = |output: &egui::FullOutput, hint: &str, left: f32, right: f32| {
+            let at = text_rect(output, hint).unwrap_or_else(|| panic!("no {hint:?}"));
+            assert!(
+                at.left() >= left - 1.0 && at.right() <= right + 1.0,
+                "{hint:?} at {at:?} runs out of its side ({left} to {right})"
+            );
+            wrapped |= rows(output, hint) > 1;
+        };
+        let mut harness = Harness::on_screen(narrow);
+        let output = harness.frame(Vec::new());
+        let left = side(&harness, "magcoupling_inputs").left();
+        for path in KEY_DESIGN {
+            let hint = hint_for(path).unwrap_or_else(|| panic!("{path} has no hint"));
+            inside(&output, hint, left, left + INPUTS_WIDTH);
+        }
+        let mut harness = size_tab(narrow, DesignInputs::default());
+        for (_, key) in SIZE_TAB_HINTS {
+            let output = entry(&mut harness, key);
+            let right = side(&harness, "magcoupling_dashboard");
+            let hint = hint_for(key).unwrap_or_else(|| panic!("{key} has no hint"));
+            inside(&output, hint, right.left(), right.right());
         }
         assert!(
             wrapped,
@@ -6714,14 +6777,206 @@ mod tests {
     }
 
     #[test]
+    fn touching_a_size_control_selects_its_row_and_a_hover_selects_nothing() {
+        // UX overhaul spec 5.2: a click on a Size control's label, the keyboard's focus
+        // arriving on its slider, or a drag of its slider, selects its row; a hover over a label
+        // shows its hover text and selects nothing (C-2). A label's click and the focus edit
+        // nothing.
+        let mut harness = size_tab(SCREEN, DesignInputs::default());
+        let tile = harness.panel.selection;
+        let label_at = |output: &egui::FullOutput, label: &str| {
+            text_rects(output, label)
+                .into_iter()
+                .find(|rect| rect.right() <= INPUTS_WIDTH)
+                .unwrap_or_else(|| panic!("no {label:?} in the Size column"))
+                .center()
+        };
+        for row in size_controls::SIZE_ROWS {
+            let output = harness.frame(Vec::new());
+            harness.frame(vec![egui::Event::PointerMoved(label_at(
+                &output, row.label,
+            ))]);
+            harness.frame(Vec::new());
+            assert_eq!(harness.panel.selection, tile, "a hover on {:?}", row.label);
+        }
+        // The six sliders: the four controls, Minimum OD, then Required (size_column_ui).
+        let sliders: Vec<egui::Id> = harness.panel.design_widgets[..6].to_vec();
+        for id in sliders {
+            let at = harness
+                .ctx
+                .read_response(id)
+                .expect("the slider has a response")
+                .rect
+                .center();
+            harness.frame(vec![egui::Event::PointerMoved(at)]);
+            harness.frame(Vec::new());
+            assert_eq!(
+                harness.panel.selection, tile,
+                "a hover on the slider at {at:?}"
+            );
+        }
+        for row in size_controls::SIZE_ROWS {
+            harness.panel.selection = Selection::Nothing;
+            let output = harness.frame(Vec::new());
+            harness.click(label_at(&output, row.label));
+            assert_eq!(
+                harness.panel.selection,
+                Selection::Input(row.key),
+                "{:?}",
+                row.label
+            );
+        }
+        assert_eq!(
+            harness.panel.inputs(),
+            &DesignInputs::default(),
+            "a click edits nothing"
+        );
+        harness.panel.selection = Selection::Nothing;
+        harness.frame(Vec::new());
+        // Tab from the slider before it (a focus requested between frames is not one that
+        // arrives) onto the gap's slider: two presses, its value box then the gap's slider, so
+        // the gap's label takes no Tab stop.
+        let gap = harness.size_widget(GAP).id;
+        let length = harness.size_widget(LENGTH).id;
+        harness.ctx.memory_mut(|m| m.request_focus(length));
+        harness.frame(Vec::new());
+        harness.panel.selection = Selection::Nothing;
+        harness.frame(key_tap(egui::Key::Tab));
+        assert!(
+            !harness.ctx.memory(|m| m.has_focus(gap)),
+            "one press: the value box"
+        );
+        harness.frame(key_tap(egui::Key::Tab));
+        assert!(
+            harness.ctx.memory(|m| m.has_focus(gap)),
+            "Tab reaches the gap in two presses"
+        );
+        harness.frame(Vec::new());
+        assert_eq!(
+            harness.panel.selection,
+            Selection::Input(FACE_GAP),
+            "the keyboard's focus"
+        );
+        assert_eq!(
+            harness.panel.inputs(),
+            &DesignInputs::default(),
+            "the focus edits nothing"
+        );
+        harness.panel.selection = Selection::Nothing;
+        harness.frame(Vec::new());
+        let at = harness.size_widget(GAP).rect.left_center() + egui::vec2(20.0, 0.0);
+        harness.frame(vec![egui::Event::PointerMoved(at)]);
+        harness.frame(vec![primary_button(at, true)]);
+        harness.frame(vec![egui::Event::PointerMoved(at + egui::vec2(12.0, 0.0))]);
+        harness.frame(vec![primary_button(at + egui::vec2(12.0, 0.0), false)]);
+        assert_eq!(
+            harness.panel.selection,
+            Selection::Input(FACE_GAP),
+            "a drag"
+        );
+    }
+
+    #[test]
+    fn the_size_column_draws_its_controls_and_two_folds_and_no_line_about_them() {
+        // UX overhaul spec 4.3: each control is its label and its slider; what left the column
+        // (every hint, Set-by, floor and what-moves-what line, the Why links and the footnote
+        // on what the controls move) is drawn nowhere until a row is selected. Under the
+        // controls, the folds Detailed inputs and Assumptions, both closed.
+        use crate::gui::dashboard::why_note_text;
+        use crate::gui::explorer::reviewed_note;
+        let mut harness = Harness::first_view();
+        let output = harness.frame(Vec::new());
+        let shown = harness.panel.shown_inputs();
+        let consequences = shown_consequences(&harness);
+        let size = dimensions(&shown).expect("the starting design has size controls");
+        let mut gone: Vec<String> = SIZE_TAB_HINTS
+            .iter()
+            .map(|&(_, key)| hint_for(key).expect("a hint").to_owned())
+            .collect();
+        gone.extend(consequences.magnet_lines(shown.coupling.npole, harness.panel.auto()));
+        gone.extend(consequences.diameter_line());
+        gone.extend(consequences.length_line());
+        gone.push(size_controls::floor_line(size.minimum_diameter_range.min));
+        gone.push(size_controls::LINKED_HOUSING.to_owned());
+        for id in [SIZE_TAB_NOTE, TORQUE_BAND_NOTE] {
+            gone.push(why_note_text(reviewed_note(id).expect("a reviewed note")));
+        }
+        for text in &gone {
+            assert_eq!(count(&output, text), 0, "{text:?} is drawn");
+        }
+        let column = |text: &str| {
+            text_rects(&output, text)
+                .into_iter()
+                .find(|rect| rect.right() <= INPUTS_WIDTH)
+                .unwrap_or_else(|| panic!("no {text:?} in the Size column"))
+        };
+        for row in size_controls::SIZE_ROWS {
+            column(row.label);
+        }
+        let detailed = column(DETAILED_INPUTS);
+        let assumptions = column(ASSUMPTIONS_FOLD);
+        assert!(
+            detailed.bottom() <= assumptions.top(),
+            "{detailed:?} {assumptions:?}"
+        );
+        assert_eq!(
+            count(&output, ASSUMPTIONS_NOTE),
+            0,
+            "the Assumptions fold starts closed"
+        );
+    }
+
+    #[test]
+    fn the_assumptions_fold_scrolls_with_the_size_column_to_its_last_assumption() {
+        // UXQ-2 of the 2026-11-23 review: the fold drew the Assumptions view's own scroll area
+        // inside the column's, a pane of two rationales at 1024x700 the column could not scroll
+        // past. Opened at 1024x700, a wheel over the column brings the last assumption's
+        // rationale into the window.
+        let size = egui::vec2(1024.0, 700.0);
+        let mut harness = size_tab(size, DesignInputs::default());
+        let output = harness.frame(Vec::new());
+        let header = text_rects(&output, ASSUMPTIONS_FOLD)
+            .into_iter()
+            .find(|rect| rect.right() <= INPUTS_WIDTH)
+            .expect("the fold's header in the Size column");
+        harness.click(header.center());
+        let paused = harness.panel.clamps_paused;
+        let last = assumptions::states(&harness.panel.inputs)
+            .into_iter()
+            .rev()
+            .find(|state| state.assumption.shown(paused))
+            .expect("an assumption is shown")
+            .assumption
+            .rationale;
+        let output = harness.frame(Vec::new());
+        assert!(
+            text_rect(&output, last).is_none_or(|rect| rect.top() > size.y),
+            "the last rationale is in view before a scroll: the test would prove nothing"
+        );
+        harness.frame(vec![egui::Event::PointerMoved(header.center())]);
+        harness.frame(vec![egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -20000.0),
+            modifiers: egui::Modifiers::NONE,
+        }]);
+        // egui spreads a wheel step over several frames.
+        let mut output = harness.frame(Vec::new());
+        for _ in 0..20 {
+            output = harness.frame(Vec::new());
+        }
+        let rect = text_rect(&output, last).expect("the last rationale is drawn");
+        assert!(rect.bottom() <= size.y, "{rect:?} below the window's foot");
+    }
+
+    #[test]
     fn size_tab_owner_case_at_8_magnets_says_the_ring_stays_and_the_cap_sets_the_diameter() {
         // Spec 6 test 10, the owner's case of 2026-10-13: from 10 to 8 magnets the coupling did
-        // not shrink and nothing said why. At 8 magnets the Size tab says the ring keeps its
-        // size, and its Set-by line shows the cap as the largest part: the outside diameter is
-        // the cap's, so fewer magnets cannot lower it.
+        // not shrink and nothing said why. At 8 magnets Magnets per ring's entry says the ring
+        // keeps its size, and Outside diameter's Set-by line shows the cap as the largest part:
+        // the outside diameter is the cap's, so fewer magnets cannot lower it (in the Explain
+        // panel since UX overhaul spec 4.3).
+        use crate::gui::explain::WHAT_SETS_IT;
         let mut harness = size_tab(SCREEN, with_poles(8));
-        let output = harness.frame(Vec::new());
-        assert_eq!(count(&output, RING_SIZE_STAYS), 1);
         let shown = harness.panel.shown_inputs();
         let parts =
             diameter_breakdown(&shown).expect("the default ring at 8 magnets has a breakdown");
@@ -6738,20 +6993,14 @@ mod tests {
         assert_eq!(consequences.diameter, Some(parts));
         let set_by = consequences.diameter_line().expect("a Set-by line");
         assert!(set_by.starts_with("Set by: cap "), "{set_by}");
+        let output = entry(&mut harness, DIAMETER_HINT_KEY);
         assert_eq!(count(&output, &set_by), 1);
-        let rect = |text: &str| text_rect(&output, text).unwrap_or_else(|| panic!("no {text:?}"));
         assert!(
-            rect(DIAMETER).bottom() <= rect(set_by.as_str()).top(),
-            "under Outside diameter"
+            explain_rect(&output, WHAT_SETS_IT).bottom() <= explain_rect(&output, &set_by).top(),
+            "in Outside diameter's entry, under What sets it"
         );
-        assert!(
-            rect(set_by.as_str()).bottom() <= rect(LENGTH).top(),
-            "above Overall length"
-        );
-        assert!(
-            rect(MAGNETS).bottom() <= rect(RING_SIZE_STAYS).top(),
-            "under Magnets per ring"
-        );
+        let output = entry(&mut harness, POLES);
+        assert_eq!(count(&output, RING_SIZE_STAYS), 1);
         // T5/T6 amendment: with Minimum OD unset the slider floor, not the coupling, stops the
         // fit search. The line says how far it could go and that Minimum OD unlocks it.
         let fit = consequences
@@ -6761,10 +7010,18 @@ mod tests {
             .expect("a fit line at the slider's floor");
         assert!(fit.ends_with("set Minimum OD lower to reach it."), "{fit}");
         assert_eq!(count(&output, &fit), 1, "{fit}");
-        // Slice 3: two lines under Magnets per ring, and the torque card above the drawing
-        // answers the owner's question in numbers (decision 7A moved the neighbour lines there):
-        // every one of its lines is drawn.
+        // Slice 3: two lines for Magnets per ring, and the torque card answers the owner's
+        // question in numbers (decision 7A moved the neighbour lines there): the entry draws
+        // the card's count row, and the Hot-low tile's entry every one of its lines.
         assert_eq!(consequences.magnet_lines(8, None).len(), 2);
+        for line in consequences
+            .card
+            .control_lines(Control::MagnetsPerRing, None)
+        {
+            assert_eq!(count(&output, &line), 1, "{line}");
+        }
+        harness.panel.selection = Selection::Result(crate::gui::tiles::Tile::HotLow.path());
+        let output = harness.frame(Vec::new());
         for line in consequences.card.lines(None) {
             assert_eq!(count(&output, &line), 1, "{line}");
         }
@@ -6772,12 +7029,13 @@ mod tests {
 
     #[test]
     fn size_tab_first_magnet_line_follows_the_auto_state() {
-        // Slice 3 spec 4.3 (physics review 3, N4, as the card leaves it): the line under
-        // Magnets per ring says what a new count does to the ring: it stays with Auto off and
-        // with Auto on the magnet length; with Auto on the ring size the torque card's Auto line
-        // says Auto sizes the ring again (decision 5A), and with Auto on the count (its slider
-        // locked) no line speaks of changing it. The lines under the control are drawn one under
-        // the next, and the card draws the Auto line of the state and no other.
+        // Slice 3 spec 4.3 (physics review 3, N4, as the card leaves it): Magnets per ring's
+        // first line says what a new count does to the ring: it stays with Auto off and with
+        // Auto on the magnet length; with Auto on the ring size the torque card's Auto line says
+        // Auto sizes the ring again (decision 5A), and with Auto on the count (its slider
+        // locked) no line speaks of changing it. The control's lines are drawn one under the
+        // next in its entry, and the card draws the Auto line of the state and no other.
+        use crate::gui::explain::WHAT_SETS_IT;
         use crate::gui::torque_card::{AUTO_HOLDS_COUNT, AUTO_HOLDS_LENGTH, AUTO_HOLDS_RING};
         let states = [
             (None, Some(RING_SIZE_STAYS), None),
@@ -6802,15 +7060,22 @@ mod tests {
             harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
             harness.frame(Vec::new());
             let output = harness.frame(Vec::new());
+            for line in [AUTO_HOLDS_LENGTH, AUTO_HOLDS_RING, AUTO_HOLDS_COUNT] {
+                let wanted = usize::from(Some(line) == auto_line);
+                assert_eq!(count(&output, line), wanted, "{auto:?}: {line}");
+            }
+            let output = entry(&mut harness, POLES);
+            // The entry's card row keeps the same Auto line (owner 5A), between the caption
+            // and the row.
+            for line in [AUTO_HOLDS_LENGTH, AUTO_HOLDS_RING, AUTO_HOLDS_COUNT] {
+                let wanted = usize::from(Some(line) == auto_line);
+                assert_eq!(count(&output, line), wanted, "{auto:?}: the entry's {line}");
+            }
             assert_eq!(
                 count(&output, RING_SIZE_STAYS),
                 usize::from(first.is_some()),
                 "{auto:?}"
             );
-            for line in [AUTO_HOLDS_LENGTH, AUTO_HOLDS_RING, AUTO_HOLDS_COUNT] {
-                let wanted = usize::from(Some(line) == auto_line);
-                assert_eq!(count(&output, line), wanted, "{auto:?}: {line}");
-            }
             let shown = harness.panel.shown_inputs();
             let lines = shown_consequences(&harness).magnet_lines(shown.coupling.npole, auto);
             assert_eq!(
@@ -6823,12 +7088,10 @@ mod tests {
                 first.is_some(),
                 "{auto:?}"
             );
-            let rect =
-                |text: &str| text_rect(&output, text).unwrap_or_else(|| panic!("no {text:?}"));
-            let mut above = rect(MAGNETS);
+            let mut above = explain_rect(&output, WHAT_SETS_IT);
             for line in &lines {
                 assert_eq!(count(&output, line), 1, "{auto:?}: {line}");
-                let at = rect(line.as_str());
+                let at = explain_rect(&output, line);
                 assert!(above.bottom() <= at.top() + 0.5, "{auto:?}: {line:?}");
                 above = at;
             }
@@ -6839,10 +7102,13 @@ mod tests {
     fn size_tab_what_moves_what_lines_follow_each_edit() {
         // Spec 6 test 5: the lines are recomputed when the design changes (the cache keys on
         // it), from the magnet count's own slider and from any other input; so is the torque
-        // card that took over the neighbour lines (slice 3, decision 7A).
+        // card that took over the neighbour lines (slice 3, decision 7A). The arrow key selects
+        // the control, whose entry draws its lines and its card row (UX overhaul spec 4.3); the
+        // other controls' entries and the Hot-low tile's whole card follow too.
         let mut harness = size_tab(SCREEN, DesignInputs::default());
         let at_10 = shown_consequences(&harness).magnet_lines(10, None);
-        let card_at_10 = card_lines(&harness);
+        let row = |c: &Consequences| c.card.control_lines(Control::MagnetsPerRing, None);
+        let row_at_10 = row(&shown_consequences(&harness));
         // The controls' widgets in drawing order: diameter, length, gap, magnets, Minimum OD.
         let magnets = harness.panel.design_widgets[3];
         harness.ctx.memory_mut(|m| m.request_focus(magnets));
@@ -6851,21 +7117,18 @@ mod tests {
         harness.frame(key_tap(egui::Key::ArrowLeft));
         let output = harness.frame(Vec::new());
         assert_eq!(harness.panel.inputs().coupling.npole, 8);
+        assert_eq!(harness.panel.selection, Selection::Input(POLES));
         let at_8 = shown_consequences(&harness).magnet_lines(8, None);
         assert_ne!(at_8, at_10);
-        for line in &at_8 {
-            assert_eq!(count(&output, line), 1, "{line}");
-        }
-        for line in at_10.iter().filter(|line| !at_8.contains(line)) {
-            assert_eq!(count(&output, line), 0, "stale: {line}");
-        }
-        let card_at_8 = card_lines(&harness);
-        assert_ne!(card_at_8, card_at_10);
-        for line in &card_at_8 {
-            assert_eq!(count(&output, line), 1, "{line}");
-        }
-        for line in card_at_10.iter().filter(|line| !card_at_8.contains(line)) {
-            assert_eq!(count(&output, line), 0, "stale: {line}");
+        let row_at_8 = row(&shown_consequences(&harness));
+        assert_ne!(row_at_8, row_at_10);
+        for (now, then) in [(&at_8, &at_10), (&row_at_8, &row_at_10)] {
+            for line in now {
+                assert_eq!(count(&output, line), 1, "{line}");
+            }
+            for line in then.iter().filter(|line| !now.contains(line)) {
+                assert_eq!(count(&output, line), 0, "stale: {line}");
+            }
         }
         // Another input: a wider face gap moves the smallest diameter that fits and every step
         // of the card.
@@ -6874,21 +7137,25 @@ mod tests {
         let wider = shown_consequences(&harness);
         let lines = wider.magnet_lines(8, None);
         assert_ne!(lines, at_8);
-        for line in &lines {
-            assert_eq!(count(&output, line), 1, "{line}");
+        let row_wider = row(&wider);
+        assert_ne!(row_wider, row_at_8);
+        for (now, then) in [(&lines, &at_8), (&row_wider, &row_at_8)] {
+            for line in now {
+                assert_eq!(count(&output, line), 1, "{line}");
+            }
+            for line in then.iter().filter(|line| !now.contains(line)) {
+                assert_eq!(count(&output, line), 0, "stale: {line}");
+            }
         }
-        for line in at_8.iter().filter(|line| !lines.contains(line)) {
-            assert_eq!(count(&output, line), 0, "stale: {line}");
-        }
-        let card_wider = wider.card.lines(None);
-        assert_ne!(card_wider, card_at_8);
-        for line in &card_wider {
-            assert_eq!(count(&output, line), 1, "{line}");
-        }
-        for line in card_at_8.iter().filter(|line| !card_wider.contains(line)) {
-            assert_eq!(count(&output, line), 0, "stale: {line}");
-        }
-        for line in wider.diameter_line().into_iter().chain(wider.length_line()) {
+        let output = entry(&mut harness, DIAMETER_HINT_KEY);
+        let diameter = wider.diameter_line().expect("a Set-by line");
+        assert_eq!(count(&output, &diameter), 1, "{diameter}");
+        let output = entry(&mut harness, LENGTH_HINT_KEY);
+        let length = wider.length_line().expect("a length split");
+        assert_eq!(count(&output, &length), 1, "{length}");
+        harness.panel.selection = Selection::Result(crate::gui::tiles::Tile::HotLow.path());
+        let output = harness.frame(Vec::new());
+        for line in wider.card.lines(None) {
             assert_eq!(count(&output, &line), 1, "{line}");
         }
     }
@@ -6899,6 +7166,7 @@ mod tests {
         // preference included. At 8 magnets the blocks fit at the slider's floor, so the line
         // takes its minimum form; a lower Minimum OD lets the search find the smallest fit.
         let mut harness = size_tab(SCREEN, with_poles(8));
+        harness.panel.selection = Selection::Input(POLES);
         assert_eq!(harness.panel.minimum_diameter_mm, None);
         let floor = shown_consequences(&harness);
         assert!(
@@ -6931,9 +7199,10 @@ mod tests {
     #[test]
     fn size_tab_magnet_slider_ends_show_only_the_neighbour_in_range() {
         // Spec 5, as the torque card's count row has it (slice 3, decision 7A): at 4 or 40
-        // magnets per ring the side past the slider reads END_OF_RANGE, drawn on the card, the
-        // side inside it is a step, and no text names 2 or 42 magnets. The default blocks do
-        // not fit 40 magnets (the card reads its one line there); forty narrow blocks do.
+        // magnets per ring the side past the slider reads END_OF_RANGE, drawn in the control's
+        // entry as its card row, the side inside it is a step, and no text names 2 or 42
+        // magnets. The default blocks do not fit 40 magnets (the card reads its one line
+        // there); forty narrow blocks do.
         use crate::gui::test_support::forty_narrow_magnets;
         use crate::gui::torque_card::END_OF_RANGE;
         for (inputs, past, inside) in [
@@ -6942,7 +7211,7 @@ mod tests {
         ] {
             let npole = inputs.coupling.npole;
             let mut harness = size_tab(SCREEN, inputs);
-            let output = harness.frame(Vec::new());
+            let output = entry(&mut harness, POLES);
             let consequences = shown_consequences(&harness);
             let count_line = row_line(&consequences.card, Control::MagnetsPerRing, None);
             assert!(
@@ -6954,7 +7223,7 @@ mod tests {
                 "{count_line}"
             );
             assert_eq!(count(&output, &count_line), 1, "{count_line}");
-            // Two lines under Magnets per ring at a slider end (three before the card): the
+            // Two lines for Magnets per ring at a slider end (three before the card): the
             // ring-size line and the fit line.
             let lines = consequences.magnet_lines(npole, None);
             assert_eq!(lines.len(), 2, "{lines:?}");
@@ -6983,45 +7252,21 @@ mod tests {
     #[test]
     fn size_tab_narrow_window_wraps_the_new_lines_inside_their_sides() {
         // Spec 5 "Narrow windows", at the M4-1 review's ~930 px window and the owner's 8 magnets:
-        // the what-moves-what lines wrap inside the inputs side (its 320 points), one under the
-        // next, the Required row is that side's too, and the tiles stay in the centre region,
-        // left of the right column.
+        // the what-moves-what lines wrap inside the right column, in their controls' entries
+        // (UX overhaul spec 4.3), one under the next; the Required row is the inputs side's
+        // (its 320 points), and the tiles stay in the centre region, left of the right column.
+        use crate::gui::explain::WHAT_SETS_IT;
         let mut harness = size_tab(egui::vec2(930.0, 1024.0), with_poles(8));
         let output = harness.frame(Vec::new());
-        let side = |id: &str| {
+        let side = |harness: &Harness, id: &str| {
             egui::containers::panel::PanelState::load(&harness.ctx, egui::Id::new(id))
                 .unwrap_or_else(|| panic!("{id} is drawn"))
                 .rect
         };
-        let inputs_left = side("magcoupling_inputs").left();
+        let inputs_left = side(&harness, "magcoupling_inputs").left();
         let inputs_right = inputs_left + INPUTS_WIDTH;
-        let dashboard_left = side("magcoupling_dashboard").left();
+        let dashboard_left = side(&harness, "magcoupling_dashboard").left();
         let rect = |text: &str| text_rect(&output, text).unwrap_or_else(|| panic!("no {text:?}"));
-        let consequences = shown_consequences(&harness);
-        let magnet_lines = consequences.magnet_lines(8, None);
-        let mut above = rect(MAGNETS);
-        for line in &magnet_lines {
-            let at = rect(line.as_str());
-            assert!(
-                above.bottom() <= at.top() + 0.5,
-                "{line:?} overlaps the line above it"
-            );
-            above = at;
-        }
-        let mut lines = magnet_lines.clone();
-        lines.extend(consequences.diameter_line());
-        lines.extend(consequences.length_line());
-        for line in &lines {
-            let at = rect(line.as_str());
-            assert!(
-                at.left() >= inputs_left - 1.0 && at.right() <= inputs_right + 1.0,
-                "{line:?} at {at:?} runs out of the inputs side ({inputs_left} to {inputs_right})"
-            );
-        }
-        assert!(
-            lines.iter().any(|line| rows(&output, line) > 1),
-            "no line wrapped: the test no longer exercises wrapping"
-        );
         let results = harness.panel.results().clone();
         let (gap, _) = torque_gap_text(
             results.metal.torque_hot_low_Nm,
@@ -7042,14 +7287,50 @@ mod tests {
             required.left() >= inputs_left - 1.0 && required.right() <= inputs_right + 1.0,
             "{required:?}"
         );
+        let consequences = shown_consequences(&harness);
+        let mut wrapped = false;
+        for (key, lines) in [
+            (POLES, consequences.magnet_lines(8, None)),
+            (
+                DIAMETER_HINT_KEY,
+                consequences.diameter_line().into_iter().collect(),
+            ),
+            (
+                LENGTH_HINT_KEY,
+                consequences.length_line().into_iter().collect(),
+            ),
+        ] {
+            assert!(!lines.is_empty(), "{key}");
+            let output = entry(&mut harness, key);
+            let right = side(&harness, "magcoupling_dashboard");
+            let mut above = explain_rect(&output, WHAT_SETS_IT);
+            for line in &lines {
+                let at = explain_rect(&output, line);
+                assert!(
+                    above.bottom() <= at.top() + 0.5,
+                    "{line:?} overlaps the line above it"
+                );
+                assert!(
+                    at.left() >= right.left() - 1.0 && at.right() <= right.right() + 1.0,
+                    "{line:?} at {at:?} runs out of the right column ({right:?})"
+                );
+                wrapped |= rows(&output, line) > 1;
+                above = at;
+            }
+        }
+        assert!(
+            wrapped,
+            "no line wrapped: the test no longer exercises wrapping"
+        );
     }
 
     #[test]
     fn size_tab_new_texts_have_glyphs_and_plain_words() {
         // Spec 6 tests 3 and 11 for the Size tab, in each state its new texts take: the
         // default, a met requirement, both ends of the magnet slider, the owner's 8 magnets, no
-        // prediction (short magnets) and a ring too small for its magnets. Every drawn text has
-        // glyphs in the default fonts; the new ones name no workbook cell, correction or sheet.
+        // prediction (short magnets) and a ring too small for its magnets; the controls' lines
+        // drawn in their entries (UX overhaul spec 4.3). Every drawn text has glyphs in the
+        // default fonts; the new ones name no workbook cell, correction or sheet.
         let mut met = DesignInputs::default();
         met.metal.required_min_Nm = 2.0;
         let too_small =
@@ -7072,23 +7353,36 @@ mod tests {
             REQUIRED.to_owned(),
             HOT_LOW.to_owned(),
             CARD_HEADING.to_owned(),
+            size_controls::MINIMUM_HOVER.to_owned(),
+            crate::gui::explain::SPREADSHEET_CELL.to_owned(),
         ];
+        // The Hot-low tile's entry (the whole card) and each Size control's (UX overhaul spec
+        // 4.3: the lines that were drawn under the controls).
+        let selections = std::iter::once(Selection::Result(crate::gui::tiles::Tile::HotLow.path()))
+            .chain(size_controls::SIZE_ROWS.map(|row| Selection::Input(row.key)));
+        let selections: Vec<Selection> = selections.collect();
         for (inputs, minimum) in states {
             harness.panel.inputs = inputs;
             harness.panel.minimum_diameter_mm = minimum;
             // The second frame draws with any minimum the first one pinned.
             harness.frame(Vec::new());
-            let output = harness.frame(Vec::new());
+            let mut all = Vec::new();
+            for &selection in &selections {
+                harness.panel.selection = selection;
+                all.extend(drawn_texts(&harness.frame(Vec::new())));
+            }
             let shown = harness.panel.shown_inputs();
             let results = compute_all(&shown);
             let consequences = shown_consequences(&harness);
             let mut texts = consequences.magnet_lines(shown.coupling.npole, None);
             // The torque card's lines (slice 3), the neighbour lines' numbers among them.
             texts.extend(consequences.card.lines(None));
-            if dimensions(&shown).is_some() {
+            if let Some(size) = dimensions(&shown) {
                 texts.extend(consequences.diameter_line());
                 texts.extend(consequences.length_line());
+                texts.push(size_controls::floor_line(size.minimum_diameter_range.min));
             }
+            texts.push(size_controls::LINKED_HOUSING.to_owned());
             texts.push(pullout_label(results.metal.op_temp_C));
             // The amber wall lines (the keyway's and the cap skirt's, BL-082).
             texts.extend(wall_cautions(&shown, &results));
@@ -7099,7 +7393,6 @@ mod tests {
             } else {
                 texts.push(NO_PREDICTION.to_owned());
             }
-            let all = drawn_texts(&output);
             for text in &texts {
                 assert!(all.contains(text), "{text:?} is not drawn");
             }
@@ -10098,52 +10391,68 @@ mod tests {
 
     #[test]
     fn the_size_tab_s_why_links_open_their_notes() {
-        // Spec 3.7 (S2-8): under Magnets per ring and Outside diameter, and on the torque card's
-        // heading (slice 3 spec 6.1; in the Hot-low tile's Explain entry, which `size_tab`
-        // shows), a link to how the coupling makes torque; beside the Required row's label a
-        // link to the hot minimum check's note (the Hot-low tile's is its entry's lesson link).
-        // Each shows its note in the Explain panel (spec 5.2).
+        // Spec 3.7 (S2-8), moved by UX overhaul spec 4.3: the Why links the Size column drew are
+        // its rows' entries' lessons: Outside diameter's and Magnets per ring's how the coupling
+        // makes torque, Required torque's the hot minimum check's note; the torque card's
+        // heading keeps its link (slice 3 spec 6.1; in the Hot-low tile's entry). Each shows its
+        // note in the Explain panel (spec 5.2). The column draws no Why link.
         use crate::gui::dashboard::why_note_text;
+        use crate::gui::explain::FULL_LESSON;
         use crate::gui::explorer::reviewed_note;
+        use crate::gui::typeset::glyph_safe;
         let mut harness = size_tab(SCREEN, DesignInputs::default());
         let tile = harness.panel.selection;
-        for (id, links) in [(SIZE_TAB_NOTE, 3), (TORQUE_BAND_NOTE, 1)] {
-            let text =
-                why_note_text(reviewed_note(id).expect("a Size-tab link's note is reviewed"));
-            for index in 0..links {
-                harness.panel.selection = tile;
-                let output = harness.frame(Vec::new());
-                // The Required and Hot-low links end wrapped rows: click their text.
-                let at = last_characters(&output, &text);
-                assert_eq!(at.len(), links, "{text}");
-                harness.click(at[index]);
-                assert_eq!(
-                    harness.panel.selection,
-                    Selection::Note(id),
-                    "{text} #{index}"
-                );
-            }
+        let note = |id| reviewed_note(id).expect("a Size-tab link's note is reviewed");
+        harness.panel.selection = Selection::Nothing;
+        let column = harness.frame(Vec::new());
+        for id in [SIZE_TAB_NOTE, TORQUE_BAND_NOTE] {
+            assert_eq!(count(&column, &why_note_text(note(id))), 0, "{id}");
         }
+        for (key, id) in [
+            (DIAMETER_HINT_KEY, SIZE_TAB_NOTE),
+            (POLES, SIZE_TAB_NOTE),
+            (REQUIREMENT_INPUT, TORQUE_BAND_NOTE),
+        ] {
+            let output = entry(&mut harness, key);
+            explain_rect(&output, FULL_LESSON);
+            harness.click(explain_rect(&output, &glyph_safe(note(id).title)).center());
+            assert_eq!(harness.panel.selection, Selection::Note(id), "{key}");
+        }
+        harness.panel.selection = tile;
+        let output = harness.frame(Vec::new());
+        let at = last_characters(&output, &why_note_text(note(SIZE_TAB_NOTE)));
+        assert_eq!(at.len(), 1, "the card's heading's link");
+        harness.click(at[0]);
+        assert_eq!(harness.panel.selection, Selection::Note(SIZE_TAB_NOTE));
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
     }
 
     #[test]
     fn without_the_diameter_control_the_size_tab_still_links_from_magnets_per_ring() {
-        // An odd magnet count has no diameter range: the Outside diameter control and its link
-        // are not drawn; the link under Magnets per ring is, and the torque card's heading's (the
-        // card keeps its gap and count rows, slice 3 T-5).
+        // An odd magnet count has no diameter range: the Outside diameter control is not drawn;
+        // Magnets per ring's entry still links its note, and the torque card's heading its (the
+        // card keeps its gap and count rows, slice 3 T-5). Outside diameter's entry, if it was
+        // selected before the count went odd, draws no value and no card row.
         use crate::gui::dashboard::why_note_text;
+        use crate::gui::explain::WHAT_A_CHANGE_DOES;
         use crate::gui::explorer::reviewed_note;
         use crate::gui::guidance::SIZE_TAB_NOTE;
+        use crate::gui::typeset::glyph_safe;
         let odd = with_poles(7);
         assert!(
             dimensions(&odd).is_none(),
             "an odd count has no diameter range"
         );
         let mut harness = size_tab(SCREEN, odd);
+        let note = reviewed_note(SIZE_TAB_NOTE).unwrap();
         let output = harness.frame(Vec::new());
-        let text = why_note_text(reviewed_note(SIZE_TAB_NOTE).unwrap());
-        assert_eq!(text_rects(&output, &text).len(), 2);
+        assert_eq!(text_rects(&output, &why_note_text(note)).len(), 1);
+        assert_eq!(count(&output, DIAMETER), 0, "no Outside diameter control");
+        let output = entry(&mut harness, POLES);
+        assert_eq!(count(&output, &glyph_safe(note.title)), 1);
+        let output = entry(&mut harness, DIAMETER_HINT_KEY);
+        assert_eq!(count(&output, WHAT_A_CHANGE_DOES), 0);
+        assert_eq!(count(&output, size_controls::DIAMETER_HOVER), 1);
     }
 
     #[test]
@@ -10456,7 +10765,7 @@ mod tests {
         // Slice 3 test 10: the torque card lives in the ConsequenceCache, keyed on the design
         // shown, the Minimum OD and the clamp pause (spec 3.2), with the Auto marking applied
         // outside it (spec 3.4). Idle frames compute nothing; a gap edit computes once (the frame
-        // that draws it asks with the edited design, the next frame's controls hit); a toggle of
+        // that draws it asks with the edited design, the next frames hit); a toggle of
         // the clamp pause computes once; so does a new Minimum OD, which the drawn Outside
         // diameter row follows. The design's results the cache is handed are computed once per
         // design (T5 M-6): none on idle frames, one for the gap edit, none for the pause or the
@@ -10511,8 +10820,10 @@ mod tests {
         // The key's third part, the Minimum OD (owner 9A: the diameter row steps the slider at
         // the user's Minimum OD): set at the diameter shown, it computes once, and the drawn
         // Outside diameter row reads END_OF_RANGE on its -1 mm side, where with none set it read
-        // that the magnets do not fit.
+        // that the magnets do not fit. Outside diameter's entry draws the row (UX overhaul spec
+        // 4.3); the gap edit above selected the gap's.
         use crate::gui::torque_card::END_OF_RANGE;
+        harness.panel.selection = Selection::Input(DIAMETER_HINT_KEY);
         let diameter_row = |harness: &Harness| {
             row_line(
                 &shown_consequences(harness).card,

@@ -678,11 +678,11 @@ mod tests {
                 whole(STORED_3D_LABEL);
                 whole(ORIENTATION);
                 let size_column = whole("Required torque");
-                // The fold of the detailed inputs, the way to the other inputs, on the first view
-                // where the window is at least the laptop's height (plan review E-4).
-                if size.y >= WINDOWS[0].y {
-                    whole("Detailed inputs");
-                }
+                // The folds of the detailed inputs and of the assumptions, the ways to the other
+                // inputs, on the first view at every size (plan review E-4; UX overhaul spec 4.3
+                // and 8.2, test 9: the Assumptions view is reachable from the opening tab).
+                whole(crate::gui::DETAILED_INPUTS);
+                whole(crate::gui::ASSUMPTIONS_FOLD);
                 let checks = whole(crate::gui::checks::HEADING);
                 let numbers: Vec<egui::Rect> = Tile::ALL
                     .iter()
@@ -723,13 +723,14 @@ mod tests {
     }
 
     #[test]
-    fn the_first_view_draws_at_most_four_hundred_and_thirty_words_at_1280_by_800() {
+    fn the_first_view_draws_at_most_two_hundred_and_eighty_words_at_1280_by_800() {
         // UX overhaul spec 2.1 (goal G-1) and 8.2, test 8, measured as the inventory did: the
         // words the opening screen shows. 608 before this stage (the dashboard's rows, the
         // torque readouts and the welcome strip); 443 after its part 1, the callout list under
         // the drawing kept until its tags are selections (decision D-19); 427 after part 2a's
-        // top bar. The design's 250 needs the Size column and the callout list of part 2b,
-        // which lowers this ceiling.
+        // top bar; 272 after part 2b-i moved the Size column's lines into the Explain panel.
+        // The design's 250 needs the callout list to leave the opening tab (part 2b-ii), which
+        // lowers this ceiling to it.
         use crate::gui::test_support::words_shown;
         let size = WINDOWS[0];
         let ctx = egui::Context::default();
@@ -739,7 +740,7 @@ mod tests {
         }
         let output = frame_on(&ctx, &mut app, size, Vec::new());
         let words = words_shown(&output, egui::Rect::from_min_size(egui::Pos2::ZERO, size));
-        assert!(words <= 430, "{words} words on the first view");
+        assert!(words <= 280, "{words} words on the first view");
     }
 
     #[test]
