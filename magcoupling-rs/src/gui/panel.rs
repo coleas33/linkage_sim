@@ -6811,6 +6811,8 @@ mod tests {
             (with_poles(40), None),
             (short_magnets(), None),
             (too_small, Some(34.0)),
+            // A 0.49 mm cap skirt: its amber caution (BL-082).
+            (with_cap(42.8, 41.82), None),
         ];
         let mut harness = size_tab(egui::vec2(1280.0, 4000.0), DesignInputs::default());
         let mut drawn = Vec::new();
@@ -6836,6 +6838,8 @@ mod tests {
                 texts.extend(consequences.length_line());
             }
             texts.push(pullout_label(results.metal.op_temp_C));
+            // The amber wall lines (the keyway's and the cap skirt's, BL-082).
+            texts.extend(wall_cautions(&shown, &results));
             let hot_low = results.metal.torque_hot_low_Nm;
             if predicts(&results, hot_low) {
                 let gap = torque_gap_text(hot_low, shown.metal.required_min_Nm).0;

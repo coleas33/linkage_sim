@@ -335,7 +335,9 @@ design. Lower it to explore diameters below the original 9 mm mounting-radius ra
 The fixed shaft bore, boss, cap/thread limits and upper radius bound still apply. Magnet-fit
 failures and a keyway breaking through the hub are flagged beside the torque, along with
 the existing guidance for a thin wall past the keyway, and an amber caution when the cap's
-skirt (its wall past the thread, (cap outside diameter - cap thread diameter) / 2) is under
+nominal skirt (its wall past the thread, (cap outside diameter - cap thread diameter) / 2; a
+tapped thread's root sits a few hundredths of a mm past its nominal diameter, so the real wall
+is that much thinner) is under
 0.5 mm (BL-082; owner answer 4a of 2026-11-22, a conservative guide value, register row A-22;
 `gui::geometry::wall_cautions` and `MIN_CAP_SKIRT_MM`; the skirt is compared as quoted, at four
 significant digits, and counts as no failed check). These checks remain separate from

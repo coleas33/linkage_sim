@@ -259,9 +259,11 @@ pub const SKIRT_CAUTION_START: &str = "Cap wall past its thread (skirt)";
 
 /// The Size tab's amber lines: walls thinner than a guide value that no counted check judges, so
 /// the status line's count does not move. The wall past the keyway while it stands (a keyway
-/// that breaks through is an exploration line in the error colour instead), and the cap's skirt,
-/// (cap outside diameter - cap thread diameter) / 2 (BL-082). The skirt is compared as quoted,
-/// at four significant digits, so it never reads equal to the minimum beside its caution.
+/// that breaks through is an exploration line in the error colour instead), and the cap's nominal
+/// skirt, (cap outside diameter - cap thread diameter) / 2 (BL-082): the thread's nominal diameter
+/// is the least root a tapped thread has, so the real wall is a few hundredths of a mm thinner.
+/// The skirt is compared as quoted, at four significant digits, so it never reads equal to the
+/// minimum beside its caution.
 pub fn wall_cautions(inputs: &DesignInputs, results: &DesignResults) -> Vec<String> {
     let mut lines = Vec::new();
     let key_wall = results.model.hub_wall_past_key_mm;
