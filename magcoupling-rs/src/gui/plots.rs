@@ -48,7 +48,7 @@ use crate::engine::meta::{NumOrText, ResultSet, Value};
 use crate::engine::model::{end_effect_in_range, harmonic_count, ring_pair_factor};
 use crate::engine::sweeps::{STATUS_BELOW_MINIMUM, STATUS_NOMINAL, SweepRow};
 use crate::gui::dashboard::{Level, end_effect_out_of_range, hover_text, result_info};
-use crate::gui::format::{format_value, with_unit};
+use crate::gui::format::{format_value, value_with_unit};
 use crate::gui::look;
 use crate::gui::plain_text::{PULL_OUT_NOMINAL, REQUIRED_TORQUE, label_for};
 use crate::gui::readouts::Readouts;
@@ -531,7 +531,7 @@ fn readouts_ui(
             let text = format!(
                 "{}: {}",
                 label_for(path),
-                with_unit(format_value(&value), info.meta.unit)
+                value_with_unit(&value, format_value(&value), info.meta.unit)
             );
             let width = ui
                 .fonts(|f| f.layout_no_wrap(text.clone(), font.clone(), Color32::PLACEHOLDER))
@@ -765,6 +765,7 @@ fn torque_angle_ui(ui: &mut egui::Ui, inputs: &DesignInputs, results: &DesignRes
 mod tests {
     use super::*;
     use crate::compute_all;
+    use crate::gui::format::with_unit;
     use crate::gui::test_support::{drawn_texts, flat_shapes, short_magnets, sized_frame};
 
     fn close(a: f64, b: f64) -> bool {
@@ -1088,6 +1089,28 @@ mod tests {
         );
     }
 
+    #[test]
+    fn the_slip_heating_readout_puts_no_unit_after_never() {
+        // UX overhaul spec 9.2: with no drag the steady state stays below the limit, and the
+        // time to the limit is the engine's words, which read "never: ... the limit", not
+        // "the limit s".
+        let mut inputs = DesignInputs::default();
+        inputs.metal.measured_drag_Nm = Some(0.0);
+        let path = "temperature.thermal.time_to_limit_high";
+        assert_eq!(
+            compute_all(&inputs).get(path),
+            Some(Value::Text(crate::engine::temperature::NEVER.to_owned()))
+        );
+        let texts = drawn_texts(&draw(PlotKind::SlipHeating, &inputs));
+        let want = format!(
+            "{}: {}",
+            crate::gui::plain_text::label_for(path),
+            crate::engine::temperature::NEVER
+        );
+        assert!(texts.contains(&want), "missing {want:?} in {texts:?}");
+        assert!(texts.iter().all(|t| !t.ends_with(" limit s")), "{texts:?}");
+    }
+
     /// The point count of every path egui painted, and the radius of every circle.
     fn paths_and_circles(output: &egui::FullOutput) -> (Vec<usize>, Vec<f32>) {
         let shapes = flat_shapes(output);
@@ -1163,11 +1186,12 @@ mod tests {
             for path in kind.readouts() {
                 let info = result_info(path).unwrap_or_else(|| panic!("{path} is a result"));
                 let value = results.get(path).unwrap();
-                let want = format!(
-                    "{}: {}",
-                    crate::gui::plain_text::label_for(path),
-                    with_unit(format_value(&value), info.meta.unit)
-                );
+                // A text value is words and takes no unit (UX overhaul spec 9.2).
+                let shown = match &value {
+                    Value::Text(text) => text.clone(),
+                    _ => with_unit(format_value(&value), info.meta.unit),
+                };
+                let want = format!("{}: {shown}", crate::gui::plain_text::label_for(path));
                 assert!(texts.contains(&want), "{kind:?}: missing {want:?}");
             }
             // The first readout of each plot has an equation to show.

@@ -56,7 +56,7 @@ use crate::engine::warnings::{Severity, WARNING_RULES, WarningRule};
 use crate::gui::checks::state_mark;
 use crate::gui::corrections::{CorrectionIndex, Mark, marker_text, marker_tooltip};
 use crate::gui::explorer::reviewed_note;
-use crate::gui::format::{format_value, with_unit};
+use crate::gui::format::{format_value, value_with_unit};
 use crate::gui::guidance::{BANNER_NOTE, Learn, design_status, status_line};
 use crate::gui::look;
 use crate::gui::plain_text::{display_label, help_for, label_for};
@@ -710,7 +710,7 @@ pub fn dashboard_lines(results: &DesignResults) -> Vec<DashboardLine> {
             DashboardLine {
                 path,
                 label: info.meta.label,
-                value: with_unit(format_value(&value), info.meta.unit),
+                value: value_with_unit(&value, format_value(&value), info.meta.unit),
                 level,
                 greyed,
                 stored_3d,

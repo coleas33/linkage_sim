@@ -23,7 +23,7 @@ use crate::gui::corrections::{CorrectionIndex, marker_text};
 use crate::gui::dashboard::{
     CHECKS, Level, ResultInfo, check_level, failing_checks, hover_text, result_info, shown_text,
 };
-use crate::gui::format::{non_finite_text, search_haystack, search_needle, with_unit};
+use crate::gui::format::{non_finite_text, search_haystack, search_needle, value_with_unit};
 use crate::gui::plain_text::display_label;
 use crate::gui::readouts::Readouts;
 use crate::gui::result_groups::{OTHER_RESULTS, result_groups};
@@ -774,7 +774,11 @@ fn row_ui(
         cell(
             ui,
             number,
-            &with_unit(shown_text(&entry.path, &value), entry.info.meta.unit),
+            &value_with_unit(
+                &value,
+                shown_text(&entry.path, &value),
+                entry.info.meta.unit,
+            ),
             level,
         );
         if show_details {
@@ -795,7 +799,7 @@ fn row_ui(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gui::format::format_value;
+    use crate::gui::format::{format_value, with_unit};
 
     /// A positive beta typed in for manual magnets with no grade (E20): no hot limit, +inf, and
     /// no torque at it, NaN (`tests/robustness.rs`).

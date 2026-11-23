@@ -63,7 +63,7 @@ use crate::gui::dashboard::{
     end_effect_out_of_range, greyed_by_end_effect, result_info, shown_text,
 };
 use crate::gui::diagrams::diagram_ui;
-use crate::gui::format::with_unit;
+use crate::gui::format::value_with_unit;
 use crate::gui::guidance::{Learn, result_text, result_unit, row_learn};
 use crate::gui::input_ui::CHANGED_DOT;
 use crate::gui::inputs::InputCatalogue;
@@ -574,7 +574,7 @@ fn crumb(path: &str) -> String {
 /// (`1: steel circuit`, and `5: 1, 3, 5 (default)` without nested parentheses); the cup wall's
 /// failing verdict with its input's label ([`shown_text`], ruling R9).
 fn value_text(path: &str, value: &Value, unit: &str) -> String {
-    let text = with_unit(shown_text(path, value), unit);
+    let text = value_with_unit(value, shown_text(path, value), unit);
     match value {
         Value::Int(code) => registry()
             .choices(path)
@@ -1187,6 +1187,7 @@ mod tests {
     use crate::compute_all;
     use crate::engine::meta::ResultSet;
     use crate::gui::format::format_value;
+    use crate::gui::format::with_unit;
     use crate::gui::results_table::table_entries;
 
     fn design() -> (DesignInputs, DesignResults) {

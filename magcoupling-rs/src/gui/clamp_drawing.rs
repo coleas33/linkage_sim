@@ -23,7 +23,7 @@ use crate::engine::clamps::MACHINING_STEPS;
 use crate::engine::compat::fmt_fixed;
 use crate::engine::meta::{NumOrText, ResultSet, Value};
 use crate::gui::dashboard::{Level, hover_text};
-use crate::gui::format::{format_value, with_unit};
+use crate::gui::format::{format_value, value_with_unit, with_unit};
 use crate::gui::geometry::{Mm, finite};
 use crate::gui::geometry_view::{DIMENSION, Transform, arrowhead, plated_text, side_by_side};
 use crate::gui::readouts::Readouts;
@@ -825,7 +825,11 @@ pub fn clamp_ui(
                 let rect = ui
                     .horizontal_wrapped(|ui| {
                         ui.label(egui::RichText::new(info.meta.label).weak());
-                        ui.label(with_unit(format_value(&value), info.meta.unit));
+                        ui.label(value_with_unit(
+                            &value,
+                            format_value(&value),
+                            info.meta.unit,
+                        ));
                     })
                     .response
                     .rect;

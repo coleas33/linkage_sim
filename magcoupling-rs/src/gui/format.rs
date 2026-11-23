@@ -32,6 +32,16 @@ pub fn with_unit(text: String, unit: &str) -> String {
     }
 }
 
+/// A value's text (`text`, drawn from `value`) followed by its unit as [`with_unit`] writes it,
+/// unless the value is a text: words take no unit (UX overhaul spec 9.2: the slip-heating
+/// readout read "never: steady state stays below the limit s").
+pub fn value_with_unit(value: &Value, text: String, unit: &str) -> String {
+    match value {
+        Value::Text(_) => text,
+        _ => with_unit(text, unit),
+    }
+}
+
 /// A unit as the screen writes it: the sweep tables' workbook header "Nm" reads "N·m", as every
 /// other torque's unit does (spec 3.5). The metadata and the exports keep "Nm":
 /// `tests/schema.rs` holds the sweep columns to the workbook headers.
