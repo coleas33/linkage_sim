@@ -830,6 +830,7 @@ pub(crate) fn check_entry_texts(
             consequences: None,
             auto: None,
             held: &|_| None,
+            minimum_diameter_mm: None,
         };
         let mut readouts = crate::gui::readouts::Readouts::default();
         explain_ui(ui, Selection::Check(check), &shown, &mut readouts);

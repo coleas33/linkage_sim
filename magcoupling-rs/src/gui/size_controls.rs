@@ -20,14 +20,15 @@ use crate::gui::dashboard::{end_effect_out_of_range, why_note_link};
 use crate::gui::format::{
     fixed, shared_torque_precision, signed_percent, signed_torque_change, torque_shortfall,
 };
-use crate::gui::guidance::{Consequences, FACE_GAP, SIZE_TAB_NOTE};
+use crate::gui::guidance::{Consequences, FACE_GAP, SIZE_TAB_NOTE, TORQUE_BAND_NOTE};
 use crate::gui::input_ui::{hint_line, slider, weak_line};
 use crate::gui::inputs::{InputCatalogue, slider_range};
 use crate::gui::plain_text::{
     DIAMETER_HINT_KEY, HOT_LOW_TORQUE, LENGTH_HINT_KEY, MINIMUM_OD_HINT_KEY, REQUIRED_TORQUE,
     help_for,
 };
-use crate::gui::sizing::{SizingMode, SizingState, auto_choice, variable_label};
+use crate::gui::sizing::{REQUIREMENT_INPUT, SizingMode, SizingState, auto_choice, variable_label};
+use crate::gui::torque_card::Control;
 use crate::{DesignInputs, DesignResults, compute_all};
 
 pub const HEADING: &str = "Size and torque";
@@ -39,6 +40,10 @@ pub const MAGNETS: &str = "Magnets per ring";
 /// The Size tab's footnote (O-7): what the diameter and length sliders move
 /// ([`crate::engine::size_controls`]).
 pub const LINKED_HOUSING: &str = "Outside diameter moves the ring radius; the cap and its thread follow the cup. Overall length sets both rings' magnet length, and the housing follows. Gap and magnet count stay as you set them.";
+
+/// The hover text of the Minimum OD control: what it does.
+pub const MINIMUM_HOVER: &str =
+    "Sets the lower end of the diameter slider without changing your current size.";
 
 /// The hover text of the Outside diameter control (R-3): what it is (the largest of the cup,
 /// the cap and the shaft boss) and what moving it changes (the ring radius; the cap and its
@@ -65,6 +70,90 @@ pub const SET_BY_AUTO: &str = "Set by Auto; turn Auto off to edit";
 pub const AUTO_STATUS_START: &str = "Auto: ";
 /// The Key design group's button to the Size tab, beside [`auto_status`].
 pub const OPEN_SIZE_TAB: &str = "Open the Size tab";
+
+/// A row of the Size column (UX overhaul spec 4.3), the key of its Explain entry
+/// (`explain::Selection::Input`): the input its slider writes, or for a control that is no one
+/// input its hint key (`plain_text::SIZE_TAB_HINT_KEYS`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct SizeRow {
+    /// The row's key: its hint key, and the input path of a row that is one input.
+    pub key: &'static str,
+    /// The label drawn above its slider.
+    pub label: &'static str,
+    /// The input the slider writes, whose spreadsheet cell and fixes are the row's; none for
+    /// Minimum OD, a view preference.
+    pub input: Option<&'static str>,
+    /// The torque card's row of the control, for the four controls the card steps.
+    pub card: Option<Control>,
+    /// The note its Why link opened in the column (spec 3.7).
+    pub lesson: Option<&'static str>,
+}
+
+/// The rows of the Size column, top to bottom.
+pub(crate) const SIZE_ROWS: [SizeRow; 6] = [
+    SizeRow {
+        key: REQUIREMENT_INPUT,
+        label: REQUIRED,
+        input: Some(REQUIREMENT_INPUT),
+        card: None,
+        lesson: Some(TORQUE_BAND_NOTE),
+    },
+    SizeRow {
+        key: MINIMUM_OD_HINT_KEY,
+        label: MINIMUM,
+        input: None,
+        card: None,
+        lesson: None,
+    },
+    SizeRow {
+        key: DIAMETER_HINT_KEY,
+        label: DIAMETER,
+        input: Some("coupling.inner_back_apothem_mm"),
+        card: Some(Control::OutsideDiameter),
+        lesson: Some(SIZE_TAB_NOTE),
+    },
+    SizeRow {
+        key: LENGTH_HINT_KEY,
+        label: LENGTH,
+        input: Some("coupling.magnets.axial_length_mm"),
+        card: Some(Control::OverallLength),
+        lesson: None,
+    },
+    SizeRow {
+        key: FACE_GAP,
+        label: GAP,
+        input: Some(FACE_GAP),
+        card: Some(Control::FaceGap),
+        lesson: None,
+    },
+    SizeRow {
+        key: FreeVariable::MagnetsPerRing.path(),
+        label: MAGNETS,
+        input: Some(FreeVariable::MagnetsPerRing.path()),
+        card: Some(Control::MagnetsPerRing),
+        lesson: Some(SIZE_TAB_NOTE),
+    },
+];
+
+/// The Size column's row of `key`.
+pub(crate) fn size_row(key: &str) -> Option<&'static SizeRow> {
+    SIZE_ROWS.iter().find(|row| row.key == key)
+}
+
+/// What the row of `key` is: the hover text its label shows.
+pub(crate) fn row_help(key: &str) -> &'static str {
+    match key {
+        MINIMUM_OD_HINT_KEY => MINIMUM_HOVER,
+        DIAMETER_HINT_KEY => DIAMETER_HOVER,
+        LENGTH_HINT_KEY => LENGTH_HOVER,
+        path => help_for(path),
+    }
+}
+
+/// The line on the diameter range's floor, in Minimum OD's entry.
+pub(crate) fn floor_line(floor_mm: f64) -> String {
+    format!("Shaft and housing range floor: {floor_mm:.1} mm")
+}
 
 /// The Size-tab slider a free variable sets, by its label: Auto locks it.
 pub fn variable_slider(variable: FreeVariable) -> &'static str {
@@ -322,9 +411,7 @@ pub(crate) fn controls_ui(
                 .expect("the diameter has input metadata");
             let range = legacy.minimum_diameter_range;
             let mut minimum = slider_minimum(&legacy, minimum_diameter_mm);
-            ui.label(MINIMUM).on_hover_text(
-                "Sets the lower end of the diameter slider without changing your current size.",
-            );
+            ui.label(MINIMUM).on_hover_text(MINIMUM_HOVER);
             let response = ui
                 .push_id("minimum_diameter_mm", |ui| {
                     ui.add(slider(&mut minimum, entry.meta, range))

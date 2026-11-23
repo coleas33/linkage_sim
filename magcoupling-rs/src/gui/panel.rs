@@ -846,6 +846,7 @@ impl MagcouplingPanel {
                     consequences,
                     auto,
                     held: &held,
+                    minimum_diameter_mm: self.minimum_diameter_mm,
                 };
                 explain_ui(ui, self.selection, &shown, readouts)
             })

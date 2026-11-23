@@ -371,6 +371,16 @@ impl Row {
         shared_torque_precision(&changes)
     }
 
+    /// The row's line while Auto is on `auto`: [`held_line`] for the row Auto holds (owner 5A),
+    /// else [`Row::line`].
+    fn text(&self, auto: Option<FreeVariable>) -> String {
+        if auto.is_some() && self.control.held_by() == auto {
+            held_line(self.control)
+        } else {
+            self.line()
+        }
+    }
+
     /// "{label}: {fewer}; {more}" (spec 4.1), the two sides' N·m at the row's one precision.
     fn line(&self) -> String {
         let precision = self.torque_precision();
@@ -431,15 +441,31 @@ impl TorqueCard {
             TorqueCard::Rows(rows) => {
                 let mut lines = vec![CAPTION.to_owned()];
                 lines.extend(auto.map(|variable| auto_line(variable).to_owned()));
-                lines.extend(rows.iter().map(|row| {
-                    if auto.is_some() && row.control.held_by() == auto {
-                        held_line(row.control)
-                    } else {
-                        row.line()
-                    }
-                }));
+                lines.extend(rows.iter().map(|row| row.text(auto)));
                 lines
             }
+        }
+    }
+
+    /// The lines of `control`'s row alone, as a Size control's Explain entry draws them (UX
+    /// overhaul spec 5.3, decision C-10): [`CAPTION`], the Auto line while Auto is on (owner
+    /// 5A: it says which edit Auto answers by re-solving), then the row's line, as
+    /// [`lines`](Self::lines) draws them; none where the card has no row for the control (an odd
+    /// magnet count has no Outside diameter or Overall length row); for the four one-line forms,
+    /// their line alone.
+    pub fn control_lines(&self, control: Control, auto: Option<FreeVariable>) -> Vec<String> {
+        match self {
+            TorqueCard::Rows(rows) => {
+                rows.iter()
+                    .find(|row| row.control == control)
+                    .map_or_else(Vec::new, |row| {
+                        let mut lines = vec![CAPTION.to_owned()];
+                        lines.extend(auto.map(|variable| auto_line(variable).to_owned()));
+                        lines.push(row.text(auto));
+                        lines
+                    })
+            }
+            _ => self.lines(auto),
         }
     }
 
