@@ -259,8 +259,11 @@ pins the four first moves. Diameter includes the cup,
 cap and shaft boss, and it is the diameter the space claim judges (E25, approved by the owner on
 2026-11-16, backlog BL-061; before it the claim left the boss out). Existing input ranges bound these controls, and all fit, clearance and
 build checks stay in the check list. Torque is unavailable outside the end-effect model's
-range. **Detailed inputs** keeps every original input, and all results, equations and
-exports remain available. **Auto: smallest [magnet length | ring radius | magnet count] that
+range. Under the controls two folds, both closed at first: **Detailed inputs** keeps every
+original input, and **Assumptions** is the Assumptions view, which the opening tab could not
+reach before part 2b-i of the UX overhaul (BL-090, plan `docs/superpowers/plans/2026-11-23-magcoupler-overhaul-b2-part2b-i-size-column.md`); a fix
+link or a term that asks for an assumption's row opens the second, any other row's the first. All
+results, equations and exports remain available. **Auto: smallest [magnet length | ring radius | magnet count] that
 meets the required torque** (the hot-low torque; it does not look at the other checks)
 runs the inverse sizing on this tab: it locks the matching slider (Overall length, Outside diameter, Magnets per ring) at the solved value, or at the best value
 under a red "Not reachable: best Y at X", and solves again 0.25 s after any other edit. Ring
@@ -294,14 +297,31 @@ manual blocks of 0.2 T on the sliders; the fold-in's G-3 re-review, MF-2). While
 end-effect banner shows, Hot-low torque and the gap read "no prediction (magnets too short for
 the end-effect model at this pole pitch)" instead of a number.
 
-Under each of the five controls (Minimum OD, Outside diameter, Overall length, Magnet face gap
-and Magnets per ring) a weak hint line of at most 12 words says what it does
-(`gui::plain_text::HINTS`, slice 2; the gap's and the magnet count's are their Key design rows'
-hints, the other three are keyed `SIZE_TAB_HINT_KEYS`, which are not input paths). The Minimum
-OD hint replaced the line under the controls that said the same.
+Since BL-090 each control is its label and its slider, and touching it (a click on the label, a
+click or drag of the slider, an edit, or the keyboard's focus arriving; a hover selects nothing)
+selects its row: the Explain panel shows the row's entry (`explain::Selection::Input`, keyed by
+`size_controls::SIZE_ROWS`: the input path where the row is one input, the hint key otherwise).
+The entry leads with the value and the label, then "What it is" (the label's hover text), "What
+sets it" (the lines below, which the column drew under the control until then, and for the four
+size controls the line "Outside diameter moves the ring radius; ...", once the column's
+footnote), "What a change does" (the control's row of the torque card, under the card's heading
+and caption: `TorqueCard::control_lines`), "Checks it touches" (the checks whose fixes on the
+design shown name its input, each a link that selects the check), "Watch out" (where two of those
+checks move it opposite ways, the "pulls two ways" sentence of their entries:
+`guidance::input_trade_offs`), "Full lesson:" with the note its Why link opened (Required torque,
+Outside diameter, Magnets per ring), and with Show spreadsheet details on a weak line
+"Spreadsheet cell: ..." for a row that is one input. The line "Set by Auto; turn Auto off to edit"
+stays under the slider Auto locks (decision D-37, register row A-26).
 
-Under the controls, short lines say what moves what, each read from the engine (the diameters
-and lengths from `engine::size_controls`), never typed. For **Magnets per ring**: a first line
+Each of the five controls (Minimum OD, Outside diameter, Overall length, Magnet face gap and
+Magnets per ring) has a hint of at most 12 words that says what it does, the first line under its
+entry's "What sets it" (`gui::plain_text::HINTS`, slice 2; the gap's and the magnet count's are
+their Key design rows' hints, the other three are keyed `SIZE_TAB_HINT_KEYS`, which are not input
+paths). Minimum OD's entry adds the floor of the diameter range ("Shaft and housing range floor:
+... mm").
+
+Short lines say what moves what, each read from the engine (the diameters and lengths from
+`engine::size_controls`), never typed. For **Magnets per ring**: a first line
 that follows the Auto state (`guidance::magnet_count_line`, slice 3 spec 4.3): with Auto off and
 with Auto on the magnet length, "The ring radius stays the same when you change the magnet
 count; the cup can still change size."; none with Auto on the ring radius (the torque card's
@@ -328,7 +348,7 @@ rows.
 While Auto is on, an Auto line says Auto sets the size again after a change, and the held
 control's row reads "Set by Auto; turn Auto off to edit". The panel draws it for the design shown
 after the frame's edits, from the `ConsequenceCache` (one key: the design, the Minimum OD and the
-shaft-clamp pause; the Auto marking is applied outside the cache), and asks it only while the Hot-low tile is selected. Until BL-081 it started open, but closed while the Equation panel was open (a click on its own Why link opens the panel, so the card then closes), in a centre region under 400 points wide (`CARD_OPEN_MIN_WIDTH`; a 930 x 800 window's), or where the open card, measured before it is drawn, would take the drawing under its floor of 160 points over three list rows; that default is decided again only when the Equation panel opens or closes or the window is resized, never on a design change, and a click on the heading or the arrow is the user's choice for the session (kept by Reset all and every load). Its body scrolls above the drawing's floor.
+shaft-clamp pause; the Auto marking is applied outside the cache), and asks it only while the Hot-low tile or a Size column row is selected. Until BL-081 it started open, but closed while the Equation panel was open (a click on its own Why link opens the panel, so the card then closes), in a centre region under 400 points wide (`CARD_OPEN_MIN_WIDTH`; a 930 x 800 window's), or where the open card, measured before it is drawn, would take the drawing under its floor of 160 points over three list rows; that default is decided again only when the Equation panel opens or closes or the window is resized, never on a design change, and a click on the heading or the arrow is the user's choice for the session (kept by Reset all and every load). Its body scrolls above the drawing's floor.
 
 **Minimum OD** adjusts the lower end of the diameter slider without resizing the current
 design. Lower it to explore diameters below the original 9 mm mounting-radius range.
