@@ -1857,7 +1857,7 @@ mod tests {
             &script[start..end]
         };
         assert!(
-            between("input_entry=true was judged", "page.goto(").contains(collect),
+            between("tag_entry=true was judged", "page.goto(").contains(collect),
             "the first page's console messages are collected before the link is opened again"
         );
         // UX overhaul slice B, stage 2, part 2b-ii (spec 5.2): after the tooltip a click on the
@@ -1879,6 +1879,30 @@ mod tests {
             assert!(
                 between("input_entry=true only if", "page.goto(").contains("Explain panel"),
                 "the input's entry is judged in the Explain panel"
+            );
+        }
+        // UX overhaul slice B, stage 2, part 2b-ii-b (spec 4.4, 5.2): after the input's entry
+        // a click on tag 1 of the drawing (the face gap's dimension) selects its result, and the
+        // step finds the result's entry in the Explain panel by the name typed once as
+        // TAG_LABEL, with its Equation link and no Equation panel opened.
+        {
+            use crate::gui::explain::EQUATION;
+            let label = crate::gui::plain_text::label_for("model.face_gap_mm");
+            assert_eq!(quoted("TAG_LABEL"), label, "the script's TAG_LABEL");
+            assert_eq!(
+                script.matches(label).count(),
+                1,
+                "the smoke prompt types the face gap's name once, in TAG_LABEL"
+            );
+            let step = between("tag_entry=true only if", "tag_entry=true was judged");
+            assert!(
+                between("input_entry=true only if", "tag_entry=true only if")
+                    .contains("click the number \"1\""),
+                "the tag's entry is judged after the input's, from a click on tag 1"
+            );
+            assert!(
+                step.contains("Explain panel") && step.contains(&format!("\"{EQUATION}\"")),
+                "the tag's entry is judged in the Explain panel by its Equation link: {step}"
             );
         }
         assert!(
