@@ -24,6 +24,7 @@ use std::sync::OnceLock;
 use egui::{Rect, Stroke, StrokeKind};
 
 use crate::engine::explain::Registry;
+use crate::gui::explain::{Selection, result_selection};
 use crate::gui::typeset::{TermColors, equation_ui};
 
 /// The hint under a tooltip's equation.
@@ -79,6 +80,8 @@ pub struct Readouts {
     events: ReadoutEvents,
     /// The header's Show spreadsheet details as the frame began ([`crate::gui::SHOW_DETAILS`]).
     show_details: bool,
+    /// The Explain panel's selection as the frame began ([`Readouts::with_selection`]).
+    selection: Selection,
 }
 
 impl Readouts {
@@ -89,7 +92,15 @@ impl Readouts {
             marks,
             events: ReadoutEvents::default(),
             show_details,
+            selection: Selection::Nothing,
         }
+    }
+
+    /// These readouts with `selection`, the Explain panel's as the frame began: the selecting
+    /// value ([`Readouts::select`]) whose click selects it is outlined.
+    pub fn with_selection(mut self, selection: Selection) -> Self {
+        self.selection = selection;
+        self
     }
 
     /// Whether this frame shows the spreadsheet details (spec S2-5): the internal names, the
@@ -149,7 +160,7 @@ impl Readouts {
     /// results-table row: UX overhaul spec 5.2) rather than opens in the Equation panel (spec
     /// 5.5): its mark, and while hovered `text(show_details)` and its equation; a click, or
     /// Enter or Space on it focused, asks for it in the Explain panel. The keyboard's focus
-    /// arriving asks for nothing.
+    /// arriving asks for nothing. Outlined while focused or selected ([`Readouts::with_selection`]).
     pub fn select(
         &mut self,
         ui: &egui::Ui,
@@ -159,6 +170,15 @@ impl Readouts {
     ) {
         if response.clicked() {
             self.events.selected = Some(path);
+        }
+        // Selected or keyboard-focused: outlined as a selected tile or check row is.
+        if response.has_focus() || self.selection == result_selection(path) {
+            ui.painter().rect_stroke(
+                response.rect,
+                2.0,
+                Stroke::new(1.0, ui.visuals().strong_text_color()),
+                StrokeKind::Inside,
+            );
         }
         self.tip(ui, response, path, text, false);
     }
@@ -172,8 +192,7 @@ impl Readouts {
         path: &'static str,
         text: impl FnOnce(bool) -> String,
     ) {
-        let response = ui.interact(rect, ui.id().with(("readout", path)), egui::Sense::click());
-        self.select(ui, response, path, text);
+        self.select(ui, sensor(ui, rect, path), path, text);
     }
 
     /// The mark of the value at `path` and, while `response` is hovered, its tooltip:
@@ -216,8 +235,7 @@ impl Readouts {
         path: &str,
         text: impl FnOnce(bool) -> String,
     ) {
-        let response = ui.interact(rect, ui.id().with(("readout", path)), egui::Sense::click());
-        self.show(ui, response, path, text);
+        self.show(ui, sensor(ui, rect, path), path, text);
     }
 
     /// Asks for the teaching note `id` (a warning's link, a lesson link), which the panel shows
@@ -241,6 +259,11 @@ impl Readouts {
     pub fn finish(self) -> ReadoutEvents {
         self.events
     }
+}
+
+/// The click sensor over `rect` of the readout at `path`, keyed by `path` in `ui`.
+fn sensor(ui: &egui::Ui, rect: Rect, path: &str) -> egui::Response {
+    ui.interact(rect, ui.id().with(("readout", path)), egui::Sense::click())
 }
 
 #[cfg(test)]
@@ -462,5 +485,39 @@ mod tests {
             let (_, events, _) = frame(key_tap(key), Some(0.7));
             assert_eq!(events.selected, Some(PATH), "{key:?}");
         }
+    }
+
+    #[test]
+    fn a_selecting_value_is_outlined_while_selected_or_focused() {
+        // A dimension tag, a callout row or a results-table row shows where it is as a tile and
+        // a check row do: outlined while its result is the selection, or while it has the
+        // keyboard's focus; with neither (another result selected), no outline.
+        use crate::gui::explain::Selection;
+        use crate::gui::test_support::key_tap;
+        const PATH: &str = "model.pullout_Nm";
+        let ctx = egui::Context::default();
+        let size = egui::vec2(800.0, 600.0);
+        let outlines = |selection: Selection, input: Vec<egui::Event>| {
+            let output = sized_frame(&ctx, size, input, |ui| {
+                let mut readouts = Readouts::default().with_selection(selection);
+                let rect = ui.label("2.688 N·m").rect;
+                readouts.select_over(ui, rect, PATH, |_| String::new());
+            });
+            let strong = ctx.style().visuals.strong_text_color();
+            flat_shapes(&output)
+                .into_iter()
+                .filter(|s| matches!(s, egui::Shape::Rect(r) if r.stroke.width == 1.0 && r.stroke.color == strong))
+                .count()
+        };
+        assert_eq!(outlines(Selection::Nothing, Vec::new()), 0);
+        assert_eq!(outlines(Selection::Result("mass.total_g"), Vec::new()), 0);
+        assert_eq!(outlines(Selection::Result(PATH), Vec::new()), 1);
+        // The keyboard's focus arriving outlines it with nothing selected.
+        outlines(Selection::Nothing, key_tap(egui::Key::Tab));
+        assert!(
+            ctx.memory(|m| m.focused().is_some()),
+            "the value takes the focus"
+        );
+        assert_eq!(outlines(Selection::Nothing, Vec::new()), 1);
     }
 }

@@ -87,7 +87,7 @@ pub const CLOSE: &str = "Close";
 /// and the walk through the teaching notes, by its button's name (a test checks). Since the
 /// panel's toggle went (part 2a), every way the app opens the panel sets a trail first, so this
 /// is only a fallback for a panel opened with none; BL-089 decides whether it goes.
-pub const EMPTY_TEXT: &str = "Hover a value to see its equation; click it to open it here, then click a term to follow it. Start here walks the main teaching notes in a suggested order.";
+pub const EMPTY_TEXT: &str = "Hover a value to see its equation; the Equation link in its entry opens it here, then click a term to follow it. Start here walks the main teaching notes in a suggested order.";
 
 /// The heading of the term list.
 pub const TERMS: &str = "Terms";

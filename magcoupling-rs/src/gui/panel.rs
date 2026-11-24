@@ -699,7 +699,7 @@ impl MagcouplingPanel {
             );
         }
         // The header's toggle as the frame begins: every view of this frame reads it here.
-        let mut readouts = Readouts::new(marks, self.show_details);
+        let mut readouts = Readouts::new(marks, self.show_details).with_selection(self.selection);
         // Esc returns the Explain panel to its orientation (UX overhaul spec 5.1), unless the
         // key is another's: a text field that had the keyboard as the last frame ended (egui
         // takes the keyboard from it at this key before the frame is drawn), or an open list.
@@ -2882,9 +2882,10 @@ mod tests {
         let output = harness.frame(Vec::new());
         assert_drew_headline(&output, &DesignInputs::default());
         let texts = drawn_texts(&output);
-        // The Results tab's Headline group draws each under its catalogue label.
+        // The Results tab's Headline group draws each under its display label (BL-094).
         for (_, path) in HEADLINE {
-            let label = result_info(path).unwrap().meta.label;
+            let label =
+                crate::gui::plain_text::display_label(path, result_info(path).unwrap().meta.label);
             assert!(texts.iter().any(|t| t == label), "missing {label:?}");
         }
         let mut renamed = 0;
@@ -4504,7 +4505,10 @@ mod tests {
         // The pull-out's row in the table (between the inputs and the dashboard).
         let centre =
             |r: &egui::Rect| r.left() > INPUTS_WIDTH && r.right() < 1280.0 - DASHBOARD_WIDTH;
-        let pullout = result_info("model.pullout_Nm").unwrap().meta.label;
+        let pullout = crate::gui::plain_text::display_label(
+            "model.pullout_Nm",
+            result_info("model.pullout_Nm").unwrap().meta.label,
+        );
         let row = text_rects(&output, pullout)
             .into_iter()
             .find(centre)
@@ -4717,21 +4721,21 @@ mod tests {
                 .collect();
             assert_eq!(in_table.len(), 1, "the row's value is on screen: {value}");
             // And the row's label (truncated to its column, but there).
-            let label = crate::gui::results_table::table_entries()
+            let entry = crate::gui::results_table::table_entries()
                 .iter()
                 .find(|e| e.info.cell.as_deref() == Some("Calculator!C93"))
-                .expect("the pull-out's row")
-                .info
-                .meta
-                .label;
+                .expect("the pull-out's row");
+            let label = crate::gui::plain_text::display_label(&entry.path, entry.info.meta.label);
             let labels: Vec<egui::Rect> = text_rects(&output, label)
                 .into_iter()
                 .filter(|r| r.left() >= 0.0 && r.right() <= 930.0 - 300.0)
                 .collect();
             assert_eq!(labels.len(), 1, "the row's label is on screen: {label}");
-            // It fills its column, at least 120 points, and ends left of the value.
+            // Its column is at least 120 points wide (the value starts that far right of the
+            // label's left edge), and the label ends left of the value.
             let min = crate::gui::results_table::LABEL_MIN_WIDTH;
-            assert!(labels[0].width() >= min - 1.0, "{:?}", labels[0]);
+            let column = in_table[0].left() - labels[0].left();
+            assert!(column >= min - 1.0, "{column} {:?}", labels[0]);
             assert!(labels[0].right() <= in_table[0].left());
         }
     }
