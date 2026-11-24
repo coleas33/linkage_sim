@@ -1675,8 +1675,8 @@ impl MagcouplingPanel {
             }
         }
         let output = row.inner;
-        // Spec 5.2: touching an input (its label's click, its widget's click, drag or focus, an
-        // edit or a reset) selects it, as a Size control's touch does; its entry holds the
+        // Spec 5.2: touching an input (its label's click, its widget's click, drag, Enter or
+        // Space, an edit or a reset; not the focus arriving, BL-093) selects it, as a Size control's touch does; its entry holds the
         // trace's link. A locked row's widget is disabled: only its label touches it.
         if output.label_clicked || output.edit.is_some() || size_controls::touched(&output.widget) {
             self.selection = Selection::Input(entry.path.as_str());

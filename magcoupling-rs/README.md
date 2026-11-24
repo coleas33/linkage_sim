@@ -317,7 +317,7 @@ Outside diameter, Magnets per ring), and with Show spreadsheet details on a weak
 stays under the slider Auto locks (decision D-37, register row A-26).
 
 Since BL-092 every input is a selection: touching a row of Detailed inputs or Assumptions (a
-click on its label, a drag of its slider, focus in its field, an edit or a reset, on the opening
+click on its label, a drag of its slider, Enter or Space on its focused control, an edit or a reset, on the opening
 tab and on the other tabs) selects its input, keyed by its path, so
 the face gap's Key design row selects the Size column's gap entry. The entry leads with the value
 (a blank, a selector's choice or a text in words: `inputs::value_text`) and the label, then "What
