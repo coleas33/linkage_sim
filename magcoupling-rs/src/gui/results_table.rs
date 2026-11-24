@@ -747,10 +747,11 @@ pub fn row_tooltip(entry: &TableEntry, value: &Value, show_details: bool) -> Str
 /// One table row: label, value with unit (after the badge of a check's `level`), and with the
 /// spreadsheet details the workbook cell and the marker, in columns `widths` wide
 /// ([`column_widths`]; the path is in the hover text, which is built only while the row is
-/// hovered). The whole row is a readout: hover it for its equation, click it to open it.
+/// hovered). The whole row is a readout: hover it for its equation, click it to select its
+/// result for the Explain panel (UX overhaul spec 5.2).
 fn row_ui(
     ui: &mut egui::Ui,
-    entry: &TableEntry,
+    entry: &'static TableEntry,
     results: &DesignResults,
     level: Option<Level>,
     height: f32,
@@ -773,7 +774,13 @@ fn row_ui(
             });
         };
         let [label, number, workbook, marker] = widths;
-        cell(ui, label, entry.info.meta.label, None);
+        // The name the dashboard, the tiles and the result's Explain entry use (BL-094).
+        cell(
+            ui,
+            label,
+            display_label(&entry.path, entry.info.meta.label),
+            None,
+        );
         // The cup wall's failing verdict with its input's label (ruling R9); the exports keep
         // the engine text.
         cell(
@@ -796,7 +803,7 @@ fn row_ui(
             cell(ui, marker, &entry.marker, None);
         }
     });
-    readouts.show_over(ui, row.response.rect, &entry.path, |show_details| {
+    readouts.select_over(ui, row.response.rect, &entry.path, |show_details| {
         row_tooltip(entry, &value, show_details)
     });
 }
@@ -920,7 +927,7 @@ mod tests {
         assert_hover_names_path_only_with_details(
             SCREEN,
             path,
-            entry.info.meta.label,
+            display_label(path, entry.info.meta.label),
             |show_details| row_tooltip(entry, &value, show_details),
             |ui, readouts| {
                 table.ui(ui, &results, None, false, readouts);
@@ -1094,6 +1101,38 @@ mod tests {
         let never = crate::engine::temperature::NEVER;
         assert!(texts.iter().any(|t| t == never), "{texts:?}");
         assert!(texts.iter().all(|t| !t.ends_with(" limit s")), "{texts:?}");
+    }
+
+    #[test]
+    fn a_row_draws_the_display_label_its_explain_entry_heads_with() {
+        use crate::gui::test_support::{SCREEN, drawn_texts, sized_frame};
+        // BL-094: a click on a row opens an entry headed with display_label, so the row draws
+        // the same words. The gearbox ripple's LABELS name differs from its catalogue label.
+        let path = "model.gearbox_input_ripple_Nm";
+        let catalogue = result_info(path).expect("a result").meta.label;
+        let shown = display_label(path, catalogue);
+        assert_ne!(
+            shown, catalogue,
+            "the probe needs a row whose two names differ"
+        );
+        let results = compute_all(&DesignInputs::default());
+        let ctx = egui::Context::default();
+        let mut table = ResultsTable {
+            query: path.to_owned(),
+            ..ResultsTable::default()
+        };
+        let mut output = None;
+        for _ in 0..2 {
+            output = Some(sized_frame(&ctx, SCREEN, Vec::new(), |ui| {
+                table.ui(ui, &results, None, false, &mut Readouts::default());
+            }));
+        }
+        let texts = drawn_texts(&output.unwrap());
+        assert!(texts.iter().any(|t| t == shown), "{shown:?} in {texts:?}");
+        assert!(
+            !texts.iter().any(|t| t == catalogue),
+            "{catalogue:?} in {texts:?}"
+        );
     }
 
     #[test]

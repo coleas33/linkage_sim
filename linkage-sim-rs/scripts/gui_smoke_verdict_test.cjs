@@ -115,7 +115,8 @@ const calculator = (args, reading) => run({ ...args, linkage: false }, { [CALCUL
 // schema gains fails every case that should pass until GOOD has it.
 const CHECKS = ['canvas_present', 'starting_design', 'look', 'first_view', 'details_toggle',
   'share_link_loaded', 'sizing_solved', 'design_file_loaded', 'explorer_ready', 'check_entry',
-  'lesson_link_opened', 'tooltip_plain', 'input_entry', 'torque_card', 'address_follows']
+  'lesson_link_opened', 'tooltip_plain', 'input_entry', 'tag_entry', 'torque_card',
+  'address_follows']
 // A calculator agent's reading of a good run; each case changes one thing.
 const GOOD = {
   passed: true,

@@ -18,7 +18,7 @@ Written 2026-11-18. Updated as answers and new questions arrive.
 | P-n, L-n | The plans for slice A and for slice B stage 1, in `docs/superpowers/plans/` |
 | Three-letter codes (LGS-11, LFA-16) | The whole-project audit, `docs/analyses/2026-11-10-whole-project-audit.md` |
 
-Contents: part A, six answers that change what is built next. Part B, eight things only you can try. Part C, 35 calls to make when convenient (questions 48, 49 and 50 were added there on 2026-11-22, questions 51, 53, 54 and 55 on 2026-11-23). Part D, five that matter only if the tools stop being generic.
+Contents: part A, six answers that change what is built next. Part B, eight things only you can try. Part C, 39 calls to make when convenient (questions 48, 49 and 50 were added there on 2026-11-22, questions 51, 53, 54, 55, 56, 57, 58 and 59 on 2026-11-23). Part D, five that matter only if the tools stop being generic.
 
 Answered so far: 1, 2, 3, 4, 5 and 6 (2026-11-22). Each answer is written in bold under its question.
 
@@ -404,6 +404,47 @@ Added 2026-11-23 (the next free number). Part 2b-ii-a moves the trace from a row
 Two more points for the same ruling (BL-092 review, PT-2 and UXC-2). The link's words do not change once the trace is on: the second click that ends the trace is on a link that still says "Highlight the results this drives". And the link promises more than it marks: it highlights only results with an equation record (416 of 1112), so on the drive torque's entry it highlights nothing while the entry above it says the drive torque moves the nominal pull-out. Either could be worded on the link itself ("Stop highlighting" while traced; "... that have an equation"), or (b) above covers both, since the banner says each.
 
 Source: UX design section 5.2; A-30; BL-092 plan, decision D-52; plan review UXP-3; BL-092 review PT-2 and UXC-2.
+
+### 56. Should every number on the page select its result, and only an "Equation" link open the Equation panel?
+
+Added 2026-11-23 (the next free number). Part 2b-ii-b makes a click on a dimension tag, a row of the drawing's callout list or a results-table row show the result's entry in the Explain panel; the entry's "Equation" link opens the Equation panel (the design's 5.2 and 5.5). Other numbers still open the Equation panel on a click: the numbers behind a check in its entry, the plots' readouts and the end-effect banner, and their hover still says so.
+
+- **If you do not answer:** as described.
+- (a) As the default.
+- (b) Every number selects its result, and only an "Equation" link opens the Equation panel (a click on a check's number would replace the check's entry with the number's).
+
+Source: UX design sections 5.2 and 5.5; A-33; BL-094 plan, decision D-61.
+
+### 57. Should a click on a result still highlight the inputs it reads?
+
+Added 2026-11-23 (the next free number). Until now a click on a result opened its equation and highlighted the inputs it reads. The click now shows the result's entry instead, and still highlights those inputs (unless you are highlighting what an input drives, which stays).
+
+- **If you do not answer:** the click shows the entry and highlights the inputs.
+- (a) As the default.
+- (b) The click only shows the entry; a link in it ("Highlight the inputs this reads", new text) highlights them, as an input's link does.
+
+Source: UX design section 5.2; A-34; BL-094 plan, decision D-62.
+
+### 58. Should the drawing's amber notes stay on the opening tab?
+
+Added 2026-11-23 (the next free number). The list of dimensions and the notes under the drawing move to the Geometry tab (the design's 4.4). Two kinds of note carry a colour: a part the drawing leaves out ("Not drawn: ...") and a design check's caution. They stay under the opening tab's drawing while they are true, as the amber lines above it do; the plain note on the cup wall's rule moves. None shows on the starting design. A dimension in red (a gap below zero, an axis over its space claim) moves with the list: on the opening tab its number stays red and the check list shows the failing check.
+
+- **If you do not answer:** the coloured notes stay on the opening tab.
+- (a) As the default.
+- (b) Every note moves to the Geometry tab, as the design says.
+
+Source: UX design section 4.4; A-35; BL-094 plan, decision D-66.
+
+### 59. During the Start here walk, which copies of a step's title should go?
+
+Added 2026-11-23 (the next free number). During the walk a step's title shows three times: the note's heading in the Explain panel, the lesson line under the equation and the walk bar's "Start here N of 14: title". Part 2a left it to the word budget of 250, which counts the first view, where no walk runs; with the dimension list moved, the first view draws 200 words. All three copies stay.
+
+- **If you do not answer:** all three stay.
+- (a) As the default.
+- (b) The lesson line drops the title while the walk runs.
+- (c) The walk bar's step line drops the title ("Start here N of 14").
+
+Source: part 2a plan, decision D-32; A-36; BL-094 plan, decision D-67.
 
 ### Linkage simulator
 

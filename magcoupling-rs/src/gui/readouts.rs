@@ -9,7 +9,8 @@
 //! the tooltip
 //! shows that text, then the value's equation typeset with its terms in colour
 //! ([`TermColors::of`]), no wider than the window; a click asks the panel to open it in the
-//! Equation panel. Both the
+//! Equation panel, or, for a dimension tag, a callout row and a results-table row
+//! ([`Readouts::select`]), to select its result for the Explain panel. Both the
 //! text and the typesetting run only inside `on_hover_ui`, so a frame pays for the one value
 //! hovered. A value whose path is a term of the equation in view (the one hovered in the last
 //! frame, else the one open in the Equation panel) gets a frame in that term's colour, and so
@@ -23,6 +24,7 @@ use std::sync::OnceLock;
 use egui::{Rect, Stroke, StrokeKind};
 
 use crate::engine::explain::Registry;
+use crate::gui::explain::{Selection, result_selection};
 use crate::gui::typeset::{TermColors, equation_ui};
 
 /// The hint under a tooltip's equation.
@@ -58,8 +60,11 @@ pub fn registry() -> &'static Registry {
 pub struct ReadoutEvents {
     /// The path of the value under the pointer.
     pub hovered: Option<String>,
-    /// The path of the value clicked.
+    /// The path of the value clicked, which opens in the Equation panel.
     pub clicked: Option<String>,
+    /// The path of the result a click selected for the Explain panel (a dimension tag, a
+    /// callout row, a results-table row: UX overhaul spec 5.2).
+    pub selected: Option<&'static str>,
     /// The teaching note a warning's or a check's Why link asked for, by id.
     pub note: Option<&'static str>,
     /// The input whose row a check guide's link asked to show (a fix, an assumption's Why
@@ -75,6 +80,8 @@ pub struct Readouts {
     events: ReadoutEvents,
     /// The header's Show spreadsheet details as the frame began ([`crate::gui::SHOW_DETAILS`]).
     show_details: bool,
+    /// The Explain panel's selection as the frame began ([`Readouts::with_selection`]).
+    selection: Selection,
 }
 
 impl Readouts {
@@ -85,7 +92,15 @@ impl Readouts {
             marks,
             events: ReadoutEvents::default(),
             show_details,
+            selection: Selection::Nothing,
         }
+    }
+
+    /// These readouts with `selection`, the Explain panel's as the frame began: the selecting
+    /// value ([`Readouts::select`]) whose click selects it is outlined.
+    pub fn with_selection(mut self, selection: Selection) -> Self {
+        self.selection = selection;
+        self
     }
 
     /// Whether this frame shows the spreadsheet details (spec S2-5): the internal names, the
@@ -141,6 +156,45 @@ impl Readouts {
         self.tip(ui, response, path, text, false);
     }
 
+    /// [`Readouts::show`] for a result a click selects (a dimension tag, a callout row, a
+    /// results-table row: UX overhaul spec 5.2) rather than opens in the Equation panel (spec
+    /// 5.5): its mark, and while hovered `text(show_details)` and its equation; a click, or
+    /// Enter or Space on it focused, asks for it in the Explain panel. The keyboard's focus
+    /// arriving asks for nothing. Outlined while focused or selected ([`Readouts::with_selection`]).
+    pub fn select(
+        &mut self,
+        ui: &egui::Ui,
+        response: egui::Response,
+        path: &'static str,
+        text: impl FnOnce(bool) -> String,
+    ) {
+        if response.clicked() {
+            self.events.selected = Some(path);
+        }
+        // Selected or keyboard-focused: outlined as a selected tile or check row is.
+        if response.has_focus() || self.selection == result_selection(path) {
+            ui.painter().rect_stroke(
+                response.rect,
+                2.0,
+                Stroke::new(1.0, ui.visuals().strong_text_color()),
+                StrokeKind::Inside,
+            );
+        }
+        self.tip(ui, response, path, text, false);
+    }
+
+    /// [`Readouts::select`] for a result drawn in `rect` by widgets that take no clicks: a
+    /// click sensor over the rect, keyed by `path` in `ui`.
+    pub fn select_over(
+        &mut self,
+        ui: &egui::Ui,
+        rect: Rect,
+        path: &'static str,
+        text: impl FnOnce(bool) -> String,
+    ) {
+        self.select(ui, sensor(ui, rect, path), path, text);
+    }
+
     /// The mark of the value at `path` and, while `response` is hovered, its tooltip:
     /// `text(show_details)`, its equation and, with `open_hint`, [`OPEN_HINT`].
     fn tip(
@@ -181,8 +235,7 @@ impl Readouts {
         path: &str,
         text: impl FnOnce(bool) -> String,
     ) {
-        let response = ui.interact(rect, ui.id().with(("readout", path)), egui::Sense::click());
-        self.show(ui, response, path, text);
+        self.show(ui, sensor(ui, rect, path), path, text);
     }
 
     /// Asks for the teaching note `id` (a warning's link, a lesson link), which the panel shows
@@ -206,6 +259,11 @@ impl Readouts {
     pub fn finish(self) -> ReadoutEvents {
         self.events
     }
+}
+
+/// The click sensor over `rect` of the readout at `path`, keyed by `path` in `ui`.
+fn sensor(ui: &egui::Ui, rect: Rect, path: &str) -> egui::Response {
+    ui.interact(rect, ui.id().with(("readout", path)), egui::Sense::click())
 }
 
 #[cfg(test)]
@@ -373,5 +431,93 @@ mod tests {
         readouts.focus_input("metal.cup_wall_corner_mm");
         assert_eq!(readouts.events().focus, Some("metal.cup_wall_corner_mm"));
         assert_eq!(readouts.finish().focus, Some("metal.cup_wall_corner_mm"));
+    }
+
+    #[test]
+    fn a_selecting_value_asks_for_the_explain_panel_by_click_or_key_and_not_on_focus() {
+        // UX overhaul spec 5.2 and 5.5: a dimension tag, a callout row and a results-table row
+        // select their result. The hover shows its text and its equation without the line
+        // that says a click opens the Equation panel; a click asks for the result in the
+        // Explain panel and opens no equation; the keyboard's focus arriving asks for nothing,
+        // and Enter or Space on the focused value asks as a click does (BL-093).
+        use crate::gui::test_support::{key_tap, primary_button};
+        const PATH: &str = "model.pullout_Nm";
+        let ctx = egui::Context::default();
+        tooltips_at_once(&ctx);
+        let size = egui::vec2(800.0, 600.0);
+        let frame = |input: Vec<egui::Event>, time: Option<f64>| {
+            let mut events = ReadoutEvents::default();
+            let mut rect = Rect::NOTHING;
+            let output = sized_frame_at(&ctx, size, time, input, |ui| {
+                let mut readouts = Readouts::default();
+                rect = ui.label("2.688 N·m").rect;
+                readouts.select_over(ui, rect, PATH, |_| format!("hover text of {PATH}"));
+                events = readouts.finish();
+            });
+            (output, events, rect)
+        };
+        let (_, _, rect) = frame(Vec::new(), Some(0.0));
+        let at = rect.center();
+        frame(vec![egui::Event::PointerMoved(at)], Some(0.1));
+        let (output, events, _) = frame(Vec::new(), Some(0.2));
+        assert_eq!(events.hovered.as_deref(), Some(PATH));
+        let texts = drawn_texts(&output);
+        assert!(
+            texts.contains(&format!("hover text of {PATH}")),
+            "{texts:?}"
+        );
+        for run in ["T", "pull", " = ", "2D", "end", "cal"] {
+            assert!(texts.iter().any(|t| t == run), "no {run:?} in {texts:?}");
+        }
+        assert!(!texts.contains(&OPEN_HINT.to_owned()), "{texts:?}");
+        frame(vec![primary_button(at, true)], Some(0.3));
+        let (_, events, _) = frame(vec![primary_button(at, false)], Some(0.4));
+        assert_eq!((events.selected, events.clicked), (Some(PATH), None));
+        // The keyboard: the pointer gone, a fresh focus on the value, then Enter and Space.
+        frame(vec![egui::Event::PointerGone], Some(0.5));
+        let (_, events, _) = frame(key_tap(egui::Key::Tab), Some(0.6));
+        assert_eq!(events.selected, None, "the focus arriving selects nothing");
+        assert!(
+            ctx.memory(|m| m.focused().is_some()),
+            "the value takes the focus"
+        );
+        for key in [egui::Key::Enter, egui::Key::Space] {
+            let (_, events, _) = frame(key_tap(key), Some(0.7));
+            assert_eq!(events.selected, Some(PATH), "{key:?}");
+        }
+    }
+
+    #[test]
+    fn a_selecting_value_is_outlined_while_selected_or_focused() {
+        // A dimension tag, a callout row or a results-table row shows where it is as a tile and
+        // a check row do: outlined while its result is the selection, or while it has the
+        // keyboard's focus; with neither (another result selected), no outline.
+        use crate::gui::explain::Selection;
+        use crate::gui::test_support::key_tap;
+        const PATH: &str = "model.pullout_Nm";
+        let ctx = egui::Context::default();
+        let size = egui::vec2(800.0, 600.0);
+        let outlines = |selection: Selection, input: Vec<egui::Event>| {
+            let output = sized_frame(&ctx, size, input, |ui| {
+                let mut readouts = Readouts::default().with_selection(selection);
+                let rect = ui.label("2.688 N·m").rect;
+                readouts.select_over(ui, rect, PATH, |_| String::new());
+            });
+            let strong = ctx.style().visuals.strong_text_color();
+            flat_shapes(&output)
+                .into_iter()
+                .filter(|s| matches!(s, egui::Shape::Rect(r) if r.stroke.width == 1.0 && r.stroke.color == strong))
+                .count()
+        };
+        assert_eq!(outlines(Selection::Nothing, Vec::new()), 0);
+        assert_eq!(outlines(Selection::Result("mass.total_g"), Vec::new()), 0);
+        assert_eq!(outlines(Selection::Result(PATH), Vec::new()), 1);
+        // The keyboard's focus arriving outlines it with nothing selected.
+        outlines(Selection::Nothing, key_tap(egui::Key::Tab));
+        assert!(
+            ctx.memory(|m| m.focused().is_some()),
+            "the value takes the focus"
+        );
+        assert_eq!(outlines(Selection::Nothing, Vec::new()), 1);
     }
 }

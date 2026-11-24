@@ -718,19 +718,25 @@ mod tests {
                     numbers.iter().all(|n| n.bottom() < drawing.top()),
                     "{size:?}"
                 );
+                // Each note with a level, under the drawing (decision D-66), is drawn whole: the
+                // example design's cap thread caution wraps to two rows at 1024 wide.
+                let paused = crate::engine::clamps::PAUSED;
+                let geometry = crate::gui::geometry::geometry(&inputs, &results, paused);
+                for note in geometry.notes.iter().filter(|note| note.level.is_some()) {
+                    whole(&note.text);
+                }
             }
         }
     }
 
     #[test]
-    fn the_first_view_draws_at_most_two_hundred_and_eighty_words_at_1280_by_800() {
+    fn the_first_view_draws_at_most_two_hundred_and_fifty_words_at_1280_by_800() {
         // UX overhaul spec 2.1 (goal G-1) and 8.2, test 8, measured as the inventory did: the
         // words the opening screen shows. 608 before this stage (the dashboard's rows, the
         // torque readouts and the welcome strip); 443 after its part 1, the callout list under
         // the drawing kept until its tags are selections (decision D-19); 427 after part 2a's
-        // top bar; 272 after part 2b-i moved the Size column's lines into the Explain panel.
-        // The design's 250 needs the callout list to leave the opening tab (part 2b-ii), which
-        // lowers this ceiling to it.
+        // top bar; 272 after part 2b-i moved the Size column's lines into the Explain panel;
+        // 200 after part 2b-ii-b moved the callout list and its notes to the Geometry tab.
         use crate::gui::test_support::words_shown;
         let size = WINDOWS[0];
         let ctx = egui::Context::default();
@@ -740,7 +746,7 @@ mod tests {
         }
         let output = frame_on(&ctx, &mut app, size, Vec::new());
         let words = words_shown(&output, egui::Rect::from_min_size(egui::Pos2::ZERO, size));
-        assert!(words <= 280, "{words} words on the first view");
+        assert!(words <= 250, "{words} words on the first view");
     }
 
     #[test]
@@ -1851,7 +1857,7 @@ mod tests {
             &script[start..end]
         };
         assert!(
-            between("input_entry=true was judged", "page.goto(").contains(collect),
+            between("tag_entry=true was judged", "page.goto(").contains(collect),
             "the first page's console messages are collected before the link is opened again"
         );
         // UX overhaul slice B, stage 2, part 2b-ii (spec 5.2): after the tooltip a click on the
@@ -1873,6 +1879,30 @@ mod tests {
             assert!(
                 between("input_entry=true only if", "page.goto(").contains("Explain panel"),
                 "the input's entry is judged in the Explain panel"
+            );
+        }
+        // UX overhaul slice B, stage 2, part 2b-ii-b (spec 4.4, 5.2): after the input's entry
+        // a click on tag 1 of the drawing (the face gap's dimension) selects its result, and the
+        // step finds the result's entry in the Explain panel by the name typed once as
+        // TAG_LABEL, with its Equation link and no Equation panel opened.
+        {
+            use crate::gui::explain::EQUATION;
+            let label = crate::gui::plain_text::label_for("model.face_gap_mm");
+            assert_eq!(quoted("TAG_LABEL"), label, "the script's TAG_LABEL");
+            assert_eq!(
+                script.matches(label).count(),
+                1,
+                "the smoke prompt types the face gap's name once, in TAG_LABEL"
+            );
+            let step = between("tag_entry=true only if", "tag_entry=true was judged");
+            assert!(
+                between("input_entry=true only if", "tag_entry=true only if")
+                    .contains("click the number \"1\""),
+                "the tag's entry is judged after the input's, from a click on tag 1"
+            );
+            assert!(
+                step.contains("Explain panel") && step.contains(&format!("\"{EQUATION}\"")),
+                "the tag's entry is judged in the Explain panel by its Equation link: {step}"
             );
         }
         assert!(
