@@ -4008,9 +4008,9 @@ mod tests {
     #[test]
     fn touching_a_detailed_row_s_widget_selects_its_input() {
         // Spec 5.2: touching an input selects it, as part 2b-i's touches do for the Size
-        // column (size_controls::touched): the keyboard's focus arriving on a Key design row's
-        // slider (a focus that edits nothing), a drag of it, and a click on its reset. A hover
-        // over the slider selects nothing (C-2).
+        // column (size_controls::touched): Enter on a Key design row's focused slider (it edits
+        // nothing), a drag of it, and a click on its reset. A hover over the slider, and the
+        // keyboard's focus arriving on it (BL-093), select nothing (C-2).
         let op_temp = "coupling.op_temp_C";
         let before = KEY_DESIGN[KEY_DESIGN.iter().position(|p| *p == op_temp).unwrap() - 1];
         let mut harness = Harness::new();
@@ -4033,15 +4033,13 @@ mod tests {
             "Tab reaches it"
         );
         harness.frame(Vec::new());
-        assert_eq!(
-            harness.panel.selection,
-            Selection::Input(op_temp),
-            "the focus"
-        );
+        assert_eq!(harness.panel.selection, Selection::Nothing, "the focus");
+        harness.frame(key_tap(egui::Key::Enter));
+        assert_eq!(harness.panel.selection, Selection::Input(op_temp), "Enter");
         assert_eq!(
             harness.panel.history.undo_len(),
             0,
-            "the focus edits nothing"
+            "the focus and Enter edit nothing"
         );
         harness.ctx.memory_mut(|m| m.surrender_focus(target));
         harness.panel.selection = Selection::Nothing;
@@ -4060,6 +4058,84 @@ mod tests {
             "a reset"
         );
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
+    fn a_keyboard_user_traces_a_middle_input_with_tab_or_shift_tab_to_its_entry_s_link() {
+        use crate::gui::explain::TRACE_LINK;
+        use crate::gui::trace::TraceKind;
+        // BL-093: Tab to a middle Key design row's slider, Enter selects it; Tab (or Shift+Tab)
+        // past the other rows to its entry's trace link keeps that selection, so Enter on the
+        // link traces it. Before, the focus arriving on each row passed selected that row.
+        let op_temp = "coupling.op_temp_C";
+        let before = KEY_DESIGN[KEY_DESIGN.iter().position(|p| *p == op_temp).unwrap() - 1];
+        let shift_tab = || {
+            [true, false]
+                .map(|pressed| egui::Event::Key {
+                    key: egui::Key::Tab,
+                    physical_key: None,
+                    pressed,
+                    repeat: false,
+                    modifiers: egui::Modifiers::SHIFT,
+                })
+                .to_vec()
+        };
+        for backwards in [false, true] {
+            let mut harness = Harness::new();
+            let target = harness.widget(op_temp).id;
+            harness.focus(before);
+            harness.panel.selection = Selection::Nothing;
+            for _ in 0..6 {
+                harness.frame(key_tap(egui::Key::Tab));
+                if harness.ctx.memory(|m| m.has_focus(target)) {
+                    break;
+                }
+            }
+            assert!(harness.ctx.memory(|m| m.has_focus(target)), "Tab reaches it");
+            harness.frame(key_tap(egui::Key::Enter));
+            assert_eq!(harness.panel.selection, Selection::Input(op_temp), "Enter");
+            let mut on_link = false;
+            for _ in 0..200 {
+                let tab = if backwards {
+                    shift_tab()
+                } else {
+                    key_tap(egui::Key::Tab)
+                };
+                harness.frame(tab);
+                let output = harness.frame(Vec::new());
+                let Some(link) = text_rect(&output, TRACE_LINK) else {
+                    break;
+                };
+                if harness
+                    .ctx
+                    .memory(|m| m.focused())
+                    .and_then(|id| harness.ctx.read_response(id))
+                    .is_some_and(|r| r.rect.contains(link.center()))
+                {
+                    on_link = true;
+                    break;
+                }
+            }
+            assert!(on_link, "the keyboard reaches the link (backwards: {backwards})");
+            assert_eq!(
+                harness.panel.selection,
+                Selection::Input(op_temp),
+                "the rows passed select nothing (backwards: {backwards})"
+            );
+            harness.frame(key_tap(egui::Key::Enter));
+            let trace = harness.panel.trace.clone().expect("a trace");
+            assert_eq!(
+                (trace.kind, trace.source.as_str()),
+                (TraceKind::Input, op_temp)
+            );
+            harness.frame(key_tap(egui::Key::Enter));
+            assert_eq!(harness.panel.trace, None, "Enter again ends it");
+            assert_eq!(
+                harness.panel.history.undo_len(),
+                0,
+                "the keyboard edits nothing"
+            );
+        }
     }
 
     #[test]
@@ -6943,10 +7019,10 @@ mod tests {
 
     #[test]
     fn touching_a_size_control_selects_its_row_and_a_hover_selects_nothing() {
-        // UX overhaul spec 5.2: a click on a Size control's label, the keyboard's focus
-        // arriving on its slider, or a drag of its slider, selects its row; a hover over a label
-        // shows its hover text and selects nothing (C-2). A label's click and the focus edit
-        // nothing.
+        // UX overhaul spec 5.2: a click on a Size control's label, Enter on its focused slider,
+        // or a drag of its slider, selects its row; a hover over a label shows its hover text
+        // and selects nothing (C-2), as does the keyboard's focus arriving (BL-093). A label's
+        // click, the focus and Enter edit nothing.
         let mut harness = size_tab(SCREEN, DesignInputs::default());
         let tile = harness.panel.selection;
         let label_at = |output: &egui::FullOutput, label: &str| {
@@ -7019,13 +7095,15 @@ mod tests {
         harness.frame(Vec::new());
         assert_eq!(
             harness.panel.selection,
-            Selection::Input(FACE_GAP),
+            Selection::Nothing,
             "the keyboard's focus"
         );
+        harness.frame(key_tap(egui::Key::Enter));
+        assert_eq!(harness.panel.selection, Selection::Input(FACE_GAP), "Enter");
         assert_eq!(
             harness.panel.inputs(),
             &DesignInputs::default(),
-            "the focus edits nothing"
+            "the focus and Enter edit nothing"
         );
         harness.panel.selection = Selection::Nothing;
         harness.frame(Vec::new());

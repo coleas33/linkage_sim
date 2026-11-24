@@ -298,7 +298,9 @@ end-effect banner shows, Hot-low torque and the gap read "no prediction (magnets
 the end-effect model at this pole pitch)" instead of a number.
 
 Since BL-090 each control is its label and its slider, and touching it (a click on the label, a
-click or drag of the slider, an edit, or the keyboard's focus arriving; a hover selects nothing)
+click or drag of the slider, an edit, or Enter or Space on the focused slider; a hover, and since
+BL-093 the keyboard's focus arriving, select nothing, so Tab can pass other rows on the way to
+the entry's trace link)
 selects its row: the Explain panel shows the row's entry (`explain::Selection::Input`, keyed by
 `size_controls::SIZE_ROWS`: the input path where the row is one input, the hint key otherwise).
 The entry leads with the value and the label, then "What it is" (the label's hover text), "What

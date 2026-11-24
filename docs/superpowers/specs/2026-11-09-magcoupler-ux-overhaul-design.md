@@ -291,7 +291,9 @@ The selection is view state: not in undo, not in a design file, not in the addre
 ### 5.2 What selects
 
 - A click on a tile, a check row, a dimension tag, a results-table row or a callout row selects that result or check.
-- Touching an input (a click on its label, a drag of its slider, focus in its field) selects that input. Today a
+- Touching an input (a click on its label, a drag of its slider, an edit, Enter or Space on its focused control)
+  selects that input. The keyboard's focus arriving selects nothing (BL-093, controller ruling 2026-11-23: Tab
+  passes every row between an input and its entry's trace link, and each would take the selection). Today a
   click on a label traces the input; tracing stays, as a link in the input's Explain entry ("Highlight the results
   this drives").
 - A link inside the Explain panel selects what it names: a fix link selects and focuses its input (as `fix_text`
