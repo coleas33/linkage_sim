@@ -298,7 +298,9 @@ end-effect banner shows, Hot-low torque and the gap read "no prediction (magnets
 the end-effect model at this pole pitch)" instead of a number.
 
 Since BL-090 each control is its label and its slider, and touching it (a click on the label, a
-click or drag of the slider, an edit, or the keyboard's focus arriving; a hover selects nothing)
+click or drag of the slider, an edit, or Enter or Space on the focused slider; a hover, and since
+BL-093 the keyboard's focus arriving, select nothing, so Tab can pass other rows on the way to
+the entry's trace link)
 selects its row: the Explain panel shows the row's entry (`explain::Selection::Input`, keyed by
 `size_controls::SIZE_ROWS`: the input path where the row is one input, the hint key otherwise).
 The entry leads with the value and the label, then "What it is" (the label's hover text), "What
@@ -315,7 +317,7 @@ Outside diameter, Magnets per ring), and with Show spreadsheet details on a weak
 stays under the slider Auto locks (decision D-37, register row A-26).
 
 Since BL-092 every input is a selection: touching a row of Detailed inputs or Assumptions (a
-click on its label, a drag of its slider, focus in its field, an edit or a reset, on the opening
+click on its label, a drag of its slider, Enter or Space on its focused control, an edit or a reset, on the opening
 tab and on the other tabs) selects its input, keyed by its path, so
 the face gap's Key design row selects the Size column's gap entry. The entry leads with the value
 (a blank, a selector's choice or a text in words: `inputs::value_text`) and the label, then "What

@@ -158,9 +158,18 @@ pub(crate) fn floor_line(floor_mm: f64) -> String {
 }
 
 /// Whether a person touched a control this frame (UX overhaul spec 5.2): a click, the start of
-/// a drag, a change (an arrow key, a typed value) or the keyboard's focus arriving.
+/// a drag, a change (an arrow key, a typed value) or Enter or Space on the focused control (a
+/// slider senses no click, so egui makes no click of them). The keyboard's focus arriving is
+/// not a touch (BL-093): Tab passes the rows between a selected input and its entry's trace
+/// link, and each would take the selection.
 pub(crate) fn touched(response: &egui::Response) -> bool {
-    response.clicked() || response.drag_started() || response.changed() || response.gained_focus()
+    response.clicked()
+        || response.drag_started()
+        || response.changed()
+        || (response.has_focus()
+            && response.ctx.input(|i| {
+                i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Space)
+            }))
 }
 
 /// A control's label, in `color` where one is given, which shows its row's help
