@@ -1,6 +1,7 @@
 //! The geometry view (spec M4 "Layout": the centre region's Geometry tab; Size and torque
-//! draws it too): paints [`crate::gui::geometry`] to scale with egui's painter, both views at
-//! one scale (decision M42-3), then lists the dimension callouts and the notes under them.
+//! draws its drawing, [`drawing_ui`]): paints [`crate::gui::geometry`] to scale with egui's
+//! painter, both views at one scale (decision M42-3), then lists the dimension callouts and the
+//! notes under them.
 //!
 //! Each dimension is a line with arrowheads and a tag; the list repeats the tag with the
 //! callout's text. The line and the text are readouts ([`crate::gui::readouts::Readouts`]):
@@ -154,7 +155,8 @@ pub(crate) fn arrowhead(painter: &egui::Painter, tip: Pos2, dir: Vec2, stroke: S
 
 /// Draws the geometry of the design shown (`inputs` and the `results` computed from them),
 /// without the clamp-boss design check while `clamps_paused` ([`geometry`]), each
-/// callout a readout (`readouts`), and returns what it drew.
+/// callout a readout (`readouts`), and returns what it drew: the Geometry tab's view, the
+/// drawing with the callout list and the notes under it.
 pub fn geometry_ui(
     ui: &mut egui::Ui,
     inputs: &DesignInputs,
@@ -162,10 +164,53 @@ pub fn geometry_ui(
     clamps_paused: bool,
     readouts: &mut Readouts,
 ) -> GeometryLayout {
+    view_ui(ui, inputs, results, clamps_paused, readouts, true)
+}
+
+/// [`geometry_ui`] for the opening tab (UX overhaul spec 4.4): the drawing with its tags, and
+/// under it only the notes that carry a level (a part not drawn, a design check's caution),
+/// drawn only while true, as the "Exploration only" lines are. The callout list and the plain
+/// notes are the Geometry tab's.
+pub fn drawing_ui(
+    ui: &mut egui::Ui,
+    inputs: &DesignInputs,
+    results: &DesignResults,
+    clamps_paused: bool,
+    readouts: &mut Readouts,
+) -> GeometryLayout {
+    view_ui(ui, inputs, results, clamps_paused, readouts, false)
+}
+
+/// The drawing, then under it the callout list and every note `with_list`, else the notes
+/// with a level alone.
+fn view_ui(
+    ui: &mut egui::Ui,
+    inputs: &DesignInputs,
+    results: &DesignResults,
+    clamps_paused: bool,
+    readouts: &mut Readouts,
+    with_list: bool,
+) -> GeometryLayout {
     let g = geometry(inputs, results, clamps_paused);
     let row = list_row(ui);
-    let rows = g.end.callouts.len() + g.side.callouts.len() + g.notes.len();
-    let list = rows as f32 * row * 1.5;
+    let list = if with_list {
+        let rows = g.end.callouts.len() + g.side.callouts.len() + g.notes.len();
+        rows as f32 * row * 1.5
+    } else {
+        // Each note's height wrapped at this width: one row and a half's spare does not cover a
+        // caution that wraps to two rows (the example design's at 1024 wide).
+        g.notes
+            .iter()
+            .filter(|note| note.level.is_some())
+            .map(|note| {
+                let text = egui::WidgetText::from(note.text.as_str());
+                let wrap = Some(egui::TextWrapMode::Wrap);
+                let body = egui::TextStyle::Body;
+                let galley = text.into_galley(ui, wrap, ui.available_width(), body);
+                galley.size().y + ui.spacing().item_spacing.y
+            })
+            .sum()
+    };
     let height = drawing_height(ui.available_height(), list, row);
     let rect = if height > 0.0 {
         ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::hover())
@@ -210,7 +255,7 @@ pub fn geometry_ui(
             }
         }
     }
-    list_ui(ui, &g, readouts);
+    list_ui(ui, &g, readouts, with_list);
     layout
 }
 
@@ -366,14 +411,15 @@ fn callout_text(callout: &Callout, show_details: bool) -> String {
 }
 
 /// The callouts (tag and text, in their colours, each a readout) and the notes, scrolling in
-/// the height left (egui's 64-point floor for a scroll area lowered to none).
-fn list_ui(ui: &mut egui::Ui, g: &Geometry, readouts: &mut Readouts) {
+/// the height left (egui's 64-point floor for a scroll area lowered to none); without the
+/// list (`with_list` false), the notes with a level alone.
+fn list_ui(ui: &mut egui::Ui, g: &Geometry, readouts: &mut Readouts, with_list: bool) {
     egui::ScrollArea::vertical()
         .id_salt("magcoupling_geometry_list")
         .auto_shrink([false, true])
         .min_scrolled_height(0.0)
         .show(ui, |ui| {
-            for callout in g.callouts() {
+            for callout in g.callouts().filter(|_| with_list) {
                 let color = callout.level.map(|l| l.color(ui.visuals()));
                 let rich = |text: String| match color {
                     Some(c) => egui::RichText::new(text).color(c),
@@ -390,7 +436,7 @@ fn list_ui(ui: &mut egui::Ui, g: &Geometry, readouts: &mut Readouts) {
                     callout_text(callout, show_details)
                 });
             }
-            for note in &g.notes {
+            for note in g.notes.iter().filter(|n| with_list || n.level.is_some()) {
                 let text = egui::RichText::new(&note.text);
                 let text = match note.level {
                     Some(level) => text.color(level.color(ui.visuals())),
@@ -544,6 +590,55 @@ mod tests {
         assert!(texts.iter().any(|t| t.starts_with(&boss_check)));
         let wall_rule = format!("{}:", crate::gui::geometry::WALL_RULE);
         assert!(texts.iter().any(|t| t.starts_with(&wall_rule)));
+    }
+
+    #[test]
+    fn the_opening_tab_s_drawing_keeps_its_tags_and_only_the_notes_with_a_level() {
+        // UX overhaul spec 4.4: on the opening tab the numbered tags stay on the drawing (a
+        // click on one selects its result) and the callout list and the notes go to the
+        // Geometry tab, but a note with a level (a design check's caution, a part not drawn)
+        // stays under the drawing while it is true, as the "Exploration only" lines do. The
+        // drawing takes the height the list left.
+        let ctx = egui::Context::default();
+        let inputs = DesignInputs::default();
+        let results = compute_all(&inputs);
+        let g = geometry(&inputs, &results, false);
+        assert!(g.notes.iter().any(|note| note.level.is_some()));
+        assert!(g.notes.iter().any(|note| note.level.is_none()));
+        let size = egui::vec2(1000.0, 700.0);
+        let draw = |with_list: bool| {
+            let mut layout = None;
+            let output = sized_frame(&ctx, size, Vec::new(), |ui| {
+                let readouts = &mut Readouts::default();
+                layout = Some(if with_list {
+                    geometry_ui(ui, &inputs, &results, false, readouts)
+                } else {
+                    drawing_ui(ui, &inputs, &results, false, readouts)
+                });
+            });
+            (output, layout.expect("drawn"))
+        };
+        let (_, full) = draw(true);
+        let (output, drawing) = draw(false);
+        let texts = drawn_texts(&output);
+        for callout in g.callouts() {
+            assert!(!texts.contains(&callout.text), "{}", callout.text);
+            let tag = callout.tag.to_string();
+            assert_eq!(text_rects(&output, &tag).len(), 1, "tag {tag} once");
+        }
+        for note in &g.notes {
+            assert_eq!(
+                texts.contains(&note.text),
+                note.level.is_some(),
+                "{}",
+                note.text
+            );
+        }
+        assert_eq!(drawing.dimensions.len(), full.dimensions.len());
+        assert!(
+            drawing.rect.height() > full.rect.height(),
+            "{drawing:?} {full:?}"
+        );
     }
 
     /// The stroke colour of every line segment.

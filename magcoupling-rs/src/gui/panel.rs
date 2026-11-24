@@ -39,7 +39,7 @@ use crate::gui::explain::{Asked, LEARN, Selection, explain_ui, result_selection}
 use crate::gui::explorer::{Explorer, FOCUS_WIDTH, explorer_ui, held_reason, panel_heights};
 use crate::gui::format::search_needle;
 use crate::gui::geometry::wall_cautions;
-use crate::gui::geometry_view::geometry_ui;
+use crate::gui::geometry_view::{drawing_ui, geometry_ui};
 use crate::gui::guidance::{
     ConsequenceCache, Direction, EXAMPLE_DESIGN_HOVER, FixCache, SIZE_TAB_ALIASES,
     within_minimum_diameter,
@@ -1034,7 +1034,8 @@ impl MagcouplingPanel {
     /// readouts (`readouts`). Each view fits itself to `ui`'s available height. The opening
     /// tab (UX overhaul spec 4.4): the four tiles, a click on one selecting it for the Explain
     /// panel; the "Exploration only" lines and the keyway's advisory, only when true; then the
-    /// drawing and its callout list in all the height left (the plan's decision D-19).
+    /// drawing in all the height left, a click on a tag selecting its result, with the notes
+    /// that carry a level under it; the callout list is the Geometry tab's (spec 4.4).
     fn view_ui(&mut self, ui: &mut egui::Ui, shown: &DesignInputs, readouts: &mut Readouts) {
         match self.centre {
             CentreView::SizeAndTorque => {
@@ -1060,7 +1061,7 @@ impl MagcouplingPanel {
                 for line in wall_cautions(shown, &self.results) {
                     ui.colored_label(ui.visuals().warn_fg_color, line);
                 }
-                geometry_ui(ui, shown, &self.results, self.clamps_paused, readouts);
+                drawing_ui(ui, shown, &self.results, self.clamps_paused, readouts);
             }
             CentreView::Geometry => {
                 geometry_ui(ui, shown, &self.results, self.clamps_paused, readouts);
@@ -2440,8 +2441,12 @@ mod tests {
             assert!(at.left() >= left, "{label}: {at:?} right of {left}");
             left = at.left();
         }
-        // Under the drawing its callout list, as on the Geometry tab, until a click on a
-        // dimension tag shows its callout in the Explain panel (decision D-19).
+        // The callout list is the Geometry tab's (spec 4.4): a click on a dimension tag shows
+        // its result in the Explain panel. There it is under the drawing.
+        assert_eq!(count(&output, "Face gap 1.400 mm"), 0);
+        harness.click_text(CentreView::Geometry.label());
+        let output = harness.frame(Vec::new());
+        let drawing = drawing_rect(&output);
         let list = centre_rect(&output, "Face gap 1.400 mm");
         assert!(drawing.bottom() <= list.top(), "{drawing:?} over {list:?}");
         assert_eq!(harness.panel.design(), Design::default());

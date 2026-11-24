@@ -718,19 +718,25 @@ mod tests {
                     numbers.iter().all(|n| n.bottom() < drawing.top()),
                     "{size:?}"
                 );
+                // Each note with a level, under the drawing (decision D-66), is drawn whole: the
+                // example design's cap thread caution wraps to two rows at 1024 wide.
+                let paused = crate::engine::clamps::PAUSED;
+                let geometry = crate::gui::geometry::geometry(&inputs, &results, paused);
+                for note in geometry.notes.iter().filter(|note| note.level.is_some()) {
+                    whole(&note.text);
+                }
             }
         }
     }
 
     #[test]
-    fn the_first_view_draws_at_most_two_hundred_and_eighty_words_at_1280_by_800() {
+    fn the_first_view_draws_at_most_two_hundred_and_fifty_words_at_1280_by_800() {
         // UX overhaul spec 2.1 (goal G-1) and 8.2, test 8, measured as the inventory did: the
         // words the opening screen shows. 608 before this stage (the dashboard's rows, the
         // torque readouts and the welcome strip); 443 after its part 1, the callout list under
         // the drawing kept until its tags are selections (decision D-19); 427 after part 2a's
-        // top bar; 272 after part 2b-i moved the Size column's lines into the Explain panel.
-        // The design's 250 needs the callout list to leave the opening tab (part 2b-ii), which
-        // lowers this ceiling to it.
+        // top bar; 272 after part 2b-i moved the Size column's lines into the Explain panel;
+        // 200 after part 2b-ii-b moved the callout list and its notes to the Geometry tab.
         use crate::gui::test_support::words_shown;
         let size = WINDOWS[0];
         let ctx = egui::Context::default();
@@ -740,7 +746,7 @@ mod tests {
         }
         let output = frame_on(&ctx, &mut app, size, Vec::new());
         let words = words_shown(&output, egui::Rect::from_min_size(egui::Pos2::ZERO, size));
-        assert!(words <= 280, "{words} words on the first view");
+        assert!(words <= 250, "{words} words on the first view");
     }
 
     #[test]
