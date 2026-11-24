@@ -35,7 +35,7 @@ use crate::engine::sizing::{FreeVariable, SizingOutcome};
 use crate::gui::checks::{CHECKS_SHARE, checks_ui};
 use crate::gui::clamp_drawing::clamp_ui;
 use crate::gui::dashboard::{Level, end_effect_banner_ui};
-use crate::gui::explain::{Asked, LEARN, Selection, explain_ui};
+use crate::gui::explain::{Asked, LEARN, Selection, explain_ui, result_selection};
 use crate::gui::explorer::{Explorer, FOCUS_WIDTH, explorer_ui, held_reason, panel_heights};
 use crate::gui::format::search_needle;
 use crate::gui::geometry::wall_cautions;
@@ -753,11 +753,18 @@ impl MagcouplingPanel {
             events.focus = None;
             self.centre = CentreView::SizeAndTorque;
         }
-        // A result clicked opens in the Equation panel and traces its inputs, unless an input's
-        // trace marks it: reading the equations of the results an input drives keeps that trace
-        // (and the table's "Traced only" rows). A result without an equation record keeps the
-        // trace too: nothing is known of its inputs.
-        if let Some(path) = &events.clicked {
+        // A result selected (a dimension tag, a callout row, a results-table row: UX overhaul
+        // spec 5.2) shows in the Explain panel, drawn before this click: the next frame shows
+        // it. It no longer opens in the Equation panel, whose entry link does (spec 5.5).
+        if let Some(path) = events.selected {
+            self.selection = result_selection(path);
+            ui.ctx().request_repaint();
+        }
+        // A result clicked (it opens in the Equation panel) or selected traces its inputs,
+        // unless an input's trace marks it: reading the results an input drives keeps that
+        // trace (and the table's "Traced only" rows). A result without an equation record keeps
+        // the trace too: nothing is known of its inputs.
+        if let Some(path) = events.clicked.as_deref().or(events.selected) {
             let inside = self
                 .trace
                 .as_ref()
@@ -4091,7 +4098,10 @@ mod tests {
                     break;
                 }
             }
-            assert!(harness.ctx.memory(|m| m.has_focus(target)), "Tab reaches it");
+            assert!(
+                harness.ctx.memory(|m| m.has_focus(target)),
+                "Tab reaches it"
+            );
             harness.frame(key_tap(egui::Key::Enter));
             assert_eq!(harness.panel.selection, Selection::Input(op_temp), "Enter");
             let mut on_link = false;
@@ -4116,7 +4126,10 @@ mod tests {
                     break;
                 }
             }
-            assert!(on_link, "the keyboard reaches the link (backwards: {backwards})");
+            assert!(
+                on_link,
+                "the keyboard reaches the link (backwards: {backwards})"
+            );
             assert_eq!(
                 harness.panel.selection,
                 Selection::Input(op_temp),
@@ -4166,6 +4179,71 @@ mod tests {
     }
 
     #[test]
+    fn a_click_on_a_tag_a_callout_or_a_table_row_selects_its_result_and_opens_no_equation() {
+        // UX overhaul spec 5.2, 5.5 and 8.2 test 10: a click on a dimension tag (on the opening
+        // tab), a callout row (on the Geometry tab) or a results-table row selects its result,
+        // and the Explain panel shows its entry; the Equation panel stays closed until the
+        // entry's Equation link opens it, the selection staying; nothing edits the design or
+        // makes an undo step.
+        use crate::gui::explain::EQUATION;
+        const FACE_GAP_RESULT: &str = "model.face_gap_mm";
+        let mut harness = Harness::first_view();
+        let output = harness.frame(Vec::new());
+        let right = right_column_left(&output);
+        // Tag 1, the face gap's, on the drawing: the topmost "1" in the centre region.
+        let tag = text_rects(&output, "1")
+            .into_iter()
+            .filter(|r| r.left() > INPUTS_WIDTH && r.right() < right)
+            .min_by(|a, b| a.top().total_cmp(&b.top()))
+            .expect("tag 1 on the drawing");
+        // The click lands on the number's edge farthest from its line, past the line's sensor
+        // and egui's interact radius, so only the tag's own click area can take it (D-65).
+        harness.click(tag.center_top() + egui::vec2(0.0, 1.0));
+        let output = harness.frame(Vec::new());
+        assert_eq!(harness.panel.selection, Selection::Result(FACE_GAP_RESULT));
+        explain_rect(&output, label_for(FACE_GAP_RESULT));
+        assert!(!harness.panel.explorer.open, "a tag opens no equation");
+        // The corner gap's row of the callout list, on the Geometry tab.
+        harness.click_text(CentreView::Geometry.label());
+        let shown = harness.panel.shown_inputs();
+        let geometry = crate::gui::geometry::geometry(&shown, harness.panel.results(), true);
+        let corner = geometry
+            .callouts()
+            .find(|callout| callout.tag == 2)
+            .expect("the corner gap's callout");
+        harness.click_text(&corner.text);
+        let output = harness.frame(Vec::new());
+        assert_eq!(harness.panel.selection, Selection::Result(corner.path));
+        explain_rect(&output, label_for(corner.path));
+        assert!(!harness.panel.explorer.open, "a callout opens no equation");
+        // The pull-out's row of the results table, then its entry's Equation link.
+        harness.click_text(CentreView::Results.label());
+        harness.click_text(&displayed_pullout(&DesignInputs::default()));
+        assert_eq!(
+            harness.panel.selection,
+            Selection::Result("model.pullout_Nm")
+        );
+        assert!(!harness.panel.explorer.open, "a row opens no equation");
+        harness.click_text(EQUATION);
+        assert_eq!(harness.panel.explorer.trail(), ["model.pullout_Nm"]);
+        assert_eq!(
+            harness.panel.selection,
+            Selection::Result("model.pullout_Nm")
+        );
+        // A selection made elsewhere leaves the open equation where it is (spec 5.5): the cup
+        // OD's row selects the cup OD, and the Equation panel stays at the pull-out.
+        let cup_od = harness.panel.results().model.cup_od_mm;
+        harness.click_text(&with_unit(format_value(&Value::Num(cup_od)), "mm"));
+        assert_eq!(
+            harness.panel.selection,
+            Selection::Result("model.cup_od_mm")
+        );
+        assert_eq!(harness.panel.explorer.trail(), ["model.pullout_Nm"]);
+        assert_eq!(harness.panel.design(), Design::default());
+        assert_eq!(harness.panel.history.undo_len(), 0);
+    }
+
+    #[test]
     fn clicking_a_result_frames_the_inputs_it_reads_and_counts_them_by_group() {
         use crate::gui::trace::{CLEAR_TRACE, TraceKind};
         let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0)).on_results();
@@ -4179,7 +4257,13 @@ mod tests {
             &trace.paths,
             registry().upstream_inputs("model.pullout_Nm").unwrap()
         );
-        assert!(harness.panel.explorer.open, "the click still opens it");
+        // The click selects the result (UX overhaul spec 5.2); its entry's Equation link
+        // opens the Equation panel (spec 5.5).
+        assert_eq!(
+            harness.panel.selection,
+            Selection::Result("model.pullout_Nm")
+        );
+        assert!(!harness.panel.explorer.open, "the click opens no equation");
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, &trace.banner(false)), 1);
         // Each Key design row is framed exactly when the pull-out reads its input.
@@ -4398,8 +4482,9 @@ mod tests {
         use crate::gui::results_table::{ResultOrder, TRACED_ONLY, table_entries};
         use crate::gui::trace::TraceKind;
         // An input traced and "Traced only" ticked: a click on a traced row (the table's main
-        // gesture, to read its equation) opens its equation and keeps the input's trace, so the
-        // table keeps its rows; a click on a result without an equation record keeps it too.
+        // gesture) selects it, and its entry's Equation link opens its equation; both keep the
+        // input's trace, so the table keeps its rows; a click on a result without an equation
+        // record keeps it too.
         let entries = table_entries();
         let total = entries.len();
         let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0));
@@ -4421,8 +4506,18 @@ mod tests {
             .expect("the pull-out's row");
         assert!(trace.marks("model.pullout_Nm"));
         harness.click(row.center());
+        assert_eq!(
+            harness.panel.selection,
+            Selection::Result("model.pullout_Nm")
+        );
+        assert_eq!(
+            harness.panel.trace.as_ref(),
+            Some(&trace),
+            "the selection keeps it"
+        );
+        harness.click_text(crate::gui::explain::EQUATION);
         let output = harness.frame(Vec::new());
-        assert!(harness.panel.explorer.open, "the click opens its equation");
+        assert!(harness.panel.explorer.open, "the link opens its equation");
         assert_eq!(
             harness.panel.trace.as_ref(),
             Some(&trace),
@@ -8894,10 +8989,12 @@ mod tests {
                 .any(|t| t.starts_with(&format!("{}\n", label_for("model.pullout_Nm")))),
             "the hover text: {texts:?}"
         );
-        // T_pull = T_2D f_end f_cal, typeset run by run, and the hint.
-        for run in ["T", "pull", " = ", "2D", "end", "cal", OPEN_HINT] {
+        // T_pull = T_2D f_end f_cal, typeset run by run. No hint that a click opens it: a
+        // click on a results-table row selects its result (UX overhaul spec 5.2, 5.5).
+        for run in ["T", "pull", " = ", "2D", "end", "cal"] {
             assert!(texts.iter().any(|t| t == run), "no {run:?} in {texts:?}");
         }
+        assert!(!texts.iter().any(|t| t == OPEN_HINT), "{texts:?}");
     }
 
     #[test]
@@ -8965,11 +9062,20 @@ mod tests {
     }
 
     #[test]
-    fn clicking_a_value_opens_it_and_a_term_drills_in_and_the_breadcrumb_returns() {
+    fn a_value_s_equation_link_opens_it_and_a_term_drills_in_and_the_breadcrumb_returns() {
+        // A click on a results-table row selects its result (UX overhaul spec 5.2); its entry's
+        // Equation link opens the Equation panel there, and the selection stays (spec 5.5).
+        use crate::gui::explain::EQUATION;
         use crate::gui::explorer::TERMS;
         let mut harness = Harness::new().on_results();
         harness.click_text(&displayed_pullout(&DesignInputs::default()));
+        assert!(!harness.panel.explorer.open);
+        harness.click_text(EQUATION);
         assert!(harness.panel.explorer.open);
+        assert_eq!(
+            harness.panel.selection,
+            Selection::Result("model.pullout_Nm")
+        );
         assert_eq!(harness.panel.explorer.trail(), ["model.pullout_Nm"]);
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, TERMS), 1);
@@ -10333,7 +10439,8 @@ mod tests {
     #[test]
     fn the_panel_works_inside_an_egui_window() {
         // M5 shows the panel in a window of the linkage app. Past its first frames: a value
-        // opened, a term followed, a leaf assumption term's row shown (the Assumptions view
+        // selected and opened from its entry, a term followed, a leaf assumption term's row
+        // shown (the Assumptions view
         // and its frame), then idle frames. The window keeps its size, the Equation panel
         // draws its lists, egui reports no ID clash (the text it paints in a debug build, as
         // the tests are) and the design is unchanged.
@@ -10393,6 +10500,7 @@ mod tests {
             &output,
             &displayed_pullout(&DesignInputs::default()),
         );
+        let output = click(&mut panel, &output, crate::gui::explain::EQUATION);
         assert_eq!(panel.explorer.trail(), ["model.pullout_Nm"]);
         let output = click(&mut panel, &output, "End-effect factor");
         assert_eq!(panel.explorer.trail(), ["model.pullout_Nm", "model.f_end"]);

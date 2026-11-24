@@ -10,7 +10,10 @@
 //! D-18). The texts under the headings are ones the screen drew before this panel: a
 //! check's entry holds its guide's Problem, its Why sentence, its fixes and their notes, each
 //! with the links it had; a tile's entry holds its result's help text and, for the hot-low
-//! torque, the torque card (decision C-10).
+//! torque, the torque card (decision C-10). A dimension tag, a callout row and a results-table
+//! row select their result too (spec 5.2): its value and its name as the table shows them, its
+//! help, the check of its row, the stored-3D line where its row reads those fields, its row's
+//! lesson and its Equation link; a check's own result selects the check.
 //!
 //! A row of the Size column selects its entry when touched (spec 4.3, 5.2): what the control is
 //! (its label's hover), the lines the column drew under it (its hint, what sets it, the floor,
@@ -31,14 +34,14 @@
 
 use crate::engine::explain::notes::Note;
 use crate::engine::explain::notes::{NOTES, shown_when};
-use crate::engine::meta::{InputSet, Value};
+use crate::engine::meta::{InputSet, ResultSet, Value};
 use crate::engine::size_controls::dimensions;
 use crate::engine::sizing::FreeVariable;
 use crate::gui::checks::{mark_level, state_mark};
 use crate::gui::dashboard::why_note_link;
 use crate::gui::dashboard::{
-    DOES_NOT_FIT, FITS, Level, MARKER_LEGEND, STORED_3D_LABEL, STORED_3D_NOTE, badging_check,
-    learn_ui, line_ui, result_info, shown_lines,
+    DOES_NOT_FIT, FITS, Level, MARKER_LEGEND, STORED_3D_LABEL, STORED_3D_NOTE, STORED_3D_ROWS,
+    badging_check, learn_ui, line_ui, result_info, shown_lines, shown_text,
 };
 use crate::gui::explorer::{
     NoteLink, NoteView, START_HERE_BUTTON, WATCH_OUT, WHAT_TO_CHANGE, explains_ui, note_ui,
@@ -53,8 +56,8 @@ use crate::gui::input_ui::weak_line;
 use crate::gui::inputs::{InputCatalogue, value_text};
 use crate::gui::look;
 use crate::gui::plain_text::{
-    DIAMETER_HINT_KEY, LENGTH_HINT_KEY, MINIMUM_OD_HINT_KEY, NO_SPREADSHEET_CELL, help_for,
-    hint_for, label_for,
+    DIAMETER_HINT_KEY, LENGTH_HINT_KEY, MINIMUM_OD_HINT_KEY, NO_SPREADSHEET_CELL, display_label,
+    help_for, hint_for, label_for,
 };
 use crate::gui::readouts::{Readouts, registry};
 use crate::gui::size_controls::{
@@ -116,7 +119,8 @@ pub enum Selection {
     Nothing,
     /// A check, by its guide's check path ([`CheckGuide::check`]).
     Check(&'static str),
-    /// A result, by its path: one of the four tiles ([`Tile::path`]).
+    /// A result, by its path: one of the four tiles ([`Tile::path`]), a dimension tag or a
+    /// callout row of the drawing, a row of the results table.
     Result(&'static str),
     /// A teaching note, by its id.
     Note(&'static str),
@@ -624,30 +628,46 @@ fn numbers_ui(
     }
 }
 
-/// The entry of the result at `path`, one of the tiles' (spec 5.3): its number and its name;
-/// what it is (the result's help text); for the hot-low torque, what a change does (the
-/// torque card, [`card_ui`]); the check that badges its row, a link that selects it; and the
-/// foot links, with the spreadsheet details its cell. Nothing for a path that is no tile's.
+/// The entry of the result at `path` (spec 5.3): a tile's, a dimension's, a callout's or a
+/// results-table row's. Its number and its name (a tile's as the tile draws them, another's as
+/// its results-table row does); what it is (the result's help text); for the hot-low torque,
+/// what a change does (the torque card, [`card_ui`]); the check that badges its row, a link
+/// that selects it; for a row that reads the stored 3D fields, the line that says so ("Watch
+/// out"); and the foot links (its row's lesson where it has one, the Equation link where it
+/// has an equation), with the spreadsheet details its cell. Nothing for a path that is no
+/// result.
 fn result_ui(
     ui: &mut egui::Ui,
     path: &'static str,
     shown: &Shown<'_>,
     readouts: &mut Readouts,
 ) -> Option<Asked> {
-    let tile = Selection::Result(path).tile()?;
+    let info = result_info(path)?;
+    let tile = Selection::Result(path).tile();
     ui.horizontal_wrapped(|ui| {
-        match tile.number(shown.inputs, shown.results) {
-            Ok(number) => ui.strong(number),
-            Err(words) => ui.weak(words),
-        };
-        ui.colored_label(look::quiet_text(ui.visuals()), tile.label(shown.results));
+        let quiet = look::quiet_text(ui.visuals());
+        match tile {
+            Some(tile) => {
+                match tile.number(shown.inputs, shown.results) {
+                    Ok(number) => ui.strong(number),
+                    Err(words) => ui.weak(words),
+                };
+                ui.colored_label(quiet, tile.label(shown.results));
+            }
+            None => {
+                let value = shown.results.get(path).unwrap_or(Value::None);
+                let text = shown_text(path, &value);
+                ui.strong(value_with_unit(&value, text, info.meta.unit));
+                ui.colored_label(quiet, display_label(path, info.meta.label));
+            }
+        }
     });
     let help = help_for(path);
     if !help.is_empty() {
         heading(ui, WHAT_IT_IS);
         ui.add(egui::Label::new(help).wrap());
     }
-    if tile == Tile::HotLow
+    if tile == Some(Tile::HotLow)
         && let Some(consequences) = shown.consequences
     {
         heading(ui, WHAT_A_CHANGE_DOES);
@@ -658,11 +678,24 @@ fn result_ui(
         heading(ui, CHECKS_IT_TOUCHES);
         asked = check_link_ui(ui, guide, shown);
     }
-    let learn = row_learn(path).unwrap_or(Learn::None(""));
+    if STORED_3D_ROWS.contains(&path) {
+        heading(ui, WATCH_OUT);
+        ui.weak(STORED_3D_LABEL).on_hover_text(STORED_3D_NOTE);
+    }
     let cell = readouts
         .show_details()
-        .then(|| cell_line(result_info(path).and_then(|info| info.cell.as_deref())));
-    asked.or(foot_ui(ui, Some(learn), Some(path), cell, readouts))
+        .then(|| cell_line(info.cell.as_deref()));
+    let equation = registry().equation_for(path).map(|_| path);
+    asked.or(foot_ui(ui, row_learn(path), equation, cell, readouts))
+}
+
+/// What a click on the result at `path` selects (spec 5.2): the check whose own result it is
+/// ([`guidance::guide`]), else the result.
+pub(crate) fn result_selection(path: &'static str) -> Selection {
+    match guidance::guide(path) {
+        Some(guide) => Selection::Check(guide.check),
+        None => Selection::Result(path),
+    }
 }
 
 /// The torque card (slice 3 spec 6.1; decision C-10 puts it here): its heading with the Why
@@ -2119,5 +2152,143 @@ mod tests {
         assert!(result_info(FIT_CHECK).is_none());
         let pullout = result_info(Tile::Pullout.path()).and_then(|info| info.cell.clone());
         assert!(pullout.is_some(), "the pull-out has a cell");
+    }
+
+    // ------------------------------------------------------------------ any result's entry
+
+    /// The results the tests below select: every dashboard row (the four tiles among them),
+    /// every dimension of the drawing of `inputs` and the first results-table row with no
+    /// equation record, each one the screen shows while the shaft-clamp section is paused.
+    fn selected_results(inputs: &DesignInputs) -> Vec<&'static str> {
+        use crate::engine::clamps;
+        let results = compute_all(inputs);
+        let shown = |path: &&str| !clamps::hides(path, clamps::PAUSED);
+        let recordless = crate::gui::results_table::table_entries()
+            .iter()
+            .map(|entry| entry.path.as_str())
+            .filter(shown)
+            .find(|path| registry().equation_for(path).is_none())
+            .expect("a result with no equation record");
+        let geometry = crate::gui::geometry::geometry(inputs, &results, clamps::PAUSED);
+        DASHBOARD
+            .iter()
+            .map(|&(path, _)| path)
+            .chain(geometry.callouts().map(|callout| callout.path))
+            .chain(std::iter::once(recordless))
+            .filter(shown)
+            .collect()
+    }
+
+    #[test]
+    fn a_result_s_entry_is_its_value_label_help_check_watch_out_lesson_and_equation() {
+        // Spec 5.1 to 5.3 for any result (a dimension tag, a callout row, a results-table row):
+        // its value as its results-table row shows it, leading its label; "What it is" (its
+        // help); the check of its dashboard row; for a row that reads the stored 3D fields, the
+        // line that says so under "Watch out"; its row's lesson where it has one; the Equation
+        // link where it has an equation record. A tile's keeps the tile's number and label.
+        let ctx = egui::Context::default();
+        let inputs = DesignInputs::default();
+        let results = compute_all(&inputs);
+        for path in selected_results(&inputs) {
+            let (output, _, _) = frames(&ctx, &inputs, Selection::Result(path), false, vec![]);
+            let texts = drawn_texts(&output);
+            let has = |text: &str| texts.iter().any(|t| t == text);
+            let info = result_info(path).expect("a result");
+            let label = match Selection::Result(path).tile() {
+                Some(tile) => tile.label(&results),
+                None => {
+                    let value = results.get(path).unwrap_or(Value::None);
+                    let shown = value_with_unit(&value, shown_text(path, &value), info.meta.unit);
+                    assert!(has(&shown), "{path}: {shown:?} in {texts:?}");
+                    display_label(path, info.meta.label).to_owned()
+                }
+            };
+            assert!(has(&label), "{path}: {label:?} in {texts:?}");
+            let help = help_for(path);
+            assert_eq!(has(WHAT_IT_IS), !help.is_empty(), "{path}");
+            assert!(help.is_empty() || has(help), "{path}: {texts:?}");
+            assert_eq!(
+                has(CHECKS_IT_TOUCHES),
+                badging_check(path).is_some(),
+                "{path}"
+            );
+            let stored_3d = STORED_3D_ROWS.contains(&path);
+            assert_eq!(has(WATCH_OUT), stored_3d, "{path}");
+            assert_eq!(has(STORED_3D_LABEL), stored_3d, "{path}");
+            assert_eq!(has(FULL_LESSON), row_learn(path).is_some(), "{path}");
+            let equation = registry().equation_for(path).is_some();
+            assert_eq!(has(EQUATION), equation, "{path}");
+            assert!(
+                !has(WHAT_A_CHANGE_DOES),
+                "{path}: no card without the consequences"
+            );
+        }
+    }
+
+    #[test]
+    fn a_result_s_equation_link_asks_for_its_equation_and_its_lesson_for_its_note() {
+        // Spec 5.5: an entry's Equation link opens the Equation panel at its result, and the
+        // selection stays. Part 1's decision D-17: the three dashboard rows no check holds
+        // (the pull-out at 20 °C, the slip swing at the gearbox input, the cup's outside
+        // diameter) lead from their entry's lesson line where the dashboard's Why link did,
+        // one click from their results-table row.
+        let inputs = DesignInputs::default();
+        const FACE_GAP_RESULT: &str = "model.face_gap_mm";
+        let (asked, events) = click(&inputs, Selection::Result(FACE_GAP_RESULT), EQUATION);
+        assert_eq!(asked, Some(Asked::Equation(FACE_GAP_RESULT)));
+        assert_eq!(events, ReadoutEvents::default());
+        for path in [
+            "model.pullout_20C_Nm",
+            "model.gearbox_input_ripple_Nm",
+            "model.cup_od_mm",
+        ] {
+            assert_eq!(badging_check(path), None, "{path}");
+            let learn = row_learn(path).expect("a dashboard row");
+            let (asked, events) = click(&inputs, Selection::Result(path), &learn_link_text(learn));
+            assert_eq!(asked, None, "{path}");
+            let want = match learn {
+                Learn::Note(id) => Some(id),
+                Learn::Assumption(_) | Learn::None(_) => None,
+            };
+            assert_eq!(events.note, want, "{path}");
+        }
+    }
+
+    #[test]
+    fn a_result_that_is_a_check_s_own_selects_the_check_and_any_other_the_result() {
+        // Spec 5.2: a click on a results-table row "selects that result or check". The row of
+        // a check's own result (its verdict) selects the check, whose entry holds its Problem,
+        // Why and fixes; any other row selects the result.
+        let checks: Vec<&CheckGuide> = CHECK_GUIDES
+            .iter()
+            .filter(|guide| result_info(guide.check).is_some())
+            .collect();
+        assert!(!checks.is_empty());
+        for guide in checks {
+            assert_eq!(result_selection(guide.check), Selection::Check(guide.check));
+        }
+        for entry in crate::gui::results_table::table_entries() {
+            let path = entry.path.as_str();
+            if guidance::guide(path).is_none() {
+                assert_eq!(result_selection(path), Selection::Result(path), "{path}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_result_s_entry_text_has_glyphs_and_names_no_paused_clamp() {
+        // Spec 8.3: every text a result's entry draws, with the spreadsheet details on designs
+        // where each check fails, has its glyphs in the app's font, and none names the paused
+        // clamp.
+        let ctx = glyph_context();
+        for inputs in designs() {
+            for path in selected_results(&inputs) {
+                let (output, _, _) = frames(&ctx, &inputs, Selection::Result(path), true, vec![]);
+                for text in drawn_texts(&output) {
+                    assert_glyphs(&ctx, &text, path);
+                    assert!(!text.to_lowercase().contains("clamp"), "{path}: {text}");
+                }
+            }
+        }
     }
 }

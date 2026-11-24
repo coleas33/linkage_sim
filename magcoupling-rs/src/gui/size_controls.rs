@@ -167,9 +167,9 @@ pub(crate) fn touched(response: &egui::Response) -> bool {
         || response.drag_started()
         || response.changed()
         || (response.has_focus()
-            && response.ctx.input(|i| {
-                i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Space)
-            }))
+            && response
+                .ctx
+                .input(|i| i.key_pressed(egui::Key::Enter) || i.key_pressed(egui::Key::Space)))
 }
 
 /// A control's label, in `color` where one is given, which shows its row's help

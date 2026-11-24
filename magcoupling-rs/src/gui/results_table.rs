@@ -747,10 +747,11 @@ pub fn row_tooltip(entry: &TableEntry, value: &Value, show_details: bool) -> Str
 /// One table row: label, value with unit (after the badge of a check's `level`), and with the
 /// spreadsheet details the workbook cell and the marker, in columns `widths` wide
 /// ([`column_widths`]; the path is in the hover text, which is built only while the row is
-/// hovered). The whole row is a readout: hover it for its equation, click it to open it.
+/// hovered). The whole row is a readout: hover it for its equation, click it to select its
+/// result for the Explain panel (UX overhaul spec 5.2).
 fn row_ui(
     ui: &mut egui::Ui,
-    entry: &TableEntry,
+    entry: &'static TableEntry,
     results: &DesignResults,
     level: Option<Level>,
     height: f32,
@@ -796,7 +797,7 @@ fn row_ui(
             cell(ui, marker, &entry.marker, None);
         }
     });
-    readouts.show_over(ui, row.response.rect, &entry.path, |show_details| {
+    readouts.select_over(ui, row.response.rect, &entry.path, |show_details| {
         row_tooltip(entry, &value, show_details)
     });
 }

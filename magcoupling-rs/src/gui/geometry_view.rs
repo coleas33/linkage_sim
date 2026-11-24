@@ -6,7 +6,7 @@
 //! callout's text. The line and the text are readouts ([`crate::gui::readouts::Readouts`]):
 //! hovering either shows the hover text of the result it shows
 //! ([`crate::gui::dashboard::hover_text`]) and its equation, built only while hovered, and a
-//! click opens it in the Equation panel. A violated callout is red, one that is not a number amber (decision M42-4);
+//! click selects its result for the Explain panel (UX overhaul spec 5.2). A violated callout is red, one that is not a number amber (decision M42-4);
 //! the space claim is dashed, an exceeded axis red. The view is rebuilt from the design shown on
 //! every frame, so it follows a slider while it is dragged.
 //!
@@ -305,14 +305,15 @@ fn paint_view(
             ui.id().with(("geometry_dimension", callout.tag)),
             Sense::click(),
         );
-        readouts.show(ui, response, callout.path, |show_details| {
+        readouts.select(ui, response, callout.path, |show_details| {
             callout_text(callout, show_details)
         });
         dimensions.push((callout.tag, rect));
     }
 }
 
-/// Paints a dimension line with its arrowheads and tag; returns its hover area.
+/// Paints a dimension line with its arrowheads and tag; returns its hover area: the line's and
+/// the tag's, so a click on the tag selects its result (UX overhaul spec 4.4).
 fn paint_dimension(
     painter: &egui::Painter,
     callout: &Callout,
@@ -331,7 +332,7 @@ fn paint_dimension(
     }
     let away = if along == Vec2::ZERO { Vec2::X } else { along };
     // Past the outer end the tag lands on a block or the liner: on a plate, it stays readable.
-    plated_text(
+    let tag = plated_text(
         painter,
         b + away * 9.0,
         callout.tag.to_string(),
@@ -339,11 +340,11 @@ fn paint_dimension(
         color,
         visuals.extreme_bg_color,
     );
-    Rect::from_two_pos(a, b).expand(6.0)
+    Rect::from_two_pos(a, b).expand(6.0).union(tag)
 }
 
 /// Paints `text` centred at `at` on a plate of `plate` one point larger than the text, so it
-/// reads over whatever is drawn beneath it.
+/// reads over whatever is drawn beneath it; returns the plate.
 pub(crate) fn plated_text(
     painter: &egui::Painter,
     at: Pos2,
@@ -351,11 +352,12 @@ pub(crate) fn plated_text(
     font: egui::FontId,
     color: Color32,
     plate: Color32,
-) {
+) -> Rect {
     let galley = painter.layout_no_wrap(text, font, color);
     let rect = egui::Align2::CENTER_CENTER.anchor_size(at, galley.size());
     painter.rect_filled(rect.expand(1.0), 0.0, plate);
     painter.galley(rect.min, galley, color);
+    rect.expand(1.0)
 }
 
 /// The hover text of the callout's result, with the spreadsheet details when `show_details`.
@@ -384,7 +386,7 @@ fn list_ui(ui: &mut egui::Ui, g: &Geometry, readouts: &mut Readouts) {
                     })
                     .response
                     .rect;
-                readouts.show_over(ui, rect, callout.path, |show_details| {
+                readouts.select_over(ui, rect, callout.path, |show_details| {
                     callout_text(callout, show_details)
                 });
             }
