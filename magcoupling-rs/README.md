@@ -334,10 +334,13 @@ Since BL-096 the left column no longer changes with the centre tab (design 4.3).
 is the Size column: the six size controls, then two folds, **Detailed inputs** (the order toggle,
 the filter box, the Key design group and every input group, now their only home) and
 **Assumptions**. Both are shut at first, drawn with no indent and scroll with the
-column (BL-091); a fold opened on one tab is open on the next. An opened fold is no wider than the
-inputs side was: 320 points in egui's default font; in the app's own font the column still grows by
-10 to 12 points when a fold first opens, and more with a filter or an opened input group (up to
-443.1 points, where two tabs cut text at 1024 x 700: BL-099). The tabs "Design inputs" and
+column (BL-091); a fold opened on one tab is open on the next. With both folds open, an input the
+filter keeps is drawn in each (the harmonics dropdown of the assumption "Harmonics included"): the
+two rows are separate controls, and either dropdown opens and takes a pick. An opened fold is no
+wider than the inputs side was: 320 points in egui's default font; in the app's own font the column
+still grows by 10 to 12 points when a fold first opens, and more with a filter or an opened input
+group (up to 443.1 points, where two tabs cut text at 1024 x 700; an opened group widens it in
+egui's default font too, to 418.8 points: BL-099). The tabs "Design inputs" and
 "Assumptions" that swapped the side are gone. While a trace is on, its banner and its **Clear
 trace** button sit at the column's foot on every tab, the opening one too. A fix link on the
 Outside diameter still opens the Size and torque tab and scrolls the column back to its slider.

@@ -1373,7 +1373,11 @@ impl MagcouplingPanel {
         egui::CollapsingHeader::new(ASSUMPTIONS_FOLD)
             .default_open(false)
             .open((assumption == Some(true)).then_some(true))
-            .show_unindented(ui, |ui| self.assumptions_ui(ui, readouts));
+            // An unindented body has no id of its own: without one here, a row the filter
+            // keeps in the fold above would share its widgets' ids with its row in this one.
+            .show_unindented(ui, |ui| {
+                ui.push_id(ASSUMPTIONS_FOLD, |ui| self.assumptions_ui(ui, readouts));
+            });
     }
 
     /// The Required torque row that leads the Size column (UX overhaul spec 4.3; it was the
@@ -1924,9 +1928,12 @@ mod tests {
             }
         }
 
+        /// One frame of the panel, in which egui reports no ID clash ([`assert_no_id_clash`]).
         pub(crate) fn frame(&mut self, events: Vec<egui::Event>) -> egui::FullOutput {
             let panel = &mut self.panel;
-            sized_frame(&self.ctx, self.screen, events, |ui| panel.ui(ui))
+            let output = sized_frame(&self.ctx, self.screen, events, |ui| panel.ui(ui));
+            assert_no_id_clash(&output);
+            output
         }
 
         /// A frame `dt` seconds after the last one.
@@ -2057,6 +2064,17 @@ mod tests {
                 other => panic!("{path}: {other:?}"),
             }
         }
+    }
+
+    /// Panics when `output` draws egui's ID clash warning: the text a debug build, as the tests
+    /// are, paints over two widgets drawn with one id ("First use of widget ID ..."). A release
+    /// build paints nothing, and neither widget takes a click (RS-1 of the 2026-11-26 review).
+    fn assert_no_id_clash(output: &egui::FullOutput) {
+        let clashes: Vec<String> = drawn_texts(output)
+            .into_iter()
+            .filter(|t| t.contains("use of") && t.contains(" ID "))
+            .collect();
+        assert!(clashes.is_empty(), "{clashes:?}");
     }
 
     /// The first `text` drawn in the left column of `output`.
@@ -7826,6 +7844,42 @@ mod tests {
     }
 
     #[test]
+    fn a_dropdown_drawn_in_both_folds_opens_and_takes_its_pick() {
+        // RS-1 of the 2026-11-26 review: the two folds drew their rows unindented, in bodies
+        // that shared one id, so the harmonics dropdown, drawn in both while the filter keeps
+        // its row and the Assumptions fold is open, was one widget id twice: no click opened
+        // either, and a debug build painted egui's ID clash warning over the column.
+        use crate::engine::model::MAX_HARMONIC_CHOICES;
+        let text = |code: i64| {
+            let choice = MAX_HARMONIC_CHOICES.iter().find(|(c, _)| *c == code);
+            choice.expect("a choice of the harmonics").1
+        };
+        let mut harness = Harness::on_screen(TALL);
+        harness.panel.input_filter = "harm".to_owned();
+        harness.click_fold(ASSUMPTIONS_FOLD);
+        // The dropdown in the filtered list, then the one under Assumptions.
+        for (index, (from, to)) in [(5, 7), (7, 9)].into_iter().enumerate() {
+            let output = harness.frame(Vec::new());
+            let dropdowns: Vec<egui::Rect> = text_rects(&output, text(from))
+                .into_iter()
+                .filter(|rect| rect.right() <= INPUTS_WIDTH)
+                .collect();
+            assert_eq!(dropdowns.len(), 2, "the row is drawn in both folds");
+            harness.click(dropdowns[index].center());
+            // The popup sizes itself on its first frame and paints on the next.
+            let output = harness.frame(Vec::new());
+            assert!(
+                egui::Popup::is_any_open(&harness.ctx),
+                "dropdown {index} opens"
+            );
+            let pick = text_rect(&output, text(to)).expect("the choice is listed");
+            harness.click(pick.center());
+            let harmonics = harness.panel.inputs.coupling.max_harmonic;
+            assert_eq!(harmonics, to, "dropdown {index}'s pick");
+        }
+    }
+
+    #[test]
     fn the_detailed_inputs_fold_scrolls_with_the_size_column_to_its_last_group() {
         // BL-091 (UXQ-2 of the 2026-11-23 review): the fold drew the design inputs' own scroll
         // area inside the column's, a short pane the column could not scroll past. Opened at
@@ -11162,11 +11216,7 @@ mod tests {
                     .default_size([1100.0, 1200.0])
                     .show(ctx, |ui| panel.ui(ui));
             });
-            let clashes: Vec<String> = drawn_texts(&output)
-                .into_iter()
-                .filter(|t| t.contains("use of") && t.contains(" ID "))
-                .collect();
-            assert!(clashes.is_empty(), "{clashes:?}");
+            assert_no_id_clash(&output);
             output
         };
         let click = |panel: &mut MagcouplingPanel, output: &egui::FullOutput, text: &str| {
