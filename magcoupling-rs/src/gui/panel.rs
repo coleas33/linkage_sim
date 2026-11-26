@@ -1330,8 +1330,14 @@ impl MagcouplingPanel {
             }
             ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
                 ui.separator();
+                // Each view in a scroll area of the side's: neither draws its own (BL-091).
                 match self.inputs_view {
-                    InputsView::Design => self.design_inputs_ui(ui, readouts),
+                    InputsView::Design => {
+                        egui::ScrollArea::vertical()
+                            .id_salt("magcoupling_inputs_scroll")
+                            .auto_shrink([false, false])
+                            .show(ui, |ui| self.design_inputs_ui(ui, readouts));
+                    }
                     InputsView::Assumptions => {
                         egui::ScrollArea::vertical()
                             .id_salt("magcoupling_assumptions_scroll")
@@ -1487,7 +1493,9 @@ impl MagcouplingPanel {
     /// The design inputs: the order toggle and the filter box, then the Key design group (each
     /// row with its hint line, slice 2 spec 3.5) and every input by group in the order chosen
     /// (decision O-1), each workflow group's advanced sections under its closed Advanced heading;
-    /// while the filter holds more than blanks, the matching inputs alone.
+    /// while the filter holds more than blanks, the matching inputs alone. No scroll area of its
+    /// own (BL-091): the Size column's fold scrolls with the column, the inputs side wraps it in
+    /// one.
     fn design_inputs_ui(&mut self, ui: &mut egui::Ui, readouts: &Readouts) {
         // Every input but those the paused shaft-clamp section hides.
         let catalogue = InputCatalogue::shown(self.clamps_paused);
@@ -1532,66 +1540,61 @@ impl MagcouplingPanel {
             InputOrder::Workflow => "workflow",
             InputOrder::Workbook => "group",
         };
-        egui::ScrollArea::vertical()
-            .id_salt("magcoupling_inputs_scroll")
-            .auto_shrink([false, false])
+        egui::CollapsingHeader::new(KEY_DESIGN_HEADING)
+            .id_salt("key_design")
+            .default_open(true)
+            .open(open_key_design.then_some(true))
             .show(ui, |ui| {
-                egui::CollapsingHeader::new(KEY_DESIGN_HEADING)
-                    .id_salt("key_design")
-                    .default_open(true)
-                    .open(open_key_design.then_some(true))
-                    .show(ui, |ui| {
-                        self.sizing_ui(ui, readouts);
-                        self.key_widgets.clear();
-                        for entry in &catalogue.key_design {
-                            let widget = self.input_row_ui(ui, entry, readouts);
-                            self.key_widgets.push((entry.path.as_str(), widget));
-                            self.design_widgets.push(widget);
-                            hint_line(ui, &entry.path);
-                        }
-                    });
-                for group in groups {
-                    let (open_group, open_advanced) = match focused {
-                        Some((name, advanced)) if name == group.name => (true, advanced),
-                        _ => (false, false),
-                    };
-                    // A trace counts the rows it frames in each group, closed or open.
-                    let traced = self.trace.as_ref().map_or(0, |trace| {
-                        trace.count_in(
-                            group
-                                .sections
-                                .iter()
-                                .flat_map(|s| s.entries.iter())
-                                .map(|e| e.path.as_str()),
-                        )
-                    });
-                    let title = if traced > 0 {
-                        format!("{} ({traced} traced)", group.label)
-                    } else {
-                        group.label.to_owned()
-                    };
-                    egui::CollapsingHeader::new(title)
-                        .id_salt((salt, &group.name))
-                        .default_open(false)
-                        .open(open_group.then_some(true))
-                        .show(ui, |ui| {
-                            for section in group.plain_sections() {
-                                self.section_ui(ui, group, section, readouts);
-                            }
-                            if group.has_advanced() {
-                                egui::CollapsingHeader::new(ADVANCED_HEADING)
-                                    .id_salt(("advanced", &group.name))
-                                    .default_open(false)
-                                    .open(open_advanced.then_some(true))
-                                    .show(ui, |ui| {
-                                        for section in group.advanced_sections() {
-                                            self.section_ui(ui, group, section, readouts);
-                                        }
-                                    });
-                            }
-                        });
+                self.sizing_ui(ui, readouts);
+                self.key_widgets.clear();
+                for entry in &catalogue.key_design {
+                    let widget = self.input_row_ui(ui, entry, readouts);
+                    self.key_widgets.push((entry.path.as_str(), widget));
+                    self.design_widgets.push(widget);
+                    hint_line(ui, &entry.path);
                 }
             });
+        for group in groups {
+            let (open_group, open_advanced) = match focused {
+                Some((name, advanced)) if name == group.name => (true, advanced),
+                _ => (false, false),
+            };
+            // A trace counts the rows it frames in each group, closed or open.
+            let traced = self.trace.as_ref().map_or(0, |trace| {
+                trace.count_in(
+                    group
+                        .sections
+                        .iter()
+                        .flat_map(|s| s.entries.iter())
+                        .map(|e| e.path.as_str()),
+                )
+            });
+            let title = if traced > 0 {
+                format!("{} ({traced} traced)", group.label)
+            } else {
+                group.label.to_owned()
+            };
+            egui::CollapsingHeader::new(title)
+                .id_salt((salt, &group.name))
+                .default_open(false)
+                .open(open_group.then_some(true))
+                .show(ui, |ui| {
+                    for section in group.plain_sections() {
+                        self.section_ui(ui, group, section, readouts);
+                    }
+                    if group.has_advanced() {
+                        egui::CollapsingHeader::new(ADVANCED_HEADING)
+                            .id_salt(("advanced", &group.name))
+                            .default_open(false)
+                            .open(open_advanced.then_some(true))
+                            .show(ui, |ui| {
+                                for section in group.advanced_sections() {
+                                    self.section_ui(ui, group, section, readouts);
+                                }
+                            });
+                    }
+                });
+        }
     }
 
     /// One section of a group: its heading ([`InputSection::heading_in`]: none for the group's
@@ -1625,19 +1628,14 @@ impl MagcouplingPanel {
         let shown: usize = matches.iter().map(|m| m.entries.len()).sum();
         let total = InputCatalogue::shown(self.clamps_paused).all().count();
         ui.weak(format!("{shown} of {total} inputs"));
-        egui::ScrollArea::vertical()
-            .id_salt("magcoupling_inputs_filter_scroll")
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                for run in &matches {
-                    ui.add_space(4.0);
-                    ui.strong(run.heading());
-                    for &entry in &run.entries {
-                        let widget = self.input_row_ui(ui, entry, readouts);
-                        self.design_widgets.push(widget);
-                    }
-                }
-            });
+        for run in &matches {
+            ui.add_space(4.0);
+            ui.strong(run.heading());
+            for &entry in &run.entries {
+                let widget = self.input_row_ui(ui, entry, readouts);
+                self.design_widgets.push(widget);
+            }
+        }
     }
 
     /// One input row; applies its edit. Returns the id of its main widget. In Torque →
@@ -7313,6 +7311,138 @@ mod tests {
         }
         let rect = text_rect(&output, last).expect("the last rationale is drawn");
         assert!(rect.bottom() <= size.y, "{rect:?} below the window's foot");
+    }
+
+    #[test]
+    fn the_detailed_inputs_fold_scrolls_with_the_size_column_to_its_last_group() {
+        // BL-091 (UXQ-2 of the 2026-11-23 review): the fold drew the design inputs' own scroll
+        // area inside the column's, a short pane the column could not scroll past. Opened at
+        // 1024x700, a wheel over the column brings the last group's heading into the window,
+        // and a row asked for (a leaf term, a fix link) still scrolls into view, through the
+        // column's own scroll area.
+        let size = egui::vec2(1024.0, 700.0);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+        let mut harness = size_tab(size, DesignInputs::default());
+        let output = harness.frame(Vec::new());
+        let header = text_rects(&output, DETAILED_INPUTS)
+            .into_iter()
+            .find(|rect| rect.right() <= INPUTS_WIDTH)
+            .expect("the fold's header in the Size column");
+        harness.click(header.center());
+        let last = InputCatalogue::get()
+            .workflow
+            .last()
+            .expect("a workflow group")
+            .label;
+        let output = harness.frame(Vec::new());
+        assert!(
+            shown_whole(&output, last, screen).is_empty(),
+            "the last group is in view before a scroll: the test would prove nothing"
+        );
+        harness.frame(vec![egui::Event::PointerMoved(header.center())]);
+        harness.frame(vec![egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -20000.0),
+            modifiers: egui::Modifiers::NONE,
+        }]);
+        // egui spreads a wheel step over several frames.
+        let mut output = harness.frame(Vec::new());
+        for _ in 0..20 {
+            output = harness.frame(Vec::new());
+        }
+        assert_eq!(
+            shown_whole(&output, last, screen).len(),
+            1,
+            "the last group's heading is in the window"
+        );
+        // From there a row asked for near the fold's top (the face gap, a Key design row)
+        // scrolls back into view.
+        let gap = label_for(FACE_GAP);
+        assert!(
+            shown_whole(&output, gap, screen)
+                .iter()
+                .all(|rect| rect.left() > INPUTS_WIDTH),
+            "the face gap's rows are scrolled out of the column"
+        );
+        // The pointer leaves: what is left of the wheel step would end the scroll to the row.
+        harness.frame(vec![egui::Event::PointerGone]);
+        harness.panel.explorer.focus_input(FACE_GAP);
+        let mut output = harness.frame(Vec::new());
+        for _ in 0..30 {
+            output = harness.frame(Vec::new());
+        }
+        let focus = focus_rects(&output);
+        assert!(
+            shown_whole(&output, gap, screen)
+                .iter()
+                .any(|row| focus.iter().any(|f| f.contains_rect(*row))),
+            "the face gap's framed row is in the window: {focus:?}"
+        );
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
+    fn the_filtered_inputs_scroll_with_the_size_column_to_their_last_row() {
+        // BL-091's other view: the filter's matches drew in a scroll area of their own too, the
+        // same short pane inside the column's. With the fold open at 1024x700 and a filter that
+        // lists every input, a wheel over the column brings the last row into the window.
+        let size = egui::vec2(1024.0, 700.0);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+        let mut harness = size_tab(size, DesignInputs::default());
+        let output = harness.frame(Vec::new());
+        let header = text_rects(&output, DETAILED_INPUTS)
+            .into_iter()
+            .find(|rect| rect.right() <= INPUTS_WIDTH)
+            .expect("the fold's header in the Size column");
+        harness.click(header.center());
+        // Every input's path holds a dot: the filter lists them all.
+        harness.panel.input_filter = ".".to_owned();
+        let groups = InputCatalogue::get().groups_in(harness.panel.input_order);
+        let matches = filter_inputs(groups, ".");
+        assert_eq!(
+            matches.iter().map(|run| run.entries.len()).sum::<usize>(),
+            InputCatalogue::get().all().count()
+        );
+        let last = matches
+            .last()
+            .and_then(|run| run.entries.last())
+            .expect("a match");
+        // The last row's label, and how many rows bear it (two inputs do, both at the list's end).
+        let last = label_for(&last.path);
+        let copies = matches
+            .iter()
+            .flat_map(|run| &run.entries)
+            .filter(|entry| label_for(&entry.path) == last)
+            .count();
+        let in_column = |output: &egui::FullOutput| {
+            shown_whole(output, last, screen)
+                .into_iter()
+                .filter(|rect| rect.right() <= INPUTS_WIDTH)
+                .count()
+        };
+        let output = harness.frame(Vec::new());
+        assert_eq!(
+            in_column(&output),
+            0,
+            "the last row is in view before a scroll: the test would prove nothing"
+        );
+        harness.frame(vec![egui::Event::PointerMoved(header.center())]);
+        harness.frame(vec![egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: egui::vec2(0.0, -200000.0),
+            modifiers: egui::Modifiers::NONE,
+        }]);
+        // egui spreads a wheel step over several frames.
+        let mut output = harness.frame(Vec::new());
+        for _ in 0..60 {
+            output = harness.frame(Vec::new());
+        }
+        assert_eq!(
+            in_column(&output),
+            copies,
+            "the filter's last row is in the window"
+        );
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
     }
 
     #[test]
