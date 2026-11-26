@@ -7222,6 +7222,66 @@ mod tests {
     }
 
     #[test]
+    fn tab_through_the_size_column_selects_nothing_and_sets_no_minimum_od() {
+        // BL-093 for every row of the Size column, the left column of every tab (UX overhaul
+        // spec 4.3): the keyboard's focus passes each slider and its value box and selects
+        // nothing. The Minimum OD's floor at the spreadsheet's design is off the one decimal
+        // its box shows, and egui writes a box's text back when the focus leaves it: that
+        // write is no touch and sets no Minimum OD. An arrow key on the slider still does.
+        use crate::gui::size_controls::slider_minimum;
+        let mut harness = Harness::first_view();
+        let floor = slider_minimum(
+            &dimensions(harness.panel.inputs()).expect("size controls"),
+            None,
+        );
+        assert_ne!(
+            floor,
+            (floor * 10.0).round() / 10.0,
+            "the floor is on its box's decimals: the test would prove nothing"
+        );
+        // The six sliders: the four controls, Minimum OD, then Required (size_column_ui).
+        let sliders: Vec<egui::Id> = harness.panel.design_widgets[..6].to_vec();
+        let mut passed = vec![false; sliders.len()];
+        let mut presses = 0;
+        // Until the focus has been on every slider, and two presses more: past the last
+        // slider's value box.
+        let mut after = 0;
+        while after < 2 {
+            harness.frame(key_tap(egui::Key::Tab));
+            harness.frame(Vec::new());
+            presses += 1;
+            assert!(presses < 60, "Tab passes the Size column: {passed:?}");
+            for (slider, passed) in sliders.iter().zip(&mut passed) {
+                *passed |= harness.ctx.memory(|m| m.has_focus(*slider));
+            }
+            after += usize::from(passed.iter().all(|&passed| passed));
+            assert_eq!(
+                harness.panel.selection,
+                Selection::Nothing,
+                "press {presses}"
+            );
+        }
+        assert_eq!(harness.panel.minimum_diameter_mm, None);
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+        assert_eq!(harness.panel.history.undo_len(), 0);
+        // The Minimum OD's slider, focused: an arrow key moves it from the value its box
+        // shows, and that is a touch.
+        let minimum = sliders[4];
+        harness.ctx.memory_mut(|m| m.request_focus(minimum));
+        harness.frame(Vec::new());
+        harness.frame(key_tap(egui::Key::ArrowLeft));
+        harness.frame(Vec::new());
+        let shown = (floor * 10.0).round() / 10.0;
+        let set = harness.panel.minimum_diameter_mm.expect("a Minimum OD");
+        assert!((set - (shown - 0.1)).abs() < 1e-9, "{set} from {shown}");
+        assert_eq!(
+            harness.panel.selection,
+            Selection::Input(crate::gui::plain_text::MINIMUM_OD_HINT_KEY)
+        );
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
     fn the_size_column_draws_its_controls_and_two_folds_and_no_line_about_them() {
         // UX overhaul spec 4.3: each control is its label and its slider; what left the column
         // (every hint, Set-by, floor and what-moves-what line, the Why links and the footnote
