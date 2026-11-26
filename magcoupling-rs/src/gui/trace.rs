@@ -15,7 +15,7 @@ use crate::engine::clamps;
 use crate::gui::explorer::term_label;
 use crate::gui::readouts::registry;
 
-/// The start of the trace's banner, at the foot of the inputs side.
+/// The start of the trace's banner, at the foot of the left column.
 pub const TRACING: &str = "Tracing";
 
 /// The banner's button that ends the trace.
@@ -68,7 +68,7 @@ impl Trace {
         paths.into_iter().filter(|path| self.marks(path)).count()
     }
 
-    /// The banner at the foot of the inputs side: what is traced and how far it reaches,
+    /// The banner at the foot of the left column: what is traced and how far it reaches,
     /// counting only the paths shown while the shaft-clamp section is paused (`clamps_paused`,
     /// [`clamps::hides`]).
     pub fn banner(&self, clamps_paused: bool) -> String {

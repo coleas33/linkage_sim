@@ -18,7 +18,7 @@ Written 2026-11-18. Updated as answers and new questions arrive.
 | P-n, L-n | The plans for slice A and for slice B stage 1, in `docs/superpowers/plans/` |
 | Three-letter codes (LGS-11, LFA-16) | The whole-project audit, `docs/analyses/2026-11-10-whole-project-audit.md` |
 
-Contents: part A, six answers that change what is built next. Part B, eight things only you can try. Part C, 39 calls to make when convenient (questions 48, 49 and 50 were added there on 2026-11-22, questions 51, 53, 54, 55, 56, 57, 58 and 59 on 2026-11-23). Part D, five that matter only if the tools stop being generic.
+Contents: part A, six answers that change what is built next. Part B, eight things only you can try. Part C, 45 calls to make when convenient (questions 48, 49 and 50 were added there on 2026-11-22, questions 51, 53, 54, 55, 56, 57, 58 and 59 on 2026-11-23, questions 60 to 65 on 2026-11-25). Part D, five that matter only if the tools stop being generic.
 
 Answered so far: 1, 2, 3, 4, 5 and 6 (2026-11-22). Each answer is written in bold under its question.
 
@@ -397,7 +397,7 @@ Source: UX design section 5.2; A-32; BL-092 plan, decision D-55.
 
 Added 2026-11-23 (the next free number). Part 2b-ii-a moves the trace from a row's label to the link "Highlight the results this drives" in the input's Explain entry; a second click on the link ends it. On the opening tab the trace draws its frames and no banner or Clear trace (as since part 2b-i). Once you select something else there, the trace stays on with no off switch in view: select the input again and click its link, or open another tab for Clear trace. An input whose results have no equation record (the drive torque) traces none, and on the opening tab nothing says so. Part 2b-ii-c, which keeps the left column the same on every tab, places the banner anyway.
 
-- **If you do not answer:** as described, until part 2b-ii-c.
+- **If you do not answer:** as described, until part 2b-ii-c. Since part 2b-ii-c (BL-096) the banner and Clear trace sit at the foot of the left column on every tab, the opening one too: question 60.
 - (a) As the default.
 - (b) While the selected input is the one traced, its entry also shows the banner and Clear trace under the link (no new text; a second copy of the banner).
 
@@ -445,6 +445,70 @@ Added 2026-11-23 (the next free number). During the walk a step's title shows th
 - (c) The walk bar's step line drops the title ("Start here N of 14").
 
 Source: part 2a plan, decision D-32; A-36; BL-094 plan, decision D-67.
+
+### 60. Where should a trace's banner and its Clear trace button sit?
+
+Added 2026-11-25 (the next free number). Since part 2b-ii-c the left column is the same on every tab, so the banner ("Tracing ...: drives N results with an equation") and Clear trace sit at its foot on every tab. The opening tab, which had neither (question 55), now shows both while a trace is on.
+
+- **If you do not answer:** at the foot of the left column, on every tab.
+- (a) As the default.
+- (b) Under the trace link in the traced input's entry instead (question 55's answer b).
+- (c) In both places.
+
+Source: UX design sections 4.3 and 5.2; A-37; BL-096 plan, decision D-74.
+
+### 61. Should a fix link on the Outside diameter still switch to the Size and torque tab?
+
+Added 2026-11-25 (the next free number). The link switched the tab because only that tab had the Outside diameter slider. The slider is now on the left of every tab. The link still switches the tab, and now also scrolls the left column back to the slider.
+
+- **If you do not answer:** it switches the tab and scrolls to the slider.
+- (a) As the default.
+- (b) It scrolls to the slider and leaves the centre tab where it is.
+
+Source: UX design sections 4.3 and 5.2; A-38; BL-096 plan, decision D-76.
+
+### 62. Should the Key design group keep Auto's line and its "Open the Size tab" button?
+
+Added 2026-11-25 (the next free number). While Auto is on, the Key design group shows "Auto: ... set by the solver (Size tab)", a button "Open the Size tab" and the solver's status. The size controls, with Auto's row and its outcome, are now above that group on every tab, so with the Detailed inputs open the status shows twice.
+
+- **If you do not answer:** the line and the button stay, word for word.
+- (a) As the default.
+- (b) Drop the button and the words "(Size tab)".
+- (c) Drop the whole line; the locked row of the size Auto sets stays.
+
+Source: UX design section 4.3; A-39; BL-096 plan, decision D-77.
+
+### 63. With a result traced and the folds shut, should something on the left show what is traced?
+
+Added 2026-11-25 (the next free number). A trace frames the input rows it reaches. Those rows are inside the Detailed inputs fold, shut at first. The banner says "Tracing ...: reads N inputs", and no input row is framed until the fold is opened. Before, the other tabs showed the Key design rows framed.
+
+- **If you do not answer:** nothing more: the banner, and the frames once the fold is open.
+- (a) As the default.
+- (b) The fold's header counts the rows, "Detailed inputs (N traced)", as each group's does.
+- (c) The size controls whose input is traced are framed too.
+
+Source: UX design section 4.3; decision O-8; A-40; BL-096 plan, decision D-79.
+
+### 64. With Detailed inputs open, should something mark where that fold ends and Assumptions begins?
+
+Added 2026-11-25 (the next free number). The two folds of the left column are drawn with no indent, so that an opened fold does not widen the column. With Detailed inputs open, its eight group headings and the Assumptions header start at the same edge with the same triangle, and Assumptions reads as a ninth input group.
+
+- **If you do not answer:** nothing more: the two headers as they are.
+- (a) As the default.
+- (b) A separator line above the Assumptions header.
+- (c) The two fold headers in a heavier face than the group headings.
+
+Source: UX design sections 4.1 and 4.3; A-41; BL-096 plan, decision D-75.
+
+### 65. Should the left column's heading read "Size" instead of "Size and torque"?
+
+Added 2026-11-25 (the next free number). The left column is now the same on every tab and is headed "Size and torque", the words of the first centre tab. On the other tabs those words stand over the column while that tab is not the one shown. The design's sketch heads the column "Size".
+
+- **If you do not answer:** "Size and torque", the heading it has today.
+- (a) As the default.
+- (b) "Size", as the design's sketch.
+
+Source: UX design sections 4.1 and 4.3; A-42; BL-096 plan, decision D-85.
 
 ### Linkage simulator
 
