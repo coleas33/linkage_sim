@@ -49,3 +49,6 @@ pub use panel::{
 };
 // The Size tab's gap text, public for the slice-3 screen dump (`size_controls` is private).
 pub use size_controls::torque_gap_text;
+// The Size column's rows, for the app's check of the smoke prompt's words.
+#[cfg(all(test, feature = "app"))]
+pub(crate) use size_controls::SIZE_ROWS;

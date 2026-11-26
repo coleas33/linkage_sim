@@ -1905,6 +1905,43 @@ mod tests {
                 "the tag's entry is judged in the Explain panel by its Equation link: {step}"
             );
         }
+        // UX overhaul slice B, stage 2, part 2b-ii-c (spec 4.3): on the Geometry tab the step
+        // judges the left side as the Size column, by the words the page draws there (each
+        // control's label and the two folds, with no "Design inputs" tab), before it opens the
+        // Detailed inputs fold for the row the tooltip step hovers.
+        {
+            use crate::gui::{ASSUMPTIONS_FOLD, DETAILED_INPUTS};
+            let tab = format!(
+                "click the \"{}\" tab",
+                crate::gui::CentreView::Geometry.label()
+            );
+            let step = between("same_column=true only if", "tooltip_plain=true only if");
+            assert!(
+                between(&tab, "tooltip_plain=true only if").contains("same_column=true only if"),
+                "the left side is judged on the Geometry tab, before the tooltip"
+            );
+            for row in crate::gui::SIZE_ROWS {
+                assert!(
+                    step.contains(&format!("\"{}\"", row.label)),
+                    "the step names the control {:?}",
+                    row.label
+                );
+            }
+            for fold in [DETAILED_INPUTS, ASSUMPTIONS_FOLD] {
+                assert!(
+                    step.contains(&format!("\"{fold}\"")),
+                    "the step names the fold {fold:?}"
+                );
+            }
+            assert!(
+                step.contains("no tab named \"Design inputs\""),
+                "the step looks for the tabs that swapped the side"
+            );
+            assert!(
+                step.contains(&format!("click the fold \"{DETAILED_INPUTS}\"")),
+                "the tooltip's row is in the Detailed inputs, opened first"
+            );
+        }
         assert!(
             between("drag_moved=true", "then close the browser").contains(collect),
             "the console messages of the page opened again are collected after the drag"

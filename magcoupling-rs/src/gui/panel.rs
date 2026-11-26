@@ -1,7 +1,9 @@
 //! [`MagcouplingPanel`]: the calculator's state and its egui UI.
 //!
-//! Layout (spec M4 "Layout"): a header line, the inputs on the left (the Key design group,
-//! then every input by package group, [`crate::gui::inputs`]), the check list over the Explain
+//! Layout (spec M4 "Layout"): a header line, the Size column on the left, the same on every tab
+//! (UX overhaul spec 4.3: the size controls over two folds, the detailed inputs, which are the
+//! Key design group, then every input by group, [`crate::gui::inputs`], and the assumptions),
+//! the check list over the Explain
 //! panel on the right ([`crate::gui::checks`], [`crate::gui::explain`]: UX overhaul spec 4.5) and
 //! the centre region between them ([`CentreView`]: one tab row, the results table last;
 //! decision M42-1), opening on Size and torque with the four tiles over the drawing (decision
@@ -184,31 +186,12 @@ pub const ASSUMPTIONS_NOTE: &str = "The model's assumptions, apart from the desi
 const EXPLORATION_ONLY: &str = "Exploration only: ";
 
 /// The Size column's fold of every design input (UX overhaul spec 4.3), over its fold of the
-/// model's assumptions, which bears the Assumptions view's name.
+/// model's assumptions (the Assumptions view of decision M43-7, whose name it keeps). The two
+/// folds are the only home of the input groups and of the assumptions, on every tab.
 pub const DETAILED_INPUTS: &str = "Detailed inputs";
-pub const ASSUMPTIONS_FOLD: &str = InputsView::Assumptions.label();
+pub const ASSUMPTIONS_FOLD: &str = "Assumptions";
 
-/// What the inputs side shows (decision M43-7): the design inputs, or the model assumptions.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum InputsView {
-    Design,
-    Assumptions,
-}
-
-impl InputsView {
-    /// Both views, in tab order.
-    pub const ALL: [InputsView; 2] = [InputsView::Design, InputsView::Assumptions];
-
-    /// The tab text.
-    pub const fn label(self) -> &'static str {
-        match self {
-            InputsView::Design => "Design inputs",
-            InputsView::Assumptions => "Assumptions",
-        }
-    }
-}
-
-/// Starting width of the inputs side [points].
+/// Starting width of the left column, the Size column of every tab [points].
 const INPUTS_WIDTH: f32 = 320.0;
 
 /// Starting width of the dashboard side [points].
@@ -262,8 +245,8 @@ pub enum PanelRequest {
 /// The views of the centre region, one tab row (decision M42-1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CentreView {
-    /// Direct envelope dimensions, magnet count and gap, with the live torque and geometry (the
-    /// view a new panel opens on: decision G-5, which reverses M42-2).
+    /// The four tiles over the drawing to scale (the view a new panel opens on: decision G-5,
+    /// which reverses M42-2). The size controls it once held are the left column of every tab.
     SizeAndTorque,
     /// The end view and the side view to scale, with the dimension callouts.
     Geometry,
@@ -351,8 +334,6 @@ pub struct MagcouplingPanel {
     /// Whether the header's Show spreadsheet details is on (spec S2-5): a view choice, never in
     /// a design file, a share link or the undo history, and kept by reset all and every load.
     show_details: bool,
-    /// What the inputs side shows.
-    inputs_view: InputsView,
     /// How the design inputs are ordered (decision O-1): a view of this session only, never in
     /// a design file or a share link.
     input_order: InputOrder,
@@ -397,6 +378,10 @@ pub struct MagcouplingPanel {
     /// Whether a text field had the keyboard as the last frame ended: Esc is then the field's,
     /// not the Explain panel's.
     typing: bool,
+    /// Whether the left column scrolls back to its top in the next frame: a fix on a control
+    /// of the Size column (the Outside diameter) shows its slider, and the Key design group's
+    /// button shows Auto's toggle, wherever the column was scrolled to. View state.
+    column_to_top: bool,
 }
 
 impl Default for MagcouplingPanel {
@@ -438,7 +423,6 @@ impl MagcouplingPanel {
             last_error: None,
             centre: CentreView::SizeAndTorque,
             show_details: false,
-            inputs_view: InputsView::Design,
             input_order: InputOrder::default(),
             minimum_diameter_mm: None,
             consequences: ConsequenceCache::default(),
@@ -454,6 +438,7 @@ impl MagcouplingPanel {
             selection: Selection::default(),
             explain_drawn: Selection::default(),
             typing: false,
+            column_to_top: false,
         }
     }
 
@@ -744,14 +729,17 @@ impl MagcouplingPanel {
         if let Some(id) = events.note.take() {
             self.show_note(ui.ctx(), id);
         }
-        // A fix on an input the Size tab names (the Outside diameter, contract C-4) opens that
-        // tab, where its slider is, instead of the input's row.
+        // A fix on an input the Size column names (the Outside diameter, contract C-4) shows
+        // that control instead of the input's row: the column, the same on every tab, scrolls
+        // back to its top, where the slider is. It still opens the Size and torque tab, as it
+        // did while only that tab had the slider.
         if events
             .focus
             .is_some_and(|path| SIZE_TAB_ALIASES.iter().any(|&(aliased, _)| aliased == path))
         {
             events.focus = None;
             self.centre = CentreView::SizeAndTorque;
+            self.column_to_top = true;
         }
         // A result selected (a dimension tag, a callout row, a results-table row: UX overhaul
         // spec 5.2) shows in the Explain panel, drawn before this click: the next frame shows
@@ -941,6 +929,8 @@ impl MagcouplingPanel {
             ui.label(size_controls::auto_status(self.sizing.variable));
             if ui.button(size_controls::OPEN_SIZE_TAB).clicked() {
                 self.centre = CentreView::SizeAndTorque;
+                // The column, the same on every tab, scrolls back to its top, where Auto is.
+                self.column_to_top = true;
                 ui.ctx().request_repaint();
             }
         });
@@ -1281,38 +1271,13 @@ impl MagcouplingPanel {
         }
     }
 
-    /// The left side: the tabs of the design inputs and the assumptions, then the view chosen,
-    /// with the trace's banner at its foot. A leaf term clicked in the Equation panel shows the
-    /// view that holds its row.
+    /// The left side (UX overhaul spec 4.3), the same on every tab of the centre region: the
+    /// Size column, with the trace's banner and its Clear trace at its foot while a trace is on.
     fn inputs_ui(&mut self, ui: &mut egui::Ui, readouts: &Readouts) {
-        // This frame's rows only, whichever groups are open.
+        // This frame's rows only, whichever folds and groups are open.
         self.design_widgets.clear();
-        if self.centre == CentreView::SizeAndTorque {
-            // The column scrolls in a short window: its overflow would stretch the panel past
-            // the window's foot, and the centre region and its drawing with it.
-            egui::ScrollArea::vertical()
-                .id_salt("magcoupling_size_column")
-                .auto_shrink([false, true])
-                .show(ui, |ui| self.size_column_ui(ui, readouts));
-            return;
-        }
-        if let Some(focus) = self.explorer.focus().filter(|f| f.scroll) {
-            let assumption = ASSUMPTIONS
-                .iter()
-                .any(|a| a.paths.contains(&focus.path.as_str()));
-            self.inputs_view = if assumption {
-                InputsView::Assumptions
-            } else {
-                InputsView::Design
-            };
-        }
-        ui.horizontal(|ui| {
-            for view in InputsView::ALL {
-                ui.selectable_value(&mut self.inputs_view, view, view.label());
-            }
-        });
-        // The trace's banner at the foot of the side, laid out bottom up first so the view takes
-        // the room above it in the same frame: a trace moves no row above it (decision O-8).
+        // The trace's banner at the foot of the side, laid out bottom up first so the column
+        // takes the room above it in the same frame: a trace moves no row above it (decision O-8).
         let clamps_paused = self.clamps_paused;
         let banner = self.trace.as_ref().map(|trace| trace.banner(clamps_paused));
         ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
@@ -1329,24 +1294,25 @@ impl MagcouplingPanel {
                 ui.separator();
             }
             ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
-                ui.separator();
-                match self.inputs_view {
-                    InputsView::Design => self.design_inputs_ui(ui, readouts),
-                    InputsView::Assumptions => {
-                        egui::ScrollArea::vertical()
-                            .id_salt("magcoupling_assumptions_scroll")
-                            .auto_shrink([false, false])
-                            .show(ui, |ui| self.assumptions_ui(ui, readouts));
-                    }
+                // The column scrolls in a short window: its overflow would stretch the panel
+                // past the window's foot, and the centre region and its drawing with it.
+                let mut column = egui::ScrollArea::vertical()
+                    .id_salt("magcoupling_size_column")
+                    .auto_shrink([false, true]);
+                if std::mem::take(&mut self.column_to_top) {
+                    column = column.vertical_scroll_offset(0.0);
                 }
+                column.show(ui, |ui| self.size_column_ui(ui, readouts));
             });
         });
     }
 
-    /// The Size column of the opening tab (UX overhaul spec 4.3): its heading, the Required
-    /// torque row, Auto and its outcome, the size controls, then two folds, both closed until a
-    /// fix link or a term asks for a row in one: the detailed inputs and the assumptions. A
-    /// control touched selects its row, whose lines show in the Explain panel.
+    /// The Size column, the left column of every tab (UX overhaul spec 4.3): its heading, the
+    /// Required torque row, Auto and its outcome, the size controls, then two folds, both closed
+    /// until a fix link or a term asks for a row in one: the detailed inputs and the
+    /// assumptions, each drawn at the column's full width (a fold's indent would widen the
+    /// column by the rows' overhang when it opens). A control touched selects its row, whose
+    /// lines show in the Explain panel.
     fn size_column_ui(&mut self, ui: &mut egui::Ui, readouts: &Readouts) {
         ui.heading(crate::gui::size_controls::HEADING);
         let (requirement, required_touched) = self.requirement_ui(ui);
@@ -1403,11 +1369,15 @@ impl MagcouplingPanel {
         egui::CollapsingHeader::new(DETAILED_INPUTS)
             .default_open(false)
             .open((assumption == Some(false)).then_some(true))
-            .show(ui, |ui| self.design_inputs_ui(ui, readouts));
+            .show_unindented(ui, |ui| self.design_inputs_ui(ui, readouts));
         egui::CollapsingHeader::new(ASSUMPTIONS_FOLD)
             .default_open(false)
             .open((assumption == Some(true)).then_some(true))
-            .show(ui, |ui| self.assumptions_ui(ui, readouts));
+            // An unindented body has no id of its own: without one here, a row the filter
+            // keeps in the fold above would share its widgets' ids with its row in this one.
+            .show_unindented(ui, |ui| {
+                ui.push_id(ASSUMPTIONS_FOLD, |ui| self.assumptions_ui(ui, readouts));
+            });
     }
 
     /// The Required torque row that leads the Size column (UX overhaul spec 4.3; it was the
@@ -1445,7 +1415,7 @@ impl MagcouplingPanel {
     /// changed-from-default dot, the rows of its inputs (value, unit, reset: the inputs' own
     /// rows, so an edit here is an edit like any other), its rationale and, with the
     /// spreadsheet details (spec S2-5), its source. No scroll area of its own: the Size
-    /// column's fold scrolls with the column, the inputs side wraps it in one.
+    /// column's fold scrolls with the column.
     fn assumptions_ui(&mut self, ui: &mut egui::Ui, readouts: &Readouts) {
         let catalogue = InputCatalogue::get();
         let clamps_paused = self.clamps_paused;
@@ -1487,7 +1457,8 @@ impl MagcouplingPanel {
     /// The design inputs: the order toggle and the filter box, then the Key design group (each
     /// row with its hint line, slice 2 spec 3.5) and every input by group in the order chosen
     /// (decision O-1), each workflow group's advanced sections under its closed Advanced heading;
-    /// while the filter holds more than blanks, the matching inputs alone.
+    /// while the filter holds more than blanks, the matching inputs alone. No scroll area of its
+    /// own (BL-091): the Size column's fold scrolls with the column.
     fn design_inputs_ui(&mut self, ui: &mut egui::Ui, readouts: &Readouts) {
         // Every input but those the paused shaft-clamp section hides.
         let catalogue = InputCatalogue::shown(self.clamps_paused);
@@ -1532,66 +1503,61 @@ impl MagcouplingPanel {
             InputOrder::Workflow => "workflow",
             InputOrder::Workbook => "group",
         };
-        egui::ScrollArea::vertical()
-            .id_salt("magcoupling_inputs_scroll")
-            .auto_shrink([false, false])
+        egui::CollapsingHeader::new(KEY_DESIGN_HEADING)
+            .id_salt("key_design")
+            .default_open(true)
+            .open(open_key_design.then_some(true))
             .show(ui, |ui| {
-                egui::CollapsingHeader::new(KEY_DESIGN_HEADING)
-                    .id_salt("key_design")
-                    .default_open(true)
-                    .open(open_key_design.then_some(true))
-                    .show(ui, |ui| {
-                        self.sizing_ui(ui, readouts);
-                        self.key_widgets.clear();
-                        for entry in &catalogue.key_design {
-                            let widget = self.input_row_ui(ui, entry, readouts);
-                            self.key_widgets.push((entry.path.as_str(), widget));
-                            self.design_widgets.push(widget);
-                            hint_line(ui, &entry.path);
-                        }
-                    });
-                for group in groups {
-                    let (open_group, open_advanced) = match focused {
-                        Some((name, advanced)) if name == group.name => (true, advanced),
-                        _ => (false, false),
-                    };
-                    // A trace counts the rows it frames in each group, closed or open.
-                    let traced = self.trace.as_ref().map_or(0, |trace| {
-                        trace.count_in(
-                            group
-                                .sections
-                                .iter()
-                                .flat_map(|s| s.entries.iter())
-                                .map(|e| e.path.as_str()),
-                        )
-                    });
-                    let title = if traced > 0 {
-                        format!("{} ({traced} traced)", group.label)
-                    } else {
-                        group.label.to_owned()
-                    };
-                    egui::CollapsingHeader::new(title)
-                        .id_salt((salt, &group.name))
-                        .default_open(false)
-                        .open(open_group.then_some(true))
-                        .show(ui, |ui| {
-                            for section in group.plain_sections() {
-                                self.section_ui(ui, group, section, readouts);
-                            }
-                            if group.has_advanced() {
-                                egui::CollapsingHeader::new(ADVANCED_HEADING)
-                                    .id_salt(("advanced", &group.name))
-                                    .default_open(false)
-                                    .open(open_advanced.then_some(true))
-                                    .show(ui, |ui| {
-                                        for section in group.advanced_sections() {
-                                            self.section_ui(ui, group, section, readouts);
-                                        }
-                                    });
-                            }
-                        });
+                self.sizing_ui(ui, readouts);
+                self.key_widgets.clear();
+                for entry in &catalogue.key_design {
+                    let widget = self.input_row_ui(ui, entry, readouts);
+                    self.key_widgets.push((entry.path.as_str(), widget));
+                    self.design_widgets.push(widget);
+                    hint_line(ui, &entry.path);
                 }
             });
+        for group in groups {
+            let (open_group, open_advanced) = match focused {
+                Some((name, advanced)) if name == group.name => (true, advanced),
+                _ => (false, false),
+            };
+            // A trace counts the rows it frames in each group, closed or open.
+            let traced = self.trace.as_ref().map_or(0, |trace| {
+                trace.count_in(
+                    group
+                        .sections
+                        .iter()
+                        .flat_map(|s| s.entries.iter())
+                        .map(|e| e.path.as_str()),
+                )
+            });
+            let title = if traced > 0 {
+                format!("{} ({traced} traced)", group.label)
+            } else {
+                group.label.to_owned()
+            };
+            egui::CollapsingHeader::new(title)
+                .id_salt((salt, &group.name))
+                .default_open(false)
+                .open(open_group.then_some(true))
+                .show(ui, |ui| {
+                    for section in group.plain_sections() {
+                        self.section_ui(ui, group, section, readouts);
+                    }
+                    if group.has_advanced() {
+                        egui::CollapsingHeader::new(ADVANCED_HEADING)
+                            .id_salt(("advanced", &group.name))
+                            .default_open(false)
+                            .open(open_advanced.then_some(true))
+                            .show(ui, |ui| {
+                                for section in group.advanced_sections() {
+                                    self.section_ui(ui, group, section, readouts);
+                                }
+                            });
+                    }
+                });
+        }
     }
 
     /// One section of a group: its heading ([`InputSection::heading_in`]: none for the group's
@@ -1625,19 +1591,14 @@ impl MagcouplingPanel {
         let shown: usize = matches.iter().map(|m| m.entries.len()).sum();
         let total = InputCatalogue::shown(self.clamps_paused).all().count();
         ui.weak(format!("{shown} of {total} inputs"));
-        egui::ScrollArea::vertical()
-            .id_salt("magcoupling_inputs_filter_scroll")
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                for run in &matches {
-                    ui.add_space(4.0);
-                    ui.strong(run.heading());
-                    for &entry in &run.entries {
-                        let widget = self.input_row_ui(ui, entry, readouts);
-                        self.design_widgets.push(widget);
-                    }
-                }
-            });
+        for run in &matches {
+            ui.add_space(4.0);
+            ui.strong(run.heading());
+            for &entry in &run.entries {
+                let widget = self.input_row_ui(ui, entry, readouts);
+                self.design_widgets.push(widget);
+            }
+        }
     }
 
     /// One input row; applies its edit. Returns the id of its main widget. In Torque →
@@ -1845,6 +1806,8 @@ mod tests {
         pub(crate) ctx: egui::Context,
         pub(crate) panel: MagcouplingPanel,
         screen: egui::Vec2,
+        /// The fold of the Size column [`Harness::fold`] opened last, if any.
+        fold: Option<&'static str>,
     }
 
     impl Harness {
@@ -1852,10 +1815,11 @@ mod tests {
             Self::on_screen(SCREEN)
         }
 
-        /// A harness on a screen of `size`, on the Geometry tab: most tests drive the whole
-        /// inputs side (the Key design group, the groups, the filter, the Assumptions view),
-        /// which the Size tab a new panel opens on folds under "Detailed inputs". The first
-        /// view's own tests use [`Harness::first_view`].
+        /// A harness on a screen of `size`, on the Geometry tab, the Size column's Detailed
+        /// inputs fold open at the column's top ([`Harness::fold`]): most tests drive the
+        /// detailed inputs (the Key design group, the groups, the filter), which the left
+        /// column, the same on every tab (UX overhaul spec 4.3), keeps under that closed fold.
+        /// The first view's own tests use [`Harness::first_view`].
         pub(crate) fn on_screen(size: egui::Vec2) -> Self {
             Self::with_baseline(DesignInputs::default(), size)
         }
@@ -1865,7 +1829,9 @@ mod tests {
         fn with_baseline(baseline: DesignInputs, size: egui::Vec2) -> Self {
             let mut panel = MagcouplingPanel::with_baseline(baseline);
             panel.centre = CentreView::Geometry;
-            Self::of(panel, size)
+            let mut harness = Self::of(panel, size);
+            harness.fold(DETAILED_INPUTS);
+            harness
         }
 
         /// A harness on a new panel as it opens (decision G-5): the Size tab, the Explain panel
@@ -1885,14 +1851,89 @@ mod tests {
                 ctx: egui::Context::default(),
                 panel,
                 screen: size,
+                fold: None,
             };
             harness.frame(Vec::new());
             harness
         }
 
+        /// Shows the Size column's fold headed `fold` ([`DETAILED_INPUTS`] or
+        /// [`ASSUMPTIONS_FOLD`]) as a person does: a click on the header of the fold this
+        /// harness opened before closes that one, a click on `fold`'s header opens it, and a
+        /// wheel over the column brings the header to just under the column's top edge, so the
+        /// fold's rows are in view down to the window's foot (in a window taller than the
+        /// column nothing scrolls). The pointer then leaves the panel. Returns the frame after.
+        fn fold(&mut self, fold: &'static str) -> egui::FullOutput {
+            match self.fold.replace(fold) {
+                Some(open) if open == fold => return self.frame(Vec::new()),
+                Some(open) => self.click_fold(open),
+                None => {}
+            }
+            self.click_fold(fold);
+            let output = self.frame(Vec::new());
+            let header = in_left_column(&output, fold);
+            let column = side_rect(&self.ctx, "magcoupling_inputs");
+            // A wheel step under 8 points is a trackpad's, which egui applies in its own frame
+            // (a larger one is spread over many): the whole distance in one frame of them.
+            let distance = (header.top() - column.top() - 8.0).max(0.0);
+            let steps = (distance / 7.0).ceil().max(1.0);
+            let step = egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, -distance / steps),
+                modifiers: egui::Modifiers::NONE,
+            };
+            self.frame(vec![egui::Event::PointerMoved(header.center())]);
+            self.frame(vec![step; steps as usize]);
+            self.frame(vec![egui::Event::PointerGone]);
+            let output = self.frame(Vec::new());
+            // The click opened the fold: on one a fix link or a term had opened it would have
+            // shut it, and the caller would read a shut fold.
+            let first = match fold {
+                ASSUMPTIONS_FOLD => ASSUMPTIONS_NOTE,
+                _ => InputOrder::Workflow.label(),
+            };
+            assert!(count(&output, first) > 0, "the click shut the {fold} fold");
+            output
+        }
+
+        /// Shows the Size and torque tab as a person arrives on it: a click on its tab (the one
+        /// in the centre region: the left column's heading bears the same words), and the fold
+        /// this harness opened closed again by a click on its header, so the column, short
+        /// again, shows its controls from its top. Returns the frame after.
+        fn size_and_torque(&mut self) -> egui::FullOutput {
+            self.tab(CentreView::SizeAndTorque);
+            if let Some(open) = self.fold.take() {
+                self.click_fold(open);
+            }
+            self.frame(Vec::new())
+        }
+
+        /// A click on the tab of `view` in the centre region's tab row.
+        fn tab(&mut self, view: CentreView) -> egui::FullOutput {
+            let output = self.frame(Vec::new());
+            let tab = text_rects(&output, view.label())
+                .into_iter()
+                .find(|rect| rect.left() > INPUTS_WIDTH)
+                .unwrap_or_else(|| panic!("no tab {:?}", view.label()));
+            self.click(tab.center())
+        }
+
+        /// A click on the header of the Size column's fold headed `fold`, then the frames egui
+        /// takes to open or close it.
+        fn click_fold(&mut self, fold: &str) {
+            let output = self.frame(Vec::new());
+            self.click(in_left_column(&output, fold).center());
+            for _ in 0..8 {
+                self.frame(Vec::new());
+            }
+        }
+
+        /// One frame of the panel, in which egui reports no ID clash ([`assert_no_id_clash`]).
         pub(crate) fn frame(&mut self, events: Vec<egui::Event>) -> egui::FullOutput {
             let panel = &mut self.panel;
-            sized_frame(&self.ctx, self.screen, events, |ui| panel.ui(ui))
+            let output = sized_frame(&self.ctx, self.screen, events, |ui| panel.ui(ui));
+            assert_no_id_clash(&output);
+            output
         }
 
         /// A frame `dt` seconds after the last one.
@@ -1914,8 +1955,8 @@ mod tests {
             self.frame(Vec::new())
         }
 
-        /// The Size tab's slider under `label` as drawn in the last frame (the Size tab must be
-        /// shown): `size_controls::controls_ui` pushes its sliders first, in this order.
+        /// The Size column's slider under `label` as drawn in the last frame (on any tab):
+        /// `size_controls::controls_ui` pushes its sliders first, in this order.
         fn size_widget(&self, label: &str) -> egui::Response {
             use crate::gui::size_controls::{DIAMETER, GAP, LENGTH, MAGNETS};
             let index = [DIAMETER, LENGTH, GAP, MAGNETS]
@@ -1980,6 +2021,22 @@ mod tests {
             self.frame(vec![primary_button(at, false)])
         }
 
+        /// A wheel of `delta` points down the left column with the pointer at `at`, then
+        /// `frames` frames (egui spreads a wheel step over several). Returns the last.
+        fn wheel_column(&mut self, at: egui::Pos2, delta: f32, frames: usize) -> egui::FullOutput {
+            self.frame(vec![egui::Event::PointerMoved(at)]);
+            self.frame(vec![egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, -delta),
+                modifiers: egui::Modifiers::NONE,
+            }]);
+            let mut output = self.frame(Vec::new());
+            for _ in 0..frames {
+                output = self.frame(Vec::new());
+            }
+            output
+        }
+
         /// Clicks the first drawn text equal to `text`.
         fn click_text(&mut self, text: &str) -> egui::FullOutput {
             let output = self.frame(Vec::new());
@@ -2007,6 +2064,33 @@ mod tests {
                 other => panic!("{path}: {other:?}"),
             }
         }
+    }
+
+    /// Panics when `output` draws egui's ID clash warning: the text a debug build, as the tests
+    /// are, paints over two widgets drawn with one id ("First use of widget ID ..."). A release
+    /// build paints nothing, and neither widget takes a click (RS-1 of the 2026-11-26 review).
+    fn assert_no_id_clash(output: &egui::FullOutput) {
+        let clashes: Vec<String> = drawn_texts(output)
+            .into_iter()
+            .filter(|t| t.contains("use of") && t.contains(" ID "))
+            .collect();
+        assert!(clashes.is_empty(), "{clashes:?}");
+    }
+
+    /// The first `text` drawn in the left column of `output`.
+    fn in_left_column(output: &egui::FullOutput, text: &str) -> egui::Rect {
+        text_rects(output, text)
+            .into_iter()
+            .find(|rect| rect.right() <= INPUTS_WIDTH)
+            .unwrap_or_else(|| panic!("no {text:?} in the left column"))
+    }
+
+    /// The rect of the side panel `id` ("magcoupling_inputs", "magcoupling_dashboard") in the
+    /// last frame.
+    fn side_rect(ctx: &egui::Context, id: &str) -> egui::Rect {
+        egui::containers::panel::PanelState::load(ctx, egui::Id::new(id))
+            .unwrap_or_else(|| panic!("{id} is drawn"))
+            .rect
     }
 
     /// The left edge of the right column in `output`, less its margin: where the check list's
@@ -2047,6 +2131,17 @@ mod tests {
 
     fn count(output: &egui::FullOutput, text: &str) -> usize {
         drawn_texts(output).iter().filter(|t| *t == text).count()
+    }
+
+    /// How many times `text` is drawn inside the Detailed inputs fold of `output`: in the left
+    /// column, under the fold's header. The size controls above it draw Auto's outcome too
+    /// (decision D-77), in view or scrolled out of it.
+    fn count_in_fold(output: &egui::FullOutput, text: &str) -> usize {
+        let header = in_left_column(output, DETAILED_INPUTS);
+        text_rects(output, text)
+            .into_iter()
+            .filter(|rect| rect.right() <= INPUTS_WIDTH && rect.top() >= header.bottom())
+            .count()
     }
 
     /// Asserts the locked free-variable row draws `value` in its value box: on the line
@@ -2964,7 +3059,7 @@ mod tests {
         // entry) and then without it, at the shipped clamp pause: idle frames still change no
         // input.
         harness.panel.clamps_paused = true;
-        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.size_and_torque();
         for open in [true, false] {
             harness.panel.selection = if open {
                 Selection::Result(crate::gui::tiles::Tile::HotLow.path())
@@ -3416,7 +3511,8 @@ mod tests {
         // A matched row is a row like any other: an arrow key nudges its value.
         let ratio = InputCatalogue::get().entry("coupling.gear_ratio").unwrap();
         let before = harness.number("coupling.gear_ratio");
-        let slider = harness.panel.design_widgets[0];
+        // The first row of the fold: the Size column's controls come before it.
+        let slider = harness.panel.design_widgets[size_controls::SIZE_ROWS.len()];
         harness.ctx.memory_mut(|m| m.request_focus(slider));
         harness.frame(Vec::new());
         harness.frame(key_tap(egui::Key::ArrowRight));
@@ -3460,7 +3556,11 @@ mod tests {
             output = harness.frame(Vec::new());
         }
         assert_eq!(harness.panel.input_filter, "");
-        assert_eq!(harness.panel.inputs_view, InputsView::Design);
+        assert_eq!(
+            count(&output, ASSUMPTIONS_NOTE),
+            0,
+            "no assumption: the Assumptions fold stays closed"
+        );
         let label = InputCatalogue::get()
             .entry("coupling.mu0")
             .unwrap()
@@ -3998,9 +4098,9 @@ mod tests {
         assert!(in_explain(TRACE_LINK));
         harness.click_text(label_for(FACE_GAP));
         assert_eq!(harness.panel.selection, Selection::Input(FACE_GAP));
-        // An assumption's row, in the Assumptions view.
+        // An assumption's row, in the Assumptions fold.
         let assumption = ASSUMPTIONS[0].paths[0];
-        harness.click_text(InputsView::Assumptions.label());
+        harness.fold(ASSUMPTIONS_FOLD);
         harness.click_text(label_for(assumption));
         assert_eq!(harness.panel.selection, Selection::Input(assumption));
         // On the opening tab, in the Detailed inputs fold (a tall window: its row in view).
@@ -4272,12 +4372,15 @@ mod tests {
         assert!(!harness.panel.explorer.open, "the click opens no equation");
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, &trace.banner(false)), 1);
-        // Each Key design row is framed exactly when the pull-out reads its input.
+        // Each Key design row is framed exactly when the pull-out reads its input (the last
+        // of its label down the column: the Size column's rows of the gap and of the magnet
+        // count, above the fold, bear the same labels and take no frame).
         let marks = trace_marks(&harness, &output);
         for entry in &InputCatalogue::get().key_design {
             let row = text_rects(&output, label_for(&entry.path))
                 .into_iter()
-                .find(|r| r.left() < INPUTS_WIDTH)
+                .filter(|r| r.left() < INPUTS_WIDTH)
+                .max_by(|a, b| a.top().total_cmp(&b.top()))
                 .unwrap();
             let framed = marks.iter().any(|m| m.contains_rect(row));
             assert_eq!(framed, trace.marks(&entry.path), "{}", entry.path);
@@ -5167,14 +5270,17 @@ mod tests {
     #[test]
     fn only_the_rows_drawn_this_frame_count_as_design_fields() {
         let mut harness = Harness::new();
+        // The Size column's controls are drawn on every tab; then the Key design rows.
+        let size_rows = size_controls::SIZE_ROWS.len();
         let key_rows = InputCatalogue::get().key_design.len();
-        assert_eq!(harness.panel.design_widgets.len(), key_rows);
-        // Every group closed: no row is drawn, so none counts (no stale ids, no growth).
+        assert_eq!(harness.panel.design_widgets.len(), size_rows + key_rows);
+        // Every group closed: no row of the fold is drawn, so none counts (no stale ids, no
+        // growth).
         harness.click_text(KEY_DESIGN_HEADING);
         for _ in 0..10 {
             harness.frame(Vec::new());
         }
-        assert!(harness.panel.design_widgets.is_empty());
+        assert_eq!(harness.panel.design_widgets.len(), size_rows);
     }
 
     #[test]
@@ -5669,6 +5775,12 @@ mod tests {
             let mut harness = Harness::on_screen(egui::vec2(1280.0, 12000.0));
             harness.panel.clamps_paused = clamps_paused;
             let mut texts = every_shown_text(&mut harness);
+            // Not vacuous for the opening tab's centre: its tiles' word is collected. The left
+            // column's heading bears that tab's words, so the guard clicks the centre's tab.
+            assert!(
+                texts.iter().any(|t| t == crate::gui::tiles::NEEDS),
+                "the Size and torque tab's tiles are not collected"
+            );
             for text in &texts {
                 crate::gui::test_support::assert_glyphs(&harness.ctx, text, "the panel");
             }
@@ -5867,7 +5979,7 @@ mod tests {
         texts.extend(drawn_texts(&harness.size()));
         // Every view of the centre region, and the geometry callouts' hover texts.
         for view in CentreView::tabs(clamps_paused) {
-            texts.extend(drawn_texts(&harness.click_text(view.label())));
+            texts.extend(drawn_texts(&harness.tab(view)));
             texts.extend(drawn_texts(&harness.frame(Vec::new())));
         }
         // The Equation panel open on a chain of temperature symbols (ϑ is drawn as θ).
@@ -5956,9 +6068,9 @@ mod tests {
         texts.extend(drawn_texts(&harness.frame(Vec::new())));
         harness.panel.input_filter.clear();
         // The Assumptions view: every rationale and source.
-        harness.click_text(InputsView::Assumptions.label());
+        harness.fold(ASSUMPTIONS_FOLD);
         texts.extend(drawn_texts(&harness.frame(Vec::new())));
-        harness.click_text(InputsView::Design.label());
+        harness.fold(DETAILED_INPUTS);
         harness.panel.inputs = short_magnets();
         texts.extend(drawn_texts(&harness.frame(Vec::new())));
         // Its c_end of 0.5 is a modified assumption: the banner (the header grows a frame later).
@@ -6070,7 +6182,7 @@ mod tests {
         for clamps_paused in [false, true] {
             let mut harness = Harness::on_screen(egui::vec2(1280.0, 6000.0));
             harness.panel.clamps_paused = clamps_paused;
-            harness.click_text(InputsView::Assumptions.label());
+            harness.fold(ASSUMPTIONS_FOLD);
             let texts = drawn_texts(&harness.frame(Vec::new()));
             for a in ASSUMPTIONS {
                 assert_eq!(
@@ -6169,8 +6281,13 @@ mod tests {
     fn size_and_torque_has_direct_dimension_and_gap_controls() {
         let mut harness = Harness::new();
         let output = harness.frame(Vec::new());
-        assert_eq!(count(&output, "Size and torque"), 1);
-        harness.click_text("Size and torque");
+        // The centre's tab: the left column's heading bears the same words on every tab.
+        let tabs = text_rects(&output, "Size and torque")
+            .into_iter()
+            .filter(|rect| rect.left() > INPUTS_WIDTH)
+            .count();
+        assert_eq!(tabs, 1);
+        harness.size_and_torque();
         let output = harness.frame(Vec::new());
         for label in [
             "Outside diameter",
@@ -6188,7 +6305,7 @@ mod tests {
         let mut harness = Harness::new();
         harness.panel.inputs.coupling.npole = 8;
         harness.frame(Vec::new());
-        harness.click_text("Size and torque");
+        harness.size_and_torque();
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, "Minimum OD"), 1);
         let before = harness.panel.design();
@@ -6229,7 +6346,7 @@ mod tests {
     #[test]
     fn manual_minimum_rejects_nonfinite_typed_values_without_changing_design() {
         let mut harness = Harness::new();
-        harness.click_text("Size and torque");
+        harness.size_and_torque();
         let before = harness.panel.design();
         harness.click_text("40.4 mm");
         harness.frame([select_all(), vec![egui::Event::Text("NaN".to_owned())]].concat());
@@ -6259,7 +6376,7 @@ mod tests {
         let mut harness = Harness::new();
         harness.panel.minimum_diameter_mm = Some(45.0);
         harness.panel.load_design_file(&text).unwrap();
-        harness.click_text("Size and torque");
+        harness.size_and_torque();
         for _ in 0..3 {
             harness.frame(Vec::new());
             assert_eq!(harness.panel.design(), design);
@@ -6358,7 +6475,7 @@ mod tests {
             34.0,
         )
         .unwrap();
-        harness.click_text("Size and torque");
+        harness.size_and_torque();
         let output = harness.frame(Vec::new());
         // The lines' words are the torque card's side words (slice 3 spec 4.2).
         assert_eq!(
@@ -6431,7 +6548,7 @@ mod tests {
         use crate::gui::guidance::{counted_guides, level};
         let mut harness = Harness::new();
         harness.panel.inputs = with_cap(42.8, 41.82);
-        harness.click_text("Size and torque");
+        harness.size_and_torque();
         let output = harness.frame(Vec::new());
         let warn = harness.ctx.style().visuals.warn_fg_color;
         let amber = crate::gui::test_support::texts_in_colors(&output, &[warn]);
@@ -6463,7 +6580,7 @@ mod tests {
         let mut harness = Harness::new();
         harness.panel.inputs.coupling.npole = 8;
         harness.frame(Vec::new());
-        harness.click_text("Size and torque");
+        harness.size_and_torque();
         harness.frame(Vec::new());
         let before = harness.panel.inputs.clone();
         let before_torque = harness.panel.results.model.pullout_Nm;
@@ -6487,7 +6604,7 @@ mod tests {
     #[test]
     fn manual_size_gap_is_the_existing_gap_and_idle_frames_do_not_edit() {
         let mut harness = Harness::new();
-        harness.click_text("Size and torque");
+        harness.size_and_torque();
         harness.frame(Vec::new());
         let before = harness.panel.inputs.clone();
         for _ in 0..4 {
@@ -6512,7 +6629,7 @@ mod tests {
         harness.panel.inputs = short_magnets();
         harness.frame(Vec::new());
         assert!(end_effect_banner(harness.panel.results()).is_some());
-        harness.click_text("Size and torque");
+        harness.size_and_torque();
         let output = harness.frame(Vec::new());
         // The three torque tiles read no prediction, and the Hot-low tile shows neither what it
         // needs nor the gap (spec 3.2, 5; UX overhaul spec 4.4).
@@ -6531,15 +6648,15 @@ mod tests {
         );
     }
 
-    /// A harness on a screen of `screen` showing the Size tab for `inputs`, set as the panel's
-    /// inputs: the tab clicked, then one more frame, so the inputs side draws its controls. The
-    /// Hot-low tile is selected, so the Explain panel draws the torque card (decision C-10).
+    /// A harness on a screen of `screen` showing the Size tab, the one a panel opens on, for
+    /// `inputs`, set as the panel's inputs, then two more frames, so the Size column draws its
+    /// controls for them. The Hot-low tile is selected, so the Explain panel draws the torque
+    /// card (decision C-10).
     fn size_tab(screen: egui::Vec2, inputs: DesignInputs) -> Harness {
-        let mut harness = Harness::on_screen(screen);
+        let mut harness = Harness::of(MagcouplingPanel::new(), screen);
         harness.panel.selection = Selection::Result(crate::gui::tiles::Tile::HotLow.path());
         harness.panel.inputs = inputs;
         harness.frame(Vec::new());
-        harness.click_text(CentreView::SizeAndTorque.label());
         harness.frame(Vec::new());
         harness
     }
@@ -6816,7 +6933,7 @@ mod tests {
             design.inputs.coupling.npole = 8;
             let mut harness = Harness::new();
             harness.panel.open_design(design.clone());
-            harness.click_text(CentreView::SizeAndTorque.label());
+            harness.size_and_torque();
             for _ in 0..10 {
                 harness.frame(Vec::new());
             }
@@ -7087,11 +7204,6 @@ mod tests {
         // hint wraps inside its side: the Key design group's in the inputs side, each Size
         // control's in its entry in the right column (UX overhaul spec 4.3).
         let narrow = egui::vec2(930.0, 3000.0);
-        let side = |harness: &Harness, id: &str| {
-            egui::containers::panel::PanelState::load(&harness.ctx, egui::Id::new(id))
-                .unwrap_or_else(|| panic!("{id} is drawn"))
-                .rect
-        };
         let mut wrapped = false;
         let mut inside = |output: &egui::FullOutput, hint: &str, left: f32, right: f32| {
             let at = text_rect(output, hint).unwrap_or_else(|| panic!("no {hint:?}"));
@@ -7103,7 +7215,7 @@ mod tests {
         };
         let mut harness = Harness::on_screen(narrow);
         let output = harness.frame(Vec::new());
-        let left = side(&harness, "magcoupling_inputs").left();
+        let left = side_rect(&harness.ctx, "magcoupling_inputs").left();
         for path in KEY_DESIGN {
             let hint = hint_for(path).unwrap_or_else(|| panic!("{path} has no hint"));
             inside(&output, hint, left, left + INPUTS_WIDTH);
@@ -7111,7 +7223,7 @@ mod tests {
         let mut harness = size_tab(narrow, DesignInputs::default());
         for (_, key) in SIZE_TAB_HINTS {
             let output = entry(&mut harness, key);
-            let right = side(&harness, "magcoupling_dashboard");
+            let right = side_rect(&harness.ctx, "magcoupling_dashboard");
             let hint = hint_for(key).unwrap_or_else(|| panic!("{key} has no hint"));
             inside(&output, hint, right.left(), right.right());
         }
@@ -7224,6 +7336,66 @@ mod tests {
     }
 
     #[test]
+    fn tab_through_the_size_column_selects_nothing_and_sets_no_minimum_od() {
+        // BL-093 for every row of the Size column, the left column of every tab (UX overhaul
+        // spec 4.3): the keyboard's focus passes each slider and its value box and selects
+        // nothing. The Minimum OD's floor at the spreadsheet's design is off the one decimal
+        // its box shows, and egui writes a box's text back when the focus leaves it: that
+        // write is no touch and sets no Minimum OD. An arrow key on the slider still does.
+        use crate::gui::size_controls::slider_minimum;
+        let mut harness = Harness::first_view();
+        let floor = slider_minimum(
+            &dimensions(harness.panel.inputs()).expect("size controls"),
+            None,
+        );
+        assert_ne!(
+            floor,
+            (floor * 10.0).round() / 10.0,
+            "the floor is on its box's decimals: the test would prove nothing"
+        );
+        // The six sliders: the four controls, Minimum OD, then Required (size_column_ui).
+        let sliders: Vec<egui::Id> = harness.panel.design_widgets[..6].to_vec();
+        let mut passed = vec![false; sliders.len()];
+        let mut presses = 0;
+        // Until the focus has been on every slider, and two presses more: past the last
+        // slider's value box.
+        let mut after = 0;
+        while after < 2 {
+            harness.frame(key_tap(egui::Key::Tab));
+            harness.frame(Vec::new());
+            presses += 1;
+            assert!(presses < 60, "Tab passes the Size column: {passed:?}");
+            for (slider, passed) in sliders.iter().zip(&mut passed) {
+                *passed |= harness.ctx.memory(|m| m.has_focus(*slider));
+            }
+            after += usize::from(passed.iter().all(|&passed| passed));
+            assert_eq!(
+                harness.panel.selection,
+                Selection::Nothing,
+                "press {presses}"
+            );
+        }
+        assert_eq!(harness.panel.minimum_diameter_mm, None);
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+        assert_eq!(harness.panel.history.undo_len(), 0);
+        // The Minimum OD's slider, focused: an arrow key moves it from the value its box
+        // shows, and that is a touch.
+        let minimum = sliders[4];
+        harness.ctx.memory_mut(|m| m.request_focus(minimum));
+        harness.frame(Vec::new());
+        harness.frame(key_tap(egui::Key::ArrowLeft));
+        harness.frame(Vec::new());
+        let shown = (floor * 10.0).round() / 10.0;
+        let set = harness.panel.minimum_diameter_mm.expect("a Minimum OD");
+        assert!((set - (shown - 0.1)).abs() < 1e-9, "{set} from {shown}");
+        assert_eq!(
+            harness.panel.selection,
+            Selection::Input(crate::gui::plain_text::MINIMUM_OD_HINT_KEY)
+        );
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
     fn the_size_column_draws_its_controls_and_two_folds_and_no_line_about_them() {
         // UX overhaul spec 4.3: each control is its label and its slider; what left the column
         // (every hint, Set-by, floor and what-moves-what line, the Why links and the footnote
@@ -7273,6 +7445,375 @@ mod tests {
         );
     }
 
+    /// The left column's fixed rows in `output`, top to bottom: its heading, each Size row's
+    /// label and the two folds' headers.
+    fn column_rows(output: &egui::FullOutput) -> Vec<egui::Rect> {
+        [size_controls::HEADING]
+            .into_iter()
+            .chain(size_controls::SIZE_ROWS.iter().map(|row| row.label))
+            .chain([DETAILED_INPUTS, ASSUMPTIONS_FOLD])
+            .map(|text| in_left_column(output, text))
+            .collect()
+    }
+
+    #[test]
+    fn the_left_column_is_the_size_column_on_every_tab() {
+        // UX overhaul spec 4.3: "The left column no longer changes with the centre tab". On
+        // every tab it is the Size column, its rows where the opening tab draws them: the
+        // heading, each control's label, then the folds Detailed inputs and Assumptions, both
+        // shut. The two tabs that swapped the side ("Design inputs", "Assumptions") are gone:
+        // the input groups show only inside the Detailed inputs, the assumptions only inside
+        // their fold, and a fold opened on one tab is open on the next.
+        let side = |harness: &Harness| side_rect(&harness.ctx, "magcoupling_inputs");
+        // A tall window: every group of the open fold is in view.
+        let mut harness = Harness::of(MagcouplingPanel::new(), TALL);
+        let first = column_rows(&harness.frame(Vec::new()));
+        assert!(
+            first
+                .windows(2)
+                .all(|pair| pair[0].bottom() <= pair[1].top()),
+            "top to bottom: {first:?}"
+        );
+        let width = side(&harness).width();
+        assert_eq!(width, INPUTS_WIDTH);
+        for view in CentreView::tabs(false) {
+            let output = harness.tab(view);
+            assert_eq!(harness.panel.centre, view);
+            assert_eq!(column_rows(&output), first, "{}", view.label());
+            for gone in ["Design inputs", KEY_DESIGN_HEADING, ASSUMPTIONS_NOTE] {
+                assert_eq!(count(&output, gone), 0, "{gone:?} on {}", view.label());
+            }
+        }
+        // The Detailed inputs, opened on the Results tab: the order toggle, the filter box, the
+        // Key design group and every workflow group, under the fold's header; still open on
+        // the Geometry tab; and the column as wide as it was (the fold has no indent).
+        harness.tab(CentreView::Results);
+        let output = harness.fold(DETAILED_INPUTS);
+        let header = in_left_column(&output, DETAILED_INPUTS);
+        let mut inside = vec![InputOrder::Workbook.label(), KEY_DESIGN_HEADING];
+        inside.extend(
+            InputCatalogue::get()
+                .workflow
+                .iter()
+                .map(|group| group.label),
+        );
+        for view in [CentreView::Results, CentreView::Geometry] {
+            let output = harness.tab(view);
+            for text in &inside {
+                let at = in_left_column(&output, text);
+                assert!(at.top() >= header.bottom(), "{text:?} on {}", view.label());
+            }
+            assert_eq!(count(&output, ASSUMPTIONS_NOTE), 0, "{}", view.label());
+            assert_eq!(side(&harness).width(), width, "{}", view.label());
+        }
+        // The Assumptions fold in its place: the note that heads it, and the same width.
+        let output = harness.fold(ASSUMPTIONS_FOLD);
+        assert_eq!(count(&output, ASSUMPTIONS_NOTE), 1);
+        assert_eq!(count(&output, KEY_DESIGN_HEADING), 0);
+        assert_eq!(side(&harness).width(), width);
+        assert_eq!(harness.panel.design(), Design::default());
+        assert_eq!(harness.panel.history.undo_len(), 0);
+    }
+
+    #[test]
+    fn a_trace_s_banner_and_clear_trace_sit_at_the_left_column_s_foot_on_every_tab() {
+        // Part 2b-ii-a's decision D-52 left the trace's banner and Clear trace at the foot of
+        // the inputs side of the other tabs, and the opening tab with neither. With the column
+        // the same on every tab (UX overhaul spec 4.3) both sit at its foot on every tab, the
+        // opening one too: under the folds, whole inside the window at its smallest, moving no
+        // row of the column (decision O-8), and still there once the selection moves on.
+        use crate::gui::trace::{CLEAR_TRACE, TRACING};
+        for size in [egui::vec2(1024.0, 700.0), SCREEN] {
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+            let mut harness = Harness::of(MagcouplingPanel::new(), size);
+            let output = harness.frame(Vec::new());
+            let rows = column_rows(&output);
+            let tracing = |output: &egui::FullOutput| {
+                drawn_texts(output)
+                    .iter()
+                    .any(|text| text.starts_with(TRACING))
+            };
+            assert!(!tracing(&output), "no trace, no banner");
+            assert_eq!(count(&output, CLEAR_TRACE), 0);
+            // The gap's row of the Size column, then its entry's trace link.
+            harness.trace_input(size_controls::GAP);
+            let banner = harness.panel.trace.clone().expect("a trace").banner(false);
+            for view in CentreView::tabs(false) {
+                harness.tab(view);
+                let output = harness.frame(Vec::new());
+                let what = format!("{size:?}, {}", view.label());
+                let at = shown_whole(&output, &banner, screen);
+                let clear = shown_whole(&output, CLEAR_TRACE, screen);
+                assert_eq!((at.len(), clear.len()), (1, 1), "{what}");
+                assert!(at[0].center().x < INPUTS_WIDTH, "{what}: {at:?}");
+                let folds = rows.last().expect("the Assumptions fold's header");
+                assert!(
+                    folds.bottom() <= at[0].top() && at[0].bottom() <= clear[0].top(),
+                    "{what}: {folds:?}, {at:?}, {clear:?}"
+                );
+                assert_eq!(column_rows(&output), rows, "{what}: a trace moves no row");
+            }
+            // On the opening tab, with another thing selected: the banner and its button stay.
+            harness.size_and_torque();
+            let output = harness.select(GEARBOX_CHECK);
+            assert_eq!(count(&output, &banner), 1, "{size:?}");
+            harness.click_text(CLEAR_TRACE);
+            assert_eq!(harness.panel.trace, None, "{size:?}");
+            let output = harness.frame(Vec::new());
+            assert!(!tracing(&output), "{size:?}");
+            assert_eq!(count(&output, CLEAR_TRACE), 0, "{size:?}");
+            assert_eq!(harness.panel.design(), Design::default());
+            assert_eq!(harness.panel.history.undo_len(), 0);
+        }
+    }
+
+    /// Where an action of the top bar before the overhaul lives now (UX overhaul spec 4.2).
+    #[derive(Clone, Copy, Debug)]
+    enum Home {
+        /// A word of the top bar.
+        Bar(&'static str),
+        /// An item of the Design menu.
+        Menu(&'static str),
+        /// The "Equation" link of an Explain entry (decision C-11).
+        EquationLink,
+        /// The row under the bar while an assumption differs from its default.
+        AssumptionsRow(&'static str),
+    }
+
+    /// Every action of the top bar before the overhaul, by its words then (`header_ui` at
+    /// 1048962, the design's 4.2 table; "Open the example design" joined it in slice A), and
+    /// its home.
+    const TOP_BAR_ACTIONS: [(&str, Home); 11] = [
+        ("Undo", Home::Bar(UNDO)),
+        ("Redo", Home::Bar(REDO)),
+        ("Reset all", Home::Menu(RESET_TO_START)),
+        ("Open the example design", Home::Menu(OPEN_EXAMPLE)),
+        ("Save design", Home::Menu(SAVE_DESIGN)),
+        ("Load design", Home::Menu(LOAD_DESIGN)),
+        ("Copy share link", Home::Bar(SHARE)),
+        ("Export spreadsheet", Home::Bar(EXPORT)),
+        ("Equation panel", Home::EquationLink),
+        ("Show spreadsheet details", Home::Menu(SHOW_DETAILS)),
+        (
+            "Reset assumptions to defaults",
+            Home::AssumptionsRow(RESET_ASSUMPTIONS),
+        ),
+    ];
+
+    #[test]
+    fn nothing_is_lost_each_action_view_note_dashboard_row_input_and_assumption_has_its_home() {
+        // UX overhaul spec 8.2, test 9 (goal G-4), table by table, with the shaft-clamp
+        // section shown and paused: every action of the old top bar is on the bar, in the
+        // Design menu, behind an entry's Equation link or on the assumptions row; every centre
+        // view has its tab; every shown note is in the Learn list; every dashboard row is a
+        // Headline row of the results table, and a tile or a number of its check's entry where
+        // it had a check; every input is a row of the Detailed inputs, under the six Size
+        // controls; every assumption is in the Assumptions fold. The inputs and the assumptions
+        // are looked for from every tab: the left column is the same on each (spec 4.3). The
+        // panel is the app's (its baseline is not the spreadsheet's design, so the menu holds
+        // the reset and the example design both), in a window that draws every input's row.
+        use crate::gui::dashboard::{DASHBOARD, dashboard_lines};
+        use crate::gui::explain::{EQUATION, shown_notes};
+        use crate::gui::guidance::counted_guides;
+        use crate::gui::plain_text::display_label;
+        use crate::gui::result_groups::result_groups;
+        use crate::gui::results_table::table_entries;
+        use crate::gui::tiles::Tile;
+        use crate::gui::typeset::glyph_safe;
+        let window = egui::vec2(1280.0, 20000.0);
+        // The texts `output` draws in the left column.
+        let left_texts = |output: &egui::FullOutput| -> std::collections::HashSet<String> {
+            flat_shapes(output)
+                .into_iter()
+                .filter_map(|shape| match shape {
+                    egui::Shape::Text(text)
+                        if text.visual_bounding_rect().center().x < INPUTS_WIDTH =>
+                    {
+                        Some(text.galley.text().to_owned())
+                    }
+                    _ => None,
+                })
+                .collect()
+        };
+        for clamps_paused in [false, true] {
+            let panel = MagcouplingPanel::with_baseline(passing_design());
+            let mut harness = Harness::of(panel, window);
+            harness.panel.clamps_paused = clamps_paused;
+            harness.frame(Vec::new());
+            let output = harness.frame(Vec::new());
+            // In the right column (a wide note widens it, so its edge is read off each frame).
+            let in_explain = |output: &egui::FullOutput, text: &str| {
+                let right = right_column_left(output);
+                text_rects(output, text)
+                    .iter()
+                    .any(|rect| rect.left() > right)
+            };
+
+            // 1. The top bar's actions.
+            let bar = text_rect(&output, HEADING).expect("the title");
+            harness.click_text(DESIGN_MENU);
+            let menu = harness.frame(Vec::new());
+            harness.frame(key_tap(egui::Key::Escape));
+            for (was, home) in TOP_BAR_ACTIONS {
+                match home {
+                    Home::Bar(text) => {
+                        let at = text_rect(&output, text)
+                            .unwrap_or_else(|| panic!("{was}: no {text:?}"));
+                        assert!(
+                            (at.center().y - bar.center().y).abs() < 20.0,
+                            "{was}: {text:?} is on the bar"
+                        );
+                    }
+                    Home::Menu(text) => {
+                        assert_eq!(count(&output, text), 0, "{was}: shut in the menu");
+                        assert_eq!(count(&menu, text), 1, "{was}: {text:?} in the menu");
+                    }
+                    Home::EquationLink => {
+                        harness.select(HOT_MIN_CHECK);
+                        harness.click_text(EQUATION);
+                        assert!(harness.panel.explorer.open, "{was}");
+                        harness.panel.explorer.close();
+                        harness.panel.selection = Selection::Nothing;
+                    }
+                    Home::AssumptionsRow(text) => {
+                        assert_eq!(count(&output, text), 0, "{was}: no assumption differs");
+                        harness.panel.inputs.coupling.c_end = 0.2;
+                        harness.frame(Vec::new());
+                        let differs = harness.frame(Vec::new());
+                        assert_eq!(count(&differs, text), 1, "{was}: {text:?} under the bar");
+                        harness.panel.inputs = passing_design();
+                        harness.frame(Vec::new());
+                    }
+                }
+            }
+
+            // 2. Every centre view has its tab; the paused section's has none.
+            for view in CentreView::ALL {
+                if clamps_paused && view == CentreView::Clamp {
+                    let output = harness.frame(Vec::new());
+                    assert_eq!(count(&output, view.label()), 0, "the paused tab");
+                    continue;
+                }
+                harness.tab(view);
+                assert_eq!(harness.panel.centre, view, "{}", view.label());
+            }
+
+            // 3. Every shown note is in the Learn list, and its title shows it.
+            let notes: Vec<_> = shown_notes(clamps_paused).collect();
+            assert!(notes.len() > 10, "{}", notes.len());
+            for note in notes {
+                harness.click_text(LEARN);
+                assert_eq!(harness.panel.selection, Selection::NoteList);
+                let output = harness.frame(Vec::new());
+                let title = glyph_safe(note.title);
+                let right = right_column_left(&output);
+                let at = text_rects(&output, &title)
+                    .into_iter()
+                    .find(|rect| rect.left() > right)
+                    .unwrap_or_else(|| panic!("{title:?} in the Learn list"));
+                harness.click(at.center());
+                assert_eq!(harness.panel.selection, Selection::Note(note.id));
+            }
+
+            // 4. Every dashboard row: a Headline row of the results table, drawn under its
+            // name; its tile where it has one; a number of its check's entry where it has a
+            // check, and that check a row of the check list.
+            let headline: Vec<&str> = result_groups()[0]
+                .rows
+                .iter()
+                .map(|&row| table_entries()[row].path.as_str())
+                .collect();
+            harness.tab(CentreView::Results);
+            let table = harness.frame(Vec::new());
+            harness.tab(CentreView::SizeAndTorque);
+            let tiles = harness.frame(Vec::new());
+            let centre = |output: &egui::FullOutput, text: &str| {
+                let right = right_column_left(output);
+                text_rects(output, text)
+                    .iter()
+                    .any(|rect| rect.left() > INPUTS_WIDTH && rect.right() < right)
+            };
+            let lines = dashboard_lines(harness.panel.results());
+            let mut homes = [0; 3];
+            for (line, (path, check)) in lines.iter().zip(DASHBOARD) {
+                if clamps::hides(path, clamps_paused) {
+                    continue;
+                }
+                assert!(headline.contains(&path), "{path}: a Headline row");
+                let name = display_label(path, result_info(path).unwrap().meta.label);
+                assert!(centre(&table, name), "{path}: {name:?} on the Results tab");
+                homes[0] += 1;
+                if let Some(tile) = Tile::ALL.into_iter().find(|tile| tile.path() == path) {
+                    let label = tile.label(harness.panel.results());
+                    assert!(centre(&tiles, &label), "{path}: its tile, {label:?}");
+                    homes[1] += 1;
+                }
+                if let Some(check) = check {
+                    let guide = counted_guides(clamps_paused)
+                        .find(|guide| guide.check == check)
+                        .unwrap_or_else(|| panic!("{path}: {check} is no row of the check list"));
+                    let entry = harness.select(check);
+                    assert!(in_explain(&entry, guide.label), "{path}: {check}'s entry");
+                    if path != check {
+                        let value = line.shown_value();
+                        assert!(in_explain(&entry, &value), "{path}: {value:?} in the entry");
+                    }
+                    homes[2] += 1;
+                }
+            }
+            // The paused section takes its one row; four rows are tiles; most have a check.
+            let rows = DASHBOARD.len() - usize::from(clamps_paused);
+            assert_eq!(homes[..2], [rows, Tile::ALL.len()], "{homes:?}");
+            assert!(homes[2] >= 10, "{homes:?}");
+            harness.panel.selection = Selection::Nothing;
+
+            // 5. Every input: a row of the Detailed inputs (the filter "." matches every
+            // path), under the six Size controls, from every tab.
+            let catalogue = InputCatalogue::shown(clamps_paused);
+            let total = catalogue.all().count();
+            harness.fold(DETAILED_INPUTS);
+            harness.panel.input_filter = ".".to_owned();
+            for view in CentreView::tabs(clamps_paused) {
+                harness.tab(view);
+                let column = left_texts(&harness.frame(Vec::new()));
+                let tab = view.label();
+                for row in size_controls::SIZE_ROWS {
+                    assert!(column.contains(row.label), "{:?} on {tab}", row.label);
+                }
+                let shown = format!("{total} of {total} inputs");
+                assert!(column.contains(&shown), "{shown:?} on {tab}");
+                // A row apiece: some inputs bear a Size control's label, or another input's.
+                assert_eq!(
+                    harness.panel.design_widgets.len(),
+                    size_controls::SIZE_ROWS.len() + total,
+                    "the rows drawn on {tab}"
+                );
+                for entry in catalogue.all() {
+                    let label = label_for(&entry.path);
+                    assert!(column.contains(label), "{}: {label:?} on {tab}", entry.path);
+                }
+            }
+            harness.panel.input_filter.clear();
+
+            // 6. Every assumption shown, with its rationale, in the Assumptions fold, from
+            // every tab (the opening one among them).
+            harness.fold(ASSUMPTIONS_FOLD);
+            for view in CentreView::tabs(clamps_paused) {
+                harness.tab(view);
+                let column = left_texts(&harness.frame(Vec::new()));
+                let tab = view.label();
+                assert!(column.contains(ASSUMPTIONS_NOTE), "the fold on {tab}");
+                for assumption in ASSUMPTIONS {
+                    let shown = assumption.shown(clamps_paused);
+                    for text in [assumption.label, assumption.rationale] {
+                        assert_eq!(column.contains(text), shown, "{text:?} on {tab}");
+                    }
+                }
+            }
+            assert_eq!(harness.panel.inputs(), &passing_design());
+        }
+    }
+
     #[test]
     fn the_assumptions_fold_scrolls_with_the_size_column_to_its_last_assumption() {
         // UXQ-2 of the 2026-11-23 review: the fold drew the Assumptions view's own scroll area
@@ -7282,10 +7823,7 @@ mod tests {
         let size = egui::vec2(1024.0, 700.0);
         let mut harness = size_tab(size, DesignInputs::default());
         let output = harness.frame(Vec::new());
-        let header = text_rects(&output, ASSUMPTIONS_FOLD)
-            .into_iter()
-            .find(|rect| rect.right() <= INPUTS_WIDTH)
-            .expect("the fold's header in the Size column");
+        let header = in_left_column(&output, ASSUMPTIONS_FOLD);
         harness.click(header.center());
         let paused = harness.panel.clamps_paused;
         let last = assumptions::states(&harness.panel.inputs)
@@ -7300,19 +7838,151 @@ mod tests {
             text_rect(&output, last).is_none_or(|rect| rect.top() > size.y),
             "the last rationale is in view before a scroll: the test would prove nothing"
         );
-        harness.frame(vec![egui::Event::PointerMoved(header.center())]);
-        harness.frame(vec![egui::Event::MouseWheel {
-            unit: egui::MouseWheelUnit::Point,
-            delta: egui::vec2(0.0, -20000.0),
-            modifiers: egui::Modifiers::NONE,
-        }]);
-        // egui spreads a wheel step over several frames.
-        let mut output = harness.frame(Vec::new());
-        for _ in 0..20 {
-            output = harness.frame(Vec::new());
-        }
+        let output = harness.wheel_column(header.center(), 20000.0, 20);
         let rect = text_rect(&output, last).expect("the last rationale is drawn");
         assert!(rect.bottom() <= size.y, "{rect:?} below the window's foot");
+    }
+
+    #[test]
+    fn a_dropdown_drawn_in_both_folds_opens_and_takes_its_pick() {
+        // RS-1 of the 2026-11-26 review: the two folds drew their rows unindented, in bodies
+        // that shared one id, so the harmonics dropdown, drawn in both while the filter keeps
+        // its row and the Assumptions fold is open, was one widget id twice: no click opened
+        // either, and a debug build painted egui's ID clash warning over the column.
+        use crate::engine::model::MAX_HARMONIC_CHOICES;
+        let text = |code: i64| {
+            let choice = MAX_HARMONIC_CHOICES.iter().find(|(c, _)| *c == code);
+            choice.expect("a choice of the harmonics").1
+        };
+        let mut harness = Harness::on_screen(TALL);
+        harness.panel.input_filter = "harm".to_owned();
+        harness.click_fold(ASSUMPTIONS_FOLD);
+        // The dropdown in the filtered list, then the one under Assumptions.
+        for (index, (from, to)) in [(5, 7), (7, 9)].into_iter().enumerate() {
+            let output = harness.frame(Vec::new());
+            let dropdowns: Vec<egui::Rect> = text_rects(&output, text(from))
+                .into_iter()
+                .filter(|rect| rect.right() <= INPUTS_WIDTH)
+                .collect();
+            assert_eq!(dropdowns.len(), 2, "the row is drawn in both folds");
+            harness.click(dropdowns[index].center());
+            // The popup sizes itself on its first frame and paints on the next.
+            let output = harness.frame(Vec::new());
+            assert!(
+                egui::Popup::is_any_open(&harness.ctx),
+                "dropdown {index} opens"
+            );
+            let pick = text_rect(&output, text(to)).expect("the choice is listed");
+            harness.click(pick.center());
+            let harmonics = harness.panel.inputs.coupling.max_harmonic;
+            assert_eq!(harmonics, to, "dropdown {index}'s pick");
+        }
+    }
+
+    #[test]
+    fn the_detailed_inputs_fold_scrolls_with_the_size_column_to_its_last_group() {
+        // BL-091 (UXQ-2 of the 2026-11-23 review): the fold drew the design inputs' own scroll
+        // area inside the column's, a short pane the column could not scroll past. Opened at
+        // 1024x700, a wheel over the column brings the last group's heading into the window,
+        // and a row asked for (a leaf term, a fix link) still scrolls into view, through the
+        // column's own scroll area.
+        let size = egui::vec2(1024.0, 700.0);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+        let mut harness = size_tab(size, DesignInputs::default());
+        let output = harness.frame(Vec::new());
+        let header = in_left_column(&output, DETAILED_INPUTS);
+        harness.click(header.center());
+        let last = InputCatalogue::get()
+            .workflow
+            .last()
+            .expect("a workflow group")
+            .label;
+        let output = harness.frame(Vec::new());
+        assert!(
+            shown_whole(&output, last, screen).is_empty(),
+            "the last group is in view before a scroll: the test would prove nothing"
+        );
+        let output = harness.wheel_column(header.center(), 20000.0, 20);
+        assert_eq!(
+            shown_whole(&output, last, screen).len(),
+            1,
+            "the last group's heading is in the window"
+        );
+        // From there a row asked for near the fold's top (the face gap, a Key design row)
+        // scrolls back into view.
+        let gap = label_for(FACE_GAP);
+        assert!(
+            shown_whole(&output, gap, screen)
+                .iter()
+                .all(|rect| rect.left() > INPUTS_WIDTH),
+            "the face gap's rows are scrolled out of the column"
+        );
+        // The pointer leaves: what is left of the wheel step would end the scroll to the row.
+        harness.frame(vec![egui::Event::PointerGone]);
+        harness.panel.explorer.focus_input(FACE_GAP);
+        let mut output = harness.frame(Vec::new());
+        for _ in 0..30 {
+            output = harness.frame(Vec::new());
+        }
+        let focus = focus_rects(&output);
+        assert!(
+            shown_whole(&output, gap, screen)
+                .iter()
+                .any(|row| focus.iter().any(|f| f.contains_rect(*row))),
+            "the face gap's framed row is in the window: {focus:?}"
+        );
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
+    fn the_filtered_inputs_scroll_with_the_size_column_to_their_last_row() {
+        // BL-091's other view: the filter's matches drew in a scroll area of their own too, the
+        // same short pane inside the column's. With the fold open at 1024x700 and a filter that
+        // lists every input, a wheel over the column brings the last row into the window.
+        let size = egui::vec2(1024.0, 700.0);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+        let mut harness = size_tab(size, DesignInputs::default());
+        let output = harness.frame(Vec::new());
+        let header = in_left_column(&output, DETAILED_INPUTS);
+        harness.click(header.center());
+        // Every input's path holds a dot: the filter lists them all.
+        harness.panel.input_filter = ".".to_owned();
+        let groups = InputCatalogue::get().groups_in(harness.panel.input_order);
+        let matches = filter_inputs(groups, ".");
+        assert_eq!(
+            matches.iter().map(|run| run.entries.len()).sum::<usize>(),
+            InputCatalogue::get().all().count()
+        );
+        let last = matches
+            .last()
+            .and_then(|run| run.entries.last())
+            .expect("a match");
+        // The last row's label, and how many rows bear it (two inputs do, both at the list's end).
+        let last = label_for(&last.path);
+        let copies = matches
+            .iter()
+            .flat_map(|run| &run.entries)
+            .filter(|entry| label_for(&entry.path) == last)
+            .count();
+        let in_column = |output: &egui::FullOutput| {
+            shown_whole(output, last, screen)
+                .into_iter()
+                .filter(|rect| rect.right() <= INPUTS_WIDTH)
+                .count()
+        };
+        let output = harness.frame(Vec::new());
+        assert_eq!(
+            in_column(&output),
+            0,
+            "the last row is in view before a scroll: the test would prove nothing"
+        );
+        let output = harness.wheel_column(header.center(), 200000.0, 60);
+        assert_eq!(
+            in_column(&output),
+            copies,
+            "the filter's last row is in the window"
+        );
+        assert_eq!(harness.panel.inputs(), &DesignInputs::default());
     }
 
     #[test]
@@ -7605,14 +8275,9 @@ mod tests {
         use crate::gui::explain::WHAT_SETS_IT;
         let mut harness = size_tab(egui::vec2(930.0, 1024.0), with_poles(8));
         let output = harness.frame(Vec::new());
-        let side = |harness: &Harness, id: &str| {
-            egui::containers::panel::PanelState::load(&harness.ctx, egui::Id::new(id))
-                .unwrap_or_else(|| panic!("{id} is drawn"))
-                .rect
-        };
-        let inputs_left = side(&harness, "magcoupling_inputs").left();
+        let inputs_left = side_rect(&harness.ctx, "magcoupling_inputs").left();
         let inputs_right = inputs_left + INPUTS_WIDTH;
-        let dashboard_left = side(&harness, "magcoupling_dashboard").left();
+        let dashboard_left = side_rect(&harness.ctx, "magcoupling_dashboard").left();
         let rect = |text: &str| text_rect(&output, text).unwrap_or_else(|| panic!("no {text:?}"));
         let results = harness.panel.results().clone();
         let (gap, _) = torque_gap_text(
@@ -7649,7 +8314,7 @@ mod tests {
         ] {
             assert!(!lines.is_empty(), "{key}");
             let output = entry(&mut harness, key);
-            let right = side(&harness, "magcoupling_dashboard");
+            let right = side_rect(&harness.ctx, "magcoupling_dashboard");
             let mut above = explain_rect(&output, WHAT_SETS_IT);
             for line in &lines {
                 let at = explain_rect(&output, line);
@@ -7793,7 +8458,7 @@ mod tests {
         }
         assert_eq!(harness.panel.runner.solves, 0, "still waiting");
         let output = harness.frame(Vec::new());
-        assert_eq!(count(&output, SOLVING), 1);
+        assert_eq!(count_in_fold(&output, SOLVING), 1);
         asks_within_the_debounce(&output);
         let solved = harness.frame_after(DEBOUNCE_S, Vec::new());
         assert_eq!(harness.panel.runner.solves, 1);
@@ -7869,7 +8534,7 @@ mod tests {
         let mut harness = Harness::new();
         harness.size();
         harness.panel.inputs.metal.required_min_Nm = 3.0;
-        assert_eq!(count(&harness.frame(Vec::new()), SOLVING), 1);
+        assert_eq!(count_in_fold(&harness.frame(Vec::new()), SOLVING), 1);
         harness.panel.set_sizing_mode(SizingMode::MagnetsToTorque);
         assert_eq!(harness.panel.sizing().mode, SizingMode::MagnetsToTorque);
         assert_eq!(harness.panel.runner.solves, 2, "solved on leaving");
@@ -7940,7 +8605,7 @@ mod tests {
         let point = harness.solved();
         let steps = harness.panel.history.undo_len();
         // Auto off on the Size tab; opening the tab is no edit.
-        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.size_and_torque();
         assert_eq!(harness.panel.history.undo_len(), steps);
         harness.click_text(AUTO);
         assert_eq!(harness.panel.sizing().mode, SizingMode::MagnetsToTorque);
@@ -7962,9 +8627,11 @@ mod tests {
         harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
         harness.frame(Vec::new());
         let output = harness.frame(Vec::new());
+        // Twice in this tall window: Auto's outcome in the Size column, and the solver's
+        // status in the Key design group under it.
         assert_eq!(
             count(&output, "Not reachable: best 9.937 N\u{b7}m at 50.80 mm"),
-            1
+            2
         );
         assert_eq!(
             harness
@@ -7990,11 +8657,12 @@ mod tests {
         harness.click_text(CentreView::Geometry.label());
         harness.size();
         // The picker is the Size tab's Auto row; the Key design group then shows the result.
-        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.size_and_torque();
         harness.click_text(auto_choice(FreeVariable::AxialLength));
         harness.click_text(auto_choice(FreeVariable::RingRadius));
         assert_eq!(harness.panel.sizing().variable, FreeVariable::RingRadius);
         harness.click_text(CentreView::Geometry.label());
+        harness.fold(DETAILED_INPUTS);
         harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
         let point = harness.solved();
         // The ring radius is not in the Key design group: its locked row shows there anyway,
@@ -8117,7 +8785,7 @@ mod tests {
         use crate::gui::sizing::auto_choice;
         let mut harness = Harness::new();
         tooltips_at_once(&harness.ctx);
-        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.size_and_torque();
         // Off: every size slider is the user's.
         let output = harness.frame(Vec::new());
         assert_eq!(count(&output, SET_BY_AUTO), 0);
@@ -8202,7 +8870,7 @@ mod tests {
         use crate::engine::sizing::solve_in;
         use crate::gui::size_controls::{AUTO, GAP, change_text};
         let mut harness = Harness::new();
-        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.size_and_torque();
         harness.click_text(AUTO);
         harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
         harness.frame(Vec::new());
@@ -8250,7 +8918,7 @@ mod tests {
     fn idle_frames_with_auto_on_change_nothing_and_solve_once() {
         use crate::gui::size_controls::AUTO;
         let mut harness = Harness::new();
-        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.size_and_torque();
         harness.click_text(AUTO);
         harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
         harness.frame(Vec::new());
@@ -8281,7 +8949,7 @@ mod tests {
         use crate::gui::sizing::NOT_REACHABLE_PREFIX;
         let mut harness = Harness::new();
         harness.panel.inputs.metal.required_min_Nm = 50.0;
-        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.size_and_torque();
         harness.click_text(AUTO);
         harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
         let output = harness.frame(Vec::new());
@@ -8328,7 +8996,7 @@ mod tests {
         let mut harness = Harness::new();
         harness.panel.inputs = short_magnets();
         harness.panel.sizing.variable = FreeVariable::RingRadius;
-        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.size_and_torque();
         harness.click_text(AUTO);
         harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
         let output = harness.frame(Vec::new());
@@ -8361,7 +9029,7 @@ mod tests {
         use crate::gui::sizing::REQUIREMENT_NOT_POSITIVE;
         let mut harness = Harness::new();
         harness.panel.inputs.metal.required_min_Nm = 0.0;
-        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.size_and_torque();
         harness.click_text(AUTO);
         harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
         let output = harness.frame(Vec::new());
@@ -8395,7 +9063,7 @@ mod tests {
         const RING: FreeVariable = FreeVariable::RingRadius;
         let mut harness = Harness::new();
         harness.panel.inputs.coupling.npole = 8;
-        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.size_and_torque();
         // The requirement: the hot-low torque of an 8.5 mm ring of 8 magnets, a valid layout.
         let at = RING.apply(harness.panel.inputs(), 8.5);
         let at_results = compute_all(&at);
@@ -8519,7 +9187,7 @@ mod tests {
         let mut harness = Harness::new();
         harness.panel.inputs = with_poles(8);
         harness.panel.inputs.metal.required_min_Nm = 50.0;
-        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.size_and_torque();
         harness.click_text(auto_choice(FreeVariable::AxialLength));
         harness.click_text(auto_choice(FreeVariable::RingRadius));
         harness.click_text(AUTO);
@@ -8576,7 +9244,7 @@ mod tests {
         let mut harness = Harness::new();
         harness.panel.inputs = with_poles(8);
         harness.panel.inputs.metal.required_min_Nm = 1.0;
-        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.size_and_torque();
         harness.click_text(auto_choice(FreeVariable::AxialLength));
         harness.click_text(auto_choice(FreeVariable::RingRadius));
         harness.click_text(AUTO);
@@ -8584,8 +9252,10 @@ mod tests {
         harness.solved();
         let own = harness.panel.inputs().clone();
         let shown = harness.panel.shown_inputs();
-        // The cap's rows, and two cap rows Auto does not set, on the inputs side of another tab.
+        // The cap's rows, and two cap rows Auto does not set, in the Detailed inputs, on
+        // another tab.
         harness.click_text(CentreView::Geometry.label());
+        harness.fold(DETAILED_INPUTS);
         harness.panel.input_filter = "metal.cap_".to_owned();
         harness.frame(Vec::new());
         let output = harness.frame(Vec::new());
@@ -8657,7 +9327,7 @@ mod tests {
         let mut harness = Harness::new();
         harness.panel.inputs = with_poles(8);
         harness.panel.inputs.metal.required_min_Nm = 2.0;
-        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.size_and_torque();
         harness.click_text(auto_choice(FreeVariable::AxialLength));
         harness.click_text(auto_choice(FreeVariable::RingRadius));
         harness.click_text(AUTO);
@@ -8695,7 +9365,7 @@ mod tests {
         // The hot-low torque of 8 magnets per ring: met below the inputs' own 10.
         let required = compute_all(&with_poles(8)).metal.torque_hot_low_Nm;
         harness.panel.inputs.metal.required_min_Nm = required;
-        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.size_and_torque();
         harness.click_text(auto_choice(FreeVariable::AxialLength));
         harness.click_text(auto_choice(FreeVariable::MagnetsPerRing));
         harness.click_text(AUTO);
@@ -8767,7 +9437,7 @@ mod tests {
             .load_design_file(&design_to_json(&design))
             .unwrap();
         // Opening the Size tab switches no mode.
-        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.size_and_torque();
         assert_eq!(harness.panel.design(), design);
         harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
         let output = harness.frame(Vec::new());
@@ -8788,13 +9458,13 @@ mod tests {
             .panel
             .open_share_payload(&encode_share_payload(&design))
             .unwrap();
-        linked.click_text(CentreView::SizeAndTorque.label());
+        linked.size_and_torque();
         assert_eq!(linked.panel.design(), design);
     }
 
     #[test]
     fn the_key_design_group_shows_auto_s_status_and_a_button_to_the_size_tab() {
-        use crate::gui::size_controls::{AUTO_STATUS_START, OPEN_SIZE_TAB, auto_status};
+        use crate::gui::size_controls::{AUTO, OPEN_SIZE_TAB, auto_status};
         let mut harness = Harness::new();
         harness.click_text(CentreView::Geometry.label());
         let output = harness.frame(Vec::new());
@@ -8808,10 +9478,12 @@ mod tests {
         for text in gone {
             assert_eq!(count(&output, text), 0, "{text}");
         }
+        // The group's own line, whichever size Auto sets (the Size column's Auto row starts
+        // with the same words).
         assert!(
-            !drawn_texts(&output)
+            FreeVariable::ALL
                 .iter()
-                .any(|t| t.starts_with(AUTO_STATUS_START)),
+                .all(|&variable| count(&output, &auto_status(variable)) == 0),
             "Auto is off"
         );
         // Auto on: one line naming the size it sets, and the button.
@@ -8822,8 +9494,25 @@ mod tests {
             assert_eq!(count(&output, text), 0, "{text}");
         }
         let design = harness.panel.design();
+        // The button shows Auto's toggle: the left column, scrolled down in its Detailed
+        // inputs, scrolls back to its top, where the toggle is.
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, SCREEN);
+        let toggle = |output: &egui::FullOutput| {
+            shown_whole(output, AUTO, screen)
+                .into_iter()
+                .any(|rect| rect.right() <= INPUTS_WIDTH)
+        };
+        assert!(
+            !toggle(&output),
+            "the toggle is in view before the click: the test would prove nothing"
+        );
         harness.click_text(OPEN_SIZE_TAB);
         assert_eq!(harness.panel.centre, CentreView::SizeAndTorque);
+        let mut output = harness.frame(Vec::new());
+        for _ in 0..5 {
+            output = harness.frame(Vec::new());
+        }
+        assert!(toggle(&output), "the column is back at Auto's toggle");
         assert_eq!(harness.panel.design(), design, "the button edits nothing");
     }
 
@@ -8835,7 +9524,7 @@ mod tests {
         harness.size();
         let solved = harness.panel.shown_inputs();
         // Opening the Size tab switches nothing.
-        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.size_and_torque();
         harness.frame(Vec::new());
         assert_eq!(harness.panel.sizing().mode, SizingMode::TorqueToMagnets);
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
@@ -8865,7 +9554,7 @@ mod tests {
         // The longest outcome line: a requirement out of reach.
         harness.panel.inputs.metal.required_min_Nm = 50.0;
         harness.frame(Vec::new());
-        harness.click_text(CentreView::SizeAndTorque.label());
+        harness.size_and_torque();
         harness.click_text(AUTO);
         harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
         let output = harness.frame(Vec::new());
@@ -8903,9 +9592,9 @@ mod tests {
         let rail = harness.size_widget(LENGTH).rect;
         harness.frame_after(0.2, vec![egui::Event::PointerMoved(rail.center())]);
         all.extend(drawn_texts(&harness.frame(Vec::new())));
-        // The Key design group's line, on another tab.
+        // The Key design group's line, in the Detailed inputs, on another tab.
         harness.click_text(CentreView::Geometry.label());
-        all.extend(drawn_texts(&harness.frame(Vec::new())));
+        all.extend(drawn_texts(&harness.fold(DETAILED_INPUTS)));
         assert!(all.contains(&auto_status(FreeVariable::AxialLength)));
         // Every Auto text, each choice's.
         all.extend([AUTO_HOVER, OPEN_SIZE_TAB, REQUIREMENT_NOT_POSITIVE].map(str::to_owned));
@@ -9177,11 +9866,14 @@ mod tests {
             egui::vec2(1280.0, 240.0),
             egui::vec2(1280.0, 300.0),
         ] {
-            let mut harness = Harness::on_screen(size);
+            // These windows show no fold's header. A fix link or a leaf term opens the Detailed
+            // inputs without it (here the face gap's), so their rows are drawn in each window.
+            let mut harness = Harness::of(MagcouplingPanel::new(), size);
             harness
                 .panel
                 .explorer
                 .open_path("temperature.summary.governing_limit_C");
+            harness.panel.explorer.focus_input(FACE_GAP);
             harness.panel.selection = Selection::Note("br_temperature");
             for view in CentreView::ALL {
                 harness.panel.centre = view;
@@ -9189,6 +9881,7 @@ mod tests {
                     harness.frame(Vec::new());
                 }
             }
+            assert!(!harness.panel.key_widgets.is_empty(), "the fold is open");
             assert_eq!(harness.panel.inputs(), &DesignInputs::default());
         }
     }
@@ -9350,8 +10043,11 @@ mod tests {
             (SCREEN, true),
             (egui::vec2(1280.0, 300.0), true),
         ] {
-            let mut harness = Harness::on_screen(size);
+            // The shortest window shows no fold's header. A fix link or a leaf term opens the
+            // Detailed inputs without it (here the face gap's), so their rows are drawn.
+            let mut harness = Harness::of(MagcouplingPanel::new(), size);
             harness.panel.explorer.open_path("model.pullout_Nm");
+            harness.panel.explorer.focus_input(FACE_GAP);
             harness.frame(Vec::new());
             if dragged {
                 let ctx = harness.ctx.clone();
@@ -9377,6 +10073,7 @@ mod tests {
                     }
                 }
             }
+            assert!(!harness.panel.key_widgets.is_empty(), "the fold is open");
             assert_eq!(harness.panel.inputs(), &DesignInputs::default());
         }
         assert!(
@@ -9502,16 +10199,21 @@ mod tests {
         // read there and must only not panic or edit.
         let narrow = egui::vec2(640.0, 240.0);
         for size in [SCREEN, egui::vec2(1280.0, 240.0), narrow] {
-            let mut harness = Harness::on_screen(size);
+            // The short windows show no fold's header. A fix link or a leaf term opens the
+            // Detailed inputs without it (here the face gap's), so their rows are drawn.
+            let mut harness = Harness::of(MagcouplingPanel::new(), size);
+            harness.panel.centre = CentreView::Geometry;
             harness.panel.explorer.open_path(paths[0]);
             for path in &paths[1..] {
                 harness.panel.explorer.drill(path);
             }
+            harness.panel.explorer.focus_input(FACE_GAP);
             assert_eq!(harness.panel.explorer.trail().len(), MAX_TRAIL);
             let mut output = harness.frame(Vec::new());
             for _ in 0..3 {
                 output = harness.frame(Vec::new());
             }
+            assert!(!harness.panel.key_widgets.is_empty(), "the fold is open");
             assert_eq!(harness.panel.inputs(), &DesignInputs::default());
             if size != narrow {
                 // The last crumbs after one ELIDED, each after its ">".
@@ -9805,9 +10507,9 @@ mod tests {
             // Tall enough for all fourteen without scrolling.
             let mut harness = Harness::on_screen(egui::vec2(1280.0, 6000.0));
             harness.panel.show_details = show_details;
-            harness.click_text(InputsView::Assumptions.label());
-            assert_eq!(harness.panel.inputs_view, InputsView::Assumptions);
-            let output = harness.frame(Vec::new());
+            let output = harness.fold(ASSUMPTIONS_FOLD);
+            assert_eq!(count(&output, ASSUMPTIONS_NOTE), 1, "the fold is open");
+            assert_eq!(count(&output, KEY_DESIGN_HEADING), 0, "and the other shut");
             let texts = drawn_texts(&output);
             for assumption in ASSUMPTIONS {
                 for want in [assumption.label.to_owned(), assumption.rationale.to_owned()] {
@@ -9821,8 +10523,9 @@ mod tests {
                 harness.frame(Vec::new());
             }
             assert_eq!(harness.panel.inputs(), &DesignInputs::default());
-            harness.click_text(InputsView::Design.label());
-            assert_eq!(harness.panel.inputs_view, InputsView::Design);
+            let output = harness.fold(DETAILED_INPUTS);
+            assert_eq!(count(&output, ASSUMPTIONS_NOTE), 0, "the fold is shut");
+            assert_eq!(count(&output, KEY_DESIGN_HEADING), 1, "and the other open");
         }
     }
 
@@ -9877,19 +10580,58 @@ mod tests {
 
     #[test]
     fn a_leaf_assumption_term_shows_its_row_in_the_assumptions_view() {
+        // The view is the Size column's Assumptions fold (UX overhaul spec 4.3), shut until
+        // the term opens it: on the Geometry tab, as on every tab. The column then scrolls to
+        // the row, over up to a third of a second.
+        let rationale = ASSUMPTIONS
+            .iter()
+            .find(|a| a.id == "end_effect")
+            .expect("the end-effect coefficient")
+            .rationale;
+        let mut harness = Harness::first_view();
+        harness.click_text(CentreView::Geometry.label());
+        harness.panel.explorer.open_path("model.f_end");
+        let output = harness.frame(Vec::new());
+        assert_eq!(count(&output, rationale), 0, "the fold starts shut");
+        harness.click_text("End-effect coefficient");
+        let mut output = harness.frame(Vec::new());
+        for _ in 0..30 {
+            output = harness.frame(Vec::new());
+        }
+        assert_eq!(count(&output, rationale), 1, "the Assumptions fold is open");
+        assert_eq!(
+            count(&output, KEY_DESIGN_HEADING),
+            0,
+            "the Detailed inputs stay shut"
+        );
+        let focus = focus_rects(&output);
+        // The assumption's heading and its row's label are both "End-effect coefficient";
+        // the row's label sits inside the frame, in the window.
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, SCREEN);
+        let labels = shown_whole(&output, "End-effect coefficient", screen);
+        assert!(
+            labels
+                .iter()
+                .any(|l| l.left() < INPUTS_WIDTH && focus.iter().any(|r| r.contains_rect(*l))),
+            "{labels:?} {focus:?}"
+        );
+        // With the Detailed inputs open (this harness's), the row shows in its input group
+        // too, which opens: a framed row is in the window all the same.
         let mut harness = Harness::new();
         harness.panel.explorer.open_path("model.f_end");
         harness.frame(Vec::new());
         harness.click_text("End-effect coefficient");
         let mut output = harness.frame(Vec::new());
-        for _ in 0..5 {
+        for _ in 0..30 {
             output = harness.frame(Vec::new());
         }
-        assert_eq!(harness.panel.inputs_view, InputsView::Assumptions);
         let focus = focus_rects(&output);
-        // The assumption's heading and its row's label are both "End-effect coefficient";
-        // the row's label sits inside the frame.
-        let labels = crate::gui::test_support::text_rects(&output, "End-effect coefficient");
+        assert_eq!(
+            focus.len(),
+            2,
+            "in its input group and in the Assumptions fold"
+        );
+        let labels = shown_whole(&output, "End-effect coefficient", screen);
         assert!(
             labels
                 .iter()
@@ -9913,7 +10655,7 @@ mod tests {
             .expect("the set has a colour");
         let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0));
         harness.panel.explorer.open_path("model.tau_Pa");
-        harness.click_text(InputsView::Assumptions.label());
+        harness.fold(ASSUMPTIONS_FOLD);
         let output = harness.frame(Vec::new());
         let row = text_rects(&output, label)
             .into_iter()
@@ -9924,10 +10666,10 @@ mod tests {
             marks.iter().any(|m| m.contains_rect(row)),
             "{row:?} not inside {marks:?}"
         );
-        // Back on the design inputs, the H under the Σ in the Equation panel.
-        harness.click_text(InputsView::Design.label());
-        assert_eq!(harness.panel.inputs_view, InputsView::Design);
-        let output = harness.frame(Vec::new());
+        // Back on the detailed inputs (the Assumptions fold shut again), the H under the Σ in
+        // the Equation panel.
+        let output = harness.fold(DETAILED_INPUTS);
+        assert_eq!(count(&output, ASSUMPTIONS_NOTE), 0, "the fold is shut");
         let h = text_rects(&output, "H")
             .into_iter()
             .find(|r| r.left() > INPUTS_WIDTH && r.right() < SCREEN.x - DASHBOARD_WIDTH)
@@ -9942,10 +10684,13 @@ mod tests {
         for _ in 0..5 {
             output = harness.frame(Vec::new());
         }
-        assert_eq!(harness.panel.inputs_view, InputsView::Assumptions);
+        assert_eq!(count(&output, ASSUMPTIONS_NOTE), 1, "the H opens the fold");
+        // The set's row in the Assumptions fold: the last one down the column (with the
+        // Detailed inputs open its input group shows the row too, framed as well).
         let row = text_rects(&output, label)
             .into_iter()
-            .find(|r| r.left() < INPUTS_WIDTH)
+            .filter(|r| r.left() < INPUTS_WIDTH)
+            .max_by(|a, b| a.top().total_cmp(&b.top()))
             .expect("the set's row on the inputs side");
         let focus = focus_rects(&output);
         assert!(
@@ -10449,7 +11194,7 @@ mod tests {
     fn the_panel_works_inside_an_egui_window() {
         // M5 shows the panel in a window of the linkage app. Past its first frames: a value
         // selected and opened from its entry, a term followed, a leaf assumption term's row
-        // shown (the Assumptions view
+        // shown (the Assumptions fold
         // and its frame), then idle frames. The window keeps its size, the Equation panel
         // draws its lists, egui reports no ID clash (the text it paints in a debug build, as
         // the tests are) and the design is unchanged.
@@ -10458,9 +11203,8 @@ mod tests {
         const TITLE: &str = "Magnetic coupling";
         let ctx = egui::Context::default();
         let mut panel = MagcouplingPanel::new();
-        // The Assumptions view is the inputs side of every view but Size and torque (which
-        // folds the inputs under "Detailed inputs"; a new panel opens there). The Results tab's
-        // Headline group lists the headline values.
+        // The Results tab's Headline group lists the headline values. The left column is the
+        // Size column there as on every tab, its Assumptions fold shut until the term opens it.
         panel.centre = CentreView::Results;
         let frame = |panel: &mut MagcouplingPanel, events: Vec<egui::Event>| {
             let input = egui::RawInput {
@@ -10472,11 +11216,7 @@ mod tests {
                     .default_size([1100.0, 1200.0])
                     .show(ctx, |ui| panel.ui(ui));
             });
-            let clashes: Vec<String> = drawn_texts(&output)
-                .into_iter()
-                .filter(|t| t.contains("use of") && t.contains(" ID "))
-                .collect();
-            assert!(clashes.is_empty(), "{clashes:?}");
+            assert_no_id_clash(&output);
             output
         };
         let click = |panel: &mut MagcouplingPanel, output: &egui::FullOutput, text: &str| {
@@ -10522,7 +11262,8 @@ mod tests {
         for _ in 0..5 {
             output = frame(&mut panel, Vec::new());
         }
-        assert_eq!(panel.inputs_view, InputsView::Assumptions);
+        // The Assumptions fold's row: the Detailed inputs, shut, draw no other.
+        assert_eq!(count(&output, KEY_DESIGN_HEADING), 0);
         assert_eq!(focus_rects(&output).len(), 1, "the row is framed");
         assert_eq!(window().map(|r| r.size()), Some(size), "the window's size");
         for heading in [TERMS, USED_BY] {
@@ -10537,8 +11278,8 @@ mod tests {
         use crate::gui::explain::CHECKS_IT_TOUCHES;
         use crate::gui::guidance::{CHECK_GUIDES, all_fixes, fix_text, guide};
         // Every fix of the workbook example's red checks, each in its check's Explain entry,
-        // from the Geometry view (the input's group or the Assumptions view opens) and from
-        // Size and torque (its Detailed inputs open).
+        // from the Geometry tab and from Size and torque: the left column is the same on both,
+        // and the input's group opens in its Detailed inputs (an assumption's fold too).
         let mut harness = Harness::on_screen(TALL);
         let defaults = DesignInputs::default();
         let fixes: Vec<(&str, &str, String)> = CHECK_GUIDES
@@ -10667,9 +11408,11 @@ mod tests {
     fn an_outside_diameter_fix_opens_the_size_tab_and_edits_nothing() {
         use crate::gui::guidance::{Direction, all_fixes, fix_text};
         use crate::gui::size_controls::DIAMETER;
-        // Contract C-4: the ring radius's fix bears the Size tab's name, and its link opens
-        // that tab, where the Outside diameter slider is, instead of a row. At 12 poles the
-        // blocks do not fit, and the fit's first fix raises the Outside diameter.
+        // Contract C-4: the ring radius's fix bears the Size column's name, and its link shows
+        // the Outside diameter slider instead of a row: it opens the Size and torque tab, as
+        // it did while only that tab had the slider, and the left column, scrolled down in its
+        // Detailed inputs, scrolls back to the slider. At 12 poles the blocks do not fit, and
+        // the fit's first fix raises the Outside diameter.
         let inputs = with_poles(12);
         let ring = "coupling.inner_back_apothem_mm";
         assert!(
@@ -10680,10 +11423,21 @@ mod tests {
         );
         let text = fix_text(ring, Direction::Raise);
         assert_eq!(text, format!("Raise {DIAMETER}"));
-        let mut harness = Harness::on_screen(TALL);
+        let size = egui::vec2(1280.0, 800.0);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+        let mut harness = Harness::on_screen(size);
         harness.panel.inputs = inputs.clone();
         harness.frame(Vec::new());
-        harness.select(crate::gui::guidance::FIT_CHECK);
+        let output = harness.select(crate::gui::guidance::FIT_CHECK);
+        let slider = |output: &egui::FullOutput| {
+            shown_whole(output, DIAMETER, screen)
+                .into_iter()
+                .any(|rect| rect.right() <= INPUTS_WIDTH)
+        };
+        assert!(
+            !slider(&output),
+            "the slider is in view before the link: the test would prove nothing"
+        );
         let undo = harness.panel.history.undo_len();
         assert_eq!(harness.panel.centre, CentreView::Geometry);
         harness.click_text(&text);
@@ -10692,9 +11446,11 @@ mod tests {
         // Spec 5.2: the link selects the control it shows.
         assert_eq!(harness.panel.selection, Selection::Input(DIAMETER_HINT_KEY));
         assert!(!harness.panel.explorer.open);
+        let mut output = harness.frame(Vec::new());
         for _ in 0..5 {
-            harness.frame(Vec::new());
+            output = harness.frame(Vec::new());
         }
+        assert!(slider(&output), "the column is back at the slider");
         assert_eq!(harness.panel.inputs(), &inputs);
         assert_eq!(harness.panel.history.undo_len(), undo);
     }
