@@ -336,10 +336,13 @@ the filter box, the Key design group and every input group, now their only home)
 **Assumptions**. Both are shut at first, drawn with no indent and scroll with the
 column (BL-091); a fold opened on one tab is open on the next. An opened fold is no wider than the
 inputs side was: 320 points in egui's default font; in the app's own font the column still grows by
-10 to 12 points when a fold first opens, and more with a filter (BL-099). The tabs "Design inputs" and
+10 to 12 points when a fold first opens, and more with a filter or an opened input group (up to
+443.1 points, where two tabs cut text at 1024 x 700: BL-099). The tabs "Design inputs" and
 "Assumptions" that swapped the side are gone. While a trace is on, its banner and its **Clear
 trace** button sit at the column's foot on every tab, the opening one too. A fix link on the
 Outside diameter still opens the Size and torque tab and scrolls the column back to its slider.
+The Key design group's **Open the Size tab** button (drawn while Auto is on) opens that tab and
+scrolls the column back to Auto's toggle the same way.
 Tab through the size controls selects nothing while every size is on its slider's step: the Minimum
 OD's slider is handed the value its box shows, so the focus leaving its box changes nothing. A size
 off its step is still rewritten when the focus leaves its box (Auto turned off leaves one: BL-097),

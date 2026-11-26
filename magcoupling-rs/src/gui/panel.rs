@@ -191,7 +191,7 @@ const EXPLORATION_ONLY: &str = "Exploration only: ";
 pub const DETAILED_INPUTS: &str = "Detailed inputs";
 pub const ASSUMPTIONS_FOLD: &str = "Assumptions";
 
-/// Starting width of the inputs side [points].
+/// Starting width of the left column, the Size column of every tab [points].
 const INPUTS_WIDTH: f32 = 320.0;
 
 /// Starting width of the dashboard side [points].
@@ -245,8 +245,8 @@ pub enum PanelRequest {
 /// The views of the centre region, one tab row (decision M42-1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CentreView {
-    /// Direct envelope dimensions, magnet count and gap, with the live torque and geometry (the
-    /// view a new panel opens on: decision G-5, which reverses M42-2).
+    /// The four tiles over the drawing to scale (the view a new panel opens on: decision G-5,
+    /// which reverses M42-2). The size controls it once held are the left column of every tab.
     SizeAndTorque,
     /// The end view and the side view to scale, with the dimension callouts.
     Geometry,
@@ -379,8 +379,8 @@ pub struct MagcouplingPanel {
     /// not the Explain panel's.
     typing: bool,
     /// Whether the left column scrolls back to its top in the next frame: a fix on a control
-    /// of the Size column (the Outside diameter) shows its slider, wherever the column was
-    /// scrolled to. View state.
+    /// of the Size column (the Outside diameter) shows its slider, and the Key design group's
+    /// button shows Auto's toggle, wherever the column was scrolled to. View state.
     column_to_top: bool,
 }
 
@@ -929,6 +929,8 @@ impl MagcouplingPanel {
             ui.label(size_controls::auto_status(self.sizing.variable));
             if ui.button(size_controls::OPEN_SIZE_TAB).clicked() {
                 self.centre = CentreView::SizeAndTorque;
+                // The column, the same on every tab, scrolls back to its top, where Auto is.
+                self.column_to_top = true;
                 ui.ctx().request_repaint();
             }
         });
@@ -1866,10 +1868,7 @@ mod tests {
             self.click_fold(fold);
             let output = self.frame(Vec::new());
             let header = in_left_column(&output, fold);
-            let side = egui::Id::new("magcoupling_inputs");
-            let column = egui::containers::panel::PanelState::load(&self.ctx, side)
-                .expect("the left column is drawn")
-                .rect;
+            let column = side_rect(&self.ctx, "magcoupling_inputs");
             // A wheel step under 8 points is a trackpad's, which egui applies in its own frame
             // (a larger one is spread over many): the whole distance in one frame of them.
             let distance = (header.top() - column.top() - 8.0).max(0.0);
@@ -1882,7 +1881,15 @@ mod tests {
             self.frame(vec![egui::Event::PointerMoved(header.center())]);
             self.frame(vec![step; steps as usize]);
             self.frame(vec![egui::Event::PointerGone]);
-            self.frame(Vec::new())
+            let output = self.frame(Vec::new());
+            // The click opened the fold: on one a fix link or a term had opened it would have
+            // shut it, and the caller would read a shut fold.
+            let first = match fold {
+                ASSUMPTIONS_FOLD => ASSUMPTIONS_NOTE,
+                _ => InputOrder::Workflow.label(),
+            };
+            assert!(count(&output, first) > 0, "the click shut the {fold} fold");
+            output
         }
 
         /// Shows the Size and torque tab as a person arrives on it: a click on its tab (the one
@@ -2007,6 +2014,22 @@ mod tests {
             self.frame(vec![primary_button(at, false)])
         }
 
+        /// A wheel of `delta` points down the left column with the pointer at `at`, then
+        /// `frames` frames (egui spreads a wheel step over several). Returns the last.
+        fn wheel_column(&mut self, at: egui::Pos2, delta: f32, frames: usize) -> egui::FullOutput {
+            self.frame(vec![egui::Event::PointerMoved(at)]);
+            self.frame(vec![egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, -delta),
+                modifiers: egui::Modifiers::NONE,
+            }]);
+            let mut output = self.frame(Vec::new());
+            for _ in 0..frames {
+                output = self.frame(Vec::new());
+            }
+            output
+        }
+
         /// Clicks the first drawn text equal to `text`.
         fn click_text(&mut self, text: &str) -> egui::FullOutput {
             let output = self.frame(Vec::new());
@@ -2042,6 +2065,14 @@ mod tests {
             .into_iter()
             .find(|rect| rect.right() <= INPUTS_WIDTH)
             .unwrap_or_else(|| panic!("no {text:?} in the left column"))
+    }
+
+    /// The rect of the side panel `id` ("magcoupling_inputs", "magcoupling_dashboard") in the
+    /// last frame.
+    fn side_rect(ctx: &egui::Context, id: &str) -> egui::Rect {
+        egui::containers::panel::PanelState::load(ctx, egui::Id::new(id))
+            .unwrap_or_else(|| panic!("{id} is drawn"))
+            .rect
     }
 
     /// The left edge of the right column in `output`, less its margin: where the check list's
@@ -7155,11 +7186,6 @@ mod tests {
         // hint wraps inside its side: the Key design group's in the inputs side, each Size
         // control's in its entry in the right column (UX overhaul spec 4.3).
         let narrow = egui::vec2(930.0, 3000.0);
-        let side = |harness: &Harness, id: &str| {
-            egui::containers::panel::PanelState::load(&harness.ctx, egui::Id::new(id))
-                .unwrap_or_else(|| panic!("{id} is drawn"))
-                .rect
-        };
         let mut wrapped = false;
         let mut inside = |output: &egui::FullOutput, hint: &str, left: f32, right: f32| {
             let at = text_rect(output, hint).unwrap_or_else(|| panic!("no {hint:?}"));
@@ -7171,7 +7197,7 @@ mod tests {
         };
         let mut harness = Harness::on_screen(narrow);
         let output = harness.frame(Vec::new());
-        let left = side(&harness, "magcoupling_inputs").left();
+        let left = side_rect(&harness.ctx, "magcoupling_inputs").left();
         for path in KEY_DESIGN {
             let hint = hint_for(path).unwrap_or_else(|| panic!("{path} has no hint"));
             inside(&output, hint, left, left + INPUTS_WIDTH);
@@ -7179,7 +7205,7 @@ mod tests {
         let mut harness = size_tab(narrow, DesignInputs::default());
         for (_, key) in SIZE_TAB_HINTS {
             let output = entry(&mut harness, key);
-            let right = side(&harness, "magcoupling_dashboard");
+            let right = side_rect(&harness.ctx, "magcoupling_dashboard");
             let hint = hint_for(key).unwrap_or_else(|| panic!("{key} has no hint"));
             inside(&output, hint, right.left(), right.right());
         }
@@ -7420,14 +7446,7 @@ mod tests {
         // shut. The two tabs that swapped the side ("Design inputs", "Assumptions") are gone:
         // the input groups show only inside the Detailed inputs, the assumptions only inside
         // their fold, and a fold opened on one tab is open on the next.
-        let side = |harness: &Harness| {
-            egui::containers::panel::PanelState::load(
-                &harness.ctx,
-                egui::Id::new("magcoupling_inputs"),
-            )
-            .expect("the left column is drawn")
-            .rect
-        };
+        let side = |harness: &Harness| side_rect(&harness.ctx, "magcoupling_inputs");
         // A tall window: every group of the open fold is in view.
         let mut harness = Harness::of(MagcouplingPanel::new(), TALL);
         let first = column_rows(&harness.frame(Vec::new()));
@@ -7745,6 +7764,12 @@ mod tests {
                 }
                 let shown = format!("{total} of {total} inputs");
                 assert!(column.contains(&shown), "{shown:?} on {tab}");
+                // A row apiece: some inputs bear a Size control's label, or another input's.
+                assert_eq!(
+                    harness.panel.design_widgets.len(),
+                    size_controls::SIZE_ROWS.len() + total,
+                    "the rows drawn on {tab}"
+                );
                 for entry in catalogue.all() {
                     let label = label_for(&entry.path);
                     assert!(column.contains(label), "{}: {label:?} on {tab}", entry.path);
@@ -7780,10 +7805,7 @@ mod tests {
         let size = egui::vec2(1024.0, 700.0);
         let mut harness = size_tab(size, DesignInputs::default());
         let output = harness.frame(Vec::new());
-        let header = text_rects(&output, ASSUMPTIONS_FOLD)
-            .into_iter()
-            .find(|rect| rect.right() <= INPUTS_WIDTH)
-            .expect("the fold's header in the Size column");
+        let header = in_left_column(&output, ASSUMPTIONS_FOLD);
         harness.click(header.center());
         let paused = harness.panel.clamps_paused;
         let last = assumptions::states(&harness.panel.inputs)
@@ -7798,17 +7820,7 @@ mod tests {
             text_rect(&output, last).is_none_or(|rect| rect.top() > size.y),
             "the last rationale is in view before a scroll: the test would prove nothing"
         );
-        harness.frame(vec![egui::Event::PointerMoved(header.center())]);
-        harness.frame(vec![egui::Event::MouseWheel {
-            unit: egui::MouseWheelUnit::Point,
-            delta: egui::vec2(0.0, -20000.0),
-            modifiers: egui::Modifiers::NONE,
-        }]);
-        // egui spreads a wheel step over several frames.
-        let mut output = harness.frame(Vec::new());
-        for _ in 0..20 {
-            output = harness.frame(Vec::new());
-        }
+        let output = harness.wheel_column(header.center(), 20000.0, 20);
         let rect = text_rect(&output, last).expect("the last rationale is drawn");
         assert!(rect.bottom() <= size.y, "{rect:?} below the window's foot");
     }
@@ -7824,10 +7836,7 @@ mod tests {
         let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
         let mut harness = size_tab(size, DesignInputs::default());
         let output = harness.frame(Vec::new());
-        let header = text_rects(&output, DETAILED_INPUTS)
-            .into_iter()
-            .find(|rect| rect.right() <= INPUTS_WIDTH)
-            .expect("the fold's header in the Size column");
+        let header = in_left_column(&output, DETAILED_INPUTS);
         harness.click(header.center());
         let last = InputCatalogue::get()
             .workflow
@@ -7839,17 +7848,7 @@ mod tests {
             shown_whole(&output, last, screen).is_empty(),
             "the last group is in view before a scroll: the test would prove nothing"
         );
-        harness.frame(vec![egui::Event::PointerMoved(header.center())]);
-        harness.frame(vec![egui::Event::MouseWheel {
-            unit: egui::MouseWheelUnit::Point,
-            delta: egui::vec2(0.0, -20000.0),
-            modifiers: egui::Modifiers::NONE,
-        }]);
-        // egui spreads a wheel step over several frames.
-        let mut output = harness.frame(Vec::new());
-        for _ in 0..20 {
-            output = harness.frame(Vec::new());
-        }
+        let output = harness.wheel_column(header.center(), 20000.0, 20);
         assert_eq!(
             shown_whole(&output, last, screen).len(),
             1,
@@ -7890,10 +7889,7 @@ mod tests {
         let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
         let mut harness = size_tab(size, DesignInputs::default());
         let output = harness.frame(Vec::new());
-        let header = text_rects(&output, DETAILED_INPUTS)
-            .into_iter()
-            .find(|rect| rect.right() <= INPUTS_WIDTH)
-            .expect("the fold's header in the Size column");
+        let header = in_left_column(&output, DETAILED_INPUTS);
         harness.click(header.center());
         // Every input's path holds a dot: the filter lists them all.
         harness.panel.input_filter = ".".to_owned();
@@ -7926,17 +7922,7 @@ mod tests {
             0,
             "the last row is in view before a scroll: the test would prove nothing"
         );
-        harness.frame(vec![egui::Event::PointerMoved(header.center())]);
-        harness.frame(vec![egui::Event::MouseWheel {
-            unit: egui::MouseWheelUnit::Point,
-            delta: egui::vec2(0.0, -200000.0),
-            modifiers: egui::Modifiers::NONE,
-        }]);
-        // egui spreads a wheel step over several frames.
-        let mut output = harness.frame(Vec::new());
-        for _ in 0..60 {
-            output = harness.frame(Vec::new());
-        }
+        let output = harness.wheel_column(header.center(), 200000.0, 60);
         assert_eq!(
             in_column(&output),
             copies,
@@ -8235,14 +8221,9 @@ mod tests {
         use crate::gui::explain::WHAT_SETS_IT;
         let mut harness = size_tab(egui::vec2(930.0, 1024.0), with_poles(8));
         let output = harness.frame(Vec::new());
-        let side = |harness: &Harness, id: &str| {
-            egui::containers::panel::PanelState::load(&harness.ctx, egui::Id::new(id))
-                .unwrap_or_else(|| panic!("{id} is drawn"))
-                .rect
-        };
-        let inputs_left = side(&harness, "magcoupling_inputs").left();
+        let inputs_left = side_rect(&harness.ctx, "magcoupling_inputs").left();
         let inputs_right = inputs_left + INPUTS_WIDTH;
-        let dashboard_left = side(&harness, "magcoupling_dashboard").left();
+        let dashboard_left = side_rect(&harness.ctx, "magcoupling_dashboard").left();
         let rect = |text: &str| text_rect(&output, text).unwrap_or_else(|| panic!("no {text:?}"));
         let results = harness.panel.results().clone();
         let (gap, _) = torque_gap_text(
@@ -8279,7 +8260,7 @@ mod tests {
         ] {
             assert!(!lines.is_empty(), "{key}");
             let output = entry(&mut harness, key);
-            let right = side(&harness, "magcoupling_dashboard");
+            let right = side_rect(&harness.ctx, "magcoupling_dashboard");
             let mut above = explain_rect(&output, WHAT_SETS_IT);
             for line in &lines {
                 let at = explain_rect(&output, line);
@@ -9429,7 +9410,7 @@ mod tests {
 
     #[test]
     fn the_key_design_group_shows_auto_s_status_and_a_button_to_the_size_tab() {
-        use crate::gui::size_controls::{OPEN_SIZE_TAB, auto_status};
+        use crate::gui::size_controls::{AUTO, OPEN_SIZE_TAB, auto_status};
         let mut harness = Harness::new();
         harness.click_text(CentreView::Geometry.label());
         let output = harness.frame(Vec::new());
@@ -9459,8 +9440,25 @@ mod tests {
             assert_eq!(count(&output, text), 0, "{text}");
         }
         let design = harness.panel.design();
+        // The button shows Auto's toggle: the left column, scrolled down in its Detailed
+        // inputs, scrolls back to its top, where the toggle is.
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, SCREEN);
+        let toggle = |output: &egui::FullOutput| {
+            shown_whole(output, AUTO, screen)
+                .into_iter()
+                .any(|rect| rect.right() <= INPUTS_WIDTH)
+        };
+        assert!(
+            !toggle(&output),
+            "the toggle is in view before the click: the test would prove nothing"
+        );
         harness.click_text(OPEN_SIZE_TAB);
         assert_eq!(harness.panel.centre, CentreView::SizeAndTorque);
+        let mut output = harness.frame(Vec::new());
+        for _ in 0..5 {
+            output = harness.frame(Vec::new());
+        }
+        assert!(toggle(&output), "the column is back at Auto's toggle");
         assert_eq!(harness.panel.design(), design, "the button edits nothing");
     }
 

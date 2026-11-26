@@ -469,11 +469,11 @@ Source: UX design sections 4.3 and 5.2; A-38; BL-096 plan, decision D-76.
 
 ### 62. Should the Key design group keep Auto's line and its "Open the Size tab" button?
 
-Added 2026-11-25 (the next free number). While Auto is on, the Key design group shows "Auto: ... set by the solver (Size tab)", a button "Open the Size tab" and the solver's status. The size controls, with Auto's row and its outcome, are now above that group on every tab, so with the Detailed inputs open the status shows twice.
+Added 2026-11-25 (the next free number). While Auto is on, the Key design group shows "Auto: ... set by the solver (Size tab)", a button "Open the Size tab" and the solver's status. The size controls, with Auto's row and its outcome, are now above that group on every tab, so with the Detailed inputs open the status shows twice. A third text names the tab: each input row Auto locks reads "Set by Auto (Size tab)" under it, and Auto's toggle is now a few rows above it in the same column. The button still opens the Size and torque tab and, since the whole-branch review's fix wave (2026-11-26), also scrolls the left column back to its top, where Auto's toggle is; before that fix a click from a scrolled column showed nothing new.
 
-- **If you do not answer:** the line and the button stay, word for word.
+- **If you do not answer:** the line, the button and the locked rows' note stay, word for word.
 - (a) As the default.
-- (b) Drop the button and the words "(Size tab)".
+- (b) Drop the button and the words "(Size tab)", in Auto's line and in the locked rows' note.
 - (c) Drop the whole line; the locked row of the size Auto sets stays.
 
 Source: UX design section 4.3; A-39; BL-096 plan, decision D-77.
