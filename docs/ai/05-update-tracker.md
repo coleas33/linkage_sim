@@ -5,6 +5,15 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-27 - Magcoupler: fix wave of the controller's review of BL-097 to BL-100 (branch magcoupling/columns-hold-still)
+- BL097-EP-1 (blocking): a number typed into a tiny value's box was thrown away. `typed_number` took every coarser rounding of the value for the box's own text, and egui holds any two numbers under about 1.9e-6 equal, so on the vacuum permeability (1.256637e-6), the NdFeB expansion (-8e-7) and the cap's and the web's field integrals typing 1.2566e-6, -1e-6 or 0 changed nothing where main edits. `input_ui::slider` now records the text egui's own formatter writes in the box (`Slider::custom_formatter`) and compares the typed number with that text alone. Red test first: `a_number_typed_into_a_tiny_value_s_box_edits` (panel); `a_value_box_s_own_text_is_no_typed_number` gains the tiny cases.
+- W-1: the check list's material warning's Why link was on a line that did not wrap, and with no back iron (or a sleeve that conducts better than 316L) it widened the right column for good, on main too: it is now drawn through `gui::wrapping_line`. Red test first: `the_right_column_keeps_its_width_with_a_material_warning_shown` (panel).
+- KF-1: a test for `follow_focus`'s clip check, the guard that keeps a column still while the focus is elsewhere (the panels share one egui layer): `a_wheeled_column_holds_still_while_the_focus_is_on_no_widget_of_its_own` (it fails with the check taken out); the code's comment says the layer check adds little.
+- W-4: the app's left-column width test holds Auto on with the Detailed inputs open (it fails at 445.2 points with Auto's line made a plain row). W-5: one `test_support::side_rect` for the panel and app tests; the right column's tests use `SMALLEST`.
+- W-2, docs only: in the app's font a grade picker's blank choice ("Blank: the manual Br, no rating") is newly cut, where main's column had grown wider first; README, BL-099's note, register row A-45 and owner question 68 now say so. The choice stays the owner's (question 68).
+- Filed: BL-103 (W-3): at pixel ratios 0.9 and 1.35 the left column still widens past 320 points by a slider row that cannot wrap.
+- Docs: README, docs/ai 02 (the DragValue lesson), 03, 04, backlog BL-097 to BL-100 notes and BL-103, register row A-45, owner question 68.
+
 ## 2026-11-26 - Magcoupler: the right column keeps its width (BL-098; branch magcoupling/columns-hold-still)
 - Why: showing a teaching note with a diagram (the first is "harmonics", from Learn or any lesson link) made the right column 316 points wide where it starts at 300, and it stayed that wide after the note was left: the centre, its tiles and its drawing lost 16 points for the rest of the session.
 - Root cause: a note's diagram is a fixed 300 points wide (`DIAGRAM_SIZE`) and the Explain panel's column holds 284; egui's side panel grows to what it holds and keeps the width.

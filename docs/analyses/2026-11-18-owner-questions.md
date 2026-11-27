@@ -533,7 +533,7 @@ Source: BL-100; BL-101; A-44.
 
 ### 68. Should the part and grade pickers show their whole choice?
 
-Added 2026-11-26 (the next free number). The left column now keeps its width: before, a long label pushed it wider the first time a fold or a group opened, and it stayed wide. At its 320 points the pickers of the magnet parts and of the grades show their choice on one line and cut it short with "…" ("B842SH: K&J block 12.70 × 6.350 × 3.170 mm, N42SH" does not fit), as they always did at that width. The part's full name is the first line under its picker, and a grade's values are in the lines under its own. Dragging the column's edge wider shows the choice whole.
+Added 2026-11-26 (the next free number). The left column now keeps its width: before, a long label pushed it wider the first time a fold or a group opened, and it stayed wide. At its 320 points the pickers of the magnet parts and of the grades show their choice on one line and cut it short with "…" ("B842SH: K&J block 12.70 × 6.350 × 3.170 mm, N42SH" does not fit), as they always did at that width. One text that was whole is now cut, in the app's font: a grade picker's blank choice, "Blank: the manual Br, no rating" (before, the column had always grown wider by the time that row showed); the hint line above the picker reads the same words whole. The part's full name is the first line under its picker, and a grade's values are in the lines under its own. Dragging the column's edge wider shows the choice whole.
 
 - **If you do not answer:** the pickers stay as they are, cut on one line.
 - (a) As the default.
