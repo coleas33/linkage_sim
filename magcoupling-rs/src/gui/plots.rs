@@ -32,6 +32,12 @@
 //! When f_end <= 0 (audit M9) every torque computed from the pull-out (the temperature and the
 //! rotation plots) is drawn grey, as the dashboard greys those rows (decision M42-6).
 //!
+//! Red means a failing check and nothing else (UX overhaul decision C-5): in a plot it marks a
+//! sweep row that does not fit, a row whose design fails the fit check. The required torque,
+//! the sweeps' required floor and the pull-out point are drawn in the strong text colour, the
+//! governing limit in violet in both plots that draw it, and the time to the limit in that
+//! violet, where the high case meets the limit (the stage 1 review, C-3).
+//!
 //! Points and reference lines that are not finite are left out; a plot with nothing left shows
 //! [`NOTHING_TO_PLOT`] (the torque-temperature plot [`EMPTY_TEMPERATURE_AXIS`] when its axis is
 //! empty although every value is a number), and a sweep that left rows out counts them in a note
@@ -607,7 +613,7 @@ fn torque_temperature_ui(ui: &mut egui::Ui, inputs: &DesignInputs, results: &Des
         );
         p.line(Line::new(LOW_BAND, s.low).color(band).width(1.0));
         p.line(Line::new(HIGH_BAND, s.high).color(band).width(1.0));
-        reference_hline(p, REQUIRED, s.required_Nm, Level::Bad.color(&visuals));
+        reference_hline(p, REQUIRED, s.required_Nm, visuals.strong_text_color());
         reference_vline(p, OPERATING, s.operating_C, visuals.weak_text_color());
         if let Some(limit) = s.limit_C {
             reference_vline(p, LIMIT, limit, VIOLET);
@@ -699,7 +705,7 @@ fn sweep_ui(
                 p.points(Points::new(name, points).radius(POINT_RADIUS).color(color));
             }
         }
-        reference_hline(p, REQUIRED_FLOOR, floor_Nm, Level::Bad.color(&visuals));
+        reference_hline(p, REQUIRED_FLOOR, floor_Nm, visuals.strong_text_color());
         let design = finite([design]);
         if !design.is_empty() {
             p.points(
@@ -718,7 +724,6 @@ fn slip_heating_ui(ui: &mut egui::Ui, results: &DesignResults) {
         ui.weak(NOTHING_TO_PLOT);
         return;
     }
-    let visuals = ui.visuals().clone();
     plot(
         ui,
         PlotKind::SlipHeating,
@@ -728,12 +733,12 @@ fn slip_heating_ui(ui: &mut egui::Ui, results: &DesignResults) {
     .show(ui, |p| {
         p.line(Line::new(ESTIMATE, s.estimate).color(BLUE).width(1.5));
         p.line(Line::new(HIGH_CASE, s.high).color(AMBER).width(2.0));
-        reference_hline(p, LIMIT, s.limit_C, Level::Bad.color(&visuals));
+        reference_hline(p, LIMIT, s.limit_C, VIOLET);
         if let Some(point) = s.time_to_limit {
             p.points(
                 Points::new(TIME_TO_LIMIT, finite([point]))
                     .radius(POINT_RADIUS + 1.0)
-                    .color(Level::Bad.color(&visuals)),
+                    .color(VIOLET),
             );
         }
     });
@@ -760,7 +765,7 @@ fn torque_angle_ui(ui: &mut egui::Ui, inputs: &DesignInputs, results: &DesignRes
             p.points(
                 Points::new(PULL_OUT_POINT, point)
                     .radius(POINT_RADIUS + 1.0)
-                    .color(tint(Level::Bad.color(&visuals), s.greyed, &visuals)),
+                    .color(tint(visuals.strong_text_color(), s.greyed, &visuals)),
             );
         }
     });
@@ -1634,6 +1639,104 @@ mod tests {
                 "{text}"
             );
             crate::gui::test_support::assert_glyphs(&ctx, text, "a plot legend or axis");
+        }
+    }
+
+    #[test]
+    fn red_marks_a_sweep_row_that_does_not_fit_and_nothing_else_in_any_plot() {
+        // UX overhaul decision C-5: red means a failing check and nothing else. The stage 1
+        // review (C-3) found the Required torque line, the sweeps' Required floor and Slip
+        // heating's Governing limit drawn in the failing red on a design that passes them; the
+        // pull-out point and the time to the limit were red too. On a passing design, on the
+        // example design (which fails four checks), on one whose high case reaches the limit,
+        // on a hot day and on one the end-effect model greys, every red mark of every plot is
+        // a sweep row that does not fit (a row whose design fails the fit check) or that row's
+        // legend entry. The requirement lines take the strong text colour, and Slip heating's
+        // limit the violet of the torque plot's.
+        use crate::gui::test_support::{hot_day, passing_design};
+        let visuals = egui::Context::default().style().visuals.clone();
+        let red = visuals.error_fg_color;
+        let mut reaches = DesignInputs::default();
+        reaches.temperature.duty.hot_ambient_C += 5.0;
+        let mut hot = passing_design();
+        hot_day(&mut hot);
+        assert!(slip_heating(&compute_all(&reaches)).time_to_limit.is_some());
+        // The colours of the dashes `output` paints.
+        let dashes = |output: &egui::FullOutput| -> Vec<Color32> {
+            flat_shapes(output)
+                .into_iter()
+                .filter_map(|shape| match shape {
+                    egui::Shape::LineSegment { stroke, .. } => Some(stroke.color),
+                    _ => None,
+                })
+                .collect()
+        };
+        for (name, inputs) in [
+            ("passing", passing_design()),
+            ("example", DesignInputs::default()),
+            ("reaches the limit", reaches),
+            ("hot day", hot),
+            ("greyed", short_magnets()),
+        ] {
+            for kind in PlotKind::ALL {
+                let output = draw(kind, &inputs);
+                let shapes = flat_shapes(&output);
+                // A legend entry's name, beside its icon on the icon's row (the legend in the
+                // plot's right corner sets each name left of its icon).
+                let entry = |at: egui::Pos2| {
+                    shapes.iter().find_map(|shape| match shape {
+                        egui::Shape::Text(text) => {
+                            let rect = text.visual_bounding_rect();
+                            let beside =
+                                (rect.left() - at.x).abs().min((at.x - rect.right()).abs());
+                            ((rect.center().y - at.y).abs() < 4.0 && beside < 16.0)
+                                .then(|| text.galley.text().to_owned())
+                        }
+                        _ => None,
+                    })
+                };
+                let mut wrong = Vec::new();
+                for shape in &shapes {
+                    match shape {
+                        egui::Shape::Circle(c) if c.fill == red || c.stroke.color == red => {
+                            let legend = entry(c.center);
+                            let row = c.radius == POINT_RADIUS && legend.is_none();
+                            if !(row || legend.as_deref() == Some(NO_FIT)) {
+                                wrong.push(format!("a circle of radius {} {legend:?}", c.radius));
+                            }
+                        }
+                        egui::Shape::LineSegment { stroke, .. } if stroke.color == red => {
+                            wrong.push("a line".to_owned())
+                        }
+                        egui::Shape::Path(path)
+                            if path.fill == red
+                                || path.stroke.color == egui::epaint::ColorMode::Solid(red) =>
+                        {
+                            wrong.push("a path".to_owned())
+                        }
+                        egui::Shape::Rect(rect) if rect.fill == red => {
+                            wrong.push("a rect".to_owned())
+                        }
+                        _ => {}
+                    }
+                }
+                wrong.sort();
+                wrong.dedup();
+                assert!(wrong.is_empty(), "{name}, {kind:?}: red {wrong:?}");
+                let drawn = dashes(&output);
+                match kind {
+                    PlotKind::TorqueTemperature | PlotKind::GapSweep | PlotKind::PoleSweep => {
+                        assert!(
+                            drawn.contains(&visuals.strong_text_color()),
+                            "{name}, {kind:?}: the requirement line in {drawn:?}"
+                        );
+                    }
+                    PlotKind::SlipHeating => {
+                        assert!(drawn.contains(&VIOLET), "{name}: the limit in {drawn:?}");
+                    }
+                    PlotKind::TorqueAngle => {}
+                }
+            }
         }
     }
 }
