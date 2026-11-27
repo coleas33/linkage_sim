@@ -48,7 +48,7 @@ use crate::gui::guidance::{
     within_minimum_diameter,
 };
 use crate::gui::history::History;
-use crate::gui::input_ui::{CHANGED_DOT, RowEdit, hint_line, input_row, slider};
+use crate::gui::input_ui::{RowEdit, head_line, hint_line, input_row, slider};
 use crate::gui::inputs::{
     ADVANCED_HEADING, FILTER_HINT, InputCatalogue, InputEntry, InputGroup, InputOrder,
     InputSection, KEY_DESIGN, filter_inputs, optional_seed,
@@ -1433,10 +1433,7 @@ impl MagcouplingPanel {
                 continue;
             }
             ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                let dot = if state.modified { CHANGED_DOT } else { " " };
-                ui.colored_label(look::mark_color(ui.visuals()), dot)
-                    .on_hover_text(crate::gui::input_ui::CHANGED_FROM_DEFAULT);
+            head_line(ui, state.modified, |ui| {
                 ui.strong(assumption.label);
             });
             for path in assumption.paths {
@@ -1543,7 +1540,7 @@ impl MagcouplingPanel {
             } else {
                 group.label.to_owned()
             };
-            egui::CollapsingHeader::new(title)
+            egui::CollapsingHeader::new(wrapped_title(ui, title))
                 .id_salt((salt, &group.name))
                 .default_open(false)
                 .open(open_group.then_some(true))
@@ -1728,6 +1725,22 @@ fn status_color(status: &str, visuals: &egui::Visuals) -> egui::Color32 {
     } else {
         Level::Bad.color(visuals)
     }
+}
+
+/// A fold's title laid out to wrap at the width its header has. egui sets a header's title on
+/// one line whatever its length, and a group's title with its traced count is longer than the
+/// left column in the app's font: the column grew to it and kept the width (BL-099).
+fn wrapped_title(ui: &egui::Ui, title: String) -> egui::WidgetText {
+    // Where egui's header puts its title: indented past the icon, the button padding after it.
+    let width = ui.available_width() - ui.spacing().indent - ui.spacing().button_padding.x;
+    egui::WidgetText::from(title)
+        .into_galley(
+            ui,
+            Some(egui::TextWrapMode::Wrap),
+            width,
+            egui::TextStyle::Button,
+        )
+        .into()
 }
 
 /// Draws `add` in a child of `ui` (salted `id_salt`) confined to the space left in `ui`: the

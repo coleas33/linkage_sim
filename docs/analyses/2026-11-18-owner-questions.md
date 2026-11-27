@@ -18,7 +18,7 @@ Written 2026-11-18. Updated as answers and new questions arrive.
 | P-n, L-n | The plans for slice A and for slice B stage 1, in `docs/superpowers/plans/` |
 | Three-letter codes (LGS-11, LFA-16) | The whole-project audit, `docs/analyses/2026-11-10-whole-project-audit.md` |
 
-Contents: part A, six answers that change what is built next. Part B, eight things only you can try. Part C, 47 calls to make when convenient (questions 48, 49 and 50 were added there on 2026-11-22, questions 51, 53, 54, 55, 56, 57, 58 and 59 on 2026-11-23, questions 60 to 65 on 2026-11-25, questions 66 and 67 on 2026-11-26). Part D, five that matter only if the tools stop being generic.
+Contents: part A, six answers that change what is built next. Part B, eight things only you can try. Part C, 47 calls to make when convenient (questions 48, 49 and 50 were added there on 2026-11-22, questions 51, 53, 54, 55, 56, 57, 58 and 59 on 2026-11-23, questions 60 to 65 on 2026-11-25, questions 66, 67 and 68 on 2026-11-26). Part D, five that matter only if the tools stop being generic.
 
 Answered so far: 1, 2, 3, 4, 5 and 6 (2026-11-22). Each answer is written in bold under its question.
 
@@ -530,6 +530,17 @@ Added 2026-11-26 (the next free number). The columns now scroll to whatever the 
 - (c) The table is one Tab stop, and the Up and Down arrow keys move through its rows.
 
 Source: BL-100; BL-101; A-44.
+
+### 68. Should the part and grade pickers show their whole choice?
+
+Added 2026-11-26 (the next free number). The left column now keeps its width: before, a long label pushed it wider the first time a fold or a group opened, and it stayed wide. At its 320 points the pickers of the magnet parts and of the grades show their choice on one line and cut it short with "…" ("B842SH: K&J block 12.70 × 6.350 × 3.170 mm, N42SH" does not fit), as they always did at that width. The part's full name is the first line under its picker, and a grade's values are in the lines under its own. Dragging the column's edge wider shows the choice whole.
+
+- **If you do not answer:** the pickers stay as they are, cut on one line.
+- (a) As the default.
+- (b) Hovering a picker shows its whole choice.
+- (c) The picker wraps its choice onto two lines.
+
+Source: BL-099; A-45.
 
 ### Linkage simulator
 

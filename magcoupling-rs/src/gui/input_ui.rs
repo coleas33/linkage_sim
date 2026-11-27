@@ -150,35 +150,34 @@ pub fn input_row(
     let mut edit = None;
     let mut label_clicked = false;
     ui.push_id(&entry.path, |ui| {
-        ui.horizontal(|ui| {
-            let dot = if changed { CHANGED_DOT } else { " " };
-            ui.colored_label(crate::gui::look::mark_color(ui.visuals()), dot)
-                .on_hover_text(CHANGED_FROM_DEFAULT);
+        head_line(ui, changed, |ui| {
             label_clicked = ui
                 .add(egui::Label::new(label_for(&entry.path)).sense(egui::Sense::click()))
                 .on_hover_ui(|ui| {
                     ui.add(egui::Label::new(tooltip()));
                 })
                 .clicked();
-            ui.add_enabled_ui(!locked, |ui| {
-                if outside_range(meta.range, current) {
-                    ui.colored_label(ui.visuals().warn_fg_color, OUTSIDE_RANGE_NOTE)
-                        .on_hover_text(OUTSIDE_RANGE_HINT);
-                }
-                if changed
-                    && ui
-                        .small_button(RESET_LABEL)
-                        .on_hover_ui(|ui| {
-                            ui.add(egui::Label::new(format!(
-                                "Back to the default: {}",
-                                format_value(default)
-                            )));
-                        })
-                        .clicked()
-                {
-                    edit = Some(RowEdit::Reset);
-                }
-            });
+            // Each on the head line itself, not in a child of it: a child starts where the
+            // label ends and wraps no further left, so it would run past the row's end.
+            if outside_range(meta.range, current) {
+                let note =
+                    egui::RichText::new(OUTSIDE_RANGE_NOTE).color(ui.visuals().warn_fg_color);
+                ui.add_enabled(!locked, egui::Label::new(note))
+                    .on_hover_text(OUTSIDE_RANGE_HINT);
+            }
+            if changed
+                && ui
+                    .add_enabled(!locked, egui::Button::new(RESET_LABEL).small())
+                    .on_hover_ui(|ui| {
+                        ui.add(egui::Label::new(format!(
+                            "Back to the default: {}",
+                            format_value(default)
+                        )));
+                    })
+                    .clicked()
+            {
+                edit = Some(RowEdit::Reset);
+            }
         });
         let widget = ui
             .add_enabled_ui(!locked, |ui| {
@@ -202,6 +201,23 @@ pub fn input_row(
         }
     })
     .inner
+}
+
+/// The head line of a row of the left column (an input's, an assumption's): the changed dot,
+/// then what `rest` draws, on a line that wraps at the width the row is given. A line that does
+/// not wrap runs a long label past the column's edge, and egui's side panel grows to what it
+/// holds and keeps the width for the rest of the session (BL-099). One point of the width is
+/// kept free: egui's text layout rounds the width it wraps at to a whole point and lets a row
+/// run half a point past it, and a label in a wrapping line takes each row as it was laid out.
+pub(crate) fn head_line(ui: &mut egui::Ui, changed: bool, rest: impl FnOnce(&mut egui::Ui)) {
+    let size = egui::vec2(ui.available_width() - 1.0, ui.spacing().interact_size.y);
+    let wrapping = egui::Layout::left_to_right(egui::Align::Center).with_main_wrap(true);
+    ui.allocate_ui_with_layout(size, wrapping, |ui| {
+        let dot = if changed { CHANGED_DOT } else { " " };
+        ui.colored_label(crate::gui::look::mark_color(ui.visuals()), dot)
+            .on_hover_text(CHANGED_FROM_DEFAULT);
+        rest(ui);
+    });
 }
 
 /// The text of a text input (empty for any other value): the row's hint and the part and
