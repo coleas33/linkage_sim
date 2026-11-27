@@ -626,6 +626,42 @@ mod tests {
         }
     }
 
+    #[test]
+    fn the_tab_row_is_one_row_in_the_app_s_own_font() {
+        // The review of part 2b-iii-a (T-1): the panel's test finds the tab row on one row in
+        // egui's built-in font, and Inter is wider (R-4). From the smallest window up, in the
+        // app's theme and font, every tab of the row sits on one row.
+        use crate::gui::CentreView;
+        use crate::gui::test_support::last_characters;
+        for size in WINDOWS {
+            let ctx = egui::Context::default();
+            let mut app = MagcouplingApp::new(&ctx);
+            frame_on(&ctx, &mut app, size, Vec::new());
+            let output = frame_on(&ctx, &mut app, size, Vec::new());
+            let (left, right) = (
+                side_rect(&ctx, "magcoupling_inputs").right(),
+                side_rect(&ctx, "magcoupling_dashboard").left(),
+            );
+            // Each tab's row: the topmost of its words in the centre region (the left column's
+            // heading bears the first tab's words).
+            let rows: Vec<(&str, f32)> = CentreView::tab_row(crate::engine::clamps::PAUSED)
+                .map(|view| {
+                    let y = last_characters(&output, view.tab())
+                        .into_iter()
+                        .filter(|at| left < at.x && at.x < right)
+                        .map(|at| at.y)
+                        .min_by(f32::total_cmp)
+                        .unwrap_or_else(|| panic!("{size:?}: no tab {:?}", view.tab()));
+                    (view.tab(), y)
+                })
+                .collect();
+            assert!(
+                rows.iter().all(|(_, y)| (y - rows[0].1).abs() < 1.0),
+                "{size:?}: {rows:?}"
+            );
+        }
+    }
+
     /// Shows `view` as a person does on a screen of `size`: a click on its tab in the centre
     /// region (the left column's heading bears the first tab's words), then, for a plot, a
     /// click on its name in the Plots tab's picker (decision C-9), each click as [`click_at`]
@@ -2412,12 +2448,9 @@ mod tests {
                 let (last, rest) = quoted.split_last().expect("a name");
                 format!("{} and {last}", rest.join(", "))
             };
-            let mut tabs: Vec<&str> = Vec::new();
-            for view in CentreView::tabs(crate::engine::clamps::PAUSED) {
-                if tabs.last() != Some(&view.tab()) {
-                    tabs.push(view.tab());
-                }
-            }
+            let tabs: Vec<&str> = CentreView::tab_row(crate::engine::clamps::PAUSED)
+                .map(CentreView::tab)
+                .collect();
             let plots: Vec<&str> = PlotKind::ALL.iter().map(|kind| kind.label()).collect();
             for (what, list) in [
                 ("the tab row", listed(&tabs)),

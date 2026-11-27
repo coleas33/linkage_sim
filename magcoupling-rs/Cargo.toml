@@ -16,7 +16,7 @@ default = []
 # windowing, no eframe, no file dialogs. serde_json, base64 and flate2 write
 # and read design files, share links and the results export; log reports the
 # sizing outcome (the host chooses the logger: the browser console on the web);
-# egui_plot draws the plot tabs; rust_xlsxwriter writes the spreadsheet export,
+# egui_plot draws the plots (one Plots tab); rust_xlsxwriter writes the spreadsheet export,
 # and js-sys gives it the time on the web (wasm32 only).
 gui = [
     "dep:egui",
@@ -57,7 +57,7 @@ workbook-parity = []
 # the exact version (0.32.3, as in linkage-sim-rs/Cargo.lock) is pinned in
 # Cargo.lock, and gate.sh checks that both lock files agree.
 egui = { version = "0.32", optional = true }
-# The plot tabs (feature gui): the 0.33 line linkage-sim-rs uses, built on egui
+# The plots, one Plots tab (feature gui): the 0.33 line linkage-sim-rs uses, built on egui
 # 0.32; Cargo.lock pins linkage-sim-rs's 0.33.0 and gate 11 checks it.
 egui_plot = { version = "0.33", optional = true }
 eframe = { version = "0.32", optional = true }

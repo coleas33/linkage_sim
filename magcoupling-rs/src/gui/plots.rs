@@ -93,6 +93,7 @@ pub const Y_LABEL_OVERHANG: f32 = 0.25;
 /// strength at 80 and 30 points, and a number on the way is as faint as 1.3:1 against the plot
 /// (the stage 1 review, E-7); each axis here draws the same numbers at full strength.
 pub const X_TICK_SPACING: f32 = 60.0;
+/// The vertical axis's [`X_TICK_SPACING`] [points].
 pub const Y_TICK_SPACING: f32 = 20.0;
 
 /// The centre region's tab of the five plots (UX overhaul spec 4.4, decision C-9): one tab, with

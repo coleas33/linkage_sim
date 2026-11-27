@@ -284,6 +284,13 @@ impl CentreView {
             .filter(move |&view| !(clamps_paused && view == CentreView::Clamp))
     }
 
+    /// The tab row, in order: [`CentreView::tabs`] with each run of views under one tab's text
+    /// kept once, so the five plots are one Plots tab at the first plot's place (decision C-9).
+    pub fn tab_row(clamps_paused: bool) -> impl Iterator<Item = CentreView> {
+        let mut last = None;
+        Self::tabs(clamps_paused).filter(move |view| last.replace(view.tab()) != Some(view.tab()))
+    }
+
     /// The view's name: its tab's text, or a plot's name in the Plots tab's picker.
     pub const fn label(self) -> &'static str {
         match self {
@@ -1028,17 +1035,14 @@ impl MagcouplingPanel {
                 self.plot = kind;
             }
             ui.horizontal_wrapped(|ui| {
-                for view in CentreView::tabs(self.clamps_paused) {
-                    // The five plots share one tab, at the first plot's place: it shows the
-                    // plot shown last (decision C-9).
+                for view in CentreView::tab_row(self.clamps_paused) {
+                    // The Plots tab shows the plot shown last (decision C-9).
                     let view = match view {
-                        CentreView::Plot(PlotKind::TorqueTemperature) => {
-                            CentreView::Plot(self.plot)
-                        }
-                        CentreView::Plot(_) => continue,
+                        CentreView::Plot(_) => CentreView::Plot(self.plot),
                         view => view,
                     };
-                    let selected = self.centre.tab() == view.tab();
+                    // self.plot is the plot shown, if one is: set above.
+                    let selected = self.centre == view;
                     if look::tab_ui(ui, selected, view.tab()).clicked() {
                         self.centre = view;
                     }
@@ -6568,6 +6572,22 @@ mod tests {
             texts.push(crate::gui::results_table::row_tooltip(entry, &value, true));
         }
         texts
+    }
+
+    #[test]
+    fn the_tab_row_lists_the_plots_once_at_the_first_plot_s_place() {
+        // The tab row centre_ui draws and the smoke prompt's guard reads (decision C-9).
+        let plots = CentreView::Plot(PlotKind::ALL[0]);
+        let (opening, geometry) = (CentreView::SizeAndTorque, CentreView::Geometry);
+        let (clamp, results) = (CentreView::Clamp, CentreView::Results);
+        assert_eq!(
+            CentreView::tab_row(false).collect::<Vec<_>>(),
+            [opening, geometry, plots, clamp, results]
+        );
+        assert_eq!(
+            CentreView::tab_row(true).collect::<Vec<_>>(),
+            [opening, geometry, plots, results]
+        );
     }
 
     #[test]
