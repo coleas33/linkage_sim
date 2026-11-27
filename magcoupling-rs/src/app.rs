@@ -2391,6 +2391,52 @@ mod tests {
                 "the tooltip's row is in the Detailed inputs, opened first"
             );
         }
+        // UX overhaul slice B, stage 2, part 2b-iii-a (spec 4.4, decision C-9): after the lesson
+        // link and before the Geometry tab the step opens the Plots tab, judges its tab row and
+        // its picker by the words the page draws (the tab row as the app draws it with the
+        // shaft-clamp section paused, the five plots' names in their order), then picks Slip
+        // heating and finds its plot by a name of its legend.
+        {
+            use crate::gui::CentreView;
+            use crate::gui::plots::{HIGH_CASE, PLOTS, PlotKind};
+            let open = format!("click \"{PLOTS}\" in the row of tabs");
+            let geometry = format!("click the \"{}\" tab", CentreView::Geometry.label());
+            assert!(
+                between("lesson_link_opened=true only if", &geometry).contains(&open),
+                "the Plots tab is opened after the lesson link, before the Geometry tab"
+            );
+            let step = between(&open, "same_column=true only if");
+            // A list as the prompt writes it: "a", "b" and "c".
+            let listed = |names: &[&str]| {
+                let quoted: Vec<String> = names.iter().map(|name| format!("\"{name}\"")).collect();
+                let (last, rest) = quoted.split_last().expect("a name");
+                format!("{} and {last}", rest.join(", "))
+            };
+            let mut tabs: Vec<&str> = Vec::new();
+            for view in CentreView::tabs(crate::engine::clamps::PAUSED) {
+                if tabs.last() != Some(&view.tab()) {
+                    tabs.push(view.tab());
+                }
+            }
+            let plots: Vec<&str> = PlotKind::ALL.iter().map(|kind| kind.label()).collect();
+            for (what, list) in [
+                ("the tab row", listed(&tabs)),
+                ("the picker", listed(&plots)),
+            ] {
+                assert!(
+                    step.contains(&list),
+                    "the step names {what} in order: {list}"
+                );
+            }
+            let pick = PlotKind::SlipHeating.label();
+            for (what, text) in [
+                ("the pick", format!("click \"{pick}\"")),
+                ("the plot's legend", format!("\"{HIGH_CASE}\"")),
+                ("the verdict", "plots_picker=true only if".to_owned()),
+            ] {
+                assert!(step.contains(&text), "the step names {what}: {text}");
+            }
+        }
         assert!(
             between("drag_moved=true", "then close the browser").contains(collect),
             "the console messages of the page opened again are collected after the drag"
