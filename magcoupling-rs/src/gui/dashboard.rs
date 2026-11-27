@@ -847,7 +847,8 @@ pub(crate) fn warnings_ui(ui: &mut egui::Ui, results: &DesignResults, readouts: 
             );
         });
         if let Some(note) = warning_note(rule) {
-            ui.horizontal(|ui| {
+            // A line that wraps: the longest link runs past the side column (BL-098's rule).
+            crate::gui::wrapping_line(ui, |ui| {
                 ui.add_space(16.0);
                 if ui.link(why_note_text(note)).clicked() {
                     readouts.open_note(rule.note_id);

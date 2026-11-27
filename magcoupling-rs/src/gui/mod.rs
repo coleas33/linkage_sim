@@ -49,9 +49,10 @@ pub use panel::{
 };
 // The Size tab's gap text, public for the slice-3 screen dump (`size_controls` is private).
 pub use size_controls::torque_gap_text;
-// The Size column's rows, for the app's check of the smoke prompt's words.
+// The Size column's rows, for the app's check of the smoke prompt's words; Auto's toggle and
+// its line's button, for the app's width test.
 #[cfg(all(test, feature = "app"))]
-pub(crate) use size_controls::SIZE_ROWS;
+pub(crate) use size_controls::{AUTO, OPEN_SIZE_TAB, SIZE_ROWS};
 
 /// A line of `ui` whose widgets wrap onto further lines, at the width `ui` has less one point:
 /// `ui.horizontal_wrapped` with a point kept free. egui's text layout rounds the width it wraps
@@ -84,7 +85,11 @@ pub(crate) fn follow_focus(ui: &egui::Ui) {
         std::mem::replace(seen, focused)
     });
     // A widget drawn in this area is clipped by this area's view, and no other is: one in
-    // another panel, or in a list open over this one, would scroll the area to nothing.
+    // another panel, or in a list open over this one, would scroll the area to nothing. The
+    // panels share one layer, so the clip check is the one that holds an area still while the
+    // focus is elsewhere (a test wheels the left column and tabs past it); the layer check
+    // adds little, as a list's widget passes the clip check only whole in the view, where no
+    // scroll follows.
     if focused != seen
         && let Some(widget) = focused.and_then(|id| ui.ctx().read_response(id))
         && widget.layer_id == ui.layer_id()

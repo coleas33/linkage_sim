@@ -1007,6 +1007,14 @@ pub(crate) fn text_rect(output: &egui::FullOutput, needle: &str) -> Option<egui:
     text_rects(output, needle).into_iter().next()
 }
 
+/// The rect of the side panel `id` ("magcoupling_inputs", "magcoupling_dashboard") as egui
+/// keeps it: the last frame's.
+pub(crate) fn side_rect(ctx: &egui::Context, id: &str) -> egui::Rect {
+    egui::containers::panel::PanelState::load(ctx, egui::Id::new(id))
+        .unwrap_or_else(|| panic!("{id} is drawn"))
+        .rect
+}
+
 /// The rect egui clips the first drawn text equal to `needle` to, such as a scroll area's
 /// visible part or the region a view is confined to. Panics when no such text is drawn.
 pub(crate) fn text_clip_rect(output: &egui::FullOutput, needle: &str) -> egui::Rect {

@@ -244,7 +244,7 @@ mod tests {
     use crate::gui::guidance::{counted_guides, design_status, level};
     use crate::gui::inputs::InputCatalogue;
     use crate::gui::session::{Design, encode_share_payload};
-    use crate::gui::test_support::{drawn_texts, texts_in_colors};
+    use crate::gui::test_support::{drawn_texts, side_rect, texts_in_colors};
 
     /// The status line at the starting design and at the example design, with the shaft-clamp
     /// section paused as the app runs it (nine counted checks).
@@ -632,14 +632,6 @@ mod tests {
         }
     }
 
-    /// The rect of the side panel `id` ("magcoupling_inputs", "magcoupling_dashboard") as egui
-    /// keeps it: the last frame's.
-    fn side_rect(ctx: &egui::Context, id: &str) -> egui::Rect {
-        egui::containers::panel::PanelState::load(ctx, egui::Id::new(id))
-            .unwrap_or_else(|| panic!("{id} is drawn"))
-            .rect
-    }
-
     /// A click at `at` on a screen of `size`, the pointer gone after it, then `settle` frames
     /// (a fold takes six to open or shut). Returns the last frame.
     fn click_at(
@@ -706,16 +698,16 @@ mod tests {
         // theme and font, at the smallest window, the laptop screen and a desktop one, the
         // column is 320 points wide with the folds shut, with each fold opened and shut again,
         // with every input group and its Advanced heading opened and shut again, with a filter
-        // that lists every input set and cleared, and with an input traced (its group's heading
-        // then bears a count); and no text is cut, on any tab or on any row of the column. The
-        // tabs are read where the column holds more than it did: a state shut again draws what
-        // the shut state drew, so its width is the whole reading, and a column never narrows by
-        // itself, so the last reading holds for each of them.
+        // that lists every input set and cleared, with an input traced (its group's heading
+        // then bears a count), and with Auto on; and no text is cut, on any tab or on any row
+        // of the column. The tabs are read where the column holds more than it did: a state
+        // shut again draws what the shut state drew, so its width is the whole reading, and a
+        // column never narrows by itself, so the last reading holds for each of them.
         use crate::engine::clamps::PAUSED;
         use crate::gui::explain::TRACE_LINK;
         use crate::gui::inputs::{ADVANCED_HEADING, FILTER_HINT, InputOrder};
         use crate::gui::test_support::{cut_texts, flat_shapes, key_tap, text_rects};
-        use crate::gui::{ASSUMPTIONS_FOLD, DETAILED_INPUTS};
+        use crate::gui::{ASSUMPTIONS_FOLD, AUTO, DETAILED_INPUTS, OPEN_SIZE_TAB};
         const COLUMN: (&str, f32) = ("magcoupling_inputs", 320.0);
         let groups = InputCatalogue::shown(PAUSED).groups_in(InputOrder::Workflow);
         let total = InputCatalogue::shown(PAUSED).all().count();
@@ -832,6 +824,18 @@ mod tests {
                 assert_eq!(drawn, usize::from(on), "{size:?}: {traced}");
                 if on {
                     holds(&mut app, "an input traced");
+                }
+            }
+            // Auto on, the Detailed inputs still open: Auto's line (which size it sets and the
+            // Open the Size tab button) heads the Key design group, 425 to 445 points wide were
+            // that line not to wrap. Its toggle again turns it off.
+            for on in [true, false] {
+                let toggle = column(&mut app, AUTO).1[0];
+                click_at(&ctx, &mut app, tall, toggle.center(), 2);
+                let drawn = column(&mut app, OPEN_SIZE_TAB).1.len();
+                assert_eq!(drawn, usize::from(on), "{size:?}: Auto's line");
+                if on {
+                    holds(&mut app, "Auto on, the Detailed inputs open");
                 }
             }
             for _ in 0..2 {
