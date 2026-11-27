@@ -49,7 +49,9 @@
 //! egui_plot's coordinate readout.
 
 use egui::Color32;
-use egui_plot::{Corner, HLine, Legend, Line, LineStyle, Plot, PlotPoints, PlotUi, Points, VLine};
+use egui_plot::{
+    AxisHints, Corner, HLine, Legend, Line, LineStyle, Plot, PlotPoints, PlotUi, Points, VLine,
+};
 
 use crate::engine::meta::{NumOrText, ResultSet, Value};
 use crate::engine::model::{end_effect_in_range, harmonic_count, ring_pair_factor};
@@ -85,6 +87,13 @@ pub const SWEEP_LINE_WIDTH: f32 = 1.5;
 /// How far left of a plot egui_plot draws its vertical axis' label, in rows of body text (its
 /// own `AXIS_LABEL_GAP`).
 pub const Y_LABEL_OVERHANG: f32 = 0.25;
+
+/// How far apart two ticks of the horizontal and of the vertical axis must be for their numbers
+/// to be drawn [points]: egui_plot's own threshold. Past it egui_plot fades a number in, to full
+/// strength at 80 and 30 points, and a number on the way is as faint as 1.3:1 against the plot
+/// (the stage 1 review, E-7); each axis here draws the same numbers at full strength.
+pub const X_TICK_SPACING: f32 = 60.0;
+pub const Y_TICK_SPACING: f32 = 20.0;
 
 /// The centre region's tab of the five plots (UX overhaul spec 4.4, decision C-9): one tab, with
 /// a picker of the plots under it.
@@ -453,15 +462,21 @@ const BLUE: Color32 = Color32::from_rgb(100, 180, 255);
 const AMBER: Color32 = Color32::from_rgb(230, 170, 70);
 const VIOLET: Color32 = Color32::from_rgb(180, 140, 230);
 
-/// A plot with its id ([`PlotKind::id`]), the panel's legend and axis labels, filling the
-/// height left and no more (`height` is egui_plot's smallest height too; it keeps at least 1
-/// point).
+/// A plot with its id ([`PlotKind::id`]), the panel's legend and axis labels, its tick numbers
+/// at full strength or not drawn ([`X_TICK_SPACING`], [`Y_TICK_SPACING`]), filling the height
+/// left and no more (`height` is egui_plot's smallest height too; it keeps at least 1 point).
 fn plot(ui: &egui::Ui, kind: PlotKind, x: &str, y: &str) -> Plot<'static> {
+    let x_axis = AxisHints::new_x()
+        .label(x.to_owned())
+        .label_spacing(egui::Rangef::point(X_TICK_SPACING));
+    let y_axis = AxisHints::new_y()
+        .label(y.to_owned())
+        .label_spacing(egui::Rangef::point(Y_TICK_SPACING));
     Plot::new(kind.id())
         .id(kind.id())
         .legend(Legend::default().position(Corner::RightTop))
-        .x_axis_label(x.to_owned())
-        .y_axis_label(y.to_owned())
+        .custom_x_axes(vec![x_axis])
+        .custom_y_axes(vec![y_axis])
         .height(ui.available_height().max(0.0))
 }
 
@@ -1640,6 +1655,59 @@ mod tests {
             );
             crate::gui::test_support::assert_glyphs(&ctx, text, "a plot legend or axis");
         }
+    }
+
+    #[test]
+    fn every_tick_number_is_drawn_at_full_strength_or_not_at_all() {
+        // The stage 1 review (E-7): egui_plot fades a tick number in as the ticks spread apart,
+        // from nothing at 60 points apart (20 on the vertical axis) to full strength at 80
+        // (30), and a number on the way is as faint as 1.3:1 against the plot. At every
+        // spacing a window's size gives the ticks, each number is drawn in the axes' colour,
+        // the plot's quiet text colour, or not at all: a theme's weak colour (the app's, the
+        // muted token), and in egui's own visuals, which set none, the text colour.
+        let inputs = DesignInputs::default();
+        let results = compute_all(&inputs);
+        let (mut numbers, mut faded) = (0, Vec::new());
+        let theme = Color32::from_rgb(101, 102, 103);
+        let cases = PlotKind::ALL
+            .into_iter()
+            .flat_map(|kind| [(kind, None), (kind, Some(theme))]);
+        for (kind, weak) in cases {
+            for width in [300.0, 420.0, 560.0, 700.0, 900.0] {
+                for height in [220.0, 300.0, 400.0, 520.0, 700.0] {
+                    let ctx = egui::Context::default();
+                    ctx.style_mut(|style| style.visuals.weak_text_color = weak);
+                    let axes = weak.unwrap_or(ctx.style().visuals.text_color());
+                    let size = egui::vec2(width, height);
+                    let mut output = None;
+                    // A plot settles its bounds on the first frame.
+                    for _ in 0..2 {
+                        output = Some(sized_frame(&ctx, size, Vec::new(), |ui| {
+                            plot_ui(ui, kind, &inputs, &results, &mut Readouts::default());
+                        }));
+                    }
+                    for shape in flat_shapes(&output.expect("two frames")) {
+                        let egui::Shape::Text(text) = shape else {
+                            continue;
+                        };
+                        if text.galley.text().parse::<f64>().is_err() {
+                            continue;
+                        }
+                        numbers += 1;
+                        let mut colours = vec![text.fallback_color];
+                        colours.extend(text.galley.job.sections.iter().map(|s| s.format.color));
+                        if colours.iter().any(|&c| c != axes) {
+                            faded.push(format!(
+                                "{kind:?}, weak {weak:?}, at {size:?}: {:?} in {colours:?}",
+                                text.galley.text()
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(numbers > 500, "{numbers} tick numbers drawn");
+        assert!(faded.is_empty(), "{} faded: {faded:#?}", faded.len());
     }
 
     #[test]
