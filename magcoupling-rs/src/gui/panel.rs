@@ -39,6 +39,7 @@ use crate::gui::clamp_drawing::clamp_ui;
 use crate::gui::dashboard::{Level, end_effect_banner_ui};
 use crate::gui::explain::{Asked, LEARN, Selection, explain_ui, result_selection};
 use crate::gui::explorer::{Explorer, FOCUS_WIDTH, explorer_ui, held_reason, panel_heights};
+use crate::gui::follow_focus;
 use crate::gui::format::search_needle;
 use crate::gui::geometry::wall_cautions;
 use crate::gui::geometry_view::{drawing_ui, geometry_ui};
@@ -47,7 +48,7 @@ use crate::gui::guidance::{
     within_minimum_diameter,
 };
 use crate::gui::history::History;
-use crate::gui::input_ui::{CHANGED_DOT, RowEdit, hint_line, input_row, slider};
+use crate::gui::input_ui::{RowEdit, head_line, hint_line, input_row, slider};
 use crate::gui::inputs::{
     ADVANCED_HEADING, FILTER_HINT, InputCatalogue, InputEntry, InputGroup, InputOrder,
     InputSection, KEY_DESIGN, filter_inputs, optional_seed,
@@ -837,7 +838,9 @@ impl MagcouplingPanel {
                     held: &held,
                     minimum_diameter_mm: self.minimum_diameter_mm,
                 };
-                explain_ui(ui, self.selection, &shown, readouts)
+                let asked = explain_ui(ui, self.selection, &shown, readouts);
+                follow_focus(ui);
+                asked
             })
             .inner;
         match asked {
@@ -925,7 +928,7 @@ impl MagcouplingPanel {
         if self.sizing.mode != SizingMode::TorqueToMagnets {
             return;
         }
-        ui.horizontal_wrapped(|ui| {
+        crate::gui::wrapping_line(ui, |ui| {
             ui.label(size_controls::auto_status(self.sizing.variable));
             if ui.button(size_controls::OPEN_SIZE_TAB).clicked() {
                 self.centre = CentreView::SizeAndTorque;
@@ -1302,7 +1305,10 @@ impl MagcouplingPanel {
                 if std::mem::take(&mut self.column_to_top) {
                     column = column.vertical_scroll_offset(0.0);
                 }
-                column.show(ui, |ui| self.size_column_ui(ui, readouts));
+                column.show(ui, |ui| {
+                    self.size_column_ui(ui, readouts);
+                    follow_focus(ui);
+                });
             });
         });
     }
@@ -1427,10 +1433,7 @@ impl MagcouplingPanel {
                 continue;
             }
             ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                let dot = if state.modified { CHANGED_DOT } else { " " };
-                ui.colored_label(look::mark_color(ui.visuals()), dot)
-                    .on_hover_text(crate::gui::input_ui::CHANGED_FROM_DEFAULT);
+            head_line(ui, state.modified, |ui| {
                 ui.strong(assumption.label);
             });
             for path in assumption.paths {
@@ -1537,7 +1540,7 @@ impl MagcouplingPanel {
             } else {
                 group.label.to_owned()
             };
-            egui::CollapsingHeader::new(title)
+            egui::CollapsingHeader::new(wrapped_title(ui, title))
                 .id_salt((salt, &group.name))
                 .default_open(false)
                 .open(open_group.then_some(true))
@@ -1724,6 +1727,22 @@ fn status_color(status: &str, visuals: &egui::Visuals) -> egui::Color32 {
     }
 }
 
+/// A fold's title laid out to wrap at the width its header has. egui sets a header's title on
+/// one line whatever its length, and a group's title with its traced count is longer than the
+/// left column in the app's font: the column grew to it and kept the width (BL-099).
+fn wrapped_title(ui: &egui::Ui, title: String) -> egui::WidgetText {
+    // Where egui's header puts its title: indented past the icon, the button padding after it.
+    let width = ui.available_width() - ui.spacing().indent - ui.spacing().button_padding.x;
+    egui::WidgetText::from(title)
+        .into_galley(
+            ui,
+            Some(egui::TextWrapMode::Wrap),
+            width,
+            egui::TextStyle::Button,
+        )
+        .into()
+}
+
 /// Draws `add` in a child of `ui` (salted `id_salt`) confined to the space left in `ui`: the
 /// child's max rect and clip rect are that space, so nothing drawn in it paints or takes a
 /// click outside it. `ui` then moves past the whole space, never past what the child used, so
@@ -1781,9 +1800,10 @@ mod tests {
     use crate::gui::test_support::{
         SCREEN, clamp_at_its_limit, drawing_rect, drawn_texts, flat_shapes, hot_day,
         hub_overstressed, key_event, key_tap, last_characters, only_the_clamp_fails,
-        only_the_joint_fails, passing_design, primary_button, row_line, select_all, short_magnets,
-        shown_whole, sized_frame, sized_frame_at, smoke_inputs, text_center, text_clip_rect,
-        text_color, text_rect, text_rects, text_shapes, tooltips_at_once, with_poles,
+        only_the_joint_fails, passing_design, primary_button, row_line, select_all, shift_tab,
+        short_magnets, shown_whole, side_rect, sized_frame, sized_frame_at, smoke_inputs,
+        text_center, text_clip_rect, text_color, text_rect, text_rects, text_shapes,
+        tooltips_at_once, with_poles,
     };
     use crate::gui::torque_card::{CAPTION, CARD_HEADING, Control, held_line};
     use crate::headline;
@@ -2083,14 +2103,6 @@ mod tests {
             .into_iter()
             .find(|rect| rect.right() <= INPUTS_WIDTH)
             .unwrap_or_else(|| panic!("no {text:?} in the left column"))
-    }
-
-    /// The rect of the side panel `id` ("magcoupling_inputs", "magcoupling_dashboard") in the
-    /// last frame.
-    fn side_rect(ctx: &egui::Context, id: &str) -> egui::Rect {
-        egui::containers::panel::PanelState::load(ctx, egui::Id::new(id))
-            .unwrap_or_else(|| panic!("{id} is drawn"))
-            .rect
     }
 
     /// The left edge of the right column in `output`, less its margin: where the check list's
@@ -2647,6 +2659,140 @@ mod tests {
         assert_eq!(harness.panel.selection, Selection::Nothing);
         assert!(!harness.panel.explorer.open, "Learn opens no equation");
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
+    fn the_right_column_keeps_its_width_whichever_note_is_shown() {
+        // BL-098: a note's diagram was 300 points wide in a column that holds 284, and egui's
+        // side panel grows to what it holds and keeps the width: from the first note with a
+        // diagram ("harmonics") the right column was 316 points wide for the rest of the
+        // session, and the centre and its drawing 16 points narrower. At the smallest window
+        // and at the laptop screen every shown note in turn leaves the column as wide as it
+        // started, and so do the note list, a check's entry, a tile's and the orientation
+        // after them.
+        use crate::gui::explain::shown_notes;
+        use crate::gui::tiles::Tile;
+        for size in [SMALLEST, egui::vec2(1280.0, 800.0)] {
+            let mut harness = Harness::of(MagcouplingPanel::new(), size);
+            let notes: Vec<_> = shown_notes(harness.panel.clamps_paused).collect();
+            assert!(notes.iter().any(|note| note.diagram.is_some()));
+            let mut shows = |selection: Selection| {
+                harness.panel.selection = selection;
+                harness.frame(Vec::new());
+                harness.frame(Vec::new());
+                let column = side_rect(&harness.ctx, "magcoupling_dashboard");
+                assert_eq!(column.width(), DASHBOARD_WIDTH, "{size:?}, {selection:?}");
+                assert_eq!(column.right(), size.x - 8.0, "{size:?}, {selection:?}");
+            };
+            shows(Selection::Nothing);
+            for note in notes {
+                shows(Selection::Note(note.id));
+            }
+            shows(Selection::NoteList);
+            shows(Selection::Check(HOT_MIN_CHECK));
+            shows(Selection::Result(Tile::HotLow.path()));
+            shows(Selection::Nothing);
+        }
+    }
+
+    #[test]
+    fn the_right_column_keeps_its_width_with_a_material_warning_shown() {
+        // The check list's material warnings: a warning's Why link sat on a line that did not
+        // wrap, and the longest ran past the column. With no back iron ("Why: Hub expands much
+        // more than the magnets") or a sleeve that conducts better than 316L the right column
+        // grew to 320.6 and 337.1 points in the app's font (302.3 and 318.3 in egui's) and kept
+        // that width. Each link now wraps, and still opens its note: in the smallest window,
+        // where the warnings are below the check list's foot, and in a window tall enough to
+        // show them.
+        use crate::gui::dashboard::why_note_text;
+        let mut conductive = DesignInputs::default();
+        conductive
+            .set("temperature.slip_loss.sigma_316_S_m", Value::Num(1e7))
+            .unwrap();
+        let designs = [
+            ("Hub expands", crate::gui::test_support::no_back_iron()),
+            ("Sleeve or liner", conductive),
+        ];
+        for size in [SMALLEST, TALL] {
+            for (title, inputs) in &designs {
+                let mut harness = Harness::of(MagcouplingPanel::new(), size);
+                harness.panel.inputs = inputs.clone();
+                harness.frame(Vec::new());
+                let output = harness.frame(Vec::new());
+                let note = crate::engine::explain::notes::NOTES
+                    .iter()
+                    .find(|note| note.title.starts_with(title))
+                    .expect("the warning's note");
+                let link = why_note_text(note);
+                let column = side_rect(&harness.ctx, "magcoupling_dashboard");
+                assert_eq!(column.width(), DASHBOARD_WIDTH, "{size:?}, {link}");
+                if size == TALL {
+                    let at = last_characters(&output, &link);
+                    assert_eq!(at.len(), 1, "the check list draws {link:?}");
+                    harness.click(at[0]);
+                    assert_eq!(harness.panel.selection, Selection::Note(note.id), "{link}");
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "app")]
+    #[test]
+    fn the_right_column_keeps_its_width_whatever_entry_is_shown_in_the_app_s_own_font() {
+        // BL-098's sweep: in the app's theme and font, at the smallest window, every entry the
+        // Explain panel can show leaves the right column as wide as it started. The orientation,
+        // the note list, every shown note, every check, every tile, every Size column row and
+        // every input, on the starting design as it opens and on the failing example design
+        // with the spreadsheet details on (the most an entry holds); then every result of the
+        // results table. A wrapping line that kept no point free let a row stand a fraction of
+        // a point past the column: 0.375 for the result temperature.adhesive_life.daily_screen.
+        use crate::engine::clamps::{PAUSED, hides};
+        use crate::gui::explain::shown_notes;
+        use crate::gui::guidance::CHECK_GUIDES;
+        use crate::gui::results_table::table_entries;
+        use crate::gui::size_controls::SIZE_ROWS;
+        use crate::gui::tiles::Tile;
+        let panel = MagcouplingPanel::with_baseline(crate::app::starting_design());
+        let mut harness = Harness::of(panel, SMALLEST);
+        harness.panel.clamps_paused = PAUSED;
+        crate::app::theme::apply(&harness.ctx);
+        crate::app::fonts::install(&harness.ctx);
+        harness.frame(Vec::new());
+        let mut entries = vec![Selection::Nothing, Selection::NoteList];
+        entries.extend(shown_notes(PAUSED).map(|note| Selection::Note(note.id)));
+        entries.extend(
+            CHECK_GUIDES
+                .iter()
+                .map(|guide| Selection::Check(guide.check)),
+        );
+        entries.extend(Tile::ALL.iter().map(|tile| Selection::Result(tile.path())));
+        entries.extend(SIZE_ROWS.iter().map(|row| Selection::Input(row.key)));
+        let inputs = InputCatalogue::shown(PAUSED).all();
+        entries.extend(inputs.map(|entry| Selection::Input(entry.path.as_str())));
+        let results: Vec<Selection> = table_entries()
+            .iter()
+            .map(|entry| entry.path.as_str())
+            .filter(|path| !hides(path, PAUSED))
+            .map(Selection::Result)
+            .collect();
+        assert!(entries.len() > 150 && results.len() > 900);
+        // The entry as it is first drawn, then settled: a width once taken is kept, so the
+        // second frame's reading holds for both.
+        let shows = |harness: &mut Harness, selection: Selection, what: &str| {
+            harness.panel.selection = selection;
+            harness.frame(Vec::new());
+            harness.frame(Vec::new());
+            let width = side_rect(&harness.ctx, "magcoupling_dashboard").width();
+            assert_eq!(width, DASHBOARD_WIDTH, "{selection:?}, {what}");
+        };
+        for &selection in &entries {
+            shows(&mut harness, selection, "the starting design");
+        }
+        harness.panel.open_example_design();
+        harness.panel.show_details = true;
+        for selection in entries.into_iter().chain(results) {
+            shows(&mut harness, selection, "the example design, details on");
+        }
     }
 
     #[test]
@@ -4182,17 +4328,6 @@ mod tests {
         // link traces it. Before, the focus arriving on each row passed selected that row.
         let op_temp = "coupling.op_temp_C";
         let before = KEY_DESIGN[KEY_DESIGN.iter().position(|p| *p == op_temp).unwrap() - 1];
-        let shift_tab = || {
-            [true, false]
-                .map(|pressed| egui::Event::Key {
-                    key: egui::Key::Tab,
-                    physical_key: None,
-                    pressed,
-                    repeat: false,
-                    modifiers: egui::Modifiers::SHIFT,
-                })
-                .to_vec()
-        };
         for backwards in [false, true] {
             let mut harness = Harness::new();
             let target = harness.widget(op_temp).id;
@@ -7340,8 +7475,9 @@ mod tests {
         // BL-093 for every row of the Size column, the left column of every tab (UX overhaul
         // spec 4.3): the keyboard's focus passes each slider and its value box and selects
         // nothing. The Minimum OD's floor at the spreadsheet's design is off the one decimal
-        // its box shows, and egui writes a box's text back when the focus leaves it: that
-        // write is no touch and sets no Minimum OD. An arrow key on the slider still does.
+        // its box shows, and egui writes a box's text back when the focus leaves it: the
+        // box's own text is no typed value (BL-097), so there is no touch and no Minimum OD is
+        // set. An arrow key on the slider still sets one.
         use crate::gui::size_controls::slider_minimum;
         let mut harness = Harness::first_view();
         let floor = slider_minimum(
@@ -7355,26 +7491,7 @@ mod tests {
         );
         // The six sliders: the four controls, Minimum OD, then Required (size_column_ui).
         let sliders: Vec<egui::Id> = harness.panel.design_widgets[..6].to_vec();
-        let mut passed = vec![false; sliders.len()];
-        let mut presses = 0;
-        // Until the focus has been on every slider, and two presses more: past the last
-        // slider's value box.
-        let mut after = 0;
-        while after < 2 {
-            harness.frame(key_tap(egui::Key::Tab));
-            harness.frame(Vec::new());
-            presses += 1;
-            assert!(presses < 60, "Tab passes the Size column: {passed:?}");
-            for (slider, passed) in sliders.iter().zip(&mut passed) {
-                *passed |= harness.ctx.memory(|m| m.has_focus(*slider));
-            }
-            after += usize::from(passed.iter().all(|&passed| passed));
-            assert_eq!(
-                harness.panel.selection,
-                Selection::Nothing,
-                "press {presses}"
-            );
-        }
+        tab_past(&mut harness, &sliders);
         assert_eq!(harness.panel.minimum_diameter_mm, None);
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
         assert_eq!(harness.panel.history.undo_len(), 0);
@@ -7393,6 +7510,192 @@ mod tests {
             Selection::Input(crate::gui::plain_text::MINIMUM_OD_HINT_KEY)
         );
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    /// Presses Tab from the top of the page (no widget focused, nothing selected) until the
+    /// keyboard's focus has been on every one of `widgets` (ids read before the pass: a
+    /// slider's response takes its value box's id while the box has the focus), and two
+    /// presses more: past the last one's value box. Nothing is selected after any press.
+    fn tab_past(harness: &mut Harness, widgets: &[egui::Id]) {
+        harness.ctx.memory_mut(|m| {
+            if let Some(focused) = m.focused() {
+                m.surrender_focus(focused);
+            }
+        });
+        harness.panel.selection = Selection::Nothing;
+        harness.frame(Vec::new());
+        let mut passed = vec![false; widgets.len()];
+        let (mut presses, mut after) = (0, 0);
+        while after < 2 {
+            harness.frame(key_tap(egui::Key::Tab));
+            harness.frame(Vec::new());
+            presses += 1;
+            assert!(presses < 200, "Tab passes the widgets: {passed:?}");
+            for (widget, passed) in widgets.iter().zip(&mut passed) {
+                *passed |= harness.ctx.memory(|m| m.has_focus(*widget));
+            }
+            after += usize::from(passed.iter().all(|&passed| passed));
+            assert_eq!(
+                harness.panel.selection,
+                Selection::Nothing,
+                "press {presses}"
+            );
+        }
+    }
+
+    #[cfg(feature = "app")]
+    #[test]
+    fn tab_through_a_length_auto_left_off_its_step_changes_nothing() {
+        // BL-097: on the app's starting design Auto solves a magnet length off the Overall
+        // length slider's step, and Auto off adopts it (decision M41-7). egui writes a value
+        // box's text back when the keyboard's focus leaves it, so a Tab pass rounded the length
+        // to the 11.9 mm its box shows: an edit, an undo step, a selection and a failed hot
+        // minimum check, with nothing typed.
+        use crate::gui::size_controls::AUTO;
+        let panel = MagcouplingPanel::with_baseline(crate::app::starting_design());
+        let mut harness = Harness::of(panel, SCREEN);
+        harness.click_text(AUTO);
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        harness.frame(Vec::new());
+        harness.solved();
+        harness.click_text(AUTO);
+        harness.frame(Vec::new());
+        let length = dimensions(harness.panel.inputs())
+            .expect("size controls")
+            .overall_length_mm;
+        assert_ne!(
+            length,
+            (length * 10.0).round() / 10.0,
+            "the length is on its slider's step: the test would prove nothing"
+        );
+        let state = |harness: &Harness| {
+            (
+                harness.panel.design(),
+                harness.panel.results().clone(),
+                harness.panel.history.undo_len(),
+                harness.panel.minimum_diameter_mm,
+            )
+        };
+        let before = state(&harness);
+        // The six sliders: the four controls, Minimum OD, then Required (size_column_ui).
+        let sliders: Vec<egui::Id> = harness.panel.design_widgets[..6].to_vec();
+        tab_past(&mut harness, &sliders);
+        assert_eq!(state(&harness), before);
+    }
+
+    #[test]
+    fn tab_past_every_value_box_keeps_a_value_off_its_step_or_outside_its_range() {
+        // BL-097 for every caller of `input_ui::slider` (a Size column slider, the Required
+        // torque, a Detailed inputs row): a loaded face gap off its slider's step and a
+        // requirement past its slider's range (kept until edited, decision M41-2) are as they
+        // were, bit for bit, after Tab has passed every value box of the Size column and of the
+        // open Detailed inputs: no edit, no undo step, no selection.
+        let range = crate::gui::test_support::slider_range(REQUIREMENT_INPUT);
+        let mut design = Design::default();
+        design.inputs.metal.face_gap_mm = 1.4123;
+        design.inputs.metal.required_min_Nm = range.max + 2.0;
+        let mut harness = Harness::new();
+        harness.panel.open_design(design.clone());
+        harness.frame(Vec::new());
+        let widgets = harness.panel.design_widgets.clone();
+        assert!(
+            widgets.contains(&harness.widget(FACE_GAP).id),
+            "the fold draws the face gap's own row"
+        );
+        tab_past(&mut harness, &widgets);
+        assert_eq!(harness.panel.design(), design);
+        assert_eq!(harness.panel.history.undo_len(), 0);
+        assert_eq!(harness.panel.last_error, None);
+    }
+
+    #[test]
+    fn a_typed_value_and_an_arrow_key_edit_a_value_off_its_step_and_its_own_text_does_not() {
+        // BL-097's rule (`input_ui::slider`): a value box's text that reads as the number the
+        // box already shows is no typed value, so leaving the box keeps a loaded 1.4123 mm
+        // whether its "1.41" was left alone or typed again. A typed value still edits (on Tab,
+        // on Enter, on a click elsewhere), snapped to the step, and so does an arrow key.
+        let mut harness = Harness::new();
+        let off_step = |harness: &mut Harness| {
+            harness.panel.inputs.metal.face_gap_mm = 1.4123;
+            harness.frame(Vec::new());
+        };
+        let type_in = |harness: &mut Harness, text: &str| {
+            harness.click_text("1.41 mm");
+            harness.frame([select_all(), vec![egui::Event::Text(text.to_owned())]].concat());
+        };
+        // A loaded design is no undo step.
+        let mut design = Design::default();
+        design.inputs.metal.face_gap_mm = 1.4123;
+        harness.panel.open_design(design);
+        harness.frame(Vec::new());
+        harness.click_text("1.41 mm");
+        harness.frame(key_tap(egui::Key::Enter));
+        assert_eq!(harness.number(FACE_GAP), 1.4123, "Enter, nothing typed");
+        type_in(&mut harness, "1.41");
+        harness.frame(key_tap(egui::Key::Enter));
+        harness.frame(Vec::new());
+        assert_eq!(harness.number(FACE_GAP), 1.4123, "the shown number typed");
+        assert_eq!(harness.panel.history.undo_len(), 0);
+        type_in(&mut harness, "2.344");
+        harness.frame(key_tap(egui::Key::Tab));
+        harness.frame(Vec::new());
+        assert_eq!(harness.number(FACE_GAP), 2.34, "typed, then Tab");
+        assert_eq!(harness.panel.selection, Selection::Input(FACE_GAP));
+        harness.frame(Vec::new());
+        assert_eq!(harness.panel.history.undo_len(), 1);
+        off_step(&mut harness);
+        type_in(&mut harness, "2.344");
+        harness.frame(key_tap(egui::Key::Enter));
+        assert_eq!(harness.number(FACE_GAP), 2.34, "typed, then Enter");
+        off_step(&mut harness);
+        type_in(&mut harness, "2.344");
+        harness.click(egui::pos2(640.0, 1010.0));
+        assert_eq!(
+            harness.number(FACE_GAP),
+            2.34,
+            "typed, then a click elsewhere"
+        );
+        off_step(&mut harness);
+        harness.focus(FACE_GAP);
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        assert_eq!(harness.number(FACE_GAP), 1.42, "an arrow key");
+    }
+
+    #[test]
+    fn a_number_typed_into_a_tiny_value_s_box_edits() {
+        // BL-097's rule compares with the text the box holds, nothing coarser: egui reads any
+        // two numbers under about 1.9e-6 as the same, so every coarser rounding of a tiny value
+        // read as the box's own, and a number typed into its box was thrown away. Each typed
+        // number below is one edit, clamped to the range as egui clamps it. The held values
+        // are the app's starting design's.
+        const CTE: &str = "temperature.mismatch.ndfeb_cte_per_C";
+        const CAP: &str = "temperature.slip_loss.cap_integral_T2m4";
+        let floor = crate::gui::test_support::slider_range(CAP).min;
+        for (path, held, shown, typed, set) in [
+            (
+                "coupling.mu0",
+                1.256637e-6,
+                "0.00000125664",
+                "1.2566e-6",
+                1.2566e-6,
+            ),
+            (CTE, -8e-7, "-0.0000008", "-1e-6", -1e-6),
+            (CAP, 4.04e-10, "0.00000000040", "0", floor),
+        ] {
+            let mut harness = Harness::new();
+            let mut design = Design::default();
+            design.inputs.set(path, Value::Num(held)).unwrap();
+            harness.panel.open_design(design);
+            harness.panel.input_filter = path.to_owned();
+            harness.frame(Vec::new());
+            let unit = InputCatalogue::get().entry(path).unwrap().meta.unit;
+            harness.click_text(&with_unit(shown.to_owned(), unit));
+            harness.frame([select_all(), vec![egui::Event::Text(typed.to_owned())]].concat());
+            harness.frame(key_tap(egui::Key::Enter));
+            harness.frame(Vec::new());
+            assert_eq!(harness.number(path), set, "{path}: {typed} typed");
+            assert_eq!(harness.panel.history.undo_len(), 1, "{path}");
+        }
     }
 
     #[test]
@@ -7454,6 +7757,246 @@ mod tests {
             .chain([DETAILED_INPUTS, ASSUMPTIONS_FOLD])
             .map(|text| in_left_column(output, text))
             .collect()
+    }
+
+    /// The smallest window supported (decision C-18).
+    const SMALLEST: egui::Vec2 = egui::vec2(1024.0, 700.0);
+
+    /// Whether the widget `r` is drawn in `region`, a column of the page under its top bar: a
+    /// stop of the top bar is above the region and whole, while a row scrolled out of the
+    /// region's view, above it or below it, is cut.
+    fn in_region(r: &egui::Response, region: egui::Rect) -> bool {
+        region.x_range().contains(r.rect.center().x)
+            && (r.rect.top() >= region.top() || r.interact_rect != r.rect)
+    }
+
+    /// The centre region: between the two columns, under the top bar.
+    fn centre_region(ctx: &egui::Context) -> egui::Rect {
+        let (left, right) = (
+            side_rect(ctx, "magcoupling_inputs"),
+            side_rect(ctx, "magcoupling_dashboard"),
+        );
+        egui::Rect::from_x_y_ranges(left.right()..=right.left(), left.y_range())
+    }
+
+    /// Taps `keys` (Tab, Shift+Tab or an arrow key) from where the keyboard's focus is until it
+    /// has been on the widgets of `region` ([`in_region`]) and has left them, or an arrow key
+    /// finds no widget further on. After each press, once the
+    /// scroll has settled, the focused widget of the region is whole in its scroll area's view
+    /// (BL-100). Returns how many stops the region held, and how many of them were out of view
+    /// when the focus arrived.
+    fn follow(harness: &mut Harness, keys: &[egui::Event], region: egui::Rect) -> (usize, usize) {
+        let focused = |harness: &Harness| {
+            let id = harness.ctx.memory(|m| m.focused())?;
+            harness.ctx.read_response(id)
+        };
+        let (mut stops, mut out_of_view) = (0, 0);
+        for press in 1..=400 {
+            let before = harness.ctx.memory(|m| m.focused());
+            harness.frame(keys.to_vec());
+            // Shift+Tab moves the focus as the next frame begins.
+            if harness.ctx.memory(|m| m.focused()) == before {
+                harness.frame(Vec::new());
+            }
+            if stops > 0 && harness.ctx.memory(|m| m.focused()) == before {
+                return (stops, out_of_view);
+            }
+            // No focus: the page's end, and the next press starts it over.
+            let arrived = focused(harness).filter(|r| in_region(r, region));
+            let Some(arrived) = arrived else {
+                if stops > 0 {
+                    return (stops, out_of_view);
+                }
+                continue;
+            };
+            stops += 1;
+            out_of_view += usize::from(arrived.interact_rect != arrived.rect);
+            // How far the view's top or foot cuts into the widget: the least scroll.
+            let (at, cut) = (arrived.rect, arrived.interact_rect);
+            let least = (at.bottom() - cut.bottom()).max(cut.top() - at.top());
+            // A second a frame, so the scroll's animation is over in one: frames until the
+            // widget is whole (eight at most), then one more.
+            let mut settled = arrived;
+            for _ in 0..8 {
+                let whole = settled.interact_rect == settled.rect;
+                harness.frame_after(1.0, Vec::new());
+                settled = focused(harness).expect("the focus stays");
+                if whole {
+                    break;
+                }
+            }
+            assert_eq!(
+                settled.interact_rect, settled.rect,
+                "press {press}: the focused widget is cut by its area's view"
+            );
+            // No further than that, but for the gap egui leaves at the view's edge.
+            let moved = (settled.rect.top() - at.top()).abs();
+            assert!(
+                (least..=least + 8.0).contains(&moved),
+                "press {press}: scrolled {moved} points to show a widget cut by {least}"
+            );
+        }
+        panic!("the focus never passed the region ({stops} stops)");
+    }
+
+    #[test]
+    fn the_left_column_follows_the_keyboard_s_focus_and_fights_no_wheel() {
+        // BL-100: egui scrolls a scroll area to no widget for taking the keyboard's focus, so
+        // with the Detailed inputs open most Tab stops of the left column landed below the
+        // window's foot, unseen. The column now scrolls, by the least that shows the widget
+        // whole, when the focus arrives (Tab, Shift+Tab, or an Up or Down arrow key), and only
+        // then: a wheel afterwards moves the column and it stays moved. The focus arriving
+        // still selects nothing and edits nothing (BL-093), and an idle frame asks for no
+        // repaint.
+        for screen in [egui::vec2(1280.0, 800.0), SMALLEST] {
+            let mut harness = Harness::on_screen(screen);
+            harness.panel.selection = Selection::Nothing;
+            harness.frame(Vec::new());
+            let column = side_rect(&harness.ctx, "magcoupling_inputs");
+            for keys in [key_tap(egui::Key::Tab), shift_tab()] {
+                let (stops, out_of_view) = follow(&mut harness, &keys, column);
+                assert!(
+                    stops > 40 && out_of_view > 10,
+                    "{screen:?}: {out_of_view} of {stops} stops were out of view"
+                );
+            }
+            assert_eq!(harness.panel.selection, Selection::Nothing, "{screen:?}");
+            assert_eq!(harness.panel.design(), Design::default(), "{screen:?}");
+            assert_eq!(harness.panel.history.undo_len(), 0, "{screen:?}");
+            // Back onto the column's first stop, in view; then a wheel takes it out of view.
+            let focused = |harness: &Harness| {
+                let id = harness.ctx.memory(|m| m.focused()).expect("a focus");
+                harness.ctx.read_response(id).expect("its widget")
+            };
+            // Past the scroll area's own drag surface, a Tab stop of egui's as tall as the view.
+            while !in_region(&focused(&harness), column) || focused(&harness).rect.height() > 100.0
+            {
+                harness.frame(key_tap(egui::Key::Tab));
+            }
+            harness.frame_after(1.0, Vec::new());
+            harness.frame_after(1.0, Vec::new());
+            let shown = focused(&harness);
+            assert_eq!(shown.interact_rect, shown.rect, "{screen:?}: in view");
+            harness.wheel_column(column.center(), 300.0, 30);
+            // A second on: egui asks for frames just after a scroll (it holds tooltips back) and
+            // while the scroll bar fades as the pointer leaves.
+            harness.frame(vec![egui::Event::PointerGone]);
+            harness.frame_after(1.0, Vec::new());
+            let idle = harness.frame(Vec::new());
+            let wheeled = focused(&harness);
+            assert_eq!(wheeled.id, shown.id, "{screen:?}: the focus stays");
+            assert!(
+                wheeled.rect.top() < shown.rect.top() - 200.0
+                    && wheeled.interact_rect != wheeled.rect,
+                "{screen:?}: the wheel is not fought: {:?} from {:?}",
+                wheeled.rect,
+                shown.rect
+            );
+            assert_eq!(
+                idle.viewport_output[&egui::ViewportId::ROOT].repaint_delay,
+                std::time::Duration::MAX,
+                "{screen:?}: an idle frame asks for no repaint"
+            );
+            // An Up or Down arrow key moves the focus too (egui's own, between two frames).
+            let (stops, out_of_view) = follow(&mut harness, &key_tap(egui::Key::ArrowDown), column);
+            assert!(
+                out_of_view > 0,
+                "{screen:?}: {out_of_view} of {stops} stops"
+            );
+            assert_eq!(harness.panel.design(), Design::default(), "{screen:?}");
+        }
+    }
+
+    #[test]
+    fn the_explain_panel_follows_the_keyboard_s_focus() {
+        // BL-100 for the Explain panel: in the smallest window a check's entry runs past the
+        // window's foot, and its lower links took the focus unseen.
+        let mut harness = Harness::of(MagcouplingPanel::new(), SMALLEST);
+        harness.select(HOT_MIN_CHECK);
+        let column = side_rect(&harness.ctx, "magcoupling_dashboard");
+        for keys in [key_tap(egui::Key::Tab), shift_tab()] {
+            let (stops, out_of_view) = follow(&mut harness, &keys, column);
+            assert!(out_of_view > 0, "{out_of_view} of {stops} stops");
+        }
+        assert_eq!(harness.panel.selection, Selection::Check(HOT_MIN_CHECK));
+        assert_eq!(harness.panel.design(), Design::default());
+    }
+
+    #[test]
+    fn a_wheeled_column_holds_still_while_the_focus_is_on_no_widget_of_its_own() {
+        // BL-100: the side panels and the centre are on one egui layer, so it is the clip
+        // check of `follow_focus` that keeps the left column still while the keyboard's focus
+        // is elsewhere: without it the second Tab stop here scrolled the wheeled column 24.5
+        // points up. Tab, then Shift+Tab, from no focus across the top bar, the centre and
+        // the right column (a check's entry shown) up to the column's first stop: the column
+        // stays where the wheel left it.
+        let mut harness = Harness::on_screen(SMALLEST);
+        harness.select(HOT_MIN_CHECK);
+        let column = side_rect(&harness.ctx, "magcoupling_inputs");
+        let top = |harness: &Harness| {
+            let slider = harness.panel.design_widgets[0];
+            let slider = harness
+                .ctx
+                .read_response(slider)
+                .expect("the first Size slider");
+            slider.rect.top()
+        };
+        for keys in [key_tap(egui::Key::Tab), shift_tab()] {
+            harness.ctx.memory_mut(|m| {
+                if let Some(focused) = m.focused() {
+                    m.surrender_focus(focused);
+                }
+            });
+            harness.wheel_column(column.center(), 300.0, 30);
+            harness.frame(vec![egui::Event::PointerGone]);
+            harness.frame_after(1.0, Vec::new());
+            let wheeled = top(&harness);
+            assert!(
+                wheeled < column.top() - 200.0,
+                "the wheel moved it: {wheeled}"
+            );
+            let mut elsewhere = 0;
+            loop {
+                harness.frame(keys.clone());
+                harness.frame_after(1.0, Vec::new());
+                let focused = harness.ctx.memory(|m| m.focused());
+                let focused = focused.and_then(|id| harness.ctx.read_response(id));
+                if focused.is_some_and(|r| in_region(&r, column)) {
+                    break;
+                }
+                elsewhere += 1;
+                assert!(elsewhere < 400, "the focus never reached the column");
+                assert_eq!(top(&harness), wheeled, "{elsewhere} stops elsewhere");
+            }
+            assert!(elsewhere > 2, "{elsewhere} stops before the column");
+        }
+    }
+
+    #[test]
+    fn the_centre_s_scrolling_views_follow_the_keyboard_s_focus() {
+        // BL-100 for the centre region's own scroll areas in the smallest window, each with
+        // rows past its foot: the Geometry tab's callout list (under the open Equation panel,
+        // whose own stops here are in view) and the Clamp tab. Shift+Tab first: with no focus
+        // it starts at the page's last stop, in the centre.
+        for (view, equation) in [(CentreView::Geometry, true), (CentreView::Clamp, false)] {
+            let mut harness = Harness::of(MagcouplingPanel::new(), SMALLEST);
+            harness.tab(view);
+            if equation {
+                harness.panel.explorer.open_path("model.pullout_Nm");
+            }
+            harness.frame(Vec::new());
+            harness.frame(Vec::new());
+            let selection = harness.panel.selection;
+            let centre = centre_region(&harness.ctx);
+            // The walk back may find every stop in view where the walk there left the area.
+            let out_of_view: usize = [shift_tab(), key_tap(egui::Key::Tab)]
+                .iter()
+                .map(|keys| follow(&mut harness, keys, centre).1)
+                .sum();
+            assert!(out_of_view > 0, "{view:?}: no stop was out of view");
+            assert_eq!(harness.panel.selection, selection, "{view:?}");
+            assert_eq!(harness.panel.design(), Design::default(), "{view:?}");
+        }
     }
 
     #[test]
@@ -10773,11 +11316,14 @@ mod tests {
     }
 
     /// Every painted shape that is a diagram's: the frames of the term marks and the panel's
-    /// own shapes aside, a diagram paints filled circles of radius 3.5 (its marked points).
+    /// own shapes aside, a diagram paints filled circles of radius 3.5 (its marked points),
+    /// scaled with it to the Explain panel's column (its 300 points less the two 8-point
+    /// margins: BL-098).
     fn diagram_points(output: &egui::FullOutput) -> usize {
+        let radius = 3.5 * (DASHBOARD_WIDTH - 16.0) / crate::gui::diagrams::DIAGRAM_SIZE.x;
         crate::gui::test_support::flat_shapes(output)
             .into_iter()
-            .filter(|s| matches!(s, egui::Shape::Circle(c) if c.radius == 3.5))
+            .filter(|s| matches!(s, egui::Shape::Circle(c) if (c.radius - radius).abs() < 1e-3))
             .count()
     }
 

@@ -18,7 +18,7 @@ Written 2026-11-18. Updated as answers and new questions arrive.
 | P-n, L-n | The plans for slice A and for slice B stage 1, in `docs/superpowers/plans/` |
 | Three-letter codes (LGS-11, LFA-16) | The whole-project audit, `docs/analyses/2026-11-10-whole-project-audit.md` |
 
-Contents: part A, six answers that change what is built next. Part B, eight things only you can try. Part C, 45 calls to make when convenient (questions 48, 49 and 50 were added there on 2026-11-22, questions 51, 53, 54, 55, 56, 57, 58 and 59 on 2026-11-23, questions 60 to 65 on 2026-11-25). Part D, five that matter only if the tools stop being generic.
+Contents: part A, six answers that change what is built next. Part B, eight things only you can try. Part C, 47 calls to make when convenient (questions 48, 49 and 50 were added there on 2026-11-22, questions 51, 53, 54, 55, 56, 57, 58 and 59 on 2026-11-23, questions 60 to 65 on 2026-11-25, questions 66 to 69 on 2026-11-26). Part D, five that matter only if the tools stop being generic.
 
 Answered so far: 1, 2, 3, 4, 5 and 6 (2026-11-22). Each answer is written in bold under its question.
 
@@ -509,6 +509,49 @@ Added 2026-11-25 (the next free number). The left column is now the same on ever
 - (b) "Size", as the design's sketch.
 
 Source: UX design sections 4.1 and 4.3; A-42; BL-096 plan, decision D-85.
+
+### 66. When you type the number a value box already shows, should the value round to it?
+
+Added 2026-11-26 (the next free number). A value from Auto or from a file can hold more digits than its box shows: Auto turned off leaves a magnet length of 11.942 mm, shown as "11.9 mm". Until now, moving through that box with Tab rounded the length to 11.9 with nothing typed, and the starting design then failed its hot torque check. Now a box left alone changes nothing. The same rule covers typing: the number already shown, typed again, also changes nothing, and the length stays 11.942. Any other number typed, an arrow key or a drag still sets the value.
+
+- **If you do not answer:** typing the number already shown changes nothing.
+- (a) As the default.
+- (b) Typing the number already shown rounds the value to it.
+
+Source: BL-097; A-43; decisions M41-1, M41-2 and M41-7.
+
+### 67. Should the Tab key walk every row of the Results table?
+
+Added 2026-11-26 (the next free number). The columns now scroll to whatever the Tab key lands on, so the keyboard's focus is never out of sight there. The Results table is left out. It draws only the rows on screen, so Tab passes those and moves on; the rows below are reached with the wheel or the search box. If the table scrolled to the focus too, each Tab would bring up the next row, and Tab would go through all of its rows, several hundred, before it left the table.
+
+- **If you do not answer:** the table stays as it is: Tab passes the rows on screen.
+- (a) As the default.
+- (b) The table scrolls to the focus, and Tab walks every row.
+- (c) The table is one Tab stop, and the Up and Down arrow keys move through its rows.
+
+Source: BL-100; BL-101; A-44.
+
+### 68. Should the part and grade pickers show their whole choice?
+
+Added 2026-11-26 (the next free number). The left column now keeps its width: before, a long label pushed it wider the first time a fold or a group opened, and it stayed wide. At its 320 points the pickers of the magnet parts and of the grades show their choice on one line and cut it short with "…" ("B842SH: K&J block 12.70 × 6.350 × 3.170 mm, N42SH" does not fit), as they always did at that width. One text that was whole is now cut, in the app's font: a grade picker's blank choice, "Blank: the manual Br, no rating" (before, the column had always grown wider by the time that row showed); the hint line above the picker reads the same words whole. The part's full name is the first line under its picker, and a grade's values are in the lines under its own. Dragging the column's edge wider shows the choice whole.
+
+- **If you do not answer:** the pickers stay as they are, cut on one line.
+- (a) As the default.
+- (b) Hovering a picker shows its whole choice.
+- (c) The picker wraps its choice onto two lines.
+
+Source: BL-099; A-45.
+
+### 69. Should the lessons' diagrams be redrawn at full size for the right column?
+
+Added 2026-11-26 (the next free number). A lesson's diagram was drawn 300 points wide in a column that holds 284, so opening the first lesson with a diagram pushed the right column 16 points wider and it stayed there. The column now keeps its width, and the diagram is the same picture made about 5 % smaller to fit: its labels are a little smaller and can look a little softer than before.
+
+- **If you do not answer:** the diagrams stay scaled to the column.
+- (a) As the default.
+- (b) Each of the six diagrams is laid out again for the narrower column, with its labels at full size.
+- (c) The right column starts 16 points wider, and the diagrams keep their size.
+
+Source: BL-098; A-46.
 
 ### Linkage simulator
 

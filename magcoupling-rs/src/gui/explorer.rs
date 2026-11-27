@@ -75,6 +75,7 @@ use crate::gui::sizing::{SizingState, held_by_auto};
 use crate::gui::typeset::{
     TermColors, glyph_safe, laid_ui, layout_equation, layout_symbol, term_at,
 };
+use crate::gui::wrapping_line;
 use crate::{DesignInputs, DesignResults};
 
 /// The panel's heading.
@@ -854,7 +855,7 @@ pub fn note_ui(ui: &mut egui::Ui, note: &Note, view: &NoteView<'_>) -> Option<No
 fn change_ui(ui: &mut egui::Ui, change: &Change, view: &NoteView<'_>) -> bool {
     let label = glyph_safe(label_for(change.input));
     let mut clicked = false;
-    ui.horizontal_wrapped(|ui| {
+    wrapping_line(ui, |ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
         ui.label(format!("{} ", change.step.word()));
         match unlinked_reason(change, view) {
@@ -881,7 +882,7 @@ pub fn explains_ui(ui: &mut egui::Ui, note: &Note) -> Option<&'static str> {
         .collect();
     let mut clicked = None;
     if !paths.is_empty() {
-        ui.horizontal_wrapped(|ui| {
+        wrapping_line(ui, |ui| {
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
             ui.strong(EXPLAINS);
             for path in paths {

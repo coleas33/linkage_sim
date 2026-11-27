@@ -49,6 +49,52 @@ pub use panel::{
 };
 // The Size tab's gap text, public for the slice-3 screen dump (`size_controls` is private).
 pub use size_controls::torque_gap_text;
-// The Size column's rows, for the app's check of the smoke prompt's words.
+// The Size column's rows, for the app's check of the smoke prompt's words; Auto's toggle and
+// its line's button, for the app's width test.
 #[cfg(all(test, feature = "app"))]
-pub(crate) use size_controls::SIZE_ROWS;
+pub(crate) use size_controls::{AUTO, OPEN_SIZE_TAB, SIZE_ROWS};
+
+/// A line of `ui` whose widgets wrap onto further lines, at the width `ui` has less one point:
+/// `ui.horizontal_wrapped` with a point kept free. egui's text layout rounds the width it wraps
+/// at to a whole point and lets a row run half a point past it, and a label in a wrapping line
+/// takes each row as it was laid out, so a row that just fits stands a fraction of a point past
+/// the line. In a side column that fraction widens the column, which egui then keeps that wide:
+/// every wrapping line of the left column and of the Explain panel is drawn through this
+/// (BL-099, BL-098).
+pub(crate) fn wrapping_line<R>(
+    ui: &mut egui::Ui,
+    add: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::InnerResponse<R> {
+    let size = egui::vec2(ui.available_width() - 1.0, ui.spacing().interact_size.y);
+    let wrapping = egui::Layout::left_to_right(egui::Align::Center).with_main_wrap(true);
+    ui.allocate_ui_with_layout(size, wrapping, add)
+}
+
+/// Scrolls the scroll area whose content `ui` is, by the smallest amount that shows it whole,
+/// to the widget the keyboard's focus has arrived on (BL-100: egui scrolls to no widget for
+/// taking the focus). Called last in the area's content. Only in the first frame the area is
+/// drawn with the focus there, so a wheel or a drag of the scroll bar afterwards is not fought.
+///
+/// Not for an area nested in another: egui hands a scroll to the innermost area alone.
+pub(crate) fn follow_focus(ui: &egui::Ui) {
+    let focused = ui.memory(|m| m.focused());
+    // Where the focus was when this area was last drawn. egui's own `gained_focus` misses a
+    // move made between two frames, as an Up or Down arrow key's is.
+    let seen = ui.data_mut(|d| {
+        let seen = d.get_temp_mut_or_default::<Option<egui::Id>>(ui.id().with("follow_focus"));
+        std::mem::replace(seen, focused)
+    });
+    // A widget drawn in this area is clipped by this area's view, and no other is: one in
+    // another panel, or in a list open over this one, would scroll the area to nothing. The
+    // panels share one layer, so the clip check is the one that holds an area still while the
+    // focus is elsewhere (a test wheels the left column and tabs past it); the layer check
+    // adds little, as a list's widget passes the clip check only whole in the view, where no
+    // scroll follows.
+    if focused != seen
+        && let Some(widget) = focused.and_then(|id| ui.ctx().read_response(id))
+        && widget.layer_id == ui.layer_id()
+        && widget.interact_rect == widget.rect.intersect(ui.clip_rect())
+    {
+        ui.scroll_to_rect(widget.rect, None);
+    }
+}

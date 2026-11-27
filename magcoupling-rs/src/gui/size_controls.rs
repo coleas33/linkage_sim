@@ -23,7 +23,7 @@ use crate::gui::format::{
 };
 use crate::gui::guidance::{FACE_GAP, SIZE_TAB_NOTE, TORQUE_BAND_NOTE};
 use crate::gui::input_ui::slider;
-use crate::gui::inputs::{InputCatalogue, slider_range, step_decimals};
+use crate::gui::inputs::{InputCatalogue, slider_range};
 use crate::gui::plain_text::{
     DIAMETER_HINT_KEY, HOT_LOW_TORQUE, LENGTH_HINT_KEY, MINIMUM_OD_HINT_KEY, REQUIRED_TORQUE,
     help_for,
@@ -248,7 +248,7 @@ pub fn auto_status(variable: FreeVariable) -> String {
 /// value shown when Auto turns off (decision M41-7).
 pub(crate) fn auto_ui(ui: &mut egui::Ui, state: SizingState) -> SizingState {
     let mut asked = state;
-    ui.horizontal_wrapped(|ui| {
+    crate::gui::wrapping_line(ui, |ui| {
         let mut on = state.mode == SizingMode::TorqueToMagnets;
         if ui
             .checkbox(&mut on, AUTO)
@@ -441,13 +441,9 @@ pub(crate) fn controls_ui(
             let range = legacy.minimum_diameter_range;
             let mut minimum = slider_minimum(&legacy, minimum_diameter_mm);
             let clicked = row_label(ui, row(MINIMUM_OD_HINT_KEY), None);
-            // The slider is handed the value its box shows. egui writes a box's text back when
-            // the keyboard's focus leaves it, so a floor off the box's decimals would count as
-            // moved, and its row as touched, by a Tab that only passed (BL-093).
-            let mut shown = egui::emath::round_to_decimals(minimum, step_decimals(range.step));
             let response = ui
                 .push_id("minimum_diameter_mm", |ui| {
-                    ui.add(slider(&mut shown, entry.meta, range))
+                    ui.add(slider(&mut minimum, entry.meta, range))
                 })
                 .inner;
             minimum_widget = Some(response.id);
@@ -455,7 +451,6 @@ pub(crate) fn controls_ui(
                 output.touched = Some(MINIMUM_OD_HINT_KEY);
             }
             if response.changed() {
-                minimum = shown;
                 output.minimum_diameter_mm = Some(minimum);
             } else if minimum_diameter_mm.is_none()
                 && legacy.diameter_mm < legacy.diameter_range.min

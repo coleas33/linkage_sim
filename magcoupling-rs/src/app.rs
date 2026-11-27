@@ -244,7 +244,7 @@ mod tests {
     use crate::gui::guidance::{counted_guides, design_status, level};
     use crate::gui::inputs::InputCatalogue;
     use crate::gui::session::{Design, encode_share_payload};
-    use crate::gui::test_support::{drawn_texts, texts_in_colors};
+    use crate::gui::test_support::{drawn_texts, side_rect, texts_in_colors};
 
     /// The status line at the starting design and at the example design, with the shaft-clamp
     /// section paused as the app runs it (nine counted checks).
@@ -629,6 +629,437 @@ mod tests {
                 let cut = cut_texts(&output, screen);
                 assert!(cut.is_empty(), "{size:?}, {}: cut: {cut:#?}", view.label());
             }
+        }
+    }
+
+    /// A click at `at` on a screen of `size`, the pointer gone after it, then `settle` frames
+    /// (a fold takes six to open or shut). Returns the last frame.
+    fn click_at(
+        ctx: &egui::Context,
+        app: &mut MagcouplingApp,
+        size: egui::Vec2,
+        at: egui::Pos2,
+        settle: usize,
+    ) -> egui::FullOutput {
+        use crate::gui::test_support::primary_button;
+        for pressed in [true, false] {
+            frame_on(ctx, app, size, vec![primary_button(at, pressed)]);
+        }
+        let mut output = frame_on(ctx, app, size, vec![egui::Event::PointerGone]);
+        for _ in 0..settle {
+            output = frame_on(ctx, app, size, Vec::new());
+        }
+        output
+    }
+
+    /// Asserts what holds a side column still (BL-099, BL-098), as the app is seen on a screen
+    /// of `size` in the state `what`: on every tab of the centre region the side panel `id` is
+    /// `width` points wide and no text of the page is cut sideways.
+    fn assert_the_column_holds(
+        ctx: &egui::Context,
+        app: &mut MagcouplingApp,
+        size: egui::Vec2,
+        (id, width): (&str, f32),
+        what: &str,
+    ) {
+        use crate::gui::CentreView;
+        use crate::gui::test_support::{cut_texts, last_characters};
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+        // The last frame may have been drawn on another screen: a wrapped row settles on the
+        // second frame.
+        for _ in 0..2 {
+            frame_on(ctx, app, size, Vec::new());
+        }
+        let mut output = frame_on(ctx, app, size, Vec::new());
+        // Last tab first: the page is left on its first view, the lightest to draw.
+        let mut views: Vec<CentreView> = CentreView::tabs(crate::engine::clamps::PAUSED).collect();
+        views.reverse();
+        for view in views {
+            // The tab in the centre region: the left column's heading bears the first tab's words.
+            let left = side_rect(ctx, "magcoupling_inputs").right();
+            let tab = last_characters(&output, view.label())
+                .into_iter()
+                .find(|at| at.x > left)
+                .unwrap_or_else(|| panic!("{size:?}, {what}: no tab {}", view.label()));
+            output = click_at(ctx, app, size, tab, 2);
+            let state = format!("{size:?}, {what}, on {}", view.label());
+            assert_eq!(side_rect(ctx, id).width(), width, "{state}");
+            let cut = cut_texts(&output, screen);
+            assert!(cut.is_empty(), "{state}: cut: {cut:#?}");
+        }
+    }
+
+    #[test]
+    fn the_left_column_keeps_its_width_whatever_is_opened_in_the_app_s_own_font() {
+        // BL-099: a row's label longer than its row ran past the column's edge, and egui's side
+        // panel grows to what it holds and keeps the width: 330.1 points once the Detailed
+        // inputs opened, 443.1 with the last group open, for the rest of the session, the
+        // centre and its drawing that much narrower and text cut on two tabs. In the app's
+        // theme and font, at the smallest window, the laptop screen and a desktop one, the
+        // column is 320 points wide with the folds shut, with each fold opened and shut again,
+        // with every input group and its Advanced heading opened and shut again, with a filter
+        // that lists every input set and cleared, with an input traced (its group's heading
+        // then bears a count), and with Auto on; and no text is cut, on any tab or on any row
+        // of the column. The tabs are read where the column holds more than it did: a state
+        // shut again draws what the shut state drew, so its width is the whole reading, and a
+        // column never narrows by itself, so the last reading holds for each of them.
+        use crate::engine::clamps::PAUSED;
+        use crate::gui::explain::TRACE_LINK;
+        use crate::gui::inputs::{ADVANCED_HEADING, FILTER_HINT, InputOrder};
+        use crate::gui::test_support::{cut_texts, flat_shapes, key_tap, text_rects};
+        use crate::gui::{ASSUMPTIONS_FOLD, AUTO, DETAILED_INPUTS, OPEN_SIZE_TAB};
+        const COLUMN: (&str, f32) = ("magcoupling_inputs", 320.0);
+        let groups = InputCatalogue::shown(PAUSED).groups_in(InputOrder::Workflow);
+        let total = InputCatalogue::shown(PAUSED).all().count();
+        for size in [WINDOWS[1], WINDOWS[0], egui::vec2(1920.0, 1080.0)] {
+            // The same window with room for every row of the column: a heading out of view at
+            // `size` is clicked here, and every row is read here for a cut and the column for
+            // its width. The tabs, and the width again, are read at `size`.
+            let tall = egui::vec2(size.x, 20_000.0);
+            let ctx = egui::Context::default();
+            let mut app = MagcouplingApp::new(&ctx);
+            // A frame of the tall window, settled: the last one may have been drawn at `size`.
+            let settled = |app: &mut MagcouplingApp| {
+                for _ in 0..2 {
+                    frame_on(&ctx, app, tall, Vec::new());
+                }
+                frame_on(&ctx, app, tall, Vec::new())
+            };
+            // The left column in the tall window, as wide as it started and no text of the
+            // page cut: how many texts it draws, and those equal to `text`, top to bottom.
+            let column = |app: &mut MagcouplingApp, text: &str| -> (usize, Vec<egui::Rect>) {
+                let output = settled(app);
+                let cut = cut_texts(&output, egui::Rect::from_min_size(egui::Pos2::ZERO, tall));
+                assert!(cut.is_empty(), "{size:?}: cut in the tall window: {cut:#?}");
+                let panel = side_rect(&ctx, COLUMN.0);
+                assert_eq!(panel.width(), COLUMN.1, "{size:?}: at {text:?}");
+                let right = panel.right();
+                let rows = flat_shapes(&output)
+                    .into_iter()
+                    .filter(|shape| match shape {
+                        egui::Shape::Text(text) => text.visual_bounding_rect().right() <= right,
+                        _ => false,
+                    })
+                    .count();
+                let found = text_rects(&output, text);
+                (
+                    rows,
+                    found.into_iter().filter(|r| r.right() <= right).collect(),
+                )
+            };
+            // A click on the first heading `text` of the left column under `below`: the column
+            // draws more texts once it has opened, fewer once it has shut. Returns its foot.
+            let click = |app: &mut MagcouplingApp, text: &str, below: f32, opens: bool| -> f32 {
+                let (before, found) = column(app, text);
+                let at = found.into_iter().find(|r| r.top() > below);
+                let at = at.unwrap_or_else(|| panic!("{size:?}: no {text:?} in the left column"));
+                click_at(&ctx, app, tall, at.center(), 6);
+                let after = column(app, text).0;
+                assert_ne!(after, before, "{size:?}: {text:?}");
+                assert_eq!(after > before, opens, "{size:?}: {text:?} {before} {after}");
+                at.bottom()
+            };
+            let holds = |app: &mut MagcouplingApp, what: &str| {
+                assert_the_column_holds(&ctx, app, size, COLUMN, what);
+            };
+            holds(&mut app, "the folds shut");
+            for fold in [DETAILED_INPUTS, ASSUMPTIONS_FOLD] {
+                click(&mut app, fold, 0.0, true);
+                holds(&mut app, &format!("{fold} open"));
+                click(&mut app, fold, 0.0, false);
+            }
+            // Each input group and its Advanced heading, one group at a time: the groups under
+            // the one opened are shut, so its Advanced heading is the first under its own.
+            click(&mut app, DETAILED_INPUTS, 0.0, true);
+            for (index, group) in groups.iter().enumerate() {
+                let header = click(&mut app, group.label, 0.0, true);
+                if group.has_advanced() {
+                    click(&mut app, ADVANCED_HEADING, header, true);
+                }
+                // The last group's labels are the longest: the column was 443.1 points here.
+                if index + 1 == groups.len() {
+                    holds(
+                        &mut app,
+                        "the last input group and its Advanced heading open",
+                    );
+                }
+                if group.has_advanced() {
+                    click(&mut app, ADVANCED_HEADING, header, false);
+                }
+                click(&mut app, group.label, 0.0, false);
+            }
+            // A filter that lists every input (each path has a dot), then cleared.
+            let filter = column(&mut app, FILTER_HINT).1[0];
+            click_at(&ctx, &mut app, tall, filter.center(), 0);
+            frame_on(
+                &ctx,
+                &mut app,
+                tall,
+                vec![egui::Event::Text(".".to_owned())],
+            );
+            let listed = format!("{total} of {total} inputs");
+            assert_eq!(column(&mut app, &listed).1.len(), 1, "{size:?}: {listed}");
+            holds(&mut app, "a filter that lists every input");
+            // The tabs' clicks took the keyboard from the filter box: a click on its text gives
+            // it back, the caret before or after the dot.
+            let filter = column(&mut app, ".").1[0];
+            click_at(&ctx, &mut app, tall, filter.center(), 0);
+            for key in [egui::Key::Backspace, egui::Key::Delete] {
+                frame_on(&ctx, &mut app, tall, key_tap(key));
+            }
+            assert_eq!(column(&mut app, FILTER_HINT).1.len(), 1, "{size:?}");
+            // A trace counts the rows it frames in each group's heading, shut or open: the
+            // Size column's Required torque traced (a click on its label, then on its entry's
+            // link), and its group's heading is the longest of the column, 293 points in the
+            // app's font with its count. The link again ends the trace.
+            let traced = format!("{} (1 traced)", groups[0].label);
+            for on in [true, false] {
+                if on {
+                    let label = column(&mut app, "Required torque").1[0];
+                    click_at(&ctx, &mut app, tall, label.center(), 2);
+                }
+                let link = text_rects(&settled(&mut app), TRACE_LINK)[0];
+                click_at(&ctx, &mut app, tall, link.center(), 2);
+                let drawn = column(&mut app, &traced).1.len();
+                assert_eq!(drawn, usize::from(on), "{size:?}: {traced}");
+                if on {
+                    holds(&mut app, "an input traced");
+                }
+            }
+            // Auto on, the Detailed inputs still open: Auto's line (which size it sets and the
+            // Open the Size tab button) heads the Key design group, 425 to 445 points wide were
+            // that line not to wrap. Its toggle again turns it off.
+            for on in [true, false] {
+                let toggle = column(&mut app, AUTO).1[0];
+                click_at(&ctx, &mut app, tall, toggle.center(), 2);
+                let drawn = column(&mut app, OPEN_SIZE_TAB).1.len();
+                assert_eq!(drawn, usize::from(on), "{size:?}: Auto's line");
+                if on {
+                    holds(&mut app, "Auto on, the Detailed inputs open");
+                }
+            }
+            for _ in 0..2 {
+                frame_on(&ctx, &mut app, size, Vec::new());
+            }
+            let width = side_rect(&ctx, COLUMN.0).width();
+            assert_eq!(
+                width, COLUMN.1,
+                "{size:?}: everything shut and cleared again"
+            );
+        }
+    }
+
+    #[test]
+    fn the_right_column_keeps_its_width_with_a_note_shown_in_the_app_s_own_font() {
+        // BL-098 as a person meets it, in the app's theme and font at the smallest window and
+        // the laptop screen: Learn on the top bar, then the title of the first note with a
+        // diagram. The diagram was 300 points wide in a column that holds 284, so the column
+        // grew to 316 and stayed there. With the note shown the right column is as wide as it
+        // started and no text is cut, on every tab.
+        use crate::gui::explain::{LEARN, shown_notes};
+        use crate::gui::test_support::text_center;
+        use crate::gui::typeset::glyph_safe;
+        const COLUMN: (&str, f32) = ("magcoupling_dashboard", 300.0);
+        let paused = crate::engine::clamps::PAUSED;
+        let note = shown_notes(paused)
+            .find(|note| note.diagram.is_some())
+            .expect("a note with a diagram");
+        let other = shown_notes(paused)
+            .find(|other| other.id != note.id)
+            .expect("another note");
+        for size in WINDOWS {
+            let ctx = egui::Context::default();
+            let mut app = MagcouplingApp::new(&ctx);
+            assert_the_column_holds(&ctx, &mut app, size, COLUMN, "the orientation");
+            for text in [LEARN.to_owned(), glyph_safe(note.title)] {
+                let output = frame_on(&ctx, &mut app, size, Vec::new());
+                click_at(&ctx, &mut app, size, text_center(&output, &text), 2);
+            }
+            // The note has taken the list's place: its own title, and no other note's.
+            let texts = drawn_texts(&frame_on(&ctx, &mut app, size, Vec::new()));
+            assert!(texts.contains(&glyph_safe(note.title)), "{size:?}");
+            assert!(!texts.contains(&glyph_safe(other.title)), "{size:?}");
+            assert_the_column_holds(&ctx, &mut app, size, COLUMN, "a note with a diagram");
+        }
+    }
+
+    #[test]
+    fn every_input_row_takes_no_more_than_the_width_it_is_given_in_either_font() {
+        // BL-099's rule, row by row: an input row is no wider than the width it is drawn in,
+        // so no row can set the left column's width. In egui's default font and in the app's
+        // theme and font (its 8-point button padding round the part and grade pickers), at the
+        // three widths the 320-point column gives a row (the filtered list and the Assumptions
+        // fold, a group, a group's Advanced heading), every input: as it is, changed (its reset
+        // button), changed and outside its slider's range (the note too), and locked by Auto.
+        use crate::gui::input_ui::input_row;
+        use crate::gui::test_support::sized_frame;
+        let inputs = starting_design();
+        for themed in [false, true] {
+            let ctx = egui::Context::default();
+            if themed {
+                theme::apply(&ctx);
+                fonts::install(&ctx);
+            }
+            // (Changed, outside its range, locked.)
+            let states = [
+                (false, false, false),
+                (true, false, false),
+                (true, true, false),
+                (false, false, true),
+            ];
+            let mut rows = 0;
+            let mut wide = Vec::new();
+            // A context loads its fonts in its first frame, and a wrapped line settles in its
+            // second: the third frame is read.
+            for frame in 0..3 {
+                sized_frame(&ctx, LAPTOP, Vec::new(), |ui| {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
+                        for entry in InputCatalogue::get().all() {
+                            let value = inputs.get(&entry.path).unwrap_or(Value::None);
+                            for (given, state) in [304.0_f32, 286.0, 268.0]
+                                .into_iter()
+                                .flat_map(|given| states.map(|state| (given, state)))
+                            {
+                                let (changed, outside, locked) = state;
+                                let current = match (outside, entry.meta.range) {
+                                    (false, _) => value.clone(),
+                                    (true, Some(range)) => match value {
+                                        Value::Int(_) => Value::Int(10 * range.max as i64 + 1),
+                                        _ => Value::Num(10.0 * range.max + 1.0),
+                                    },
+                                    // No slider, no range to be outside of.
+                                    (true, None) => continue,
+                                };
+                                let default = if changed {
+                                    Value::Text("another value".to_owned())
+                                } else {
+                                    current.clone()
+                                };
+                                let used = ui
+                                    .allocate_ui(egui::vec2(given, 0.0), |ui| {
+                                        ui.push_id((given as i32, state), |ui| {
+                                            input_row(
+                                                ui, entry, &current, &default, None, locked, false,
+                                            );
+                                        });
+                                        ui.min_rect().width()
+                                    })
+                                    .inner;
+                                if frame == 2 {
+                                    rows += 1;
+                                    if used > given {
+                                        wide.push(format!(
+                                            "{} {state:?}: {used} in {given}",
+                                            entry.path
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                    });
+                });
+            }
+            assert!(rows > 3 * 3 * InputCatalogue::get().all().count(), "{rows}");
+            assert!(wide.is_empty(), "themed {themed}: {wide:#?}");
+        }
+    }
+
+    #[test]
+    fn an_input_label_that_wraps_is_one_tab_stop_in_either_font() {
+        // A label egui lays out in a wrapping line is allocated row by row, each row a Tab stop
+        // of its own, and only the first shows the focus (egui 0.32 label.rs): since BL-099's
+        // head line wraps, each wrapped label took one press that showed nothing (SK-1). The
+        // input rows whose label wraps at the narrowest width the column gives a row, each
+        // changed (its reset button): a Tab round over them has as many stops there as at a
+        // width where nothing wraps, and the reset button sits close under the label.
+        use crate::gui::input_ui::{RESET_LABEL, input_row};
+        use crate::gui::inputs::InputEntry;
+        use crate::gui::plain_text::label_for;
+        use crate::gui::test_support::{key_tap, sized_frame, text_rect, text_rects, text_shapes};
+        let inputs = starting_design();
+        let all: Vec<&InputEntry> = InputCatalogue::get().all().collect();
+        for themed in [false, true] {
+            let context = || {
+                let ctx = egui::Context::default();
+                if themed {
+                    theme::apply(&ctx);
+                    fonts::install(&ctx);
+                }
+                ctx
+            };
+            // One frame of the rows at the width `given`, on a screen tall enough for them with
+            // no scroll area (its drag surface is a stop of its own).
+            let frame = |ctx: &egui::Context, given: f32, rows: &[&InputEntry], events| {
+                let screen = egui::vec2(given + 40.0, 40_000.0);
+                sized_frame(ctx, screen, events, |ui| {
+                    for entry in rows {
+                        let current = inputs.get(&entry.path).unwrap_or(Value::None);
+                        let default = Value::Text("another value".to_owned());
+                        ui.allocate_ui(egui::vec2(given, 0.0), |ui| {
+                            input_row(ui, entry, &current, &default, None, false, false);
+                        });
+                    }
+                })
+            };
+            // The rows whose label takes more than one line at `given`, each with its reset
+            // button on the line under it at a widget's height (egui gives a wrapping line's
+            // next row the height of the row before: here the two-line label's). A context
+            // loads its fonts in its first frame, and a wrapped line settles in its second.
+            let wrapped = |given: f32| {
+                let ctx = context();
+                frame(&ctx, given, &all, Vec::new());
+                let output = frame(&ctx, given, &all, Vec::new());
+                let resets = text_rects(&output, RESET_LABEL);
+                let half_a_widget = ctx.style().spacing.interact_size.y / 2.0;
+                let long: Vec<&InputEntry> = all
+                    .iter()
+                    .copied()
+                    .filter(|entry| {
+                        text_shapes(&output, label_for(&entry.path))
+                            .any(|(_, text)| text.galley.rows.len() > 1)
+                    })
+                    .collect();
+                for entry in &long {
+                    let label = text_rect(&output, label_for(&entry.path)).expect("drawn");
+                    let reset = resets
+                        .iter()
+                        .filter(|reset| reset.top() > label.top())
+                        .min_by(|a, b| a.top().total_cmp(&b.top()))
+                        .expect("its reset button");
+                    let gap = reset.top() - label.bottom();
+                    assert!(
+                        (0.0..half_a_widget).contains(&gap),
+                        "themed {themed}: {} {label:?} {reset:?}",
+                        entry.path
+                    );
+                }
+                long
+            };
+            // The stops of a Tab round from no focus.
+            let stops = |given: f32, rows: &[&InputEntry]| {
+                let ctx = context();
+                frame(&ctx, given, rows, Vec::new());
+                let mut seen = Vec::new();
+                loop {
+                    frame(&ctx, given, rows, key_tap(egui::Key::Tab));
+                    // Past the last stop the focus wraps to the first, or is let go.
+                    let focused = ctx.memory(|m| m.focused());
+                    let Some(focused) = focused.filter(|id| !seen.contains(id)) else {
+                        return seen.len();
+                    };
+                    seen.push(focused);
+                    assert!(seen.len() < 1_000, "the Tab round never ends");
+                }
+            };
+            let long = wrapped(268.0);
+            assert!(!long.is_empty(), "themed {themed}: no label wraps");
+            assert!(wrapped(4_000.0).is_empty(), "themed {themed}");
+            let paths: Vec<&str> = long.iter().map(|entry| entry.path.as_str()).collect();
+            assert_eq!(
+                stops(268.0, &long),
+                stops(4_000.0, &long),
+                "themed {themed}: {paths:?}"
+            );
         }
     }
 

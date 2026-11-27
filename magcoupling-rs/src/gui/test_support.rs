@@ -855,6 +855,19 @@ pub(crate) fn key_tap(key: egui::Key) -> Vec<egui::Event> {
     vec![key_event(key, true), key_event(key, false)]
 }
 
+/// Shift+Tab tapped: the keyboard's focus to the widget before.
+pub(crate) fn shift_tab() -> Vec<egui::Event> {
+    [true, false]
+        .map(|pressed| egui::Event::Key {
+            key: egui::Key::Tab,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: egui::Modifiers::SHIFT,
+        })
+        .to_vec()
+}
+
 /// Ctrl+A (Cmd+A on a Mac) tapped: select all in the focused text field.
 pub(crate) fn select_all() -> Vec<egui::Event> {
     [true, false]
@@ -992,6 +1005,14 @@ pub(crate) fn last_characters(output: &egui::FullOutput, needle: &str) -> Vec<eg
 /// label: lets a test click a widget whose id it cannot know.
 pub(crate) fn text_rect(output: &egui::FullOutput, needle: &str) -> Option<egui::Rect> {
     text_rects(output, needle).into_iter().next()
+}
+
+/// The rect of the side panel `id` ("magcoupling_inputs", "magcoupling_dashboard") as egui
+/// keeps it: the last frame's.
+pub(crate) fn side_rect(ctx: &egui::Context, id: &str) -> egui::Rect {
+    egui::containers::panel::PanelState::load(ctx, egui::Id::new(id))
+        .unwrap_or_else(|| panic!("{id} is drawn"))
+        .rect
 }
 
 /// The rect egui clips the first drawn text equal to `needle` to, such as a scroll area's

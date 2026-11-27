@@ -569,12 +569,23 @@ fn heating_curve(fonts: &Fonts, r: Rect, pens: &Pens) -> Vec<Shape> {
     shapes
 }
 
-/// Allocates [`DIAGRAM_SIZE`] and paints the diagram `kind` there.
+/// Paints the diagram `kind` at [`DIAGRAM_SIZE`], or where `ui` is narrower than that, scaled
+/// to the width `ui` has: the same picture, smaller, so no label meets another. A diagram
+/// wider than its place would widen the Explain panel's column, which egui then keeps that
+/// wide (BL-098).
 pub fn diagram_ui(ui: &mut egui::Ui, kind: Diagram) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(DIAGRAM_SIZE, egui::Sense::hover());
+    // The width first, as it is given: a width worked back from the scale can come out a
+    // fraction of a point over it.
+    let width = DIAGRAM_SIZE.x.min(ui.available_width());
+    let scale = width / DIAGRAM_SIZE.x;
+    let size = vec2(width, scale * DIAGRAM_SIZE.y);
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::hover());
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 4.0, ui.visuals().extreme_bg_color);
-    let shapes = ui.fonts(|f| diagram_shapes(f, kind, rect, ui.visuals()));
+    let full = Rect::from_min_size(Pos2::ZERO, DIAGRAM_SIZE);
+    let mut shapes = ui.fonts(|f| diagram_shapes(f, kind, full, ui.visuals()));
+    let placed = egui::emath::TSTransform::new(rect.min.to_vec2(), scale);
+    shapes.iter_mut().for_each(|shape| shape.transform(placed));
     painter.extend(shapes);
     response
 }
@@ -651,6 +662,55 @@ mod tests {
         for (i, a) in signatures.iter().enumerate() {
             for b in &signatures[i + 1..] {
                 assert_ne!(a, b);
+            }
+        }
+    }
+
+    #[test]
+    fn a_diagram_takes_the_width_it_is_given_scaled_as_one_picture() {
+        // BL-098: a diagram took 300 points whatever its place had, and the Explain panel's
+        // column holds 284: the column grew to the diagram and kept the width. In a narrower
+        // place the diagram is the same picture scaled to the place's width, every shape and
+        // label inside it; where it has room it is [`DIAGRAM_SIZE`], as before.
+        for (given, scale) in [
+            (284.0, 284.0 / 300.0),
+            (150.0, 0.5),
+            (300.0, 1.0),
+            (400.0, 1.0),
+        ] {
+            for kind in KINDS {
+                let ctx = egui::Context::default();
+                let mut placed = Rect::NOTHING;
+                let output = ctx.run(egui::RawInput::default(), |ctx| {
+                    egui::CentralPanel::default()
+                        .frame(egui::Frame::NONE)
+                        .show(ctx, |ui| {
+                            ui.allocate_ui(vec2(given, 0.0), |ui| {
+                                placed = diagram_ui(ui, kind).rect;
+                            });
+                        });
+                });
+                let size = scale * DIAGRAM_SIZE;
+                assert!(
+                    (placed.size() - size).abs().max_elem() < 0.1,
+                    "{kind:?} in {given}: {placed:?}"
+                );
+                // The diagram's own shapes: its painter clips them to its place.
+                let shapes: Vec<&Shape> = output
+                    .shapes
+                    .iter()
+                    .filter(|clipped| clipped.clip_rect == placed)
+                    .map(|clipped| &clipped.shape)
+                    .collect();
+                assert!(shapes.len() >= 6, "{kind:?}: the plate and the diagram");
+                for shape in shapes {
+                    for p in points(shape) {
+                        assert!(
+                            placed.expand(1.0).contains(p),
+                            "{kind:?} in {given}: {p:?} outside {placed:?}"
+                        );
+                    }
+                }
             }
         }
     }

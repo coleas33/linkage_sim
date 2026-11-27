@@ -845,6 +845,7 @@ pub fn clamp_ui(
                 .id_salt("magcoupling_screw_sizes")
                 .default_open(false)
                 .show(ui, |ui| screw_table_ui(ui, results, readouts));
+            crate::gui::follow_focus(ui);
         });
 }
 
