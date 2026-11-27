@@ -206,13 +206,9 @@ pub fn input_row(
 /// The head line of a row of the left column (an input's, an assumption's): the changed dot,
 /// then what `rest` draws, on a line that wraps at the width the row is given. A line that does
 /// not wrap runs a long label past the column's edge, and egui's side panel grows to what it
-/// holds and keeps the width for the rest of the session (BL-099). One point of the width is
-/// kept free: egui's text layout rounds the width it wraps at to a whole point and lets a row
-/// run half a point past it, and a label in a wrapping line takes each row as it was laid out.
+/// holds and keeps the width for the rest of the session (BL-099).
 pub(crate) fn head_line(ui: &mut egui::Ui, changed: bool, rest: impl FnOnce(&mut egui::Ui)) {
-    let size = egui::vec2(ui.available_width() - 1.0, ui.spacing().interact_size.y);
-    let wrapping = egui::Layout::left_to_right(egui::Align::Center).with_main_wrap(true);
-    ui.allocate_ui_with_layout(size, wrapping, |ui| {
+    crate::gui::wrapping_line(ui, |ui| {
         let dot = if changed { CHANGED_DOT } else { " " };
         ui.colored_label(crate::gui::look::mark_color(ui.visuals()), dot)
             .on_hover_text(CHANGED_FROM_DEFAULT);

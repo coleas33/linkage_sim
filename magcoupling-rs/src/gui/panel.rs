@@ -928,7 +928,7 @@ impl MagcouplingPanel {
         if self.sizing.mode != SizingMode::TorqueToMagnets {
             return;
         }
-        ui.horizontal_wrapped(|ui| {
+        crate::gui::wrapping_line(ui, |ui| {
             ui.label(size_controls::auto_status(self.sizing.variable));
             if ui.button(size_controls::OPEN_SIZE_TAB).clicked() {
                 self.centre = CentreView::SizeAndTorque;
@@ -2667,6 +2667,99 @@ mod tests {
         assert_eq!(harness.panel.selection, Selection::Nothing);
         assert!(!harness.panel.explorer.open, "Learn opens no equation");
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[test]
+    fn the_right_column_keeps_its_width_whichever_note_is_shown() {
+        // BL-098: a note's diagram was 300 points wide in a column that holds 284, and egui's
+        // side panel grows to what it holds and keeps the width: from the first note with a
+        // diagram ("harmonics") the right column was 316 points wide for the rest of the
+        // session, and the centre and its drawing 16 points narrower. At the smallest window
+        // and at the laptop screen every shown note in turn leaves the column as wide as it
+        // started, and so do the note list, a check's entry, a tile's and the orientation
+        // after them.
+        use crate::gui::explain::shown_notes;
+        use crate::gui::tiles::Tile;
+        for size in [egui::vec2(1024.0, 700.0), egui::vec2(1280.0, 800.0)] {
+            let mut harness = Harness::of(MagcouplingPanel::new(), size);
+            let notes: Vec<_> = shown_notes(harness.panel.clamps_paused).collect();
+            assert!(notes.iter().any(|note| note.diagram.is_some()));
+            let mut shows = |selection: Selection| {
+                harness.panel.selection = selection;
+                harness.frame(Vec::new());
+                harness.frame(Vec::new());
+                let column = side_rect(&harness.ctx, "magcoupling_dashboard");
+                assert_eq!(column.width(), DASHBOARD_WIDTH, "{size:?}, {selection:?}");
+                assert_eq!(column.right(), size.x - 8.0, "{size:?}, {selection:?}");
+            };
+            shows(Selection::Nothing);
+            for note in notes {
+                shows(Selection::Note(note.id));
+            }
+            shows(Selection::NoteList);
+            shows(Selection::Check(HOT_MIN_CHECK));
+            shows(Selection::Result(Tile::HotLow.path()));
+            shows(Selection::Nothing);
+        }
+    }
+
+    #[cfg(feature = "app")]
+    #[test]
+    fn the_right_column_keeps_its_width_whatever_entry_is_shown_in_the_app_s_own_font() {
+        // BL-098's sweep: in the app's theme and font, at the smallest window, every entry the
+        // Explain panel can show leaves the right column as wide as it started. The orientation,
+        // the note list, every shown note, every check, every tile, every Size column row and
+        // every input, on the starting design as it opens and on the failing example design
+        // with the spreadsheet details on (the most an entry holds); then every result of the
+        // results table. A wrapping line that kept no point free let a row stand a fraction of
+        // a point past the column: 0.375 for the result temperature.adhesive_life.daily_screen.
+        use crate::engine::clamps::{PAUSED, hides};
+        use crate::gui::explain::shown_notes;
+        use crate::gui::guidance::CHECK_GUIDES;
+        use crate::gui::results_table::table_entries;
+        use crate::gui::size_controls::SIZE_ROWS;
+        use crate::gui::tiles::Tile;
+        let panel = MagcouplingPanel::with_baseline(crate::app::starting_design());
+        let mut harness = Harness::of(panel, egui::vec2(1024.0, 700.0));
+        harness.panel.clamps_paused = PAUSED;
+        crate::app::theme::apply(&harness.ctx);
+        crate::app::fonts::install(&harness.ctx);
+        harness.frame(Vec::new());
+        let mut entries = vec![Selection::Nothing, Selection::NoteList];
+        entries.extend(shown_notes(PAUSED).map(|note| Selection::Note(note.id)));
+        entries.extend(
+            CHECK_GUIDES
+                .iter()
+                .map(|guide| Selection::Check(guide.check)),
+        );
+        entries.extend(Tile::ALL.iter().map(|tile| Selection::Result(tile.path())));
+        entries.extend(SIZE_ROWS.iter().map(|row| Selection::Input(row.key)));
+        let inputs = InputCatalogue::shown(PAUSED).all();
+        entries.extend(inputs.map(|entry| Selection::Input(entry.path.as_str())));
+        let results: Vec<Selection> = table_entries()
+            .iter()
+            .map(|entry| entry.path.as_str())
+            .filter(|path| !hides(path, PAUSED))
+            .map(Selection::Result)
+            .collect();
+        assert!(entries.len() > 150 && results.len() > 900);
+        // The entry as it is first drawn, then settled: a width once taken is kept, so the
+        // second frame's reading holds for both.
+        let shows = |harness: &mut Harness, selection: Selection, what: &str| {
+            harness.panel.selection = selection;
+            harness.frame(Vec::new());
+            harness.frame(Vec::new());
+            let width = side_rect(&harness.ctx, "magcoupling_dashboard").width();
+            assert_eq!(width, DASHBOARD_WIDTH, "{selection:?}, {what}");
+        };
+        for &selection in &entries {
+            shows(&mut harness, selection, "the starting design");
+        }
+        harness.panel.open_example_design();
+        harness.panel.show_details = true;
+        for selection in entries.into_iter().chain(results) {
+            shows(&mut harness, selection, "the example design, details on");
+        }
     }
 
     #[test]
@@ -11103,11 +11196,14 @@ mod tests {
     }
 
     /// Every painted shape that is a diagram's: the frames of the term marks and the panel's
-    /// own shapes aside, a diagram paints filled circles of radius 3.5 (its marked points).
+    /// own shapes aside, a diagram paints filled circles of radius 3.5 (its marked points),
+    /// scaled with it to the Explain panel's column (its 300 points less the two 8-point
+    /// margins: BL-098).
     fn diagram_points(output: &egui::FullOutput) -> usize {
+        let radius = 3.5 * (DASHBOARD_WIDTH - 16.0) / crate::gui::diagrams::DIAGRAM_SIZE.x;
         crate::gui::test_support::flat_shapes(output)
             .into_iter()
-            .filter(|s| matches!(s, egui::Shape::Circle(c) if c.radius == 3.5))
+            .filter(|s| matches!(s, egui::Shape::Circle(c) if (c.radius - radius).abs() < 1e-3))
             .count()
     }
 

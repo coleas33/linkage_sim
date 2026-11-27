@@ -53,6 +53,22 @@ pub use size_controls::torque_gap_text;
 #[cfg(all(test, feature = "app"))]
 pub(crate) use size_controls::SIZE_ROWS;
 
+/// A line of `ui` whose widgets wrap onto further lines, at the width `ui` has less one point:
+/// `ui.horizontal_wrapped` with a point kept free. egui's text layout rounds the width it wraps
+/// at to a whole point and lets a row run half a point past it, and a label in a wrapping line
+/// takes each row as it was laid out, so a row that just fits stands a fraction of a point past
+/// the line. In a side column that fraction widens the column, which egui then keeps that wide:
+/// every wrapping line of the left column and of the Explain panel is drawn through this
+/// (BL-099, BL-098).
+pub(crate) fn wrapping_line<R>(
+    ui: &mut egui::Ui,
+    add: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::InnerResponse<R> {
+    let size = egui::vec2(ui.available_width() - 1.0, ui.spacing().interact_size.y);
+    let wrapping = egui::Layout::left_to_right(egui::Align::Center).with_main_wrap(true);
+    ui.allocate_ui_with_layout(size, wrapping, add)
+}
+
 /// Scrolls the scroll area whose content `ui` is, by the smallest amount that shows it whole,
 /// to the widget the keyboard's focus has arrived on (BL-100: egui scrolls to no widget for
 /// taking the focus). Called last in the area's content. Only in the first frame the area is

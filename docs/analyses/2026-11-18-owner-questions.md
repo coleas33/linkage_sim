@@ -18,7 +18,7 @@ Written 2026-11-18. Updated as answers and new questions arrive.
 | P-n, L-n | The plans for slice A and for slice B stage 1, in `docs/superpowers/plans/` |
 | Three-letter codes (LGS-11, LFA-16) | The whole-project audit, `docs/analyses/2026-11-10-whole-project-audit.md` |
 
-Contents: part A, six answers that change what is built next. Part B, eight things only you can try. Part C, 47 calls to make when convenient (questions 48, 49 and 50 were added there on 2026-11-22, questions 51, 53, 54, 55, 56, 57, 58 and 59 on 2026-11-23, questions 60 to 65 on 2026-11-25, questions 66, 67 and 68 on 2026-11-26). Part D, five that matter only if the tools stop being generic.
+Contents: part A, six answers that change what is built next. Part B, eight things only you can try. Part C, 47 calls to make when convenient (questions 48, 49 and 50 were added there on 2026-11-22, questions 51, 53, 54, 55, 56, 57, 58 and 59 on 2026-11-23, questions 60 to 65 on 2026-11-25, questions 66 to 69 on 2026-11-26). Part D, five that matter only if the tools stop being generic.
 
 Answered so far: 1, 2, 3, 4, 5 and 6 (2026-11-22). Each answer is written in bold under its question.
 
@@ -541,6 +541,17 @@ Added 2026-11-26 (the next free number). The left column now keeps its width: be
 - (c) The picker wraps its choice onto two lines.
 
 Source: BL-099; A-45.
+
+### 69. Should the lessons' diagrams be redrawn at full size for the right column?
+
+Added 2026-11-26 (the next free number). A lesson's diagram was drawn 300 points wide in a column that holds 284, so opening the first lesson with a diagram pushed the right column 16 points wider and it stayed there. The column now keeps its width, and the diagram is the same picture made about 5 % smaller to fit: its labels are a little smaller and can look a little softer than before.
+
+- **If you do not answer:** the diagrams stay scaled to the column.
+- (a) As the default.
+- (b) Each of the six diagrams is laid out again for the narrower column, with its labels at full size.
+- (c) The right column starts 16 points wider, and the diagrams keep their size.
+
+Source: BL-098; A-46.
 
 ### Linkage simulator
 

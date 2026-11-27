@@ -66,6 +66,7 @@ use crate::gui::size_controls::{
 use crate::gui::tiles::Tile;
 use crate::gui::torque_card::CARD_HEADING;
 use crate::gui::typeset::glyph_safe;
+use crate::gui::wrapping_line;
 use crate::{DesignInputs, DesignResults};
 
 /// The heading of the Explain panel.
@@ -254,7 +255,7 @@ fn input_ui(
     readouts: &mut Readouts,
 ) -> Option<Asked> {
     let row = size_row(key).copied().or_else(|| input_row(key))?;
-    ui.horizontal_wrapped(|ui| {
+    wrapping_line(ui, |ui| {
         if let Some(value) = row_value(&row, shown) {
             ui.strong(value);
         }
@@ -428,7 +429,7 @@ fn check_link_ui(
     shown: &Shown<'_>,
 ) -> Option<Asked> {
     let mut asked = None;
-    ui.horizontal_wrapped(|ui| {
+    wrapping_line(ui, |ui| {
         let mark = mark_level(guide, shown.inputs, shown.results);
         state_mark(ui, mark);
         if ui.link(guide.label).clicked() {
@@ -551,7 +552,7 @@ fn entry_ui(
 ) -> Option<Asked> {
     let guide = entry.guide;
     let mut asked = None;
-    ui.horizontal_wrapped(|ui| {
+    wrapping_line(ui, |ui| {
         state_mark(ui, entry.mark);
         ui.strong(guide.label);
         if let Some(mark) = entry.mark {
@@ -644,7 +645,7 @@ fn result_ui(
 ) -> Option<Asked> {
     let info = result_info(path)?;
     let tile = Selection::Result(path).tile();
-    ui.horizontal_wrapped(|ui| {
+    wrapping_line(ui, |ui| {
         let quiet = look::quiet_text(ui.visuals());
         match tile {
             Some(tile) => {
@@ -707,7 +708,7 @@ fn card_ui(
     auto: Option<FreeVariable>,
     readouts: &mut Readouts,
 ) {
-    ui.horizontal_wrapped(|ui| {
+    wrapping_line(ui, |ui| {
         ui.label(CARD_HEADING);
         if why_note_link(ui, SIZE_TAB_NOTE) {
             readouts.open_note(SIZE_TAB_NOTE);
@@ -730,7 +731,7 @@ fn foot_ui(
 ) -> Option<Asked> {
     ui.separator();
     if let Some(learn) = learn {
-        ui.horizontal_wrapped(|ui| {
+        wrapping_line(ui, |ui| {
             ui.label(FULL_LESSON);
             learn_ui(ui, learn, readouts);
         });

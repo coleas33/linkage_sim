@@ -248,7 +248,7 @@ pub fn auto_status(variable: FreeVariable) -> String {
 /// value shown when Auto turns off (decision M41-7).
 pub(crate) fn auto_ui(ui: &mut egui::Ui, state: SizingState) -> SizingState {
     let mut asked = state;
-    ui.horizontal_wrapped(|ui| {
+    crate::gui::wrapping_line(ui, |ui| {
         let mut on = state.mode == SizingMode::TorqueToMagnets;
         if ui
             .checkbox(&mut on, AUTO)

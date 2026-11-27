@@ -846,6 +846,40 @@ mod tests {
     }
 
     #[test]
+    fn the_right_column_keeps_its_width_with_a_note_shown_in_the_app_s_own_font() {
+        // BL-098 as a person meets it, in the app's theme and font at the smallest window and
+        // the laptop screen: Learn on the top bar, then the title of the first note with a
+        // diagram. The diagram was 300 points wide in a column that holds 284, so the column
+        // grew to 316 and stayed there. With the note shown the right column is as wide as it
+        // started and no text is cut, on every tab.
+        use crate::gui::explain::{LEARN, shown_notes};
+        use crate::gui::test_support::text_center;
+        use crate::gui::typeset::glyph_safe;
+        const COLUMN: (&str, f32) = ("magcoupling_dashboard", 300.0);
+        let paused = crate::engine::clamps::PAUSED;
+        let note = shown_notes(paused)
+            .find(|note| note.diagram.is_some())
+            .expect("a note with a diagram");
+        let other = shown_notes(paused)
+            .find(|other| other.id != note.id)
+            .expect("another note");
+        for size in WINDOWS {
+            let ctx = egui::Context::default();
+            let mut app = MagcouplingApp::new(&ctx);
+            assert_the_column_holds(&ctx, &mut app, size, COLUMN, "the orientation");
+            for text in [LEARN.to_owned(), glyph_safe(note.title)] {
+                let output = frame_on(&ctx, &mut app, size, Vec::new());
+                click_at(&ctx, &mut app, size, text_center(&output, &text), 2);
+            }
+            // The note has taken the list's place: its own title, and no other note's.
+            let texts = drawn_texts(&frame_on(&ctx, &mut app, size, Vec::new()));
+            assert!(texts.contains(&glyph_safe(note.title)), "{size:?}");
+            assert!(!texts.contains(&glyph_safe(other.title)), "{size:?}");
+            assert_the_column_holds(&ctx, &mut app, size, COLUMN, "a note with a diagram");
+        }
+    }
+
+    #[test]
     fn every_input_row_takes_no_more_than_the_width_it_is_given_in_either_font() {
         // BL-099's rule, row by row: an input row is no wider than the width it is drawn in,
         // so no row can set the left column's width. In egui's default font and in the app's
