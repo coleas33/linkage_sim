@@ -2427,14 +2427,14 @@ Replace:
 
 ```yaml
   status: in_progress
-  notes: "Built on branch magcoupling/overhaul-b2-part2b-iii-a (Tasks 1 to 4 of the plan);
+  notes: "Built on branch magcoupling/overhaul-b2p2b-iii (Tasks 1 to 4 of the plan);
 ```
 
 with:
 
 ```yaml
   status: fixed
-  notes: "FIXED <date>: merged (<the gate, the reviews and the smoke run in a few words>). Built on branch magcoupling/overhaul-b2-part2b-iii-a (Tasks 1 to 4 of the plan);
+  notes: "FIXED <date>: merged (<the gate, the reviews and the smoke run in a few words>). Built on branch magcoupling/overhaul-b2p2b-iii (Tasks 1 to 4 of the plan);
 ```
 
   Commit it with the review record: `docs(magcoupler): BL-104 fixed: the reviews, the gate and the smoke run passed`. Then merge the branch into `main` with a merge commit (`git merge --no-ff`), its message one line of what the screen now does.
