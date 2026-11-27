@@ -39,6 +39,7 @@ use crate::gui::clamp_drawing::clamp_ui;
 use crate::gui::dashboard::{Level, end_effect_banner_ui};
 use crate::gui::explain::{Asked, LEARN, Selection, explain_ui, result_selection};
 use crate::gui::explorer::{Explorer, FOCUS_WIDTH, explorer_ui, held_reason, panel_heights};
+use crate::gui::follow_focus;
 use crate::gui::format::search_needle;
 use crate::gui::geometry::wall_cautions;
 use crate::gui::geometry_view::{drawing_ui, geometry_ui};
@@ -837,7 +838,9 @@ impl MagcouplingPanel {
                     held: &held,
                     minimum_diameter_mm: self.minimum_diameter_mm,
                 };
-                explain_ui(ui, self.selection, &shown, readouts)
+                let asked = explain_ui(ui, self.selection, &shown, readouts);
+                follow_focus(ui);
+                asked
             })
             .inner;
         match asked {
@@ -1302,7 +1305,10 @@ impl MagcouplingPanel {
                 if std::mem::take(&mut self.column_to_top) {
                     column = column.vertical_scroll_offset(0.0);
                 }
-                column.show(ui, |ui| self.size_column_ui(ui, readouts));
+                column.show(ui, |ui| {
+                    self.size_column_ui(ui, readouts);
+                    follow_focus(ui);
+                });
             });
         });
     }
@@ -1781,9 +1787,10 @@ mod tests {
     use crate::gui::test_support::{
         SCREEN, clamp_at_its_limit, drawing_rect, drawn_texts, flat_shapes, hot_day,
         hub_overstressed, key_event, key_tap, last_characters, only_the_clamp_fails,
-        only_the_joint_fails, passing_design, primary_button, row_line, select_all, short_magnets,
-        shown_whole, sized_frame, sized_frame_at, smoke_inputs, text_center, text_clip_rect,
-        text_color, text_rect, text_rects, text_shapes, tooltips_at_once, with_poles,
+        only_the_joint_fails, passing_design, primary_button, row_line, select_all, shift_tab,
+        short_magnets, shown_whole, sized_frame, sized_frame_at, smoke_inputs, text_center,
+        text_clip_rect, text_color, text_rect, text_rects, text_shapes, tooltips_at_once,
+        with_poles,
     };
     use crate::gui::torque_card::{CAPTION, CARD_HEADING, Control, held_line};
     use crate::headline;
@@ -4182,17 +4189,6 @@ mod tests {
         // link traces it. Before, the focus arriving on each row passed selected that row.
         let op_temp = "coupling.op_temp_C";
         let before = KEY_DESIGN[KEY_DESIGN.iter().position(|p| *p == op_temp).unwrap() - 1];
-        let shift_tab = || {
-            [true, false]
-                .map(|pressed| egui::Event::Key {
-                    key: egui::Key::Tab,
-                    physical_key: None,
-                    pressed,
-                    repeat: false,
-                    modifiers: egui::Modifiers::SHIFT,
-                })
-                .to_vec()
-        };
         for backwards in [false, true] {
             let mut harness = Harness::new();
             let target = harness.widget(op_temp).id;
@@ -7585,6 +7581,196 @@ mod tests {
             .chain([DETAILED_INPUTS, ASSUMPTIONS_FOLD])
             .map(|text| in_left_column(output, text))
             .collect()
+    }
+
+    /// The smallest window supported (decision C-18).
+    const SMALLEST: egui::Vec2 = egui::vec2(1024.0, 700.0);
+
+    /// Whether the widget `r` is drawn in `region`, a column of the page under its top bar: a
+    /// stop of the top bar is above the region and whole, while a row scrolled out of the
+    /// region's view, above it or below it, is cut.
+    fn in_region(r: &egui::Response, region: egui::Rect) -> bool {
+        region.x_range().contains(r.rect.center().x)
+            && (r.rect.top() >= region.top() || r.interact_rect != r.rect)
+    }
+
+    /// The centre region: between the two columns, under the top bar.
+    fn centre_region(ctx: &egui::Context) -> egui::Rect {
+        let (left, right) = (
+            side_rect(ctx, "magcoupling_inputs"),
+            side_rect(ctx, "magcoupling_dashboard"),
+        );
+        egui::Rect::from_x_y_ranges(left.right()..=right.left(), left.y_range())
+    }
+
+    /// Taps `keys` (Tab, Shift+Tab or an arrow key) from where the keyboard's focus is until it
+    /// has been on the widgets of `region` ([`in_region`]) and has left them, or an arrow key
+    /// finds no widget further on. After each press, once the
+    /// scroll has settled, the focused widget of the region is whole in its scroll area's view
+    /// (BL-100). Returns how many stops the region held, and how many of them were out of view
+    /// when the focus arrived.
+    fn follow(harness: &mut Harness, keys: &[egui::Event], region: egui::Rect) -> (usize, usize) {
+        let focused = |harness: &Harness| {
+            let id = harness.ctx.memory(|m| m.focused())?;
+            harness.ctx.read_response(id)
+        };
+        let (mut stops, mut out_of_view) = (0, 0);
+        for press in 1..=400 {
+            let before = harness.ctx.memory(|m| m.focused());
+            harness.frame(keys.to_vec());
+            // Shift+Tab moves the focus as the next frame begins.
+            if harness.ctx.memory(|m| m.focused()) == before {
+                harness.frame(Vec::new());
+            }
+            if stops > 0 && harness.ctx.memory(|m| m.focused()) == before {
+                return (stops, out_of_view);
+            }
+            // No focus: the page's end, and the next press starts it over.
+            let arrived = focused(harness).filter(|r| in_region(r, region));
+            let Some(arrived) = arrived else {
+                if stops > 0 {
+                    return (stops, out_of_view);
+                }
+                continue;
+            };
+            stops += 1;
+            out_of_view += usize::from(arrived.interact_rect != arrived.rect);
+            // How far the view's top or foot cuts into the widget: the least scroll.
+            let (at, cut) = (arrived.rect, arrived.interact_rect);
+            let least = (at.bottom() - cut.bottom()).max(cut.top() - at.top());
+            // A second a frame, so the scroll's animation is over in one: frames until the
+            // widget is whole (eight at most), then one more.
+            let mut settled = arrived;
+            for _ in 0..8 {
+                let whole = settled.interact_rect == settled.rect;
+                harness.frame_after(1.0, Vec::new());
+                settled = focused(harness).expect("the focus stays");
+                if whole {
+                    break;
+                }
+            }
+            assert_eq!(
+                settled.interact_rect, settled.rect,
+                "press {press}: the focused widget is cut by its area's view"
+            );
+            // No further than that, but for the gap egui leaves at the view's edge.
+            let moved = (settled.rect.top() - at.top()).abs();
+            assert!(
+                (least..=least + 8.0).contains(&moved),
+                "press {press}: scrolled {moved} points to show a widget cut by {least}"
+            );
+        }
+        panic!("the focus never passed the region ({stops} stops)");
+    }
+
+    #[test]
+    fn the_left_column_follows_the_keyboard_s_focus_and_fights_no_wheel() {
+        // BL-100: egui scrolls a scroll area to no widget for taking the keyboard's focus, so
+        // with the Detailed inputs open most Tab stops of the left column landed below the
+        // window's foot, unseen. The column now scrolls, by the least that shows the widget
+        // whole, when the focus arrives (Tab, Shift+Tab, or an Up or Down arrow key), and only
+        // then: a wheel afterwards moves the column and it stays moved. The focus arriving
+        // still selects nothing and edits nothing (BL-093), and an idle frame asks for no
+        // repaint.
+        for screen in [egui::vec2(1280.0, 800.0), SMALLEST] {
+            let mut harness = Harness::on_screen(screen);
+            harness.panel.selection = Selection::Nothing;
+            harness.frame(Vec::new());
+            let column = side_rect(&harness.ctx, "magcoupling_inputs");
+            for keys in [key_tap(egui::Key::Tab), shift_tab()] {
+                let (stops, out_of_view) = follow(&mut harness, &keys, column);
+                assert!(
+                    stops > 40 && out_of_view > 10,
+                    "{screen:?}: {out_of_view} of {stops} stops were out of view"
+                );
+            }
+            assert_eq!(harness.panel.selection, Selection::Nothing, "{screen:?}");
+            assert_eq!(harness.panel.design(), Design::default(), "{screen:?}");
+            assert_eq!(harness.panel.history.undo_len(), 0, "{screen:?}");
+            // Back onto the column's first stop, in view; then a wheel takes it out of view.
+            let focused = |harness: &Harness| {
+                let id = harness.ctx.memory(|m| m.focused()).expect("a focus");
+                harness.ctx.read_response(id).expect("its widget")
+            };
+            // Past the scroll area's own drag surface, a Tab stop of egui's as tall as the view.
+            while !in_region(&focused(&harness), column) || focused(&harness).rect.height() > 100.0
+            {
+                harness.frame(key_tap(egui::Key::Tab));
+            }
+            harness.frame_after(1.0, Vec::new());
+            harness.frame_after(1.0, Vec::new());
+            let shown = focused(&harness);
+            assert_eq!(shown.interact_rect, shown.rect, "{screen:?}: in view");
+            harness.wheel_column(column.center(), 300.0, 30);
+            // A second on: egui asks for frames just after a scroll (it holds tooltips back) and
+            // while the scroll bar fades as the pointer leaves.
+            harness.frame(vec![egui::Event::PointerGone]);
+            harness.frame_after(1.0, Vec::new());
+            let idle = harness.frame(Vec::new());
+            let wheeled = focused(&harness);
+            assert_eq!(wheeled.id, shown.id, "{screen:?}: the focus stays");
+            assert!(
+                wheeled.rect.top() < shown.rect.top() - 200.0
+                    && wheeled.interact_rect != wheeled.rect,
+                "{screen:?}: the wheel is not fought: {:?} from {:?}",
+                wheeled.rect,
+                shown.rect
+            );
+            assert_eq!(
+                idle.viewport_output[&egui::ViewportId::ROOT].repaint_delay,
+                std::time::Duration::MAX,
+                "{screen:?}: an idle frame asks for no repaint"
+            );
+            // An Up or Down arrow key moves the focus too (egui's own, between two frames).
+            let (stops, out_of_view) = follow(&mut harness, &key_tap(egui::Key::ArrowDown), column);
+            assert!(
+                out_of_view > 0,
+                "{screen:?}: {out_of_view} of {stops} stops"
+            );
+            assert_eq!(harness.panel.design(), Design::default(), "{screen:?}");
+        }
+    }
+
+    #[test]
+    fn the_explain_panel_follows_the_keyboard_s_focus() {
+        // BL-100 for the Explain panel: in the smallest window a check's entry runs past the
+        // window's foot, and its lower links took the focus unseen.
+        let mut harness = Harness::of(MagcouplingPanel::new(), SMALLEST);
+        harness.select(HOT_MIN_CHECK);
+        let column = side_rect(&harness.ctx, "magcoupling_dashboard");
+        for keys in [key_tap(egui::Key::Tab), shift_tab()] {
+            let (stops, out_of_view) = follow(&mut harness, &keys, column);
+            assert!(out_of_view > 0, "{out_of_view} of {stops} stops");
+        }
+        assert_eq!(harness.panel.selection, Selection::Check(HOT_MIN_CHECK));
+        assert_eq!(harness.panel.design(), Design::default());
+    }
+
+    #[test]
+    fn the_centre_s_scrolling_views_follow_the_keyboard_s_focus() {
+        // BL-100 for the centre region's own scroll areas in the smallest window, each with
+        // rows past its foot: the Geometry tab's callout list (under the open Equation panel,
+        // whose own stops here are in view) and the Clamp tab. Shift+Tab first: with no focus
+        // it starts at the page's last stop, in the centre.
+        for (view, equation) in [(CentreView::Geometry, true), (CentreView::Clamp, false)] {
+            let mut harness = Harness::of(MagcouplingPanel::new(), SMALLEST);
+            harness.tab(view);
+            if equation {
+                harness.panel.explorer.open_path("model.pullout_Nm");
+            }
+            harness.frame(Vec::new());
+            harness.frame(Vec::new());
+            let selection = harness.panel.selection;
+            let centre = centre_region(&harness.ctx);
+            // The walk back may find every stop in view where the walk there left the area.
+            let out_of_view: usize = [shift_tab(), key_tap(egui::Key::Tab)]
+                .iter()
+                .map(|keys| follow(&mut harness, keys, centre).1)
+                .sum();
+            assert!(out_of_view > 0, "{view:?}: no stop was out of view");
+            assert_eq!(harness.panel.selection, selection, "{view:?}");
+            assert_eq!(harness.panel.design(), Design::default(), "{view:?}");
+        }
     }
 
     #[test]

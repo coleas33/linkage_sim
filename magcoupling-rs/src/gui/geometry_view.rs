@@ -444,6 +444,7 @@ fn list_ui(ui: &mut egui::Ui, g: &Geometry, readouts: &mut Readouts, with_list: 
                 };
                 ui.add(egui::Label::new(text).wrap());
             }
+            crate::gui::follow_focus(ui);
         });
 }
 

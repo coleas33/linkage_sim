@@ -5,6 +5,15 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-26 - Magcoupler: a scroll area follows the keyboard's focus (BL-100; branch magcoupling/columns-hold-still)
+- Why: with the Detailed inputs open, most Tab stops of the left column were below the window's foot and the column did not follow (33 of 57 at 1024 x 700 in the panel tests): the focus went where nobody could see it.
+- Root cause: egui scrolls no scroll area to a widget for taking the keyboard's focus.
+- What changed: `gui::follow_focus(ui)`, called last in a scroll area's content, scrolls that area by the least that shows whole the widget the focus has arrived on (`scroll_to_rect(rect, None)`), in the first frame the area is drawn with the focus there and never again. One rule, four callers: the left column, the Explain panel, the Geometry tab's callout list, the Clamp tab. It keeps the focused id it saw last (egui's own `gained_focus` misses an Up or Down arrow key's move), and takes a widget for its own when the area's clip rect is what cuts it.
+- Kept: the focus arriving selects nothing and edits nothing (BL-093); a wheel or a drag of the scroll bar after the arrival is not fought; an idle frame asks for no repaint.
+- Probed, not fixed, filed as BL-101: the Equation panel and the Clamp tab's screw-size table (sideways scroll areas nested in an up-and-down one: egui hands a scroll to the innermost area alone, so the one rule does not reach them) and the Results table (only the rows in view are drawn; with the rule Tab would walk every row before it left the table: register row A-44, owner question 67). Found on the way, filed as BL-102: egui gives the keyboard's focus to each scroll area's drag surface and scroll bar and to each column's resize edge, none of which shows it.
+- Tests (each fails with its area's call taken out, and all three with the rule's scroll taken out): `the_left_column_follows_the_keyboard_s_focus_and_fights_no_wheel` (1280 x 800 and 1024 x 700, Tab, Shift+Tab and a Down arrow walk, the least scroll, the wheel, the idle frame), `the_explain_panel_follows_the_keyboard_s_focus`, `the_centre_s_scrolling_views_follow_the_keyboard_s_focus`; `test_support::shift_tab` is shared with the trace-link test.
+- Docs: README, docs/ai 02 (a note and two lessons), 04, backlog BL-100 in_progress, BL-101 and BL-102 filed, register row A-44, owner question 67.
+
 ## 2026-11-26 - Magcoupler: a value box left with nothing typed changes nothing (BL-097; branch magcoupling/columns-hold-still)
 - Why: live on the public site. On the starting design, Auto on, Auto off, then Tab through the Size column rounded the adopted magnet length from 11.942 to 11.9 mm with nothing typed: an edit, an undo step, a selection, and hot-low 1.3445 N·m under the 1.35 N·m requirement (one failed check where there was none).
 - Root cause: egui's value box (`DragValue`) writes its text back when the keyboard's focus leaves it, typed or not, and the text is the value at the box's decimals, clamped to the slider's range; `Slider::set_value` then snaps it to the step.

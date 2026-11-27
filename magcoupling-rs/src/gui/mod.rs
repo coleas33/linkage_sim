@@ -52,3 +52,28 @@ pub use size_controls::torque_gap_text;
 // The Size column's rows, for the app's check of the smoke prompt's words.
 #[cfg(all(test, feature = "app"))]
 pub(crate) use size_controls::SIZE_ROWS;
+
+/// Scrolls the scroll area whose content `ui` is, by the smallest amount that shows it whole,
+/// to the widget the keyboard's focus has arrived on (BL-100: egui scrolls to no widget for
+/// taking the focus). Called last in the area's content. Only in the first frame the area is
+/// drawn with the focus there, so a wheel or a drag of the scroll bar afterwards is not fought.
+///
+/// Not for an area nested in another: egui hands a scroll to the innermost area alone.
+pub(crate) fn follow_focus(ui: &egui::Ui) {
+    let focused = ui.memory(|m| m.focused());
+    // Where the focus was when this area was last drawn. egui's own `gained_focus` misses a
+    // move made between two frames, as an Up or Down arrow key's is.
+    let seen = ui.data_mut(|d| {
+        let seen = d.get_temp_mut_or_default::<Option<egui::Id>>(ui.id().with("follow_focus"));
+        std::mem::replace(seen, focused)
+    });
+    // A widget drawn in this area is clipped by this area's view, and no other is: one in
+    // another panel, or in a list open over this one, would scroll the area to nothing.
+    if focused != seen
+        && let Some(widget) = focused.and_then(|id| ui.ctx().read_response(id))
+        && widget.layer_id == ui.layer_id()
+        && widget.interact_rect == widget.rect.intersect(ui.clip_rect())
+    {
+        ui.scroll_to_rect(widget.rect, None);
+    }
+}

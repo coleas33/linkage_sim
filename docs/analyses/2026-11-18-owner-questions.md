@@ -18,7 +18,7 @@ Written 2026-11-18. Updated as answers and new questions arrive.
 | P-n, L-n | The plans for slice A and for slice B stage 1, in `docs/superpowers/plans/` |
 | Three-letter codes (LGS-11, LFA-16) | The whole-project audit, `docs/analyses/2026-11-10-whole-project-audit.md` |
 
-Contents: part A, six answers that change what is built next. Part B, eight things only you can try. Part C, 46 calls to make when convenient (questions 48, 49 and 50 were added there on 2026-11-22, questions 51, 53, 54, 55, 56, 57, 58 and 59 on 2026-11-23, questions 60 to 65 on 2026-11-25, question 66 on 2026-11-26). Part D, five that matter only if the tools stop being generic.
+Contents: part A, six answers that change what is built next. Part B, eight things only you can try. Part C, 47 calls to make when convenient (questions 48, 49 and 50 were added there on 2026-11-22, questions 51, 53, 54, 55, 56, 57, 58 and 59 on 2026-11-23, questions 60 to 65 on 2026-11-25, questions 66 and 67 on 2026-11-26). Part D, five that matter only if the tools stop being generic.
 
 Answered so far: 1, 2, 3, 4, 5 and 6 (2026-11-22). Each answer is written in bold under its question.
 
@@ -519,6 +519,17 @@ Added 2026-11-26 (the next free number). A value from Auto or from a file can ho
 - (b) Typing the number already shown rounds the value to it.
 
 Source: BL-097; A-43; decisions M41-1, M41-2 and M41-7.
+
+### 67. Should the Tab key walk every row of the Results table?
+
+Added 2026-11-26 (the next free number). The columns now scroll to whatever the Tab key lands on, so the keyboard's focus is never out of sight there. The Results table is left out. It draws only the rows on screen, so Tab passes those and moves on; the rows below are reached with the wheel or the search box. If the table scrolled to the focus too, each Tab would bring up the next row, and Tab would go through all of its rows, several hundred, before it left the table.
+
+- **If you do not answer:** the table stays as it is: Tab passes the rows on screen.
+- (a) As the default.
+- (b) The table scrolls to the focus, and Tab walks every row.
+- (c) The table is one Tab stop, and the Up and Down arrow keys move through its rows.
+
+Source: BL-100; BL-101; A-44.
 
 ### Linkage simulator
 

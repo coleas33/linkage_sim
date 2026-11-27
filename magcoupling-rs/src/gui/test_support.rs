@@ -855,6 +855,19 @@ pub(crate) fn key_tap(key: egui::Key) -> Vec<egui::Event> {
     vec![key_event(key, true), key_event(key, false)]
 }
 
+/// Shift+Tab tapped: the keyboard's focus to the widget before.
+pub(crate) fn shift_tab() -> Vec<egui::Event> {
+    [true, false]
+        .map(|pressed| egui::Event::Key {
+            key: egui::Key::Tab,
+            physical_key: None,
+            pressed,
+            repeat: false,
+            modifiers: egui::Modifiers::SHIFT,
+        })
+        .to_vec()
+}
+
 /// Ctrl+A (Cmd+A on a Mac) tapped: select all in the focused text field.
 pub(crate) fn select_all() -> Vec<egui::Event> {
     [true, false]
