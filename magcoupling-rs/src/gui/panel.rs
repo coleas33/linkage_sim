@@ -7340,8 +7340,9 @@ mod tests {
         // BL-093 for every row of the Size column, the left column of every tab (UX overhaul
         // spec 4.3): the keyboard's focus passes each slider and its value box and selects
         // nothing. The Minimum OD's floor at the spreadsheet's design is off the one decimal
-        // its box shows, and egui writes a box's text back when the focus leaves it: that
-        // write is no touch and sets no Minimum OD. An arrow key on the slider still does.
+        // its box shows, and egui writes a box's text back when the focus leaves it: the
+        // box's own text is no typed value (BL-097), so there is no touch and no Minimum OD is
+        // set. An arrow key on the slider still sets one.
         use crate::gui::size_controls::slider_minimum;
         let mut harness = Harness::first_view();
         let floor = slider_minimum(
@@ -7355,26 +7356,7 @@ mod tests {
         );
         // The six sliders: the four controls, Minimum OD, then Required (size_column_ui).
         let sliders: Vec<egui::Id> = harness.panel.design_widgets[..6].to_vec();
-        let mut passed = vec![false; sliders.len()];
-        let mut presses = 0;
-        // Until the focus has been on every slider, and two presses more: past the last
-        // slider's value box.
-        let mut after = 0;
-        while after < 2 {
-            harness.frame(key_tap(egui::Key::Tab));
-            harness.frame(Vec::new());
-            presses += 1;
-            assert!(presses < 60, "Tab passes the Size column: {passed:?}");
-            for (slider, passed) in sliders.iter().zip(&mut passed) {
-                *passed |= harness.ctx.memory(|m| m.has_focus(*slider));
-            }
-            after += usize::from(passed.iter().all(|&passed| passed));
-            assert_eq!(
-                harness.panel.selection,
-                Selection::Nothing,
-                "press {presses}"
-            );
-        }
+        tab_past(&mut harness, &sliders);
         assert_eq!(harness.panel.minimum_diameter_mm, None);
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
         assert_eq!(harness.panel.history.undo_len(), 0);
@@ -7393,6 +7375,155 @@ mod tests {
             Selection::Input(crate::gui::plain_text::MINIMUM_OD_HINT_KEY)
         );
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    /// Presses Tab from the top of the page (no widget focused, nothing selected) until the
+    /// keyboard's focus has been on every one of `widgets` (ids read before the pass: a
+    /// slider's response takes its value box's id while the box has the focus), and two
+    /// presses more: past the last one's value box. Nothing is selected after any press.
+    fn tab_past(harness: &mut Harness, widgets: &[egui::Id]) {
+        harness.ctx.memory_mut(|m| {
+            if let Some(focused) = m.focused() {
+                m.surrender_focus(focused);
+            }
+        });
+        harness.panel.selection = Selection::Nothing;
+        harness.frame(Vec::new());
+        let mut passed = vec![false; widgets.len()];
+        let (mut presses, mut after) = (0, 0);
+        while after < 2 {
+            harness.frame(key_tap(egui::Key::Tab));
+            harness.frame(Vec::new());
+            presses += 1;
+            assert!(presses < 200, "Tab passes the widgets: {passed:?}");
+            for (widget, passed) in widgets.iter().zip(&mut passed) {
+                *passed |= harness.ctx.memory(|m| m.has_focus(*widget));
+            }
+            after += usize::from(passed.iter().all(|&passed| passed));
+            assert_eq!(
+                harness.panel.selection,
+                Selection::Nothing,
+                "press {presses}"
+            );
+        }
+    }
+
+    #[cfg(feature = "app")]
+    #[test]
+    fn tab_through_a_length_auto_left_off_its_step_changes_nothing() {
+        // BL-097: on the app's starting design Auto solves a magnet length off the Overall
+        // length slider's step, and Auto off adopts it (decision M41-7). egui writes a value
+        // box's text back when the keyboard's focus leaves it, so a Tab pass rounded the length
+        // to the 11.9 mm its box shows: an edit, an undo step, a selection and a failed hot
+        // minimum check, with nothing typed.
+        use crate::gui::size_controls::AUTO;
+        let panel = MagcouplingPanel::with_baseline(crate::app::starting_design());
+        let mut harness = Harness::of(panel, SCREEN);
+        harness.click_text(AUTO);
+        harness.frame_after(DEBOUNCE_S + 0.01, Vec::new());
+        harness.frame(Vec::new());
+        harness.solved();
+        harness.click_text(AUTO);
+        harness.frame(Vec::new());
+        let length = dimensions(harness.panel.inputs())
+            .expect("size controls")
+            .overall_length_mm;
+        assert_ne!(
+            length,
+            (length * 10.0).round() / 10.0,
+            "the length is on its slider's step: the test would prove nothing"
+        );
+        let state = |harness: &Harness| {
+            (
+                harness.panel.design(),
+                harness.panel.results().clone(),
+                harness.panel.history.undo_len(),
+                harness.panel.minimum_diameter_mm,
+            )
+        };
+        let before = state(&harness);
+        // The six sliders: the four controls, Minimum OD, then Required (size_column_ui).
+        let sliders: Vec<egui::Id> = harness.panel.design_widgets[..6].to_vec();
+        tab_past(&mut harness, &sliders);
+        assert_eq!(state(&harness), before);
+    }
+
+    #[test]
+    fn tab_past_every_value_box_keeps_a_value_off_its_step_or_outside_its_range() {
+        // BL-097 for every caller of `input_ui::slider` (a Size column slider, the Required
+        // torque, a Detailed inputs row): a loaded face gap off its slider's step and a
+        // requirement past its slider's range (kept until edited, decision M41-2) are as they
+        // were, bit for bit, after Tab has passed every value box of the Size column and of the
+        // open Detailed inputs: no edit, no undo step, no selection.
+        let range = crate::gui::test_support::slider_range(REQUIREMENT_INPUT);
+        let mut design = Design::default();
+        design.inputs.metal.face_gap_mm = 1.4123;
+        design.inputs.metal.required_min_Nm = range.max + 2.0;
+        let mut harness = Harness::new();
+        harness.panel.open_design(design.clone());
+        harness.frame(Vec::new());
+        let widgets = harness.panel.design_widgets.clone();
+        assert!(
+            widgets.contains(&harness.widget(FACE_GAP).id),
+            "the fold draws the face gap's own row"
+        );
+        tab_past(&mut harness, &widgets);
+        assert_eq!(harness.panel.design(), design);
+        assert_eq!(harness.panel.history.undo_len(), 0);
+        assert_eq!(harness.panel.last_error, None);
+    }
+
+    #[test]
+    fn a_typed_value_and_an_arrow_key_edit_a_value_off_its_step_and_its_own_text_does_not() {
+        // BL-097's rule (`input_ui::slider`): a value box's text that reads as the number the
+        // box already shows is no typed value, so leaving the box keeps a loaded 1.4123 mm
+        // whether its "1.41" was left alone or typed again. A typed value still edits (on Tab,
+        // on Enter, on a click elsewhere), snapped to the step, and so does an arrow key.
+        let mut harness = Harness::new();
+        let off_step = |harness: &mut Harness| {
+            harness.panel.inputs.metal.face_gap_mm = 1.4123;
+            harness.frame(Vec::new());
+        };
+        let type_in = |harness: &mut Harness, text: &str| {
+            harness.click_text("1.41 mm");
+            harness.frame([select_all(), vec![egui::Event::Text(text.to_owned())]].concat());
+        };
+        // A loaded design is no undo step.
+        let mut design = Design::default();
+        design.inputs.metal.face_gap_mm = 1.4123;
+        harness.panel.open_design(design);
+        harness.frame(Vec::new());
+        harness.click_text("1.41 mm");
+        harness.frame(key_tap(egui::Key::Enter));
+        assert_eq!(harness.number(FACE_GAP), 1.4123, "Enter, nothing typed");
+        type_in(&mut harness, "1.41");
+        harness.frame(key_tap(egui::Key::Enter));
+        harness.frame(Vec::new());
+        assert_eq!(harness.number(FACE_GAP), 1.4123, "the shown number typed");
+        assert_eq!(harness.panel.history.undo_len(), 0);
+        type_in(&mut harness, "2.344");
+        harness.frame(key_tap(egui::Key::Tab));
+        harness.frame(Vec::new());
+        assert_eq!(harness.number(FACE_GAP), 2.34, "typed, then Tab");
+        assert_eq!(harness.panel.selection, Selection::Input(FACE_GAP));
+        harness.frame(Vec::new());
+        assert_eq!(harness.panel.history.undo_len(), 1);
+        off_step(&mut harness);
+        type_in(&mut harness, "2.344");
+        harness.frame(key_tap(egui::Key::Enter));
+        assert_eq!(harness.number(FACE_GAP), 2.34, "typed, then Enter");
+        off_step(&mut harness);
+        type_in(&mut harness, "2.344");
+        harness.click(egui::pos2(640.0, 1010.0));
+        assert_eq!(
+            harness.number(FACE_GAP),
+            2.34,
+            "typed, then a click elsewhere"
+        );
+        off_step(&mut harness);
+        harness.focus(FACE_GAP);
+        harness.frame(key_tap(egui::Key::ArrowRight));
+        assert_eq!(harness.number(FACE_GAP), 1.42, "an arrow key");
     }
 
     #[test]

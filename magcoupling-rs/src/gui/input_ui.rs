@@ -62,16 +62,22 @@ pub struct RowOutput {
 /// flagged), its step (also the arrow-key nudge), values rounded to the step's decimals
 /// (decision M41-1), edits clamped to the range while a value already outside it is kept until
 /// edited (decision M41-2), typed values applied on Enter or when the box loses focus, the
-/// unit as a suffix.
+/// unit as a suffix. The box's own text is no typed value ([`typed_number`], BL-097).
 pub fn slider<'a>(value: &'a mut f64, meta: &InputMeta, range: SliderRange) -> egui::Slider<'a> {
+    let decimals = match meta.ty {
+        FieldType::I64 => 0,
+        _ => step_decimals(range.step),
+    };
+    let held = *value;
     let mut slider = egui::Slider::new(value, range.min..=range.max)
         .logarithmic(range.log)
         .clamping(egui::SliderClamping::Edits)
-        .update_while_editing(false);
+        .update_while_editing(false)
+        .custom_parser(move |text| typed_number(text, held, decimals));
     if meta.ty == FieldType::I64 {
         slider = slider.integer();
     } else {
-        slider = slider.max_decimals(step_decimals(range.step));
+        slider = slider.max_decimals(decimals);
     }
     // After integer(), which sets a step of 1: pole counts step by 2.
     slider = slider.step_by(range.step);
@@ -80,6 +86,27 @@ pub fn slider<'a>(value: &'a mut f64, meta: &InputMeta, range: SliderRange) -> e
         slider = slider.suffix(suffix);
     }
     slider
+}
+
+/// The number typed into a value box that holds `held` and shows at most `decimals` decimals,
+/// read as egui reads one (blanks ignored, U+2212 a minus); none when `text` is no number, or
+/// reads as the number the box already shows for `held`. egui writes a box's text back when the
+/// keyboard's focus leaves it, typed or not, so the box's own text would round a value off its
+/// step, or bring one outside the range to its end, on a Tab pass (BL-097): an edit, an undo
+/// step and a selection with nothing typed. The same number typed again is no edit either. The
+/// box shows `held` at the fewest decimals egui's pointer precision asks for, so every count
+/// up to `decimals` is tried; bits are compared, so a NaN reads as itself.
+fn typed_number(text: &str, held: f64, decimals: usize) -> Option<f64> {
+    let text: String = text
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .map(|c| if c == '\u{2212}' { '-' } else { c })
+        .collect();
+    let typed: f64 = text.parse().ok()?;
+    let shown =
+        |least| egui::emath::format_with_decimals_in_range(held, least..=decimals).parse::<f64>();
+    let own = (0..=decimals).any(|least| shown(least).map(f64::to_bits) == Ok(typed.to_bits()));
+    (!own).then_some(typed)
 }
 
 /// The number in a value, if it is one.
@@ -293,5 +320,34 @@ pub(crate) fn weak_line(ui: &mut egui::Ui, text: &str) {
 pub(crate) fn hint_line(ui: &mut egui::Ui, key: &str) {
     if let Some(hint) = hint_for(key) {
         weak_line(ui, hint);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_value_box_s_own_text_is_no_typed_number() {
+        // BL-097: 1.4123 at two decimals is shown as "1.41"; that text, and the same number
+        // written another way, is not a typed value. Any other number is.
+        assert_eq!(typed_number("1.41", 1.4123, 2), None);
+        assert_eq!(typed_number(" 1.410 ", 1.4123, 2), None);
+        assert_eq!(typed_number("1.4", 1.4123, 2), Some(1.4));
+        assert_eq!(typed_number("1.42", 1.4123, 2), Some(1.42));
+        // A whole number's box (a magnet count).
+        assert_eq!(typed_number("7", 7.0, 0), None);
+        assert_eq!(typed_number("8", 7.0, 0), Some(8.0));
+        // egui shows a value at fewer decimals where that reads the same to seven digits:
+        // 5000.006 is "5000" while a pointer aims no finer, and "5000.01" at both decimals.
+        assert_eq!(typed_number("5000", 5000.006, 2), None);
+        assert_eq!(typed_number("5000.01", 5000.006, 2), None);
+        assert_eq!(typed_number("5000.02", 5000.006, 2), Some(5000.02));
+        // A value outside the slider's range is shown as it is: its text is its own too.
+        assert_eq!(typed_number("7.50", 7.5, 2), None);
+        // Read as egui reads a number; text that is none changes nothing.
+        assert_eq!(typed_number("\u{2212}1 000", 2.0, 0), Some(-1000.0));
+        assert_eq!(typed_number("wide", 2.0, 0), None);
+        assert_eq!(typed_number("NaN", f64::NAN, 2), None);
     }
 }
