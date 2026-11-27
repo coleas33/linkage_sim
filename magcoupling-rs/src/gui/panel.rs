@@ -7926,8 +7926,8 @@ mod tests {
     fn a_wheeled_column_holds_still_while_the_focus_is_on_no_widget_of_its_own() {
         // BL-100: the side panels and the centre are on one egui layer, so it is the clip
         // check of `follow_focus` that keeps the left column still while the keyboard's focus
-        // is elsewhere: without it each Tab onto a stop of the top bar scrolled a wheeled column
-        // 28 points up. Tab, then Shift+Tab, from no focus across the top bar, the centre and
+        // is elsewhere: without it the second Tab stop here scrolled the wheeled column 24.5
+        // points up. Tab, then Shift+Tab, from no focus across the top bar, the centre and
         // the right column (a check's entry shown) up to the column's first stop: the column
         // stays where the wheel left it.
         let mut harness = Harness::on_screen(SMALLEST);

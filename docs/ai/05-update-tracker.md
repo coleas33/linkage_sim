@@ -5,6 +5,11 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-27 - Magcoupler: fix wave of the re-review of BL-097 to BL-100 (branch magcoupling/columns-hold-still)
+- SK-1: since BL-099's head line wraps, an input label that wrapped was two Tab stops and the second showed no focus (egui lays a label out in a wrapping line row by row, each row a Tab stop of its own; only the first draws the focus underline). `input_ui::input_row` now draws the label as one block, one text row high, so a label that fits sits where it did and a wrapped one is one stop with its focus shown on both lines; after a wrapped label the note and the reset button take a line of their own. Red test first: `an_input_label_that_wraps_is_one_tab_stop_in_either_font` (app; it failed with 80 stops against 64 for 16 wrapped labels).
+- RF-1: the comment of `a_wheeled_column_holds_still_while_the_focus_is_on_no_widget_of_its_own` and BL-100's note now give the test's own reading with the clip check taken out (the second stop, 24.5 points), not the first review's 28 points.
+- Docs: README (the column note, the app tests), docs/ai 02 (the column note and the egui lesson), 04, backlog BL-099 and BL-100 notes.
+
 ## 2026-11-27 - Magcoupler: fix wave of the controller's review of BL-097 to BL-100 (branch magcoupling/columns-hold-still)
 - BL097-EP-1 (blocking): a number typed into a tiny value's box was thrown away. `typed_number` took every coarser rounding of the value for the box's own text, and egui holds any two numbers under about 1.9e-6 equal, so on the vacuum permeability (1.256637e-6), the NdFeB expansion (-8e-7) and the cap's and the web's field integrals typing 1.2566e-6, -1e-6 or 0 changed nothing where main edits. `input_ui::slider` now records the text egui's own formatter writes in the box (`Slider::custom_formatter`) and compares the typed number with that text alone. Red test first: `a_number_typed_into_a_tiny_value_s_box_edits` (panel); `a_value_box_s_own_text_is_no_typed_number` gains the tiny cases.
 - W-1: the check list's material warning's Why link was on a line that did not wrap, and with no back iron (or a sleeve that conducts better than 316L) it widened the right column for good, on main too: it is now drawn through `gui::wrapping_line`. Red test first: `the_right_column_keeps_its_width_with_a_material_warning_shown` (panel).

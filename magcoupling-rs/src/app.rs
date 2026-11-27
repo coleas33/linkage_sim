@@ -965,6 +965,105 @@ mod tests {
     }
 
     #[test]
+    fn an_input_label_that_wraps_is_one_tab_stop_in_either_font() {
+        // A label egui lays out in a wrapping line is allocated row by row, each row a Tab stop
+        // of its own, and only the first shows the focus (egui 0.32 label.rs): since BL-099's
+        // head line wraps, each wrapped label took one press that showed nothing (SK-1). The
+        // input rows whose label wraps at the narrowest width the column gives a row, each
+        // changed (its reset button): a Tab round over them has as many stops there as at a
+        // width where nothing wraps, and the reset button sits close under the label.
+        use crate::gui::input_ui::{RESET_LABEL, input_row};
+        use crate::gui::inputs::InputEntry;
+        use crate::gui::plain_text::label_for;
+        use crate::gui::test_support::{key_tap, sized_frame, text_rect, text_rects, text_shapes};
+        let inputs = starting_design();
+        let all: Vec<&InputEntry> = InputCatalogue::get().all().collect();
+        for themed in [false, true] {
+            let context = || {
+                let ctx = egui::Context::default();
+                if themed {
+                    theme::apply(&ctx);
+                    fonts::install(&ctx);
+                }
+                ctx
+            };
+            // One frame of the rows at the width `given`, on a screen tall enough for them with
+            // no scroll area (its drag surface is a stop of its own).
+            let frame = |ctx: &egui::Context, given: f32, rows: &[&InputEntry], events| {
+                let screen = egui::vec2(given + 40.0, 40_000.0);
+                sized_frame(ctx, screen, events, |ui| {
+                    for entry in rows {
+                        let current = inputs.get(&entry.path).unwrap_or(Value::None);
+                        let default = Value::Text("another value".to_owned());
+                        ui.allocate_ui(egui::vec2(given, 0.0), |ui| {
+                            input_row(ui, entry, &current, &default, None, false, false);
+                        });
+                    }
+                })
+            };
+            // The rows whose label takes more than one line at `given`, each with its reset
+            // button on the line under it at a widget's height (egui gives a wrapping line's
+            // next row the height of the row before: here the two-line label's). A context
+            // loads its fonts in its first frame, and a wrapped line settles in its second.
+            let wrapped = |given: f32| {
+                let ctx = context();
+                frame(&ctx, given, &all, Vec::new());
+                let output = frame(&ctx, given, &all, Vec::new());
+                let resets = text_rects(&output, RESET_LABEL);
+                let half_a_widget = ctx.style().spacing.interact_size.y / 2.0;
+                let long: Vec<&InputEntry> = all
+                    .iter()
+                    .copied()
+                    .filter(|entry| {
+                        text_shapes(&output, label_for(&entry.path))
+                            .any(|(_, text)| text.galley.rows.len() > 1)
+                    })
+                    .collect();
+                for entry in &long {
+                    let label = text_rect(&output, label_for(&entry.path)).expect("drawn");
+                    let reset = resets
+                        .iter()
+                        .filter(|reset| reset.top() > label.top())
+                        .min_by(|a, b| a.top().total_cmp(&b.top()))
+                        .expect("its reset button");
+                    let gap = reset.top() - label.bottom();
+                    assert!(
+                        (0.0..half_a_widget).contains(&gap),
+                        "themed {themed}: {} {label:?} {reset:?}",
+                        entry.path
+                    );
+                }
+                long
+            };
+            // The stops of a Tab round from no focus.
+            let stops = |given: f32, rows: &[&InputEntry]| {
+                let ctx = context();
+                frame(&ctx, given, rows, Vec::new());
+                let mut seen = Vec::new();
+                loop {
+                    frame(&ctx, given, rows, key_tap(egui::Key::Tab));
+                    // Past the last stop the focus wraps to the first, or is let go.
+                    let focused = ctx.memory(|m| m.focused());
+                    let Some(focused) = focused.filter(|id| !seen.contains(id)) else {
+                        return seen.len();
+                    };
+                    seen.push(focused);
+                    assert!(seen.len() < 1_000, "the Tab round never ends");
+                }
+            };
+            let long = wrapped(268.0);
+            assert!(!long.is_empty(), "themed {themed}: no label wraps");
+            assert!(wrapped(4_000.0).is_empty(), "themed {themed}");
+            let paths: Vec<&str> = long.iter().map(|entry| entry.path.as_str()).collect();
+            assert_eq!(
+                stops(268.0, &long),
+                stops(4_000.0, &long),
+                "themed {themed}: {paths:?}"
+            );
+        }
+    }
+
+    #[test]
     fn the_first_view_keeps_its_three_columns_its_tiles_and_the_fixed_3d_line_in_the_app_s_own_font()
      {
         // UX overhaul spec 8.2, test 15, and the stage 1 review's C-6: in the app's theme and
