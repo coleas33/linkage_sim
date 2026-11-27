@@ -1,7 +1,8 @@
-//! The plot tabs (spec M4 "Layout": "torque vs temperature (hot/cold allowance band,
-//! requirement line); gap sweep; pole sweep; slip heating over time vs limit; torque vs rotation
-//! angle (pull-out point)"), drawn with egui_plot (the 0.33 line linkage-sim-rs uses, locked to
-//! its version: gate 11).
+//! The plots (spec M4 "Layout": "torque vs temperature (hot/cold allowance band, requirement
+//! line); gap sweep; pole sweep; slip heating over time vs limit; torque vs rotation angle
+//! (pull-out point)"), drawn with egui_plot (the 0.33 line linkage-sim-rs uses, locked to its
+//! version: gate 11). They share the centre region's one Plots tab ([`PLOTS`]), whose picker
+//! names the five (UX overhaul spec 4.4, decision C-9).
 //!
 //! Every series comes from the results computed this frame, plus three inputs of the design
 //! shown (the minimum temperature, the variation allowance and the required minimum torque,
@@ -79,7 +80,11 @@ pub const SWEEP_LINE_WIDTH: f32 = 1.5;
 /// own `AXIS_LABEL_GAP`).
 pub const Y_LABEL_OVERHANG: f32 = 0.25;
 
-/// The plots, one tab each.
+/// The centre region's tab of the five plots (UX overhaul spec 4.4, decision C-9): one tab, with
+/// a picker of the plots under it.
+pub const PLOTS: &str = "Plots";
+
+/// The plots, each one choice of the Plots tab's picker.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlotKind {
     TorqueTemperature,
@@ -90,7 +95,7 @@ pub enum PlotKind {
 }
 
 impl PlotKind {
-    /// Every plot, in tab order.
+    /// Every plot, in the picker's order (the order of the tabs they had).
     pub const ALL: [PlotKind; 5] = [
         PlotKind::TorqueTemperature,
         PlotKind::GapSweep,
@@ -99,7 +104,7 @@ impl PlotKind {
         PlotKind::TorqueAngle,
     ];
 
-    /// The tab text.
+    /// The plot's name in the Plots tab's picker.
     pub const fn label(self) -> &'static str {
         match self {
             PlotKind::TorqueTemperature => "Torque vs temperature",

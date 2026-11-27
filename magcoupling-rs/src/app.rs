@@ -550,7 +550,7 @@ mod tests {
         all(&output, &["Running clearance"], theme::TEXT);
         // A tab that is not the active one is quiet too; the active tab's name (drawn as the
         // left side's heading as well) is the text colour.
-        all(&output, &["Gap sweep"], theme::MUTED);
+        all(&output, &[crate::gui::plots::PLOTS], theme::MUTED);
         all(&output, &["Size and torque"], theme::TEXT);
         // The failing example design with its Running clearance check selected: the entry's
         // headings are captions, and under the last a row's label is muted and its value is
@@ -610,26 +610,51 @@ mod tests {
         // here and no other test sees it (R-2: the Pole sweep's legend lost its first letters).
         // The app as a browser draws it, in its theme and font, on every tab.
         use crate::gui::CentreView;
-        use crate::gui::test_support::{cut_texts, last_characters, primary_button};
+        use crate::gui::test_support::cut_texts;
         for size in WINDOWS {
             let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
             let ctx = egui::Context::default();
             let mut app = MagcouplingApp::new(&ctx);
             frame_on(&ctx, &mut app, size, Vec::new());
             for view in CentreView::tabs(crate::engine::clamps::PAUSED) {
-                let output = frame_on(&ctx, &mut app, size, Vec::new());
-                let tab = last_characters(&output, view.label())[0];
-                for pressed in [true, false] {
-                    frame_on(&ctx, &mut app, size, vec![primary_button(tab, pressed)]);
-                }
-                // The pointer leaves, so no tooltip is in the picture; then the view settles.
-                frame_on(&ctx, &mut app, size, vec![egui::Event::PointerGone]);
-                frame_on(&ctx, &mut app, size, Vec::new());
-                let output = frame_on(&ctx, &mut app, size, Vec::new());
+                // The pointer leaves after each click, so no tooltip is in the picture; then
+                // the view settles.
+                let output = show_view(&ctx, &mut app, size, view, 2);
                 let cut = cut_texts(&output, screen);
                 assert!(cut.is_empty(), "{size:?}, {}: cut: {cut:#?}", view.label());
             }
         }
+    }
+
+    /// Shows `view` as a person does on a screen of `size`: a click on its tab in the centre
+    /// region (the left column's heading bears the first tab's words), then, for a plot, a
+    /// click on its name in the Plots tab's picker (decision C-9), each click as [`click_at`]
+    /// with `settle` frames. Returns the last frame.
+    fn show_view(
+        ctx: &egui::Context,
+        app: &mut MagcouplingApp,
+        size: egui::Vec2,
+        view: crate::gui::CentreView,
+        settle: usize,
+    ) -> egui::FullOutput {
+        use crate::gui::test_support::last_characters;
+        let mut output = frame_on(ctx, app, size, Vec::new());
+        let mut clicks = vec![view.tab()];
+        if matches!(view, crate::gui::CentreView::Plot(_)) {
+            clicks.push(view.label());
+        }
+        for text in clicks {
+            let (left, right) = (
+                side_rect(ctx, "magcoupling_inputs").right(),
+                side_rect(ctx, "magcoupling_dashboard").left(),
+            );
+            let at = last_characters(&output, text)
+                .into_iter()
+                .find(|at| left < at.x && at.x < right)
+                .unwrap_or_else(|| panic!("{size:?}: no {text:?} in the centre region"));
+            output = click_at(ctx, app, size, at, settle);
+        }
+        output
     }
 
     /// A click at `at` on a screen of `size`, the pointer gone after it, then `settle` frames
@@ -663,25 +688,18 @@ mod tests {
         what: &str,
     ) {
         use crate::gui::CentreView;
-        use crate::gui::test_support::{cut_texts, last_characters};
+        use crate::gui::test_support::cut_texts;
         let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
         // The last frame may have been drawn on another screen: a wrapped row settles on the
         // second frame.
         for _ in 0..2 {
             frame_on(ctx, app, size, Vec::new());
         }
-        let mut output = frame_on(ctx, app, size, Vec::new());
         // Last tab first: the page is left on its first view, the lightest to draw.
         let mut views: Vec<CentreView> = CentreView::tabs(crate::engine::clamps::PAUSED).collect();
         views.reverse();
         for view in views {
-            // The tab in the centre region: the left column's heading bears the first tab's words.
-            let left = side_rect(ctx, "magcoupling_inputs").right();
-            let tab = last_characters(&output, view.label())
-                .into_iter()
-                .find(|at| at.x > left)
-                .unwrap_or_else(|| panic!("{size:?}, {what}: no tab {}", view.label()));
-            output = click_at(ctx, app, size, tab, 2);
+            let output = show_view(ctx, app, size, view, 2);
             let state = format!("{size:?}, {what}, on {}", view.label());
             assert_eq!(side_rect(ctx, id).width(), width, "{state}");
             let cut = cut_texts(&output, screen);
