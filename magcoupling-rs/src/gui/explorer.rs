@@ -71,12 +71,6 @@ pub const EQUATION_PANEL: &str = "Equation panel";
 /// The panel's close button.
 pub const CLOSE: &str = "Close";
 
-/// What the panel says before anything is opened (spec 3.7, TC-29b): how to open an equation,
-/// and the walk through the teaching notes, by its button's name (a test checks). Since the
-/// panel's toggle went (part 2a), every way the app opens the panel sets a trail first, so this
-/// is only a fallback for a panel opened with none; BL-089 decides whether it goes.
-pub const EMPTY_TEXT: &str = "Hover a value to see its equation; the Equation link in its entry opens it here, then click a term to follow it. Start here walks the main teaching notes in a suggested order.";
-
 /// The heading of the term list.
 pub const TERMS: &str = "Terms";
 
@@ -641,8 +635,9 @@ pub fn explorer_ui(
         .id_salt("magcoupling_equation_scroll")
         .auto_shrink([false, false])
         .show(ui, |ui| {
+            // Every way the app opens the panel sets a trail first: with none there is nothing
+            // to draw (BL-089).
             let Some(path) = explorer.current().map(str::to_owned) else {
-                ui.weak(EMPTY_TEXT);
                 return;
             };
             // The marks on screen are another equation's while its value is hovered.
@@ -1680,12 +1675,39 @@ mod tests {
     }
 
     #[test]
-    fn the_empty_text_and_explain_s_own_lines_name_the_buttons_in_plain_words() {
-        // TC-29b: the empty panel names the walk through the notes by its button's own name
-        // (the Explain toggle it also named went with decision C-11); the fallback lines read
-        // as plain words in egui's default fonts.
-        assert!(EMPTY_TEXT.contains(START_HERE_BUTTON));
-        assert!(!EMPTY_TEXT.contains("Explain"), "{EMPTY_TEXT}");
+    fn a_panel_open_with_no_trail_draws_its_header_row_and_nothing_else() {
+        // BL-089: every way the app opens the panel sets a trail first (a value clicked, an
+        // Equation link followed, a Start here step), so a panel open with none is no state a
+        // person reaches. It draws its header row, and no text under it.
+        use crate::gui::test_support::{SCREEN, drawn_texts, sized_frame};
+        let (inputs, results) = design();
+        let mut explorer = Explorer {
+            open: true,
+            ..Explorer::default()
+        };
+        let ctx = egui::Context::default();
+        let output = sized_frame(&ctx, SCREEN, Vec::new(), |ui| {
+            explorer_ui(
+                ui,
+                &mut explorer,
+                &inputs,
+                &results,
+                &inputs,
+                false,
+                clamps::PAUSED,
+            );
+        });
+        assert_eq!(
+            drawn_texts(&output),
+            [EQUATION_PANEL, CLOSE, START_HERE_BUTTON]
+        );
+    }
+
+    #[test]
+    fn explain_s_own_lines_name_the_buttons_in_plain_words() {
+        // TC-29b: the fallback lines name the walk through the notes by its button's own name
+        // and read as plain words in egui's default fonts. (The empty panel's text, which named
+        // it too, went with BL-089: no way of opening the panel leaves it empty.)
         assert!(START_HERE_HINT.contains(START_HERE_BUTTON));
         let ctx = egui::Context::default();
         crate::gui::test_support::sized_frame(
@@ -1694,13 +1716,7 @@ mod tests {
             Vec::new(),
             |_| {},
         );
-        for text in [
-            EMPTY_TEXT,
-            NO_NOTE,
-            START_HERE_HINT,
-            NEAREST_NOTE,
-            NEAREST_ASSUMPTION,
-        ] {
+        for text in [NO_NOTE, START_HERE_HINT, NEAREST_NOTE, NEAREST_ASSUMPTION] {
             assert_eq!(
                 crate::gui::guidance::plain_text_violations(text),
                 Vec::<&str>::new(),

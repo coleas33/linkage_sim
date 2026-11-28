@@ -10279,7 +10279,6 @@ mod tests {
         // (a row the paused shaft-clamp section hides is not drawn: none of its offers).
         use crate::gui::explorer as ex;
         for (tag, text) in [
-            ("explorer/empty text", ex::EMPTY_TEXT),
             ("explorer/no note", ex::NO_NOTE),
             ("explorer/start here hint", ex::START_HERE_HINT),
             ("explorer/closest note lead", ex::NEAREST_NOTE),
