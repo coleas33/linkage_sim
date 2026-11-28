@@ -489,13 +489,13 @@ fn draw_force_zone(
                 );
                 // Filled center dot.
                 painter.circle_filled(center, 3.5, color);
-                painter.text(
-                    Pos2::new(center.x + half + 3.0, center.y),
-                    egui::Align2::LEFT_CENTER,
-                    label,
-                    FontId::monospace(10.0),
-                    color,
-                );
+                // Keep the marker's semantic color while a measured dark
+                // plate makes the small label readable over yellow overlap.
+                let galley = painter.layout_no_wrap(label.to_string(), FontId::monospace(10.0), color);
+                let text_pos = Pos2::new(center.x + half + 3.0, center.y - galley.size().y * 0.5);
+                let label_rect = egui::Rect::from_min_size(text_pos, galley.size()).expand2(egui::vec2(3.0, 2.0));
+                painter.rect_filled(label_rect, 3.0, Color32::from_rgb(20, 22, 30));
+                painter.galley(text_pos, galley, color);
             }
         }
 }
@@ -577,6 +577,114 @@ mod tests {
     use super::*;
     use crate::analysis::gravity_breakdown::{max_abs_finite, BRAKE_TOL_REL};
     use crate::gui::test_support::{set_actuator_stored_force, swept_lift};
+
+    // ── BL-046: application labels remain legible over overlap geometry ──
+
+    fn bl046_zone_label_frame(shape: crate::core::body::GeometryShape, mode: ZoneAppMode, active: bool) -> egui::FullOutput {
+        use crate::core::body::{Body, BodyGeometry, GeometryShape};
+        let mut mech = Mechanism::new();
+        let mut body = Body::new("body");
+        body.geometry = Some(match shape {
+            GeometryShape::Rectangle => BodyGeometry::new(2.0, 2.0, nalgebra::Vector2::zeros()).unwrap(),
+            GeometryShape::Circle => BodyGeometry::circle(2.0, nalgebra::Vector2::zeros()).unwrap(),
+        });
+        mech.add_body(body).unwrap();
+        mech.build().unwrap();
+        let q = mech.state().make_q();
+        let zone = ForceZoneElement {
+            body_id: "body".into(),
+            zone_min: if active { [-2.0, -2.0] } else { [3.0, 3.0] },
+            zone_max: if active { [2.0, 2.0] } else { [4.0, 4.0] },
+            force: [0.0, 5.0], label: Some("Label contrast fixture".into()),
+            body_local_app_point: if mode == ZoneAppMode::Centroid { None } else { Some([0.0, 0.0]) },
+            at_contact_point: mode == ZoneAppMode::Contact,
+        };
+        let view = bl049_view(0.0);
+        crate::gui::test_support::central_panel_frame(&egui::Context::default(), Vec::new(), |ui| {
+            draw_force_zone(ui.painter(), &zone, &mech, mech.state(), &q, &view);
+        })
+    }
+
+    fn bl046_assert_plate_and_existing_marker(output: &egui::FullOutput, mode: ZoneAppMode, active: bool) {
+        let (label, color) = match mode {
+            ZoneAppMode::Centroid => ("F", Color32::from_rgb(255, 215, 120)),
+            ZoneAppMode::Locked => ("F (locked)", Color32::from_rgb(255, 165, 80)),
+            ZoneAppMode::Contact => ("F (contact)", Color32::from_rgb(255, 165, 80)),
+        };
+        let center = Pos2::new(200.0, if mode == ZoneAppMode::Contact { 400.0 } else { 300.0 });
+        let mut text = None;
+        let mut rectangles = Vec::new();
+        let mut overlap_order = None;
+        let mut marker_dot = false;
+        let mut order = 0usize;
+        crate::gui::test_support::visit_shapes(output, |shape| {
+            match shape {
+                egui::Shape::Text(drawn) if drawn.galley.text() == label => {
+                    text = Some((order, drawn.clone()));
+                }
+                egui::Shape::Rect(rect) => rectangles.push((order, rect.clone())),
+                egui::Shape::Path(path) if path.fill == FORCE_ZONE_OVERLAP_FILL => overlap_order = Some(order),
+                egui::Shape::Circle(circle) if circle.center.distance(center) < 0.001
+                    && (circle.radius - 3.5).abs() < 0.001 && circle.fill == color => marker_dot = true,
+                _ => {}
+            }
+            order += 1;
+        });
+        let (text_order, text) = text.expect("the actual application label is painted");
+        assert!((text.pos.x - 211.0).abs() < 0.001, "keep the existing LEFT_CENTER label anchor x");
+        assert!((text.pos.y + text.galley.size().y * 0.5 - center.y).abs() < 0.001,
+            "keep the existing label center y");
+        assert!(!text.galley.job.sections.is_empty());
+        for section in &text.galley.job.sections {
+            assert_eq!(section.format.font_id, FontId::monospace(10.0), "preserve the label font");
+            assert_eq!(section.format.color, color, "preserve the semantic label color");
+        }
+        let text_rect = egui::Rect::from_min_size(text.pos, text.galley.size());
+        let (plate_order, _) = rectangles.iter().find(|(_, plate)| {
+            plate.fill.a() == 255 && plate.fill.r() <= 35 && plate.fill.g() <= 35 && plate.fill.b() <= 35
+                && plate.rect.contains_rect(text_rect)
+                && plate.rect.width() > text_rect.width()
+                && plate.rect.height() > text_rect.height()
+                && plate.rect.width() <= text_rect.width() + 12.0
+                && plate.rect.height() <= text_rect.height() + 8.0
+        }).expect("a measured, opaque dark backing plate must contain the complete application label");
+        assert!(*plate_order < text_order, "plate must be painted before its text");
+        if active {
+            assert!(overlap_order.expect("literal body and zone overlap") < *plate_order,
+                "plate must cover the overlap highlight rather than sit below it");
+        } else {
+            assert!(overlap_order.is_none(), "the no-overlap control must actually be inactive");
+        }
+        assert!(marker_dot, "preserve the application point's orange/yellow dot");
+        let crosshair = bl049_lines(output, color, 1.5);
+        bl049_assert_line(&crosshair, Pos2::new(center.x - 8.0, center.y), Pos2::new(center.x + 8.0, center.y));
+        bl049_assert_line(&crosshair, Pos2::new(center.x, center.y - 8.0), Pos2::new(center.x, center.y + 8.0));
+    }
+
+    #[test]
+    fn bl046_zone_application_labels_have_a_plate_above_yellow_overlap() {
+        use crate::core::body::GeometryShape;
+        for shape in [GeometryShape::Rectangle, GeometryShape::Circle] {
+            for mode in [ZoneAppMode::Centroid, ZoneAppMode::Locked, ZoneAppMode::Contact] {
+                let output = bl046_zone_label_frame(shape, mode, true);
+                bl046_assert_plate_and_existing_marker(&output, mode, true);
+            }
+        }
+    }
+
+    #[test]
+    fn bl046_locked_and_contact_label_plates_remain_visible_without_overlap() {
+        use crate::core::body::GeometryShape;
+        for shape in [GeometryShape::Rectangle, GeometryShape::Circle] {
+            for mode in [ZoneAppMode::Locked, ZoneAppMode::Contact] {
+                let output = bl046_zone_label_frame(shape, mode, false);
+                bl046_assert_plate_and_existing_marker(&output, mode, false);
+            }
+            let centroid = bl046_zone_label_frame(shape, ZoneAppMode::Centroid, false);
+            assert!(!crate::gui::test_support::drew_text(&centroid, "F"),
+                "inactive automatic centroid has no application point to label");
+        }
+    }
 
     fn bl049_view(angle: f64) -> ViewTransform {
         ViewTransform { offset: [200.0, 300.0], scale: 100.0, mounting_angle: angle }
