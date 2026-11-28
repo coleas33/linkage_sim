@@ -44,7 +44,7 @@
 //! `tests/python_schema.rs`): this is a GUI layer over them, in plain words
 //! ([`plain_text_violations`] lists what it must not say). No egui.
 
-use crate::engine::api::shaft_joint_links;
+use crate::engine::api::{checked_pullout, gearbox_checked_input, shaft_joint_links};
 use crate::engine::clamps::SCREW_SIZES;
 use crate::engine::deviations::Deviations;
 use crate::engine::grades::{GRADES, GradeFamily};
@@ -797,10 +797,16 @@ pub(crate) fn check_terms(
                 at_least_zero(name, reserve, Some(Quoted::new(size, Some(axis), 2)))
             })
             .collect(),
+        // BL-067: the torque the check compares; cold-high is quoted only where it is that
+        // torque (no result holds the operating pull-out with its allowance).
         GEARBOX => vec![at_least_zero(
             "gearbox input torque",
-            inputs.coupling.gearbox_input_rating_Nm - md.cold_high_input_Nm,
-            Some(Quoted::new("metal.cold_high_input_Nm", Some(COLD_HIGH), 2)),
+            inputs.coupling.gearbox_input_rating_Nm - gearbox_checked_input(inputs, results),
+            (!operating_pullout_compared(inputs, results)).then_some(Quoted::new(
+                "metal.cold_high_input_Nm",
+                Some(COLD_HIGH),
+                2,
+            )),
         )],
         // The engine's four terms of each joint, with the guide's margins (BL-064 spec 5.2). A
         // joint that is not judged (no wall, a reversed band, or the check cannot be made) passes
@@ -2449,10 +2455,14 @@ fn term_sentence(
     let name = side.name;
     match cause {
         Cause::Slips => format!(
-            "At its loosest the {name} holds {}, less than the {} it must hold: cold-high, {}, times the safety factor of {}.",
+            "At its loosest the {name} holds {}, less than the {} it must hold: {}, {}, times the safety factor of {}.",
             apart_from(results, side.holding, joint.required_Nm, false),
             result_text(results, REQUIRED),
-            result_text(results, "metal.torque_cold_high_Nm"),
+            checked_pullout_name(inputs, results),
+            number_text(
+                checked_pullout(inputs, results),
+                "metal.torque_cold_high_Nm"
+            ),
             input_text(inputs, SAFETY_FACTOR),
         ),
         Cause::BoreStress => format!(
@@ -2700,16 +2710,39 @@ fn not_judged_sentences(
 /// readout shows it, or, where it would read the same as the bound, one last digit past it: up
 /// above a limit (`above`, [`quoted_load`]), down under a need ([`quoted_limit`]).
 fn apart_from(results: &DesignResults, path: &str, bound: f64, above: bool) -> String {
-    let x = result_number(results, path);
+    apart_number(result_number(results, path), path, bound, above)
+}
+
+/// [`apart_from`] for a number `x` no result holds, in the unit of the result at `unit_of`.
+fn apart_number(x: f64, unit_of: &str, bound: f64, above: bool) -> String {
     let reads_apart = if above {
         quoted_value(x) > quoted_value(bound)
     } else {
         quoted_value(x) < quoted_value(bound)
     };
     match (reads_apart, above) {
-        (true, _) => result_text(results, path),
-        (false, true) => number_text(quoted_load(x, bound), path),
-        (false, false) => number_text(quoted_limit(x, bound), path),
+        (true, _) => number_text(x, unit_of),
+        (false, true) => number_text(quoted_load(x, bound), unit_of),
+        (false, false) => number_text(quoted_limit(x, bound), unit_of),
+    }
+}
+
+/// Whether the gearbox and shaft joint checks compare the operating pull-out with its allowance
+/// rather than cold-high (BL-067: it is the larger, as with the operating temperature below the
+/// minimum; [`checked_pullout`]). Larger means beyond float noise ([`RATING_NOISE`]): at the
+/// minimum temperature the two are one torque by two float paths (G-3 text review of R4, SF-1),
+/// so the texts' name never follows the last bits.
+fn operating_pullout_compared(inputs: &DesignInputs, results: &DesignResults) -> bool {
+    checked_pullout(inputs, results) > results.metal.torque_cold_high_Nm * (1.0 + RATING_NOISE)
+}
+
+/// What the guide calls the pull-out the gearbox and shaft joint checks compare (BL-067),
+/// mid-sentence.
+fn checked_pullout_name(inputs: &DesignInputs, results: &DesignResults) -> &'static str {
+    if operating_pullout_compared(inputs, results) {
+        "the operating pull-out with its allowance"
+    } else {
+        "cold-high"
     }
 }
 
@@ -2739,12 +2772,20 @@ fn gearbox_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<Str
         Level::Caution => Some(GEARBOX_UNKNOWN.to_owned()),
         Level::Bad => {
             let rating = inputs.coupling.gearbox_input_rating_Nm;
-            // Where both read the same at four significant digits, cold-high is quoted one last
-            // digit past the rating, as the badge and sentence 2 quote a torque on the gearbox
-            // input (whole-branch review MF-1).
-            let torque_text = apart_from(results, "metal.cold_high_input_Nm", rating, true);
+            // Where both read the same at four significant digits, the torque compared is quoted
+            // one last digit past the rating, as the badge and sentence 2 quote a torque on the
+            // gearbox input (whole-branch review MF-1). BL-067: cold-high, or the operating
+            // pull-out with its allowance where the check compares that.
+            let torque_text = apart_number(
+                gearbox_checked_input(inputs, results),
+                "metal.cold_high_input_Nm",
+                rating,
+                true,
+            );
+            let name = checked_pullout_name(inputs, results);
+            let what = format!("{}{}", name[..1].to_uppercase(), &name[1..]);
             let overload = format!(
-                "Cold-high at the gearbox input is {torque_text}, above its {} input rating.",
+                "{what} at the gearbox input is {torque_text}, above its {} input rating.",
                 input_text(inputs, "coupling.gearbox_input_rating_Nm"),
             );
             // Owner decision 4A: where no geometry passes both checks, the Problem says so.
@@ -2817,7 +2858,8 @@ fn band_levers(inputs: &DesignInputs, results: &DesignResults) -> Option<String>
 /// NB-2). The band is a ratio of two engine torques, 1.0000000000000002 where it is exactly one
 /// (no variation allowance, the minimum at the operating temperature), and the requirement over
 /// ratio × efficiency can miss a rating it equals in decimals by an ulp (0.84 N·m × 5 × 0.95 is
-/// 3.99 N·m). A torque only this far above the rating is at it, and at the rating passes.
+/// 3.99 N·m). A torque only this far above the rating is at it, and at the rating passes. The
+/// texts' name of the compared pull-out takes the same noise ([`operating_pullout_compared`]).
 const RATING_NOISE: f64 = 1e-12;
 
 /// Problem sentence 2 of the gearbox check (owner decision 4A): where no magnet size, gap or
@@ -4608,12 +4650,25 @@ mod tests {
                 )],
                 "{name}"
             );
+            // BL-067: the larger of cold-high and the operating pull-out with its allowance
+            // (above cold-high where the end-effect model gives a pull-out below zero, as
+            // short_magnets does); cold-high is quoted only where it is the larger.
+            let c = &inputs.coupling;
+            let operating = results.model.pullout_Nm * (1.0 + inputs.metal.variation);
+            let (compared, quoted) = if operating > md.torque_cold_high_Nm {
+                (operating / (c.gear_ratio * c.gear_efficiency), None)
+            } else {
+                (
+                    md.cold_high_input_Nm,
+                    Some(Quoted::new("metal.cold_high_input_Nm", Some(COLD_HIGH), 2)),
+                )
+            };
             assert_eq!(
                 read(GEARBOX),
                 [row(
                     "gearbox input torque",
-                    inputs.coupling.gearbox_input_rating_Nm - md.cold_high_input_Nm,
-                    Some(Quoted::new("metal.cold_high_input_Nm", Some(COLD_HIGH), 2))
+                    c.gearbox_input_rating_Nm - compared,
+                    quoted
                 )],
                 "{name}"
             );
@@ -7137,8 +7192,9 @@ mod tests {
         }
     }
 
-    /// The two numbers gearbox Problem sentence 1 quotes, as they read: cold-high at the gearbox
-    /// input and the rating.
+    /// The two numbers gearbox Problem sentence 1 quotes, as they read: the torque the check
+    /// compares at the gearbox input (cold-high, or the operating pull-out with its allowance:
+    /// BL-067) and the rating.
     fn sentence_1_numbers(problem: &str) -> (f64, f64) {
         let between = |start: &str, end: &str| -> f64 {
             let from = problem
@@ -7154,7 +7210,7 @@ mod tests {
                 .unwrap_or_else(|_| panic!("a number between {start:?} and {end:?} in {problem}"))
         };
         (
-            between("Cold-high at the gearbox input is ", " N·m, above its "),
+            between(" at the gearbox input is ", " N·m, above its "),
             between("above its ", " N·m input rating."),
         )
     }
@@ -7180,6 +7236,13 @@ mod tests {
         if let (Level::Bad, Some(problem)) = (badge, &problem) {
             let (torque, rating) = sentence_1_numbers(problem);
             assert!(torque > rating, "{name}: {problem}");
+            // BL-067: it names the torque the check compares.
+            let named = if operating_pullout_compared(inputs, &results) {
+                "The operating pull-out with its allowance at the gearbox input is "
+            } else {
+                "Cold-high at the gearbox input is "
+            };
+            assert!(problem.starts_with(named), "{name}: {problem}");
         }
         let conflict = gearbox_conflict(inputs, &results);
         let numbers = ConflictNumbers::of(inputs, &results);
@@ -7756,6 +7819,128 @@ mod tests {
         }
         // Red in every case, never with sentence 2.
         assert_eq!(forms, BTreeSet::from([(Level::Bad, false)]));
+    }
+
+    #[test]
+    fn below_the_minimum_temperature_the_texts_name_the_operating_pull_out_with_its_allowance() {
+        // BL-067 (option (b), assumed under the owner's ruling of 2026-11-10, register A-10).
+        // Operating -40 °C, minimum 20 °C, variation 0.1, each on its slider: the operating
+        // pull-out with its allowance, 3.657 N·m at the gearbox output and 0.7699 N·m at its
+        // input, is above cold-high (3.182 and 0.6700 N·m), and both checks compare it.
+        let mut corner = DesignInputs::default();
+        for (path, x) in [
+            ("coupling.op_temp_C", -40.0),
+            ("metal.min_temp_C", 20.0),
+            ("metal.variation", 0.1),
+        ] {
+            corner = with_number(&corner, path, x).unwrap_or_else(|| panic!("{path}: {x}"));
+        }
+        // The gearbox Problem names it and quotes it at the gearbox input, with a rating
+        // between it and cold-high there; the card's term compares it and quotes nothing (no
+        // result holds it).
+        let rated = with(corner.clone(), |i| {
+            i.coupling.gearbox_input_rating_Nm = 0.72
+        });
+        let results = compute_all(&rated);
+        assert!(operating_pullout_compared(&rated, &results));
+        assert!(results.metal.cold_high_input_Nm < 0.72);
+        assert_eq!(
+            problem(GEARBOX, &rated).as_deref(),
+            Some(
+                "The operating pull-out with its allowance at the gearbox input is 0.7699 N·m, above its 0.7200 N·m input rating."
+            )
+        );
+        let terms = check_terms(GEARBOX, &rated, &results);
+        assert_eq!(terms.len(), 1);
+        assert_eq!(
+            terms[0].margin,
+            0.72 - gearbox_checked_input(&rated, &results)
+        );
+        assert!(
+            !terms[0].passes && terms[0].quoted.is_none(),
+            "{:?}",
+            terms[0]
+        );
+        // The shaft joints Problem names it and quotes it at the gearbox output.
+        let slipping = with(corner, |i| i.shaft_joint.hub_interference_min_um = 8.0);
+        let slips = problem(SHAFT_JOINT, &slipping).expect("the inner hub slips");
+        assert!(
+            slips.contains(
+                "it must hold: the operating pull-out with its allowance, 3.657 N·m, times the safety factor of 2.000."
+            ),
+            "{slips}"
+        );
+        // With the temperatures in order the texts are unchanged: cold-high, quoted.
+        let defaults = DesignInputs::default();
+        let results = compute_all(&defaults);
+        assert!(!operating_pullout_compared(&defaults, &results));
+        assert_eq!(
+            gearbox_checked_input(&defaults, &results),
+            results.metal.cold_high_input_Nm
+        );
+        assert!(
+            problem(GEARBOX, &defaults)
+                .is_some_and(|p| p.starts_with("Cold-high at the gearbox input is 0.8049 N·m"))
+        );
+    }
+
+    #[test]
+    fn at_equal_temperatures_the_texts_name_cold_high_whatever_the_float_noise() {
+        // G-3 text review of R4, SF-1. With the operating temperature at the minimum the
+        // operating pull-out with its allowance is cold-high, formed by another float path, and
+        // on some designs it comes out above cold-high in the last bits. The texts name it only
+        // where it is larger beyond float noise ([`RATING_NOISE`]); the check's numbers are
+        // unchanged. The review's sweep: operating = minimum from -40 to 20 °C in 0.5 °C steps,
+        // variations 0 to 0.2 (605 designs).
+        let mut noisy = 0;
+        for k in 0..=120 {
+            let t = -40.0 + 0.5 * f64::from(k);
+            for variation in [0.0, 0.05, 0.1, 0.15, 0.2] {
+                let inputs = design(|i| {
+                    i.coupling.op_temp_C = t;
+                    i.metal.min_temp_C = t;
+                    i.metal.variation = variation;
+                });
+                let results = compute_all(&inputs);
+                if checked_pullout(&inputs, &results) > results.metal.torque_cold_high_Nm {
+                    noisy += 1;
+                }
+                assert!(
+                    !operating_pullout_compared(&inputs, &results),
+                    "{t} °C, variation {variation}"
+                );
+                assert_eq!(checked_pullout_name(&inputs, &results), "cold-high");
+            }
+        }
+        // Not vacuous: the noise shows on some of them.
+        assert!(noisy > 0);
+        // Operating = minimum = 0 °C, variation 0.15, the default 0.6 N·m rating: sentence 1
+        // names cold-high, as sentence 2 does, and the card's term quotes cold-high.
+        let equal = design(|i| {
+            i.coupling.op_temp_C = 0.0;
+            i.metal.min_temp_C = 0.0;
+            i.metal.variation = 0.15;
+        });
+        let results = compute_all(&equal);
+        let gearbox = problem(GEARBOX, &equal).expect("the gearbox check fails");
+        assert!(
+            gearbox.starts_with(
+                "Cold-high at the gearbox input is 0.7344 N·m, above its 0.6000 N·m input rating. "
+            ),
+            "{gearbox}"
+        );
+        assert!(gearbox_conflict(&equal, &results).is_some(), "{gearbox}");
+        assert!(check_terms(GEARBOX, &equal, &results)[0].quoted.is_some());
+        // The BL-067 corner still names the operating pull-out with its allowance.
+        let corner = design(|i| {
+            i.coupling.op_temp_C = -40.0;
+            i.metal.min_temp_C = 20.0;
+            i.metal.variation = 0.1;
+        });
+        assert_eq!(
+            checked_pullout_name(&corner, &compute_all(&corner)),
+            "the operating pull-out with its allowance"
+        );
     }
 
     #[test]

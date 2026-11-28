@@ -171,10 +171,29 @@ pub fn shaft_joint_links(inputs: &DesignInputs, results: &DesignResults) -> Shaf
     joint_links(
         inputs,
         &parts_in_effect(inputs).hub(),
-        results.metal.torque_cold_high_Nm,
+        checked_pullout(inputs, results),
         results.housing.hub_length_mm,
         &results.temperature,
     )
+}
+
+/// The pull-out the gearbox and shaft joint checks compared for `results` [N·m at the gearbox
+/// output] (BL-067, [`gearbox::checked_pullout_Nm`]), as [`compute_all`] forms it.
+pub fn checked_pullout(inputs: &DesignInputs, results: &DesignResults) -> f64 {
+    let md = &results.metal;
+    gearbox::checked_pullout_Nm(
+        md.torque_cold_high_Nm,
+        md.torque_op_Nm,
+        inputs.metal.variation,
+    )
+}
+
+/// The torque the gearbox check compared for `results` [N·m at the gearbox input]: the checked
+/// pull-out ([`checked_pullout`]) divided by ratio and efficiency, as [`compute_all`] forms it,
+/// so it is `metal.cold_high_input_Nm` bit for bit where cold-high is the larger.
+pub fn gearbox_checked_input(inputs: &DesignInputs, results: &DesignResults) -> f64 {
+    let c = &inputs.coupling;
+    checked_pullout(inputs, results) / (c.gear_ratio * c.gear_efficiency)
 }
 
 /// The parts' materials in effect for `inputs` (Addendum A5): the part selectors resolved
@@ -191,21 +210,22 @@ pub fn parts_in_effect(inputs: &DesignInputs) -> PartProperties {
 }
 
 /// The 15 engine values the shaft joint check reads (BL-064), filled in one place for `compute`
-/// and [`shaft_joint_links`]: the bore, keyway depth and inner back apothem, and the inner
-/// bondline, boss length, web, boss diameter and minimum temperature, are the inputs (`compute`'s
-/// copies of the coupling and metal design groups leave all eight as typed); the adhesive's
-/// design limit and the inner ring's own single-ring onset are `temperature`'s; the three part
-/// values are `hub`'s, the hub, cup and boss material in effect.
+/// and [`shaft_joint_links`]: the checked pull-out (BL-067) is the caller's; the bore, keyway
+/// depth and inner back apothem, and the inner bondline, boss length, web, boss diameter and
+/// minimum temperature, are the inputs (`compute`'s copies of the coupling and metal design
+/// groups leave all eight as typed); the adhesive's design limit and the inner ring's own
+/// single-ring onset are `temperature`'s; the three part values are `hub`'s, the hub, cup and
+/// boss material in effect.
 #[allow(non_snake_case)] // unit suffixes, as the engine's names
 fn joint_links(
     inputs: &DesignInputs,
     hub: &HubMaterial,
-    cold_high_Nm: f64,
+    pullout_Nm: f64,
     hub_length_mm: f64,
     temperature: &TemperatureResults,
 ) -> ShaftJointLinks {
     ShaftJointLinks {
-        cold_high_Nm,
+        pullout_Nm,
         bore_mm: inputs.coupling.bore_mm,
         keyway_depth_mm: inputs.coupling.keyway_depth_mm,
         hub_length_mm,
@@ -436,19 +456,20 @@ fn compute(inputs: &DesignInputs, dev: Deviations) -> DesignResults {
 
     // Addendum A1: the space claim, from the derived dimensions (both modes).
     let housing = housing::compute(&mdr, &axial);
-    // BL-059: cold-high at the gearbox input against the gearbox input torque rating.
-    let gearbox = gearbox::compute(mdr.cold_high_input_Nm, ci.gearbox_input_rating_Nm);
+    // BL-067: both checks compare the larger of cold-high and the operating pull-out with the
+    // allowance (the checked pull-out; [`checked_pullout`] rebuilds it for the guide).
+    let pullout =
+        gearbox::checked_pullout_Nm(mdr.torque_cold_high_Nm, mdr.torque_op_Nm, md.variation);
+    // BL-059: the checked pull-out at the gearbox input against the gearbox input torque rating.
+    let gearbox = gearbox::compute(
+        pullout / (ci.gear_ratio * ci.gear_efficiency),
+        ci.gearbox_input_rating_Nm,
+    );
     // BL-064: the keyed shrink fits of the inner hub on the wheel shaft and of the cup on the
     // gearbox output shaft.
     let shaft_joint = shaft_joint::compute(
         &inputs.shaft_joint,
-        &joint_links(
-            inputs,
-            &hub_material,
-            mdr.torque_cold_high_Nm,
-            axial.hub_length_mm,
-            &temp,
-        ),
+        &joint_links(inputs, &hub_material, pullout, axial.hub_length_mm, &temp),
     );
 
     let alloy = if inputs.clamps.alloy == 1 {

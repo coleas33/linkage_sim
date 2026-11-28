@@ -4,17 +4,20 @@
 //! boss, on the gearbox output shaft. Both sit on the one bore (`coupling.bore_mm`). Cold-high
 //! (`metal.torque_cold_high_Nm`: the pull-out at the minimum magnet temperature with the
 //! production allowance) can reach each joint before the coupling slips, and while it slips
-//! each joint carries a fully reversing swing.
+//! each joint carries a fully reversing swing. With the operating temperature below the minimum
+//! the operating pull-out with the allowance can be the larger (BL-067, assumed under the
+//! owner's ruling of 2026-11-10): the check reads the larger of the two
+//! ([`crate::engine::gearbox::checked_pullout_Nm`]), called the checked pull-out below.
 //!
-//! The rule (owner decision 2A): the fit alone must hold the safety factor times cold-high at
-//! its loosest; the part must stay within its stress limit, yield ÷ [`YIELD_FACTOR`], at its
-//! tightest; the key alone, a backup, is checked at the same torque against the same limit. The
-//! fit's and the key's capacities are never added. Each part must also be fitted within its
-//! allowed temperature (owner decision 7A) in the owner's order: the bare cup is shrunk onto the
-//! gearbox shaft before its magnets are bonded; the inner hub is bonded first, then shrunk onto
-//! the cooled wheel shaft, so its allowed temperature is also capped by the adhesive's design
-//! limit and by the inner magnets' own single-ring onset less the cure margin (owner R-15 and
-//! its ring ruling, [`hub_fit_allowed`]).
+//! The rule (owner decision 2A): the fit alone must hold the safety factor times the checked
+//! pull-out at its loosest; the part must stay within its stress limit, yield ÷
+//! [`YIELD_FACTOR`], at its tightest; the key alone, a backup, is checked at the same torque
+//! against the same limit. The fit's and the key's capacities are never added. Each part must
+//! also be fitted within its allowed temperature (owner decision 7A) in the owner's order: the
+//! bare cup is shrunk onto the gearbox shaft before its magnets are bonded; the inner hub is
+//! bonded first, then shrunk onto the cooled wheel shaft, so its allowed temperature is also
+//! capped by the adhesive's design limit and by the inner magnets' own single-ring onset less
+//! the cure margin (owner R-15 and its ring ruling, [`hub_fit_allowed`]).
 //!
 //! Each joint is judged on four terms, in this order ([`CAUSES`]): the fit slips, the bore
 //! stress is above its limit, it cannot be fitted at the allowed temperature, the key backup
@@ -60,7 +63,7 @@ inputs! {
                 "The largest measured diametral interference of the cup. Its bore stress and fitting temperature are checked at it.")
                 .range(0.0, 40.0, 0.5),
             safety_factor: f64 = 2.0 => param_rust_only("-", "Shaft joint safety factor",
-                "The fit alone must hold cold-high times this, and the key alone is checked at the same torque. While the coupling slips, the torque can reverse many times.")
+                "Each fit and each key, alone, must hold this times the larger of cold-high and the operating pull-out with allowance. While the coupling slips, the torque can reverse many times.")
                 .range(1.0, 4.0, 0.1),
             friction: f64 = 0.14 => param_rust_only("-", "Shrink-fit friction coefficient",
                 "The default is for dry, degreased steel on steel. Holding torque scales with it; oil or a coating in the bore lowers it.")
@@ -105,7 +108,7 @@ results! {
     pub struct ShaftJointResults {
         fields {
             required_Nm: f64 => out_rust_only("N·m", "Torque each shaft joint must hold",
-                "Cold-high (the pull-out at the minimum magnet temperature, with the production allowance) times the safety factor. Each fit alone must hold it; the key alone is checked at it."),
+                "Cold-high, or the operating pull-out with the production allowance if larger, times the safety factor. Each fit alone must hold it; the key alone is checked at it."),
             part_modulus_GPa: f64 => out_rust_only("GPa", "Inner hub and cup elastic modulus",
                 "Of the inner hub and cup material in effect: the back-iron steel with a steel circuit, else the hub body's material. The fit's contact pressure rises with it."),
             part_cte_per_C: f64 => out_rust_only("1/°C", "Inner hub and cup expansion coefficient",
@@ -151,7 +154,7 @@ results! {
             cup_fit_allowed_C: f64 => out_rust_only("°C", "Cup fitting temperature allowed",
                 "Your limit for the bare cup, which is fitted before its magnets are bonded."),
             check: String => out_rust_only("", "Shaft joints: keyed shrink fits",
-                "Each rotor's shrink fit must hold cold-high times the safety factor when loosest, stay elastic when tightest and be fitted within the allowed temperature; the key alone is a backup."),
+                "Each shrink fit must hold the torque each shaft joint must hold when loosest, stay elastic when tightest and be fitted within the allowed temperature; the key is a backup."),
         }
     }
 }
@@ -356,8 +359,9 @@ pub fn shaft_shrink_um(shaft_C: f64, bore_mm: f64) -> f64 {
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[allow(non_snake_case)] // unit suffixes, as the engine's names
 pub struct ShaftJointLinks {
-    /// Cold-high [N·m] (`metal.torque_cold_high_Nm`).
-    pub cold_high_Nm: f64,
+    /// The checked pull-out [N·m]: the larger of cold-high (`metal.torque_cold_high_Nm`) and the
+    /// operating pull-out with the production allowance (BL-067).
+    pub pullout_Nm: f64,
     /// Both joints' bore [mm] (`coupling.bore_mm`).
     pub bore_mm: f64,
     /// Both joints' keyway depth [mm] (`coupling.keyway_depth_mm`); 0 for no keyway.
@@ -396,7 +400,7 @@ impl ShaftJointLinks {
     /// The fifteen values, for the unknown test.
     pub fn values(&self) -> [f64; 15] {
         [
-            self.cold_high_Nm,
+            self.pullout_Nm,
             self.bore_mm,
             self.keyway_depth_mm,
             self.hub_length_mm,
@@ -769,7 +773,7 @@ pub fn joint_specs(
         part_cte_per_C: links.part_cte_per_C,
         cold_C: links.min_temp_C,
         hot_C: links.adhesive_limit_C,
-        required_Nm: inputs.safety_factor * links.cold_high_Nm,
+        required_Nm: inputs.safety_factor * links.pullout_Nm,
         stress_limit_MPa: links.part_yield_MPa / YIELD_FACTOR,
     };
     let (hub_allowed_C, _) = hub_fit_allowed(

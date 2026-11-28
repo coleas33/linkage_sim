@@ -42,7 +42,7 @@ use crate::gui::explain::{Asked, LEARN, Selection, explain_ui, result_selection}
 use crate::gui::explorer::{Explorer, FOCUS_WIDTH, explorer_ui, panel_heights};
 use crate::gui::follow_focus;
 use crate::gui::format::search_needle;
-use crate::gui::geometry::wall_cautions;
+use crate::gui::geometry::{CAP_THREAD_BREAKS_THROUGH, cap_skirt_mm, wall_cautions};
 use crate::gui::geometry_view::{drawing_ui, geometry_ui};
 use crate::gui::guidance::{
     ConsequenceCache, Direction, EXAMPLE_DESIGN_HOVER, FixCache, SIZE_TAB_ALIASES,
@@ -185,7 +185,8 @@ pub const ASSUMPTIONS_NOTE: &str = "The model's assumptions, apart from the desi
 /// The start of the Size tab's exploration lines: a design the checks rule out (its magnets do
 /// not fit, or the keyway breaks through the hub) is still drawn, for exploring. Each line ends
 /// in the torque card's side words ([`SIDE_DOES_NOT_FIT`], [`KEYWAY_BREAKS_THROUGH`]), so a
-/// change of those words reaches both (slice 3 spec 4.2).
+/// change of those words reaches both (slice 3 spec 4.2). A cap thread at or past the cap's
+/// outside diameter is one too ([`CAP_THREAD_BREAKS_THROUGH`], BL-087).
 const EXPLORATION_ONLY: &str = "Exploration only: ";
 
 /// The Size column's fold of every design input (UX overhaul spec 4.3), over its fold of the
@@ -1084,6 +1085,12 @@ impl MagcouplingPanel {
                     ui.colored_label(
                         ui.visuals().error_fg_color,
                         format!("{EXPLORATION_ONLY}{KEYWAY_BREAKS_THROUGH}."),
+                    );
+                }
+                if cap_skirt_mm(shown) <= 0.0 {
+                    ui.colored_label(
+                        ui.visuals().error_fg_color,
+                        format!("{EXPLORATION_ONLY}{CAP_THREAD_BREAKS_THROUGH}."),
                     );
                 }
                 for line in wall_cautions(shown, &self.results) {
@@ -7010,8 +7017,48 @@ mod tests {
                 "Cap wall past its thread (skirt): 0.4900 mm; guide minimum is 0.5 mm.".to_owned()
             ]
         );
-        // A thread above the outside diameter is a skirt below zero, still under the minimum.
-        assert_eq!(skirt_caution(&with_cap(42.0, 42.2)).len(), 1);
+        // A thin skirt just over zero is still the amber caution.
+        assert_eq!(skirt_caution(&with_cap(42.0, 41.98)).len(), 1);
+        // A skirt at or below zero is no wall: the exploration line says so instead (BL-087).
+        for (od, thread) in [(42.0, 42.2), (42.0, 42.0)] {
+            assert!(
+                skirt_caution(&with_cap(od, thread)).is_empty(),
+                "{od} {thread}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_cap_thread_at_or_past_the_cap_s_outside_diameter_draws_an_exploration_line() {
+        // BL-087: a skirt at or below zero is an error-coloured 'Exploration only' line, the
+        // way the keyway's break-through is, and no amber caution; a thin skirt over zero
+        // keeps the amber caution and draws no exploration line.
+        let line = "Exploration only: the cap thread breaks through the cap.";
+        let mut harness = Harness::new();
+        harness.size_and_torque();
+        let visuals = harness.ctx.style().visuals.clone();
+        for (od, thread, broken) in [(42.0, 42.2, true), (42.0, 42.0, true), (42.0, 41.98, false)] {
+            harness.panel.inputs = with_cap(od, thread);
+            let output = harness.frame(Vec::new());
+            let error =
+                crate::gui::test_support::texts_in_colors(&output, &[visuals.error_fg_color]);
+            let amber =
+                crate::gui::test_support::texts_in_colors(&output, &[visuals.warn_fg_color]);
+            let skirt = amber
+                .iter()
+                .filter(|t| t.starts_with(SKIRT_CAUTION_START))
+                .count();
+            assert_eq!(
+                count(&output, line),
+                usize::from(broken),
+                "{od} {thread}: {error:?}"
+            );
+            assert_eq!(
+                error.iter().filter(|t| *t == line).count(),
+                usize::from(broken)
+            );
+            assert_eq!(skirt, usize::from(!broken), "{od} {thread}: {amber:?}");
+        }
     }
 
     #[test]
@@ -9422,6 +9469,8 @@ mod tests {
             (too_small, Some(34.0)),
             // A 0.49 mm cap skirt: its amber caution (BL-082).
             (with_cap(42.8, 41.82), None),
+            // A cap thread past the cap's outside diameter: its exploration line (BL-087).
+            (with_cap(42.0, 42.2), None),
         ];
         let mut harness = size_tab(egui::vec2(1280.0, 4000.0), DesignInputs::default());
         let mut drawn = Vec::new();
@@ -9462,6 +9511,9 @@ mod tests {
             texts.push(pullout_label(results.metal.op_temp_C));
             // The amber wall lines (the keyway's and the cap skirt's, BL-082).
             texts.extend(wall_cautions(&shown, &results));
+            if cap_skirt_mm(&shown) <= 0.0 {
+                texts.push(format!("{EXPLORATION_ONLY}{CAP_THREAD_BREAKS_THROUGH}."));
+            }
             let hot_low = results.metal.torque_hot_low_Nm;
             if predicts(&results, hot_low) {
                 let gap = torque_gap_text(hot_low, shown.metal.required_min_Nm).0;
