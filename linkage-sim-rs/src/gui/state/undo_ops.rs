@@ -78,7 +78,7 @@ impl AppState {
         self.mechanism = Some(mech);
         self.driver_joint_id = snapshot.driver_joint_id.clone();
         self.playing = false;
-        self.compute_forces(self.driver_angle);
+        self.compute_forces(t);
         self.update_grashof();
         self.compute_validation();
         self.recompute_driver_display_offset();

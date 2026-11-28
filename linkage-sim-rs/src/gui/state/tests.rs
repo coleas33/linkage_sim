@@ -473,6 +473,25 @@
         assert_eq!(state.driver_angle, angle_before);
     }
 
+    /// BL-117: the stock builder's own omega and theta_0 (FourBar J4 sets
+    /// theta_0 = 7.804) must survive the reassign, so the next rebuild solves.
+    #[test]
+    fn reassign_driver_to_a_theta_0_joint_keeps_the_next_edit_solved() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.reassign_driver("J4");
+        assert!(state.solver_status.converged);
+        let q_before = state.q.clone();
+        assert_eq!(state.current_driver_time(), 0.0);
+
+        state.add_mount_point("coupler", "M_bl117", [0.1, 0.02]);
+        assert!(state.solver_status.converged);
+        assert!((&state.q - &q_before).norm() < 1e-6);
+
+        state.add_point_mass("coupler", 0.5, [0.05, 0.0]);
+        assert!(state.solver_status.converged);
+    }
+
     #[test]
     fn reassign_driver_changes_joint() {
         let mut state = AppState::default();

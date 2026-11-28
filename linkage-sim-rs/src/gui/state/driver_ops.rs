@@ -53,13 +53,22 @@ impl AppState {
                         ));
                         self.status_message_time = 5.0;
                     }
+                    // The stock builder may set its own omega/theta_0 (FourBar J4); keep
+                    // them so the next rebuild reads the same driver (BL-117).
+                    let (omega, theta_0) = blueprint
+                        .as_ref()
+                        .and_then(|bp| bp.drivers.values().find_map(|d| match d {
+                            DriverJson::ConstantSpeed { omega, theta_0, .. } => Some((*omega, *theta_0)),
+                            _ => None,
+                        }))
+                        .unwrap_or((2.0 * PI, 0.0));
                     self.driver_kind = super::DriverKind::Revolute {
-                        angle: 0.0,
-                        omega: 2.0 * PI,
-                        theta_0: 0.0,
+                        angle: theta_0,
+                        omega,
+                        theta_0,
                     };
                     self.solve_and_update(&mech, &q0, 0.0, 1e-10, 50, Some(q0.clone()));
-                    self.driver_angle = 0.0;
+                    self.driver_angle = theta_0; // t = (angle - theta_0) / omega stays 0
                     self.q_at_zero = self.q.clone();
                     self.blueprint = blueprint;
                     self.mechanism = Some(mech);
