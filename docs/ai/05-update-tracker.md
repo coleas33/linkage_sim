@@ -5,6 +5,9 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - Mounted force drawings (BL-049)
+- Reaction, component, external and zone-force arrows turn with the mounting angle and a force zone draws its four turned corners; five 30-degree tests failed before, pass after (fix reused from the parked Codex branch).
+
 ## 2026-11-28 — Undoable committed force edits (BL-045)
 - update_force_element records one undo step and sets dirty; force-editor numeric fields commit once on release or focus loss (from Codex 8e6ad7d); red test plus gate green.
 

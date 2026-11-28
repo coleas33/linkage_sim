@@ -5,7 +5,7 @@
 //! Also contains load-path visualization helpers (color-coding links by
 //! reaction force magnitude).
 
-use eframe::egui::{self, Color32, FontId, Pos2, Rect, Stroke, Vec2};
+use eframe::egui::{self, Color32, FontId, Pos2, Stroke, Vec2};
 
 use crate::core::constraint::Constraint;
 use crate::core::mechanism::Mechanism;
@@ -161,6 +161,7 @@ pub(super) fn draw_force_elements(
                     origin,
                     f.force[0] as f32,
                     f.force[1] as f32,
+                    view,
                 );
             }
             ForceElement::ExternalTorque(t) => {
@@ -369,25 +370,27 @@ fn draw_force_zone(
     let zone_stroke = Stroke::new(2.0, FORCE_ZONE_COLOR);
     let zone_fill = Color32::from_rgba_premultiplied(255, 80, 80, 30);
 
-    // Convert zone corners to screen space.
-    let min_sp = view.world_to_screen(fz.zone_min[0], fz.zone_min[1]);
-    let max_sp = view.world_to_screen(fz.zone_max[0], fz.zone_max[1]);
-    let s_min_x = min_sp[0].min(max_sp[0]);
-    let s_min_y = min_sp[1].min(max_sp[1]);
-    let s_max_x = min_sp[0].max(max_sp[0]);
-    let s_max_y = min_sp[1].max(max_sp[1]);
-
-    let tl = Pos2::new(s_min_x, s_min_y);
-    let tr = Pos2::new(s_max_x, s_min_y);
-    let br = Pos2::new(s_max_x, s_max_y);
-    let bl = Pos2::new(s_min_x, s_max_y);
+    // Transform all four world corners; the mounted rectangle is not screen-aligned.
+    let corners = [
+        [fz.zone_min[0], fz.zone_max[1]],
+        [fz.zone_max[0], fz.zone_max[1]],
+        [fz.zone_max[0], fz.zone_min[1]],
+        [fz.zone_min[0], fz.zone_min[1]],
+    ].map(|[x, y]| {
+        let sp = view.world_to_screen(x, y);
+        Pos2::new(sp[0], sp[1])
+    });
+    let [tl, tr, br, bl] = corners;
+    let s_min_x = corners.iter().map(|p| p.x).fold(f32::INFINITY, f32::min);
+    let s_min_y = corners.iter().map(|p| p.y).fold(f32::INFINITY, f32::min);
+    let s_max_x = corners.iter().map(|p| p.x).fold(f32::NEG_INFINITY, f32::max);
 
     // 1. Faint red fill.
-    painter.rect_filled(
-        Rect::from_min_max(tl, br),
-        0.0,
+    painter.add(egui::epaint::PathShape::convex_polygon(
+        corners.to_vec(),
         zone_fill,
-    );
+        Stroke::NONE,
+    ));
 
     // 2. Dashed red border (4 edges).
     let dash = 6.0_f32;
@@ -402,28 +405,25 @@ fn draw_force_zone(
     let fy = fz.force[1] as f32;
     let fmag = (fx * fx + fy * fy).sqrt();
     if fmag > 1e-9 {
-        // Unit direction in screen space (flip Y because screen Y is down).
-        let dir_x = fx / fmag;
-        let dir_y = -fy / fmag;
-
-        let zone_w = s_max_x - s_min_x;
-        let zone_h = s_max_y - s_min_y;
+        let direction = world_direction_to_screen(view, fx / fmag, fy / fmag);
+        let zone_x = tr - tl;
+        let zone_y = bl - tl;
+        let zone_w = zone_x.length();
+        let zone_h = zone_y.length();
         let arrow_len = (zone_w.min(zone_h) * 0.35).clamp(10.0, 40.0);
         let head_len = 6.0_f32;
 
         for i in 0..3 {
             let frac = (i as f32 + 1.0) / 4.0;
-            let cx = s_min_x + zone_w * frac;
-            let cy = s_min_y + zone_h * 0.5;
-
+            let center = tl + zone_x * frac + zone_y * 0.5;
             let half = arrow_len * 0.5;
-            let start = Pos2::new(cx - dir_x * half, cy - dir_y * half);
-            let tip = Pos2::new(cx + dir_x * half, cy + dir_y * half);
+            let start = center - direction * half;
+            let tip = center + direction * half;
 
             // Arrow shaft and a small arrowhead at the tip.
             let stroke = Stroke::new(1.5, FORCE_ZONE_COLOR);
             painter.line_segment([start, tip], stroke);
-            draw_arrowhead(painter, tip, Vec2::new(dir_x, dir_y), head_len, stroke);
+            draw_arrowhead(painter, tip, direction, head_len, stroke);
         }
     }
 
@@ -577,6 +577,161 @@ mod tests {
     use super::*;
     use crate::analysis::gravity_breakdown::{max_abs_finite, BRAKE_TOL_REL};
     use crate::gui::test_support::{set_actuator_stored_force, swept_lift};
+
+    fn bl049_view(angle: f64) -> ViewTransform {
+        ViewTransform { offset: [200.0, 300.0], scale: 100.0, mounting_angle: angle }
+    }
+
+    fn bl049_lines(output: &egui::FullOutput, color: Color32, width: f32) -> Vec<[Pos2; 2]> {
+        let mut lines = Vec::new();
+        crate::gui::test_support::visit_shapes(output, |shape| {
+            if let egui::Shape::LineSegment { points, stroke } = shape
+                && stroke.color == color && (stroke.width - width).abs() < 1e-6
+            {
+                lines.push(*points);
+            }
+        });
+        lines
+    }
+
+    fn bl049_assert_line(lines: &[[Pos2; 2]], from: Pos2, to: Pos2) {
+        assert!(lines.iter().any(|line| line[0].distance(from) < 0.002 && line[1].distance(to) < 0.002),
+            "missing screen segment {from:?} -> {to:?}; got {lines:?}");
+    }
+
+    fn bl049_overlay(angle: f64, components: bool, external: bool) -> egui::FullOutput {
+        let mut state = AppState {
+            view: bl049_view(angle),
+            mounting_angle: angle,
+            show_forces: true,
+            show_force_components: components,
+            gravity_magnitude: 0.0,
+            ..Default::default()
+        };
+        let joint_targets = if external {
+            let mut mech = Mechanism::new();
+            mech.add_body(crate::core::body::Body::new("body")).unwrap();
+            mech.add_force(ForceElement::ExternalForce(ExternalForceElement {
+                body_id: "body".into(), local_point: [0.0, 0.0], local_point_name: None,
+                force: [1.0, 0.0], modulation: TimeModulation::default(),
+            }));
+            mech.build().unwrap();
+            state.q = mech.state().make_q();
+            state.mechanism = Some(mech);
+            Vec::new()
+        } else {
+            state.force_results.joint_reactions.insert("J1".into(), (1.0, if components { -1.0 } else { 0.0 }));
+            vec![(Pos2::new(200.0, 300.0), "J1".into())]
+        };
+        crate::gui::test_support::central_panel_frame(&egui::Context::default(), Vec::new(), |ui| {
+            let painter = ui.painter().clone();
+            let canvas_rect = ui.max_rect();
+            super::super::render_overlays(ui, &painter, canvas_rect, &state,
+                &joint_targets, &[], &[], true, 0.0, 0, false);
+        })
+    }
+
+    #[test]
+    fn bl049_mounted_reaction_arrow_uses_literal_screen_direction() {
+        // One newton gives a 30 px shaft. Expected coordinates are literal
+        // cos(30)=sqrt(3)/2, sin(30)=1/2, followed by screen-Y reversal.
+        for (angle, tip) in [(0.0, Pos2::new(230.0, 300.0)),
+            (std::f64::consts::PI / 6.0, Pos2::new(225.98076, 285.0))]
+        {
+            let output = bl049_overlay(angle, false, false);
+            bl049_assert_line(&bl049_lines(&output, FORCE_ARROW_COLOR, FORCE_ARROW_WIDTH),
+                Pos2::new(200.0, 300.0), tip);
+            assert!(crate::gui::test_support::drew_text(&output, "1 N"));
+        }
+    }
+
+    #[test]
+    fn bl049_mounted_component_arrows_keep_world_components_and_styles() {
+        let output = bl049_overlay(std::f64::consts::PI / 6.0, true, false);
+        let lines = bl049_lines(&output, FORCE_ARROW_COLOR, FORCE_ARROW_WIDTH);
+        // Fx=+1 is solid along mounted world X. Fy=-1 is dashed along
+        // negative mounted world Y; its first dash is exactly 5 px.
+        bl049_assert_line(&lines, Pos2::new(200.0, 300.0), Pos2::new(225.98076, 285.0));
+        bl049_assert_line(&lines, Pos2::new(200.0, 300.0), Pos2::new(202.5, 304.33014));
+        let fy_tip = Pos2::new(215.0, 325.98077);
+        assert_eq!(lines.iter().filter(|line| line[0].distance(fy_tip) < 0.002).count(), 2,
+            "the solid two-line Fy head stays at the mounted tip");
+        assert!(crate::gui::test_support::drew_text(&output, "Fx = 1 N"));
+        assert!(crate::gui::test_support::drew_text(&output, "Fy = -1 N"));
+    }
+
+    #[test]
+    fn bl049_mounted_external_arrow_keeps_its_tip_at_the_application_point() {
+        for (angle, tail) in [(0.0, Pos2::new(170.0, 300.0)),
+            (std::f64::consts::PI / 6.0, Pos2::new(174.01924, 315.0))]
+        {
+            let output = bl049_overlay(angle, false, true);
+            bl049_assert_line(&bl049_lines(&output, EXT_FORCE_COLOR, FORCE_ARROW_WIDTH),
+                tail, Pos2::new(200.0, 300.0));
+            assert!(crate::gui::test_support::drew_text(&output, "1 N"));
+        }
+    }
+
+    fn bl049_zone_frame() -> egui::FullOutput {
+        let mech = Mechanism::new();
+        let zone = ForceZoneElement {
+            body_id: "absent".into(), zone_min: [0.0, 0.0], zone_max: [2.0, 1.0],
+            force: [1.0, 0.0], label: Some("Mounted zone".into()),
+            body_local_app_point: None, at_contact_point: false,
+        };
+        let view = bl049_view(std::f64::consts::PI / 6.0);
+        crate::gui::test_support::central_panel_frame(&egui::Context::default(), Vec::new(), |ui| {
+            draw_force_zone(ui.painter(), &zone, &mech, mech.state(), &nalgebra::DVector::zeros(0), &view);
+        })
+    }
+
+    #[test]
+    fn bl049_mounted_zone_draws_its_four_literal_corners_and_dashed_edges() {
+        let output = bl049_zone_frame();
+        // World corners (0,1), (2,1), (2,0), (0,0), mounted at 30 deg,
+        // scale 100 px/m and translated to (200,300).
+        let corners = [Pos2::new(150.0, 213.39746), Pos2::new(323.20508, 113.39746),
+            Pos2::new(373.20508, 200.0), Pos2::new(200.0, 300.0)];
+        let fill = Color32::from_rgba_premultiplied(255, 80, 80, 30);
+        let mut filled_corners = None;
+        crate::gui::test_support::visit_shapes(&output, |shape| {
+            if let egui::Shape::Path(path) = shape
+                && path.fill == fill
+            {
+                filled_corners = Some(path.points.clone());
+            }
+        });
+        let filled = filled_corners.expect("the zone fill is its four-corner polygon");
+        assert_eq!(filled.len(), 4);
+        for corner in corners {
+            assert!(filled.iter().any(|point| point.distance(corner) < 0.002), "missing literal corner {corner:?}: {filled:?}");
+        }
+        let lines = bl049_lines(&output, FORCE_ZONE_COLOR, 2.0);
+        for (corner, dash_end) in corners.into_iter().zip([
+            Pos2::new(155.19615, 210.39746), Pos2::new(326.20508, 118.59361),
+            Pos2::new(368.00894, 203.0), Pos2::new(197.0, 294.80386),
+        ]) {
+            bl049_assert_line(&lines, corner, dash_end);
+        }
+        assert!(crate::gui::test_support::drew_text(&output, "Mounted zone"));
+    }
+
+    #[test]
+    fn bl049_mounted_zone_arrows_use_rotated_centres_and_literal_direction() {
+        let output = bl049_zone_frame();
+        let shafts: Vec<_> = bl049_lines(&output, FORCE_ZONE_COLOR, 1.5).into_iter()
+            .filter(|line| line[0].distance(line[1]) > 20.0).collect();
+        assert_eq!(shafts.len(), 3);
+        // The original 35 px shafts retain their length. Their centres lie
+        // at world (.5,.5), (1,.5), (1.5,.5), not the screen bounding box.
+        for (tail, tip) in [
+            (Pos2::new(203.14583, 240.44873), Pos2::new(233.45671, 222.94873)),
+            (Pos2::new(246.4471, 215.44873), Pos2::new(276.758, 197.94873)),
+            (Pos2::new(289.74835, 190.44873), Pos2::new(320.05927, 172.94873)),
+        ] {
+            bl049_assert_line(&shafts, tail, tip);
+        }
+    }
 
     /// Every force sign (push, pull, shown as zero) against every power
     /// case (motoring, braking, inside the tolerance, unknown).
