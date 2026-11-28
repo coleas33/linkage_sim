@@ -521,6 +521,194 @@ mod tests {
     }
 
     #[test]
+    fn every_control_shows_its_edge_on_the_panel_and_in_the_design_menu() {
+        // The stage 1 review (E-4, R-6), in the app's own theme: a checkbox's box, a slider's
+        // rail and a value box at rest were 1.1:1 to 1.2:1 on the panel. With both folds of the
+        // left column open, every rect and circle the column draws (the sliders' rails and
+        // handles, the value boxes, the pickers, the text boxes, the checkboxes and the order
+        // toggle: no other shape is filled or outlined there at rest) shows an edge, by its
+        // fill or its outline, at 3:1 or more against the panel. The Design menu draws a
+        // checkbox's box with no outline: its fill is 3:1 or more against the menu.
+        use crate::gui::test_support::{flat_shapes, text_center, text_rects};
+        use crate::gui::{ASSUMPTIONS_FOLD, DESIGN_MENU, DETAILED_INPUTS, SHOW_DETAILS};
+        use theme::contrast;
+        // The stronger of a shape's fill and outline against `behind`.
+        let edge = |fill: egui::Color32, stroke: egui::Stroke, behind: egui::Color32| {
+            let outline = if stroke.width > 0.0 && stroke.color.a() > 0 {
+                contrast(stroke.color, behind)
+            } else {
+                1.0
+            };
+            let fill = if fill.a() > 0 {
+                contrast(fill, behind)
+            } else {
+                1.0
+            };
+            fill.max(outline)
+        };
+        // A window tall enough to draw every row of the column.
+        let tall = egui::vec2(1280.0, 20_000.0);
+        let ctx = egui::Context::default();
+        let mut app = MagcouplingApp::new(&ctx);
+        frame_on(&ctx, &mut app, tall, Vec::new());
+        for fold in [DETAILED_INPUTS, ASSUMPTIONS_FOLD] {
+            let output = frame_on(&ctx, &mut app, tall, Vec::new());
+            click_at(&ctx, &mut app, tall, text_center(&output, fold), 6);
+        }
+        let output = frame_on(&ctx, &mut app, tall, Vec::new());
+        let column = side_rect(&ctx, "magcoupling_inputs");
+        let mut faint = Vec::new();
+        let mut shapes = 0;
+        for shape in flat_shapes(&output) {
+            let (what, ratio) = match shape {
+                egui::Shape::Rect(rect)
+                    if column.contains_rect(rect.rect)
+                        && rect.rect != column
+                        && (rect.fill.a() > 0 || rect.stroke.color.a() > 0) =>
+                {
+                    (
+                        format!("{:?}", rect.rect),
+                        edge(rect.fill, rect.stroke, theme::PANEL),
+                    )
+                }
+                egui::Shape::Circle(circle) if column.contains(circle.center) => (
+                    format!("a circle at {:?}", circle.center),
+                    edge(circle.fill, circle.stroke, theme::PANEL),
+                ),
+                _ => continue,
+            };
+            shapes += 1;
+            if ratio < 3.0 {
+                faint.push(format!("{what}: {ratio:.2}"));
+            }
+        }
+        // Six size controls, twenty-one more sliders, their value boxes and the rest.
+        assert!(shapes > 90, "{shapes} shapes");
+        assert!(
+            faint.is_empty(),
+            "{} of {shapes} faint: {faint:#?}",
+            faint.len()
+        );
+        // The Design menu, opened on the laptop screen, its fading in done.
+        frame_on(&ctx, &mut app, LAPTOP, Vec::new());
+        let output = frame_on(&ctx, &mut app, LAPTOP, Vec::new());
+        click_at(&ctx, &mut app, LAPTOP, text_center(&output, DESIGN_MENU), 6);
+        let output = frame_on(&ctx, &mut app, LAPTOP, Vec::new());
+        let label = text_rects(&output, SHOW_DETAILS);
+        let label = label.first().expect("the menu shows the checkbox");
+        let boxes: Vec<f64> = flat_shapes(&output)
+            .into_iter()
+            .filter_map(|shape| match shape {
+                egui::Shape::Rect(rect)
+                    if rect.rect.right() <= label.left()
+                        && (rect.rect.center().y - label.center().y).abs() < 2.0
+                        && (rect.rect.width() - rect.rect.height()).abs() < 0.5 =>
+                {
+                    Some(edge(rect.fill, rect.stroke, theme::PANEL2))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(boxes.len(), 1, "the checkbox's box: {boxes:?}");
+        assert!(boxes[0] >= 3.0, "the menu's checkbox: {:.2}", boxes[0]);
+    }
+
+    #[test]
+    fn an_open_picker_keeps_its_edge() {
+        // egui draws an open picker's box in the open state's colours, not the resting ones.
+        // Opened, Auto's picker keeps an outline at 3:1 or more against the panel, as at rest,
+        // so it does not read as dimmed or disabled while its list shows.
+        use crate::engine::sizing::FreeVariable;
+        use crate::gui::sizing::auto_choice;
+        use crate::gui::test_support::{flat_shapes, text_rects};
+        use theme::contrast;
+        let ctx = egui::Context::default();
+        let mut app = MagcouplingApp::new(&ctx);
+        frame_on(&ctx, &mut app, LAPTOP, Vec::new());
+        let output = frame_on(&ctx, &mut app, LAPTOP, Vec::new());
+        let shown = text_rects(&output, auto_choice(FreeVariable::AxialLength));
+        assert_eq!(shown.len(), 1, "Auto's picker shows its size: {shown:?}");
+        let output = click_at(&ctx, &mut app, LAPTOP, shown[0].center(), 6);
+        // Open: its list names the other sizes.
+        let listed = text_rects(&output, auto_choice(FreeVariable::RingRadius));
+        assert_eq!(listed.len(), 1, "the picker's list: {listed:?}");
+        let outlines: Vec<f64> = flat_shapes(&output)
+            .into_iter()
+            .filter_map(|shape| match shape {
+                egui::Shape::Rect(rect)
+                    if rect.rect.contains_rect(shown[0])
+                        && rect.rect.height() < 3.0 * shown[0].height() =>
+                {
+                    Some(if rect.stroke.width > 0.0 {
+                        contrast(rect.stroke.color, theme::PANEL)
+                    } else {
+                        1.0
+                    })
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(outlines.len(), 1, "the picker's box: {outlines:?}");
+        assert!(
+            outlines[0] >= 3.0,
+            "the open picker's outline: {:.2}",
+            outlines[0]
+        );
+    }
+
+    #[test]
+    fn a_plot_legend_s_entries_show_their_dots_on_a_grey_disc() {
+        // egui_plot draws each legend entry, a toggle that hides or shows its line, as a disc
+        // in the resting fill and outline with the line's dot on it. That disc is the edge of
+        // the toggle: 3:1 or more against the legend's background (the field colour), on every
+        // entry of Torque vs temperature's legend, the longest.
+        use crate::gui::CentreView;
+        use crate::gui::plots::PlotKind;
+        use crate::gui::test_support::flat_shapes;
+        use theme::contrast;
+        let ctx = egui::Context::default();
+        let mut app = MagcouplingApp::new(&ctx);
+        frame_on(&ctx, &mut app, LAPTOP, Vec::new());
+        let view = CentreView::Plot(PlotKind::TorqueTemperature);
+        let output = show_view(&ctx, &mut app, LAPTOP, view, 2);
+        let (left, right) = (
+            side_rect(&ctx, "magcoupling_inputs").right(),
+            side_rect(&ctx, "magcoupling_dashboard").left(),
+        );
+        let circles: Vec<&egui::epaint::CircleShape> = flat_shapes(&output)
+            .into_iter()
+            .filter_map(|shape| match shape {
+                egui::Shape::Circle(circle)
+                    if left < circle.center.x && circle.center.x < right =>
+                {
+                    Some(circle)
+                }
+                _ => None,
+            })
+            .collect();
+        // An entry: a filled and outlined disc (a plot's own points are one or the other), and
+        // on it, at its centre, its line's smaller dot.
+        let discs: Vec<&egui::epaint::CircleShape> = circles
+            .iter()
+            .copied()
+            .filter(|disc| {
+                disc.fill.a() > 0
+                    && disc.stroke.width > 0.0
+                    && circles
+                        .iter()
+                        .any(|dot| dot.center == disc.center && dot.radius < disc.radius)
+            })
+            .collect();
+        assert_eq!(discs.len(), 7, "the legend's entries: {discs:?}");
+        let rest = theme::visuals().widgets.inactive;
+        for disc in discs {
+            let ratio = contrast(disc.fill, theme::BG);
+            assert!(ratio >= 3.0, "a legend entry's disc: {ratio:.2}");
+            assert_eq!((disc.fill, disc.stroke), (rest.bg_fill, rest.bg_stroke));
+        }
+    }
+
+    #[test]
     fn a_label_is_muted_and_its_value_is_in_the_text_colour() {
         // UX overhaul spec 6.1: the muted token is for labels and captions, the text token for
         // values. A reader scanning for a number finds it as the bright line of its row.

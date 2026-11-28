@@ -11,7 +11,7 @@ use egui::style::WidgetVisuals;
 use egui::{Color32, CornerRadius, Stroke};
 
 // The token table (spec 6.1). Every colour [`visuals`] sets is one of these, but the fill
-// behind what is selected ([`SELECTION`]).
+// behind what is selected ([`SELECTION`]) and the edge of a control at rest ([`CONTROL`]).
 
 /// Behind the drawing and the plots; a field's background.
 pub const BG: Color32 = Color32::from_rgb(0x12, 0x14, 0x17);
@@ -38,11 +38,20 @@ pub const OK: Color32 = crate::gui::look::OK;
 /// hue of the drawing's dimension lines; blue means "click me").
 pub const LINK: Color32 = Color32::from_rgb(90, 170, 255);
 
-/// The fill behind selected text and of a selected choice: the one colour outside the spec's
-/// table (6.1), which names none that a reader can see behind text. A quiet blue, the hue of
+/// The fill behind selected text and of a selected choice: a colour outside the spec's table
+/// (6.1), which names none that a reader can see behind text. A quiet blue, the hue of
 /// [`LINK`]: 3:1 or more against a field and the panel and 2.8:1 on a tooltip, with [`TEXT`]
 /// on it at 4.5:1 (the theme's tests pin each). Never the accent (decision C-5).
 pub const SELECTION: Color32 = Color32::from_rgb(0x46, 0x6a, 0x90);
+
+/// The edge of a control at rest (the stage 1 review, E-4 and R-6): the outline of a value
+/// box, a framed button, a picker (open too) and a text box, and the fill of a checkbox's box,
+/// a radio button, a slider's rail and handle and the disc behind a plot legend's dot (egui_plot
+/// draws it in the resting fill and outline). The other colour outside the spec's table (6.1),
+/// whose border colour is 1.2:1 on the panel: a grey of the tokens' hue, 3:1 or more on the
+/// panel, a menu and a field, under [`MUTED`], with the tick of a ticked box ([`TEXT`]) at
+/// 4.3:1 on it (the theme's tests pin each).
+pub const CONTROL: Color32 = Color32::from_rgb(0x65, 0x6c, 0x76);
 
 /// The corner radius of buttons, fields, menus and tooltips [points].
 pub const RADIUS: u8 = 4;
@@ -52,8 +61,8 @@ pub const RADIUS: u8 = 4;
 pub const ITEM_SPACING: egui::Vec2 = egui::vec2(6.0, 4.0);
 pub const BUTTON_PADDING: egui::Vec2 = egui::vec2(8.0, 4.0);
 
-/// One widget state: its fill (a checkbox's box, a slider's rail), a button's fill and its
-/// outline. Its text is in the text colour and its corners are [`RADIUS`].
+/// One widget state: its fill (a checkbox's box, a slider's rail and handle), a button's fill
+/// and its outline. Its text is in the text colour and its corners are [`RADIUS`].
 fn state(state: &mut WidgetVisuals, fill: Color32, button: Color32, outline: Stroke) {
     state.bg_fill = fill;
     state.weak_bg_fill = button;
@@ -68,7 +77,8 @@ fn state(state: &mut WidgetVisuals, fill: Color32, button: Color32, outline: Str
 /// sets a value apart from the text beside it (a second, heavier face is the cure if a later
 /// slice needs one). `weak()` is [`MUTED`], and the panel draws a label beside its value in it
 /// (`gui::look::quiet_text`), so the value is the bright one of the pair. Borders are hairlines
-/// and nothing casts a shadow (decision C-6).
+/// and nothing casts a shadow (decision C-6). A control at rest shows its edge in [`CONTROL`];
+/// under the pointer and pressed its fill stays and its outline brightens.
 pub fn visuals() -> egui::Visuals {
     let hairline = Stroke::new(1.0, BORDER);
     let radius = CornerRadius::same(RADIUS);
@@ -94,20 +104,32 @@ pub fn visuals() -> egui::Visuals {
     v.selection.bg_fill = SELECTION;
     v.selection.stroke = Stroke::new(1.0, TEXT);
     state(&mut v.widgets.noninteractive, PANEL2, PANEL2, hairline);
-    state(&mut v.widgets.inactive, BORDER, PANEL2, hairline);
+    state(
+        &mut v.widgets.inactive,
+        CONTROL,
+        PANEL2,
+        Stroke::new(1.0, CONTROL),
+    );
     state(
         &mut v.widgets.hovered,
-        BORDER,
+        CONTROL,
         BORDER,
         Stroke::new(1.0, MUTED),
     );
     state(
         &mut v.widgets.active,
-        BORDER,
+        CONTROL,
         BORDER,
         Stroke::new(1.0, TEXT),
     );
-    state(&mut v.widgets.open, PANEL2, PANEL2, hairline);
+    // An open picker's box (egui draws it in this state) keeps the resting outline, so opening
+    // it does not make it look dimmed; menus drop this outline (egui's `menu_style`).
+    state(
+        &mut v.widgets.open,
+        PANEL2,
+        PANEL2,
+        Stroke::new(1.0, CONTROL),
+    );
     v
 }
 
@@ -121,28 +143,30 @@ pub fn apply(ctx: &egui::Context) {
     });
 }
 
+/// The WCAG 2 relative luminance of an opaque colour.
+#[cfg(test)]
+pub(crate) fn luminance(colour: Color32) -> f64 {
+    let linear = |channel: u8| {
+        let s = f64::from(channel) / 255.0;
+        if s <= 0.04045 {
+            s / 12.92
+        } else {
+            ((s + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * linear(colour.r()) + 0.7152 * linear(colour.g()) + 0.0722 * linear(colour.b())
+}
+
+/// The WCAG 2 contrast ratio of two opaque colours.
+#[cfg(test)]
+pub(crate) fn contrast(a: Color32, b: Color32) -> f64 {
+    let (a, b) = (luminance(a), luminance(b));
+    (a.max(b) + 0.05) / (a.min(b) + 0.05)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// The WCAG 2 relative luminance of an opaque colour.
-    fn luminance(colour: Color32) -> f64 {
-        let linear = |channel: u8| {
-            let s = f64::from(channel) / 255.0;
-            if s <= 0.04045 {
-                s / 12.92
-            } else {
-                ((s + 0.055) / 1.055).powf(2.4)
-            }
-        };
-        0.2126 * linear(colour.r()) + 0.7152 * linear(colour.g()) + 0.0722 * linear(colour.b())
-    }
-
-    /// The WCAG 2 contrast ratio of two opaque colours.
-    fn contrast(a: Color32, b: Color32) -> f64 {
-        let (a, b) = (luminance(a), luminance(b));
-        (a.max(b) + 0.05) / (a.min(b) + 0.05)
-    }
 
     #[test]
     fn the_tokens_are_the_spec_s_table() {
@@ -207,16 +231,22 @@ mod tests {
         let w = &v.widgets;
         for (name, state, fill, button, outline) in [
             ("noninteractive", w.noninteractive, PANEL2, PANEL2, hairline),
-            ("inactive", w.inactive, BORDER, PANEL2, hairline),
+            (
+                "inactive",
+                w.inactive,
+                CONTROL,
+                PANEL2,
+                Stroke::new(1.0, CONTROL),
+            ),
             (
                 "hovered",
                 w.hovered,
-                BORDER,
+                CONTROL,
                 BORDER,
                 Stroke::new(1.0, MUTED),
             ),
-            ("active", w.active, BORDER, BORDER, Stroke::new(1.0, TEXT)),
-            ("open", w.open, PANEL2, PANEL2, hairline),
+            ("active", w.active, CONTROL, BORDER, Stroke::new(1.0, TEXT)),
+            ("open", w.open, PANEL2, PANEL2, Stroke::new(1.0, CONTROL)),
         ] {
             assert_eq!(
                 (state.bg_fill, state.weak_bg_fill, state.bg_stroke),
@@ -335,6 +365,60 @@ mod tests {
         for token in [MUTED, LINK, BAD, WARN, OK] {
             assert!(contrast(token, SELECTION) < 4.5, "{token:?}");
         }
+    }
+
+    #[test]
+    fn a_control_at_rest_shows_its_edge_at_three_to_one_on_every_surface_it_sits_on() {
+        // The stage 1 review (E-4, R-6), by WCAG 2's rule for a control's edge (1.4.11): at
+        // least 3:1 against what is around it. At rest a value box, a framed button, a picker
+        // and a text box show their resting outline; a checkbox's box, a radio button and a
+        // slider's rail and handle show their resting fill, and in a menu, which drops the
+        // outline, a checkbox's box shows by its fill alone. Both were the border colour,
+        // 1.2:1 on the panel. A control sits on the panel, in a menu and on a field.
+        let v = visuals();
+        let rest = v.widgets.inactive;
+        assert!(rest.bg_stroke.width >= 1.0);
+        for (what, edge) in [("outline", rest.bg_stroke.color), ("fill", rest.bg_fill)] {
+            for (surface, colour) in [("the panel", PANEL), ("a menu", PANEL2), ("a field", BG)] {
+                let ratio = contrast(edge, colour);
+                assert!(ratio >= 3.0, "the resting {what} on {surface}: {ratio:.2}");
+            }
+        }
+        // A ticked box's tick and a slider handle's ring are the text colour, on that fill.
+        assert!(contrast(rest.fg_stroke.color, rest.bg_fill) >= 3.0);
+        // Under the pointer and pressed, a box and a handle keep their fill and a box's outline
+        // brightens: the muted colour, then the text colour. A handle's ring is the text colour
+        // in every state (egui only thickens it and grows the handle), so its state shows by
+        // the ring's width and the handle's size alone (decision D-98).
+        let hovered = v.widgets.hovered;
+        let pressed = v.widgets.active;
+        assert_eq!(
+            (hovered.bg_fill, pressed.bg_fill),
+            (rest.bg_fill, rest.bg_fill)
+        );
+        assert_eq!(
+            (hovered.bg_stroke.color, pressed.bg_stroke.color),
+            (MUTED, TEXT)
+        );
+        assert!(luminance(MUTED) > luminance(rest.bg_stroke.color));
+        assert_eq!(
+            (hovered.fg_stroke.color, pressed.fg_stroke.color),
+            (rest.fg_stroke.color, rest.fg_stroke.color)
+        );
+        // An open picker keeps the resting outline: egui draws its box in the open state's
+        // colours, and opening it must not make it look dimmed.
+        assert_eq!(v.widgets.open.bg_stroke, rest.bg_stroke);
+        // The figures [`CONTROL`]'s comment quotes, to one decimal; the border colour it
+        // replaces at rest.
+        let one_decimal = |a, b| (contrast(a, b) * 10.0).round() / 10.0;
+        assert_eq!(
+            (one_decimal(CONTROL, PANEL), one_decimal(CONTROL, PANEL2)),
+            (3.3, 3.0)
+        );
+        assert_eq!(
+            (one_decimal(TEXT, CONTROL), one_decimal(BORDER, PANEL)),
+            (4.3, 1.2)
+        );
     }
 
     #[test]
