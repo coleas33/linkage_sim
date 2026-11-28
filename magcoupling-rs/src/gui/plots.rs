@@ -100,10 +100,16 @@ pub const Y_TICK_SPACING: f32 = 20.0;
 /// reads the value per point from it.
 const GRID_SPACING_MIN: f64 = 8.0;
 
+/// The grid steps of one decade, as [finer, numbered, coarser]: 1, 2 and 5, each with the
+/// finer step it is a multiple of and the coarser step that is a multiple of it. egui_plot
+/// numbers every multiple of each step whose ticks are far enough apart, so a coarse 5 over a
+/// numbered 2 put its odd multiples between the 2's ('14 15 16': the branch review, B-2).
+const DECADE_STEPS: [[f64; 3]; 3] = [[0.5, 1.0, 2.0], [1.0, 2.0, 10.0], [1.0, 5.0, 10.0]];
+
 /// The horizontal axis' three grid steps: the finest of 1, 2 and 5 times a power of ten whose
 /// ticks are further apart than [`X_TICK_SPACING`] (so its numbers are drawn), with the steps
-/// either side of it. egui_plot's own spacer steps in tens, and at 53 to 59 points between
-/// tens a plot's axis kept one or two numbers or none (BL-105).
+/// of [`DECADE_STEPS`] either side of it. egui_plot's own spacer steps in tens, and at 53 to
+/// 59 points between tens a plot's axis kept one or two numbers or none (BL-105).
 fn x_grid_steps(input: egui_plot::GridInput) -> [f64; 3] {
     // shortcut: a zero or non-finite scale (an empty plot) gets egui_plot's tens, which draw
     // nothing over an empty range.
@@ -112,19 +118,25 @@ fn x_grid_steps(input: egui_plot::GridInput) -> [f64; 3] {
         return [1.0, 10.0, 100.0];
     }
     let decade = want.log10().floor() as i32;
-    let nice: Vec<f64> = (decade - 1..=decade + 1)
-        .flat_map(|k| [1.0, 2.0, 5.0].map(|m| m * 10f64.powi(k)))
-        .collect();
-    let at = nice
-        .iter()
-        .position(|&s| s > want)
-        .unwrap_or(nice.len() - 2);
-    [nice[at - 1], nice[at], nice[at + 1]]
+    (decade..=decade + 1)
+        .flat_map(|k| DECADE_STEPS.map(|steps| steps.map(|s| s * 10f64.powi(k))))
+        .find(|[_, step, _]| *step > want)
+        .expect("ten times the decade at or under `want` is over it")
 }
 
-/// A horizontal axis' number: whole, or with up to two decimals (a step of 0.5 or 0.2).
+/// A horizontal axis' number, with the decimals its mark's step needs (none for a step of 1 or
+/// more, one for 0.5, 0.2 or 0.1, two for 0.05 and so on) less trailing zeros, so a zoom to
+/// any step keeps neighbouring numbers apart (the branch review, N-6: a fixed 0 to 2 repeated
+/// them below 0.01) and a mark on a coarser step reads '1', not '1.0'.
 fn x_number(mark: egui_plot::GridMark, _range: &std::ops::RangeInclusive<f64>) -> String {
-    egui::emath::format_with_decimals_in_range(mark.value, 0..=2)
+    // The 1e-9 keeps float noise in a power of ten (0.001 as 3.0000000000000004 decades) from
+    // adding a decimal.
+    let decimals = (-mark.step_size.log10() - 1e-9).ceil().max(0.0) as usize;
+    let text = format!("{:.decimals$}", mark.value);
+    if decimals == 0 {
+        return text;
+    }
+    text.trim_end_matches('0').trim_end_matches('.').to_owned()
 }
 
 /// The centre region's tab of the five plots (UX overhaul spec 4.4, decision C-9): one tab, with
@@ -861,6 +873,94 @@ mod tests {
 
     fn close(a: f64, b: f64) -> bool {
         (a - b).abs() <= 1e-12 * a.abs().max(b.abs())
+    }
+
+    /// The horizontal axis' grid input at `units_per_point` units of the axis per point.
+    fn x_input(units_per_point: f64) -> egui_plot::GridInput {
+        egui_plot::GridInput {
+            bounds: (0.0, 1.0),
+            base_step_size: units_per_point * GRID_SPACING_MIN,
+        }
+    }
+
+    #[test]
+    fn each_horizontal_grid_step_is_a_multiple_of_the_one_finer_than_it() {
+        // BL-105, the branch review's B-2: egui_plot numbers every multiple of each step whose
+        // ticks are over X_TICK_SPACING apart, so a coarse step that is no multiple of the
+        // numbered one (5 over 2) put its odd multiples between the numbered ones ('6 8 10
+        // 12 14 15 16'). From 1e-6 to 1e6 units per point: the numbered step's ticks are over
+        // the threshold and at most 2.5 times it (the widest gap between 1, 2 and 5), the
+        // finer step's are not over it (but for the spacer's 0.1 % margin), and each step is
+        // a whole multiple of the one finer than it.
+        let threshold = f64::from(X_TICK_SPACING);
+        for i in 0..=1200 {
+            let units_per_point = 10f64.powf(-6.0 + f64::from(i) / 100.0);
+            let steps = x_grid_steps(x_input(units_per_point));
+            let [fine, step, _] = steps.map(|s| s / units_per_point);
+            let what = format!("{units_per_point:e} units per point: {steps:?}");
+            assert!(
+                threshold < step && step <= 2.5 * threshold * 1.001,
+                "{what}"
+            );
+            assert!(fine <= threshold * 1.001, "{what}");
+            for (finer, coarser) in [(steps[0], steps[1]), (steps[1], steps[2])] {
+                let ratio = coarser / finer;
+                assert!(
+                    ratio > 1.5 && (ratio - ratio.round()).abs() < 1e-9,
+                    "{what}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_horizontal_number_has_the_decimals_of_its_mark_s_step() {
+        // The branch review's N-6: the numbers took 0 to 2 decimals whatever the step, so a
+        // pointer zoom below a step of 0.01 repeated them ('0.01 0.01 0.02'). A number takes
+        // as many decimals as its mark's step needs. For each numbered step x_grid_steps gives
+        // from 1e-8 to 1e4 units per point, a run of its multiples, each with the largest of
+        // the three steps it is a multiple of (as egui_plot marks them), reads back as its
+        // value, no two alike and no decimal its step does not need.
+        let number = |value: f64, step_size: f64| {
+            x_number(egui_plot::GridMark { value, step_size }, &(0.0..=1.0))
+        };
+        assert_eq!(number(0.015, 0.005), "0.015");
+        assert_eq!(number(0.01, 0.01), "0.01");
+        assert_eq!(number(0.004, 0.002), "0.004");
+        assert_eq!(number(1.5, 0.5), "1.5");
+        assert_eq!(number(1.0, 0.2), "1");
+        assert_eq!(number(0.0, 0.002), "0");
+        assert_eq!(number(-40.0, 20.0), "-40");
+        assert_eq!(number(1200.0, 200.0), "1200");
+        for k in -8..=4 {
+            let step = 10f64.powi(k);
+            let value = 3.0 * step;
+            let read: f64 = number(value, step).parse().unwrap();
+            assert!((read - value).abs() <= 1e-9 * step, "{step:e}: {read}");
+            assert!(!number(value, step).ends_with('0') || k >= 1, "{step:e}");
+        }
+        for i in 0..=1200 {
+            let units_per_point = 10f64.powf(-8.0 + f64::from(i) / 100.0);
+            let steps = x_grid_steps(x_input(units_per_point));
+            let step = steps[1];
+            let numbers: Vec<(f64, String)> = (-12..=12)
+                .map(|n| {
+                    let value = f64::from(n) * step;
+                    let divides = |s: &f64| ((value / s) - (value / s).round()).abs() < 1e-6;
+                    let mark_step = steps.into_iter().filter(divides).fold(step, f64::max);
+                    (value, number(value, mark_step))
+                })
+                .collect();
+            let what = format!("{units_per_point:e} units per point: {numbers:?}");
+            for (value, text) in &numbers {
+                let read: f64 = text.parse().unwrap();
+                assert!((read - value).abs() <= 1e-6 * step, "{what}");
+                assert!(!text.contains('.') || !text.ends_with('0'), "{what}");
+            }
+            let mut texts: Vec<&String> = numbers.iter().map(|(_, t)| t).collect();
+            texts.dedup();
+            assert_eq!(texts.len(), numbers.len(), "{what}");
+        }
     }
 
     #[test]

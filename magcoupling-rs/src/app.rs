@@ -876,26 +876,41 @@ mod tests {
     }
 
     #[test]
-    fn every_plot_s_horizontal_axis_carries_three_numbers_in_the_app_s_own_font() {
+    fn every_plot_s_horizontal_axis_carries_three_evenly_spaced_numbers_in_the_app_s_own_font() {
         // BL-105 (the review of part 2b-iii-a, UX-2): at 1024 x 700 and 1280 x 800 four plots'
         // horizontal axes carried one or two numbers, or none, because egui_plot's tens-only
         // spacer skipped the finer step at 53 to 59 points apart. In the app's theme and font,
         // on the starting design: each plot's horizontal axis (the row of numbers lowest in the
         // centre region) carries three or more numbers, none cut and none within `GAP` points
-        // of the next; the vertical axes still carry numbers, and 1920 x 1080 keeps at least
-        // the numbers it drew (10 to 16 on four axes).
+        // of the next, each one step from its neighbours (the branch review, B-2: a coarse step
+        // of 5 over a labelled 2 put '15' in '6 8 10 12 14 15 16'); the vertical axes still
+        // carry numbers, and 1920 x 1080 keeps at least the numbers it drew (10 to 16 on four
+        // axes). The windows run from the smallest, 1024 points wide, to 1360 at 700 and 800
+        // points high, past the plot widths B-2 found uneven (340 to 680).
         use crate::gui::CentreView;
         use crate::gui::plots::PlotKind;
         use crate::gui::test_support::{cut_texts, flat_shapes};
         const GAP: f32 = 8.0;
-        for size in [WINDOWS[1], WINDOWS[0], egui::vec2(1920.0, 1080.0)] {
-            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
-            let ctx = egui::Context::default();
-            let mut app = MagcouplingApp::new(&ctx);
-            frame_on(&ctx, &mut app, size, Vec::new());
-            for kind in PlotKind::ALL {
+        let sizes: Vec<egui::Vec2> = [700.0, 800.0]
+            .into_iter()
+            .flat_map(|height| {
+                (1024..=1360)
+                    .step_by(4)
+                    .map(move |w| egui::vec2(w as f32, height))
+            })
+            .chain([egui::vec2(1920.0, 1080.0)])
+            .collect();
+        assert!(sizes.contains(&WINDOWS[0]) && sizes.contains(&WINDOWS[1]));
+        let ctx = egui::Context::default();
+        let mut app = MagcouplingApp::new(&ctx);
+        frame_on(&ctx, &mut app, sizes[0], Vec::new());
+        for kind in PlotKind::ALL {
+            show_view(&ctx, &mut app, sizes[0], CentreView::Plot(kind), 2);
+            for &size in &sizes {
+                let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
                 let what = format!("{size:?}, {kind:?}");
-                let output = show_view(&ctx, &mut app, size, CentreView::Plot(kind), 2);
+                frame_on(&ctx, &mut app, size, Vec::new());
+                let output = frame_on(&ctx, &mut app, size, Vec::new());
                 let (left, right) = (
                     side_rect(&ctx, "magcoupling_inputs").right(),
                     side_rect(&ctx, "magcoupling_dashboard").left(),
@@ -931,6 +946,14 @@ mod tests {
                     let gap = pair[1].1.left() - pair[0].1.right();
                     assert!(gap >= GAP, "{what}: {texts:?}: a gap of {gap}");
                 }
+                let values: Vec<f64> = texts.iter().map(|t| t.parse().unwrap()).collect();
+                let step = values[1] - values[0];
+                assert!(
+                    values
+                        .windows(2)
+                        .all(|pair| ((pair[1] - pair[0]) - step).abs() <= 1e-9 * step.abs()),
+                    "{what}: uneven steps: {texts:?}"
+                );
                 let cut = cut_texts(&output, screen);
                 assert!(
                     cut.iter().all(|t| t.parse::<f64>().is_err()),

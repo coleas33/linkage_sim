@@ -20,6 +20,7 @@ Reverse chronological (newest at top).
 ## 2026-11-28 - Magcoupler: every plot's horizontal axis carries at least three numbers at 1024 x 700 and 1280 x 800 (BL-105)
 
 - gui/plots.rs x_grid_steps (1-2-5 grid steps, finest with ticks over 60 points apart), x_number; test in app.rs; README; backlog BL-105 fixed.
+- Branch review B-2 rework: gui/plots.rs DECADE_STEPS makes each grid step a multiple of the one finer than it, so each axis's numbers are one step apart (no '15' in '6 8 10 12 14 16'), and x_number takes its decimals from the mark's step (N-6); tests in app.rs (windows 1024 to 1360 wide) and plots.rs; README, docs/ai 02 (lesson) and 03, backlog BL-105 notes.
 
 ## 2026-11-28 - Magcoupler: the left column holds 320 points at pixel ratios 0.9 and 1.35 (BL-103)
 

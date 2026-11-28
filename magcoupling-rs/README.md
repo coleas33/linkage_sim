@@ -749,7 +749,10 @@ can name an input Auto holds; its link then frames a locked row (known limitatio
   stage 1 review, E-7). The horizontal axis takes its own grid steps (`x_grid_steps`): the
   finest of 1, 2 and 5 times a power of ten whose ticks are more than 60 points apart, so at
   1024 x 700 and 1280 x 800 every plot's axis carries at least three numbers (BL-105; egui_plot's
-  tens-only steps left four plots one or two, or none).
+  tens-only steps left four plots one or two, or none). Each of its steps is a multiple of the
+  one finer than it (`DECADE_STEPS`), so the numbers are one step apart (a coarse 5 over a
+  numbered 2 once read '6 8 10 12 14 15 16': the branch review, B-2), and each number takes the
+  decimals its mark's step needs (`x_number`), so a zoom below a step of 0.01 repeats none (N-6).
 - **Clamp** (`clamp_drawing.rs`; M42-7; not offered while the shaft-clamp section is paused, below): drawing.py's end and top views of the one-piece slotted
   clamp for the recommended screw (its texts, coordinates and limits; the cuts clipped to the
   boss; the screws needed, at most 50), both at one scale in the dark theme's pens (each view's
