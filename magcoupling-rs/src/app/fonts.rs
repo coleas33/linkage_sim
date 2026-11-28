@@ -1,8 +1,8 @@
 //! The standalone app's font: Inter (UX overhaul spec 6.2), ahead of egui's built-in fonts.
 //!
-//! The file is a cut of Inter Regular, made once by `assets/fonts/subset_inter.py` and
-//! committed with its licence (`assets/fonts/OFL.txt`, SIL Open Font License 1.1); the build
-//! runs no font tools. Two things the cut does:
+//! The files are cuts of Inter Regular and Inter SemiBold, made once by
+//! `assets/fonts/subset_inter.py` and committed with their licence (`assets/fonts/OFL.txt`,
+//! SIL Open Font License 1.1); the build runs no font tools. What each cut does:
 //!
 //! - It holds the characters the app draws (Latin, Greek, the maths and unit signs in use),
 //!   about 30 KB. A character outside it is drawn in a built-in font, which the glyph guards
@@ -13,12 +13,12 @@
 //!   tall as the font the panel's layout was built on made it (1.149 em; Inter's own rows are
 //!   1.21 em) and a text size is rounded to whole pixels as that font's is.
 //!
-//! One face. egui has no bold; a heavier face for numbers and headings is added only if a
-//! later slice needs it. The panel itself installs no font: in another host it is drawn in
-//! that host's fonts, so the typesetter's substitutions for egui's built-in fonts
+//! Two faces. egui has no bold, so the app points egui's Heading style at the SemiBold cut:
+//! the title and the left column's heading, the panel's two `ui.heading` texts (the stage 1
+//! review, S-1). Every other text is Regular; a tile's number keeps it, since the panel names
+//! no font. The panel itself installs no font: in another host it is drawn in that host's
+//! fonts, so the typesetter's substitutions for egui's built-in fonts
 //! (`gui::typeset::glyph_safe`) stay as they are.
-
-use egui::epaint::text::{FontInsert, FontPriority, InsertFontFamily};
 
 /// The cut of Inter Regular.
 pub const INTER: &[u8] = include_bytes!("../../assets/fonts/Inter-Regular.subset.ttf");
@@ -26,31 +26,63 @@ pub const INTER: &[u8] = include_bytes!("../../assets/fonts/Inter-Regular.subset
 /// Its name among egui's fonts.
 pub const INTER_NAME: &str = "Inter";
 
-/// Puts Inter first in the proportional family. egui's built-in fonts stay behind it, for a
-/// character outside the cut, and the monospace family is not touched.
+/// The cut of Inter SemiBold, for the title and the headings: the same characters, digits and
+/// rows as [`INTER`] (the same script, the same list).
+pub const INTER_SEMIBOLD: &[u8] = include_bytes!("../../assets/fonts/Inter-SemiBold.subset.ttf");
+
+/// Its name among egui's fonts, and the name of the family it leads.
+pub const SEMIBOLD_NAME: &str = "Inter SemiBold";
+
+/// The family the SemiBold cut leads: the title and the headings.
+pub fn semibold() -> egui::FontFamily {
+    egui::FontFamily::Name(SEMIBOLD_NAME.into())
+}
+
+/// Puts Inter Regular first in the proportional family and Inter SemiBold first in its own
+/// ([`semibold`]), which egui's Heading style then draws in, at the size it had. egui's
+/// built-in fonts stay behind each cut, for a character outside it, and the monospace family
+/// is not touched.
 pub fn install(ctx: &egui::Context) {
-    ctx.add_font(FontInsert::new(
-        INTER_NAME,
-        egui::FontData::from_static(INTER),
-        vec![InsertFontFamily {
-            family: egui::FontFamily::Proportional,
-            priority: FontPriority::Highest,
-        }],
-    ));
+    let mut definitions = egui::FontDefinitions::default();
+    let built_in = definitions.families[&egui::FontFamily::Proportional].clone();
+    for (name, bytes, family) in [
+        (INTER_NAME, INTER, egui::FontFamily::Proportional),
+        (SEMIBOLD_NAME, INTER_SEMIBOLD, semibold()),
+    ] {
+        definitions.font_data.insert(
+            name.to_owned(),
+            std::sync::Arc::new(egui::FontData::from_static(bytes)),
+        );
+        let mut fonts = vec![name.to_owned()];
+        fonts.extend(built_in.iter().cloned());
+        definitions.families.insert(family, fonts);
+    }
+    ctx.set_fonts(definitions);
+    ctx.all_styles_mut(|style| {
+        let heading = egui::TextStyle::Heading;
+        let size = style.text_styles[&heading].size;
+        style
+            .text_styles
+            .insert(heading, egui::FontId::new(size, semibold()));
+    });
 }
 
 /// A context whose only font is the cut.
 #[cfg(test)]
 fn inter_alone() -> egui::Context {
+    alone(INTER_NAME, INTER)
+}
+
+/// A context whose only font is `bytes`, named `name`.
+#[cfg(test)]
+fn alone(name: &str, bytes: &'static [u8]) -> egui::Context {
     let mut definitions = egui::FontDefinitions::empty();
     definitions.font_data.insert(
-        INTER_NAME.to_owned(),
-        std::sync::Arc::new(egui::FontData::from_static(INTER)),
+        name.to_owned(),
+        std::sync::Arc::new(egui::FontData::from_static(bytes)),
     );
     for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
-        definitions
-            .families
-            .insert(family, vec![INTER_NAME.to_owned()]);
+        definitions.families.insert(family, vec![name.to_owned()]);
     }
     let ctx = egui::Context::default();
     ctx.set_fonts(definitions);
@@ -98,6 +130,19 @@ mod tests {
             definitions.families[&FontFamily::Monospace],
             built_in.families[&FontFamily::Monospace]
         );
+        // The SemiBold cut leads its own family, the built-in fonts behind it, and egui's
+        // Heading style draws in it at the size it had; no other style changes.
+        proportional[0] = SEMIBOLD_NAME.to_owned();
+        assert_eq!(definitions.families[&semibold()], proportional);
+        let ctx = installed();
+        let plain = egui::Style::default();
+        for (style, font) in &ctx.style().text_styles {
+            let mut want = plain.text_styles[style].clone();
+            if *style == egui::TextStyle::Heading {
+                want.family = semibold();
+            }
+            assert_eq!(*font, want, "{style:?}");
+        }
     }
 
     #[test]
@@ -175,5 +220,45 @@ mod tests {
         assert_eq!(missing, "", "not in the cut");
         // The check can fail: Inter has no "element of" sign, and the cut leaves Cyrillic out.
         assert!(!cut_holds('\u{2208}') && !cut_holds('\u{0416}'));
+    }
+
+    #[test]
+    fn the_semibold_cut_has_the_regular_cut_s_characters_digits_and_rows() {
+        // The title and the headings are drawn in the SemiBold cut (the stage 1 review, S-1),
+        // and the panel's glyph guards ask the Regular cut (`cut_holds`): they hold for the
+        // headings too because the two cuts hold the same characters (the script's one list,
+        // read here over every character up to the maths signs). Its digits are tabular and
+        // its rows are as tall as the Regular cut's, so a heading's row and the brand mark
+        // beside the title (`gui::look::mark_ui`) do not move. It is heavier, so wider.
+        let (regular, semibold) = (inter_alone(), alone(SEMIBOLD_NAME, INTER_SEMIBOLD));
+        let font = FontId::proportional(14.0);
+        let held = |ctx: &egui::Context, c: char| ctx.fonts(|f| f.has_glyph(&font, c));
+        let differ: String = (0x20..0x2300)
+            .filter_map(char::from_u32)
+            .filter(|&c| held(&regular, c) != held(&semibold, c))
+            .collect();
+        assert_eq!(differ, "", "held by one cut and not the other");
+        assert!(held(&semibold, '\u{03A9}') && !held(&semibold, '\u{0416}'));
+        for size in [12.5, 15.0, 18.0, 22.0] {
+            let font = FontId::proportional(size);
+            let widths: Vec<f32> = "0123456789"
+                .chars()
+                .map(|digit| semibold.fonts(|f| f.glyph_width(&font, digit)))
+                .collect();
+            assert!(
+                widths.iter().all(|&w| w > 0.0 && w == widths[0]),
+                "{size}: {widths:?}"
+            );
+            let row = |ctx: &egui::Context| ctx.fonts(|f| f.row_height(&font));
+            assert_eq!(row(&semibold), row(&regular), "{size}");
+        }
+        let width = |ctx: &egui::Context| {
+            let heading = FontId::proportional(18.0);
+            let words = "Size and torque".to_owned();
+            ctx.fonts(|f| f.layout_no_wrap(words, heading, egui::Color32::WHITE))
+                .size()
+                .x
+        };
+        assert!(width(&semibold) > width(&regular));
     }
 }
