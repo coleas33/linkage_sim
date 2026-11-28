@@ -147,6 +147,10 @@ pub struct Note {
 /// the gearbox check, and the open question of which datasheet figure the rating is. Typed once.
 pub const GEARBOX_CHECK_SOURCE: &str = "Design ruling of 2026-10-16: the gearbox check compares cold-high at the gearbox input with the gearbox input torque rating; which datasheet figure that rating is (input or output side; nominal, acceleration or emergency stop) is still to be confirmed";
 
+/// The source of the gearbox and shaft joint notes' "or the operating pull-out with allowance
+/// if larger" (BL-067, option (b)): an assumption, not the owner's answer. Typed once.
+pub const CHECKED_PULLOUT_SOURCE: &str = "Assumption of 2026-11-10, under the owner's ruling that open questions take the conservative answer: the gearbox and shaft joint checks compare the larger of cold-high and the operating pull-out with the allowance";
+
 /// Every note: 21, the cap the completeness test holds (15 to 21; the owner raised it from 20
 /// for the shaft joints, BL-064): the spec's list (harmonics, back iron, pull-out against
 /// angle, end effect, Br(T), demagnetization, slip heating, the slip temperature, the shaft
@@ -554,7 +558,7 @@ pub const NOTES: &[Note] = &[
         sentences: &[
             "Hot-low is the weakest coupling expected at the operating temperature, and cold-high the strongest at the minimum temperature, allowing for production scatter.",
             "Hot-low, here {metal.torque_hot_low_Nm}, is the pull-out at the operating temperature less the variation allowance; it must reach the requirement.",
-            "Cold-high, here {metal.torque_cold_high_Nm}, is the pull-out at the minimum temperature plus that allowance: the most torque expected before it slips.",
+            "Cold-high, here {metal.torque_cold_high_Nm}, is the pull-out at the minimum temperature plus that allowance: the most torque expected before it slips, unless running below the minimum.",
             "Whatever holds the hub on the shaft must carry cold-high with margin, and the gearbox output carries it too, so added torque loads both.",
             "On this design, hot-low passes once the 20 °C pull-out reaches {metal.required_20C_Nm}, the requirement taken back to 20 °C with the allowance.",
         ],
@@ -586,7 +590,7 @@ pub const NOTES: &[Note] = &[
         ],
         watch_out: &[
             "Hot-low uses the operating temperature you enter, not the hot-day start ({temperature.duty.hot_day_start_C} here); the hot-day torque is reported apart, without the allowance.",
-            "The gearbox check compares cold-high at the gearbox input, {metal.cold_high_input_Nm} here, with its input rating; repeated slips also load the gearbox in fatigue, which nothing checks.",
+            "The gearbox check compares cold-high at the gearbox input, {metal.cold_high_input_Nm} here, or the operating pull-out with allowance if larger, with its rating; nothing checks the gearbox's fatigue from repeated slips.",
         ],
         diagram: None,
         sources: &[
@@ -595,6 +599,7 @@ pub const NOTES: &[Note] = &[
             "Design rulings of 2026-10-14 and 2026-10-15: the coupling sits on the gearbox output, and whatever holds the hub on the shaft carries the cold-high torque",
             "Guidance audit of 2026-10-13: which temperature each torque uses; the gearbox input",
             GEARBOX_CHECK_SOURCE,
+            CHECKED_PULLOUT_SOURCE,
         ],
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
@@ -751,7 +756,7 @@ pub const NOTES: &[Note] = &[
             },
         ],
         watch_out: &[
-            "The gearbox output carries these swings; cold they can reach cold-high, {metal.cold_high_input_Nm} at the gearbox input here; the gearbox check compares only that torque with the input rating.",
+            "The gearbox output carries these swings; cold they can reach cold-high, {metal.cold_high_input_Nm} at the gearbox input here; the gearbox check compares that, or the operating pull-out with allowance if larger.",
             "The drag, the heating and the magnets' limits use fields stored from the starting or example design's 3D model; those fields do not follow your geometry or magnet grade.",
         ],
         diagram: None,
@@ -762,6 +767,7 @@ pub const NOTES: &[Note] = &[
             "The gearbox rows: the ripple at the gearbox input is the pull-out through the gear ratio and efficiency",
             "Guidance audit of 2026-10-13: what happens past pull-out; the rings re-lock only when the slip speed falls",
             GEARBOX_CHECK_SOURCE,
+            CHECKED_PULLOUT_SOURCE,
         ],
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",
@@ -934,7 +940,7 @@ pub const NOTES: &[Note] = &[
         ],
         sentences: &[
             "A shrink fit holds each rotor on its shaft: the bore is made smaller than the shaft, and friction from the grip carries the torque.",
-            "At its loosest the inner hub holds {shaft_joint.hub_holding_Nm} here and the cup {shaft_joint.cup_holding_Nm}; each must hold {shaft_joint.required_Nm}, cold-high times the safety factor.",
+            "Loosest, the inner hub holds {shaft_joint.hub_holding_Nm} here, the cup {shaft_joint.cup_holding_Nm}; each needs {shaft_joint.required_Nm}, cold-high or a larger operating pull-out with allowance, times the safety factor.",
             "Measured interference is not what grips: smoothing takes micrometres off at fitting, and a rotor running warmer than its shaft loses more.",
             "Tighter is not safer here: the cup's bore stress, {shaft_joint.cup_bore_stress_MPa} against {shaft_joint.stress_limit_MPa}, follows interference over diameter, hardly the wall.",
             "Here the inner hub would need {shaft_joint.hub_fit_temp_C} on the wheel shaft shrunk {shaft_joint.wheel_shaft_shrink_um}; allowed: {shaft_joint.hub_fit_allowed_C}, lowest of your limit, adhesive's, single-ring onset less 10 °C.",
@@ -983,6 +989,7 @@ pub const NOTES: &[Note] = &[
             "DIN 6885-1 parallel keys: 3 × 3 for shafts over 8 up to 10 mm",
             "NIST cryogenic material properties: nickel steel Fe-2.25Ni, linear expansion",
             "Friction of dry steel on steel: Gear Technology, Nov/Dec 2017 (0.145); ANSI/AGMA 9003 (0.15)",
+            CHECKED_PULLOUT_SOURCE,
         ],
         review: Review::Reviewed {
             reviewer: "physics reviewer (session model)",

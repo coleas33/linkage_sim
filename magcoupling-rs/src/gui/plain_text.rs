@@ -154,7 +154,7 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "coupling.gearbox_input_rating_Nm",
-        "The gearbox's input torque rating. The gearbox check compares the cold-high torque at the gearbox input with it.",
+        "The gearbox's input torque rating. The gearbox check compares the cold-high torque at the gearbox input with it, or the operating pull-out with allowance if larger.",
     ),
     (
         "temperature.duty.hot_ambient_C",
@@ -747,7 +747,7 @@ const HELP: &[(&str, &str)] = &[
     // docs/analyses/2026-10-14-magcoupler-help-review.md, BL-059 section).
     (
         "model.gearbox_input_ripple_Nm",
-        "Slip swing: the pull-out at the gearbox output at operating temperature, without the production allowance, divided by ratio and efficiency. The gearbox check compares cold-high at the gearbox input instead.",
+        "The pull-out at the gearbox output at operating temperature, without the production allowance, divided by ratio and efficiency. The gearbox check compares cold-high, or this plus allowance if larger.",
     ),
 ];
 
@@ -2184,8 +2184,9 @@ mod batch_b_tests {
     /// below the minimum, so no text calls the swing warm. Each claim holds on the engine: at
     /// the five probe designs the swing is the nominal pull-out divided by the ratio and
     /// efficiency, one slider step of the operating temperature moves it and one of the minimum
-    /// temperature or the variation does not; and with the rating halfway between the swing and
-    /// cold-high at the gearbox input, the check follows cold-high on either side of the swing.
+    /// temperature or the variation does not; and the check compares the larger of cold-high and
+    /// the swing plus allowance at the gearbox input (BL-067): with the rating halfway between
+    /// the two it fails, whichever is the larger, and at the larger it passes.
     #[test]
     fn the_gearbox_texts_claim_what_the_engine_does() {
         use crate::engine::explain::notes::Step;
@@ -2206,7 +2207,12 @@ mod batch_b_tests {
         names(
             RATING,
             help_for(RATING),
-            &["gearbox check", "cold-high", "gearbox input"],
+            &[
+                "gearbox check",
+                "cold-high",
+                "gearbox input",
+                "operating pull-out with allowance if larger",
+            ],
         );
         names(
             RIPPLE,
@@ -2215,7 +2221,7 @@ mod batch_b_tests {
                 "operating temperature",
                 "without the production allowance",
                 "ratio and efficiency",
-                "cold-high at the gearbox input",
+                "cold-high, or this plus allowance if larger",
                 "pull-out at the gearbox output",
             ],
         );
@@ -2225,6 +2231,7 @@ mod batch_b_tests {
             &[
                 "gearbox output",
                 "gearbox input",
+                "operating pull-out with allowance if larger",
                 "fatigue from repeated slips is not checked",
             ],
         );
@@ -2278,27 +2285,37 @@ mod batch_b_tests {
                 );
             }
         }
-        // The check compares cold-high at the gearbox input, not the swing: with the rating
-        // halfway between them it follows cold-high, above the swing at the defaults and below
-        // it with the operating temperature under the minimum (-40 against 20 °C, variation
-        // 0.1: both temperatures on their sliders).
+        // The check compares the larger of cold-high and the swing plus allowance at the
+        // gearbox input (BL-067): cold-high is the larger at the defaults, the swing plus
+        // allowance with the operating temperature under the minimum (-40 against 20 °C,
+        // variation 0.1: both temperatures on their sliders). With the rating halfway between
+        // the two the check fails either way; at the larger it passes.
         let mut colder_running = DesignInputs::default();
         colder_running.coupling.op_temp_C = -40.0;
         colder_running.metal.min_temp_C = 20.0;
         colder_running.metal.variation = 0.1;
-        for (design, passes) in [(DesignInputs::default(), false), (colder_running, true)] {
+        for (design, swing_larger) in [(DesignInputs::default(), false), (colder_running, true)] {
             let results = compute_all(&design);
-            let ripple = results.model.gearbox_input_ripple_Nm;
+            let swing_high = results.model.gearbox_input_ripple_Nm * (1.0 + design.metal.variation);
             let cold_high = results.metal.cold_high_input_Nm;
-            assert_eq!(cold_high < ripple, passes, "{cold_high} against {ripple}");
-            let mut between = design.clone();
-            between.coupling.gearbox_input_rating_Nm = (ripple + cold_high) / 2.0;
-            let verdict = compute_all(&between).gearbox.cold_high_check;
-            if passes {
-                assert_eq!(verdict, WITHIN_THE_GEARBOX_RATING);
-            } else {
-                assert!(verdict.starts_with(ABOVE_THE_GEARBOX_RATING), "{verdict}");
-            }
+            assert_eq!(
+                cold_high < swing_high,
+                swing_larger,
+                "{cold_high} against {swing_high}"
+            );
+            let rated = |rating: f64| {
+                let mut rated = design.clone();
+                rated.coupling.gearbox_input_rating_Nm = rating;
+                compute_all(&rated).gearbox.cold_high_check
+            };
+            let verdict = rated((swing_high + cold_high) / 2.0);
+            assert!(verdict.starts_with(ABOVE_THE_GEARBOX_RATING), "{verdict}");
+            // A rating a millionth above the larger: the swing plus allowance is formed here in
+            // another order than the engine forms it, so not to the last float.
+            assert_eq!(
+                rated(cold_high.max(swing_high) * (1.0 + 1e-6)),
+                WITHIN_THE_GEARBOX_RATING
+            );
         }
     }
 

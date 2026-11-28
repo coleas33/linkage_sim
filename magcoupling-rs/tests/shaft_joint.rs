@@ -572,11 +572,12 @@ fn the_defaults_pass_with_the_numbers_of_the_spec() {
 }
 
 #[test]
-fn the_bl067_corner_reads_cold_high_and_passes() {
-    // Review MF-4: with the operating temperature (-40 °C) below the minimum (20 °C) and a
-    // 0.1 variation, the check reads cold-high (3.1823 N·m), not the 3.657 N·m operating
-    // pull-out with its allowance (3.3246 × 1.1). BL-067's fix of which pull-out the checks
-    // compare moves this pin on purpose.
+fn the_bl067_corner_reads_the_operating_pull_out_with_its_allowance() {
+    // Review MF-4 pinned this corner on cold-high; BL-067 (option (b), assumed under the
+    // owner's ruling of 2026-11-10, register A-10) moves the pin on purpose. With the operating
+    // temperature (-40 °C) below the minimum (20 °C) and a 0.1 variation, the operating
+    // pull-out with its allowance (3.3246 × 1.1 = 3.657 N·m) is above cold-high (3.1823 N·m),
+    // and the check reads the larger: each joint must hold twice it.
     let corner = design(|i| {
         i.coupling.op_temp_C = -40.0;
         i.metal.min_temp_C = 20.0;
@@ -586,13 +587,19 @@ fn the_bl067_corner_reads_cold_high_and_passes() {
     let s = &r.shaft_joint;
     assert_near(r.metal.torque_cold_high_Nm, 3.1823, 5e-5, "cold-high");
     assert_near(r.model.pullout_Nm * 1.1, 3.657, 5e-4, "operating pull-out");
-    assert_near(s.required_Nm, 6.3647, 5e-5, "required");
+    assert_near(
+        s.required_Nm,
+        2.0 * r.model.pullout_Nm * 1.1,
+        1e-12,
+        "required",
+    );
+    assert_near(s.required_Nm, 7.3141, 5e-4, "required");
     assert_near(s.hub_holding_Nm, 9.484, 5e-4, "hub holding");
     assert_near(s.cup_holding_Nm, 16.899, 5e-4, "cup holding");
     assert_near(s.hub_bore_stress_MPa, 233.09, 5e-3, "hub stress");
     assert_near(s.cup_bore_stress_MPa, 303.95, 5e-3, "cup stress");
-    assert_near(s.hub_key_pressure_MPa, 106.08, 5e-3, "hub key");
-    assert_near(s.cup_key_pressure_MPa, 84.86, 5e-3, "cup key");
+    assert_near(s.hub_key_pressure_MPa, 121.90, 5e-3, "hub key");
+    assert_near(s.cup_key_pressure_MPa, 97.52, 5e-3, "cup key");
     assert_eq!(s.check, SHAFT_JOINTS_PASS);
 }
 
@@ -1274,7 +1281,7 @@ fn a_value_that_is_not_a_number_reads_unknown() {
     }
     type PutLink = fn(&mut ShaftJointLinks);
     let links_nan: [PutLink; 15] = [
-        |l| l.cold_high_Nm = f64::NAN,
+        |l| l.pullout_Nm = f64::NAN,
         |l| l.bore_mm = f64::NAN,
         |l| l.keyway_depth_mm = f64::NAN,
         |l| l.hub_length_mm = f64::NAN,
@@ -1929,7 +1936,7 @@ fn an_infinite_cold_high_slips() {
     // +inf fails where it is compared: the required torque +inf slips at the inner hub first.
     let defaults = DesignInputs::default();
     let infinite = ShaftJointLinks {
-        cold_high_Nm: f64::INFINITY,
+        pullout_Nm: f64::INFINITY,
         ..links(&defaults)
     };
     assert_eq!(
