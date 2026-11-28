@@ -39,7 +39,7 @@ use crate::gui::checks::{CHECKS_SHARE, checks_ui};
 use crate::gui::clamp_drawing::clamp_ui;
 use crate::gui::dashboard::{Level, end_effect_banner_ui};
 use crate::gui::explain::{Asked, LEARN, Selection, explain_ui, result_selection};
-use crate::gui::explorer::{Explorer, FOCUS_WIDTH, explorer_ui, held_reason, panel_heights};
+use crate::gui::explorer::{Explorer, FOCUS_WIDTH, explorer_ui, panel_heights};
 use crate::gui::follow_focus;
 use crate::gui::format::search_needle;
 use crate::gui::geometry::wall_cautions;
@@ -55,6 +55,7 @@ use crate::gui::inputs::{
     InputSection, KEY_DESIGN, filter_inputs, optional_seed,
 };
 use crate::gui::look;
+use crate::gui::notes_view::held_reason;
 use crate::gui::plots::{PLOTS, PlotKind, plot_ui};
 use crate::gui::readouts::{Readouts, registry};
 use crate::gui::results_table::{
@@ -11788,7 +11789,7 @@ mod tests {
         // (the axial override blank).
         use crate::engine::explain::note_text;
         use crate::engine::explain::notes::note;
-        use crate::gui::explorer::{HELD_BY_AUTO, live_value};
+        use crate::gui::notes_view::{HELD_BY_AUTO, live_value};
         let id = "torque_from_shear";
         let mut harness = Harness::on_screen(TALL);
         harness.size();
@@ -11866,7 +11867,7 @@ mod tests {
         // Each note selected (the Explain panel draws it), then its sources fold opened (it
         // starts closed): every drawn text, sources included, has glyphs.
         use crate::engine::explain::notes::NOTES;
-        use crate::gui::explorer::WHERE_FROM;
+        use crate::gui::notes_view::WHERE_FROM;
         use crate::gui::typeset::glyph_safe;
         let mut harness = Harness::on_screen(egui::vec2(1280.0, 3000.0));
         for note in NOTES {

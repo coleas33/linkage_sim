@@ -5527,7 +5527,7 @@ mod tests {
         problem: &str,
         paused: bool,
     ) {
-        use crate::gui::explorer::WHAT_TO_CHANGE;
+        use crate::gui::notes_view::WHAT_TO_CHANGE;
         let all = within_minimum_diameter(&all_fixes(inputs, results, paused), inputs, None);
         assert_eq!(all[guide_index], [], "paused {paused}");
         let check = CHECK_GUIDES[guide_index].check;

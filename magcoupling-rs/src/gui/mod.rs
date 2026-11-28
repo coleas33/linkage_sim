@@ -21,6 +21,7 @@ pub mod history;
 pub mod input_ui;
 pub mod inputs;
 pub mod look;
+pub mod notes_view;
 mod panel;
 pub mod pickers;
 pub mod plain_text;

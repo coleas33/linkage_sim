@@ -170,6 +170,18 @@ pub(crate) fn workflow_group(id: &str) -> &'static crate::gui::inputs::WorkflowG
         .unwrap_or_else(|| panic!("no workflow group {id}"))
 }
 
+/// The default design and its results.
+pub(crate) fn design() -> (crate::DesignInputs, crate::DesignResults) {
+    let inputs = crate::DesignInputs::default();
+    let results = crate::compute_all(&inputs);
+    (inputs, results)
+}
+
+/// The view of a design on which no input is held.
+pub(crate) fn nothing_held(_: &str) -> Option<String> {
+    None
+}
+
 /// The slider range of the input at `path` ([`crate::gui::inputs::slider_range`], the one
 /// spelling production reads), for a path the test knows has one.
 pub(crate) fn slider_range(path: &str) -> crate::engine::meta::SliderRange {

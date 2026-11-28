@@ -949,7 +949,7 @@ mod tests {
         // headings are captions, and under the last a row's label is muted and its value is
         // not.
         use crate::gui::explain::{NUMBERS, WHAT_IT_IS, WHAT_SETS_IT};
-        use crate::gui::explorer::WHAT_TO_CHANGE;
+        use crate::gui::notes_view::WHAT_TO_CHANGE;
         use crate::gui::test_support::{primary_button, text_center};
         app.panel.open_example_design();
         frame_texts(&ctx, &mut app);
@@ -2547,11 +2547,11 @@ mod tests {
         // fold, the Geometry tab and the check list's last row as the page draws them, so the
         // prompt cannot go stale unnoticed.
         assert!(
-            script.contains(crate::gui::explorer::WHAT_TO_CHANGE),
+            script.contains(crate::gui::notes_view::WHAT_TO_CHANGE),
             "a note's What to change"
         );
         assert!(
-            script.contains(crate::gui::explorer::WHERE_FROM),
+            script.contains(crate::gui::notes_view::WHERE_FROM),
             "a note's sources fold"
         );
         assert!(
