@@ -517,7 +517,7 @@ mod tests {
         // heading on one line inside the 320-point column (the column's width and the texts
         // cut on every tab are the BL-099 test's, in the same font).
         use crate::gui::test_support::flat_shapes;
-        let semibold = egui::FontFamily::Name(fonts::SEMIBOLD_NAME.into());
+        let semibold = fonts::semibold();
         for size in [WINDOWS[1], WINDOWS[0], egui::vec2(1920.0, 1080.0)] {
             let ctx = egui::Context::default();
             let mut app = MagcouplingApp::new(&ctx);
@@ -2882,7 +2882,7 @@ mod tests {
         // shows the app and the line's removal in one paint; the page's script only starts the
         // app (a browser run checks both).
         let page = include_str!("../../linkage-sim-rs/web/tools/magcoupler/index.html");
-        let hex = |c: egui::Color32| format!("#{:02x}{:02x}{:02x}", c.r(), c.g(), c.b());
+        use theme::hex;
         assert!(
             page.contains("<html lang=\"en\">"),
             "index.html names its language"

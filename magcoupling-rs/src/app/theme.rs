@@ -164,6 +164,13 @@ pub(crate) fn contrast(a: Color32, b: Color32) -> f64 {
     (a.max(b) + 0.05) / (a.min(b) + 0.05)
 }
 
+/// An opaque colour as CSS writes it, `#rrggbb`.
+#[cfg(test)]
+pub(crate) fn hex(colour: Color32) -> String {
+    let [r, g, b, _] = colour.to_array();
+    format!("#{r:02x}{g:02x}{b:02x}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -171,7 +178,6 @@ mod tests {
     #[test]
     fn the_tokens_are_the_spec_s_table() {
         // UX overhaul spec 6.1, value for value; the link blue is decision C-13's.
-        let hex = |c: Color32| format!("#{:02x}{:02x}{:02x}", c.r(), c.g(), c.b());
         let table = [
             (BG, "#121417"),
             (PANEL, "#181b1f"),
@@ -443,8 +449,7 @@ mod tests {
     #[test]
     fn the_web_page_background_is_the_panel_colour() {
         let page = include_str!("../../../linkage-sim-rs/web/tools/magcoupler/index.html");
-        let [r, g, b, _] = visuals().panel_fill.to_array();
-        let colour = format!("background: #{r:02x}{g:02x}{b:02x};");
+        let colour = format!("background: {};", hex(visuals().panel_fill));
         assert!(page.contains(&colour), "index.html has no {colour}");
     }
 }
