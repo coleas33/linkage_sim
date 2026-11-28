@@ -11850,18 +11850,25 @@ mod tests {
 
     #[cfg(feature = "app")]
     #[test]
-    fn a_term_whose_name_wraps_is_one_tab_stop_in_the_app_s_own_font() {
+    fn a_wrapped_term_name_or_closest_note_title_is_one_tab_stop_in_the_app_s_own_font() {
         // The branch's review (KR-1): egui lays a label out in a wrapping line row by row, each
         // row a Tab stop of its own, and only the first shows the focus (SK-1 of the input rows),
         // so a term's name that wrapped in the term list took a press for each further row, a
-        // stop that showed nothing (BL-102: no Tab stop is added). At 1024 points wide in the
-        // app's theme and font, on a window tall enough that nothing scrolls, on two equations
-        // with long names: a Tab round never stops on a row that starts at the left of the stop
-        // before it, where that stop ends.
-        use crate::gui::explorer::term_label;
+        // stop that showed nothing (BL-102: no Tab stop is added). The closest note's link
+        // beside its lead did the same (the re-review's RR-1). At 1024 points wide in the app's
+        // theme and font, on a window tall enough that nothing scrolls, on two equations with
+        // long names and two whose closest note's title wraps: a Tab round never stops on a row
+        // that starts where the stop before it ends, at its left edge or further left.
+        use crate::gui::explorer::{NoteFallback, note_fallback, term_label};
         use crate::gui::test_support::text_shapes;
+        use crate::gui::typeset::glyph_safe;
         let size = egui::vec2(SMALLEST.x, 3000.0);
-        for path in ["metal.torque_hot_low_Nm", "model.iron_circuit_angle_rad"] {
+        for path in [
+            "metal.torque_hot_low_Nm",
+            "model.iron_circuit_angle_rad",
+            "temperature.summary.verdict",
+            "model.pullout_iron_Nm",
+        ] {
             let panel = MagcouplingPanel::with_baseline(crate::app::starting_design());
             let mut harness = Harness::of(panel, size);
             crate::app::theme::apply(&harness.ctx);
@@ -11871,18 +11878,23 @@ mod tests {
             let output = harness.frame(Vec::new());
             let panel = equation_panel_rect(&harness.ctx).expand(1.0);
             let eq = registry().equation_for(path).expect("an equation");
-            let wrapped: Vec<&str> = eq
+            let note = match note_fallback(path) {
+                NoteFallback::Note(note) => Some(glyph_safe(note.title)),
+                _ => None,
+            };
+            let wrapped: Vec<String> = eq
                 .terms
                 .iter()
-                .map(|term| term_label(term))
-                .filter(|&label| {
+                .map(|term| term_label(term).to_owned())
+                .chain(note)
+                .filter(|label| {
                     text_shapes(&output, label)
                         .any(|(clip, text)| panel.contains_rect(clip) && text.galley.rows.len() > 1)
                 })
                 .collect();
             assert!(
                 !wrapped.is_empty(),
-                "{path}: no term's name wraps: the test would prove nothing"
+                "{path}: no term's name or note title wraps: the test would prove nothing"
             );
             let mut stops = Vec::new();
             loop {
@@ -11905,7 +11917,7 @@ mod tests {
                 .windows(2)
                 .filter(|pair| {
                     (pair[1].top() - pair[0].bottom()).abs() < 0.5
-                        && (pair[1].left() - pair[0].left()).abs() < 0.5
+                        && pair[1].left() < pair[0].left() + 0.5
                 })
                 .collect();
             assert!(

@@ -917,7 +917,9 @@ fn note_fallback_ui(ui: &mut egui::Ui, path: &str) -> Option<NoteLink> {
             let mut asked = None;
             ui.horizontal_wrapped(|ui| {
                 ui.weak(NEAREST_NOTE);
-                if ui.link(glyph_safe(note.title)).clicked() {
+                // One Tab stop however the title wraps (the re-review's RR-1, as KR-1).
+                let link = egui::Link::new(glyph_safe(note.title));
+                if crate::gui::label_block(ui, link).clicked() {
                     asked = Some(NoteLink::Note(note.id));
                 }
             });

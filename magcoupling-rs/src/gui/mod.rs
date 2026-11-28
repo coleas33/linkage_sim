@@ -76,8 +76,9 @@ pub(crate) fn wrapping_line<R>(
 /// focus (SK-1). The block is one text row high (as epaint rounds it), so the line centres it as
 /// it centred a label that fits. After a wrapped label, what follows starts a line of its own at
 /// a widget's height: a wrapping line's next row takes the height of the one before. An input
-/// row's label and a term's name in the Equation panel are drawn through this.
-pub(crate) fn label_block(ui: &mut egui::Ui, label: egui::Label) -> egui::Response {
+/// row's label, a term's name in the Equation panel and the closest note's link there (an
+/// `egui::Link`, a label drawn as a link) are drawn through this.
+pub(crate) fn label_block(ui: &mut egui::Ui, label: impl egui::Widget) -> egui::Response {
     let row = ui.text_style_height(&egui::TextStyle::Body);
     let line = egui::vec2(
         ui.available_size_before_wrap().x,
