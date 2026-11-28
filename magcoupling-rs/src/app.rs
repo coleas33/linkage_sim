@@ -2826,6 +2826,26 @@ mod tests {
                 );
             }
         }
+        // UX overhaul slice B, stage 2, part 2b-iii-b (the stage 1 review's S-4, S-1, E-4 and
+        // R-6): on the clean page the look's step also reads that the page's loading line is
+        // gone (its id typed once, as LOADING_ID, equal to the page's), and judges the heavier
+        // title and heading and the grey edge of Auto's box and of the value boxes.
+        {
+            assert_eq!(quoted("LOADING_ID"), LOADING_ID, "the script's LOADING_ID");
+            let look = between("Then the look:", "Collect the console");
+            let gone = "document.getElementById('${LOADING_ID}') === null";
+            for (what, text) in [
+                ("reads that the loading line is gone", gone),
+                (
+                    "judges the heavier title and heading",
+                    "heavier than the text under them",
+                ),
+                ("names Auto's box", crate::gui::AUTO),
+                ("judges the controls' edges", "grey edge"),
+            ] {
+                assert!(look.contains(text), "the look's step {what}: {text}");
+            }
+        }
         // The app opens the link and the solve succeeds after its debounce.
         let ctx = egui::Context::default();
         let mut app = MagcouplingApp::new(&ctx);
