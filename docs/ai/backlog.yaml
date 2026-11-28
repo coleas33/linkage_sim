@@ -1059,3 +1059,12 @@
   priority: 5
   status: open
   notes: "Filed 2026-11-27 by the controller from the text review of part 2b-iii-b (F-2), not taken there: on main too, one frame long."
+- id: BL-113
+  title: "A linear driver's stroke is lost on undo, and a mass edit or an assembly-branch flip solves at the wrong time: rebuild() takes its solve time from the driver kind, four other sites still use driver_angle"
+  dimension: gui
+  risk: mechanical
+  evidence: "Branch review of linkage/r5-mechanical (F-5, F-6), pre-existing; BL-045 sends more edits through undo, so users hit it more. BL-051 fixed rebuild() only. gui/state/undo_ops.rs restore_snapshot solved at a time from driver_angle and reset a linear driver's stroke to length_0; blueprint_ops.rs recompute_dynamics (mass and gravity edits) and state/mod.rs flip_assembly_branch also took the time from driver_angle. Probe: Slider-Crank on a linear driver at stroke 1.2, two mount-point edits, then undo: the stroke reads 1.15 and converged=false while the pose stays at x = 0.2. rebuild's match on the driver kind repeated property_panel/equations.rs compute_t_mech."
+  acceptance: "Red test first: on a linear-driven mechanism (Slider-Crank at stroke 1.2), undo after an edit restores the stroke and converges; a mass or gravity edit and an assembly-branch flip keep the stroke; one AppState method gives the current driver time by driver kind and rebuild, restore_snapshot, recompute_dynamics, flip_assembly_branch and equations.rs use it; GATE PASS."
+  priority: 3
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: AppState::current_driver_time() is the one match on the driver kind; MechanismSnapshot stores driver_stroke and restore_snapshot reinstalls the driver kind before it solves. Tests bl113_* in gui/state/tests.rs (undo and redo, branch flip, the method itself with a gravity edit). Revolute behaviour unchanged. A mass or gravity edit's force results are empty for a linear driver (compute_forces needs a revolute driver), so recompute_dynamics's time is checked through the method, not through force_results."

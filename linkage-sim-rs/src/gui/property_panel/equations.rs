@@ -17,7 +17,7 @@ use eframe::egui;
 use crate::gui::eq_rendering::{
     kind_at, lambda_string, n_constraints, residual_norm_string, symbolic_form, EqKind,
 };
-use crate::gui::state::{driver_angle_to_time, AppState};
+use crate::gui::state::AppState;
 use crate::solver::assembly::assemble_constraints;
 use crate::solver::statics::solve_statics;
 
@@ -40,7 +40,7 @@ pub fn draw(state: &AppState, ui: &mut egui::Ui) {
     // Compute t_mech from the active driver state. Mirrors the convention
     // used by `solve_at_angle` / `solve_at_stroke`: t = (param - param_0) / rate
     // with a guard against zero rate.
-    let t_mech = compute_t_mech(state);
+    let t_mech = state.current_driver_time();
 
     // Φ at current pose.
     let phi = assemble_constraints(mech, &state.q, t_mech);
@@ -151,23 +151,3 @@ fn color_for_kind(state: &AppState, kind: EqKind) -> egui::Color32 {
     state.nc(raw)
 }
 
-/// Compute the mechanism time `t_mech` consistent with `solve_at_angle` /
-/// `solve_at_stroke`: maps the active driver's parameter back to time using
-/// the rate. Returns 0 if no driver or rate is near zero (defense in depth
-/// against div-by-zero from edge-case driver configs).
-fn compute_t_mech(state: &AppState) -> f64 {
-    use crate::gui::state::DriverKind;
-    match state.driver_kind {
-        DriverKind::Revolute { angle: _, omega, theta_0 } => {
-            driver_angle_to_time(state.driver_angle, theta_0, omega)
-        }
-        DriverKind::Linear {
-            stroke,
-            velocity,
-            length_0,
-        } => {
-            driver_angle_to_time(stroke, length_0, velocity)
-        }
-        DriverKind::None => 0.0,
-    }
-}

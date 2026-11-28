@@ -855,6 +855,17 @@ impl AppState {
         }
     }
 
+    /// Mechanism time `t` of the current driver value: a revolute driver's
+    /// angle slider, a linear driver's stroke, 0 with no driver. The one
+    /// place that maps driver kind to solve time (BL-051, BL-113).
+    pub fn current_driver_time(&self) -> f64 {
+        let value = match self.driver_kind {
+            DriverKind::Linear { stroke, .. } => stroke,
+            DriverKind::Revolute { .. } | DriverKind::None => self.driver_angle,
+        };
+        driver_angle_to_time(value, self.driver_theta_0(), self.driver_omega())
+    }
+
     /// Active driver's current stroke (Linear) or 0 (Revolute / None).
     pub fn driver_stroke(&self) -> f64 {
         match self.driver_kind {
@@ -1326,7 +1337,7 @@ impl AppState {
         // 4. Re-solve at the current driver angle with the reflected
         //    guess. solve_and_update handles status + q bookkeeping.
         let q_before = self.q.clone();
-        let t = driver_angle_to_time(self.driver_angle, self.driver_theta_0(), self.driver_omega());
+        let t = self.current_driver_time();
         let converged = self.solve_and_update(&mech, &q_guess, t, 1e-10, 50, None);
 
         self.mechanism = Some(mech);

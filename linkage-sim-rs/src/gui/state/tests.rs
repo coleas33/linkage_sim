@@ -293,6 +293,74 @@
         assert!((&state.q - &before).norm() < 1e-9, "the crank and coupler must not move on rebuild");
     }
 
+    /// Slider-Crank on a linear driver (length_0 1.15) solved at stroke 1.2 m,
+    /// so the slider sits at x = 0.2 m (BL-113).
+    fn bl113_linear_slider_crank_at_1_2() -> AppState {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::SliderCrank);
+        state.solve_at_angle(1.0);
+        {
+            let bp = state.blueprint.as_mut().unwrap();
+            bp.drivers.clear();
+            bp.linear_drivers.push(crate::io::LinearDriverJson {
+                id: "LD1".into(), body_a: "ground".into(), point_a: [-1.0, 0.0],
+                body_b: "slider".into(), point_b: [0.0, 0.0], velocity: 1.0, length_0: 1.15, cosine_stroke: None,
+            });
+        }
+        state.rebuild();
+        state.solve_at_stroke(1.2);
+        assert!(state.solver_status.converged, "1.2 m stroke must solve");
+        state
+    }
+
+    fn bl113_assert_stroke_1_2(state: &AppState) {
+        assert!(state.solver_status.converged, "must converge at the commanded stroke");
+        assert!((state.driver_stroke() - 1.2).abs() < 1e-12, "stroke must stay 1.2 m, got {}", state.driver_stroke());
+        let mech = state.mechanism.as_ref().unwrap();
+        let (x, y, _) = mech.state().get_pose("slider", &state.q);
+        assert!((x - 0.2).abs() < 1e-9 && y.abs() < 1e-9, "slider must stay at (0.2, 0), got ({x}, {y})");
+    }
+
+    #[test]
+    fn bl113_undo_after_edit_restores_linear_stroke() {
+        let mut state = bl113_linear_slider_crank_at_1_2();
+        state.add_mount_point("coupler", "M_a", [0.1, 0.02]);
+        state.add_mount_point("coupler", "M_b", [0.12, 0.02]);
+        state.undo();
+        bl113_assert_stroke_1_2(&state);
+        state.redo();
+        bl113_assert_stroke_1_2(&state);
+    }
+
+    #[test]
+    fn bl113_current_driver_time_follows_the_driver_kind_and_a_gravity_edit_keeps_the_stroke() {
+        let mut state = bl113_linear_slider_crank_at_1_2();
+        // Linear: (stroke - length_0) / velocity = (1.2 - 1.15) / 1.
+        assert!((state.current_driver_time() - 0.05).abs() < 1e-12);
+        state.gravity_magnitude = 9.81;
+        state.recompute_dynamics();
+        bl113_assert_stroke_1_2(&state);
+
+        let mut rev = AppState::default();
+        rev.load_sample(SampleMechanism::FourBar);
+        rev.driver_angle = 2.0;
+        let expected = (2.0 - rev.driver_theta_0()) / rev.driver_omega();
+        assert!((rev.current_driver_time() - expected).abs() < 1e-12);
+        assert_eq!(AppState::default().current_driver_time(), 0.0);
+    }
+
+    #[test]
+    fn bl113_flip_assembly_branch_keeps_linear_stroke() {
+        let mut state = bl113_linear_slider_crank_at_1_2();
+        state.flip_assembly_branch();
+        assert!(state.solver_status.converged, "flip must solve at the commanded stroke");
+        assert!((state.driver_stroke() - 1.2).abs() < 1e-12);
+        let mech = state.mechanism.as_ref().unwrap();
+        let pa = mech.state().body_point_global("ground", &nalgebra::Vector2::new(-1.0, 0.0), &state.q);
+        let pb = mech.state().body_point_global("slider", &nalgebra::Vector2::zeros(), &state.q);
+        assert!(((pb - pa).norm() - 1.2).abs() < 1e-9, "driver length must stay 1.2 m, got {}", (pb - pa).norm());
+    }
+
     #[test]
     fn convert_actuator_to_linear_driver_switches_mode() {
         // ParallelogramActuator has a LinearActuator force element

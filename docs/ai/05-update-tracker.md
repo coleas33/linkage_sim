@@ -5,6 +5,9 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - Linear driver time in one method (BL-113)
+- Branch review F-5, F-6: undo on a linear-driven mechanism reset the stroke to length_0 (probe: Slider-Crank at 1.2, two mount edits, undo gave 1.15 and converged=false), and recompute_dynamics and flip_assembly_branch took their time from driver_angle. AppState::current_driver_time() (state/mod.rs) is now the one match on the driver kind; rebuild, restore_snapshot, recompute_dynamics, flip_assembly_branch and property_panel/equations.rs use it (compute_t_mech deleted). MechanismSnapshot gains driver_stroke; restore_snapshot reinstalls the driver kind before it solves. Revolute behaviour is unchanged. Tests bl113_* in gui/state/tests.rs.
+
 ## 2026-11-28 - R5 review fixes
 - Branch review of linkage/r5-mechanical, small findings: F-4 committed_number skips on_hover_text for "" (egui drew an empty tooltip box on the attachment-point and modulation fields); F-7 the BL-046 label plate colour is the named LABEL_PLATE in canvas/colors.rs (draw_pill_label differs in font, alpha and text colour, so it is not reused); F-8 the mounting rotation plus Y flip is ViewTransform::world_direction_to_screen beside world_to_screen, the old primitives.rs function deleted; F-9 the Chebyshev PNG test asserts the output dir starts with CARGO_MANIFEST_DIR/target, and AGENTS.md gives the regenerate and copy commands; F-10 BL-006's note starts DEFERRED and this branch's 2026-11-28 entries in this file are in reverse commit order.
 - Backlog closed after checking each claim: BL-005 (rust-test-fixer agent already general; untracked here), BL-008 (no let delta; no mixed_script_confusables warning), BL-014 (duplicate of fixed BL-037).

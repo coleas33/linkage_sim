@@ -4,7 +4,7 @@ use nalgebra::DVector;
 
 use crate::gui::undo::MechanismSnapshot;
 use crate::io::{load_mechanism_unbuilt, mechanism_to_json};
-use super::{driver_angle_to_time, AppState};
+use super::AppState;
 
 impl AppState {
     /// Create a snapshot of the current mechanism document state.
@@ -22,6 +22,7 @@ impl AppState {
             driver_angle: self.driver_angle,
             driver_omega: self.driver_omega(),
             driver_theta_0: self.driver_theta_0(),
+            driver_stroke: self.driver_stroke(),
             driver_joint_id: self.driver_joint_id.clone(),
             q: self.q.iter().copied().collect(),
         })
@@ -42,9 +43,27 @@ impl AppState {
             return;
         }
 
-        // Solve at the snapshot's driver angle, using the stored q as the initial guess.
+        // Reinstall the snapshot's driver first so the solve time comes from
+        // its kind (a linear driver's stroke), not its angle slider. Linear
+        // takes priority over revolute (matches rebuild() / load_from_string).
+        let snapshot_bp: Option<crate::io::MechanismJson> = serde_json::from_str(&snapshot.mechanism_json).ok();
+        self.driver_angle = snapshot.driver_angle;
+        self.driver_kind = match &snapshot_bp {
+            Some(bp) if !bp.linear_drivers.is_empty() => super::DriverKind::Linear {
+                stroke: snapshot.driver_stroke,
+                velocity: snapshot.driver_omega,
+                length_0: snapshot.driver_theta_0,
+            },
+            Some(bp) if !bp.drivers.is_empty() => super::DriverKind::Revolute {
+                angle: snapshot.driver_angle,
+                omega: snapshot.driver_omega,
+                theta_0: snapshot.driver_theta_0,
+            },
+            _ => super::DriverKind::None,
+        };
+        // Solve at the snapshot's driver value, using the stored q as the initial guess.
         // Falls back to make_q() (all zeros) if the snapshot has no q data.
-        let t = driver_angle_to_time(snapshot.driver_angle, snapshot.driver_theta_0, snapshot.driver_omega);
+        let t = self.current_driver_time();
         let q0 = if snapshot.q.len() == mech.state().n_coords() {
             DVector::from_vec(snapshot.q.clone())
         } else {
@@ -53,33 +72,10 @@ impl AppState {
         self.solve_and_update(&mech, &q0, t, 1e-10, 50, Some(q0.clone()));
 
         // Restore the blueprint from the snapshot JSON so it stays in sync.
-        self.blueprint = serde_json::from_str(&snapshot.mechanism_json).ok();
+        self.blueprint = snapshot_bp;
 
         self.refresh_sweep_stroke_range(&mech);
         self.mechanism = Some(mech);
-        self.driver_angle = snapshot.driver_angle;
-        // Reconstruct driver_kind from the restored blueprint, then
-        // overlay the snapshot's omega/theta_0 onto it. Linear takes
-        // priority over revolute (matches rebuild() / load_from_string).
-        self.driver_kind = if let Some(ref bp) = self.blueprint {
-            if let Some(ld) = bp.linear_drivers.first() {
-                super::DriverKind::Linear {
-                    stroke: ld.length_0,
-                    velocity: snapshot.driver_omega,
-                    length_0: snapshot.driver_theta_0,
-                }
-            } else if !bp.drivers.is_empty() {
-                super::DriverKind::Revolute {
-                    angle: snapshot.driver_angle,
-                    omega: snapshot.driver_omega,
-                    theta_0: snapshot.driver_theta_0,
-                }
-            } else {
-                super::DriverKind::None
-            }
-        } else {
-            super::DriverKind::None
-        };
         self.driver_joint_id = snapshot.driver_joint_id.clone();
         self.playing = false;
         self.compute_forces(self.driver_angle);
