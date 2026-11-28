@@ -1297,6 +1297,53 @@ mod tests {
     }
 
     #[test]
+    fn the_left_column_keeps_its_width_at_the_pixel_ratios_a_zoomed_browser_gives() {
+        // BL-103: a slider and its value box cannot wrap, and at a pixel ratio of 0.9 the
+        // vacuum permeability's row ('0.00000125664 T·m/A') was 2.9 points wider than the
+        // column's row, so the column grew to 322.9 for good. With every input group and its
+        // Advanced heading open, at the ratios 0.9 and 1.35, the left column is 320 points and
+        // the right one 300.
+        use crate::gui::DETAILED_INPUTS;
+        use crate::gui::inputs::{ADVANCED_HEADING, InputOrder};
+        use crate::gui::test_support::text_rects;
+        let groups =
+            InputCatalogue::shown(crate::engine::clamps::PAUSED).groups_in(InputOrder::Workflow);
+        let tall = egui::vec2(1280.0, 20_000.0);
+        for ratio in [0.9_f32, 1.35] {
+            let ctx = egui::Context::default();
+            ctx.set_pixels_per_point(ratio);
+            let mut app = MagcouplingApp::new(&ctx);
+            let settle = |app: &mut MagcouplingApp, text: &str| {
+                for _ in 0..3 {
+                    frame_on(&ctx, app, tall, Vec::new());
+                }
+                text_rects(&frame_on(&ctx, app, tall, Vec::new()), text)
+            };
+            let left = settle(&mut app, DETAILED_INPUTS)[0];
+            click_at(&ctx, &mut app, tall, left.center(), 2);
+            for group in groups.iter().rev() {
+                let header = settle(&mut app, group.label)[0];
+                click_at(&ctx, &mut app, tall, header.center(), 2);
+                if group.has_advanced() {
+                    let advanced = settle(&mut app, ADVANCED_HEADING)
+                        .into_iter()
+                        .filter(|r| r.top() > header.bottom())
+                        .min_by(|a, b| a.top().total_cmp(&b.top()))
+                        .expect("an Advanced heading under its group");
+                    click_at(&ctx, &mut app, tall, advanced.center(), 2);
+                }
+            }
+            settle(&mut app, DETAILED_INPUTS);
+            let (left, right) = (
+                side_rect(&ctx, "magcoupling_inputs"),
+                side_rect(&ctx, "magcoupling_dashboard"),
+            );
+            assert_eq!(left.width(), 320.0, "ratio {ratio}");
+            assert_eq!(right.width(), 300.0, "ratio {ratio}");
+        }
+    }
+
+    #[test]
     fn the_right_column_keeps_its_width_with_a_note_shown_in_the_app_s_own_font() {
         // BL-098 as a person meets it, in the app's theme and font at the smallest window and
         // the laptop screen: Learn on the top bar, then the title of the first note with a

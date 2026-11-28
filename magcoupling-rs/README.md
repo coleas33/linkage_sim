@@ -341,8 +341,9 @@ filter keeps is drawn in each (the harmonics dropdown of the assumption "Harmoni
 two rows are separate controls, and either dropdown opens and takes a pick. The column keeps its
 width whatever it shows (BL-099): 320 points until its edge is dragged, in egui's default font and
 in the app's own, with a fold, an input group or its Advanced heading opened, a filter set or an
-input traced (at a pixel ratio of 1 and most others: at 0.9 and 1.35, which a zoomed browser
-can give, a slider row that cannot wrap still widens it by up to 3 points, BL-103). A label
+input traced, at a pixel ratio of 1 and at the 0.9 and 1.35 a zoomed browser can give (BL-103: a
+slider takes the width its value box leaves, and a part or grade picker keeps one point free; test
+`the_left_column_keeps_its_width_at_the_pixel_ratios_a_zoomed_browser_gives`). A label
 longer than its row wraps onto a second line, under its own first line, and the note "outside the
 slider range" and the reset button follow it on a line of their own; the label is still one Tab
 stop that shows its focus on both lines (`input_ui::input_row` draws it as one block: egui lays a

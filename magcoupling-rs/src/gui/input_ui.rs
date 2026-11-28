@@ -96,6 +96,39 @@ pub fn slider<'a>(value: &'a mut f64, meta: &InputMeta, range: SliderRange) -> e
     slider
 }
 
+/// Draws `slider` in the room the row has: a slider and its value box cannot wrap, so the
+/// slider takes the width the box leaves, at most egui's own (BL-103: at a pixel ratio of 0.9
+/// the longest box, '0.00000125664 T·m/A', ran 2.9 points past the left column's row). The
+/// box is measured at the most decimals it can show, so it never needs more than it is given.
+pub fn add_slider(
+    ui: &mut egui::Ui,
+    value: &mut f64,
+    meta: &InputMeta,
+    range: SliderRange,
+) -> egui::Response {
+    let decimals = match meta.ty {
+        FieldType::I64 => 0,
+        _ => step_decimals(range.step),
+    };
+    let text = with_unit(
+        egui::emath::format_with_decimals_in_range(*value, decimals..=decimals),
+        meta.unit,
+    );
+    let font = egui::TextStyle::Button.resolve(ui.style());
+    let galley = ui
+        .painter()
+        .layout_no_wrap(text, font, egui::Color32::PLACEHOLDER);
+    let boxed = galley.size().x + 2.0 * ui.spacing().button_padding.x;
+    // One point kept free, as `gui::wrapping_line` does: a width is rounded to the pixel.
+    let room = ui.available_width() - ui.spacing().item_spacing.x - boxed - 1.0;
+    ui.scope(|ui| {
+        let width = &mut ui.spacing_mut().slider_width;
+        *width = width.min(room.max(0.0));
+        ui.add(slider(value, meta, range))
+    })
+    .inner
+}
+
 /// The number typed into a value box whose own text is `shown`, read as egui reads one (blanks
 /// ignored, U+2212 a minus); none when `text` is no number, or reads as the number `shown`
 /// does. egui writes a box's text back when the keyboard's focus leaves it, typed or not, so
@@ -291,7 +324,7 @@ fn widget(
                 match (number(current), meta.range) {
                     (Some(x), Some(range)) => {
                         let mut value = x;
-                        let response = ui.add(slider(&mut value, meta, range));
+                        let response = add_slider(ui, &mut value, meta, range);
                         if response.changed() && value != x {
                             *edit = Some(RowEdit::Set(Value::Num(value)));
                         }
@@ -317,7 +350,7 @@ fn widget(
         _ => match (number(current), meta.range) {
             (Some(x), Some(range)) => {
                 let mut value = x;
-                let response = ui.add(slider(&mut value, meta, range));
+                let response = add_slider(ui, &mut value, meta, range);
                 if response.changed() && value != x {
                     *edit = Some(RowEdit::Set(typed(meta, value)));
                 }

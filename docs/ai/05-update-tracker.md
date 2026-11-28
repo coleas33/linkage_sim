@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - Magcoupler: the left column holds 320 points at pixel ratios 0.9 and 1.35 (BL-103)
+
+- gui/input_ui.rs add_slider (slider width capped to what its value box leaves; used by input rows and gui/size_controls.rs), gui/pickers.rs one point free in the part and grade pickers; test in app.rs; README; backlog BL-103 fixed.
+
 ## 2026-11-28 - Magcoupler: the Tab key passes the stops that show no focus: scroll-area surfaces and bars, panel edges, the Equation panel's formula (BL-102)
 
 - gui/mod.rs scroll_area, hide_resize_edge, TabWalk (panel.rs calls it at the end of ui()); explorer.rs formula Sense::CLICK; test in gui/panel.rs; backlog BL-102 fixed, BL-124 filed (plot axes).
