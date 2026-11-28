@@ -1147,8 +1147,8 @@
   evidence: "The text review of part 2b-iii-c (BL-112), 2026-11-28, in Chrome from the branch's release build (docs/analyses/2026-11-27-magcoupler-slice-b2p2biii-c-review.md), finding F-1: explorer.rs draws the walk bar's step line and its three buttons as separate items of one ui.horizontal_wrapped (about lines 618-640), so at 1024 x 700 step 9 puts Previous on the step line's row and Next and Stop on the next, step 13 puts Previous and Next on a second row and Stop on a third, and at 1280 x 800 step 12 puts Stop alone on the next row. Each button is whole and works. Decision D-111 of the plan says the buttons follow the line on its last row or the next, together."
   acceptance: "A red test first: the app's Start here walk test asserts the three buttons share one row on every step at 1024 x 700, 1280 x 800 and 1920 x 1080 in the app's theme and font; the fix draws them as one block (a ui.horizontal inside the wrapping line); no text changes; GATE PASS."
   priority: 4
-  status: open
-  notes: "Filed 2026-11-28 by the controller from the text review of BL-112 (F-1), not taken there: no word lost and every button works; taken into the R3 polish batch."
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch magcoupling/r3-polish: the walk bar draws its three buttons as one ui.horizontal block on the row after the step line (a block inside the wrapping line was cut to the room left on its last row, so Next and Stop were not drawn), so they share one row on every step at 1024 x 700, 1280 x 800 and 1920 x 1080; test the_start_here_buttons_share_one_row_on_every_step_in_the_app_s_own_font. Filed 2026-11-28 by the controller from the text review of BL-112 (F-1), not taken there: no word lost and every button works; taken into the R3 polish batch."
 - id: BL-122
   title: "Magcoupler: an equation opened in the Equation panel keeps the last one's scroll position, so its title can open above the view"
   dimension: gui

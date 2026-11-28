@@ -622,21 +622,26 @@ pub fn explorer_ui(
             // made it wider than the centre region); the buttons stay whole.
             let line = egui::RichText::new(start_here_text(step)).weak();
             ui.add(egui::Label::new(line).wrap());
-            if ui
-                .add_enabled(step > 0, egui::Button::new(PREVIOUS))
-                .clicked()
-            {
-                asked = explorer.start(step - 1);
-            }
-            if ui
-                .add_enabled(step + 1 < START_HERE.len(), egui::Button::new(NEXT))
-                .clicked()
-            {
-                asked = explorer.start(step + 1);
-            }
-            if ui.button(STOP).clicked() {
-                explorer.stop();
-            }
+            // One block on the row after the line, so the buttons stay on one row (BL-121: a
+            // block inside the wrapping line is cut to the room left on the line's last row).
+            ui.end_row();
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(step > 0, egui::Button::new(PREVIOUS))
+                    .clicked()
+                {
+                    asked = explorer.start(step - 1);
+                }
+                if ui
+                    .add_enabled(step + 1 < START_HERE.len(), egui::Button::new(NEXT))
+                    .clicked()
+                {
+                    asked = explorer.start(step + 1);
+                }
+                if ui.button(STOP).clicked() {
+                    explorer.stop();
+                }
+            });
         });
     }
     ui.separator();

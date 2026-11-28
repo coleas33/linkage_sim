@@ -12242,6 +12242,50 @@ mod tests {
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
     }
 
+    #[cfg(feature = "app")]
+    #[test]
+    fn the_start_here_buttons_share_one_row_on_every_step_in_the_app_s_own_font() {
+        // BL-121: the step line and the three buttons were separate items of one wrapping line,
+        // so a long step line left Previous, Next and Stop on different rows. At the three
+        // window sizes, in the app's theme and font, the buttons stay on one row on every step.
+        use crate::engine::explain::notes::START_HERE;
+        use crate::gui::explorer::{NEXT, PREVIOUS, STOP};
+        for size in [
+            SMALLEST,
+            egui::vec2(1280.0, 800.0),
+            egui::vec2(1920.0, 1080.0),
+        ] {
+            let panel = MagcouplingPanel::with_baseline(crate::app::starting_design());
+            let mut harness = Harness::of(panel, size);
+            crate::app::theme::apply(&harness.ctx);
+            crate::app::fonts::install(&harness.ctx);
+            for step in 0..START_HERE.len() {
+                harness.panel.explorer.start(step);
+                for _ in 0..2 {
+                    harness.frame(Vec::new());
+                }
+                let output = harness.frame(Vec::new());
+                let panel = equation_panel_rect(&harness.ctx).expand(1.0);
+                let rows: Vec<f32> = [PREVIOUS, NEXT, STOP]
+                    .iter()
+                    .map(|word| {
+                        let rects: Vec<egui::Rect> = text_rects(&output, word)
+                            .into_iter()
+                            .filter(|r| panel.contains_rect(*r))
+                            .collect();
+                        assert_eq!(rects.len(), 1, "{word} at {size:?}, step {step}");
+                        rects[0].center().y
+                    })
+                    .collect();
+                assert!(
+                    rows.iter().all(|y| (y - rows[0]).abs() < 1.0),
+                    "buttons on rows {rows:?} at {size:?}, step {}",
+                    step + 1
+                );
+            }
+        }
+    }
+
     #[test]
     fn with_auto_on_the_step_1_note_names_the_length_auto_holds_and_draws_the_design_shown() {
         // Review Focus RF-1 (A-25 T-1): Auto on, its default free variable the axial magnet
