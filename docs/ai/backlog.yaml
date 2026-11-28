@@ -1068,3 +1068,12 @@
   priority: 3
   status: fixed
   notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: AppState::current_driver_time() is the one match on the driver kind; MechanismSnapshot stores driver_stroke and restore_snapshot reinstalls the driver kind before it solves. Tests bl113_* in gui/state/tests.rs (undo and redo, branch flip, the method itself with a gravity edit). Revolute behaviour unchanged. A mass or gravity edit's force results are empty for a linear driver (compute_forces needs a revolute driver), so recompute_dynamics's time is checked through the method, not through force_results."
+- id: BL-114
+  title: "A mounting angle from a file outside -180..180 degrees is clamped, rebuilt and changed on the first idle frame with the Mounting section open"
+  dimension: gui
+  risk: mechanical
+  evidence: "Branch review of linkage/r5-mechanical (F-11), the same kind of idle-frame bug as BL-021. gui/input_panel.rs's Mounting Angle slider clamps to -180..=180, and gui/state/file_io.rs (about line 491) copied a file's mounting_angle unnormalised, so 270 degrees was clamped to 180, rebuilt and silently changed on the first idle frame with the section open."
+  acceptance: "Red test first: a mechanism loaded with mounting_angle 270 keeps an equivalent mounting on idle frames with the Mounting section open (no rebuild, no change of the drawn pose); GATE PASS."
+  priority: 4
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: file_io.rs wraps a loaded angle outside -180..180 degrees into that range (270 becomes -90, the same mounting; in-range and non-finite values pass through untouched). Chosen over clamp_existing_to_range(false) because every reader of mounting_angle (rotation, gravity, export) uses it only through sin and cos, so the drawing is the same and the slider never holds an out-of-range value. Test bl114_file_mounting_angle_outside_slider_range_survives_idle_frames in gui/input_panel.rs failed (angle 4.71 became 3.14 on frame 0), then passed."

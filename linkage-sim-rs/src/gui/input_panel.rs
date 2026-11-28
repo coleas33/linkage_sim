@@ -1213,4 +1213,45 @@ mod tests {
             assert!(state.playing, "idle frame {frame} rebuilt and paused playback");
         }
     }
+
+    #[test]
+    fn bl114_file_mounting_angle_outside_slider_range_survives_idle_frames() {
+        use crate::gui::test_support::{screen_input, NATIVE_SCREEN};
+
+        let mut source = AppState::default();
+        source.load_sample(SampleMechanism::FourBar);
+        let mut bp = source.blueprint.clone().unwrap();
+        bp.mounting_angle = 270.0_f64.to_radians();
+        let json = serde_json::to_string(&bp).unwrap();
+
+        let mut state = AppState::default();
+        state.load_from_json_str(&json).unwrap();
+        assert!(state.solver_status.converged);
+        let (sin0, cos0) = (270.0_f64.to_radians().sin(), 270.0_f64.to_radians().cos());
+        assert!((state.mounting_angle.sin() - sin0).abs() < 1e-9);
+        assert!((state.mounting_angle.cos() - cos0).abs() < 1e-9);
+
+        state.playing = true;
+        state.dirty = false;
+        let before_angle = state.mounting_angle;
+        let before_q = state.q.clone();
+        let ctx = egui::Context::default();
+        for frame in 0..4 {
+            let _ = ctx.run(screen_input(Vec::new(), NATIVE_SCREEN), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let id = ui.id().with(egui::Id::new("child"))
+                        .with(egui::Id::new("mounting_angle_section"));
+                    let mut open = egui::collapsing_header::CollapsingState::load_with_default_open(
+                        ctx, id, false,
+                    );
+                    open.set_open(true);
+                    open.store(ctx);
+                    draw_input_panel(ui, &mut state);
+                });
+            });
+            assert_eq!(state.mounting_angle, before_angle, "idle frame {frame} changed the loaded angle");
+            assert_eq!(state.q, before_q, "idle frame {frame} moved the pose");
+            assert!(state.playing, "idle frame {frame} rebuilt and paused playback");
+        }
+    }
 }

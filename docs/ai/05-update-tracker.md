@@ -5,6 +5,9 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - Mounting angle from a file wrapped into the slider's range (BL-114)
+- Branch review F-11: the Mounting Angle slider clamps to -180..=180 and file_io.rs did not normalise a file's mounting_angle, so 270 degrees was clamped, rebuilt and changed on the first idle frame with the section open. A loaded angle outside the range is now wrapped into it (270 becomes -90, the same mounting). Test bl114_* in gui/input_panel.rs.
+
 ## 2026-11-28 - Linear driver time in one method (BL-113)
 - Branch review F-5, F-6: undo on a linear-driven mechanism reset the stroke to length_0 (probe: Slider-Crank at 1.2, two mount edits, undo gave 1.15 and converged=false), and recompute_dynamics and flip_assembly_branch took their time from driver_angle. AppState::current_driver_time() (state/mod.rs) is now the one match on the driver kind; rebuild, restore_snapshot, recompute_dynamics, flip_assembly_branch and property_panel/equations.rs use it (compute_t_mech deleted). MechanismSnapshot gains driver_stroke; restore_snapshot reinstalls the driver kind before it solves. Revolute behaviour is unchanged. Tests bl113_* in gui/state/tests.rs.
 
