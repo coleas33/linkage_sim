@@ -211,6 +211,52 @@ fn exactly_at_the_rating_passes_and_one_float_above_fails() {
 }
 
 #[test]
+fn below_the_minimum_temperature_the_check_compares_the_operating_pull_out_with_its_allowance() {
+    // BL-067, option (b), assumed under the owner's ruling of 2026-11-10 (register A-10): with
+    // the operating temperature (-40 °C) below the minimum (20 °C) and a 0.1 variation, each on
+    // its slider, the operating pull-out with its allowance at the gearbox input (0.7699 N·m) is
+    // above cold-high there (0.6700 N·m). The check compares the larger, so a rating between the
+    // two fails and quotes the operating pull-out with its allowance; at that torque it passes,
+    // one float under it fails.
+    let corner = design(|i| {
+        i.coupling.op_temp_C = -40.0;
+        i.metal.min_temp_C = 20.0;
+        i.metal.variation = 0.1;
+    });
+    for (path, value) in [
+        ("coupling.op_temp_C", -40.0),
+        ("metal.min_temp_C", 20.0),
+        ("metal.variation", 0.1),
+    ] {
+        let range = input_meta(path).range.expect("a slider");
+        assert!(range.min <= value && value <= range.max, "{path} {value}");
+    }
+    let r = compute_all(&corner);
+    let c = &corner.coupling;
+    let operating = r.model.pullout_Nm * 1.1 / (c.gear_ratio * c.gear_efficiency);
+    assert!(
+        (r.metal.cold_high_input_Nm - 0.6700).abs() < 5e-5,
+        "{}",
+        r.metal.cold_high_input_Nm
+    );
+    assert!((operating - 0.7699).abs() < 5e-5, "{operating}");
+    let at = |rating: f64| {
+        let mut rated = corner.clone();
+        rated.coupling.gearbox_input_rating_Nm = rating;
+        compute_all(&rated).gearbox.cold_high_check
+    };
+    assert_eq!(at(0.72), above("0.77", "0.72"));
+    assert_eq!(at(operating), WITHIN_THE_GEARBOX_RATING);
+    assert_eq!(at(operating.next_down()), above("0.78", "0.77"));
+    // The torque compared: the larger of the two, NaN where either is.
+    assert_eq!(gearbox::checked_pullout_Nm(3.0, 2.0, 0.1), 3.0);
+    assert!((gearbox::checked_pullout_Nm(2.0, 3.0, 0.1) - 3.3).abs() < 1e-12);
+    assert!(gearbox::checked_pullout_Nm(f64::NAN, 2.0, 0.1).is_nan());
+    assert!(gearbox::checked_pullout_Nm(3.0, f64::NAN, 0.1).is_nan());
+    assert!(gearbox::checked_pullout_Nm(3.0, 2.0, f64::NAN).is_nan());
+}
+
+#[test]
 fn a_torque_that_is_not_a_number_reads_unknown() {
     for (cold_high_input, rating) in [
         (f64::NAN, 0.6),

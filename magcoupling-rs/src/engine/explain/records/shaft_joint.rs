@@ -52,7 +52,9 @@ use crate::engine::explain::record::{Record, record};
 #[rustfmt::skip]
 pub const RECORDS: &[Record] = &[
     // --- What both joints share (shaft_joint::joint_specs, PartProperties::hub) ---
-    record("shaft_joint.required_Nm", "T_{fit,req}", "{shaft_joint.safety_factor} * {metal.torque_cold_high_Nm}"),
+    // BL-067: the larger of cold-high and the operating pull-out with the allowance.
+    record("shaft_joint.required_Nm", "T_{fit,req}",
+        "{shaft_joint.safety_factor} * max({metal.torque_cold_high_Nm}, {metal.torque_op_Nm} * (1 + {metal.variation}))"),
     // The part material in effect: on the steel circuit the steel's values (the Materials
     // inputs for the default pick, else the pick's), else the body's (a non-magnetic pick's,
     // else the workbook's 6061-T6); the yield is the library's for the metal in effect.

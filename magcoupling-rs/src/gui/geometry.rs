@@ -257,11 +257,21 @@ pub const MIN_CAP_SKIRT_MM: f64 = 0.5;
 /// The start of the cap's skirt caution (BL-082).
 pub const SKIRT_CAUTION_START: &str = "Cap wall past its thread (skirt)";
 
+/// The words of the Size tab's exploration line for a skirt at or below zero (BL-087).
+pub const CAP_THREAD_BREAKS_THROUGH: &str = "the cap thread breaks through the cap";
+
+/// The cap's nominal skirt, its wall past the thread [mm]: (cap outside diameter - cap thread
+/// diameter) / 2. At or below zero the thread breaks through the cap (BL-087).
+pub fn cap_skirt_mm(inputs: &DesignInputs) -> f64 {
+    (inputs.metal.cap_od_mm - inputs.metal.cap_thread_dia_mm) / 2.0
+}
+
 /// The Size tab's amber lines: walls thinner than a guide value that no counted check judges, so
 /// the status line's count does not move. The wall past the keyway while it stands (a keyway
 /// that breaks through is an exploration line in the error colour instead), and the cap's nominal
-/// skirt, (cap outside diameter - cap thread diameter) / 2 (BL-082): the thread's nominal diameter
-/// is the least root a tapped thread has, so the real wall is a few hundredths of a mm thinner.
+/// skirt ([`cap_skirt_mm`], BL-082) while it stands (at or below zero it is an exploration line
+/// too, BL-087): the thread's nominal diameter is the least root a tapped thread has, so the real
+/// wall is a few hundredths of a mm thinner.
 /// The skirt is compared as quoted, at four significant digits, so it never reads equal to the
 /// minimum beside its caution.
 pub fn wall_cautions(inputs: &DesignInputs, results: &DesignResults) -> Vec<String> {
@@ -274,10 +284,9 @@ pub fn wall_cautions(inputs: &DesignInputs, results: &DesignResults) -> Vec<Stri
             "Wall past keyway: {key_wall:.2} mm; existing guidance is about 2.5 mm."
         ));
     }
-    let md = &inputs.metal;
-    let skirt = (md.cap_od_mm - md.cap_thread_dia_mm) / 2.0;
+    let skirt = cap_skirt_mm(inputs);
     let quoted: f64 = format_value(&Value::Num(skirt)).parse().unwrap_or(skirt);
-    if quoted < MIN_CAP_SKIRT_MM {
+    if skirt > 0.0 && quoted < MIN_CAP_SKIRT_MM {
         lines.push(format!(
             "{SKIRT_CAUTION_START}: {}; guide minimum is {MIN_CAP_SKIRT_MM} mm.",
             mm(skirt)

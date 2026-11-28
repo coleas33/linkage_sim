@@ -26,7 +26,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::f64::consts::FRAC_PI_2;
 
 use common::{differential_files, input_meta, load_cases, report};
-use magcoupling::engine::api::{DesignInputs, DesignResults, compute_all};
+use magcoupling::engine::api::{DesignInputs, DesignResults, checked_pullout, compute_all};
 use magcoupling::engine::assumptions::{self, ASSUMPTIONS};
 use magcoupling::engine::compat::parity_close;
 use magcoupling::engine::deviations::DeviationId;
@@ -3135,8 +3135,13 @@ fn the_torque_band_note_s_levers_move_hot_low_and_cold_high_as_it_says() {
             close(r.metal.torque_cold_high_Nm, cold),
             "{name}: cold-high stays"
         );
-        // Entry 4: a colder minimum raises cold-high, and with it the shaft-joint and gearbox
-        // loads; hot-low stays.
+        // Entry 4: a colder minimum raises cold-high and, where cold-high is the larger (as at
+        // every probe design), the shaft-joint and gearbox loads; hot-low stays.
+        assert_eq!(
+            checked_pullout(&design, &base),
+            cold,
+            "{name}: cold-high the larger"
+        );
         let r = compute_all(&stepped(&design, "metal.min_temp_C", Step::Lower));
         assert!(r.metal.torque_cold_high_Nm > cold, "{name}: minimum");
         assert!(
@@ -3188,7 +3193,17 @@ fn the_torque_band_note_s_sentences_hold_at_every_probe_design() {
             close(m.torque_hot_low_Nm, base.model.pullout_Nm * (1.0 - v)),
             "{name}: hot-low"
         );
-        // Sentence 2: cold-high is the pull-out at the minimum temperature plus the allowance.
+        // Sentence 2: cold-high is the pull-out at the minimum temperature plus the allowance,
+        // the most torque expected before it slips with the minimum at or below the
+        // operating temperature (BL-067; the corner below the probes has it the other way).
+        assert!(
+            design.metal.min_temp_C <= design.coupling.op_temp_C,
+            "{name}"
+        );
+        assert!(
+            m.torque_cold_high_Nm >= base.model.pullout_Nm * (1.0 + v),
+            "{name}: cold-high at least the operating pull-out with the allowance"
+        );
         let mut cold_running = design.clone();
         cold_running.coupling.op_temp_C = design.metal.min_temp_C;
         assert!(
@@ -3225,6 +3240,28 @@ fn the_torque_band_note_s_sentences_hold_at_every_probe_design() {
             );
         }
     }
+    // Sentence 2's "unless running below the minimum" (BL-067): with the operating
+    // temperature below the minimum (-40 against 20 °C, variation 0.05, each on its slider)
+    // the operating pull-out with the allowance is above cold-high.
+    assert!(
+        note.sentences[2].ends_with("before it slips, unless running below the minimum."),
+        "{:?}",
+        note.sentences[2]
+    );
+    let mut corner = DesignInputs::default();
+    corner.coupling.op_temp_C = -40.0;
+    corner.metal.min_temp_C = 20.0;
+    corner.metal.variation = 0.05;
+    for (path, value) in [
+        ("coupling.op_temp_C", -40.0),
+        ("metal.min_temp_C", 20.0),
+        ("metal.variation", 0.05),
+    ] {
+        let s = slider(path);
+        assert!(s.min <= value && value <= s.max, "{path} {value}");
+    }
+    let r = compute_all(&corner);
+    assert!(r.model.pullout_Nm * 1.05 > r.metal.torque_cold_high_Nm);
 }
 
 /// `hot_low_cold_high`'s watch-outs: the first on the example design, the second at the five
@@ -3249,8 +3286,9 @@ fn the_torque_band_note_s_watch_outs_hold() {
         r.metal.torque_hot_low_Nm
     );
     // Watch-out 2: the gearbox check compares cold-high at the gearbox input, the one value the
-    // watch-out quotes, with the input rating, at every probe design; on the example design
-    // and the 20 mm ring it fails, on the other three it passes, so both sides are probed.
+    // watch-out quotes, or the operating pull-out with allowance if larger (BL-067), with the
+    // input rating, at every probe design; on the example design and the 20 mm ring it fails,
+    // on the other three it passes, so both sides are probed.
     let note = notes::note("hot_low_cold_high").expect("the torque-band note");
     assert!(
         note.watch_out[1].contains("gearbox check"),
@@ -3260,7 +3298,7 @@ fn the_torque_band_note_s_watch_outs_hold() {
     assert_eq!(values_in(note.watch_out[1]), ["metal.cold_high_input_Nm"]);
     let mut failing = Vec::new();
     for (name, design) in probes::probe_designs() {
-        assert_the_gearbox_check_compares_cold_high_at_the_input(name, &design);
+        assert_the_gearbox_check_compares_the_larger_pull_out_at_the_input(name, &design);
         let check = compute_all(&design).gearbox.cold_high_check;
         if check.starts_with(ABOVE_THE_GEARBOX_RATING) {
             failing.push(name);
@@ -3278,6 +3316,7 @@ fn the_torque_band_note_s_watch_outs_hold() {
     assert_eq!(gearbox_checks, ["gearbox.cold_high_check"]);
     // The note cites the check and the rating's open datasheet question.
     assert!(note.sources.contains(&notes::GEARBOX_CHECK_SOURCE));
+    assert!(note.sources.contains(&notes::CHECKED_PULLOUT_SOURCE));
 }
 
 /// The placeholders of one note text, in order.
@@ -3293,15 +3332,25 @@ fn values_in(text: &'static str) -> Vec<&'static str> {
 }
 
 /// What the torque-band note's second watch-out and the slip note's first say of the gearbox
-/// check (BL-059), at `design`: it compares cold-high at the gearbox input with the input
-/// rating and fails exactly when cold-high there is above the rating, so at the rating it
-/// passes (the rating 1 % either side of cold-high at the input, and at it); and it compares
-/// only cold-high, not the ripple there (the nominal slip swing): with the rating between the
-/// two, it fails exactly when cold-high is the larger. Which is larger is the caller's to
-/// assert: cold-high with the temperatures in order (the probe designs), the ripple at the
-/// caller's corners with the operating temperature below the minimum, where it can be the larger
-/// (backlog BL-067).
-fn assert_the_gearbox_check_compares_cold_high_at_the_input(name: &str, design: &DesignInputs) {
+/// check (BL-059, BL-067), at `design`: it compares the larger of cold-high and the operating
+/// pull-out with the allowance at the gearbox input with the input rating and fails exactly
+/// when that is above the rating, so at the rating it passes (the rating 1 % either side of
+/// it, and at it); and it compares that, not the ripple there (the nominal slip swing): with
+/// the rating between the two, it fails exactly when that is the larger. Cold-high is the
+/// larger with the temperatures in order (the probe designs); with the operating temperature
+/// below the minimum the operating pull-out with the allowance can be (the caller's corners).
+fn assert_the_gearbox_check_compares_the_larger_pull_out_at_the_input(
+    name: &str,
+    design: &DesignInputs,
+) {
+    // The larger at the gearbox input, formed as the engine forms it (the larger at the output
+    // over ratio and efficiency), so the rating can sit at it to the last float.
+    let larger = |d: &DesignInputs| {
+        let r = compute_all(d);
+        let c = &d.coupling;
+        let operating = r.model.pullout_Nm * (1.0 + d.metal.variation);
+        r.metal.torque_cold_high_Nm.max(operating) / (c.gear_ratio * c.gear_efficiency)
+    };
     let fails = |d: &DesignInputs| {
         let r = compute_all(d);
         let check = r.gearbox.cold_high_check;
@@ -3312,13 +3361,13 @@ fn assert_the_gearbox_check_compares_cold_high_at_the_input(name: &str, design: 
         );
         assert_eq!(
             above,
-            r.metal.cold_high_input_Nm > d.coupling.gearbox_input_rating_Nm,
+            larger(d) > d.coupling.gearbox_input_rating_Nm,
             "{name}: {check}"
         );
         above
     };
     let r = compute_all(design);
-    let peak = r.metal.cold_high_input_Nm;
+    let peak = larger(design);
     let rated = |rating: f64| {
         let mut d = design.clone();
         d.coupling.gearbox_input_rating_Nm = rating;
@@ -3331,7 +3380,7 @@ fn assert_the_gearbox_check_compares_cold_high_at_the_input(name: &str, design: 
     assert_eq!(
         fails(&rated(0.5 * (swing + peak))),
         peak > swing,
-        "{name}: a rating between the ripple and cold-high at the gearbox input"
+        "{name}: a rating between the ripple and the larger pull-out at the gearbox input"
     );
     // At the design's own rating.
     fails(design);
@@ -3613,9 +3662,9 @@ fn levers_of(id: &str) -> Vec<Lever> {
 /// and minus the pull-out once per pole pair passed (the slip frequency), leaving a drag far
 /// below the pull-out; the gearbox input sees that swing through the ratio and the efficiency,
 /// and cold-high at the input lies above it (the first watch-out: cold, the swings can reach
-/// cold-high, and the gearbox check compares only that torque with the input rating). With the
-/// operating temperature below the minimum the swing can be above cold-high, and the check still
-/// compares only cold-high.
+/// cold-high, and the gearbox check compares that, or the operating pull-out with allowance if
+/// larger). With the operating temperature below the minimum the swing can be above cold-high,
+/// and the check compares the swing with the allowance (BL-067).
 #[test]
 fn the_slip_note_s_claims_hold_at_every_probe_design() {
     assert_eq!(
@@ -3642,7 +3691,8 @@ fn the_slip_note_s_claims_hold_at_every_probe_design() {
         "sentence 0 names the gearbox: {sentence_zero:?}"
     );
     // Watch-out 1 names the gearbox check and quotes cold-high at the gearbox input, the value
-    // it compares; the note cites the check and the rating's open datasheet question.
+    // it compares where it is the larger; the note cites the check and the rating's open
+    // datasheet question.
     assert!(
         note.watch_out[0].contains("gearbox check"),
         "watch-out 1 names the gearbox check: {:?}",
@@ -3650,15 +3700,16 @@ fn the_slip_note_s_claims_hold_at_every_probe_design() {
     );
     assert_eq!(values_in(note.watch_out[0]), ["metal.cold_high_input_Nm"]);
     assert!(note.sources.contains(&notes::GEARBOX_CHECK_SOURCE));
+    assert!(note.sources.contains(&notes::CHECKED_PULLOUT_SOURCE));
     // Every torque in watch-out 1 names its gearbox side, none is called the swings' peak, and
-    // the check "compares only that torque": with the operating temperature below the minimum
-    // (both on their sliders; backlog BL-067) the nominal swing at the gearbox input can be
-    // above cold-high there, and the check still compares only cold-high.
+    // the check compares cold-high "or the operating pull-out with allowance if larger": with
+    // the operating temperature below the minimum (both on their sliders) the nominal swing at
+    // the gearbox input can be above cold-high there, and the check compares the swing with
+    // the allowance (BL-067).
     for words in [
         "gearbox output",
         "at the gearbox input here",
-        "the input rating",
-        "compares only that torque",
+        "compares that, or the operating pull-out with allowance if larger",
     ] {
         assert!(
             note.watch_out[0].contains(words),
@@ -3693,7 +3744,7 @@ fn the_slip_note_s_claims_hold_at_every_probe_design() {
             r.model.gearbox_input_ripple_Nm > r.metal.cold_high_input_Nm,
             "{name}: the ripple above cold-high at the gearbox input"
         );
-        assert_the_gearbox_check_compares_cold_high_at_the_input(&name, &corner);
+        assert_the_gearbox_check_compares_the_larger_pull_out_at_the_input(&name, &corner);
     }
     for (name, design) in probes::probe_designs() {
         let r = compute_all(&design);
@@ -3729,12 +3780,12 @@ fn the_slip_note_s_claims_hold_at_every_probe_design() {
         // Watch-out 1: the gearbox output carries the swings (sentence 4's relation); cold they
         // can reach cold-high, which at the gearbox input lies above the ripple at the
         // operating temperature (the temperatures in order); and the gearbox check compares
-        // only that torque with the input rating.
+        // that, or the operating pull-out with allowance if larger, with the input rating.
         assert!(
             r.metal.cold_high_input_Nm > r.model.gearbox_input_ripple_Nm,
             "{name}: cold-high at the gearbox input above the ripple"
         );
-        assert_the_gearbox_check_compares_cold_high_at_the_input(name, &design);
+        assert_the_gearbox_check_compares_the_larger_pull_out_at_the_input(name, &design);
         // Entry 2: slower slipping, slower swings.
         let slower = compute_all(&stepped(&design, "metal.slip_rpm", Step::Lower));
         assert!(
@@ -4725,9 +4776,12 @@ fn the_shaft_joint_note_s_claims_hold_at_every_probe_design() {
         ]
     );
     // Sentence 1 says what each joint must hold (the notes record's SF-2, from the review
-    // leftovers), as `r.required_Nm` is asserted below at every probe design.
+    // leftovers), as `r.required_Nm` is asserted below at every probe design; BL-067 adds the
+    // operating pull-out with the allowance where it is the larger.
     assert!(
-        s[1].contains("{shaft_joint.required_Nm}, cold-high times the safety factor."),
+        s[1].contains(
+            "{shaft_joint.required_Nm}, cold-high or a larger operating pull-out with allowance, times the safety factor."
+        ),
         "sentence 1 says what each joint must hold: {:?}",
         s[1]
     );
@@ -4815,10 +4869,14 @@ fn the_shaft_joint_note_s_claims_hold_at_every_probe_design() {
     );
     for (name, inputs, results) in &probe_points() {
         let r = &results.shaft_joint;
+        // BL-067: the larger of cold-high and the operating pull-out with the allowance,
+        // cold-high at every probe point (the temperatures in order).
+        let operating = results.model.pullout_Nm * (1.0 + inputs.metal.variation);
+        assert!(results.metal.torque_cold_high_Nm >= operating, "{name}");
         assert_eq!(
             r.required_Nm,
-            inputs.shaft_joint.safety_factor * results.metal.torque_cold_high_Nm,
-            "{name}: each must hold the safety factor times cold-high"
+            inputs.shaft_joint.safety_factor * results.metal.torque_cold_high_Nm.max(operating),
+            "{name}: each must hold the safety factor times the larger"
         );
         // E [GPa] · δ [µm] / d [mm] in MPa per µm: GPa · 1000 × µm · 0.001.
         let thin_wall = r.part_modulus_GPa / inputs.coupling.bore_mm;

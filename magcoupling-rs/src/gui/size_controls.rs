@@ -19,7 +19,8 @@ use crate::engine::size_controls::{
 use crate::engine::sizing::FreeVariable;
 use crate::gui::dashboard::end_effect_out_of_range;
 use crate::gui::format::{
-    fixed, shared_torque_precision, signed_percent, signed_torque_change, torque_shortfall,
+    TORQUE_DECIMALS, TorquePrecision, decimals_with_a_digit, fixed, shared_torque_precision,
+    signed_percent, signed_torque_change, torque_shortfall,
 };
 use crate::gui::guidance::{FACE_GAP, SIZE_TAB_NOTE, TORQUE_BAND_NOTE};
 use crate::gui::input_ui::add_slider;
@@ -311,7 +312,9 @@ pub fn pullout_label(op_temp_C: f64) -> String {
 /// significant digits as the readouts write values, a margin with its sign and a shortfall's
 /// size without (the owner's FO-4 at the slice-3 STOP; `shared_torque_precision`, the gap a
 /// row of one, then `signed_torque_change` and `torque_shortfall`): "margin +2.29 N·m
-/// (+2.285e302 %)", "short 1.000e300 N·m (-100.0 %)".
+/// (+2.285e302 %)", "short 1.000e300 N·m (-100.0 %)". So does a shortfall that reads zero at
+/// the cap whatever its percent (BL-083): "short 1.000e-7 N·m (-0.0 %)", never "short 0.00 N·m",
+/// though a margin that small still reads "+0.00" (T-9's float noise).
 #[allow(non_snake_case)] // unit suffix
 pub fn torque_gap_text(hot_low_Nm: f64, required_Nm: f64) -> (String, bool) {
     let meets = hot_low_Nm >= required_Nm;
@@ -319,8 +322,13 @@ pub fn torque_gap_text(hot_low_Nm: f64, required_Nm: f64) -> (String, bool) {
     // The gap as a fraction of a positive requirement: the percent drawn beside it.
     let fraction = (required_Nm > 0.0).then(|| gap_Nm / required_Nm);
     // The gap's own precision, one rule for a margin and a shortfall: a torque card row's, the
-    // gap a row of one.
-    let precision = shared_torque_precision(&[(gap_Nm, fraction)]);
+    // gap a row of one. A shortfall that would read zero there reads four significant digits
+    // (BL-083): a failing design never reads "short 0.00 N·m".
+    let precision = if !meets && decimals_with_a_digit(gap_Nm, TORQUE_DECIMALS).is_none() {
+        TorquePrecision::Significant
+    } else {
+        shared_torque_precision(&[(gap_Nm, fraction)])
+    };
     let (word, torque) = if meets {
         ("margin", signed_torque_change(gap_Nm, precision))
     } else {
@@ -619,12 +627,16 @@ mod tests {
             torque_gap_text(2.504, 2.5),
             ("margin +0.004 N·m (+0.2 %)".to_owned(), true)
         );
-        // Past the cap (two more decimals, T-9) a gap reads two decimals: a change that small is
-        // read as float noise (T-9), not a digit to show, though this one is a typed 0.00001 N·m
-        // shortfall. The word and the percent's sign still say which side it is on.
+        // Past the cap (two more decimals, T-9) a margin reads two decimals, as float noise
+        // (T-9), but a shortfall reads four significant digits (BL-083): a failing design never
+        // reads "short 0.00 N·m".
         assert_eq!(
             torque_gap_text(2.49999, 2.5),
-            ("short 0.00 N·m (-0.0 %)".to_owned(), false)
+            ("short 1.000e-5 N·m (-0.0 %)".to_owned(), false)
+        );
+        assert_eq!(
+            torque_gap_text(2.50001, 2.5),
+            ("margin +0.00 N·m (+0.0 %)".to_owned(), true)
         );
     }
 
@@ -687,7 +699,7 @@ mod tests {
             // No percent drawn (a requirement that is no positive torque): the bound alone.
             (2e6, 0.0, "margin +2.000e6 N·m", true),
             (1e-9, 0.0, "margin +0.00 N·m", true),
-            (-1e-9, 0.0, "short 0.00 N·m", false),
+            (-1e-9, 0.0, "short 1.000e-9 N·m", false),
         ] {
             assert_eq!(
                 torque_gap_text(hot_low, required),
@@ -729,6 +741,11 @@ mod tests {
                 };
                 assert!(text.starts_with(word), "{what}");
                 assert!(text.contains(sign), "{what}");
+                if !meets {
+                    // BL-083: a shortfall's size never reads zero, however small.
+                    let size = text[word.len()..].split(' ').next().unwrap_or_default();
+                    assert_ne!(size.parse::<f64>(), Ok(0.0), "{what}");
+                }
             }
         }
     }
@@ -800,6 +817,8 @@ mod tests {
             // Decision 10B's new forms: an exact zero and a shortfall at three decimals.
             torque_gap_text(2.5, 2.5).0,
             torque_gap_text(2.499, 2.5).0,
+            // BL-083's form: a shortfall past the cap in four significant digits.
+            torque_gap_text(2.49999, 2.5).0,
             DIAMETER_HOVER.to_owned(),
             LENGTH_HOVER.to_owned(),
             LINKED_HOUSING.to_owned(),

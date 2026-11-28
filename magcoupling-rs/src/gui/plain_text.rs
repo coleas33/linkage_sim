@@ -154,7 +154,7 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "coupling.gearbox_input_rating_Nm",
-        "The gearbox's input torque rating. The gearbox check compares the cold-high torque at the gearbox input with it.",
+        "The gearbox's input torque rating. The gearbox check compares with it the torque at the gearbox input: cold-high, or the operating pull-out with allowance if larger.",
     ),
     (
         "temperature.duty.hot_ambient_C",
@@ -747,7 +747,18 @@ const HELP: &[(&str, &str)] = &[
     // docs/analyses/2026-10-14-magcoupler-help-review.md, BL-059 section).
     (
         "model.gearbox_input_ripple_Nm",
-        "Slip swing: the pull-out at the gearbox output at operating temperature, without the production allowance, divided by ratio and efficiency. The gearbox check compares cold-high at the gearbox input instead.",
+        "The pull-out at the gearbox output at operating temperature, without the production allowance, divided by ratio and efficiency. The gearbox check compares input cold-high, or this plus allowance if larger.",
+    ),
+    // BL-084: the band torques, the Hot-low and Cold-high tiles' "What it is" (the torque-band
+    // note's definitions; the checks that read cold-high compare the larger of it and the
+    // operating pull-out with the allowance, BL-067, so no torque is ordered).
+    (
+        "metal.torque_hot_low_Nm",
+        "The pull-out at the operating magnet temperature less the production variation allowance. It must reach the required torque; a hotter operating temperature or a larger allowance lowers it.",
+    ),
+    (
+        "metal.torque_cold_high_Nm",
+        "The pull-out at the minimum magnet temperature plus the production variation allowance. The shaft joint and gearbox checks read it, or the operating pull-out with allowance if larger.",
     ),
 ];
 
@@ -1925,6 +1936,38 @@ mod batch_b_tests {
         }
     }
 
+    /// Asserts that `result` moves as `moves` says on the `design` design when `input` rises
+    /// one slider step.
+    fn assert_one_step_up(input: &str, design: &str, result: &str, moves: Moves) {
+        let before = claim_design(design);
+        let step = InputCatalogue::get()
+            .entry(input)
+            .and_then(|entry| entry.meta.range)
+            .unwrap_or_else(|| panic!("{input}: no slider"))
+            .step;
+        let raised = match before.get(input) {
+            Some(Value::Num(x)) => Value::Num(x + step),
+            Some(Value::Int(n)) => Value::Int(n + step as i64),
+            other => panic!("{input}: {other:?}"),
+        };
+        let mut after = before.clone();
+        after
+            .set(input, raised)
+            .unwrap_or_else(|e| panic!("{input}: {e:?}"));
+        let (was, now) = (number(&before, result), number(&after, result));
+        let seen = if now > was {
+            Up
+        } else if now < was {
+            Down
+        } else {
+            Stays
+        };
+        assert_eq!(
+            seen, moves,
+            "{input} one step up on the {design} design: {result} {was} -> {now}"
+        );
+    }
+
     #[test]
     fn every_direction_a_batch_b_help_states_holds_one_slider_step_up() {
         let catalogue = InputCatalogue::get();
@@ -1933,33 +1976,7 @@ mod batch_b_tests {
                 BATCH_B_EMPTY.contains(&input) || BATCH_B_OVERRIDES.contains(&input),
                 "{input} is not batch B's"
             );
-            let before = claim_design(design);
-            let step = catalogue
-                .entry(input)
-                .and_then(|entry| entry.meta.range)
-                .unwrap_or_else(|| panic!("{input}: no slider"))
-                .step;
-            let raised = match before.get(input) {
-                Some(Value::Num(x)) => Value::Num(x + step),
-                Some(Value::Int(n)) => Value::Int(n + step as i64),
-                other => panic!("{input}: {other:?}"),
-            };
-            let mut after = before.clone();
-            after
-                .set(input, raised)
-                .unwrap_or_else(|e| panic!("{input}: {e:?}"));
-            let (was, now) = (number(&before, result), number(&after, result));
-            let seen = if now > was {
-                Up
-            } else if now < was {
-                Down
-            } else {
-                Stays
-            };
-            assert_eq!(
-                seen, moves,
-                "{input} one step up on the {design} design: {result} {was} -> {now}"
-            );
+            assert_one_step_up(input, design, result, moves);
         }
         // Every batch-B input with a slider and a value has its help's claim checked here; the
         // blank measured drag and the three results are checked in the next test.
@@ -1973,6 +1990,36 @@ mod batch_b_tests {
                     "{path}: no claim"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn every_direction_the_band_torques_helps_state_holds_one_slider_step_up() {
+        // BL-084: a hotter operating temperature or a larger allowance lowers hot-low; a colder
+        // minimum (the minimum falling) or a larger allowance raises cold-high. The temperature
+        // claims hold for NdFeB and for ferrite: both lose Br as they warm. Hot-low's help states
+        // its directions; cold-high's gave its words to the torque the checks compare instead
+        // (G-3 text review of R4, SF-3, under the 30-word cap), and the torque-band note's steps
+        // still state its directions.
+        const HOT_LOW: &str = "metal.torque_hot_low_Nm";
+        const COLD_HIGH: &str = "metal.torque_cold_high_Nm";
+        let help = help_for(HOT_LOW);
+        assert!(
+            help.contains("a hotter operating temperature or a larger allowance lowers it"),
+            "{help}"
+        );
+        assert!(
+            help_for(COLD_HIGH).contains(
+                "The shaft joint and gearbox checks read it, or the operating pull-out with allowance if larger."
+            ),
+            "{}",
+            help_for(COLD_HIGH)
+        );
+        for design in ["example", "Y30 grades"] {
+            assert_one_step_up("coupling.op_temp_C", design, HOT_LOW, Down);
+            assert_one_step_up("metal.variation", design, HOT_LOW, Down);
+            assert_one_step_up("metal.min_temp_C", design, COLD_HIGH, Down);
+            assert_one_step_up("metal.variation", design, COLD_HIGH, Up);
         }
     }
 
@@ -2184,8 +2231,9 @@ mod batch_b_tests {
     /// below the minimum, so no text calls the swing warm. Each claim holds on the engine: at
     /// the five probe designs the swing is the nominal pull-out divided by the ratio and
     /// efficiency, one slider step of the operating temperature moves it and one of the minimum
-    /// temperature or the variation does not; and with the rating halfway between the swing and
-    /// cold-high at the gearbox input, the check follows cold-high on either side of the swing.
+    /// temperature or the variation does not; and the check compares the larger of cold-high and
+    /// the swing plus allowance at the gearbox input (BL-067): with the rating halfway between
+    /// the two it fails, whichever is the larger, and at the larger it passes.
     #[test]
     fn the_gearbox_texts_claim_what_the_engine_does() {
         use crate::engine::explain::notes::Step;
@@ -2206,7 +2254,12 @@ mod batch_b_tests {
         names(
             RATING,
             help_for(RATING),
-            &["gearbox check", "cold-high", "gearbox input"],
+            &[
+                "gearbox check",
+                "cold-high",
+                "gearbox input",
+                "operating pull-out with allowance if larger",
+            ],
         );
         names(
             RIPPLE,
@@ -2215,7 +2268,7 @@ mod batch_b_tests {
                 "operating temperature",
                 "without the production allowance",
                 "ratio and efficiency",
-                "cold-high at the gearbox input",
+                "input cold-high, or this plus allowance if larger",
                 "pull-out at the gearbox output",
             ],
         );
@@ -2225,6 +2278,7 @@ mod batch_b_tests {
             &[
                 "gearbox output",
                 "gearbox input",
+                "operating pull-out with allowance if larger",
                 "fatigue from repeated slips is not checked",
             ],
         );
@@ -2278,27 +2332,37 @@ mod batch_b_tests {
                 );
             }
         }
-        // The check compares cold-high at the gearbox input, not the swing: with the rating
-        // halfway between them it follows cold-high, above the swing at the defaults and below
-        // it with the operating temperature under the minimum (-40 against 20 °C, variation
-        // 0.1: both temperatures on their sliders).
+        // The check compares the larger of cold-high and the swing plus allowance at the
+        // gearbox input (BL-067): cold-high is the larger at the defaults, the swing plus
+        // allowance with the operating temperature under the minimum (-40 against 20 °C,
+        // variation 0.1: both temperatures on their sliders). With the rating halfway between
+        // the two the check fails either way; at the larger it passes.
         let mut colder_running = DesignInputs::default();
         colder_running.coupling.op_temp_C = -40.0;
         colder_running.metal.min_temp_C = 20.0;
         colder_running.metal.variation = 0.1;
-        for (design, passes) in [(DesignInputs::default(), false), (colder_running, true)] {
+        for (design, swing_larger) in [(DesignInputs::default(), false), (colder_running, true)] {
             let results = compute_all(&design);
-            let ripple = results.model.gearbox_input_ripple_Nm;
+            let swing_high = results.model.gearbox_input_ripple_Nm * (1.0 + design.metal.variation);
             let cold_high = results.metal.cold_high_input_Nm;
-            assert_eq!(cold_high < ripple, passes, "{cold_high} against {ripple}");
-            let mut between = design.clone();
-            between.coupling.gearbox_input_rating_Nm = (ripple + cold_high) / 2.0;
-            let verdict = compute_all(&between).gearbox.cold_high_check;
-            if passes {
-                assert_eq!(verdict, WITHIN_THE_GEARBOX_RATING);
-            } else {
-                assert!(verdict.starts_with(ABOVE_THE_GEARBOX_RATING), "{verdict}");
-            }
+            assert_eq!(
+                cold_high < swing_high,
+                swing_larger,
+                "{cold_high} against {swing_high}"
+            );
+            let rated = |rating: f64| {
+                let mut rated = design.clone();
+                rated.coupling.gearbox_input_rating_Nm = rating;
+                compute_all(&rated).gearbox.cold_high_check
+            };
+            let verdict = rated((swing_high + cold_high) / 2.0);
+            assert!(verdict.starts_with(ABOVE_THE_GEARBOX_RATING), "{verdict}");
+            // A rating a millionth above the larger: the swing plus allowance is formed here in
+            // another order than the engine forms it, so not to the last float.
+            assert_eq!(
+                rated(cold_high.max(swing_high) * (1.0 + 1e-6)),
+                WITHIN_THE_GEARBOX_RATING
+            );
         }
     }
 

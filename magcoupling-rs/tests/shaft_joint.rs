@@ -14,6 +14,7 @@ use magcoupling::compute_all;
 use magcoupling::engine::api::{DesignInputs, shaft_joint_links};
 use magcoupling::engine::assumptions::ASSUMPTIONS;
 use magcoupling::engine::compat::py_min;
+use magcoupling::engine::explain::notes;
 use magcoupling::engine::explain::probes::probe_designs;
 use magcoupling::engine::material_library::BACK_IRON_CHOICES;
 use magcoupling::engine::meta::{InputSet, SliderRange, Value, input_rows, result_rows};
@@ -371,6 +372,48 @@ fn the_safety_factor_help_says_a_slip_can_reverse_the_torque_not_that_each_does(
 }
 
 #[test]
+fn no_shaft_joint_text_calls_the_torque_a_fit_must_hold_the_required_torque() {
+    // G-3 text review of R4, MF-1: on this page Required torque is the hot-low requirement (the
+    // Size tab's first slider); the torque each fit must hold is the result "Torque each shaft
+    // joint must hold". So no label or help of the check's inputs and results, and no text of
+    // the shaft-joint note, says "required torque"; the check's help names that result by its
+    // label.
+    let defaults = DesignInputs::default();
+    let mut texts: Vec<&str> = Vec::new();
+    for row in input_rows(&defaults) {
+        if row.path.starts_with("shaft_joint.") {
+            texts.extend([row.meta.label, row.meta.help]);
+        }
+    }
+    for row in result_rows(&compute_all(&defaults)) {
+        if row.path.starts_with("shaft_joint.") {
+            texts.extend([row.meta.label, row.meta.help]);
+        }
+    }
+    // Not vacuous: fifteen inputs and twenty-four results.
+    assert_eq!(texts.len(), 2 * (15 + 24));
+    let note = notes::note("shaft_joint").expect("the shaft-joint note");
+    texts.push(note.title);
+    texts.extend(note.sentences.iter().copied());
+    texts.extend(note.change.iter().map(|change| change.text));
+    texts.extend(note.watch_out.iter().copied());
+    for text in &texts {
+        assert!(!text.to_lowercase().contains("required torque"), "{text}");
+    }
+    let label = result_rows(&compute_all(&defaults))
+        .into_iter()
+        .find(|row| row.path == "shaft_joint.required_Nm")
+        .map(|row| row.meta.label)
+        .expect("the joint torque");
+    assert_eq!(label, "Torque each shaft joint must hold");
+    let help = result_help("shaft_joint.check");
+    assert!(
+        help.contains("must hold the torque each shaft joint must hold when loosest"),
+        "{help}"
+    );
+}
+
+#[test]
 fn the_holding_helps_put_the_rotor_allowance_at_the_hot_end_alone() {
     // G-3 review MF-2 (spec 3.3): the loosest fit is the cold end or the hot end, whichever
     // loosens it more, and only the hot end has the rotor warmer than its shaft. 4140 (the
@@ -572,11 +615,12 @@ fn the_defaults_pass_with_the_numbers_of_the_spec() {
 }
 
 #[test]
-fn the_bl067_corner_reads_cold_high_and_passes() {
-    // Review MF-4: with the operating temperature (-40 °C) below the minimum (20 °C) and a
-    // 0.1 variation, the check reads cold-high (3.1823 N·m), not the 3.657 N·m operating
-    // pull-out with its allowance (3.3246 × 1.1). BL-067's fix of which pull-out the checks
-    // compare moves this pin on purpose.
+fn the_bl067_corner_reads_the_operating_pull_out_with_its_allowance() {
+    // Review MF-4 pinned this corner on cold-high; BL-067 (option (b), assumed under the
+    // owner's ruling of 2026-11-10, register A-10) moves the pin on purpose. With the operating
+    // temperature (-40 °C) below the minimum (20 °C) and a 0.1 variation, the operating
+    // pull-out with its allowance (3.3246 × 1.1 = 3.657 N·m) is above cold-high (3.1823 N·m),
+    // and the check reads the larger: each joint must hold twice it.
     let corner = design(|i| {
         i.coupling.op_temp_C = -40.0;
         i.metal.min_temp_C = 20.0;
@@ -586,13 +630,19 @@ fn the_bl067_corner_reads_cold_high_and_passes() {
     let s = &r.shaft_joint;
     assert_near(r.metal.torque_cold_high_Nm, 3.1823, 5e-5, "cold-high");
     assert_near(r.model.pullout_Nm * 1.1, 3.657, 5e-4, "operating pull-out");
-    assert_near(s.required_Nm, 6.3647, 5e-5, "required");
+    assert_near(
+        s.required_Nm,
+        2.0 * r.model.pullout_Nm * 1.1,
+        1e-12,
+        "required",
+    );
+    assert_near(s.required_Nm, 7.3141, 5e-4, "required");
     assert_near(s.hub_holding_Nm, 9.484, 5e-4, "hub holding");
     assert_near(s.cup_holding_Nm, 16.899, 5e-4, "cup holding");
     assert_near(s.hub_bore_stress_MPa, 233.09, 5e-3, "hub stress");
     assert_near(s.cup_bore_stress_MPa, 303.95, 5e-3, "cup stress");
-    assert_near(s.hub_key_pressure_MPa, 106.08, 5e-3, "hub key");
-    assert_near(s.cup_key_pressure_MPa, 84.86, 5e-3, "cup key");
+    assert_near(s.hub_key_pressure_MPa, 121.90, 5e-3, "hub key");
+    assert_near(s.cup_key_pressure_MPa, 97.52, 5e-3, "cup key");
     assert_eq!(s.check, SHAFT_JOINTS_PASS);
 }
 
@@ -1274,7 +1324,7 @@ fn a_value_that_is_not_a_number_reads_unknown() {
     }
     type PutLink = fn(&mut ShaftJointLinks);
     let links_nan: [PutLink; 15] = [
-        |l| l.cold_high_Nm = f64::NAN,
+        |l| l.pullout_Nm = f64::NAN,
         |l| l.bore_mm = f64::NAN,
         |l| l.keyway_depth_mm = f64::NAN,
         |l| l.hub_length_mm = f64::NAN,
@@ -1929,7 +1979,7 @@ fn an_infinite_cold_high_slips() {
     // +inf fails where it is compared: the required torque +inf slips at the inner hub first.
     let defaults = DesignInputs::default();
     let infinite = ShaftJointLinks {
-        cold_high_Nm: f64::INFINITY,
+        pullout_Nm: f64::INFINITY,
         ..links(&defaults)
     };
     assert_eq!(
