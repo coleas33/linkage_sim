@@ -5,6 +5,9 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - Magcoupler: the Hot-low and Cold-high entries say what they are; Cold-high names its checks (BL-084)
+- Branch magcoupling/r4-physics: a HELP row each for `metal.torque_hot_low_Nm` and `metal.torque_cold_high_Nm` (magcoupling-rs/src/gui/plain_text.rs: what each is and which way the temperature and the allowance move it), so both tiles' entries, hovers and table rows show "What it is"; the Cold-high entry names the Shaft joints and Gearbox input torque checks under "Checks it touches" (`explain::ALSO_TOUCHES`, `touched_guides`; its row still badges none); red test explain.rs `the_band_torques_entries_say_what_they_are_and_cold_high_names_the_checks_it_feeds`; claim test plain_text.rs `every_direction_the_band_torques_helps_state_holds_one_slider_step_up` (pins each help's direction words and checks them one slider step up on the example and Y30 designs); the gui-smoke card step names the entry's "What it is"; GUI text only, no engine or oracle number changes.
+
 ## 2026-11-28 - Magcoupler: a failing Hot-low tile never reads a gap of zero (BL-083)
 - Branch magcoupling/r4-physics: `torque_gap_text` (magcoupling-rs/src/gui/size_controls.rs) reads a shortfall that reads zero at the cap in four significant digits whatever its percent, so at Required = hot-low + 1e-7 the tile reads "short 1.000e-7 N·m (-0.0 %)", not "short 0.00 N·m (-0.0 %)"; a margin that small still reads "+0.00" (T-9). The true gap, not the difference of the BL-068 pair on screen. GUI text only; no engine or oracle number moves. Tests: tiles.rs `a_failing_hot_low_tile_never_reads_a_gap_of_zero` (red first), the T-9 gap cases and the hair-gap sweep in size_controls.rs. Docs: README, docs/ai 02, backlog BL-083.
 

@@ -406,7 +406,8 @@ Space on it focused (the focus arriving selects nothing), selects its result (`R
 check row, the tag or row is outlined while its result is selected or while it has the keyboard's
 focus. The entry leads with the value and the name as the results table shows them (the display
 label, which the table draws as the dashboard does; a tile's as the tile does), then
-"What it is" (the result's help), "Checks it touches" (the check of its dashboard row), "Watch
+"What it is" (the result's help), "Checks it touches" (the check of its dashboard row; for
+cold-high, the shaft joints and gearbox checks that read it, BL-084), "Watch
 out" (the stored-3D line, for a row that reads those fields), "Full lesson:" where its dashboard
 row has a lesson, the "Equation" link where it has an equation, and with Show spreadsheet details
 on its cell. Such a click no longer opens the Equation panel (the design's 5.5: the entry's

@@ -630,11 +630,11 @@ fn numbers_ui(
 /// The entry of the result at `path` (spec 5.3): a tile's, a dimension's, a callout's or a
 /// results-table row's. Its number and its name (a tile's as the tile draws them, another's as
 /// its results-table row does); what it is (the result's help text); for the hot-low torque,
-/// what a change does (the torque card, [`card_ui`]); the check that badges its row, a link
-/// that selects it; for a row that reads the stored 3D fields, the line that says so ("Watch
-/// out"); and the foot links (its row's lesson where it has one, the Equation link where it
-/// has an equation), with the spreadsheet details its cell. Nothing for a path that is no
-/// result.
+/// what a change does (the torque card, [`card_ui`]); the checks it touches
+/// ([`touched_guides`]), each a link that selects it; for a row that reads the stored 3D
+/// fields, the line that says so ("Watch out"); and the foot links (its row's lesson where it
+/// has one, the Equation link where it has an equation), with the spreadsheet details its cell.
+/// Nothing for a path that is no result.
 fn result_ui(
     ui: &mut egui::Ui,
     path: &'static str,
@@ -673,9 +673,12 @@ fn result_ui(
         card_ui(ui, consequences, shown.auto, readouts);
     }
     let mut asked = None;
-    if let Some(guide) = badging_check(path).and_then(guidance::guide) {
+    let guides = touched_guides(path);
+    if !guides.is_empty() {
         heading(ui, CHECKS_IT_TOUCHES);
-        asked = check_link_ui(ui, guide, shown);
+        for guide in guides {
+            asked = asked.or(check_link_ui(ui, guide, shown));
+        }
     }
     if STORED_3D_ROWS.contains(&path) {
         heading(ui, WATCH_OUT);
@@ -686,6 +689,29 @@ fn result_ui(
         .then(|| cell_line(info.cell.as_deref()));
     let equation = registry().equation_for(path).map(|_| path);
     asked.or(foot_ui(ui, row_learn(path), equation, cell, readouts))
+}
+
+/// The checks that read a result without badging its row, which its entry names under
+/// [`CHECKS_IT_TOUCHES`] after the check of its row (BL-084), in the check list's order:
+/// cold-high feeds the shaft joints and gearbox checks, which compare the larger of it and the
+/// operating pull-out with the allowance (BL-067).
+const ALSO_TOUCHES: [(&str, &[&str]); 1] = [(
+    "metal.torque_cold_high_Nm",
+    &[guidance::SHAFT_JOINT, guidance::GEARBOX],
+)];
+
+/// The guides of the checks the entry of the result at `path` names under
+/// [`CHECKS_IT_TOUCHES`]: the check that badges its row, then its [`ALSO_TOUCHES`] row's.
+fn touched_guides(path: &str) -> Vec<&'static CheckGuide> {
+    let also = ALSO_TOUCHES
+        .iter()
+        .filter(|&&(row, _)| row == path)
+        .flat_map(|&(_, checks)| checks.iter().copied());
+    badging_check(path)
+        .into_iter()
+        .chain(also)
+        .filter_map(guidance::guide)
+        .collect()
 }
 
 /// What a click on the result at `path` selects (spec 5.2): the check whose own result it is
@@ -1516,7 +1542,8 @@ mod tests {
     fn a_tile_s_entry_names_the_check_of_its_row_and_a_click_selects_it() {
         // Spec 5.3, "Checks it touches" for a result: the check of its row (plan review C-3,
         // E-5). The Hot-low tile's entry shows the hot minimum check's state and name; a click
-        // on the name selects the check. A tile no check badges has no such heading.
+        // on the name selects the check. A tile no check touches has no such heading (Cold-high's
+        // checks are BL-084's test, below).
         let ctx = egui::Context::default();
         let inputs = DesignInputs::default();
         let check = "metal.hot_min_check";
@@ -1535,7 +1562,7 @@ mod tests {
         let (_, asked, events) = frames(&ctx, &inputs, hot_low, false, click_at(link.center()));
         assert_eq!(asked, Some(Asked::Select(Selection::Check(check))));
         assert_eq!(events, ReadoutEvents::default());
-        for tile in [Tile::Pullout, Tile::ColdHigh, Tile::Mass] {
+        for tile in [Tile::Pullout, Tile::Mass] {
             let (output, _, _) =
                 frames(&ctx, &inputs, Selection::Result(tile.path()), false, vec![]);
             assert_eq!(
@@ -1543,6 +1570,38 @@ mod tests {
                 0,
                 "{tile:?}"
             );
+        }
+    }
+
+    #[test]
+    fn the_band_torques_entries_say_what_they_are_and_cold_high_names_the_checks_it_feeds() {
+        // BL-084: the Hot-low and Cold-high tiles' entries each have "What it is" (a HELP row),
+        // and Cold-high's names under "Checks it touches" the two checks that read it, the shaft
+        // joints and the gearbox input checks (they compare the larger of it and the operating
+        // pull-out with the allowance, BL-067); a click on either name selects that check.
+        let ctx = egui::Context::default();
+        let inputs = DesignInputs::default();
+        for tile in [Tile::HotLow, Tile::ColdHigh] {
+            let help = help_for(tile.path());
+            assert!(!help.is_empty(), "{tile:?}: no help");
+            let (output, _, _) =
+                frames(&ctx, &inputs, Selection::Result(tile.path()), false, vec![]);
+            let texts = drawn_texts(&output);
+            assert_eq!(count(&texts, WHAT_IT_IS), 1, "{tile:?}: {texts:?}");
+            assert_eq!(count(&texts, help), 1, "{tile:?}: {texts:?}");
+        }
+        let cold_high = Selection::Result(Tile::ColdHigh.path());
+        let (output, _, _) = frames(&ctx, &inputs, cold_high, false, vec![]);
+        assert_eq!(count(&drawn_texts(&output), CHECKS_IT_TOUCHES), 1);
+        for check in [guidance::SHAFT_JOINT, guidance::GEARBOX] {
+            let guide = guidance::guide(check).expect("its guide");
+            let (asked, events) = click(&inputs, cold_high, guide.label);
+            assert_eq!(
+                asked,
+                Some(Asked::Select(Selection::Check(check))),
+                "{check}"
+            );
+            assert_eq!(events, ReadoutEvents::default(), "{check}");
         }
     }
 
@@ -2183,7 +2242,7 @@ mod tests {
     fn a_result_s_entry_is_its_value_label_help_check_watch_out_lesson_and_equation() {
         // Spec 5.1 to 5.3 for any result (a dimension tag, a callout row, a results-table row):
         // its value as its results-table row shows it, leading its label; "What it is" (its
-        // help); the check of its dashboard row; for a row that reads the stored 3D fields, the
+        // help); the checks it touches; for a row that reads the stored 3D fields, the
         // line that says so under "Watch out"; its row's lesson where it has one; the Equation
         // link where it has an equation record. A tile's keeps the tile's number and label.
         let ctx = egui::Context::default();
@@ -2209,7 +2268,7 @@ mod tests {
             assert!(help.is_empty() || has(help), "{path}: {texts:?}");
             assert_eq!(
                 has(CHECKS_IT_TOUCHES),
-                badging_check(path).is_some(),
+                !touched_guides(path).is_empty(),
                 "{path}"
             );
             let stored_3d = STORED_3D_ROWS.contains(&path);

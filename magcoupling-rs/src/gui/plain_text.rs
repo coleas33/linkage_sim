@@ -749,6 +749,17 @@ const HELP: &[(&str, &str)] = &[
         "model.gearbox_input_ripple_Nm",
         "The pull-out at the gearbox output at operating temperature, without the production allowance, divided by ratio and efficiency. The gearbox check compares cold-high, or this plus allowance if larger.",
     ),
+    // BL-084: the band torques, the Hot-low and Cold-high tiles' "What it is" (the torque-band
+    // note's definitions; the checks that read cold-high compare the larger of it and the
+    // operating pull-out with the allowance, BL-067, so no torque is ordered).
+    (
+        "metal.torque_hot_low_Nm",
+        "The pull-out at the operating magnet temperature less the production variation allowance. It must reach the required torque; a hotter operating temperature or a larger allowance lowers it.",
+    ),
+    (
+        "metal.torque_cold_high_Nm",
+        "The pull-out at the minimum magnet temperature plus the production variation allowance. The shaft joint and gearbox checks read it; a colder minimum or a larger allowance raises it.",
+    ),
 ];
 
 /// The hint key of the Size tab's Minimum OD control: it edits no input, so its hint line is
@@ -1925,6 +1936,38 @@ mod batch_b_tests {
         }
     }
 
+    /// Asserts that `result` moves as `moves` says on the `design` design when `input` rises
+    /// one slider step.
+    fn assert_one_step_up(input: &str, design: &str, result: &str, moves: Moves) {
+        let before = claim_design(design);
+        let step = InputCatalogue::get()
+            .entry(input)
+            .and_then(|entry| entry.meta.range)
+            .unwrap_or_else(|| panic!("{input}: no slider"))
+            .step;
+        let raised = match before.get(input) {
+            Some(Value::Num(x)) => Value::Num(x + step),
+            Some(Value::Int(n)) => Value::Int(n + step as i64),
+            other => panic!("{input}: {other:?}"),
+        };
+        let mut after = before.clone();
+        after
+            .set(input, raised)
+            .unwrap_or_else(|e| panic!("{input}: {e:?}"));
+        let (was, now) = (number(&before, result), number(&after, result));
+        let seen = if now > was {
+            Up
+        } else if now < was {
+            Down
+        } else {
+            Stays
+        };
+        assert_eq!(
+            seen, moves,
+            "{input} one step up on the {design} design: {result} {was} -> {now}"
+        );
+    }
+
     #[test]
     fn every_direction_a_batch_b_help_states_holds_one_slider_step_up() {
         let catalogue = InputCatalogue::get();
@@ -1933,33 +1976,7 @@ mod batch_b_tests {
                 BATCH_B_EMPTY.contains(&input) || BATCH_B_OVERRIDES.contains(&input),
                 "{input} is not batch B's"
             );
-            let before = claim_design(design);
-            let step = catalogue
-                .entry(input)
-                .and_then(|entry| entry.meta.range)
-                .unwrap_or_else(|| panic!("{input}: no slider"))
-                .step;
-            let raised = match before.get(input) {
-                Some(Value::Num(x)) => Value::Num(x + step),
-                Some(Value::Int(n)) => Value::Int(n + step as i64),
-                other => panic!("{input}: {other:?}"),
-            };
-            let mut after = before.clone();
-            after
-                .set(input, raised)
-                .unwrap_or_else(|e| panic!("{input}: {e:?}"));
-            let (was, now) = (number(&before, result), number(&after, result));
-            let seen = if now > was {
-                Up
-            } else if now < was {
-                Down
-            } else {
-                Stays
-            };
-            assert_eq!(
-                seen, moves,
-                "{input} one step up on the {design} design: {result} {was} -> {now}"
-            );
+            assert_one_step_up(input, design, result, moves);
         }
         // Every batch-B input with a slider and a value has its help's claim checked here; the
         // blank measured drag and the three results are checked in the next test.
@@ -1973,6 +1990,35 @@ mod batch_b_tests {
                     "{path}: no claim"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn every_direction_the_band_torques_helps_state_holds_one_slider_step_up() {
+        // BL-084: a hotter operating temperature or a larger allowance lowers hot-low; a colder
+        // minimum (the minimum falling) or a larger allowance raises cold-high. The temperature
+        // claims hold for NdFeB and for ferrite: both lose Br as they warm.
+        const HOT_LOW: &str = "metal.torque_hot_low_Nm";
+        const COLD_HIGH: &str = "metal.torque_cold_high_Nm";
+        // The helps state these directions; the slider steps below check them.
+        for (result, words) in [
+            (
+                HOT_LOW,
+                "a hotter operating temperature or a larger allowance lowers it",
+            ),
+            (
+                COLD_HIGH,
+                "a colder minimum or a larger allowance raises it",
+            ),
+        ] {
+            let help = help_for(result);
+            assert!(help.contains(words), "{result}: {help}");
+        }
+        for design in ["example", "Y30 grades"] {
+            assert_one_step_up("coupling.op_temp_C", design, HOT_LOW, Down);
+            assert_one_step_up("metal.variation", design, HOT_LOW, Down);
+            assert_one_step_up("metal.min_temp_C", design, COLD_HIGH, Down);
+            assert_one_step_up("metal.variation", design, COLD_HIGH, Up);
         }
     }
 
