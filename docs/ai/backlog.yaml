@@ -504,8 +504,8 @@
   evidence: "src/gui/export/raster.rs:406-431 test export_chebyshev_lambda_pngs writes into docs/chebyshev_lambda/; observed 2026-08-08 (8 PNGs dirty after every gate run; were clean at session start)"
   acceptance: "cargo test --all leaves the working tree clean (test writes to target/ or is #[ignore]/opt-in); PNG regeneration documented as an explicit command"
   priority: 2
-  status: open
-  notes: "Interacts with fix-campaign per-item commits; commit step already guards against staging these PNGs."
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: export_chebyshev_lambda_pngs now writes to linkage-sim-rs/target/chebyshev_lambda/ instead of docs/chebyshev_lambda/, so cargo test leaves the tree clean; regeneration is a manual copy, documented in AGENTS.md; a test pins the output directory outside docs/. Interacts with fix-campaign per-item commits; commit step already guards against staging these PNGs."
 
 - id: BL-013
   title: Web (WASM) build renders light theme; theme.rs claims CAD dark visuals

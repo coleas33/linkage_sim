@@ -445,6 +445,23 @@ mod tests {
         );
     }
 
+    /// Scratch directory for the Chebyshev lambda PNGs. To refresh the committed
+    /// images, copy them from here into docs/chebyshev_lambda/ by hand.
+    fn chebyshev_lambda_out_dir() -> std::path::PathBuf {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target").join("chebyshev_lambda")
+    }
+
+    #[test]
+    fn chebyshev_lambda_pngs_do_not_go_into_the_tracked_docs_tree() {
+        let dir = chebyshev_lambda_out_dir();
+        assert!(
+            !dir.components().any(|c| c.as_os_str() == "docs"),
+            "test output must not land in docs/: {}",
+            dir.display()
+        );
+    }
+
     #[test]
     #[cfg(feature = "raster")]
     fn export_chebyshev_lambda_pngs() {
@@ -453,9 +470,7 @@ mod tests {
 
         let (mech, q0) = build_sample(SampleMechanism::Chebyshev);
 
-        let out_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent().unwrap()
-            .join("docs").join("chebyshev_lambda");
+        let out_dir = chebyshev_lambda_out_dir();
         std::fs::create_dir_all(&out_dir).expect("create output dir");
 
         let omega = 1.0;

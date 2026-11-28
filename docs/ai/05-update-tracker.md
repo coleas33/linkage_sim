@@ -5,6 +5,9 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - Tests stop rewriting docs/chebyshev_lambda (BL-012)
+- export_chebyshev_lambda_pngs writes to linkage-sim-rs/target/chebyshev_lambda/; a test pins the directory outside docs/; AGENTS.md says to copy by hand to refresh the committed images.
+
 ## 2026-11-28 - Web build keeps the CAD dark theme (BL-013)
 - apply_cad_theme selects the Dark preference before styling, so a light browser preference no longer gives a light web build; two theme tests failed before, pass after (reused from Codex 261f6b4).
 
