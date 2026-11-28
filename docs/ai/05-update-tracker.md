@@ -3634,3 +3634,5 @@ formats, and Phase 6.8 UX overhaul.
 - 2026-11-28 BL-121 (magcoupling/r3-polish): the Start here bar draws Previous, Next and Stop as one block on the row after the step line, so they always share a row (explorer.rs; test the_start_here_buttons_share_one_row_on_every_step_in_the_app_s_own_font).
 
 - 2026-11-28 BL-115 (magcoupling/r3-polish): the Equation panel header lays Close and Start here out first and wraps the heading and crumbs in the room left of them, so a long breadcrumb trail is never drawn under the buttons (explorer.rs; test a_long_breadcrumb_trail_stays_clear_of_start_here_and_close_in_the_app_s_own_font).
+
+- 2026-11-28 BL-116 (magcoupling/r3-polish): the Explain panel's scroll area keeps a 10-point strip for its floating scroll bar, so a note's lines are no longer covered by the bar under the pointer (panel.rs; test a_note_in_the_explain_panel_keeps_clear_of_its_scroll_bar).

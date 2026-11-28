@@ -858,6 +858,9 @@ impl MagcouplingPanel {
             explain_scroll = explain_scroll.vertical_scroll_offset(0.0);
             self.explain_drawn = self.selection;
         }
+        // BL-116: the bar floats over the area's last 10 points, widest under the pointer, and
+        // covered the ends of a note's lines; the area keeps that strip for it.
+        ui.spacing_mut().scroll.floating_allocated_width = ui.spacing().scroll.bar_width;
         let asked = explain_scroll
             .show(ui, |ui| {
                 // A note's change entry names an input Auto or a part pick holds as plain
@@ -13533,5 +13536,41 @@ mod tests {
             }
         }
         assert_eq!(entries, 4, "the example design's four red checks");
+    }
+
+    #[test]
+    fn a_note_in_the_explain_panel_keeps_clear_of_its_scroll_bar() {
+        // BL-116: egui's floating scroll bar is drawn over the last 10 points of the area, widest
+        // under the pointer, so the pointer on it covered the ends of the note's lines (and the
+        // About link). The area keeps that strip for the bar: no text of the panel's body runs
+        // into it. A long note at 1024 x 700 scrolls, so the bar is up.
+        let mut harness = Harness::of(MagcouplingPanel::new(), SMALLEST);
+        harness.panel.selection = Selection::Note("torque_from_shear");
+        let mut output = harness.frame(Vec::new());
+        for _ in 0..6 {
+            output = harness.frame_after(0.5, Vec::new());
+        }
+        let column = side_rect(&harness.ctx, "magcoupling_dashboard");
+        let top = text_rect(&output, crate::gui::explain::HEADING)
+            .expect("the Explain heading")
+            .top();
+        // The panel's frame margin (8) and the bar's width (10).
+        let limit = column.right() - 8.0 - harness.ctx.style().spacing.scroll.bar_width;
+        let mut checked = 0;
+        for shape in flat_shapes(&output) {
+            if let egui::Shape::Text(text) = shape {
+                let rect = text.galley.rect.translate(text.pos.to_vec2());
+                if rect.top() >= top && rect.left() > column.left() {
+                    checked += 1;
+                    assert!(
+                        rect.right() <= limit + 0.5,
+                        "{:?} ends at {} past the bar's strip at {limit}",
+                        text.galley.text(),
+                        rect.right()
+                    );
+                }
+            }
+        }
+        assert!(checked > 5, "the note's texts were found: {checked}");
     }
 }
