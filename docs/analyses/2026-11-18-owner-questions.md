@@ -588,16 +588,16 @@ Source: UX design decision C-5; the slice B stage 1 review, finding C-3; A-50; B
 
 ### 73. Should every control show a grey edge?
 
-Added 2026-11-27 (the next free number). A checkbox's box, a slider's rail and a value box were drawn in the hairline colour, so faint on the dark panel (1.2:1) that the boxes were hard to find. They now show their edge in a new grey, `#656c76`: value boxes, buttons with a frame, pickers and text boxes are outlined in it, and a checkbox's box and a slider's rail and handle are filled with it, at 3:1 against the panel and the menus (the usual rule for a control's edge). An open picker keeps its grey outline. Each name in a plot's legend, which you click to hide or show its line, now shows its coloured dot on a small grey disc; a grey dot (the Operating temperature line of Torque vs temperature) is hard to tell from its disc. The words of the top bar, the tabs and menu items stay without a frame. A selected choice keeps its blue fill with a thin grey edge. A slider's handle still shows that you point at it, drag it or reach it with Tab only by a thicker ring.
+Added 2026-11-27 (the next free number). A checkbox's box, a slider's rail and a value box were drawn in the hairline colour, so faint on the dark panel (1.2:1) that the boxes were hard to find. They now show their edge in a new grey, `#656c76`: value boxes, buttons with a frame, pickers and text boxes are outlined in it, and a checkbox's box and a slider's rail and handle are filled with it, at 3:1 against the panel and the menus (the usual rule for a control's edge). An open picker keeps its grey outline. Each name in a plot's legend, which you click to hide or show its line, now shows its coloured dot on a small grey disc, and every coloured dot is faint on it: 1.6:1 to 2.6:1, where it was 4.4:1 to 6.9:1 on the old dark disc. The faintest is the red "Does not fit" dot of the two sweeps (1.6:1), then the grey Operating temperature dot of Torque vs temperature (1.7:1); only the white dots stand out. The legend shows whether a line is shown or hidden only by whether its dot is there (the name stays the same), so a faint dot is hard to tell from a hidden line's empty disc. The words of the top bar, the tabs and menu items stay without a frame. The four tiles over the drawing, which you click too, keep their faint edge (1.2:1); their words name them. A selected choice keeps its blue fill with a thin grey edge. A slider's handle still shows that you point at it, drag it or reach it with Tab only by a thicker ring.
 
 - **If you do not answer:** the grey edge.
 - (a) As the default.
 - (b) The faint edges as before.
 - (c) A lighter grey (a brighter ring around every button).
-- (d) The grey edge, but the legend's dots without the grey disc.
+- (d) The grey edge, but each legend dot on a dark disc inside a grey ring, so every coloured dot stands out again (5.7:1 or more).
 - (e) The grey edge, and a dragged or focused slider handle turns blue, as it did before the new look.
 
-Source: the slice B stage 1 review, findings E-4 and R-6; A-52; BL-107 plan, decisions D-96 to D-98.
+Source: the slice B stage 1 review, findings E-4 and R-6; A-52; BL-107 plan, decisions D-96 to D-98; its review's LOOK-1 and LOOK-2 (BL-108: the legend's dark disc and grey ring; BL-109: the tiles' grey edge).
 
 ### 74. Should more than the title and the left column's heading be drawn heavier?
 

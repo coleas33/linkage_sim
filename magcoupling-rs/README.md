@@ -906,10 +906,18 @@ can name an input Auto holds; its link then frames a locked row (known limitatio
   picker keeps the grey outline (egui draws it in its open state). egui_plot draws each entry of
   a plot's legend, a toggle that hides or shows its line, as a disc in the resting fill and
   outline under the line's dot, so every legend dot now sits on a grey disc (3.5:1 on the
-  legend's background; Torque vs temperature's muted dot is 1.7:1 on it). Frameless controls
-  stay frameless (the top bar's words, the tabs, menu items and the names in a row of choices,
-  whose words name them), and a selected choice keeps its fill, edged in the grey at 1.1:1 to
-  it. The hairlines between the columns are no control and stay the hairline colour. The panel's own
+  legend's background), and every coloured dot is 1.6:1 to 2.6:1 on it, where the border
+  colour's disc gave 4.4:1 to 6.9:1: the sweeps' red "Does not fit" dot 1.6:1, Torque vs
+  temperature's muted dot 1.7:1, the violet, the pass green, the blue and the amber 2.0:1 to
+  2.6:1; only the text-colour dots pass (4.3:1). egui_plot shows whether a line is shown or
+  hidden only by whether its dot is there (the name keeps its colour), so that cue is under
+  WCAG's 3:1 for every coloured entry (BL-108: the disc in the field colour inside a grey
+  ring, a panel change). Frameless controls stay frameless (the top bar's words, the tabs,
+  menu items and the names in a row of choices, whose words name them), and a selected choice
+  keeps its fill, edged in the grey at 1.1:1 to it. The four tiles over the drawing take a click and the keyboard's focus, and the panel
+  frames them itself (`gui/tiles.rs`): they keep their hairline (1.2:1 on the panel) and faint
+  fill, and their words name them (BL-109: their resting outline in the grey, a panel change).
+  The hairlines between the columns are no control and stay the hairline colour. The panel's own
   marks (the changed dot, a trace's banner and frames, the frame around a row an equation
   points at) are the host's link colour (`look::mark_color`), so they stay blue. Body text, values and headings share the text colour (egui has no bold, so
   `strong()` no longer sets a value apart from the text beside it); `weak()` is the muted
@@ -972,7 +980,9 @@ can name an input Auto holds; its link then frames a locked row (known limitatio
   points where it was 257.7 and the heading 134.6 where it was 133.4, and the top bar stays one
   row and the left column 320 points at 1024 x 700, 1280 x 800 and 1920 x 1080. It adds 46,869
   bytes to the wasm file (6,820,704 to 6,867,573; about 21 KB more gzipped, 16 KB with
-  brotli). The panel installs no font: another host draws it in its own.
+  brotli); with the code that removes the page's loading line, 6,566 bytes more, BL-107 takes
+  the file from 6,820,704 to 6,874,139 bytes (+53,435; about 23 KB gzipped). The panel
+  installs no font: another host draws it in its own.
 
 **Versions.** `Cargo.toml` has caret ranges (egui and eframe 0.32, egui_plot 0.33).
 `Cargo.lock` pins wasm-bindgen 0.2.114, the `wasm-bindgen-cli` version `deploy-web.yml`
