@@ -522,7 +522,7 @@ Source: BL-097; A-43; decisions M41-1, M41-2 and M41-7.
 
 ### 67. Should the Tab key walk every row of the Results table?
 
-Added 2026-11-26 (the next free number). The columns now scroll to whatever the Tab key lands on, so the keyboard's focus is never out of sight there. The Results table is left out. It draws only the rows on screen, so Tab passes those and moves on; the rows below are reached with the wheel or the search box. A row the table's edge cuts is no longer a Tab stop, so the focus never sits on a row half seen. If the table scrolled to the focus too, each Tab would bring up the next row, and Tab would go through all of its rows, several hundred, before it left the table.
+Added 2026-11-26 (the next free number). The columns now scroll to whatever the Tab key lands on, so the keyboard's focus is never out of sight there. The Results table is left out. It draws only the rows on screen, so Tab passes those and moves on; the rows below are reached with the wheel or the search box. A row the table's edge cuts is no longer a Tab stop, so the focus never sits on a row half seen. A row that has the focus loses it when the wheel moves the row even partly out of view, and the next Tab then starts again at the top of the page. If the table scrolled to the focus too, each Tab would bring up the next row, and Tab would go through all of its rows, several hundred, before it left the table.
 
 - **If you do not answer:** the table stays as it is: Tab passes the rows on screen.
 - (a) As the default.
