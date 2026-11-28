@@ -1122,17 +1122,16 @@ impl AppState {
 
     /// Replace a force element in the blueprint at the given index.
     ///
-    /// Intended for continuous parameter tweaks (e.g. DragValue), so no undo
-    /// snapshot is pushed. Immediately recomputes sweep data to keep the
-    /// inverse dynamics torque plot in sync.
-    /// No-op if `index` is out of bounds.
+    /// Call once per committed edit (click, drag-stop or focus loss). Records
+    /// one undo step and marks the document changed, then rebuilds and updates
+    /// the sweep. Missing indices and unchanged elements are no-ops.
     pub fn update_force_element(&mut self, index: usize, force: ForceElement) {
-        let Some(bp) = &mut self.blueprint else { return };
-        if index >= bp.forces.len() {
-            return;
-        }
-        bp.forces[index] = force;
-        self.rebuild();
+        let Some(current) = self.blueprint.as_ref().and_then(|bp| bp.forces.get(index)) else { return };
+        if let (Ok(previous), Ok(next)) = (serde_json::to_value(current), serde_json::to_value(&force))
+            && previous == next { return; }
+        self.mutate_and_rebuild(|state| {
+            state.blueprint.as_mut().expect("validated force blueprint").forces[index] = force;
+        });
         self.compute_sweep();
     }
 

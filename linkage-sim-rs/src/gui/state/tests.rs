@@ -4020,3 +4020,58 @@
         assert!(finite, "q must stay finite at omega = 0");
         assert!(converged, "flip at omega = 0 must still converge");
     }
+
+    // ── BL-045: committed force edits are undoable document changes ─────
+
+    fn bl045_zone_state() -> AppState {
+        use crate::forces::elements::{ForceElement, ForceZoneElement};
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        let body_id = sorted_link_ids(&state)[0].clone();
+        state.blueprint.as_mut().unwrap().forces.push(ForceElement::ForceZone(ForceZoneElement {
+            body_id,
+            zone_min: [0.0, 0.0],
+            zone_max: [1.0, 1.0],
+            force: [0.0, 10.0],
+            label: None,
+            body_local_app_point: None,
+            at_contact_point: false,
+        }));
+        state.rebuild();
+        state.undo_history.clear();
+        state.dirty = false;
+        state
+    }
+
+    #[test]
+    fn bl045_zone_mode_switch_is_one_undo_step_and_sets_dirty() {
+        use crate::forces::elements::{ForceElement, ZoneAppMode};
+        let mut state = bl045_zone_state();
+        let idx = state.blueprint.as_ref().unwrap().forces.len() - 1;
+        let ForceElement::ForceZone(zone) = state.blueprint.as_ref().unwrap().forces[idx].clone() else {
+            panic!("zone missing");
+        };
+        state.update_force_element(
+            idx,
+            ForceElement::ForceZone(zone.with_app_mode(ZoneAppMode::Contact, [0.0, 0.0])),
+        );
+        assert!(state.dirty, "autosave must see the force edit");
+        assert_eq!(state.undo_history.undo_count(), 1);
+        let ForceElement::ForceZone(z) = &state.blueprint.as_ref().unwrap().forces[idx] else { panic!() };
+        assert!(z.at_contact_point);
+        state.undo();
+        let ForceElement::ForceZone(z) = &state.blueprint.as_ref().unwrap().forces[idx] else { panic!() };
+        assert!(!z.at_contact_point, "undo restores the mode");
+        assert!(state.dirty);
+    }
+
+    #[test]
+    fn bl045_unchanged_or_invalid_force_edit_leaves_history_alone() {
+        let mut state = bl045_zone_state();
+        let idx = state.blueprint.as_ref().unwrap().forces.len() - 1;
+        let same = state.blueprint.as_ref().unwrap().forces[idx].clone();
+        state.update_force_element(idx, same.clone());
+        state.update_force_element(usize::MAX, same);
+        assert!(!state.dirty);
+        assert_eq!(state.undo_history.undo_count(), 0);
+    }

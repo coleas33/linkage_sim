@@ -824,8 +824,8 @@
   evidence: "update_force_element (blueprint_ops.rs) does not push an undo step, so a force zone's mode switch (Overlap centre / Locked point / Contact point), a dragged F marker and the other force-editor edits cannot be undone and do not set dirty (the web autosave skips them); noted in the round-geometry final review 2026-10-06"
   acceptance: "each force-element edit is one undo step and sets dirty; a test switches a zone's mode, undoes it, and checks dirty"
   priority: 3
-  status: open
-  notes: "Pre-existing for the old lock checkbox; the round-geometry branch adds the three-way choice."
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: update_force_element now records one undo step and sets dirty through mutate_and_rebuild (unchanged or invalid edits are no-ops), and the force editor commits numeric fields once on drag release or focus loss; reused from Codex 8e6ad7d. Pre-existing for the old lock checkbox; the round-geometry branch adds the three-way choice."
 
 - id: BL-046
   title: "The canvas's orange zone-force label is hard to read on the yellow overlap highlight"

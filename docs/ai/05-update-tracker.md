@@ -5,6 +5,9 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 — Undoable committed force edits (BL-045)
+- update_force_element records one undo step and sets dirty; force-editor numeric fields commit once on release or focus loss (from Codex 8e6ad7d); red test plus gate green.
+
 ## 2026-11-28 - Weight mass cap raised to 1e5 kg (BL-034)
 - WEIGHT_MASS_RANGE_KG is 0.001..=100000 (was 1000) for the weight editor and + Mass field; test typed_values_are_clamped_to_the_weight_mass_range now types 5000 and 1e6.
 ## 2026-11-28 - Delete with toolbar focus (BL-033)

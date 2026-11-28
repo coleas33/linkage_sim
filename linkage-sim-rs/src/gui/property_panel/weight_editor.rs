@@ -63,7 +63,7 @@ pub(crate) fn weight_mass_drag_value(mass: &mut f64) -> egui::DragValue<'_> {
 /// without typing makes egui read the shown (rounded) text back, which must
 /// not become an edit, and Esc keeps the stored value. Idle frames never
 /// commit, whatever the value.
-fn committed_number(
+pub(super) fn committed_number(
     ui: &mut egui::Ui,
     key: &str,
     hover: &str,
