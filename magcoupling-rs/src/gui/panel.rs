@@ -8117,10 +8117,17 @@ mod tests {
 
     /// Whether the widget `r` is drawn in `region`, a column of the page under its top bar: a
     /// stop of the top bar is above the region and whole, while a row scrolled out of the
-    /// region's view, above it or below it, is cut.
+    /// region's view, above it or below it, is cut. A widget its view cuts sideways (a cell of
+    /// the screw-size table past the table's right edge) is the view's, which ends in the
+    /// region.
     fn in_region(r: &egui::Response, region: egui::Rect) -> bool {
-        region.x_range().contains(r.rect.center().x)
-            && (r.rect.top() >= region.top() || r.interact_rect != r.rect)
+        let cut = r.interact_rect != r.rect;
+        let x = if cut {
+            r.interact_rect.max.x
+        } else {
+            r.rect.center().x
+        };
+        region.x_range().contains(x) && (r.rect.top() >= region.top() || cut)
     }
 
     /// The centre region: between the two columns, under the top bar.
@@ -8136,12 +8143,19 @@ mod tests {
     /// has been on the widgets of `region` ([`in_region`]) and has left them, or an arrow key
     /// finds no widget further on. After each press, once the
     /// scroll has settled, the focused widget of the region is whole in its scroll area's view
-    /// (BL-100). Returns how many stops the region held, and how many of them were out of view
-    /// when the focus arrived.
+    /// (BL-100); one wider than the region (the Equation panel's formula, in a sideways area of
+    /// its own) is whole up and down and shows from its start (BL-101). Returns how many stops
+    /// the region held, and how many of them were out of view when the focus arrived.
     fn follow(harness: &mut Harness, keys: &[egui::Event], region: egui::Rect) -> (usize, usize) {
         let focused = |harness: &Harness| {
             let id = harness.ctx.memory(|m| m.focused())?;
             harness.ctx.read_response(id)
+        };
+        let shown = |r: &egui::Response| {
+            r.interact_rect == r.rect
+                || (r.rect.width() > region.width()
+                    && r.interact_rect.left() == r.rect.left()
+                    && r.interact_rect.y_range() == r.rect.y_range())
         };
         let (mut stops, mut out_of_view) = (0, 0);
         for press in 1..=400 {
@@ -8171,16 +8185,18 @@ mod tests {
             // widget is whole (eight at most), then one more.
             let mut settled = arrived;
             for _ in 0..8 {
-                let whole = settled.interact_rect == settled.rect;
+                let whole = shown(&settled);
                 harness.frame_after(1.0, Vec::new());
                 settled = focused(harness).expect("the focus stays");
                 if whole {
                     break;
                 }
             }
-            assert_eq!(
-                settled.interact_rect, settled.rect,
-                "press {press}: the focused widget is cut by its area's view"
+            assert!(
+                shown(&settled),
+                "press {press}: the focused widget {:?} is cut by its area's view to {:?}",
+                settled.rect,
+                settled.interact_rect
             );
             // No further than that, but for the gap egui leaves at the view's edge.
             let moved = (settled.rect.top() - at.top()).abs();
@@ -8357,6 +8373,75 @@ mod tests {
             assert_eq!(harness.panel.selection, selection, "{view:?}");
             assert_eq!(harness.panel.design(), Design::default(), "{view:?}");
         }
+    }
+
+    #[test]
+    fn the_equation_panel_follows_the_keyboard_s_focus_into_its_terms_and_formula() {
+        // BL-101 (1): the Equation panel's own scroll area did not follow the focus, and its
+        // formula scrolls sideways in an area nested in it, which egui gives every scroll
+        // target. In the smallest window, the panel open on the hot-low torque and on the hot
+        // minimum check, at its starting height and dragged to its least height: after each
+        // Tab and Shift+Tab every stop of the panel is whole once the scroll has settled, the
+        // hot minimum check's formula, wider than the panel, from its start. Nothing is
+        // selected or edited.
+        for (path, least) in [
+            ("metal.torque_hot_low_Nm", false),
+            ("metal.hot_min_check", false),
+            ("metal.torque_hot_low_Nm", true),
+            ("metal.hot_min_check", true),
+        ] {
+            let mut harness = Harness::of(MagcouplingPanel::new(), SMALLEST);
+            harness.panel.explorer.open_path(path);
+            harness.frame(Vec::new());
+            if least {
+                let ctx = harness.ctx.clone();
+                let foot = equation_panel_rect(&ctx).bottom();
+                drag_equation_panel(&ctx, &mut |events| harness.frame(events), foot);
+            }
+            harness.frame(Vec::new());
+            let selection = harness.panel.selection;
+            let panel = equation_panel_rect(&harness.ctx);
+            let out_of_view: usize = [shift_tab(), key_tap(egui::Key::Tab)]
+                .iter()
+                .map(|keys| follow(&mut harness, keys, panel).1)
+                .sum();
+            assert!(
+                out_of_view > 0,
+                "{path}, least {least}: no stop was out of view"
+            );
+            assert_eq!(harness.panel.selection, selection, "{path}");
+            assert_eq!(harness.panel.design(), Design::default(), "{path}");
+        }
+    }
+
+    #[test]
+    fn the_screw_size_table_follows_the_keyboard_s_focus_up_down_and_sideways() {
+        // BL-101 (2): the Clamp tab's screw-size table scrolls sideways in an area nested in
+        // the tab's own. Opened in a tall window, then in one of the smallest width and a
+        // height that holds the whole table (its own drag surface, a Tab stop of egui's, is as
+        // tall as the table: BL-102): after each Tab and Shift+Tab every stop of the centre
+        // region is whole once the scroll has settled, the table's cells past its right edge
+        // and under the view's foot among them.
+        use crate::gui::clamp_drawing::SCREW_SIZES;
+        use crate::gui::test_support::cut_texts;
+        let mut harness = Harness::of(MagcouplingPanel::new(), TALL);
+        harness.tab(CentreView::Clamp);
+        harness.click_text(SCREW_SIZES);
+        for _ in 0..8 {
+            harness.frame(Vec::new());
+        }
+        harness.screen = egui::vec2(SMALLEST.x, 1000.0);
+        harness.frame(Vec::new());
+        let output = harness.frame(Vec::new());
+        let centre = centre_region(&harness.ctx);
+        let cells = format!("{SCREW_SIZES} is open with its cells cut sideways");
+        assert!(!cut_texts(&output, centre).is_empty(), "{cells}");
+        let out_of_view: usize = [shift_tab(), key_tap(egui::Key::Tab)]
+            .iter()
+            .map(|keys| follow(&mut harness, keys, centre).1)
+            .sum();
+        assert!(out_of_view > 0, "no stop was out of view");
+        assert_eq!(harness.panel.design(), Design::default());
     }
 
     #[test]

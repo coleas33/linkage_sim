@@ -857,32 +857,30 @@ fn screw_table_ui(ui: &mut egui::Ui, results: &DesignResults, readouts: &mut Rea
         .ok()
         .and_then(|i| i.checked_sub(1));
     let good = Level::Good.color(ui.visuals());
-    egui::ScrollArea::horizontal()
-        .id_salt("magcoupling_screw_sizes_scroll")
-        .show(ui, |ui| {
-            egui::Grid::new("magcoupling_screw_sizes_grid")
-                .striped(true)
-                .show(ui, |ui| {
-                    for (label, unit, field) in screw_rows() {
-                        ui.label(with_unit((*label).to_owned(), unit));
-                        for i in 0..sizes {
-                            let path = format!("clamps.table[{i}].{field}");
-                            let text = format_value(&results.get(&path).unwrap_or(Value::None));
-                            let rich = egui::RichText::new(text);
-                            let rich = if Some(i) == pick {
-                                rich.color(good).strong()
-                            } else {
-                                rich
-                            };
-                            let rect = ui.label(rich).rect;
-                            readouts.show_over(ui, rect, &path, |show_details| {
-                                hover_text(&path, show_details).unwrap_or_else(|| path.clone())
-                            });
-                        }
-                        ui.end_row();
+    crate::gui::sideways_scroll_area(ui, "magcoupling_screw_sizes_scroll", |ui| {
+        egui::Grid::new("magcoupling_screw_sizes_grid")
+            .striped(true)
+            .show(ui, |ui| {
+                for (label, unit, field) in screw_rows() {
+                    ui.label(with_unit((*label).to_owned(), unit));
+                    for i in 0..sizes {
+                        let path = format!("clamps.table[{i}].{field}");
+                        let text = format_value(&results.get(&path).unwrap_or(Value::None));
+                        let rich = egui::RichText::new(text);
+                        let rich = if Some(i) == pick {
+                            rich.color(good).strong()
+                        } else {
+                            rich
+                        };
+                        let rect = ui.label(rich).rect;
+                        readouts.show_over(ui, rect, &path, |show_details| {
+                            hover_text(&path, show_details).unwrap_or_else(|| path.clone())
+                        });
                     }
-                });
-        });
+                    ui.end_row();
+                }
+            });
+    });
 }
 
 #[cfg(test)]

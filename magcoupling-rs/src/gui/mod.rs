@@ -75,9 +75,10 @@ pub(crate) fn wrapping_line<R>(
 /// to the widget the keyboard's focus has arrived on (BL-100: egui scrolls to no widget for
 /// taking the focus). Called last in the area's content. Only in the first frame the area is
 /// drawn with the focus there, so a wheel or a drag of the scroll bar afterwards is not fought.
-///
-/// Not for an area nested in another: egui hands a scroll to the innermost area alone.
-pub(crate) fn follow_focus(ui: &egui::Ui) {
+/// Returns the widget's rect when it scrolls to it: egui hands both axes' scroll targets to the
+/// innermost area alone, so an area nested in another passes the rect on to the outer one
+/// ([`sideways_scroll_area`], BL-101).
+pub(crate) fn follow_focus(ui: &egui::Ui) -> Option<egui::Rect> {
     let focused = ui.memory(|m| m.focused());
     // Where the focus was when this area was last drawn. egui's own `gained_focus` misses a
     // move made between two frames, as an Up or Down arrow key's is.
@@ -90,12 +91,42 @@ pub(crate) fn follow_focus(ui: &egui::Ui) {
     // panels share one layer, so the clip check is the one that holds an area still while the
     // focus is elsewhere (a test wheels the left column and tabs past it); the layer check
     // adds little, as a list's widget passes the clip check only whole in the view, where no
-    // scroll follows.
+    // scroll follows. A sideways area nested in an up-and-down one is clipped up and down by
+    // the outer area's view (egui keeps the parent's clip on the axis an area does not scroll),
+    // so its widgets are also those in its content: else it would take the outer area's,
+    // read from the frame before, and scroll the outer area a second time (BL-101).
     if focused != seen
         && let Some(widget) = focused.and_then(|id| ui.ctx().read_response(id))
         && widget.layer_id == ui.layer_id()
         && widget.interact_rect == widget.rect.intersect(ui.clip_rect())
+        && ui.min_rect().contains_rect(widget.rect)
     {
         ui.scroll_to_rect(widget.rect, None);
+        return Some(widget.rect);
     }
+    None
+}
+
+/// A sideways scroll area inside an up-and-down one (the Equation panel's formula, the Clamp
+/// tab's screw-size table) that follows the keyboard's focus both ways (BL-101). It calls
+/// [`follow_focus`] last in its content, so it scrolls sideways to the widget; egui gives it
+/// both axes' targets, so the outer area's content asks again for the rect once it has ended,
+/// and the outer area scrolls up or down to the widget. A widget wider than the view shows from
+/// its start (egui's least scroll).
+pub(crate) fn sideways_scroll_area<R>(
+    ui: &mut egui::Ui,
+    id_salt: &str,
+    add: impl FnOnce(&mut egui::Ui) -> R,
+) -> R {
+    let (inner, followed) = egui::ScrollArea::horizontal()
+        .id_salt(id_salt)
+        .show(ui, |ui| {
+            let inner = add(ui);
+            (inner, follow_focus(ui))
+        })
+        .inner;
+    if let Some(rect) = followed {
+        ui.scroll_to_rect(rect, None);
+    }
+    inner
 }

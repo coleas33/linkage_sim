@@ -63,6 +63,7 @@ use crate::gui::readouts::{ReadoutEvents, registry};
 use crate::gui::typeset::{
     TermColors, glyph_safe, laid_ui, layout_equation, layout_symbol, term_at,
 };
+use crate::gui::{follow_focus, sideways_scroll_area};
 use crate::{DesignInputs, DesignResults};
 
 /// The panel's heading.
@@ -683,6 +684,7 @@ pub fn explorer_ui(
             } else if let Some(user) = up {
                 explorer.drill(&user);
             }
+            follow_focus(ui);
         });
     asked
 }
@@ -716,16 +718,14 @@ fn equation_body(
     let colors = TermColors::of(eq);
     let ink = ui.visuals().text_color();
     let laid = ui.fonts(|f| layout_equation(f, registry(), eq, &colors, PANEL_SIZE, ink));
-    egui::ScrollArea::horizontal()
-        .id_salt("magcoupling_equation_formula")
-        .show(ui, |ui| {
-            let response = laid_ui(ui, &laid, ink, Sense::click());
-            if response.clicked()
-                && let Some(at) = response.interact_pointer_pos()
-            {
-                clicked = term_at(&laid, response.rect.min, at);
-            }
-        });
+    sideways_scroll_area(ui, "magcoupling_equation_formula", |ui| {
+        let response = laid_ui(ui, &laid, ink, Sense::click());
+        if response.clicked()
+            && let Some(at) = response.interact_pointer_pos()
+        {
+            clicked = term_at(&laid, response.rect.min, at);
+        }
+    });
     let value = terms.results.get(&eq.target).unwrap_or(Value::None);
     ui.strong(format!(
         "{} = {}",
