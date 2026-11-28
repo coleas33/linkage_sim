@@ -1468,50 +1468,166 @@ mod tests {
         }
     }
 
+    /// The tall window the pixel-ratio tests draw on: room for every row of the left column.
+    const TALL: egui::Vec2 = egui::vec2(1280.0, 20_000.0);
+
+    /// A frame of [`TALL`] once `app` has settled (a fold takes frames to open).
+    fn settled_tall(ctx: &egui::Context, app: &mut MagcouplingApp) -> egui::FullOutput {
+        for _ in 0..3 {
+            frame_on(ctx, app, TALL, Vec::new());
+        }
+        frame_on(ctx, app, TALL, Vec::new())
+    }
+
+    /// The faults of the left column in `output` (BL-103 review B-1): each text drawn over by
+    /// another or by a filled rect painted after it, and each text or filled rect drawn after a
+    /// part or grade picker's label, on its row, that starts left of the label's end (the combo
+    /// box laid out from the row's start, over its label).
+    fn left_column_faults(ctx: &egui::Context, output: &egui::FullOutput) -> Vec<String> {
+        use crate::gui::pickers::{PICK_GRADE, PICK_PART};
+        use crate::gui::test_support::{covered_texts_in, flat_shapes};
+        let column = side_rect(ctx, "magcoupling_inputs").expand(1.0);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, TALL);
+        let mut faults = covered_texts_in(output, screen, |clip| column.contains_rect(clip));
+        let shapes = flat_shapes(output);
+        for (i, shape) in shapes.iter().enumerate() {
+            let egui::Shape::Text(label) = shape else {
+                continue;
+            };
+            let name = label.galley.text();
+            let at = label.visual_bounding_rect();
+            if ![PICK_PART, PICK_GRADE].contains(&name) || !column.contains_rect(at) {
+                continue;
+            }
+            for later in &shapes[i + 1..] {
+                let (rect, what) = match later {
+                    egui::Shape::Text(text) => (
+                        text.visual_bounding_rect(),
+                        format!("{:?}", text.galley.text()),
+                    ),
+                    egui::Shape::Rect(r) if r.fill.a() > 0 => (r.rect, "a rect".to_owned()),
+                    _ => continue,
+                };
+                let on_its_row = at.y_range().contains(rect.center().y);
+                if on_its_row && column.contains_rect(rect) && rect.left() < at.right() {
+                    faults.push(format!("{name:?} at {at:?} under {what} at {rect:?}"));
+                }
+            }
+        }
+        faults
+    }
+
+    #[test]
+    fn the_part_and_grade_pickers_draw_their_box_right_of_their_label() {
+        // BL-103 review B-1: `set_max_width` after the label put the picker row's cursor back
+        // at the row's start, so each combo box was laid out over its "Pick a part" or "Pick a
+        // grade" label (at 304 points: the frame from x 8, its text from x 13, over the label
+        // at x 9 to 65). In the app's theme and font, with the Magnets and rings group open, at
+        // the pixel ratios 1, 0.9 and 1.35, both pickers' boxes start right of their labels
+        // and no text of the left column is drawn over another.
+        use crate::gui::DETAILED_INPUTS;
+        use crate::gui::pickers::{PICK_GRADE, PICK_PART};
+        use crate::gui::test_support::{drawn_count, text_rects, workflow_group};
+        for ratio in [1.0_f32, 0.9, 1.35] {
+            let ctx = egui::Context::default();
+            ctx.set_pixels_per_point(ratio);
+            let mut app = MagcouplingApp::new(&ctx);
+            for heading in [DETAILED_INPUTS, workflow_group("magnets").label] {
+                let at = text_rects(&settled_tall(&ctx, &mut app), heading)[0];
+                click_at(&ctx, &mut app, TALL, at.center(), 2);
+            }
+            let output = settled_tall(&ctx, &mut app);
+            for label in [PICK_PART, PICK_GRADE] {
+                assert!(
+                    drawn_count(&output, label) > 0,
+                    "ratio {ratio}: no {label:?}"
+                );
+            }
+            let faults = left_column_faults(&ctx, &output);
+            assert!(faults.is_empty(), "ratio {ratio}: {faults:#?}");
+        }
+    }
+
     #[test]
     fn the_left_column_keeps_its_width_at_the_pixel_ratios_a_zoomed_browser_gives() {
         // BL-103: a slider and its value box cannot wrap, and at a pixel ratio of 0.9 the
         // vacuum permeability's row ('0.00000125664 T·m/A') was 2.9 points wider than the
-        // column's row, so the column grew to 322.9 for good. With every input group and its
-        // Advanced heading open, at the ratios 0.9 and 1.35, the left column is 320 points and
-        // the right one 300.
-        use crate::gui::DETAILED_INPUTS;
-        use crate::gui::inputs::{ADVANCED_HEADING, InputOrder};
+        // column's row, so the column grew to 322.9 for good. At the ratios 0.9 and 1.35, with
+        // every input group and its Advanced heading open, then Auto on, then a filter that
+        // lists every input set too (review N-3), the left column is 320 points and the right
+        // one 300, and no text of the left column is drawn over another (review B-1).
+        use crate::engine::clamps::PAUSED;
+        use crate::gui::inputs::{ADVANCED_HEADING, FILTER_HINT, InputOrder};
         use crate::gui::test_support::text_rects;
-        let groups =
-            InputCatalogue::shown(crate::engine::clamps::PAUSED).groups_in(InputOrder::Workflow);
-        let tall = egui::vec2(1280.0, 20_000.0);
+        use crate::gui::{AUTO, DETAILED_INPUTS, OPEN_SIZE_TAB};
+        let groups = InputCatalogue::shown(PAUSED).groups_in(InputOrder::Workflow);
+        let total = InputCatalogue::shown(PAUSED).all().count();
         for ratio in [0.9_f32, 1.35] {
             let ctx = egui::Context::default();
             ctx.set_pixels_per_point(ratio);
             let mut app = MagcouplingApp::new(&ctx);
+            // The rects of `text` in the left column of a settled frame.
             let settle = |app: &mut MagcouplingApp, text: &str| {
-                for _ in 0..3 {
-                    frame_on(&ctx, app, tall, Vec::new());
-                }
-                text_rects(&frame_on(&ctx, app, tall, Vec::new()), text)
+                let output = settled_tall(&ctx, app);
+                let right = side_rect(&ctx, "magcoupling_inputs").right();
+                let found = text_rects(&output, text);
+                found
+                    .into_iter()
+                    .filter(|r| r.right() <= right)
+                    .collect::<Vec<_>>()
+            };
+            let holds = |app: &mut MagcouplingApp, what: &str| {
+                let output = settled_tall(&ctx, app);
+                let (left, right) = (
+                    side_rect(&ctx, "magcoupling_inputs"),
+                    side_rect(&ctx, "magcoupling_dashboard"),
+                );
+                assert_eq!(left.width(), 320.0, "ratio {ratio}, {what}");
+                assert_eq!(right.width(), 300.0, "ratio {ratio}, {what}");
+                let faults = left_column_faults(&ctx, &output);
+                assert!(faults.is_empty(), "ratio {ratio}, {what}: {faults:#?}");
             };
             let left = settle(&mut app, DETAILED_INPUTS)[0];
-            click_at(&ctx, &mut app, tall, left.center(), 2);
+            click_at(&ctx, &mut app, TALL, left.center(), 2);
             for group in groups.iter().rev() {
                 let header = settle(&mut app, group.label)[0];
-                click_at(&ctx, &mut app, tall, header.center(), 2);
+                click_at(&ctx, &mut app, TALL, header.center(), 2);
                 if group.has_advanced() {
                     let advanced = settle(&mut app, ADVANCED_HEADING)
                         .into_iter()
                         .filter(|r| r.top() > header.bottom())
                         .min_by(|a, b| a.top().total_cmp(&b.top()))
                         .expect("an Advanced heading under its group");
-                    click_at(&ctx, &mut app, tall, advanced.center(), 2);
+                    click_at(&ctx, &mut app, TALL, advanced.center(), 2);
                 }
             }
-            settle(&mut app, DETAILED_INPUTS);
-            let (left, right) = (
-                side_rect(&ctx, "magcoupling_inputs"),
-                side_rect(&ctx, "magcoupling_dashboard"),
+            holds(&mut app, "every group and Advanced heading open");
+            // Auto on: its line (which size it sets and the Open the Size tab button) heads the
+            // Key design group.
+            let toggle = settle(&mut app, AUTO)[0];
+            click_at(&ctx, &mut app, TALL, toggle.center(), 2);
+            assert_eq!(
+                settle(&mut app, OPEN_SIZE_TAB).len(),
+                1,
+                "ratio {ratio}: Auto"
             );
-            assert_eq!(left.width(), 320.0, "ratio {ratio}");
-            assert_eq!(right.width(), 300.0, "ratio {ratio}");
+            holds(&mut app, "Auto on");
+            // Then a filter that lists every input (each path has a dot), Auto still on.
+            let filter = settle(&mut app, FILTER_HINT)[0];
+            click_at(&ctx, &mut app, TALL, filter.center(), 0);
+            frame_on(
+                &ctx,
+                &mut app,
+                TALL,
+                vec![egui::Event::Text(".".to_owned())],
+            );
+            let listed = format!("{total} of {total} inputs");
+            assert_eq!(
+                settle(&mut app, &listed).len(),
+                1,
+                "ratio {ratio}: {listed}"
+            );
+            holds(&mut app, "Auto on and a filter that lists every input");
         }
     }
 

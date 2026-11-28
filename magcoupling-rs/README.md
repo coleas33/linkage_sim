@@ -346,7 +346,11 @@ width whatever it shows (BL-099): 320 points until its edge is dragged, in egui'
 in the app's own, with a fold, an input group or its Advanced heading opened, a filter set or an
 input traced, at a pixel ratio of 1 and at the 0.9 and 1.35 a zoomed browser can give (BL-103: a
 slider takes the width its value box leaves, and a part or grade picker keeps one point free; test
-`the_left_column_keeps_its_width_at_the_pixel_ratios_a_zoomed_browser_gives`). A label
+`the_left_column_keeps_its_width_at_the_pixel_ratios_a_zoomed_browser_gives`, with every group
+open, Auto on and a filter that lists every input). The picker row frees that point before its
+label: egui's `set_max_width` puts a row's cursor back at its start, and set after the label it
+laid the box over "Pick a part" or "Pick a grade" (BL-103 review B-1; test
+`the_part_and_grade_pickers_draw_their_box_right_of_their_label`). A label
 longer than its row wraps onto a second line, under its own first line, and the note "outside the
 slider range" and the reset button follow it on a line of their own; the label is still one Tab
 stop that shows its focus on both lines (`input_ui::input_row` draws it as one block: egui lays a

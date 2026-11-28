@@ -24,6 +24,7 @@ Reverse chronological (newest at top).
 ## 2026-11-28 - Magcoupler: the left column holds 320 points at pixel ratios 0.9 and 1.35 (BL-103)
 
 - gui/input_ui.rs add_slider (slider width capped to what its value box leaves; used by input rows and gui/size_controls.rs), gui/pickers.rs one point free in the part and grade pickers; test in app.rs; README; backlog BL-103 fixed.
+- Branch review B-1 rework: gui/pickers.rs frees the point before the picker's label (Ui::set_max_width after it had laid each combo box over its label); app.rs tests the_part_and_grade_pickers_draw_their_box_right_of_their_label and the width test with Auto on and a filter that lists every input (N-3), both checking that no text of the left column is drawn over another; README, docs/ai 02 (lesson), backlog BL-103 notes.
 
 ## 2026-11-28 - Magcoupler: the Tab key passes the stops that show no focus: scroll-area surfaces and bars, panel edges, the Equation panel's formula (BL-102)
 
