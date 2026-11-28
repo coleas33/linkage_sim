@@ -18,7 +18,7 @@ Written 2026-11-18. Updated as answers and new questions arrive.
 | P-n, L-n | The plans for slice A and for slice B stage 1, in `docs/superpowers/plans/` |
 | Three-letter codes (LGS-11, LFA-16) | The whole-project audit, `docs/analyses/2026-11-10-whole-project-audit.md` |
 
-Contents: part A, six answers that change what is built next. Part B, eight things only you can try. Part C, 53 calls to make when convenient (questions 48, 49 and 50 were added there on 2026-11-22, questions 51, 53, 54, 55, 56, 57, 58 and 59 on 2026-11-23, questions 60 to 65 on 2026-11-25, questions 66 to 69 on 2026-11-26, questions 70, 71 and 72 on 2026-11-27). Part D, five that matter only if the tools stop being generic.
+Contents: part A, six answers that change what is built next. Part B, eight things only you can try. Part C, 56 calls to make when convenient (questions 48, 49 and 50 were added there on 2026-11-22, questions 51, 53, 54, 55, 56, 57, 58 and 59 on 2026-11-23, questions 60 to 65 on 2026-11-25, questions 66 to 69 on 2026-11-26, questions 70 to 75 on 2026-11-27). Part D, five that matter only if the tools stop being generic.
 
 Answered so far: 1, 2, 3, 4, 5 and 6 (2026-11-22). Each answer is written in bold under its question.
 
@@ -585,6 +585,41 @@ One cost in the legends, which draw every entry as a dot in its colour, whatever
 - (c) Red only while the check a line stands for fails.
 
 Source: UX design decision C-5; the slice B stage 1 review, finding C-3; A-50; BL-104 plan, decision D-90.
+
+### 73. Should every control show a grey edge?
+
+Added 2026-11-27 (the next free number). A checkbox's box, a slider's rail and a value box were drawn in the hairline colour, so faint on the dark panel (1.2:1) that the boxes were hard to find. They now show their edge in a new grey, `#656c76`: value boxes, buttons with a frame, pickers and text boxes are outlined in it, and a checkbox's box and a slider's rail and handle are filled with it, at 3:1 against the panel and the menus (the usual rule for a control's edge). An open picker keeps its grey outline. Each name in a plot's legend, which you click to hide or show its line, now shows its coloured dot on a small grey disc; a grey dot (the Operating temperature line of Torque vs temperature) is hard to tell from its disc. The words of the top bar, the tabs and menu items stay without a frame. A selected choice keeps its blue fill with a thin grey edge. A slider's handle still shows that you point at it, drag it or reach it with Tab only by a thicker ring.
+
+- **If you do not answer:** the grey edge.
+- (a) As the default.
+- (b) The faint edges as before.
+- (c) A lighter grey (a brighter ring around every button).
+- (d) The grey edge, but the legend's dots without the grey disc.
+- (e) The grey edge, and a dragged or focused slider handle turns blue, as it did before the new look.
+
+Source: the slice B stage 1 review, findings E-4 and R-6; A-52; BL-107 plan, decisions D-96 to D-98.
+
+### 74. Should more than the title and the left column's heading be drawn heavier?
+
+Added 2026-11-27 (the next free number). The title "Magnetic coupling calculator" and the heading "Size and torque" over the left column are now drawn in a heavier weight of the same typeface (Inter SemiBold), so they stand out by weight and not only by size. Everything else stays in the regular weight, including the four tiles' big numbers and the small headings CHECKS and EXPLAIN on the right. The design allowed the heavier weight for the tile numbers too.
+
+- **If you do not answer:** the title and the heading only.
+- (a) As the default.
+- (b) The tiles' numbers too.
+- (c) The tiles' numbers and the CHECKS and EXPLAIN headings too.
+
+Source: UX design section 6.2; the slice B stage 1 review, suggestion S-1; A-53; BL-107 plan, decision D-99.
+
+### 75. What should the page say while the calculator loads?
+
+Added 2026-11-27 (the next free number). The calculator is one file of about 6.9 MB, and while it loads the page was dark and empty. It now shows one quiet grey line in the middle, "Loading the calculator", which goes as the calculator appears. If the file cannot load, the line stays.
+
+- **If you do not answer:** "Loading the calculator".
+- (a) As the default.
+- (b) Other words (say which).
+- (c) No line, as before.
+
+Source: the slice B stage 1 review, suggestion S-4; A-54; BL-107 plan, decisions D-101 to D-103.
 
 ### Linkage simulator
 
