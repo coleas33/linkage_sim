@@ -432,9 +432,13 @@ fn list_ui(ui: &mut egui::Ui, g: &Geometry, readouts: &mut Readouts, with_list: 
                     })
                     .response
                     .rect;
-                readouts.select_over(ui, rect, callout.path, |show_details| {
-                    callout_text(callout, show_details)
-                });
+                readouts.select_over(
+                    ui,
+                    rect,
+                    callout.path,
+                    egui::Sense::click(),
+                    |show_details| callout_text(callout, show_details),
+                );
             }
             for note in g.notes.iter().filter(|n| with_list || n.level.is_some()) {
                 let text = egui::RichText::new(&note.text);

@@ -170,6 +170,18 @@ pub(crate) fn workflow_group(id: &str) -> &'static crate::gui::inputs::WorkflowG
         .unwrap_or_else(|| panic!("no workflow group {id}"))
 }
 
+/// The default design and its results.
+pub(crate) fn design() -> (crate::DesignInputs, crate::DesignResults) {
+    let inputs = crate::DesignInputs::default();
+    let results = crate::compute_all(&inputs);
+    (inputs, results)
+}
+
+/// The view of a design on which no input is held.
+pub(crate) fn nothing_held(_: &str) -> Option<String> {
+    None
+}
+
 /// The slider range of the input at `path` ([`crate::gui::inputs::slider_range`], the one
 /// spelling production reads), for a path the test knows has one.
 pub(crate) fn slider_range(path: &str) -> crate::engine::meta::SliderRange {
@@ -1038,12 +1050,25 @@ pub(crate) fn text_center(output: &egui::FullOutput, needle: &str) -> egui::Pos2
 /// label) is measured as it is drawn. Left out: a text whose middle is above or below what
 /// shows (a list scrolls, and a row half out of view is not a cut).
 pub(crate) fn cut_texts(output: &egui::FullOutput, screen: egui::Rect) -> Vec<String> {
+    cut_texts_in(output, screen, |_| true)
+}
+
+/// [`cut_texts`] of the texts whose clip rect `within` takes: those of one panel, or all but
+/// those of an area that scrolls sideways by design.
+pub(crate) fn cut_texts_in(
+    output: &egui::FullOutput,
+    screen: egui::Rect,
+    within: impl Fn(egui::Rect) -> bool,
+) -> Vec<String> {
     clipped_flat_shapes(output)
         .into_iter()
         .filter_map(|(clip, shape)| {
             let egui::Shape::Text(text) = shape else {
                 return None;
             };
+            if !within(clip) {
+                return None;
+            }
             let ink = text.visual_bounding_rect();
             let shown = clip.intersect(screen);
             if !shown.y_range().contains(ink.center().y) {
@@ -1053,6 +1078,99 @@ pub(crate) fn cut_texts(output: &egui::FullOutput, screen: egui::Rect) -> Vec<St
             (cut > 1.0).then(|| format!("{:?} by {cut:.0} points", text.galley.text()))
         })
         .collect()
+}
+
+/// The texts of a frame whose clip rect `within` takes that are drawn over: a glyph of one meets
+/// a filled rect painted after it, or a glyph of another such text, by more than 2 points both
+/// ways. Each is named with what covers it. Only what shows counts: each glyph's and each rect's
+/// part inside its clip rect and `screen`; a space is left out. [`cut_texts_in`] sees no such
+/// fault: a wrapped term row of the Equation panel hung half a row into the next one, under its
+/// stripe and its text, and stayed inside its clip rect (BL-112 review F-1).
+pub(crate) fn covered_texts_in(
+    output: &egui::FullOutput,
+    screen: egui::Rect,
+    within: impl Fn(egui::Rect) -> bool,
+) -> Vec<String> {
+    let glyphs = |clip: egui::Rect, text: &egui::epaint::TextShape| -> Vec<egui::Rect> {
+        let shown = clip.intersect(screen);
+        text.galley
+            .rows
+            .iter()
+            .flat_map(|row| {
+                let at = text.pos.to_vec2() + row.pos.to_vec2();
+                row.glyphs
+                    .iter()
+                    .filter(|glyph| !glyph.chr.is_whitespace())
+                    .map(move |glyph| glyph.logical_rect().translate(at).intersect(shown))
+            })
+            .filter(|glyph| glyph.is_positive())
+            .collect()
+    };
+    let meet = |a: egui::Rect, b: egui::Rect| {
+        let both = a.intersect(b);
+        both.width() > 2.0 && both.height() > 2.0
+    };
+    let shapes = clipped_flat_shapes(output);
+    let mut covered = Vec::new();
+    for (i, &(clip, shape)) in shapes.iter().enumerate() {
+        let egui::Shape::Text(text) = shape else {
+            continue;
+        };
+        if !within(clip) {
+            continue;
+        }
+        let own = glyphs(clip, text);
+        for &(later_clip, later) in &shapes[i + 1..] {
+            let (over, what) = match later {
+                egui::Shape::Rect(r) if r.fill.a() > 0 => (
+                    vec![r.rect.intersect(later_clip).intersect(screen)],
+                    format!("a rect at {:?}", r.rect),
+                ),
+                egui::Shape::Text(other) if within(later_clip) => (
+                    glyphs(later_clip, other),
+                    format!("{:?}", other.galley.text()),
+                ),
+                _ => continue,
+            };
+            if own.iter().any(|&a| over.iter().any(|&b| meet(a, b))) {
+                let at = text.galley.rect.translate(text.pos.to_vec2());
+                covered.push(format!("{:?} at {at:?} under {what}", text.galley.text()));
+            }
+        }
+    }
+    covered
+}
+
+/// The Equation panel's rect in the last frame (its PanelState), asserted inside the centre
+/// region, between the two columns (BL-086); `at` names the state in the failure.
+pub(crate) fn equation_panel_in_centre(ctx: &egui::Context, at: &str) -> egui::Rect {
+    let panel = side_rect(ctx, "magcoupling_equation_panel");
+    let centre = side_rect(ctx, "magcoupling_inputs").right()
+        ..=side_rect(ctx, "magcoupling_dashboard").left();
+    assert!(
+        centre.contains(&panel.left()) && centre.contains(&panel.right()),
+        "{at}: the panel {panel:?} runs out of the centre region {centre:?}"
+    );
+    panel
+}
+
+/// Every text of the Equation panel at `panel` that is not whole in a frame: cut sideways
+/// ([`cut_texts_in`]) or drawn over ([`covered_texts_in`]). The formula is left out: it scrolls
+/// sideways in an area of its own (decision D-109: an equation does not wrap), the area where the
+/// panel draws its " = ".
+pub(crate) fn equation_panel_faults(
+    output: &egui::FullOutput,
+    screen: egui::Rect,
+    panel: egui::Rect,
+) -> Vec<String> {
+    let inside = |clip: egui::Rect| panel.expand(1.0).contains_rect(clip);
+    let formula = text_shapes(output, " = ")
+        .map(|(clip, _)| clip)
+        .find(|&clip| inside(clip));
+    let checked = |clip: egui::Rect| inside(clip) && Some(clip) != formula;
+    let mut faults = cut_texts_in(output, screen, checked);
+    faults.extend(covered_texts_in(output, screen, checked));
+    faults
 }
 
 /// The rects of `text` where `output` draws it whole: inside its clip rect and inside `screen`.

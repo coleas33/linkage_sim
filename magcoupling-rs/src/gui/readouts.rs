@@ -184,15 +184,17 @@ impl Readouts {
     }
 
     /// [`Readouts::select`] for a result drawn in `rect` by widgets that take no clicks: a
-    /// click sensor over the rect, keyed by `path` in `ui`.
+    /// sensor over the rect, keyed by `path` in `ui`, that senses `sense`: a click, with the
+    /// keyboard's focus or without it.
     pub fn select_over(
         &mut self,
         ui: &egui::Ui,
         rect: Rect,
         path: &'static str,
+        sense: egui::Sense,
         text: impl FnOnce(bool) -> String,
     ) {
-        self.select(ui, sensor(ui, rect, path), path, text);
+        self.select(ui, sensor(ui, rect, path, sense), path, text);
     }
 
     /// The mark of the value at `path` and, while `response` is hovered, its tooltip:
@@ -235,7 +237,7 @@ impl Readouts {
         path: &str,
         text: impl FnOnce(bool) -> String,
     ) {
-        self.show(ui, sensor(ui, rect, path), path, text);
+        self.show(ui, sensor(ui, rect, path, egui::Sense::click()), path, text);
     }
 
     /// Asks for the teaching note `id` (a warning's link, a lesson link), which the panel shows
@@ -261,9 +263,9 @@ impl Readouts {
     }
 }
 
-/// The click sensor over `rect` of the readout at `path`, keyed by `path` in `ui`.
-fn sensor(ui: &egui::Ui, rect: Rect, path: &str) -> egui::Response {
-    ui.interact(rect, ui.id().with(("readout", path)), egui::Sense::click())
+/// The sensor over `rect` of the readout at `path`, keyed by `path` in `ui`, that senses `sense`.
+fn sensor(ui: &egui::Ui, rect: Rect, path: &str, sense: egui::Sense) -> egui::Response {
+    ui.interact(rect, ui.id().with(("readout", path)), sense)
 }
 
 #[cfg(test)]
@@ -451,7 +453,9 @@ mod tests {
             let output = sized_frame_at(&ctx, size, time, input, |ui| {
                 let mut readouts = Readouts::default();
                 rect = ui.label("2.688 N·m").rect;
-                readouts.select_over(ui, rect, PATH, |_| format!("hover text of {PATH}"));
+                readouts.select_over(ui, rect, PATH, egui::Sense::click(), |_| {
+                    format!("hover text of {PATH}")
+                });
                 events = readouts.finish();
             });
             (output, events, rect)
@@ -501,7 +505,7 @@ mod tests {
             let output = sized_frame(&ctx, size, input, |ui| {
                 let mut readouts = Readouts::default().with_selection(selection);
                 let rect = ui.label("2.688 N·m").rect;
-                readouts.select_over(ui, rect, PATH, |_| String::new());
+                readouts.select_over(ui, rect, PATH, egui::Sense::click(), |_| String::new());
             });
             let strong = ctx.style().visuals.strong_text_color();
             flat_shapes(&output)

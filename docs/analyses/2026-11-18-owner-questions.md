@@ -18,7 +18,7 @@ Written 2026-11-18. Updated as answers and new questions arrive.
 | P-n, L-n | The plans for slice A and for slice B stage 1, in `docs/superpowers/plans/` |
 | Three-letter codes (LGS-11, LFA-16) | The whole-project audit, `docs/analyses/2026-11-10-whole-project-audit.md` |
 
-Contents: part A, six answers that change what is built next. Part B, eight things only you can try. Part C, 56 calls to make when convenient (questions 48, 49 and 50 were added there on 2026-11-22, questions 51, 53, 54, 55, 56, 57, 58 and 59 on 2026-11-23, questions 60 to 65 on 2026-11-25, questions 66 to 69 on 2026-11-26, questions 70 to 75 on 2026-11-27). Part D, five that matter only if the tools stop being generic.
+Contents: part A, six answers that change what is built next. Part B, eight things only you can try. Part C, 57 calls to make when convenient (questions 48, 49 and 50 were added there on 2026-11-22, questions 51, 53, 54, 55, 56, 57, 58 and 59 on 2026-11-23, questions 60 to 65 on 2026-11-25, questions 66 to 69 on 2026-11-26, questions 70 to 75 on 2026-11-27, question 76 on 2026-11-28). Part D, five that matter only if the tools stop being generic.
 
 Answered so far: 1, 2, 3, 4, 5 and 6 (2026-11-22). Each answer is written in bold under its question.
 
@@ -522,7 +522,7 @@ Source: BL-097; A-43; decisions M41-1, M41-2 and M41-7.
 
 ### 67. Should the Tab key walk every row of the Results table?
 
-Added 2026-11-26 (the next free number). The columns now scroll to whatever the Tab key lands on, so the keyboard's focus is never out of sight there. The Results table is left out. It draws only the rows on screen, so Tab passes those and moves on; the rows below are reached with the wheel or the search box. If the table scrolled to the focus too, each Tab would bring up the next row, and Tab would go through all of its rows, several hundred, before it left the table.
+Added 2026-11-26 (the next free number). The columns now scroll to whatever the Tab key lands on, so the keyboard's focus is never out of sight there. The Results table is left out. It draws only the rows on screen, so Tab passes those and moves on; the rows below are reached with the wheel or the search box. A row the table's edge cuts is no longer a Tab stop, so the focus never sits on a row half seen. A row that has the focus loses it when the wheel moves the row even partly out of view, and the next Tab then starts again at the top of the page. If the table scrolled to the focus too, each Tab would bring up the next row, and Tab would go through all of its rows, several hundred, before it left the table.
 
 - **If you do not answer:** the table stays as it is: Tab passes the rows on screen.
 - (a) As the default.
@@ -621,6 +621,16 @@ Added 2026-11-27 (the next free number). The calculator is one file of about 6.9
 - (d) If the file cannot load, the line says so and asks for a reload, in words you choose. Today it keeps saying "Loading the calculator" (the page was blank on the same failure before), and the browser's console shows the error.
 
 Source: the slice B stage 1 review, suggestion S-4; A-54; BL-107 plan, decisions D-101 to D-103; option (d) from the text review of part 2b-iii-b (finding F-1, docs/analyses/2026-11-27-magcoupler-slice-b2p2biii-b-review.md).
+
+### 76. Should an equation wider than the Equation panel be set smaller to fit?
+
+Added 2026-11-28 (the next free number). Every text of the Equation panel now wraps inside it: a term's name and what it is, and the Start here bar's step line, which ran past its edge in the smallest window. The equation itself is one line of typeset maths and does not wrap. On the Start here walk it is wider than the panel on five of the 14 steps in the smallest window, 1024 x 700, and on three at 1280 x 800; it scrolls sideways, as it always did, with a scroll bar under the pointer. Set smaller to fit, the widest (the ferrite magnets' cold check) would need about 7.6 points in the smallest window by the app's own measure, and about 6.6 in the browser, where it is about 1,203 points wide; both are below the 8 points the hover's equations stop at. With that 8-point floor, (b) would still show three of the five long walk equations whole (steps 10, 12 and 14, at 9 to 16 points) and the hot minimum check's at about 16. Where the panel cuts an equation between two of its parts, nothing shows that it goes on: at 1024 x 700 the hot minimum check reads as complete without its conditions until the pointer brings up the scroll bar (the text review of 2026-11-28, F-2; on main too).
+
+- **If you do not answer:** the equation keeps its size and scrolls sideways.
+- (a) As the default.
+- (b) An equation too wide is set smaller to fit, down to a smallest size, and scrolls only past it.
+
+Source: BL-086; A-55; BL-112 plan, decision D-109.
 
 ### Linkage simulator
 

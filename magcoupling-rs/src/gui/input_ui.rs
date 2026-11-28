@@ -166,31 +166,13 @@ pub fn input_row(
     let mut label_clicked = false;
     ui.push_id(&entry.path, |ui| {
         head_line(ui, changed, |ui| {
-            // The label as one block in the rest of the line: egui lays a label out in a
-            // wrapping line row by row, each row a Tab stop of its own, and only the first shows
-            // the focus (SK-1). The block is one text row high (as epaint rounds it), so the line
-            // centres it as it centred a label that fits.
-            let row = ui.text_style_height(&egui::TextStyle::Body);
-            let line = egui::vec2(
-                ui.available_size_before_wrap().x,
-                egui::emath::GuiRounding::round_to_pixels(row, ui.pixels_per_point()),
-            );
+            // One Tab stop however the label wraps; after a wrapped label the note and the
+            // reset button start a line of their own (SK-1).
             let label = egui::Label::new(label_for(&entry.path)).sense(egui::Sense::click());
-            let label = ui
-                .allocate_ui_with_layout(line, egui::Layout::top_down(egui::Align::Min), |ui| {
-                    ui.add(label)
-                })
-                .inner
-                .on_hover_ui(|ui| {
-                    ui.add(egui::Label::new(tooltip()));
-                });
+            let label = crate::gui::label_block(ui, label).on_hover_ui(|ui| {
+                ui.add(egui::Label::new(tooltip()));
+            });
             label_clicked = label.clicked();
-            // After a wrapped label the note and the reset button start a line of their own at
-            // a widget's height: a wrapping line's next row takes the height of the one before.
-            if label.rect.height() > 1.5 * line.y {
-                ui.end_row();
-                ui.set_row_height(ui.spacing().interact_size.y);
-            }
             // Each on the head line itself, not in a child of it: a child starts where the
             // label ends and wraps no further left, so it would run past the row's end.
             if outside_range(meta.range, current) {

@@ -43,10 +43,7 @@ use crate::gui::dashboard::{
     DOES_NOT_FIT, FITS, Level, MARKER_LEGEND, STORED_3D_LABEL, STORED_3D_NOTE, STORED_3D_ROWS,
     badging_check, learn_ui, line_ui, result_info, shown_lines, shown_text,
 };
-use crate::gui::explorer::{
-    NoteLink, NoteView, START_HERE_BUTTON, WATCH_OUT, WHAT_TO_CHANGE, explains_ui, note_ui,
-    reviewed_note, start_here_hover,
-};
+use crate::gui::explorer::{START_HERE_BUTTON, reviewed_note, start_here_hover};
 use crate::gui::format::{format_value, value_with_unit};
 use crate::gui::guidance::{
     self, CHECK_GUIDES, CheckGuide, Consequences, Direction, FIT_CHECK, Learn, NO_FIX,
@@ -55,6 +52,7 @@ use crate::gui::guidance::{
 use crate::gui::input_ui::weak_line;
 use crate::gui::inputs::{InputCatalogue, value_text};
 use crate::gui::look;
+use crate::gui::notes_view::{NoteLink, NoteView, WATCH_OUT, WHAT_TO_CHANGE, explains_ui, note_ui};
 use crate::gui::plain_text::{
     DIAMETER_HINT_KEY, LENGTH_HINT_KEY, MINIMUM_OD_HINT_KEY, NO_SPREADSHEET_CELL, display_label,
     help_for, hint_for, label_for,
@@ -1017,7 +1015,8 @@ mod tests {
         // Decision C-11: the note as the Equation panel drew it, after the links to the
         // equations it explains; an equation link opens it in the Equation panel and leaves
         // the selection; a change entry's input shows its row, as a check's fix does.
-        use crate::gui::explorer::{EXPLAINS, WHERE_FROM, crumb};
+        use crate::gui::explorer::crumb;
+        use crate::gui::notes_view::{EXPLAINS, WHERE_FROM};
         let ctx = egui::Context::default();
         let inputs = DesignInputs::default();
         let note = reviewed_note("pullout_angle").unwrap();

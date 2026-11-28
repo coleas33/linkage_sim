@@ -690,7 +690,8 @@ struct HeadingLine<'a> {
 /// A group's heading, `size` points: the open or closed triangle of egui's collapsing header,
 /// then the text and the badge of `line`. Returns whether it was clicked.
 fn group_heading_ui(ui: &mut egui::Ui, line: &HeadingLine, size: egui::Vec2) -> bool {
-    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+    let at = egui::Rect::from_min_size(ui.cursor().min, size);
+    let (rect, response) = ui.allocate_exact_size(size, line_sense(ui, at));
     // The triangle where egui's collapsing header puts it: its inner icon square, centred in
     // the indent.
     let indent_width = ui.spacing().indent;
@@ -742,6 +743,20 @@ pub fn row_tooltip(entry: &TableEntry, value: &Value, show_details: bool) -> Str
         tooltip.push_str(&format!("\nExact value: {}", exact_number(*x)));
     }
     tooltip
+}
+
+/// What a line of the table at `rect` senses: a click, and the keyboard's focus only while the
+/// table's view shows the line whole up and down (BL-101; owner question 67's default, register
+/// row A-44). Tab passes the lines on screen and leaves the table after the last whole one: it
+/// never stops on a line the view's top or foot cuts, nor on one drawn past the foot, and the
+/// table does not scroll for it. A focused line a wheel then cuts loses the focus.
+fn line_sense(ui: &egui::Ui, rect: egui::Rect) -> egui::Sense {
+    let view = ui.clip_rect();
+    if view.top() <= rect.top() && rect.bottom() <= view.bottom() {
+        egui::Sense::click()
+    } else {
+        egui::Sense::CLICK
+    }
 }
 
 /// One table row: label, value with unit (after the badge of a check's `level`), and with the
@@ -803,9 +818,14 @@ fn row_ui(
             cell(ui, marker, &entry.marker, None);
         }
     });
-    readouts.select_over(ui, row.response.rect, &entry.path, |show_details| {
-        row_tooltip(entry, &value, show_details)
-    });
+    let rect = row.response.rect;
+    readouts.select_over(
+        ui,
+        rect,
+        &entry.path,
+        line_sense(ui, rect),
+        |show_details| row_tooltip(entry, &value, show_details),
+    );
 }
 
 #[cfg(test)]

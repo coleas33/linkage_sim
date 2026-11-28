@@ -949,7 +949,7 @@ mod tests {
         // headings are captions, and under the last a row's label is muted and its value is
         // not.
         use crate::gui::explain::{NUMBERS, WHAT_IT_IS, WHAT_SETS_IT};
-        use crate::gui::explorer::WHAT_TO_CHANGE;
+        use crate::gui::notes_view::WHAT_TO_CHANGE;
         use crate::gui::test_support::{primary_button, text_center};
         app.panel.open_example_design();
         frame_texts(&ctx, &mut app);
@@ -1628,16 +1628,20 @@ mod tests {
     }
 
     #[test]
-    fn every_start_here_step_s_lesson_line_is_drawn_whole_in_the_app_s_own_font() {
-        // Plan review UXP-1 (BL-085): the lesson line under the open equation ("Full lesson:"
-        // and the note's title, a link) ran past the Equation panel's edge at 1024 x 700 on
-        // the long titles (steps 3, 7 and 12). Each step of the walk, at the three window
-        // sizes, in the app's theme and font: no text of the line is cut.
+    fn every_text_of_the_equation_panel_is_whole_on_each_start_here_step_in_the_app_s_own_font() {
+        // Plan review UXP-1 (BL-085): the lesson line under the open equation ran past the
+        // Equation panel's edge at 1024 x 700 on the long titles. BL-086: so did a term's name
+        // and its tag (at 1280 x 800 too) and the walk bar's step line, which also pushed the
+        // panel over the right column. Each step of the walk, at the three window sizes, in the
+        // app's theme and font: the panel stays inside the centre region, and no text of it is
+        // cut or drawn over but the formula's, which scrolls sideways in an area of its own
+        // (decision D-109: an equation does not wrap). The branch's review (F-1): a wrapped term
+        // row hung half a row into the next, under its stripe (step 5, 1024 x 700).
         use crate::engine::explain::notes::START_HERE;
-        use crate::gui::explain::FULL_LESSON;
-        use crate::gui::explorer::{NEXT, START_HERE_BUTTON, reviewed_note};
-        use crate::gui::test_support::{cut_texts, primary_button, text_center};
-        use crate::gui::typeset::glyph_safe;
+        use crate::gui::explorer::{NEXT, START_HERE_BUTTON};
+        use crate::gui::test_support::{
+            equation_panel_faults, equation_panel_in_centre, primary_button, text_center,
+        };
         for size in [WINDOWS[1], WINDOWS[0], egui::vec2(1920.0, 1080.0)] {
             let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
             let ctx = egui::Context::default();
@@ -1655,20 +1659,14 @@ mod tests {
             };
             frame_on(&ctx, &mut app, size, Vec::new());
             let mut output = click(&mut app, START_HERE_BUTTON);
-            for (step, &(id, _)) in START_HERE.iter().enumerate() {
+            for step in 0..START_HERE.len() {
                 if step > 0 {
                     output = click(&mut app, NEXT);
                 }
-                let title = glyph_safe(reviewed_note(id).expect("a reviewed note").title);
-                let line = [FULL_LESSON, title.as_str()];
-                let cut: Vec<String> = cut_texts(&output, screen)
-                    .into_iter()
-                    .filter(|cut| {
-                        line.iter()
-                            .any(|text| cut.starts_with(&format!("{text:?} by")))
-                    })
-                    .collect();
-                assert!(cut.is_empty(), "{size:?}, step {}: cut: {cut:#?}", step + 1);
+                let at = format!("{size:?}, step {}", step + 1);
+                let panel = equation_panel_in_centre(&ctx, &at);
+                let faults = equation_panel_faults(&output, screen, panel);
+                assert!(faults.is_empty(), "{at}: {faults:#?}");
             }
         }
     }
@@ -2547,11 +2545,11 @@ mod tests {
         // fold, the Geometry tab and the check list's last row as the page draws them, so the
         // prompt cannot go stale unnoticed.
         assert!(
-            script.contains(crate::gui::explorer::WHAT_TO_CHANGE),
+            script.contains(crate::gui::notes_view::WHAT_TO_CHANGE),
             "a note's What to change"
         );
         assert!(
-            script.contains(crate::gui::explorer::WHERE_FROM),
+            script.contains(crate::gui::notes_view::WHERE_FROM),
             "a note's sources fold"
         );
         assert!(
