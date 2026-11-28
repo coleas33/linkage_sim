@@ -107,11 +107,11 @@ The file `linkage-sim-rs/web/vercel.json` configures:
 - Redirects, first match wins, permanent (308) except the root's, which stays temporary (307) so a page of its own can replace it later: on linkage.colesorkness.com, `/magcoupling/...` to colesorkness.com/tools/magcoupler/..., `/?tool=magcoupling` (without `m`) to the calculator, and every other path to colesorkness.com/tools/linkage/...; on any host, `/magcoupling/...` to `/tools/magcoupler/...` and `/` to `/tools/`. Share links keep their `m` through an explicit capture (`has` query `m`, `?m=:m`), and the sources use `:path(.*)`, not `:path*`, which Vercel compiles so strictly that it never matches a path ending in `/`. `tests/web_layout.rs` pins them.
 - Header rules: `.wasm` files with `Content-Type: application/wasm`, and the wasm and both JS glue files with `Cache-Control: public, max-age=0, must-revalidate`.
 
-## Known Limitations (WASM Build)
+## Browser Behavior (WASM Build)
 
-The following features are **not available** in the browser / WASM build:
+The shipped browser build uses downloads and browser storage instead of native filesystem paths:
 
-- **No file dialogs** -- Save, Open, and Save As use native file dialogs (`rfd` crate) gated behind the `native` feature flag.
-- **No PNG / SVG / GIF export** -- Export functions rely on native filesystem access.
-- **No autosave** -- The browser build has no persistent local storage integration; work is lost on page reload.
-- **No recent-files list** -- Depends on native filesystem paths.
+- **File access** -- Load mechanisms by dragging JSON files onto the canvas, and save through **Download JSON...**. Native Open/Save/Save As dialogs are unavailable. The magnetic coupling calculator's Load design uses the browser's file chooser.
+- **Exports** -- SVG and other text exports use browser downloads. The shipped `raster` feature also enables PNG and GIF downloads; GIF export requires a supported sweep.
+- **Autosave/recovery** -- For a changed, loaded mechanism, the browser attempts periodic autosaves to `localStorage` on a configured interval of 30 seconds, when storage is available. Startup offers recovery or discard. Changes since the last autosave can still be lost on reload; clearing or blocking browser storage removes this protection.
+- **Recent mechanisms** -- The browser keeps up to five JSON snapshots in `localStorage`, added by JSON imports and downloads. **Recent Mechanisms** restores these snapshots rather than reopening native filesystem paths.

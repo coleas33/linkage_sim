@@ -414,8 +414,8 @@
   evidence: "WASM_DEPLOYMENT.md:36-40 omits --features raster (build_web.sh:20-24 and deploy-web.yml:38-50 include it); WASM_DEPLOYMENT.md:100 claims max-age=31536000 immutable but web/vercel.json sets max-age=0 must-revalidate"
   acceptance: "doc's build command and cache-control statements match build_web.sh and web/vercel.json verbatim"
   priority: 3
-  status: open
-  notes: ""
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: the build command (raster) and cache-control statements had already been corrected by later work; the remaining drift was the Known Limitations section, which denied file loading, PNG/SVG/GIF export, autosave and recent mechanisms the web build ships. Replaced it with a Browser Behavior section (reused from codex 426844d, checked against file_io.rs and menu_bar.rs). Doc-only; the guide's old claims were verified false before the edit."
 
 - id: BL-005
   title: .claude/agents/rust-test-fixer.md premise is stale (tests already fixed)

@@ -5,6 +5,9 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - WASM guide describes the browser features it ships (BL-004)
+- docs/guides/WASM_DEPLOYMENT.md: Known Limitations (no dialogs/export/autosave/recents) replaced by Browser Behavior; build and cache statements already matched build_web.sh and vercel.json.
+
 ## 2026-11-28 — Defer nom 1.2.4 warning (BL-006)
 - cargo tree -i nom: nom 1.2.4 <- meval 0.2.0; meval 0.2.0 is still the latest and needs nom 1.x, so deferred with that upstream blocker named. No code or lockfile change.
 
