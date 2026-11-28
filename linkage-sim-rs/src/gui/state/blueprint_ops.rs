@@ -344,13 +344,7 @@ impl AppState {
         // assigned driver kind (a linear driver's value is its stroke).
         let t = self.current_driver_time();
 
-        // Try solving with last_good_q if it has the right dimension;
-        // after a topology change, seed the surviving bodies by id.
-        let try_q = if self.last_good_q.len() == mech.state().n_coords() {
-            self.last_good_q.clone()
-        } else {
-            seed_q_by_body_id(self.mechanism.as_ref(), &self.last_good_q, &mech)
-        };
+        let try_q = self.rebuild_guess(&mech);
 
         if !self.solve_and_update(&mech, &try_q, t, 1e-10, 50, None) {
             // First attempt failed — a NaN residual means the solver errored
@@ -385,6 +379,16 @@ impl AppState {
         self.compute_validation();
         self.recompute_driver_display_offset();
         self.mark_sweep_dirty();
+    }
+
+    /// rebuild()'s first guess for `mech`: last_good_q if it has the right
+    /// dimension; after a topology change, the surviving bodies seeded by id.
+    pub(crate) fn rebuild_guess(&self, mech: &Mechanism) -> DVector<f64> {
+        if self.last_good_q.len() == mech.state().n_coords() {
+            self.last_good_q.clone()
+        } else {
+            seed_q_by_body_id(self.mechanism.as_ref(), &self.last_good_q, mech)
+        }
     }
 
     // ── Blueprint edit operations ────────────────────────────────────────

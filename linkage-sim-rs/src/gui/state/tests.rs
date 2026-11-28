@@ -540,9 +540,7 @@
             else {
                 continue;
             };
-            if !state.solver_status.converged {
-                continue; // a sample that does not solve at load is not this item's subject
-            }
+            assert!(state.solver_status.converged, "{sample:?}: the load did not converge");
             let q_before = state.q.clone();
             state.add_mount_point(&body, "M_bl140", [0.01, 0.02]);
             assert!(
@@ -556,7 +554,7 @@
                 state.driver_angle
             );
             // The actuator samples rebuild to a different state size (pre-existing,
-            // filed apart from BL-140), so its pose has no vector to compare.
+            // BL-141), so its pose has no vector to compare.
             if state.q.len() != q_before.len() {
                 assert!(format!("{sample:?}").contains("Actuator"), "{sample:?}: the edit changed the state size");
                 continue;
@@ -565,6 +563,106 @@
                 (&state.q - &q_before).norm() < 1e-6,
                 "{sample:?}: the edit moved the pose"
             );
+        }
+    }
+
+    /// BL-118 (R5b re-review RR-1, RR-2): a driver reassign to any grounded revolute
+    /// joint of any sample either converges, with one undo entry that brings the old
+    /// driver back, or is refused: the driver, q, driver_angle, the blueprint and the
+    /// convergence stay as they were, no undo entry is added and the status line names
+    /// the joint.
+    #[test]
+    fn every_sample_reassign_converges_or_leaves_the_state_unchanged() {
+        use crate::core::constraint::Constraint;
+        let mut bad = Vec::new();
+        for &sample in SampleMechanism::all() {
+            let load = || {
+                let mut state = AppState::default();
+                state.load_sample(sample);
+                assert!(state.solver_status.converged, "{sample:?}: the load did not converge");
+                state
+            };
+            let first = load();
+            let ids: Vec<String> = first
+                .mechanism
+                .as_ref()
+                .unwrap()
+                .joints()
+                .iter()
+                .filter(|j| j.is_revolute() && (j.body_i_id() == "ground" || j.body_j_id() == "ground"))
+                .map(|j| j.id().to_string())
+                .collect();
+            // A refused reassign leaves the state as loaded, so it serves the next
+            // joint; a load is the slow part (it computes the sweep).
+            let mut fresh = Some(first);
+            for id in ids {
+                let mut state = fresh.take().unwrap_or_else(load);
+                let (q, angle, kind, joint) =
+                    (state.q.clone(), state.driver_angle, state.driver_kind, state.driver_joint_id.clone());
+                let bp = serde_json::to_value(&state.blueprint).unwrap();
+                let depth = state.undo_history.undo_count();
+                state.status_message = None;
+
+                state.reassign_driver(&id);
+
+                let added = state.undo_history.undo_count() as i64 - depth as i64;
+                if state.driver_joint_id.as_deref() == Some(id.as_str()) && added != 0 {
+                    if !state.solver_status.converged {
+                        bad.push(format!("{sample:?} {id}: kept but unsolved"));
+                    }
+                    if added != 1 {
+                        bad.push(format!("{sample:?} {id}: kept with {added} undo entries"));
+                    }
+                    state.undo();
+                    // An actuator sample's undo comes back with a larger q (BL-141).
+                    let pose_back = state.q.len() != q.len() || (&state.q - &q).norm() < 1e-9;
+                    if state.driver_joint_id != joint || !pose_back {
+                        bad.push(format!("{sample:?} {id}: one Undo did not bring the old driver back"));
+                    }
+                    continue;
+                }
+                let unchanged = state.q == q
+                    && state.driver_angle == angle
+                    && state.driver_kind == kind
+                    && state.driver_joint_id == joint
+                    && state.load_cases.cases[state.load_cases.active_index].driver_joint_id
+                        == joint.clone().unwrap_or_default()
+                    && serde_json::to_value(&state.blueprint).unwrap() == bp
+                    && state.solver_status.converged;
+                if added != 0 {
+                    bad.push(format!("{sample:?} {id}: refused with {added} undo entries"));
+                }
+                if !state.status_message.as_deref().is_some_and(|m| m.contains(&format!("{id} "))) {
+                    bad.push(format!("{sample:?} {id}: refused with status {:?}", state.status_message));
+                }
+                if unchanged {
+                    fresh = Some(state);
+                } else {
+                    bad.push(format!(
+                        "{sample:?} {id}: refused but the state changed (converged {}, joint {:?})",
+                        state.solver_status.converged, state.driver_joint_id
+                    ));
+                }
+            }
+        }
+        assert!(bad.is_empty(), "{bad:#?}");
+    }
+
+    /// BL-118: the loader adds joints in id order whatever the order of the map it
+    /// reads, so the SixBarB1 J7 reassign (a Newton solve near a singular pose)
+    /// ends the same way on every run.
+    #[test]
+    fn joints_load_in_id_order_whatever_the_map_order() {
+        use crate::core::constraint::Constraint;
+        let (mech, _) = crate::gui::samples::build_sample(SampleMechanism::SixBarB1);
+        let json = serde_json::to_string(&mechanism_to_json(&mech).unwrap()).unwrap();
+        for _ in 0..8 {
+            // Each parse makes new maps with a new random order.
+            let loaded = crate::io::load_mechanism_unbuilt(&json).unwrap();
+            let ids: Vec<&str> = loaded.joints().iter().map(|j| j.id()).collect();
+            let mut sorted = ids.clone();
+            sorted.sort();
+            assert_eq!(ids, sorted);
         }
     }
 

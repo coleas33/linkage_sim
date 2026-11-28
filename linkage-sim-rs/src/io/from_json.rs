@@ -181,8 +181,12 @@ pub fn load_mechanism_unbuilt_from_json(json_struct: &MechanismJson) -> Result<M
             .map_err(SerializationError::build)?;
     }
 
-    // Rebuild joints (geometric constraints only; drivers are separate)
-    for (joint_id, joint_json) in &json_struct.joints {
+    // Rebuild joints (geometric constraints only; drivers are separate), in id
+    // order: the constraint rows follow it, and a Newton solve near a
+    // singular pose can end on another pose for another row order (BL-118).
+    let mut joints: Vec<_> = json_struct.joints.iter().collect();
+    joints.sort_by(|a, b| a.0.cmp(b.0));
+    for (joint_id, joint_json) in joints {
         match joint_json {
             JointJson::Revolute {
                 body_i,
