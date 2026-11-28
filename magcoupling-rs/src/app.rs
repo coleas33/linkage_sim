@@ -762,7 +762,7 @@ mod tests {
         // a series: blue, amber, violet, the text, muted and the three levels' colours.
         use crate::gui::CentreView;
         use crate::gui::plots::PlotKind;
-        use crate::gui::test_support::flat_shapes;
+        use crate::gui::test_support::{flat_shapes, primary_button};
         use theme::contrast;
         // A frame's legend entries in the centre region: each a filled and outlined disc (a
         // plot's own points are one or the other) and, while its line is shown, the colour of
@@ -841,9 +841,255 @@ mod tests {
                         .any(|(d, dot)| d.center == first.center && *dot == first_dot),
                     "{what}: shown again"
                 );
+                // BL-110 (F-2): under the pointer, then pressed, the entry keeps the field
+                // colour for its disc, its ring 3:1 or more on the legend and its dot 3:1 or
+                // more on the disc.
+                for (state, event) in [
+                    ("hovered", egui::Event::PointerMoved(first.center)),
+                    ("pressed", primary_button(first.center, true)),
+                ] {
+                    frame_on(&ctx, &mut app, LAPTOP, vec![event.clone()]);
+                    let output = frame_on(&ctx, &mut app, LAPTOP, Vec::new());
+                    let at: Vec<_> = entries(&ctx, &output)
+                        .into_iter()
+                        .filter(|(d, _)| d.center == first.center)
+                        .collect();
+                    assert_eq!(at.len(), 1, "{what}: the {state} entry's disc");
+                    let (disc, dot) = at[0];
+                    assert_eq!(disc.fill, first.fill, "{what}: the {state} disc's fill");
+                    let ring = contrast(disc.stroke.color, theme::BG);
+                    assert!(ring >= 3.0, "{what}: the {state} ring: {ring:.2}");
+                    let dot = dot.unwrap_or_else(|| panic!("{what}: the {state} entry's dot"));
+                    let ratio = contrast(dot, disc.fill);
+                    assert!(ratio >= 3.0, "{what}: the {state} dot: {ratio:.2}");
+                }
+                frame_on(
+                    &ctx,
+                    &mut app,
+                    LAPTOP,
+                    vec![primary_button(first.center, false)],
+                );
+                frame_on(&ctx, &mut app, LAPTOP, vec![egui::Event::PointerGone]);
             }
         }
         assert_eq!(colours.len(), 8, "the dots' colours: {colours:?}");
+    }
+
+    #[test]
+    fn every_plot_s_horizontal_axis_carries_three_evenly_spaced_numbers_in_the_app_s_own_font() {
+        // BL-105 (the review of part 2b-iii-a, UX-2): at 1024 x 700 and 1280 x 800 four plots'
+        // horizontal axes carried one or two numbers, or none, because egui_plot's tens-only
+        // spacer skipped the finer step at 53 to 59 points apart. In the app's theme and font,
+        // on the starting design: each plot's horizontal axis (the row of numbers lowest in the
+        // centre region) carries three or more numbers, none cut and none within `GAP` points
+        // of the next, each one step from its neighbours (the branch review, B-2: a coarse step
+        // of 5 over a labelled 2 put '15' in '6 8 10 12 14 15 16'); the vertical axes still
+        // carry numbers, and 1920 x 1080 keeps at least the numbers it drew (10 to 16 on four
+        // axes). The windows run from the smallest, 1024 points wide, to 1360 at 700 and 800
+        // points high, past the plot widths B-2 found uneven (340 to 680). The browser review
+        // of R3 (F-1): on the example design at 1024 x 700 Slip heating's last number, 1500,
+        // sat centred on its tick at the plot's right edge and was cut to '150'. Each of the
+        // other plot designs is drawn at 1024 x 700 and 1280 x 800 too, and on every design no
+        // horizontal number's text passes its plot's frame.
+        use crate::gui::CentreView;
+        use crate::gui::plots::PlotKind;
+        use crate::gui::test_support::{cut_texts, flat_shapes};
+        const GAP: f32 = 8.0;
+        let every_size: Vec<egui::Vec2> = [700.0, 800.0]
+            .into_iter()
+            .flat_map(|height| {
+                (1024..=1360)
+                    .step_by(4)
+                    .map(move |w| egui::vec2(w as f32, height))
+            })
+            .chain([egui::vec2(1920.0, 1080.0)])
+            .collect();
+        assert!(every_size.contains(&WINDOWS[0]) && every_size.contains(&WINDOWS[1]));
+        for design in PLOT_DESIGNS {
+            let sizes = if design == "starting" {
+                every_size.clone()
+            } else {
+                vec![WINDOWS[1], WINDOWS[0]]
+            };
+            let (ctx, mut app) = app_on_plot_design(design, sizes[0]);
+            for kind in PlotKind::ALL {
+                show_view(&ctx, &mut app, sizes[0], CentreView::Plot(kind), 2);
+                for &size in &sizes {
+                    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+                    let what = format!("{size:?}, {design}, {kind:?}");
+                    frame_on(&ctx, &mut app, size, Vec::new());
+                    let output = frame_on(&ctx, &mut app, size, Vec::new());
+                    let (left, right) = (
+                        side_rect(&ctx, "magcoupling_inputs").right(),
+                        side_rect(&ctx, "magcoupling_dashboard").left(),
+                    );
+                    let mut numbers: Vec<(String, egui::Rect)> = flat_shapes(&output)
+                        .into_iter()
+                        .filter_map(|shape| match shape {
+                            egui::Shape::Text(text) => {
+                                let rect = text.visual_bounding_rect();
+                                let in_centre = left < rect.center().x && rect.center().x < right;
+                                let number = text.galley.text().parse::<f64>().is_ok();
+                                (in_centre && number).then(|| (text.galley.text().to_owned(), rect))
+                            }
+                            _ => None,
+                        })
+                        .collect();
+                    let bottom = numbers
+                        .iter()
+                        .map(|(_, rect)| rect.center().y)
+                        .fold(f32::MIN, f32::max);
+                    let (mut row, rest): (Vec<_>, Vec<_>) = numbers
+                        .drain(..)
+                        .partition(|(_, rect)| (rect.center().y - bottom).abs() < 2.0);
+                    row.sort_by(|a, b| a.1.left().total_cmp(&b.1.left()));
+                    let texts: Vec<&str> = row.iter().map(|(t, _)| t.as_str()).collect();
+                    assert!(row.len() >= 3, "{what}: the horizontal axis: {texts:?}");
+                    assert!(
+                        rest.len() >= 2,
+                        "{what}: the vertical axis: {} numbers",
+                        rest.len()
+                    );
+                    for pair in row.windows(2) {
+                        let gap = pair[1].1.left() - pair[0].1.right();
+                        assert!(gap >= GAP, "{what}: {texts:?}: a gap of {gap}");
+                    }
+                    let values: Vec<f64> = texts.iter().map(|t| t.parse().unwrap()).collect();
+                    let step = values[1] - values[0];
+                    assert!(
+                        values
+                            .windows(2)
+                            .all(|pair| ((pair[1] - pair[0]) - step).abs() <= 1e-9 * step.abs()),
+                        "{what}: uneven steps: {texts:?}"
+                    );
+                    // F-1: the shape holds the whole number; the clip cut it where it passed
+                    // the plot's frame.
+                    let frame = *egui_plot::PlotMemory::load(&ctx, kind.id())
+                        .expect("the plot ran this frame")
+                        .transform()
+                        .frame();
+                    for (text, rect) in &row {
+                        assert!(
+                            frame.left() <= rect.left() && rect.right() <= frame.right(),
+                            "{what}: {texts:?}: {text:?} at {rect:?} passes the frame {frame:?}"
+                        );
+                    }
+                    // cut_texts names each text as "\"1500\" by 9 points".
+                    let cut = cut_texts(&output, screen);
+                    assert!(
+                        !cut.iter().any(|t| t
+                            .split('"')
+                            .nth(1)
+                            .is_some_and(|text| text.parse::<f64>().is_ok())),
+                        "{what}: cut: {cut:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn no_plot_s_legend_covers_a_marked_point() {
+        // BL-106 (the review of part 2b-iii-a, F-1): every plot put its legend at the top right,
+        // and on the example design at 1024 x 700 Slip heating's legend covered the time to the
+        // limit's dot. In the app's theme and font, on the starting design, the example
+        // design and a hotter one at 1024 x 700 and 1280 x 800, no circle a plot draws (a
+        // reference value's dot, This design, the time to the limit, a sweep row) has its
+        // centre inside the legend.
+        use crate::gui::CentreView;
+        use crate::gui::plots::PlotKind;
+        use crate::gui::test_support::flat_shapes;
+        let mut covered = Vec::new();
+        for size in [WINDOWS[1], WINDOWS[0]] {
+            for design in PLOT_DESIGNS {
+                let (ctx, mut app) = app_on_plot_design(design, size);
+                for kind in PlotKind::ALL {
+                    let what = format!("{size:?}, {design}, {kind:?}");
+                    let output = show_view(&ctx, &mut app, size, CentreView::Plot(kind), 2);
+                    let (left, right) = (
+                        side_rect(&ctx, "magcoupling_inputs").right(),
+                        side_rect(&ctx, "magcoupling_dashboard").left(),
+                    );
+                    let circles: Vec<egui::epaint::CircleShape> = flat_shapes(&output)
+                        .into_iter()
+                        .filter_map(|shape| match shape {
+                            egui::Shape::Circle(c) if left < c.center.x && c.center.x < right => {
+                                Some(*c)
+                            }
+                            _ => None,
+                        })
+                        .collect();
+                    // A legend entry: a filled and outlined disc.
+                    let discs: Vec<&egui::epaint::CircleShape> = circles
+                        .iter()
+                        .filter(|c| c.fill.a() > 0 && c.stroke.width > 0.0)
+                        .collect();
+                    assert!(!discs.is_empty(), "{what}: no legend entry");
+                    // The legend's frame: the smallest rect shape holding every entry's disc.
+                    let frame = flat_shapes(&output)
+                        .into_iter()
+                        .filter_map(|shape| match shape {
+                            egui::Shape::Rect(r)
+                                if discs.iter().all(|d| r.rect.contains(d.center)) =>
+                            {
+                                Some(r.rect)
+                            }
+                            _ => None,
+                        })
+                        .min_by(|a, b| a.area().total_cmp(&b.area()))
+                        .unwrap_or_else(|| panic!("{what}: no legend frame"));
+                    for c in &circles {
+                        let in_legend = discs.iter().any(|d| d.center == c.center);
+                        if !in_legend && frame.contains(c.center) {
+                            covered.push(format!(
+                                "{what}: a point at {:?} is under the legend {frame:?}",
+                                c.center
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(covered.is_empty(), "{covered:#?}");
+    }
+
+    /// The designs the plots' tests draw: the starting design; the example design; the example
+    /// 5 degrees hotter, whose high case reaches the limit, so Slip heating marks the time to
+    /// it; and the gui-smoke share link's, whose Slip heating marks the time to the limit under
+    /// a top-right legend (BL-106, N-4).
+    const PLOT_DESIGNS: [&str; 4] = ["starting", "example", "hot example", "smoke link"];
+
+    /// A new app on a screen of `size` showing `design`, one of [`PLOT_DESIGNS`], one frame in.
+    fn app_on_plot_design(design: &str, size: egui::Vec2) -> (egui::Context, MagcouplingApp) {
+        let ctx = egui::Context::default();
+        let mut app = MagcouplingApp::new(&ctx);
+        if design != "starting" {
+            app.panel.open_example_design();
+        }
+        if design == "smoke link" {
+            let script = include_str!("../../.claude/workflows/gui-smoke.js");
+            let marker = "const MAGCOUPLING_SMOKE_PAYLOAD = '";
+            let start = script.find(marker).expect("the smoke payload") + marker.len();
+            let end = start + script[start..].find('\'').expect("its closing quote");
+            app.panel.load_share_payload(&script[start..end]).unwrap();
+            // Auto sizing solves after its debounce: let that pass, as the web page does.
+            for t in 1..=4 {
+                let input = egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                    time: Some(f64::from(t)),
+                    ..Default::default()
+                };
+                let _ = ctx.run(input, |ctx| app.ui(ctx));
+            }
+        }
+        if design == "hot example" {
+            let mut hot = Design::default();
+            hot.inputs.temperature.duty.hot_ambient_C += 5.0;
+            let text = crate::gui::session::design_to_json(&hot);
+            app.panel.load_design_file(&text).unwrap();
+        }
+        frame_on(&ctx, &mut app, size, Vec::new());
+        (ctx, app)
     }
 
     #[test]
@@ -1293,6 +1539,169 @@ mod tests {
                 width, COLUMN.1,
                 "{size:?}: everything shut and cleared again"
             );
+        }
+    }
+
+    /// The tall window the pixel-ratio tests draw on: room for every row of the left column.
+    const TALL: egui::Vec2 = egui::vec2(1280.0, 20_000.0);
+
+    /// A frame of [`TALL`] once `app` has settled (a fold takes frames to open).
+    fn settled_tall(ctx: &egui::Context, app: &mut MagcouplingApp) -> egui::FullOutput {
+        for _ in 0..3 {
+            frame_on(ctx, app, TALL, Vec::new());
+        }
+        frame_on(ctx, app, TALL, Vec::new())
+    }
+
+    /// The faults of the left column in `output` (BL-103 review B-1): each text drawn over by
+    /// another or by a filled rect painted after it, and each text or filled rect drawn after a
+    /// part or grade picker's label, on its row, that starts left of the label's end (the combo
+    /// box laid out from the row's start, over its label).
+    fn left_column_faults(ctx: &egui::Context, output: &egui::FullOutput) -> Vec<String> {
+        use crate::gui::pickers::{PICK_GRADE, PICK_PART};
+        use crate::gui::test_support::{covered_texts_in, flat_shapes};
+        let column = side_rect(ctx, "magcoupling_inputs").expand(1.0);
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, TALL);
+        let mut faults = covered_texts_in(output, screen, |clip| column.contains_rect(clip));
+        let shapes = flat_shapes(output);
+        for (i, shape) in shapes.iter().enumerate() {
+            let egui::Shape::Text(label) = shape else {
+                continue;
+            };
+            let name = label.galley.text();
+            let at = label.visual_bounding_rect();
+            if ![PICK_PART, PICK_GRADE].contains(&name) || !column.contains_rect(at) {
+                continue;
+            }
+            for later in &shapes[i + 1..] {
+                let (rect, what) = match later {
+                    egui::Shape::Text(text) => (
+                        text.visual_bounding_rect(),
+                        format!("{:?}", text.galley.text()),
+                    ),
+                    egui::Shape::Rect(r) if r.fill.a() > 0 => (r.rect, "a rect".to_owned()),
+                    _ => continue,
+                };
+                let on_its_row = at.y_range().contains(rect.center().y);
+                if on_its_row && column.contains_rect(rect) && rect.left() < at.right() {
+                    faults.push(format!("{name:?} at {at:?} under {what} at {rect:?}"));
+                }
+            }
+        }
+        faults
+    }
+
+    #[test]
+    fn the_part_and_grade_pickers_draw_their_box_right_of_their_label() {
+        // BL-103 review B-1: `set_max_width` after the label put the picker row's cursor back
+        // at the row's start, so each combo box was laid out over its "Pick a part" or "Pick a
+        // grade" label (at 304 points: the frame from x 8, its text from x 13, over the label
+        // at x 9 to 65). In the app's theme and font, with the Magnets and rings group open, at
+        // the pixel ratios 1, 0.9 and 1.35, both pickers' boxes start right of their labels
+        // and no text of the left column is drawn over another.
+        use crate::gui::DETAILED_INPUTS;
+        use crate::gui::pickers::{PICK_GRADE, PICK_PART};
+        use crate::gui::test_support::{drawn_count, text_rects, workflow_group};
+        for ratio in [1.0_f32, 0.9, 1.35] {
+            let ctx = egui::Context::default();
+            ctx.set_pixels_per_point(ratio);
+            let mut app = MagcouplingApp::new(&ctx);
+            for heading in [DETAILED_INPUTS, workflow_group("magnets").label] {
+                let at = text_rects(&settled_tall(&ctx, &mut app), heading)[0];
+                click_at(&ctx, &mut app, TALL, at.center(), 2);
+            }
+            let output = settled_tall(&ctx, &mut app);
+            for label in [PICK_PART, PICK_GRADE] {
+                assert!(
+                    drawn_count(&output, label) > 0,
+                    "ratio {ratio}: no {label:?}"
+                );
+            }
+            let faults = left_column_faults(&ctx, &output);
+            assert!(faults.is_empty(), "ratio {ratio}: {faults:#?}");
+        }
+    }
+
+    #[test]
+    fn the_left_column_keeps_its_width_at_the_pixel_ratios_a_zoomed_browser_gives() {
+        // BL-103: a slider and its value box cannot wrap, and at a pixel ratio of 0.9 the
+        // vacuum permeability's row ('0.00000125664 T·m/A') was 2.9 points wider than the
+        // column's row, so the column grew to 322.9 for good. At the ratios 0.9 and 1.35, with
+        // every input group and its Advanced heading open, then Auto on, then a filter that
+        // lists every input set too (review N-3), the left column is 320 points and the right
+        // one 300, and no text of the left column is drawn over another (review B-1).
+        use crate::engine::clamps::PAUSED;
+        use crate::gui::inputs::{ADVANCED_HEADING, FILTER_HINT, InputOrder};
+        use crate::gui::test_support::text_rects;
+        use crate::gui::{AUTO, DETAILED_INPUTS, OPEN_SIZE_TAB};
+        let groups = InputCatalogue::shown(PAUSED).groups_in(InputOrder::Workflow);
+        let total = InputCatalogue::shown(PAUSED).all().count();
+        for ratio in [0.9_f32, 1.35] {
+            let ctx = egui::Context::default();
+            ctx.set_pixels_per_point(ratio);
+            let mut app = MagcouplingApp::new(&ctx);
+            // The rects of `text` in the left column of a settled frame.
+            let settle = |app: &mut MagcouplingApp, text: &str| {
+                let output = settled_tall(&ctx, app);
+                let right = side_rect(&ctx, "magcoupling_inputs").right();
+                let found = text_rects(&output, text);
+                found
+                    .into_iter()
+                    .filter(|r| r.right() <= right)
+                    .collect::<Vec<_>>()
+            };
+            let holds = |app: &mut MagcouplingApp, what: &str| {
+                let output = settled_tall(&ctx, app);
+                let (left, right) = (
+                    side_rect(&ctx, "magcoupling_inputs"),
+                    side_rect(&ctx, "magcoupling_dashboard"),
+                );
+                assert_eq!(left.width(), 320.0, "ratio {ratio}, {what}");
+                assert_eq!(right.width(), 300.0, "ratio {ratio}, {what}");
+                let faults = left_column_faults(&ctx, &output);
+                assert!(faults.is_empty(), "ratio {ratio}, {what}: {faults:#?}");
+            };
+            let left = settle(&mut app, DETAILED_INPUTS)[0];
+            click_at(&ctx, &mut app, TALL, left.center(), 2);
+            for group in groups.iter().rev() {
+                let header = settle(&mut app, group.label)[0];
+                click_at(&ctx, &mut app, TALL, header.center(), 2);
+                if group.has_advanced() {
+                    let advanced = settle(&mut app, ADVANCED_HEADING)
+                        .into_iter()
+                        .filter(|r| r.top() > header.bottom())
+                        .min_by(|a, b| a.top().total_cmp(&b.top()))
+                        .expect("an Advanced heading under its group");
+                    click_at(&ctx, &mut app, TALL, advanced.center(), 2);
+                }
+            }
+            holds(&mut app, "every group and Advanced heading open");
+            // Auto on: its line (which size it sets and the Open the Size tab button) heads the
+            // Key design group.
+            let toggle = settle(&mut app, AUTO)[0];
+            click_at(&ctx, &mut app, TALL, toggle.center(), 2);
+            assert_eq!(
+                settle(&mut app, OPEN_SIZE_TAB).len(),
+                1,
+                "ratio {ratio}: Auto"
+            );
+            holds(&mut app, "Auto on");
+            // Then a filter that lists every input (each path has a dot), Auto still on.
+            let filter = settle(&mut app, FILTER_HINT)[0];
+            click_at(&ctx, &mut app, TALL, filter.center(), 0);
+            frame_on(
+                &ctx,
+                &mut app,
+                TALL,
+                vec![egui::Event::Text(".".to_owned())],
+            );
+            let listed = format!("{total} of {total} inputs");
+            assert_eq!(
+                settle(&mut app, &listed).len(),
+                1,
+                "ratio {ratio}: {listed}"
+            );
+            holds(&mut app, "Auto on and a filter that lists every input");
         }
     }
 

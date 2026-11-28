@@ -23,7 +23,7 @@ use crate::gui::format::{
     signed_percent, signed_torque_change, torque_shortfall,
 };
 use crate::gui::guidance::{FACE_GAP, SIZE_TAB_NOTE, TORQUE_BAND_NOTE};
-use crate::gui::input_ui::slider;
+use crate::gui::input_ui::add_slider;
 use crate::gui::inputs::{InputCatalogue, slider_range};
 use crate::gui::plain_text::{
     DIAMETER_HINT_KEY, HOT_LOW_TORQUE, LENGTH_HINT_KEY, MINIMUM_OD_HINT_KEY, REQUIRED_TORQUE,
@@ -451,7 +451,7 @@ pub(crate) fn controls_ui(
             let clicked = row_label(ui, row(MINIMUM_OD_HINT_KEY), None);
             let response = ui
                 .push_id("minimum_diameter_mm", |ui| {
-                    ui.add(slider(&mut minimum, entry.meta, range))
+                    add_slider(ui, &mut minimum, entry.meta, range)
                 })
                 .inner;
             minimum_widget = Some(response.id);
@@ -570,7 +570,8 @@ fn size_slider(
 ) -> egui::Response {
     let response = ui
         .push_id(path, |ui| {
-            ui.add_enabled(!locked, slider(value, meta, range))
+            ui.add_enabled_ui(!locked, |ui| add_slider(ui, value, meta, range))
+                .inner
         })
         .inner
         .on_disabled_hover_text(SET_BY_AUTO);

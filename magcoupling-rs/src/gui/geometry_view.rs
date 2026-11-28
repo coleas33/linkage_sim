@@ -19,6 +19,7 @@ use egui::{Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use crate::gui::dashboard::{Level, hover_text};
 use crate::gui::geometry::{Callout, Geometry, Mm, Outline, Part, View, finite, geometry};
 use crate::gui::readouts::Readouts;
+use crate::gui::scroll_area;
 use crate::{DesignInputs, DesignResults};
 
 /// The colour of a dimension that is fine: drawing.py's dimension blue, lightened for a dark
@@ -414,8 +415,7 @@ fn callout_text(callout: &Callout, show_details: bool) -> String {
 /// the height left (egui's 64-point floor for a scroll area lowered to none); without the
 /// list (`with_list` false), the notes with a level alone.
 fn list_ui(ui: &mut egui::Ui, g: &Geometry, readouts: &mut Readouts, with_list: bool) {
-    egui::ScrollArea::vertical()
-        .id_salt("magcoupling_geometry_list")
+    scroll_area(ui, "magcoupling_geometry_list")
         .auto_shrink([false, true])
         .min_scrolled_height(0.0)
         .show(ui, |ui| {

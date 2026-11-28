@@ -5,6 +5,63 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - Magcoupler: R3 browser review fix wave (F-1, F-2; BL-125 to BL-127 filed)
+
+- gui/plots.rs: `plot` leaves out a horizontal number whose text would pass the plot's frame on either side and keeps its tick (the spacer hands the formatter the axis' points per unit each frame), so on the gui-smoke share link's design at 1024 x 700 Slip heating reads '0 500 1000', not '0 500 1000 150' (F-1, BL-105); app.rs: the BL-105 axis test also draws the example, hotter example and share-link designs at 1024 x 700 and 1280 x 800, asserts no horizontal number passes its plot's frame, and its cut check now reads the quoted text (it parsed the whole '"1500" by 9 points' and never failed); the plot designs are shared with the BL-106 legend test (`PLOT_DESIGNS`, `app_on_plot_design`). gui/explain.rs: the heading row's About link stands `scroll.bar_inner_margin` left of the strip the Explain area keeps for its bar, so the bar under the pointer covers no letter of it (F-2, BL-116); test the_explain_heading_s_link_ends_left_of_the_scroll_bar_under_the_pointer (panel.rs). Docs: the record docs/analyses/2026-11-28-magcoupler-r3-visual-review.md with its Fix wave section, README, backlog BL-105 and BL-116 notes, BL-125 (F-3), BL-126 (F-5) and BL-127 (F-6) filed.
+
+## 2026-11-28 - Magcoupler: R3 review fixes (N-4, N-5, N-7, N-9)
+
+- app.rs: the BL-106 legend test gains the gui-smoke share link's design (a fourth case, read from gui-smoke.js), so Slip heating's time-to-limit dot under a top-right legend fails it; gui/input_ui.rs: `slider_decimals` shared by `slider` and `add_slider`; docs: the six tracker lines of BL-120, BL-121, BL-115, BL-116, BL-119 and BL-123 moved up into this branch's entries, README lines on BL-111, BL-115, BL-116 and BL-123 and two stale sentences reworded (BL-102, BL-101), docs/ai 02 (BL-100's paragraph names BL-119 and BL-123), backlog BL-115 notes the Tab order (Close, Start here, then the crumbs).
+
+## 2026-11-28 - Magcoupler: an equation opened in the Equation panel opens at its top, and the same one keeps its offset (BL-122)
+
+- gui/explorer.rs (explorer_ui: last drawn path in egui temp data, vertical_scroll_offset(0.0) when it changes); test in panel.rs; README, docs/ai 02 to 04; backlog BL-122 fixed.
+
+- 2026-11-28 BL-123 (magcoupling/r3-polish): sideways_scroll_area keeps a bar-wide strip under its content for egui's floating scroll bar, so the pointer on the formula or the screw-size table no longer covers the last row (gui/mod.rs; test the_formula_s_scroll_bar_covers_none_of_its_glyphs_under_the_pointer).
+
+- 2026-11-28 BL-119 (magcoupling/r3-polish): follow_focus scrolls to the focused widget's rect grown one point at its foot, so a value box in the app's font is whole at the left column's foot (gui/mod.rs; test the_left_column_shows_every_focused_widget_whole_in_the_app_s_own_font).
+
+- 2026-11-28 BL-116 (magcoupling/r3-polish): the Explain panel's scroll area keeps a 10-point strip for its floating scroll bar, so a note's lines are no longer covered by the bar under the pointer (panel.rs; test a_note_in_the_explain_panel_keeps_clear_of_its_scroll_bar).
+
+- 2026-11-28 BL-115 (magcoupling/r3-polish): the Equation panel header lays Close and Start here out first and wraps the heading and crumbs in the room left of them, so a long breadcrumb trail is never drawn under the buttons (explorer.rs; test a_long_breadcrumb_trail_stays_clear_of_start_here_and_close_in_the_app_s_own_font).
+
+## 2026-11-28 - Magcoupler: the four tiles share one height in the first painted frame (BL-111)
+
+- gui/tiles.rs (request_discard in place of request_repaint when a row's height changes); test in tiles.rs; backlog BL-111 fixed.
+
+- 2026-11-28 BL-121 (magcoupling/r3-polish): the Start here bar draws Previous, Next and Stop as one block on the row after the step line, so they always share a row (explorer.rs; test the_start_here_buttons_share_one_row_on_every_step_in_the_app_s_own_font).
+
+- 2026-11-28 BL-120 (magcoupling/r3-polish): the Equation panel's closest-note title starts its own row when the room left is less than its widest word, so it never breaks mid-word in a narrow centre (explorer.rs; test a_closest_note_title_breaks_only_between_words_in_a_narrow_centre).
+
+## 2026-11-28 - Magcoupler: a legend disc and a resting tile keep a visible edge under a host that sets no resting outline, and the legend test checks the disc hovered and pressed (BL-110)
+
+- gui/tiles.rs, gui/plots.rs (noninteractive hairline fallback); tests in tiles.rs, plots.rs, app.rs; README; backlog BL-110 fixed.
+
+## 2026-11-28 - Magcoupler: a plot's legend sits in a corner its data leave free: Pole sweep and Slip heating at the bottom right (BL-106)
+
+- gui/plots.rs PlotKind::legend_corner (read by plot()); test in app.rs; README; backlog BL-106 fixed.
+
+## 2026-11-28 - Magcoupler: every plot's horizontal axis carries at least three numbers at 1024 x 700 and 1280 x 800 (BL-105)
+
+- gui/plots.rs x_grid_steps (1-2-5 grid steps, finest with ticks over 60 points apart), x_number; test in app.rs; README; backlog BL-105 fixed.
+- Branch review B-2 rework: gui/plots.rs DECADE_STEPS makes each grid step a multiple of the one finer than it, so each axis's numbers are one step apart (no '15' in '6 8 10 12 14 16'), and x_number takes its decimals from the mark's step (N-6); tests in app.rs (windows 1024 to 1360 wide) and plots.rs; README, docs/ai 02 (lesson) and 03, backlog BL-105 notes.
+
+## 2026-11-28 - Magcoupler: the left column holds 320 points at pixel ratios 0.9 and 1.35 (BL-103)
+
+- gui/input_ui.rs add_slider (slider width capped to what its value box leaves; used by input rows and gui/size_controls.rs), gui/pickers.rs one point free in the part and grade pickers; test in app.rs; README; backlog BL-103 fixed.
+- Branch review B-1 rework: gui/pickers.rs frees the point before the picker's label (Ui::set_max_width after it had laid each combo box over its label); app.rs tests the_part_and_grade_pickers_draw_their_box_right_of_their_label and the width test with Auto on and a filter that lists every input (N-3), both checking that no text of the left column is drawn over another; README, docs/ai 02 (lesson), backlog BL-103 notes.
+
+## 2026-11-28 - Magcoupler: the Tab key passes the stops that show no focus: scroll-area surfaces and bars, panel edges, the Equation panel's formula (BL-102)
+
+- gui/mod.rs scroll_area, hide_resize_edge, TabWalk (panel.rs calls it at the end of ui()); explorer.rs formula Sense::CLICK; test in gui/panel.rs; backlog BL-102 fixed, BL-124 filed (plot axes).
+
+## 2026-11-28 - Magcoupler: the keyway-wall line is compared as printed, so no line reads 2.50 mm (BL-078)
+
+- gui/geometry.rs wall_cautions rounds the wall to 0.01 mm before the 2.5 test; test in gui/panel.rs; backlog BL-078 fixed.
+
+## 2026-11-28 - Magcoupler: a space-claim overshoot result's entry links the space-claim check (BL-095)
+
+- badging_check maps housing.{diameter,length,bay}_overshoot_mm to the space-claim check; test in gui/explain.rs; README and backlog BL-095 updated.
 ## 2026-11-28 - R4 text review fix wave (BL-067, BL-084; BL-130)
 - Branch magcoupling/r4-physics, the G-3 text review's fix wave (`docs/analyses/2026-11-28-magcoupler-r4-text-review.md`, "Fix wave"): the shaft joints check's help names "the torque each shaft joint must hold", not "the required torque" (MF-1, guard `no_shaft_joint_text_calls_the_torque_a_fit_must_hold_the_required_torque`); the guide names the operating pull-out with its allowance only where it is larger than cold-high beyond float noise (SF-1, `operating_pullout_compared` with `RATING_NOISE`, red test `at_equal_temperatures_the_texts_name_cold_high_whatever_the_float_noise`; the check's numbers unchanged); the torque-band note's minimum step (MF-2), the Cold-high help (SF-3) and the ripple, rating and safety-factor helps (SF-5) reworded; SF-2, SF-4, SF-6 and N-1 to N-3 go to BL-130; GUI and help text only, no engine or oracle number changes; docs: README, backlog BL-067, BL-084, BL-130, input_schema.json.
 

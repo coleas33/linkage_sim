@@ -256,6 +256,10 @@ fn part_picker(ui: &mut egui::Ui, current: &str) -> Option<RowEdit> {
     };
     let mut picked = None;
     ui.horizontal(|ui| {
+        // One point free: a truncated text and the box's padding round up to the pixel and
+        // widen the column at some pixel ratios (BL-103). Before the label: egui puts the
+        // cursor back at the row's start, so after it the box would cover it (review B-1).
+        ui.set_max_width(ui.available_width() - 1.0);
         ui.weak(PICK_PART);
         ComboBox::from_id_salt("part_picker")
             .selected_text(shown)
@@ -296,6 +300,10 @@ fn grade_picker(ui: &mut egui::Ui, current: &str) -> Option<RowEdit> {
     };
     let mut picked = None;
     ui.horizontal(|ui| {
+        // One point free: a truncated text and the box's padding round up to the pixel and
+        // widen the column at some pixel ratios (BL-103). Before the label: egui puts the
+        // cursor back at the row's start, so after it the box would cover it (review B-1).
+        ui.set_max_width(ui.available_width() - 1.0);
         ui.weak(PICK_GRADE);
         ComboBox::from_id_salt("grade_picker")
             .selected_text(shown)

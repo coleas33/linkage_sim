@@ -171,7 +171,8 @@ pub(crate) fn tiles_ui(
         });
         if tallest != height {
             ui.data_mut(|data| data.insert_temp(id, tallest));
-            ui.ctx().request_repaint();
+            // Discard this pass so the first painted frame already has even heights (BL-111).
+            ui.ctx().request_discard("tile row height changed");
         }
     }
     clicked
@@ -197,7 +198,13 @@ fn tile_ui(
     let outline = if selected || focused {
         visuals.strong_text_color()
     } else {
-        visuals.widgets.inactive.bg_stroke.color
+        // A host with no resting outline (width 0) gets the noninteractive hairline (BL-110).
+        let rest = visuals.widgets.inactive.bg_stroke;
+        if rest.width > 0.0 {
+            rest.color
+        } else {
+            visuals.widgets.noninteractive.bg_stroke.color
+        }
     };
     let frame = egui::Frame::new()
         .fill(visuals.faint_bg_color)
@@ -304,6 +311,49 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    #[test]
+    fn the_four_tiles_share_one_height_in_the_first_painted_frame() {
+        // BL-111: a row's height came from the last frame, so the first frame drew uneven tiles.
+        let ctx = egui::Context::default();
+        let inputs = DesignInputs::default();
+        let results = compute_all(&inputs);
+        let output = sized_frame(&ctx, egui::vec2(700.0, 600.0), Vec::new(), |ui| {
+            tiles_ui(ui, &inputs, &results, None, &mut Readouts::default());
+        });
+        let tiles = tile_rects(&ctx, &output);
+        assert_eq!(tiles.len(), 4);
+        assert!(
+            tiles
+                .iter()
+                .all(|t| (t.height() - tiles[0].height()).abs() < 0.5),
+            "{tiles:?}"
+        );
+    }
+
+    #[test]
+    fn a_resting_tile_shows_an_edge_in_a_plain_egui_context() {
+        // BL-110 (F-1): under egui::Visuals::dark(), what a host gets that does not apply the
+        // calculator's theme, the resting outline is Stroke::NONE; the tile falls back to the
+        // noninteractive hairline, so it still has a visible edge.
+        let ctx = egui::Context::default();
+        assert_eq!(ctx.style().visuals.widgets.inactive.bg_stroke.width, 0.0);
+        let (output, _) = frames(&ctx, &DesignInputs::default(), 700.0, None, Vec::new());
+        let fill = ctx.style().visuals.faint_bg_color;
+        let edges: Vec<egui::Color32> = flat_shapes(&output)
+            .into_iter()
+            .filter_map(|shape| match shape {
+                egui::Shape::Rect(r) if r.fill == fill => Some(r.stroke.color),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(edges.len(), Tile::ALL.len());
+        let hairline = ctx.style().visuals.widgets.noninteractive.bg_stroke.color;
+        assert!(
+            edges.iter().all(|&c| c == hairline && c.a() > 0),
+            "{edges:?}"
+        );
     }
 
     #[test]
