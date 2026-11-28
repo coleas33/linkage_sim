@@ -202,11 +202,29 @@ pub fn build_sample(sample: SampleMechanism) -> (Mechanism, DVector<f64>) {
     build_sample_with_driver(sample, None).expect("built-in sample must always build successfully")
 }
 
+/// BL-118: a reassign whose start pose does not assemble at t=0 is refused, never returned
+/// as a silent unsolved state.
+pub fn build_sample_with_driver(
+    sample: SampleMechanism,
+    driver_joint_id: Option<&str>,
+) -> Result<(Mechanism, DVector<f64>), String> {
+    let (mech, q0) = build_sample_unchecked(sample, driver_joint_id)?;
+    let assembled = crate::solver::kinematics::solve_position(&mech, &q0, 0.0, 1e-10, 50)
+        .is_ok_and(|r| r.converged);
+    if !assembled {
+        return Err(format!(
+            "{sample:?} does not assemble with driver {}",
+            driver_joint_id.unwrap_or("(default)")
+        ));
+    }
+    Ok((mech, q0))
+}
+
 /// Build any sample mechanism with the driver on a specified grounded revolute joint.
 ///
 /// If `driver_joint_id` is `None`, the default driver joint for that sample is used.
 /// Returns an error if the specified joint does not exist, is not revolute, or is not grounded.
-pub fn build_sample_with_driver(
+fn build_sample_unchecked(
     sample: SampleMechanism,
     driver_joint_id: Option<&str>,
 ) -> Result<(Mechanism, DVector<f64>), String> {
@@ -972,6 +990,37 @@ mod tests {
             );
             assert!(build_sample_with_driver(sample, Some("J1")).is_ok(), "{sample:?} J1 is its driver");
         }
+    }
+
+    /// BL-118: a driver reassign to any grounded revolute joint gives the same pose on
+    /// repeated calls, and either assembles at t=0 or is refused with a message.
+    #[test]
+    fn driver_reassign_is_deterministic_and_never_returns_an_unsolved_state() {
+        use crate::core::constraint::Constraint;
+        let mut bad = Vec::new();
+        for &sample in SampleMechanism::all() {
+            let (base, _) = build_sample(sample);
+            let ids: Vec<String> = base
+                .joints()
+                .iter()
+                .filter(|j| j.is_revolute() && (j.body_i_id() == "ground" || j.body_j_id() == "ground"))
+                .map(|j| j.id().to_string())
+                .collect();
+            for id in ids {
+                let runs: Vec<_> = (0..6).map(|_| build_sample_with_driver(sample, Some(&id))).collect();
+                for (mech, q0) in runs.iter().flatten() {
+                    let ok = solve_position(mech, q0, 0.0, 1e-10, 50).map(|s| s.converged).unwrap_or(false);
+                    if !ok {
+                        bad.push(format!("{sample:?} {id}: Ok but unsolved at t=0"));
+                    }
+                }
+                let first = runs[0].as_ref().ok().map(|(_, q)| q.clone());
+                if runs.iter().any(|r| r.as_ref().ok().map(|(_, q)| q.clone()) != first) {
+                    bad.push(format!("{sample:?} {id}: not deterministic"));
+                }
+            }
+        }
+        assert!(bad.is_empty(), "{bad:#?}");
     }
 
     #[test]

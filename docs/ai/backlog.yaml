@@ -1120,8 +1120,8 @@
   evidence: "Re-review of the R5 fix wave (2026-11-28, finding R-6; pre-existing). A reassign over all 30 samples and every grounded revolute joint (60 reassigns), with and without a weight: SixBarB1 J7 and SixBarA1 J7 converge 8 of 12 runs with 8 distinct poses, the same with and without a weight; build_sample_with_driver sometimes returns Err 'could not find converging initial guess'. Plain reassigns to rocker joints (J4 on CrankRocker, Hoeken and others) also fail to converge, with or without weights."
   acceptance: "Red test first: each sample's build_sample_with_driver gives the same pose on repeated calls; a reassign to any grounded revolute joint either converges or is refused with a message (no silent unsolved state); GATE PASS."
   priority: 4
-  status: open
-  notes: "Filed 2026-11-28 by the controller from the R5 fix wave's re-review (R-6)."
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5b: build_sample_with_driver now solves the returned start pose at t=0 and refuses (Err with a message) one that does not assemble, so a reassign never yields a silent unsolved state (the GUI falls back to the blueprint reassign); the J7 nondeterminism did not reproduce in-process, root cause not found. Filed 2026-11-28 by the controller from the R5 fix wave's re-review (R-6)."
 - id: BL-119
   title: "Magcoupler: in the app's font a value box of the left column that takes the keyboard's focus at the column's foot stays 0.4 of a point under the view"
   dimension: gui
