@@ -779,7 +779,7 @@ mod tests {
         let _ = central_panel_frame(&egui::Context::default(), Vec::new(), |ui| draw_property_panel(ui, state));
     }
 
-    /// Weight masses outside the mass field's 0.001..=100000 kg range (a heavy
+    /// Weight masses outside the mass field's 0.001..=1000 kg range (a heavy
     /// payload, or a zero mass the loader skipped) must survive idle frames.
     /// egui's DragValue clamps an out-of-range bound value and reports it as
     /// changed, which the panel would commit as a silent edit + undo entry.

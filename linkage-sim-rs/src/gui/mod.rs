@@ -1302,7 +1302,7 @@ fn draw_place_mass_field(ui: &mut egui::Ui, state: &mut AppState) {
         return;
     }
     ui.add(property_panel::weight_mass_drag_value(&mut state.last_point_mass_kg))
-        .on_hover_text("Mass of the next weight you place. Starts at the last mass used.");
+        .on_hover_text("Mass of the next weight you place. Starts at the last mass used. Up to 1,000 kg.");
 }
 
 /// Protect a focused editor without treating every Tab-focused button as text input.

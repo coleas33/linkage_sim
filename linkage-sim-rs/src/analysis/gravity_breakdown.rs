@@ -289,9 +289,13 @@ mod tests {
     /// Sources and gravity powers of the single bar at `theta`, driven at
     /// `omega` (pose solved at driver time theta / omega).
     fn single_bar_powers(theta: f64, omega: f64) -> (Vec<WeightSource>, Vec<f64>) {
-        let bp = single_bar_blueprint(omega);
-        let mech = build(&bp);
-        let sources = weight_sources(&bp);
+        powers_of(&single_bar_blueprint(omega), theta, omega)
+    }
+
+    /// Same as [`single_bar_powers`] for any blueprint of that bar.
+    fn powers_of(bp: &MechanismJson, theta: f64, omega: f64) -> (Vec<WeightSource>, Vec<f64>) {
+        let mech = build(bp);
+        let sources = weight_sources(bp);
         let st = mech.state();
         let mut q = st.make_q();
         st.set_pose("bar", &mut q, 0.0, 0.0, theta);
@@ -328,6 +332,21 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A weight's gravity power scales with its mass (BL-034): a 1,000 kg
+    /// weight contributes 1000 / 2.5 times a 2.5 kg one at the same spot.
+    #[test]
+    fn gravity_power_scales_with_a_weights_mass() {
+        let mut bp = single_bar_blueprint(2.0);
+        for (pm, mass) in bp.bodies.get_mut("bar").unwrap().point_masses.iter_mut().zip([2.5, 1000.0]) {
+            pm.mass = mass;
+            pm.local_pos = [1.0, 0.0];
+        }
+        let (sources, powers) = powers_of(&bp, 0.5, 2.0);
+        assert_eq!((sources[1].id.as_str(), sources[2].id.as_str()), ("W1", "W2"));
+        assert!(powers[1].abs() > 1e-6, "the 2.5 kg weight has power");
+        assert!((powers[2] / powers[1] - 400.0).abs() < 1e-9, "{} / {}", powers[2], powers[1]);
     }
 
     /// Same pose, opposite direction: going up the weights cost power

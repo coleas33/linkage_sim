@@ -5,6 +5,9 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - Weight mass cap stays 1,000 kg, said on hover (BL-034, A-57)
+- Reworked 19f8546: WEIGHT_MASS_RANGE_KG back to 0.001..=1000 (question 33's default, option (a)); the weight editor's and + Mass field's hover say "Up to 1,000 kg."; tests: typing 5000 stores 1000, a 1000 kg weight's gravity power is 400 times a 2.5 kg one's; docs and A-57 updated.
+
 ## 2026-11-28 - Keep weights on driver reassign (BL-030)
 - reassign_driver rebuilds a sample from the stock builder and carries each user weight over by body id into the new blueprint and live body (a weight on a body the stock sample lacks is dropped with a status message); replaces 8d01d32's blueprint path, which could not assemble (review F-1). Tests check convergence and the weightless pose (FourBar J4, WattII J2) plus the drop case; 02-system known limitation updated.
 
@@ -29,8 +32,6 @@ Reverse chronological (newest at top).
 ## 2026-11-28 — Undoable committed force edits (BL-045)
 - update_force_element records one undo step and sets dirty; force-editor numeric fields commit once on release or focus loss (from Codex 8e6ad7d); red test plus gate green.
 
-## 2026-11-28 - Weight mass cap raised to 1e5 kg (BL-034)
-- WEIGHT_MASS_RANGE_KG is 0.001..=100000 (was 1000) for the weight editor and + Mass field; test typed_values_are_clamped_to_the_weight_mass_range now types 5000 and 1e6.
 ## 2026-11-28 - Delete with toolbar focus (BL-033)
 - handle_delete_shortcut gates on focused_widget_may_edit_text (TextEdit state plus response/touch guards) instead of wants_keyboard_input; five bl033_* tests in gui/mod.rs (reused from Codex ed88854).
 ## 2026-11-28 - Preserve idle mounting angle (BL-021)

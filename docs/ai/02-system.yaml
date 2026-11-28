@@ -257,7 +257,7 @@ invariants_to_protect:
     field buffers typed text the same way and commits on lost focus
     without Esc. The + Mass toolbar field edits
     AppState::last_point_mass_kg directly (a setting, so no undo step) with the
-    same weight_mass_drag_value (0.001..=100000 kg).
+    same weight_mass_drag_value (0.001..=1000 kg; each mass field says "Up to 1,000 kg." on hover).
   - place_mass_click_snaps_and_selects — the + Mass tool's placement click
     snaps to the grid (canvas interaction.rs snapped_world, shared with the
     weight drag), adds one weight of last_point_mass_kg (one undo step),
