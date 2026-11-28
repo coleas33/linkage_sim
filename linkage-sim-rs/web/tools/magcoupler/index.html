@@ -1,8 +1,10 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#181b1f">
+    <meta name="color-scheme" content="dark">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <title>Magnetic Coupling Calculator</title>
     <style>
@@ -18,14 +20,28 @@
             width: 100%;
             height: 100%;
         }
+        #magcoupling_loading {
+            position: fixed;
+            top: 50%;
+            left: 0;
+            right: 0;
+            margin: 0;
+            transform: translateY(-50%);
+            text-align: center;
+            color: #8a919a;
+            font: 14px system-ui, sans-serif;
+        }
     </style>
 </head>
 <body>
     <!-- Built by scripts/build_magcoupling_web.sh. The canvas id must equal
-         magcoupling::app::CANVAS_ID (a magcoupling-rs test checks). Absolute
-         paths: /tools/magcoupler (no trailing slash) must not resolve the glue
-         against /tools/. -->
+         magcoupling::app::CANVAS_ID, and the loading line's id and words
+         magcoupling::app::LOADING_ID and LOADING_LINE (magcoupling-rs tests
+         check). Absolute paths: /tools/magcoupler (no trailing slash) must not
+         resolve the glue against /tools/. The line shows while the wasm file
+         loads; the app removes it when it draws its first frame. -->
     <canvas id="magcoupling_canvas"></canvas>
+    <p id="magcoupling_loading">Loading the calculator</p>
     <script type="module">
         import init from '/tools/magcoupler/magcoupling-web.js';
         init();

@@ -22,6 +22,14 @@ pub const TITLE: &str = "Magnetic Coupling Calculator";
 /// must use the same.
 pub const CANVAS_ID: &str = "magcoupling_canvas";
 
+/// Id of the page's loading line in `linkage-sim-rs/web/tools/magcoupler/index.html`, which
+/// the app removes when it draws its first frame.
+pub const LOADING_ID: &str = "magcoupling_loading";
+
+/// The page's loading line, in the muted colour on the page's charcoal while the wasm file
+/// loads (the stage 1 review, S-4): the one text of the page outside the canvas.
+pub const LOADING_LINE: &str = "Loading the calculator";
+
 /// The log line of a share link opened at start-up (the web smoke test looks for it).
 pub const SHARE_LINK_LOADED: &str = "magcoupling: loaded the design from the share link";
 
@@ -216,6 +224,22 @@ impl MagcouplingApp {
 impl eframe::App for MagcouplingApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.ui(ctx);
+        #[cfg(target_arch = "wasm32")]
+        remove_loading_line();
+    }
+}
+
+/// Removes the page's loading line ([`LOADING_ID`]) at the end of a frame: eframe paints the
+/// frame in the same task, so the browser shows the app's first frame and the line's removal in
+/// one paint. (Removed by the page's script when the module had loaded, the line left a blank
+/// frame or two before the app's first.) After the first frame there is no line to find.
+#[cfg(target_arch = "wasm32")]
+fn remove_loading_line() {
+    if let Some(line) = web_sys::window()
+        .and_then(|window| window.document())
+        .and_then(|document| document.get_element_by_id(LOADING_ID))
+    {
+        line.remove();
     }
 }
 
@@ -484,6 +508,74 @@ mod tests {
     }
 
     #[test]
+    fn the_title_and_the_size_heading_are_semibold_and_the_top_bar_keeps_one_row() {
+        // The stage 1 review (S-1): with one weight the title and the headings were only larger
+        // than the text under them. In the app egui's Heading style is Inter SemiBold, which
+        // draws the title and the left column's heading and no other text (the tab of the same
+        // words stays Regular). A heavier face is wider, so at the smallest window, the laptop
+        // screen and a desktop one the top bar's six words stay on the title's row and the
+        // heading on one line inside the 320-point column (the column's width and the texts
+        // cut on every tab are the BL-099 test's, in the same font).
+        use crate::gui::test_support::flat_shapes;
+        let semibold = fonts::semibold();
+        for size in [WINDOWS[1], WINDOWS[0], egui::vec2(1920.0, 1080.0)] {
+            let ctx = egui::Context::default();
+            let mut app = MagcouplingApp::new(&ctx);
+            frame_on(&ctx, &mut app, size, Vec::new());
+            let output = frame_on(&ctx, &mut app, size, Vec::new());
+            let mut heavy = Vec::new();
+            for shape in flat_shapes(&output) {
+                if let egui::Shape::Text(text) = shape {
+                    let sections = &text.galley.job.sections;
+                    let semibold_sections = sections
+                        .iter()
+                        .filter(|s| s.format.font_id.family == semibold)
+                        .count();
+                    if semibold_sections > 0 {
+                        assert_eq!(semibold_sections, sections.len(), "{size:?}");
+                        heavy.push((text.galley.text().to_owned(), text.visual_bounding_rect()));
+                    }
+                }
+            }
+            let names: Vec<&str> = heavy.iter().map(|(text, _)| text.as_str()).collect();
+            let size_heading = crate::gui::CentreView::SizeAndTorque.label();
+            assert_eq!(
+                names,
+                ["Magnetic coupling calculator", size_heading],
+                "{size:?}"
+            );
+            let (title, heading) = (heavy[0].1, heavy[1].1);
+            let column = side_rect(&ctx, "magcoupling_inputs");
+            let style = ctx.style();
+            let row = ctx.fonts(|f| f.row_height(&egui::TextStyle::Heading.resolve(&style)));
+            assert!(
+                column.contains_rect(heading) && heading.height() <= row,
+                "{size:?}: the heading {heading:?} in {column:?}, rows of {row}"
+            );
+            // The top bar: every text over the left column (the title and the six words) on
+            // the title's row, inside the window.
+            let bar: Vec<(String, egui::Rect)> = flat_shapes(&output)
+                .into_iter()
+                .filter_map(|shape| match shape {
+                    egui::Shape::Text(text)
+                        if text.visual_bounding_rect().bottom() <= column.top() =>
+                    {
+                        Some((text.galley.text().to_owned(), text.visual_bounding_rect()))
+                    }
+                    _ => None,
+                })
+                .collect();
+            assert!(bar.len() >= 7, "{size:?}: {bar:?}");
+            for (text, at) in &bar {
+                assert!(
+                    (at.center().y - title.center().y).abs() < 4.0 && at.right() <= size.x,
+                    "{size:?}: {text:?} at {at:?}, the title at {title:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn the_accent_marks_the_brand_and_the_active_tab_and_nothing_else() {
         // Decision C-5, in the app's own theme: crimson is never a text colour and never on a
         // value or a check. At the starting design and at a failing one the accent is on two
@@ -518,6 +610,307 @@ mod tests {
         }
         // A failing check is the theme's red, which is not the accent.
         assert_ne!(theme::BAD, ACCENT);
+    }
+
+    #[test]
+    fn every_control_shows_its_edge_on_the_panel_and_in_the_design_menu() {
+        // The stage 1 review (E-4, R-6), in the app's own theme: a checkbox's box, a slider's
+        // rail and a value box at rest were 1.1:1 to 1.2:1 on the panel. With both folds of the
+        // left column open, every rect and circle the column draws (the sliders' rails and
+        // handles, the value boxes, the pickers, the text boxes, the checkboxes and the order
+        // toggle: no other shape is filled or outlined there at rest) shows an edge, by its
+        // fill or its outline, at 3:1 or more against the panel. The Design menu draws a
+        // checkbox's box with no outline: its fill is 3:1 or more against the menu.
+        use crate::gui::test_support::{flat_shapes, text_center, text_rects};
+        use crate::gui::{ASSUMPTIONS_FOLD, DESIGN_MENU, DETAILED_INPUTS, SHOW_DETAILS};
+        use theme::contrast;
+        // The stronger of a shape's fill and outline against `behind`.
+        let edge = |fill: egui::Color32, stroke: egui::Stroke, behind: egui::Color32| {
+            let outline = if stroke.width > 0.0 && stroke.color.a() > 0 {
+                contrast(stroke.color, behind)
+            } else {
+                1.0
+            };
+            let fill = if fill.a() > 0 {
+                contrast(fill, behind)
+            } else {
+                1.0
+            };
+            fill.max(outline)
+        };
+        // A window tall enough to draw every row of the column.
+        let tall = egui::vec2(1280.0, 20_000.0);
+        let ctx = egui::Context::default();
+        let mut app = MagcouplingApp::new(&ctx);
+        frame_on(&ctx, &mut app, tall, Vec::new());
+        for fold in [DETAILED_INPUTS, ASSUMPTIONS_FOLD] {
+            let output = frame_on(&ctx, &mut app, tall, Vec::new());
+            click_at(&ctx, &mut app, tall, text_center(&output, fold), 6);
+        }
+        let output = frame_on(&ctx, &mut app, tall, Vec::new());
+        let column = side_rect(&ctx, "magcoupling_inputs");
+        let mut faint = Vec::new();
+        let mut shapes = 0;
+        for shape in flat_shapes(&output) {
+            let (what, ratio) = match shape {
+                egui::Shape::Rect(rect)
+                    if column.contains_rect(rect.rect)
+                        && rect.rect != column
+                        && (rect.fill.a() > 0 || rect.stroke.color.a() > 0) =>
+                {
+                    (
+                        format!("{:?}", rect.rect),
+                        edge(rect.fill, rect.stroke, theme::PANEL),
+                    )
+                }
+                egui::Shape::Circle(circle) if column.contains(circle.center) => (
+                    format!("a circle at {:?}", circle.center),
+                    edge(circle.fill, circle.stroke, theme::PANEL),
+                ),
+                _ => continue,
+            };
+            shapes += 1;
+            if ratio < 3.0 {
+                faint.push(format!("{what}: {ratio:.2}"));
+            }
+        }
+        // Six size controls, twenty-one more sliders, their value boxes and the rest.
+        assert!(shapes > 90, "{shapes} shapes");
+        assert!(
+            faint.is_empty(),
+            "{} of {shapes} faint: {faint:#?}",
+            faint.len()
+        );
+        // The Design menu, opened on the laptop screen, its fading in done.
+        frame_on(&ctx, &mut app, LAPTOP, Vec::new());
+        let output = frame_on(&ctx, &mut app, LAPTOP, Vec::new());
+        click_at(&ctx, &mut app, LAPTOP, text_center(&output, DESIGN_MENU), 6);
+        let output = frame_on(&ctx, &mut app, LAPTOP, Vec::new());
+        let label = text_rects(&output, SHOW_DETAILS);
+        let label = label.first().expect("the menu shows the checkbox");
+        let boxes: Vec<f64> = flat_shapes(&output)
+            .into_iter()
+            .filter_map(|shape| match shape {
+                egui::Shape::Rect(rect)
+                    if rect.rect.right() <= label.left()
+                        && (rect.rect.center().y - label.center().y).abs() < 2.0
+                        && (rect.rect.width() - rect.rect.height()).abs() < 0.5 =>
+                {
+                    Some(edge(rect.fill, rect.stroke, theme::PANEL2))
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(boxes.len(), 1, "the checkbox's box: {boxes:?}");
+        assert!(boxes[0] >= 3.0, "the menu's checkbox: {:.2}", boxes[0]);
+    }
+
+    #[test]
+    fn an_open_picker_keeps_its_edge() {
+        // egui draws an open picker's box in the open state's colours, not the resting ones.
+        // Opened, Auto's picker keeps an outline at 3:1 or more against the panel, as at rest,
+        // so it does not read as dimmed or disabled while its list shows.
+        use crate::engine::sizing::FreeVariable;
+        use crate::gui::sizing::auto_choice;
+        use crate::gui::test_support::{flat_shapes, text_rects};
+        use theme::contrast;
+        let ctx = egui::Context::default();
+        let mut app = MagcouplingApp::new(&ctx);
+        frame_on(&ctx, &mut app, LAPTOP, Vec::new());
+        let output = frame_on(&ctx, &mut app, LAPTOP, Vec::new());
+        let shown = text_rects(&output, auto_choice(FreeVariable::AxialLength));
+        assert_eq!(shown.len(), 1, "Auto's picker shows its size: {shown:?}");
+        let output = click_at(&ctx, &mut app, LAPTOP, shown[0].center(), 6);
+        // Open: its list names the other sizes.
+        let listed = text_rects(&output, auto_choice(FreeVariable::RingRadius));
+        assert_eq!(listed.len(), 1, "the picker's list: {listed:?}");
+        let outlines: Vec<f64> = flat_shapes(&output)
+            .into_iter()
+            .filter_map(|shape| match shape {
+                egui::Shape::Rect(rect)
+                    if rect.rect.contains_rect(shown[0])
+                        && rect.rect.height() < 3.0 * shown[0].height() =>
+                {
+                    Some(if rect.stroke.width > 0.0 {
+                        contrast(rect.stroke.color, theme::PANEL)
+                    } else {
+                        1.0
+                    })
+                }
+                _ => None,
+            })
+            .collect();
+        assert_eq!(outlines.len(), 1, "the picker's box: {outlines:?}");
+        assert!(
+            outlines[0] >= 3.0,
+            "the open picker's outline: {:.2}",
+            outlines[0]
+        );
+    }
+
+    #[test]
+    fn a_plot_legend_s_dots_show_at_three_to_one_on_their_discs_shown_or_hidden() {
+        // egui_plot draws each legend entry, a toggle that hides or shows its line, as a disc
+        // in the interact state's fill and outline with the line's dot on it while the line is
+        // shown, so the dot alone shows the state. BL-108 (the review of part 2b-iii-b,
+        // LOOK-1): on a disc in the controls' grey the dots were 1.6:1 to 2.6:1. In the app's
+        // theme and font, on all five plots of the starting design and of the example design
+        // (its sweeps have rows that do not fit): every dot is 3:1 or more against the disc it
+        // is drawn on and every disc's ring 3:1 or more against the legend's background (the
+        // field colour); an entry clicked hidden keeps its disc, fill and ring with no dot, and
+        // a second click shows it again. The two designs draw all eight colours the plots give
+        // a series: blue, amber, violet, the text, muted and the three levels' colours.
+        use crate::gui::CentreView;
+        use crate::gui::plots::PlotKind;
+        use crate::gui::test_support::flat_shapes;
+        use theme::contrast;
+        // A frame's legend entries in the centre region: each a filled and outlined disc (a
+        // plot's own points are one or the other) and, while its line is shown, the colour of
+        // the smaller dot at its centre.
+        let entries = |ctx: &egui::Context, output: &egui::FullOutput| {
+            let (left, right) = (
+                side_rect(ctx, "magcoupling_inputs").right(),
+                side_rect(ctx, "magcoupling_dashboard").left(),
+            );
+            let circles: Vec<egui::epaint::CircleShape> = flat_shapes(output)
+                .into_iter()
+                .filter_map(|shape| match shape {
+                    egui::Shape::Circle(c) if left < c.center.x && c.center.x < right => Some(*c),
+                    _ => None,
+                })
+                .collect();
+            circles
+                .iter()
+                .filter(|disc| disc.fill.a() > 0 && disc.stroke.width > 0.0)
+                .map(|disc| {
+                    let dot = circles
+                        .iter()
+                        .find(|dot| dot.center == disc.center && dot.radius < disc.radius);
+                    (*disc, dot.map(|dot| dot.fill))
+                })
+                .collect::<Vec<_>>()
+        };
+        let mut colours = std::collections::HashSet::new();
+        for example in [false, true] {
+            let ctx = egui::Context::default();
+            let mut app = MagcouplingApp::new(&ctx);
+            if example {
+                app.panel.open_example_design();
+            }
+            frame_on(&ctx, &mut app, LAPTOP, Vec::new());
+            for kind in PlotKind::ALL {
+                let what = format!("example design {example}, {kind:?}");
+                let output = show_view(&ctx, &mut app, LAPTOP, CentreView::Plot(kind), 2);
+                let shown = entries(&ctx, &output);
+                assert!(!shown.is_empty(), "{what}: no legend entry");
+                for (disc, dot) in &shown {
+                    let ring = contrast(disc.stroke.color, theme::BG);
+                    assert!(
+                        ring >= 3.0,
+                        "{what}: a disc's ring on the legend: {ring:.2}"
+                    );
+                    let dot = dot.unwrap_or_else(|| panic!("{what}: an entry with no dot"));
+                    let ratio = contrast(dot, disc.fill);
+                    assert!(
+                        ratio >= 3.0,
+                        "{what}: the dot {} on its disc {}: {ratio:.2}",
+                        theme::hex(dot),
+                        theme::hex(disc.fill)
+                    );
+                    colours.insert(dot);
+                }
+                // A click on the first entry hides its line: its disc stays, with no dot.
+                let (first, first_dot) = shown[0];
+                let hidden = entries(&ctx, &click_at(&ctx, &mut app, LAPTOP, first.center, 2));
+                let hidden: Vec<_> = hidden
+                    .iter()
+                    .filter(|(d, _)| d.center == first.center)
+                    .collect();
+                assert_eq!(hidden.len(), 1, "{what}: the hidden entry's disc");
+                assert_eq!(hidden[0].1, None, "{what}: the hidden entry's dot");
+                assert_eq!(
+                    (hidden[0].0.fill, hidden[0].0.stroke),
+                    (first.fill, first.stroke),
+                    "{what}: the hidden entry's disc"
+                );
+                // A second click shows it again.
+                let again = entries(&ctx, &click_at(&ctx, &mut app, LAPTOP, first.center, 2));
+                assert!(
+                    again
+                        .iter()
+                        .any(|(d, dot)| d.center == first.center && *dot == first_dot),
+                    "{what}: shown again"
+                );
+            }
+        }
+        assert_eq!(colours.len(), 8, "the dots' colours: {colours:?}");
+    }
+
+    #[test]
+    fn a_tile_shows_its_edge_on_the_panel_as_a_framed_control_does() {
+        // BL-109 (the review of part 2b-iii-b, LOOK-2): the four tiles over the drawing are
+        // click targets that the panel frames itself, and they kept the hairline (1.2:1 on the
+        // panel) where every control egui frames shows its edge at 3:1. In the app's theme, on
+        // the first view at 1280 x 800, each tile's resting outline is the resting outline of
+        // a framed control, 3:1 or more against the panel; a click on the Hot-low tile outlines
+        // it in the strong text colour, another colour, at the same width, and no tile moves.
+        use crate::gui::test_support::{flat_shapes, text_rects};
+        use crate::gui::tiles::Tile;
+        use theme::contrast;
+        let inputs = starting_design();
+        let results = compute_all(&inputs);
+        // Each tile's frame: the rect in the tiles' fill around its number in the centre
+        // region (the Hot-low tile's torque card repeats its number in the Explain panel).
+        let frames = |ctx: &egui::Context, output: &egui::FullOutput| {
+            let right = side_rect(ctx, "magcoupling_dashboard").left();
+            Tile::ALL
+                .iter()
+                .map(|tile| {
+                    let number: Vec<egui::Rect> =
+                        text_rects(output, &tile.number(&inputs, &results).unwrap())
+                            .into_iter()
+                            .filter(|at| at.right() < right)
+                            .collect();
+                    assert_eq!(number.len(), 1, "{tile:?}'s number: {number:?}");
+                    let frame: Vec<&egui::epaint::RectShape> = flat_shapes(output)
+                        .into_iter()
+                        .filter_map(|shape| match shape {
+                            egui::Shape::Rect(r)
+                                if r.fill == theme::PANEL2 && r.rect.contains_rect(number[0]) =>
+                            {
+                                Some(r)
+                            }
+                            _ => None,
+                        })
+                        .collect();
+                    assert_eq!(frame.len(), 1, "{tile:?}'s frame: {frame:?}");
+                    frame[0].clone()
+                })
+                .collect::<Vec<egui::epaint::RectShape>>()
+        };
+        let ctx = egui::Context::default();
+        let mut app = MagcouplingApp::new(&ctx);
+        frame_on(&ctx, &mut app, LAPTOP, Vec::new());
+        let rest = theme::visuals().widgets.inactive.bg_stroke;
+        let resting = frames(&ctx, &frame_on(&ctx, &mut app, LAPTOP, Vec::new()));
+        for (tile, frame) in Tile::ALL.iter().zip(&resting) {
+            let ratio = contrast(frame.stroke.color, theme::PANEL);
+            assert!(
+                ratio >= 3.0,
+                "{tile:?}'s resting outline on the panel: {ratio:.2}"
+            );
+            assert_eq!(frame.stroke, rest, "{tile:?}");
+        }
+        let hot_low = Tile::ALL.iter().position(|&t| t == Tile::HotLow).unwrap();
+        let output = click_at(&ctx, &mut app, LAPTOP, resting[hot_low].rect.center(), 2);
+        let selected = frames(&ctx, &output);
+        let mark = egui::Stroke::new(rest.width, theme::TEXT);
+        assert_ne!(mark.color, rest.color);
+        for ((tile, before), after) in Tile::ALL.iter().zip(&resting).zip(&selected) {
+            let stroke = if *tile == Tile::HotLow { mark } else { rest };
+            assert_eq!(after.stroke, stroke, "{tile:?}");
+            assert_eq!(after.rect, before.rect, "{tile:?} moved");
+        }
     }
 
     #[test]
@@ -2546,6 +2939,26 @@ mod tests {
                 );
             }
         }
+        // UX overhaul slice B, stage 2, part 2b-iii-b (the stage 1 review's S-4, S-1, E-4 and
+        // R-6): on the clean page the look's step also reads that the page's loading line is
+        // gone (its id typed once, as LOADING_ID, equal to the page's), and judges the heavier
+        // title and heading and the grey edge of Auto's box and of the value boxes.
+        {
+            assert_eq!(quoted("LOADING_ID"), LOADING_ID, "the script's LOADING_ID");
+            let look = between("Then the look:", "Collect the console");
+            let gone = "document.getElementById('${LOADING_ID}') === null";
+            for (what, text) in [
+                ("reads that the loading line is gone", gone),
+                (
+                    "judges the heavier title and heading",
+                    "heavier than the text under them",
+                ),
+                ("names Auto's box", crate::gui::AUTO),
+                ("judges the controls' edges", "grey edge"),
+            ] {
+                assert!(look.contains(text), "the look's step {what}: {text}");
+            }
+        }
         // The app opens the link and the solve succeeds after its debounce.
         let ctx = egui::Context::default();
         let mut app = MagcouplingApp::new(&ctx);
@@ -2569,6 +2982,67 @@ mod tests {
         let hub = include_str!("../../linkage-sim-rs/web/tools/index.html");
         assert!(hub.contains("Magnetic Coupling Calculator"));
         assert!(!hub.to_lowercase().contains("clamp"));
+    }
+
+    #[test]
+    fn the_page_wears_the_app_s_colours_and_a_loading_line_until_the_app_draws() {
+        // The stage 1 review (S-4): while the wasm file loads, the page was charcoal with
+        // nothing to say it was working, and the browser's own bars kept their colour. The page
+        // names its language, gives the browser the panel colour and a dark scheme from its
+        // head (before any style, so nothing flashes white), and shows one line in the muted
+        // colour across the middle of the page, after the canvas. The app removes the line at
+        // the end of its first frame (`remove_loading_line`, on wasm32 only), so the browser
+        // shows the app and the line's removal in one paint; the page's script only starts the
+        // app (a browser run checks both).
+        let page = include_str!("../../linkage-sim-rs/web/tools/magcoupler/index.html");
+        use theme::hex;
+        assert!(
+            page.contains("<html lang=\"en\">"),
+            "index.html names its language"
+        );
+        let head = &page[..page.find("</head>").expect("a head")];
+        for (what, meta) in [
+            (
+                "the browser's colour",
+                format!(
+                    "<meta name=\"theme-color\" content=\"{}\">",
+                    hex(theme::PANEL)
+                ),
+            ),
+            (
+                "the dark scheme",
+                "<meta name=\"color-scheme\" content=\"dark\">".to_owned(),
+            ),
+        ] {
+            assert!(
+                head.contains(&meta),
+                "index.html's head gives {what}: {meta}"
+            );
+        }
+        // The line, after the canvas, and its style: the muted colour, centred on the page.
+        let line = format!("<p id=\"{LOADING_ID}\">{LOADING_LINE}</p>");
+        let canvas = format!("<canvas id=\"{CANVAS_ID}\"></canvas>");
+        let at = page.find(&line).expect("index.html has the loading line");
+        assert!(page.find(&canvas).is_some_and(|canvas| canvas < at));
+        let rule = format!("#{LOADING_ID} {{");
+        let rule = &head[head.find(&rule).expect("the line's style")..];
+        let rule = &rule[..rule.find('}').expect("its end")];
+        for property in [
+            format!("color: {};", hex(theme::MUTED)),
+            "position: fixed;".to_owned(),
+            "text-align: center;".to_owned(),
+        ] {
+            assert!(rule.contains(&property), "the line's style has {property}");
+        }
+        // The script starts the app and touches the line nowhere: the app removes it.
+        let script = &page[page.find("<script").expect("a script")..];
+        assert!(script.contains("init();") && !script.contains(LOADING_ID));
+        // A new text on screen: plain words, no gearbox claim, every glyph in the page's font.
+        use crate::engine::explain::plain::mentions_gearbox_protection;
+        use crate::gui::guidance::plain_text_violations;
+        assert_eq!(plain_text_violations(LOADING_LINE), Vec::<&str>::new());
+        assert!(!mentions_gearbox_protection(LOADING_LINE));
+        assert!(LOADING_LINE.is_ascii());
     }
 
     #[test]
