@@ -5,6 +5,9 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 — Defer nom 1.2.4 warning (BL-006)
+- cargo tree -i nom: nom 1.2.4 <- meval 0.2.0; meval 0.2.0 is still the latest and needs nom 1.x, so deferred with that upstream blocker named. No code or lockfile change.
+
 ## 2026-11-28 - Tests stop rewriting docs/chebyshev_lambda (BL-012)
 - export_chebyshev_lambda_pngs writes to linkage-sim-rs/target/chebyshev_lambda/; a test pins the directory outside docs/; AGENTS.md says to copy by hand to refresh the committed images.
 

@@ -434,8 +434,8 @@
   evidence: "cargo report during 2026-08-08 build: 'nom v1.2.4 ... will be rejected by a future version of Rust'"
   acceptance: "cargo tree -i nom documented in notes; dependency updated/replaced, or item deferred with the upstream blocker named"
   priority: 2
-  status: open
-  notes: ""
+  status: deferred
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: resolved by the acceptance's deferral clause (no code change). cargo tree -i nom: nom v1.2.4 <- meval v0.2.0 <- linkage-sim-rs v0.1.0. Re-checked today: latest published meval is still 0.2.0 and requires nom 1.x, so a lock bump cannot remove nom 1.2.4; upstream blocker is meval (issue 30, nom7/nom8 PRs 27/34 unmerged). Warning stays; revisit when a maintained meval release or validated parser replacement exists. Codex's earlier deferral (5a14aa9, cecbc0e) reused. "
 
 - id: BL-007
   title: CSV/HTML export behavior on NaN-padded (non-Grashof) sweep rows unverified
