@@ -1,7 +1,12 @@
-"""Builds the calculator's font: Inter Regular, cut to the characters the app draws, with
-tabular digits as its default digits and the vertical metrics of egui's built-in font.
+"""Builds the calculator's fonts: Inter Regular and Inter SemiBold, each cut to the characters
+the app draws, with tabular digits as its default digits and the vertical metrics of egui's
+built-in font.
 
     python subset_inter.py Inter-Regular.ttf Inter-Regular.subset.ttf
+    python subset_inter.py Inter-SemiBold.ttf Inter-SemiBold.subset.ttf
+
+The SemiBold cut draws the title and the headings (UX overhaul spec 6.2; the stage 1 review's
+S-1). Both cuts hold the same characters, digits and rows: the same list, the same metrics.
 
 Why a built file: egui cannot switch OpenType features, so the ten digits are remapped here to
 Inter's tabular ones (its `tnum` feature, the digits only: the whole feature would also widen
@@ -19,9 +24,16 @@ of such a row to within 0.01 em.
 Source: Inter 4.1, https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip
   (SHA-256 9883fdd4a49d4fb66bd8177ba6625ef9a64aa45899767dde3d36aa425756b11e),
   its file extras/ttf/Inter-Regular.ttf
-  (SHA-256 40d692fce188e4471e2b3cba937be967878f631ad3ebbbdcd587687c7ebe0c82).
-Licence: SIL Open Font License 1.1 (OFL.txt beside this file, the zip's LICENSE.txt). Inter
-  declares no Reserved Font Name, so the cut file keeps the name.
+  (SHA-256 40d692fce188e4471e2b3cba937be967878f631ad3ebbbdcd587687c7ebe0c82), cut to
+  Inter-Regular.subset.ttf (30,684 bytes, SHA-256
+  8f8ed7fc1abbc5080700ec7044eeea4afe76ec1ca6d6296eb49e823fecac3421),
+  and its file extras/ttf/Inter-SemiBold.ttf
+  (SHA-256 78a843fade9d4612a5567302fb595b56976eb5fcebf4fea5a5912d638bafcde3), cut to
+  Inter-SemiBold.subset.ttf (30,524 bytes, SHA-256
+  bfce2d669a45afe425b001c6ab20048d3dceea50f4cf38d39e11d29048d1d4b8).
+Licence: SIL Open Font License 1.1 (OFL.txt beside this file, the zip's LICENSE.txt), for
+  every weight of the family; both files keep its copyright and licence lines. Inter declares
+  no Reserved Font Name, so each cut file keeps its name.
 Tool: fontTools 4.51.0 on Python 3.12. The output does not depend on the date (the head table's
   timestamps are kept), so the same input and tool give the same bytes.
 """

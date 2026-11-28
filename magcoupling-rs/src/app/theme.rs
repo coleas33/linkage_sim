@@ -74,11 +74,11 @@ fn state(state: &mut WidgetVisuals, fill: Color32, button: Color32, outline: Str
 /// The theme's visuals: egui's dark visuals with the tokens in place of its colours.
 ///
 /// Body text, values and headings share [`TEXT`]; egui has no bold, so `strong()` no longer
-/// sets a value apart from the text beside it (a second, heavier face is the cure if a later
-/// slice needs one). `weak()` is [`MUTED`], and the panel draws a label beside its value in it
-/// (`gui::look::quiet_text`), so the value is the bright one of the pair. Borders are hairlines
-/// and nothing casts a shadow (decision C-6). A control at rest shows its edge in [`CONTROL`];
-/// under the pointer and pressed its fill stays and its outline brightens.
+/// sets a value apart from the text beside it (the app's heavier face draws the title and the
+/// headings: `app::fonts`). `weak()` is [`MUTED`], and the panel draws a label beside its value
+/// in it (`gui::look::quiet_text`), so the value is the bright one of the pair. Borders are
+/// hairlines and nothing casts a shadow (decision C-6). A control at rest shows its edge in
+/// [`CONTROL`]; under the pointer and pressed its fill stays and its outline brightens.
 pub fn visuals() -> egui::Visuals {
     let hairline = Stroke::new(1.0, BORDER);
     let radius = CornerRadius::same(RADIUS);

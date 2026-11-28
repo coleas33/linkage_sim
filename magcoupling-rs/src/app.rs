@@ -484,6 +484,74 @@ mod tests {
     }
 
     #[test]
+    fn the_title_and_the_size_heading_are_semibold_and_the_top_bar_keeps_one_row() {
+        // The stage 1 review (S-1): with one weight the title and the headings were only larger
+        // than the text under them. In the app egui's Heading style is Inter SemiBold, which
+        // draws the title and the left column's heading and no other text (the tab of the same
+        // words stays Regular). A heavier face is wider, so at the smallest window, the laptop
+        // screen and a desktop one the top bar's six words stay on the title's row and the
+        // heading on one line inside the 320-point column (the column's width and the texts
+        // cut on every tab are the BL-099 test's, in the same font).
+        use crate::gui::test_support::flat_shapes;
+        let semibold = egui::FontFamily::Name(fonts::SEMIBOLD_NAME.into());
+        for size in [WINDOWS[1], WINDOWS[0], egui::vec2(1920.0, 1080.0)] {
+            let ctx = egui::Context::default();
+            let mut app = MagcouplingApp::new(&ctx);
+            frame_on(&ctx, &mut app, size, Vec::new());
+            let output = frame_on(&ctx, &mut app, size, Vec::new());
+            let mut heavy = Vec::new();
+            for shape in flat_shapes(&output) {
+                if let egui::Shape::Text(text) = shape {
+                    let sections = &text.galley.job.sections;
+                    let semibold_sections = sections
+                        .iter()
+                        .filter(|s| s.format.font_id.family == semibold)
+                        .count();
+                    if semibold_sections > 0 {
+                        assert_eq!(semibold_sections, sections.len(), "{size:?}");
+                        heavy.push((text.galley.text().to_owned(), text.visual_bounding_rect()));
+                    }
+                }
+            }
+            let names: Vec<&str> = heavy.iter().map(|(text, _)| text.as_str()).collect();
+            let size_heading = crate::gui::CentreView::SizeAndTorque.label();
+            assert_eq!(
+                names,
+                ["Magnetic coupling calculator", size_heading],
+                "{size:?}"
+            );
+            let (title, heading) = (heavy[0].1, heavy[1].1);
+            let column = side_rect(&ctx, "magcoupling_inputs");
+            let style = ctx.style();
+            let row = ctx.fonts(|f| f.row_height(&egui::TextStyle::Heading.resolve(&style)));
+            assert!(
+                column.contains_rect(heading) && heading.height() <= row,
+                "{size:?}: the heading {heading:?} in {column:?}, rows of {row}"
+            );
+            // The top bar: every text over the left column (the title and the six words) on
+            // the title's row, inside the window.
+            let bar: Vec<(String, egui::Rect)> = flat_shapes(&output)
+                .into_iter()
+                .filter_map(|shape| match shape {
+                    egui::Shape::Text(text)
+                        if text.visual_bounding_rect().bottom() <= column.top() =>
+                    {
+                        Some((text.galley.text().to_owned(), text.visual_bounding_rect()))
+                    }
+                    _ => None,
+                })
+                .collect();
+            assert!(bar.len() >= 7, "{size:?}: {bar:?}");
+            for (text, at) in &bar {
+                assert!(
+                    (at.center().y - title.center().y).abs() < 4.0 && at.right() <= size.x,
+                    "{size:?}: {text:?} at {at:?}, the title at {title:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn the_accent_marks_the_brand_and_the_active_tab_and_nothing_else() {
         // Decision C-5, in the app's own theme: crimson is never a text colour and never on a
         // value or a check. At the starting design and at a failing one the accent is on two
