@@ -5,6 +5,9 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - R4 review follow-ups (BL-130, BL-131)
+- The gearbox check's Problem builds its opening name from `checked_pullout_name` (the branch review's R4-2, DRY). BL-130 filed for fable's physics re-review of the four R4 diffs on 2026-12-01 (R4-1, R4-4); BL-131 filed: the adhesive bond screen still loads the bond with cold-high only (R4-3, older than the branch).
+
 ## 2026-11-28 - Magcoupler: a cap thread at or past the cap's outside diameter is an exploration line, not an amber skirt caution (BL-087)
 - Branch magcoupling/r4-physics: a cap skirt ((cap OD - cap thread) / 2, new `gui::geometry::cap_skirt_mm`) at or below zero draws an error-coloured "Exploration only: the cap thread breaks through the cap." line on the Size tab (panel.rs `view_ui`, beside the keyway's), and `wall_cautions` keeps the amber skirt caution for 0 < skirt < 0.5 mm only; red first at (42.0, 42.2) and (42.0, 42.0) (panel test `a_cap_thread_at_or_past_the_cap_s_outside_diameter_draws_an_exploration_line`), the new line in `size_tab_new_texts_have_glyphs_and_plain_words`; GUI only, no engine or oracle change; docs: README (prose and the src/gui module map), docs/ai 02, 03, 04, register row A-22 and its log, backlog BL-087 fixed.
 

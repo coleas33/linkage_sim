@@ -2780,11 +2780,8 @@ fn gearbox_problem(inputs: &DesignInputs, results: &DesignResults) -> Option<Str
                 rating,
                 true,
             );
-            let what = if operating_pullout_compared(inputs, results) {
-                "The operating pull-out with its allowance"
-            } else {
-                "Cold-high"
-            };
+            let name = checked_pullout_name(inputs, results);
+            let what = format!("{}{}", name[..1].to_uppercase(), &name[1..]);
             let overload = format!(
                 "{what} at the gearbox input is {torque_text}, above its {} input rating.",
                 input_text(inputs, "coupling.gearbox_input_rating_Nm"),
