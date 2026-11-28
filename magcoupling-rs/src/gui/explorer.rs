@@ -649,51 +649,59 @@ pub fn explorer_ui(
         });
     }
     ui.separator();
-    scroll_area(ui, "magcoupling_equation_scroll")
-        .auto_shrink([false, false])
-        .show(ui, |ui| {
-            // Every way the app opens the panel sets a trail first: with none there is nothing
-            // to draw (BL-089).
-            let Some(path) = explorer.current().map(str::to_owned) else {
-                return;
-            };
-            // The marks on screen are another equation's while its value is hovered.
-            let others_marked = explorer.hovered().is_some_and(|h| h != path);
-            let (follow, link) = match registry().equation_for(&path) {
-                Some(eq) => equation_body(ui, eq, &terms, baseline, others_marked, show_details),
-                None => {
-                    no_equation_body(ui, &path, results, show_details);
-                    (None, note_fallback_ui(ui, &path))
-                }
-            };
-            if let Some(link) = link {
-                asked = asked.or(explorer.follow_note_link(link));
+    // BL-122: a different equation opens at its top, the same one keeps its offset (the Explain
+    // panel's rule, its scroll_area in panel.rs). The last drawn path is kept in temp data.
+    let drawn_id = ui.make_persistent_id("magcoupling_equation_drawn");
+    let drawn: Option<String> = ui.data(|d| d.get_temp(drawn_id)).flatten();
+    let mut equation_scroll =
+        scroll_area(ui, "magcoupling_equation_scroll").auto_shrink([false, false]);
+    if drawn.as_deref() != explorer.current() {
+        equation_scroll = equation_scroll.vertical_scroll_offset(0.0);
+        ui.data_mut(|d| d.insert_temp(drawn_id, explorer.current().map(str::to_owned)));
+    }
+    equation_scroll.show(ui, |ui| {
+        // Every way the app opens the panel sets a trail first: with none there is nothing
+        // to draw (BL-089).
+        let Some(path) = explorer.current().map(str::to_owned) else {
+            return;
+        };
+        // The marks on screen are another equation's while its value is hovered.
+        let others_marked = explorer.hovered().is_some_and(|h| h != path);
+        let (follow, link) = match registry().equation_for(&path) {
+            Some(eq) => equation_body(ui, eq, &terms, baseline, others_marked, show_details),
+            None => {
+                no_equation_body(ui, &path, results, show_details);
+                (None, note_fallback_ui(ui, &path))
             }
-            ui.add_space(6.0);
-            let users = used_by_shown(&path, clamps_paused);
-            let mut up = None;
-            if !users.is_empty() {
-                ui.horizontal_wrapped(|ui| {
-                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                    ui.strong(USED_BY);
-                    for user in users {
-                        if ui
-                            .link(crumb(user))
-                            .on_hover_text(term_label(user))
-                            .clicked()
-                        {
-                            up = Some(user.clone());
-                        }
+        };
+        if let Some(link) = link {
+            asked = asked.or(explorer.follow_note_link(link));
+        }
+        ui.add_space(6.0);
+        let users = used_by_shown(&path, clamps_paused);
+        let mut up = None;
+        if !users.is_empty() {
+            ui.horizontal_wrapped(|ui| {
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                ui.strong(USED_BY);
+                for user in users {
+                    if ui
+                        .link(crumb(user))
+                        .on_hover_text(term_label(user))
+                        .clicked()
+                    {
+                        up = Some(user.clone());
                     }
-                });
-            }
-            if let Some(term) = follow {
-                explorer.follow(&term, &terms);
-            } else if let Some(user) = up {
-                explorer.drill(&user);
-            }
-            follow_focus(ui);
-        });
+                }
+            });
+        }
+        if let Some(term) = follow {
+            explorer.follow(&term, &terms);
+        } else if let Some(user) = up {
+            explorer.drill(&user);
+        }
+        follow_focus(ui);
+    });
     asked
 }
 

@@ -390,7 +390,7 @@ the widget whole, and a point more at its foot (the app's font heights are not w
 afterwards is not fought, the focus arriving still selects nothing and edits nothing, and an idle
 page draws no frame. One rule, `gui::follow_focus`, called last in a scroll area's content, serves
 the column, the Explain panel, the check list, the Geometry tab's callout list, the Clamp tab and
-the Equation panel. A sideways scroll area inside an up-and-down one, the Equation panel's formula
+the Equation panel. The Equation panel's area, like the Explain panel's, opens a different equation at its top and keeps its offset while the same one stays open (BL-122). A sideways scroll area inside an up-and-down one, the Equation panel's formula
 and the Clamp tab's screw-size table, is `gui::sideways_scroll_area` (BL-101): egui hands both
 axes' scroll targets to the innermost area alone, so the inner area scrolls sideways to the widget
 and the outer one is asked again for its rect once the inner area has ended; a formula wider than

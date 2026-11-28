@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - Magcoupler: an equation opened in the Equation panel opens at its top, and the same one keeps its offset (BL-122)
+
+- gui/explorer.rs (explorer_ui: last drawn path in egui temp data, vertical_scroll_offset(0.0) when it changes); test in panel.rs; README, docs/ai 02 to 04; backlog BL-122 fixed.
+
 ## 2026-11-28 - Magcoupler: the four tiles share one height in the first painted frame (BL-111)
 
 - gui/tiles.rs (request_discard in place of request_repaint when a row's height changes); test in tiles.rs; backlog BL-111 fixed.

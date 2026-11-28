@@ -1156,8 +1156,8 @@
   evidence: "The text review of part 2b-iii-c (BL-112), 2026-11-28, in Chrome from the branch's release build (docs/analyses/2026-11-27-magcoupler-slice-b2p2biii-c-review.md), finding F-3: the panel's ScrollArea::vertical().id_salt(\"magcoupling_equation_scroll\") keeps its offset when the open equation changes, so the walk's Next (step 2 opened at step 1's position) and an Equation link (N_lim,hi opened at V_temp's position) open the new equation with its title and the top of its formula above the view. Since the term rows wrap at 1024 x 700 the panel scrolls more often, so this shows more. Not checked on main."
   acceptance: "A red test first: open an equation, wheel the panel down, open another (by Next and by an Equation link), and its title is in view; the panel goes to its top when the open equation changes and keeps its offset otherwise; GATE PASS."
   priority: 4
-  status: open
-  notes: "Filed 2026-11-28 by the controller from the text review of BL-112 (F-3); taken into the R3 polish batch."
+  status: fixed
+  notes: "Filed 2026-11-28 by the controller from the text review of BL-112 (F-3); taken into the R3 polish batch. FIXED 2026-11-28 on branch magcoupling/r3-polish: explorer_ui keeps the last drawn equation path in egui temp data keyed on the area's id and calls vertical_scroll_offset(0.0) when explorer.current() differs, so Next and an Equation link open the new equation at its top and the same one keeps its offset; red test each_equation_opens_at_its_top_and_the_same_one_keeps_its_offset in panel.rs."
 - id: BL-123
   title: "Magcoupler: the formula's floating sideways scroll bar covers the lower half of its last row while the pointer is on it"
   dimension: gui

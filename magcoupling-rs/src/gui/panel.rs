@@ -2400,6 +2400,76 @@ mod tests {
     }
 
     #[test]
+    fn each_equation_opens_at_its_top_and_the_same_one_keeps_its_offset() {
+        // BL-122: an equation scrolled down, then another opened by an Equation link or by the
+        // walk's Next: the new title is whole in view; the same equation keeps its offset.
+        use crate::gui::explorer::NEXT;
+        use crate::gui::plain_text::label_for;
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, SMALLEST);
+        let mut harness = Harness::of(MagcouplingPanel::new(), SMALLEST);
+        harness.frame(Vec::new());
+        // The title is the one drawn text of that label inside the Equation panel.
+        let title_in_view = |harness: &Harness, output: &egui::FullOutput, path: &str| {
+            let panel = equation_panel_rect(&harness.ctx);
+            shown_whole(output, label_for(path), screen)
+                .iter()
+                .any(|r| panel.contains_rect(*r))
+        };
+        let settle = |harness: &mut Harness| {
+            let mut output = harness.frame(Vec::new());
+            for _ in 0..3 {
+                output = harness.frame(Vec::new());
+            }
+            output
+        };
+        let scroll_down = |harness: &mut Harness| {
+            let at = equation_panel_rect(&harness.ctx).center();
+            harness.frame(vec![egui::Event::PointerMoved(at)]);
+            harness.frame(vec![egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, -5000.0),
+                modifiers: egui::Modifiers::NONE,
+            }]);
+            let output = settle(harness);
+            harness.frame(vec![egui::Event::PointerGone]);
+            output
+        };
+        let first = "model.pullout_Nm";
+        harness.panel.explorer.open_path(first);
+        let output = settle(&mut harness);
+        assert!(title_in_view(&harness, &output, first), "opens at its top");
+        let output = scroll_down(&mut harness);
+        assert!(
+            !title_in_view(&harness, &output, first),
+            "it did not scroll"
+        );
+        // The same equation open on later frames keeps its offset.
+        let output = settle(&mut harness);
+        assert!(!title_in_view(&harness, &output, first), "offset not kept");
+        // An Equation link.
+        let second = "model.f_end";
+        harness.panel.explorer.open_path(second);
+        let output = settle(&mut harness);
+        assert!(
+            title_in_view(&harness, &output, second),
+            "link: title above the view"
+        );
+        // The walk's Next.
+        harness.panel.explorer.start(0);
+        settle(&mut harness);
+        scroll_down(&mut harness);
+        let step = harness.panel.explorer.current().unwrap().to_owned();
+        harness.click_text(NEXT);
+        let next = harness.panel.explorer.current().unwrap().to_owned();
+        assert_ne!(step, next);
+        let output = settle(&mut harness);
+        assert!(
+            title_in_view(&harness, &output, &next),
+            "Next: title above the view"
+        );
+    }
+
+    #[test]
     fn a_click_on_a_check_shows_its_entry_and_esc_or_about_returns_the_orientation() {
         // Spec 5.1, 5.2 and 8.2 test 10, and goal G-8: one click on a failing check shows its
         // problem, its reason and its fixes. A hover changes nothing (decision C-2).

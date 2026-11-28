@@ -73,7 +73,7 @@ major_subsystems:
       undo/redo, design files and share links, the sizing mode and the theme (the linkage app's then; the calculator's own since UX overhaul slice B, stage 1, BL-079).
       M4-2 adds the centre region's views, the geometry view to scale (the default until 2026-10-13), five plots
       (egui_plot) and the clamp drawing and table (hidden since 2026-10-15 while the shaft-clamp section is paused, slice-2 ruling 11).
-      M4-3 adds the equation explorer (typesetter, hover on every value, the docked Equation panel),
+      M4-3 adds the equation explorer (typesetter, hover on every value, the docked Equation panel, which opens each equation at its top),
       the assumptions view and banner, the teaching notes with their diagrams, the material, part
       and grade pickers and the material warnings.
       M5 embedded the panel in the linkage app (a Tools -> Magnetic coupling window); on 2026-10-06
