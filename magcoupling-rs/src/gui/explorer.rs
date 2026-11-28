@@ -63,7 +63,7 @@ use crate::gui::readouts::{ReadoutEvents, registry};
 use crate::gui::typeset::{
     TermColors, glyph_safe, laid_ui, layout_equation, layout_symbol, term_at,
 };
-use crate::gui::{follow_focus, sideways_scroll_area};
+use crate::gui::{follow_focus, scroll_area, sideways_scroll_area};
 use crate::{DesignInputs, DesignResults};
 
 /// The panel's heading.
@@ -574,45 +574,49 @@ pub fn explorer_ui(
 ) -> Option<&'static str> {
     let terms = Design { inputs, results };
     let mut asked = None;
-    ui.horizontal_wrapped(|ui| {
-        // Whole crumbs move to the next row (a wrapped text would start mid-row).
-        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-        ui.strong(EQUATION_PANEL);
-        ui.separator();
-        let mut back = None;
-        let last = explorer.trail.len().saturating_sub(1);
-        let first = explorer.trail.len().saturating_sub(SHOWN_CRUMBS);
-        if first > 0 {
-            ui.weak(ELIDED)
-                .on_hover_text(format!("{first} earlier steps"));
+    // The buttons are laid out first, at the right, so the crumbs wrap in the room left of them
+    // and are never drawn under them (BL-115).
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
+        if ui.button(CLOSE).clicked() {
+            explorer.close();
         }
-        for (i, path) in explorer.trail.iter().enumerate().skip(first) {
-            if i > 0 {
-                ui.weak(">");
-            }
-            if ui
-                .selectable_label(i == last, crumb(path))
-                .on_hover_text(term_label(path))
-                .clicked()
-                && i != last
-            {
-                back = Some(i);
-            }
+        if ui
+            .button(START_HERE_BUTTON)
+            .on_hover_text(start_here_hover(clamps_paused))
+            .clicked()
+        {
+            asked = explorer.start(0);
         }
-        if let Some(i) = back {
-            explorer.back_to(i);
-        }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button(CLOSE).clicked() {
-                explorer.close();
-            }
-            if ui
-                .button(START_HERE_BUTTON)
-                .on_hover_text(start_here_hover(clamps_paused))
-                .clicked()
-            {
-                asked = explorer.start(0);
-            }
+        ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
+            ui.horizontal_wrapped(|ui| {
+                // Whole crumbs move to the next row (a wrapped text would start mid-row).
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                ui.strong(EQUATION_PANEL);
+                ui.separator();
+                let mut back = None;
+                let last = explorer.trail.len().saturating_sub(1);
+                let first = explorer.trail.len().saturating_sub(SHOWN_CRUMBS);
+                if first > 0 {
+                    ui.weak(ELIDED)
+                        .on_hover_text(format!("{first} earlier steps"));
+                }
+                for (i, path) in explorer.trail.iter().enumerate().skip(first) {
+                    if i > 0 {
+                        ui.weak(">");
+                    }
+                    if ui
+                        .selectable_label(i == last, crumb(path))
+                        .on_hover_text(term_label(path))
+                        .clicked()
+                        && i != last
+                    {
+                        back = Some(i);
+                    }
+                }
+                if let Some(i) = back {
+                    explorer.back_to(i);
+                }
+            });
         });
     });
     if let Some(step) = explorer.start_here {
@@ -622,70 +626,82 @@ pub fn explorer_ui(
             // made it wider than the centre region); the buttons stay whole.
             let line = egui::RichText::new(start_here_text(step)).weak();
             ui.add(egui::Label::new(line).wrap());
-            if ui
-                .add_enabled(step > 0, egui::Button::new(PREVIOUS))
-                .clicked()
-            {
-                asked = explorer.start(step - 1);
-            }
-            if ui
-                .add_enabled(step + 1 < START_HERE.len(), egui::Button::new(NEXT))
-                .clicked()
-            {
-                asked = explorer.start(step + 1);
-            }
-            if ui.button(STOP).clicked() {
-                explorer.stop();
-            }
+            // One block on the row after the line, so the buttons stay on one row (BL-121: a
+            // block inside the wrapping line is cut to the room left on the line's last row).
+            ui.end_row();
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(step > 0, egui::Button::new(PREVIOUS))
+                    .clicked()
+                {
+                    asked = explorer.start(step - 1);
+                }
+                if ui
+                    .add_enabled(step + 1 < START_HERE.len(), egui::Button::new(NEXT))
+                    .clicked()
+                {
+                    asked = explorer.start(step + 1);
+                }
+                if ui.button(STOP).clicked() {
+                    explorer.stop();
+                }
+            });
         });
     }
     ui.separator();
-    egui::ScrollArea::vertical()
-        .id_salt("magcoupling_equation_scroll")
-        .auto_shrink([false, false])
-        .show(ui, |ui| {
-            // Every way the app opens the panel sets a trail first: with none there is nothing
-            // to draw (BL-089).
-            let Some(path) = explorer.current().map(str::to_owned) else {
-                return;
-            };
-            // The marks on screen are another equation's while its value is hovered.
-            let others_marked = explorer.hovered().is_some_and(|h| h != path);
-            let (follow, link) = match registry().equation_for(&path) {
-                Some(eq) => equation_body(ui, eq, &terms, baseline, others_marked, show_details),
-                None => {
-                    no_equation_body(ui, &path, results, show_details);
-                    (None, note_fallback_ui(ui, &path))
-                }
-            };
-            if let Some(link) = link {
-                asked = asked.or(explorer.follow_note_link(link));
+    // BL-122: a different equation opens at its top, the same one keeps its offset (the Explain
+    // panel's rule, its scroll_area in panel.rs). The last drawn path is kept in temp data.
+    let drawn_id = ui.make_persistent_id("magcoupling_equation_drawn");
+    let drawn: Option<String> = ui.data(|d| d.get_temp(drawn_id)).flatten();
+    let mut equation_scroll =
+        scroll_area(ui, "magcoupling_equation_scroll").auto_shrink([false, false]);
+    if drawn.as_deref() != explorer.current() {
+        equation_scroll = equation_scroll.vertical_scroll_offset(0.0);
+        ui.data_mut(|d| d.insert_temp(drawn_id, explorer.current().map(str::to_owned)));
+    }
+    equation_scroll.show(ui, |ui| {
+        // Every way the app opens the panel sets a trail first: with none there is nothing
+        // to draw (BL-089).
+        let Some(path) = explorer.current().map(str::to_owned) else {
+            return;
+        };
+        // The marks on screen are another equation's while its value is hovered.
+        let others_marked = explorer.hovered().is_some_and(|h| h != path);
+        let (follow, link) = match registry().equation_for(&path) {
+            Some(eq) => equation_body(ui, eq, &terms, baseline, others_marked, show_details),
+            None => {
+                no_equation_body(ui, &path, results, show_details);
+                (None, note_fallback_ui(ui, &path))
             }
-            ui.add_space(6.0);
-            let users = used_by_shown(&path, clamps_paused);
-            let mut up = None;
-            if !users.is_empty() {
-                ui.horizontal_wrapped(|ui| {
-                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                    ui.strong(USED_BY);
-                    for user in users {
-                        if ui
-                            .link(crumb(user))
-                            .on_hover_text(term_label(user))
-                            .clicked()
-                        {
-                            up = Some(user.clone());
-                        }
+        };
+        if let Some(link) = link {
+            asked = asked.or(explorer.follow_note_link(link));
+        }
+        ui.add_space(6.0);
+        let users = used_by_shown(&path, clamps_paused);
+        let mut up = None;
+        if !users.is_empty() {
+            ui.horizontal_wrapped(|ui| {
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                ui.strong(USED_BY);
+                for user in users {
+                    if ui
+                        .link(crumb(user))
+                        .on_hover_text(term_label(user))
+                        .clicked()
+                    {
+                        up = Some(user.clone());
                     }
-                });
-            }
-            if let Some(term) = follow {
-                explorer.follow(&term, &terms);
-            } else if let Some(user) = up {
-                explorer.drill(&user);
-            }
-            follow_focus(ui);
-        });
+                }
+            });
+        }
+        if let Some(term) = follow {
+            explorer.follow(&term, &terms);
+        } else if let Some(user) = up {
+            explorer.drill(&user);
+        }
+        follow_focus(ui);
+    });
     asked
 }
 
@@ -719,7 +735,7 @@ fn equation_body(
     let ink = ui.visuals().text_color();
     let laid = ui.fonts(|f| layout_equation(f, registry(), eq, &colors, PANEL_SIZE, ink));
     sideways_scroll_area(ui, "magcoupling_equation_formula", |ui| {
-        let response = laid_ui(ui, &laid, ink, Sense::click());
+        let response = laid_ui(ui, &laid, ink, Sense::CLICK);
         if response.clicked()
             && let Some(at) = response.interact_pointer_pos()
         {
@@ -917,8 +933,25 @@ fn note_fallback_ui(ui: &mut egui::Ui, path: &str) -> Option<NoteLink> {
             let mut asked = None;
             ui.horizontal_wrapped(|ui| {
                 ui.weak(NEAREST_NOTE);
-                // One Tab stop however the title wraps (the re-review's RR-1, as KR-1).
-                let link = egui::Link::new(glyph_safe(note.title));
+                // One Tab stop however the title wraps (the re-review's RR-1, as KR-1). A title
+                // starts its own row when the room left holds less than its widest word, or
+                // egui breaks that word in the middle (BL-120).
+                let title = glyph_safe(note.title);
+                let font = egui::TextStyle::Body.resolve(ui.style());
+                let widest = title
+                    .split_whitespace()
+                    .map(|word| {
+                        ui.fonts(|f| {
+                            f.layout_no_wrap(word.to_owned(), font.clone(), egui::Color32::WHITE)
+                        })
+                        .size()
+                        .x
+                    })
+                    .fold(0.0, f32::max);
+                if ui.available_size_before_wrap().x < widest {
+                    ui.end_row();
+                }
+                let link = egui::Link::new(title);
                 if crate::gui::label_block(ui, link).clicked() {
                     asked = Some(NoteLink::Note(note.id));
                 }
@@ -1729,7 +1762,7 @@ mod tests {
         });
         assert_eq!(
             drawn_texts(&output),
-            [EQUATION_PANEL, CLOSE, START_HERE_BUTTON]
+            [CLOSE, START_HERE_BUTTON, EQUATION_PANEL]
         );
     }
 

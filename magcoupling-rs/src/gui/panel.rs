@@ -40,7 +40,6 @@ use crate::gui::clamp_drawing::clamp_ui;
 use crate::gui::dashboard::{Level, end_effect_banner_ui};
 use crate::gui::explain::{Asked, LEARN, Selection, explain_ui, result_selection};
 use crate::gui::explorer::{Explorer, FOCUS_WIDTH, explorer_ui, panel_heights};
-use crate::gui::follow_focus;
 use crate::gui::format::search_needle;
 use crate::gui::geometry::{CAP_THREAD_BREAKS_THROUGH, cap_skirt_mm, wall_cautions};
 use crate::gui::geometry_view::{drawing_ui, geometry_ui};
@@ -75,6 +74,7 @@ use crate::gui::tiles::tiles_ui;
 use crate::gui::torque_card::{KEYWAY_BREAKS_THROUGH, SIDE_DOES_NOT_FIT};
 use crate::gui::trace::{CLEAR_TRACE, Trace, TraceKind};
 use crate::gui::xlsx::{XLSX_FILE_NAME, XLSX_MIME, now_unix_s, spreadsheet_bytes};
+use crate::gui::{TabWalk, follow_focus, hide_resize_edge, scroll_area};
 use crate::{DesignInputs, DesignResults, compute_all};
 
 /// The heading of the panel.
@@ -403,6 +403,8 @@ pub struct MagcouplingPanel {
     /// Whether a text field had the keyboard as the last frame ended: Esc is then the field's,
     /// not the Explain panel's.
     typing: bool,
+    /// The Tab key's walk, which passes the stops that show no focus (BL-102). View state.
+    tab_walk: TabWalk,
     /// Whether the left column scrolls back to its top in the next frame: a fix on a control
     /// of the Size column (the Outside diameter) shows its slider, and the Key design group's
     /// button shows Auto's toggle, wherever the column was scrolled to. View state.
@@ -464,6 +466,7 @@ impl MagcouplingPanel {
             selection: Selection::default(),
             explain_drawn: Selection::default(),
             typing: false,
+            tab_walk: TabWalk::default(),
             column_to_top: false,
         }
     }
@@ -725,6 +728,13 @@ impl MagcouplingPanel {
             egui::TopBottomPanel::top("magcoupling_header").show_inside(ui, |ui| {
                 self.header_ui(ui);
             });
+            for edge in [
+                "magcoupling_inputs",
+                "magcoupling_dashboard",
+                EQUATION_PANEL_ID,
+            ] {
+                hide_resize_edge(ui.ctx(), edge);
+            }
             egui::SidePanel::left("magcoupling_inputs")
                 .resizable(true)
                 .default_width(INPUTS_WIDTH)
@@ -792,6 +802,9 @@ impl MagcouplingPanel {
         // filter goes off with an input's trace even while the table is not drawn.
         self.results_table.sync_trace_filter(self.trace.as_ref());
         self.explorer.end_frame(ui.ctx(), events);
+        // Last of the frame's drawing: every widget is registered, and the editing check below
+        // reads the focus this leaves.
+        self.tab_walk.pass_hidden_stops(ui.ctx());
         // One undo step per settled edit.
         let settled = !self.editing(ui);
         self.history.observe(&self.design(), settled);
@@ -809,8 +822,7 @@ impl MagcouplingPanel {
         fixes: &[Vec<(&'static str, Direction)>],
         readouts: &mut Readouts,
     ) {
-        egui::ScrollArea::vertical()
-            .id_salt("magcoupling_checks_scroll")
+        scroll_area(ui, "magcoupling_checks_scroll")
             .max_height(CHECKS_SHARE * ui.available_height())
             .show(ui, |ui| {
                 let clicked = checks_ui(
@@ -841,13 +853,15 @@ impl MagcouplingPanel {
             self.consequences
                 .get(shown, results, self.minimum_diameter_mm, self.clamps_paused)
         });
-        let mut explain_scroll = egui::ScrollArea::vertical()
-            .id_salt("magcoupling_explain_scroll")
-            .auto_shrink([false, false]);
+        let mut explain_scroll =
+            scroll_area(ui, "magcoupling_explain_scroll").auto_shrink([false, false]);
         if self.selection != self.explain_drawn {
             explain_scroll = explain_scroll.vertical_scroll_offset(0.0);
             self.explain_drawn = self.selection;
         }
+        // BL-116: the bar floats over the area's last 10 points, widest under the pointer, and
+        // covered the ends of a note's lines; the area keeps that strip for it.
+        ui.spacing_mut().scroll.floating_allocated_width = ui.spacing().scroll.bar_width;
         let asked = explain_scroll
             .show(ui, |ui| {
                 // A note's change entry names an input Auto or a part pick holds as plain
@@ -1351,9 +1365,8 @@ impl MagcouplingPanel {
             ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
                 // The column scrolls in a short window: its overflow would stretch the panel
                 // past the window's foot, and the centre region and its drawing with it.
-                let mut column = egui::ScrollArea::vertical()
-                    .id_salt("magcoupling_size_column")
-                    .auto_shrink([false, true]);
+                let mut column =
+                    scroll_area(ui, "magcoupling_size_column").auto_shrink([false, true]);
                 if std::mem::take(&mut self.column_to_top) {
                     column = column.vertical_scroll_offset(0.0);
                 }
@@ -1850,8 +1863,8 @@ mod tests {
     };
     use crate::gui::sizing::DEBOUNCE_S;
     use crate::gui::test_support::{
-        SCREEN, clamp_at_its_limit, drawing_rect, drawn_texts, flat_shapes, hot_day,
-        hub_overstressed, key_event, key_tap, last_characters, only_the_clamp_fails,
+        SCREEN, clamp_at_its_limit, clipped_flat_shapes, drawing_rect, drawn_texts, flat_shapes,
+        hot_day, hub_overstressed, key_event, key_tap, last_characters, only_the_clamp_fails,
         only_the_joint_fails, passing_design, primary_button, row_line, select_all, shift_tab,
         short_magnets, shown_whole, side_rect, sized_frame, sized_frame_at, smoke_inputs,
         text_center, text_clip_rect, text_color, text_rect, text_rects, text_shapes,
@@ -2383,6 +2396,76 @@ mod tests {
             shown_whole(&output, explain::WHAT_IT_IS, screen).len(),
             1,
             "the hot-low entry opens at its top"
+        );
+    }
+
+    #[test]
+    fn each_equation_opens_at_its_top_and_the_same_one_keeps_its_offset() {
+        // BL-122: an equation scrolled down, then another opened by an Equation link or by the
+        // walk's Next: the new title is whole in view; the same equation keeps its offset.
+        use crate::gui::explorer::NEXT;
+        use crate::gui::plain_text::label_for;
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, SMALLEST);
+        let mut harness = Harness::of(MagcouplingPanel::new(), SMALLEST);
+        harness.frame(Vec::new());
+        // The title is the one drawn text of that label inside the Equation panel.
+        let title_in_view = |harness: &Harness, output: &egui::FullOutput, path: &str| {
+            let panel = equation_panel_rect(&harness.ctx);
+            shown_whole(output, label_for(path), screen)
+                .iter()
+                .any(|r| panel.contains_rect(*r))
+        };
+        let settle = |harness: &mut Harness| {
+            let mut output = harness.frame(Vec::new());
+            for _ in 0..3 {
+                output = harness.frame(Vec::new());
+            }
+            output
+        };
+        let scroll_down = |harness: &mut Harness| {
+            let at = equation_panel_rect(&harness.ctx).center();
+            harness.frame(vec![egui::Event::PointerMoved(at)]);
+            harness.frame(vec![egui::Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: egui::vec2(0.0, -5000.0),
+                modifiers: egui::Modifiers::NONE,
+            }]);
+            let output = settle(harness);
+            harness.frame(vec![egui::Event::PointerGone]);
+            output
+        };
+        let first = "model.pullout_Nm";
+        harness.panel.explorer.open_path(first);
+        let output = settle(&mut harness);
+        assert!(title_in_view(&harness, &output, first), "opens at its top");
+        let output = scroll_down(&mut harness);
+        assert!(
+            !title_in_view(&harness, &output, first),
+            "it did not scroll"
+        );
+        // The same equation open on later frames keeps its offset.
+        let output = settle(&mut harness);
+        assert!(!title_in_view(&harness, &output, first), "offset not kept");
+        // An Equation link.
+        let second = "model.f_end";
+        harness.panel.explorer.open_path(second);
+        let output = settle(&mut harness);
+        assert!(
+            title_in_view(&harness, &output, second),
+            "link: title above the view"
+        );
+        // The walk's Next.
+        harness.panel.explorer.start(0);
+        settle(&mut harness);
+        scroll_down(&mut harness);
+        let step = harness.panel.explorer.current().unwrap().to_owned();
+        harness.click_text(NEXT);
+        let next = harness.panel.explorer.current().unwrap().to_owned();
+        assert_ne!(step, next);
+        let output = settle(&mut harness);
+        assert!(
+            title_in_view(&harness, &output, &next),
+            "Next: title above the view"
         );
     }
 
@@ -7080,6 +7163,27 @@ mod tests {
     }
 
     #[test]
+    fn a_keyway_wall_that_prints_as_2_50_draws_no_caution_and_2_49_does() {
+        // BL-078: compared as the line prints it (0.01 mm), so no line reads "2.50 mm" against
+        // "about 2.5 mm". A hair under 2.5 (a ring radius of 9.25 mm computes 2.4999999999999990).
+        let mut inputs = DesignInputs::default();
+        let hub_wall =
+            compute_all(&inputs).model.hub_wall_past_key_mm + inputs.coupling.keyway_depth_mm;
+        let lines = |wall: f64, inputs: &mut DesignInputs| {
+            inputs.coupling.keyway_depth_mm = hub_wall - wall;
+            wall_cautions(inputs, &compute_all(inputs))
+                .into_iter()
+                .filter(|line| line.starts_with("Wall past keyway"))
+                .collect::<Vec<_>>()
+        };
+        assert!(lines(2.5 - 1e-12, &mut inputs).is_empty());
+        assert_eq!(
+            lines(2.49, &mut inputs),
+            vec!["Wall past keyway: 2.49 mm; existing guidance is about 2.5 mm.".to_owned()]
+        );
+    }
+
+    #[test]
     fn the_skirt_caution_is_drawn_amber_on_the_opening_tab_and_counts_no_check() {
         use crate::gui::guidance::{counted_guides, level};
         let mut harness = Harness::new();
@@ -8285,7 +8389,8 @@ mod tests {
                 let id = harness.ctx.memory(|m| m.focused()).expect("a focus");
                 harness.ctx.read_response(id).expect("its widget")
             };
-            // Past the scroll area's own drag surface, a Tab stop of egui's as tall as the view.
+            // Past any stop as tall as the view (the scroll area's drag surface, which Tab no
+            // longer stops on since BL-102).
             while !in_region(&focused(&harness), column) || focused(&harness).rect.height() > 100.0
             {
                 harness.frame(key_tap(egui::Key::Tab));
@@ -8321,6 +8426,28 @@ mod tests {
                 "{screen:?}: {out_of_view} of {stops} stops"
             );
             assert_eq!(harness.panel.design(), Design::default(), "{screen:?}");
+        }
+    }
+
+    #[cfg(feature = "app")]
+    #[test]
+    fn the_left_column_shows_every_focused_widget_whole_in_the_app_s_own_font() {
+        // BL-119: BL-100's walk runs in egui's default font, whose heights are whole points.
+        // In the app's theme and font a value box taking the focus at the column's foot stayed
+        // 0.4 of a point under the view. Both folds, at the two laptop windows.
+        for screen in [SMALLEST, egui::vec2(1280.0, 800.0)] {
+            for fold in [DETAILED_INPUTS, ASSUMPTIONS_FOLD] {
+                let mut harness = Harness::on_screen(screen);
+                crate::app::theme::apply(&harness.ctx);
+                crate::app::fonts::install(&harness.ctx);
+                harness.panel.selection = Selection::Nothing;
+                harness.fold(fold);
+                let column = side_rect(&harness.ctx, "magcoupling_inputs");
+                for keys in [key_tap(egui::Key::Tab), shift_tab()] {
+                    let (stops, _) = follow(&mut harness, &keys, column);
+                    assert!(stops > 20, "{screen:?} {fold}: {stops} stops");
+                }
+            }
         }
     }
 
@@ -8429,9 +8556,10 @@ mod tests {
         // formula scrolls sideways in an area nested in it, which egui gives every scroll
         // target. In the smallest window, the panel open on the hot-low torque and on the hot
         // minimum check, at its starting height and dragged to its least height: after each
-        // Tab and Shift+Tab every stop of the panel is whole once the scroll has settled, the
-        // hot minimum check's formula, wider than the panel, from its start. Nothing is
-        // selected or edited.
+        // Tab and Shift+Tab every stop of the panel is whole once the scroll has settled
+        // (the formula, wider than the panel on the hot minimum check, is no stop since
+        // BL-102: the term list is the keyboard's way in). Nothing is selected or edited.
+        let mut out_of_view_in_all = 0;
         for (path, least) in [
             ("metal.torque_hot_low_Nm", false),
             ("metal.hot_min_check", false),
@@ -8453,21 +8581,18 @@ mod tests {
                 .iter()
                 .map(|keys| follow(&mut harness, keys, panel).1)
                 .sum();
-            assert!(
-                out_of_view > 0,
-                "{path}, least {least}: no stop was out of view"
-            );
+            out_of_view_in_all += out_of_view;
             assert_eq!(harness.panel.selection, selection, "{path}");
             assert_eq!(harness.panel.design(), Design::default(), "{path}");
         }
+        assert!(out_of_view_in_all > 0, "no stop was out of view");
     }
 
     #[test]
     fn the_screw_size_table_follows_the_keyboard_s_focus_up_down_and_sideways() {
         // BL-101 (2): the Clamp tab's screw-size table scrolls sideways in an area nested in
         // the tab's own. Opened in a tall window, then in one of the smallest width and a
-        // height that holds the whole table (its own drag surface, a Tab stop of egui's, is as
-        // tall as the table: BL-102): after each Tab and Shift+Tab every stop of the centre
+        // height that holds the whole table: after each Tab and Shift+Tab every stop of the centre
         // region is whole once the scroll has settled, the table's cells past its right edge
         // and under the view's foot among them.
         use crate::gui::clamp_drawing::SCREW_SIZES;
@@ -8563,6 +8688,89 @@ mod tests {
         assert!(out_of_view > 0, "no stop was out of view");
         assert_eq!(harness.panel.selection, selection);
         assert_eq!(harness.panel.design(), Design::default());
+    }
+
+    /// Whether the keyboard's focus on `r` shows nothing on the page (BL-102): a scroll area's
+    /// drag surface or a column's resize edge (a tall or thin drag and no click), a scroll bar
+    /// (a strip thinner than 12 points that senses both), or a stop wider than `panel` (the Equation
+    /// panel's formula).
+    fn shows_no_focus(r: &egui::Response, panel: egui::Rect) -> bool {
+        let thin = r.rect.width().min(r.rect.height()) < 12.0;
+        // A drag-only stop that is tall or thin is a surface or an edge: a drag value is one
+        // line high and wide.
+        let drag_only = !r.sense.senses_click() && (r.rect.height() > 40.0 || thin);
+        (r.sense.senses_drag() && (drag_only || thin)) || r.rect.width() > panel.width()
+    }
+
+    #[test]
+    fn tab_and_shift_tab_stop_on_nothing_that_shows_no_focus() {
+        // BL-102: egui registers each scroll area's drag surface, each shown scroll bar and
+        // each column's resize edge as a Tab stop, and the Equation panel's formula took one
+        // too; none draws a focus mark. At 1024 x 700 and 1280 x 800, on every tab, with the
+        // folds shut and the Detailed inputs open (and the Equation panel open on a formula
+        // wider than it), a Tab pass and a Shift+Tab pass round the page stop on none of them.
+        // A pass ends at the page's end, or where it comes round to a stop it has made.
+        for screen in [SMALLEST, egui::vec2(1280.0, 800.0)] {
+            for detailed in [false, true] {
+                for view in CentreView::tab_row(false) {
+                    let mut harness = Harness::of(MagcouplingPanel::new(), screen);
+                    harness.tab(view);
+                    harness.panel.explorer.open_path("metal.hot_min_check");
+                    if detailed {
+                        harness.fold(DETAILED_INPUTS);
+                    }
+                    harness.frame(Vec::new());
+                    harness.frame(Vec::new());
+                    let panel = equation_panel_rect(&harness.ctx);
+                    let at = format!(
+                        "{screen:?}, {}, Detailed inputs open {detailed}",
+                        view.label()
+                    );
+                    for keys in [key_tap(egui::Key::Tab), shift_tab()] {
+                        harness.ctx.memory_mut(|m| {
+                            if let Some(focused) = m.focused() {
+                                m.surrender_focus(focused);
+                            }
+                        });
+                        let mut stops = 0;
+                        let mut visited = std::collections::HashSet::new();
+                        for press in 0..300 {
+                            harness.frame(keys.clone());
+                            harness.frame(Vec::new());
+                            let Some(r) = harness
+                                .ctx
+                                .memory(|m| m.focused())
+                                .and_then(|id| harness.ctx.read_response(id))
+                            else {
+                                // No focus: the page's end, and the next press starts it over
+                                // (egui's first Shift+Tab from no focus may find none).
+                                if stops > 0 {
+                                    break;
+                                }
+                                continue;
+                            };
+                            // Round to where the pass began: the walk is complete.
+                            if !visited.insert(r.id) {
+                                break;
+                            }
+                            stops += 1;
+                            // A plot's axes are egui_plot's drag-only stops inside the centre
+                            // region (BL-124): not this item's.
+                            let axis = matches!(view, CentreView::Plot(_))
+                                && centre_region(&harness.ctx).contains_rect(r.rect);
+                            assert!(
+                                axis || !shows_no_focus(&r, panel),
+                                "{at}: press {press} stops on {:?} ({:?})",
+                                r.rect,
+                                r.sense
+                            );
+                        }
+                        assert!(stops > 20, "{at}: {stops} stops");
+                    }
+                }
+            }
+        }
+        assert_eq!(Harness::new().panel.design(), Design::default());
     }
 
     #[test]
@@ -11902,6 +12110,37 @@ mod tests {
 
     #[cfg(feature = "app")]
     #[test]
+    fn a_long_breadcrumb_trail_stays_clear_of_start_here_and_close_in_the_app_s_own_font() {
+        // BL-115: the header row laid the crumbs out first and Start here and Close in what was
+        // left of the row, so a trail that reached them was drawn under them. A trail of several
+        // steps (each a term of the one before) at 1024 x 700 and 1280 x 800: no text of the
+        // panel is drawn over.
+        use crate::gui::test_support::equation_panel_faults;
+        for size in [SMALLEST, egui::vec2(1280.0, 800.0)] {
+            let panel = MagcouplingPanel::with_baseline(crate::app::starting_design());
+            let mut harness = Harness::of(panel, size);
+            crate::app::theme::apply(&harness.ctx);
+            crate::app::fonts::install(&harness.ctx);
+            harness.panel.explorer.open_path("metal.torque_hot_low_Nm");
+            for (n, path) in ["metal.torque_op_Nm", "model.torque_2d_Nm", "model.tau_Pa"]
+                .into_iter()
+                .enumerate()
+            {
+                harness.panel.explorer.drill(path);
+                for _ in 0..2 {
+                    harness.frame(Vec::new());
+                }
+                let output = harness.frame(Vec::new());
+                let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+                let panel = equation_panel_rect(&harness.ctx);
+                let faults = equation_panel_faults(&output, screen, panel);
+                assert!(faults.is_empty(), "{size:?}, {} crumbs: {faults:#?}", n + 2);
+            }
+        }
+    }
+
+    #[cfg(feature = "app")]
+    #[test]
     fn a_wrapped_term_name_or_closest_note_title_is_one_tab_stop_in_the_app_s_own_font() {
         // The branch's review (KR-1): egui lays a label out in a wrapping line row by row, each
         // row a Tab stop of its own, and only the first shows the focus (SK-1 of the input rows),
@@ -11977,6 +12216,71 @@ mod tests {
                 "{path}: wrapped {wrapped:?}, a row a stop of its own: {split:?}"
             );
         }
+    }
+
+    #[cfg(feature = "app")]
+    #[test]
+    fn a_closest_note_title_breaks_only_between_words_in_a_narrow_centre() {
+        // BL-120: with the right column dragged about 130 points wider at 1024 points in the
+        // app's theme and font, the room left after "Closest teaching note:" was less than the
+        // title's widest word, and egui broke a word in the middle (Demagnetizati / on). Every
+        // closest-note title breaks only between words.
+        use crate::gui::explorer::{NoteFallback, note_fallback};
+        use crate::gui::test_support::{primary_button, side_rect, text_shapes};
+        use crate::gui::typeset::glyph_safe;
+        let panel = MagcouplingPanel::with_baseline(crate::app::starting_design());
+        let mut harness = Harness::of(panel, egui::vec2(SMALLEST.x, 3000.0));
+        crate::app::theme::apply(&harness.ctx);
+        crate::app::fonts::install(&harness.ctx);
+        harness.panel.explorer.open_path("model.pullout_Nm");
+        harness.frame(Vec::new());
+        harness.frame(Vec::new());
+        let edge = side_rect(&harness.ctx, "magcoupling_dashboard");
+        let grab = egui::pos2(edge.left() + 1.0, 400.0);
+        let to = egui::pos2(grab.x - 130.0, grab.y);
+        harness.frame(vec![egui::Event::PointerMoved(grab)]);
+        harness.frame(vec![primary_button(grab, true)]);
+        harness.frame(vec![egui::Event::PointerMoved(to)]);
+        harness.frame(vec![egui::Event::PointerMoved(to)]);
+        harness.frame(vec![primary_button(to, false)]);
+        harness.frame(vec![egui::Event::PointerGone]);
+        harness.frame(Vec::new());
+        let width = side_rect(&harness.ctx, "magcoupling_dashboard").width();
+        assert!(
+            width > DASHBOARD_WIDTH + 100.0,
+            "the drag moved nothing: {width}"
+        );
+        let mut checked = 0;
+        let mut broken = Vec::new();
+        for eq in registry().equations() {
+            let NoteFallback::Note(note) = note_fallback(&eq.target) else {
+                continue;
+            };
+            let title = glyph_safe(note.title);
+            harness.panel.explorer.open_path(&eq.target);
+            harness.frame(Vec::new());
+            let output = harness.frame(Vec::new());
+            let Some((_, text)) = text_shapes(&output, &title).next() else {
+                continue;
+            };
+            checked += 1;
+            let rows: Vec<String> = text
+                .galley
+                .rows
+                .iter()
+                .map(|row| row.glyphs.iter().map(|g| g.chr).collect())
+                .collect();
+            for word in title.split_whitespace() {
+                if !rows.iter().any(|row| row.contains(word)) {
+                    broken.push(format!("{}: {word} in {rows:?}", eq.target));
+                }
+            }
+        }
+        assert!(
+            checked > 20,
+            "few titles drawn: the test proves little ({checked})"
+        );
+        assert!(broken.is_empty(), "words broken: {broken:?}");
     }
 
     #[test]
@@ -12114,6 +12418,50 @@ mod tests {
         assert_eq!(harness.panel.explorer.current(), Some(START_HERE[1].1));
         assert_eq!(harness.panel.selection, Selection::Note(START_HERE[1].0));
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[cfg(feature = "app")]
+    #[test]
+    fn the_start_here_buttons_share_one_row_on_every_step_in_the_app_s_own_font() {
+        // BL-121: the step line and the three buttons were separate items of one wrapping line,
+        // so a long step line left Previous, Next and Stop on different rows. At the three
+        // window sizes, in the app's theme and font, the buttons stay on one row on every step.
+        use crate::engine::explain::notes::START_HERE;
+        use crate::gui::explorer::{NEXT, PREVIOUS, STOP};
+        for size in [
+            SMALLEST,
+            egui::vec2(1280.0, 800.0),
+            egui::vec2(1920.0, 1080.0),
+        ] {
+            let panel = MagcouplingPanel::with_baseline(crate::app::starting_design());
+            let mut harness = Harness::of(panel, size);
+            crate::app::theme::apply(&harness.ctx);
+            crate::app::fonts::install(&harness.ctx);
+            for step in 0..START_HERE.len() {
+                harness.panel.explorer.start(step);
+                for _ in 0..2 {
+                    harness.frame(Vec::new());
+                }
+                let output = harness.frame(Vec::new());
+                let panel = equation_panel_rect(&harness.ctx).expand(1.0);
+                let rows: Vec<f32> = [PREVIOUS, NEXT, STOP]
+                    .iter()
+                    .map(|word| {
+                        let rects: Vec<egui::Rect> = text_rects(&output, word)
+                            .into_iter()
+                            .filter(|r| panel.contains_rect(*r))
+                            .collect();
+                        assert_eq!(rects.len(), 1, "{word} at {size:?}, step {step}");
+                        rects[0].center().y
+                    })
+                    .collect();
+                assert!(
+                    rows.iter().all(|y| (y - rows[0]).abs() < 1.0),
+                    "buttons on rows {rows:?} at {size:?}, step {}",
+                    step + 1
+                );
+            }
+        }
     }
 
     #[test]
@@ -13332,5 +13680,125 @@ mod tests {
             }
         }
         assert_eq!(entries, 4, "the example design's four red checks");
+    }
+
+    #[test]
+    fn a_note_in_the_explain_panel_keeps_clear_of_its_scroll_bar() {
+        // BL-116: egui's floating scroll bar is drawn over the last 10 points of the area, widest
+        // under the pointer, so the pointer on it covered the ends of the note's lines (and the
+        // About link). The area keeps that strip for the bar: no text of the panel's body runs
+        // into it. A long note at 1024 x 700 scrolls, so the bar is up.
+        let mut harness = Harness::of(MagcouplingPanel::new(), SMALLEST);
+        harness.panel.selection = Selection::Note("torque_from_shear");
+        let mut output = harness.frame(Vec::new());
+        for _ in 0..6 {
+            output = harness.frame_after(0.5, Vec::new());
+        }
+        let column = side_rect(&harness.ctx, "magcoupling_dashboard");
+        let top = text_rect(&output, crate::gui::explain::HEADING)
+            .expect("the Explain heading")
+            .top();
+        // The panel's frame margin (8) and the bar's width (10).
+        let limit = column.right() - 8.0 - harness.ctx.style().spacing.scroll.bar_width;
+        let mut checked = 0;
+        for shape in flat_shapes(&output) {
+            if let egui::Shape::Text(text) = shape {
+                let rect = text.galley.rect.translate(text.pos.to_vec2());
+                if rect.top() >= top && rect.left() > column.left() {
+                    checked += 1;
+                    assert!(
+                        rect.right() <= limit + 0.5,
+                        "{:?} ends at {} past the bar's strip at {limit}",
+                        text.galley.text(),
+                        rect.right()
+                    );
+                }
+            }
+        }
+        assert!(checked > 5, "the note's texts were found: {checked}");
+    }
+
+    #[test]
+    fn the_explain_heading_s_link_ends_left_of_the_scroll_bar_under_the_pointer() {
+        // The browser review of R3 (F-2, BL-116's residual): the About link sits right-aligned
+        // in the heading row, flush with the edge of the strip the area keeps for its bar, and
+        // the bar, widest under the pointer, covered its last letter. With the pointer on the
+        // bar, the link's text ends left of the bar's widest rect.
+        let mut harness = Harness::of(MagcouplingPanel::new(), SMALLEST);
+        harness.panel.selection = Selection::Note("torque_from_shear");
+        let output = harness.frame(Vec::new());
+        let column = side_rect(&harness.ctx, "magcoupling_dashboard");
+        let heading = text_rect(&output, crate::gui::explain::HEADING).expect("the heading");
+        // The panel's frame margin (8): the strip is the area's last bar_width points.
+        let bar_width = harness.ctx.style().spacing.scroll.bar_width;
+        let strip = column.right() - 8.0 - bar_width;
+        let on_bar = egui::pos2(strip + bar_width / 2.0, heading.bottom() + 100.0);
+        harness.frame(vec![egui::Event::PointerMoved(on_bar)]);
+        let mut output = harness.frame(Vec::new());
+        for _ in 0..6 {
+            output = harness.frame_after(0.5, Vec::new());
+        }
+        let widest = flat_shapes(&output)
+            .into_iter()
+            .filter_map(|shape| match shape {
+                egui::Shape::Rect(r) if r.rect.left() >= strip - 1.0 && r.rect.height() > 50.0 => {
+                    Some(r.rect)
+                }
+                _ => None,
+            })
+            .max_by(|a, b| a.width().total_cmp(&b.width()))
+            .expect("the bar");
+        assert!(widest.width() > 5.0, "the bar widened: {widest:?}");
+        let about = text_rect(&output, crate::gui::explain::ABOUT).expect("the About link");
+        assert!(
+            about.right() < widest.left(),
+            "the link {about:?} runs under the bar {widest:?}"
+        );
+    }
+
+    #[test]
+    fn the_formula_s_scroll_bar_covers_none_of_its_glyphs_under_the_pointer() {
+        // BL-123: egui's floating sideways bar is drawn over the last rows of the area's view,
+        // widest under the pointer, and covered the lower half of the formula's last row. The
+        // area keeps a strip under the formula for it: with the pointer on the bar, the bar's
+        // widest rect starts below the formula's lowest glyph.
+        let mut harness = Harness::of(MagcouplingPanel::new(), SMALLEST);
+        harness.panel.explorer.open_path("metal.hot_min_check");
+        let mut output = harness.frame(Vec::new());
+        let formula = text_shapes(&output, "\"Estimate covers hot min\"")
+            .next()
+            .expect("the formula's last row");
+        let (view, last_row) = (formula.0, formula.1.visual_bounding_rect());
+        // The bar's rects: wide and thin, in the formula's view, under its glyphs.
+        let bars = |output: &egui::FullOutput| -> Vec<egui::Rect> {
+            clipped_flat_shapes(output)
+                .into_iter()
+                .filter_map(|(_, shape)| match shape {
+                    egui::Shape::Rect(r)
+                        if r.rect.width() > 100.0
+                            && r.rect.height() <= 10.5
+                            && r.rect.bottom() > last_row.center().y
+                            && r.rect.top() > view.top() =>
+                    {
+                        Some(r.rect)
+                    }
+                    _ => None,
+                })
+                .collect()
+        };
+        let at = bars(&output).first().expect("the sideways bar").center();
+        harness.frame(vec![egui::Event::PointerMoved(at)]);
+        for _ in 0..6 {
+            output = harness.frame_after(0.5, Vec::new());
+        }
+        let widest = bars(&output)
+            .into_iter()
+            .max_by(|a, b| a.height().total_cmp(&b.height()))
+            .expect("the bar under the pointer");
+        assert!(widest.height() > 5.0, "the bar widened: {widest:?}");
+        assert!(
+            widest.top() >= last_row.bottom() - 0.5,
+            "the bar {widest:?} covers the formula's last row {last_row:?}"
+        );
     }
 }

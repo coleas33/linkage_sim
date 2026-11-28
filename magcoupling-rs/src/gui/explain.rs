@@ -220,6 +220,10 @@ pub(crate) fn explain_ui(
         ui.colored_label(look::quiet_text(ui.visuals()), HEADING);
         if selection != Selection::Nothing {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // The link sat flush against the strip the area keeps for its floating bar, and
+                // the bar, widest under the pointer, covered its last letter (the browser review
+                // of R3, F-2): egui's margin between contents and bar keeps it clear.
+                ui.add_space(ui.spacing().scroll.bar_inner_margin);
                 if ui.link(ABOUT).clicked() {
                     asked = Some(Asked::Select(Selection::Nothing));
                 }
@@ -2310,6 +2314,32 @@ mod tests {
                 Learn::Assumption(_) | Learn::None(_) => None,
             };
             assert_eq!(events.note, want, "{path}");
+        }
+    }
+
+    #[test]
+    fn a_space_claim_overshoot_s_entry_links_the_space_claim_check() {
+        // BL-095: the three overshoot results are no dashboard rows, yet each one's entry
+        // names the fit check it fails: "Checks it touches" and a link that selects it.
+        let inputs = DesignInputs::default();
+        let guide = guidance::guide(guidance::SPACE_CLAIM).expect("the space claim guide");
+        for path in [
+            "housing.diameter_overshoot_mm",
+            "housing.length_overshoot_mm",
+            "housing.bay_overshoot_mm",
+        ] {
+            let ctx = egui::Context::default();
+            let (output, _, _) = frames(&ctx, &inputs, Selection::Result(path), false, vec![]);
+            assert!(
+                drawn_texts(&output).iter().any(|t| t == CHECKS_IT_TOUCHES),
+                "{path}"
+            );
+            let (asked, _) = click(&inputs, Selection::Result(path), guide.label);
+            assert_eq!(
+                asked,
+                Some(Asked::Select(Selection::Check(guidance::SPACE_CLAIM))),
+                "{path}"
+            );
         }
     }
 

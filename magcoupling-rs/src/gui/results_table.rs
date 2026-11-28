@@ -27,6 +27,7 @@ use crate::gui::format::{non_finite_text, search_haystack, search_needle, value_
 use crate::gui::plain_text::display_label;
 use crate::gui::readouts::Readouts;
 use crate::gui::result_groups::{OTHER_RESULTS, result_groups};
+use crate::gui::scroll_area;
 use crate::gui::session::{Design, design_json, json_value};
 use crate::gui::trace::{Trace, TraceKind};
 use crate::{DesignInputs, DesignResults, compute_all};
@@ -577,8 +578,8 @@ impl ResultsTable {
         let row_width = row_width(widths, spacing);
         let mut clicked = None;
         // In the height left, however short (egui's 64-point floor lowered to none).
-        egui::ScrollArea::both()
-            .id_salt("magcoupling_results_scroll")
+        scroll_area(ui, "magcoupling_results_scroll")
+            .scroll([true, true])
             .auto_shrink([false, false])
             .min_scrolled_height(0.0)
             .show_rows(ui, row_height, lines.len(), |ui, range| {

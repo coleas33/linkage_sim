@@ -28,6 +28,7 @@ use crate::gui::geometry::{Mm, finite};
 use crate::gui::geometry_view::{DIMENSION, Transform, arrowhead, plated_text, side_by_side};
 use crate::gui::readouts::Readouts;
 use crate::gui::results_table::table_entries;
+use crate::gui::scroll_area;
 use crate::{DesignInputs, DesignResults};
 
 /// drawing.py's `ValueError` text, shown when no screw size fits.
@@ -791,8 +792,7 @@ pub fn clamp_ui(
     readouts: &mut Readouts,
 ) {
     // In the height left, however short (egui's 64-point floor lowered to none).
-    egui::ScrollArea::vertical()
-        .id_salt("magcoupling_clamp_scroll")
+    scroll_area(ui, "magcoupling_clamp_scroll")
         .auto_shrink([false, false])
         .min_scrolled_height(0.0)
         .show(ui, |ui| {

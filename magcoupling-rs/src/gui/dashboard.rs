@@ -682,9 +682,20 @@ pub(crate) fn end_effect_banner_ui(
     true
 }
 
-/// The check whose level badges the dashboard row at `path`; `None` for a row with no badge
-/// or a path that is no row.
+/// The space claim's three overshoot results: no dashboard rows, yet each is the failing
+/// measure of the space-claim check (BL-095).
+const SPACE_CLAIM_OVERSHOOTS: [&str; 3] = [
+    "housing.diameter_overshoot_mm",
+    "housing.length_overshoot_mm",
+    "housing.bay_overshoot_mm",
+];
+
+/// The check whose level badges the dashboard row at `path`, or that a space-claim overshoot
+/// result fails; `None` for a row with no badge or a path that is neither.
 pub(crate) fn badging_check(path: &str) -> Option<&'static str> {
+    if SPACE_CLAIM_OVERSHOOTS.contains(&path) {
+        return Some(crate::gui::guidance::SPACE_CLAIM);
+    }
     DASHBOARD
         .iter()
         .find(|&&(row, _)| row == path)

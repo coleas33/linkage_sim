@@ -277,7 +277,9 @@ pub fn cap_skirt_mm(inputs: &DesignInputs) -> f64 {
 pub fn wall_cautions(inputs: &DesignInputs, results: &DesignResults) -> Vec<String> {
     let mut lines = Vec::new();
     let key_wall = results.model.hub_wall_past_key_mm;
-    if key_wall.is_finite() && key_wall > 0.0 && key_wall < 2.5 {
+    // Compared as the line prints it (0.01 mm), so it never reads 2.50 beside "about 2.5" (BL-078).
+    let printed_wall: f64 = format!("{key_wall:.2}").parse().unwrap_or(key_wall);
+    if key_wall.is_finite() && key_wall > 0.0 && printed_wall < 2.5 {
         lines.push(format!(
             "Wall past keyway: {key_wall:.2} mm; existing guidance is about 2.5 mm."
         ));

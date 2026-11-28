@@ -96,6 +96,111 @@ pub(crate) fn label_block(ui: &mut egui::Ui, label: impl egui::Widget) -> egui::
     response
 }
 
+/// The ids of the Tab stops the page draws no focus on (BL-102): egui registers each scroll
+/// area's drag surface and its two scroll bars, and each resizable panel's edge, as widgets
+/// the keyboard can reach, and none of them shows it. Kept in the context's temporary data.
+fn hidden_stops(ctx: &egui::Context) -> std::collections::HashSet<egui::Id> {
+    ctx.data_mut(|d| d.get_temp::<std::collections::HashSet<egui::Id>>(egui::Id::NULL))
+        .unwrap_or_default()
+}
+
+fn hide_stops(ctx: &egui::Context, ids: impl IntoIterator<Item = egui::Id>) {
+    ctx.data_mut(|d| {
+        d.get_temp_mut_or_default::<std::collections::HashSet<egui::Id>>(egui::Id::NULL)
+            .extend(ids)
+    });
+}
+
+/// An up-and-down scroll area salted `id_salt` (`.scroll([..])` changes its axes), its drag surface and scroll bars among the stops [`TabWalk`] passes
+/// (egui's ids: `id.with("area")` for the surface, `id.with(0)` and `id.with(1)` for the bars;
+/// the surface stays, as a touch screen drags the content by it). Every scroll area of the page
+/// is made through this.
+pub(crate) fn scroll_area(ui: &egui::Ui, id_salt: &str) -> egui::ScrollArea {
+    let id = ui.make_persistent_id(egui::Id::new(id_salt));
+    hide_stops(
+        ui.ctx(),
+        [id.with("area"), id.with(0_usize), id.with(1_usize)],
+    );
+    egui::ScrollArea::vertical().id_salt(id_salt)
+}
+
+/// The edge of the resizable panel `panel_id` (egui's `id.with("__resize")`), a stop
+/// [`TabWalk`] passes.
+pub(crate) fn hide_resize_edge(ctx: &egui::Context, panel_id: &str) {
+    hide_stops(ctx, [egui::Id::new(panel_id).with("__resize")]);
+}
+
+/// The Tab key's walk, which passes the stops that show no focus (BL-102). egui hands the focus
+/// to the next widget it registered, so a stop that shows nothing is reached and left by a press
+/// that seems to do nothing. When a Tab (or Shift+Tab) press has put the focus on one, the focus
+/// moves on at the end of the frame to the next (or the previous) widget egui would stop on, in
+/// the order it registered them; past the last, the focus goes to none, as egui's does. Shift+Tab
+/// puts the focus on its widget as the next frame begins, so the press before counts too. A click
+/// or a drag on a surface arrives with no press and keeps the focus where egui puts it.
+#[derive(Default)]
+pub(crate) struct TabWalk {
+    /// The focus at the end of the last frame.
+    seen: Option<egui::Id>,
+    /// Whether the last frame had a Tab press, and whether it held Shift.
+    tabbed: Option<bool>,
+}
+
+impl TabWalk {
+    /// Called at the end of the frame, once every widget is registered.
+    pub(crate) fn pass_hidden_stops(&mut self, ctx: &egui::Context) {
+        // The key event's own modifiers, as egui's focus reads them.
+        let tab = ctx.input(|i| {
+            i.events.iter().find_map(|event| match event {
+                egui::Event::Key {
+                    key: egui::Key::Tab,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } => Some(modifiers.shift),
+                _ => None,
+            })
+        });
+        let walking = tab.or(self.tabbed);
+        self.tabbed = tab;
+        let mut focus = ctx.memory(|m| m.focused());
+        if let (Some(id), Some(back)) = (focus, walking)
+            && focus != self.seen
+            && hidden_stops(ctx).contains(&id)
+        {
+            focus = next_stop(ctx, id, back);
+            ctx.memory_mut(|m| match focus {
+                Some(next) => m.request_focus(next),
+                None => m.surrender_focus(id),
+            });
+        }
+        self.seen = focus;
+    }
+}
+
+/// The widget after `from` (before it, going `back`) that egui stops on and the page shows a
+/// focus on, in registration order within `from`'s layer.
+fn next_stop(ctx: &egui::Context, from: egui::Id, back: bool) -> Option<egui::Id> {
+    let hidden = hidden_stops(ctx);
+    let stops: Vec<egui::Id> = ctx.viewport(|v| {
+        let widgets = &v.this_pass.widgets;
+        let Some(layer) = widgets.get(from).map(|w| w.layer_id) else {
+            return Vec::new();
+        };
+        widgets
+            .get_layer(layer)
+            .filter(|w| w.enabled && w.sense.is_focusable())
+            .map(|w| w.id)
+            .collect()
+    });
+    let at = stops.iter().position(|id| *id == from)?;
+    let usable = |id: &&egui::Id| !hidden.contains(id);
+    if back {
+        stops[..at].iter().rev().find(usable).copied()
+    } else {
+        stops[at + 1..].iter().find(usable).copied()
+    }
+}
+
 /// Scrolls the scroll area whose content `ui` is, by the smallest amount that shows it whole,
 /// to the widget the keyboard's focus has arrived on (BL-100: egui scrolls to no widget for
 /// taking the focus). Called last in the area's content. Only in the first frame the area is
@@ -124,14 +229,21 @@ pub(crate) fn follow_focus(ui: &egui::Ui) -> Option<egui::Rect> {
     // the outer area's view (egui keeps the parent's clip on the axis an area does not scroll),
     // so its widgets are also those in its content: else it would take the outer area's,
     // read from the frame before, and scroll the outer area a second time (BL-101).
+    // A stop that shows no focus (BL-102) is passed on within the frame: no scroll to it.
+    let hidden = focused.is_some_and(|id| hidden_stops(ui.ctx()).contains(&id));
     if focused != seen
+        && !hidden
         && let Some(widget) = focused.and_then(|id| ui.ctx().read_response(id))
         && widget.layer_id == ui.layer_id()
         && widget.interact_rect == widget.rect.intersect(ui.clip_rect())
         && ui.min_rect().contains_rect(widget.rect)
     {
-        ui.scroll_to_rect(widget.rect, None);
-        return Some(widget.rect);
+        // A point past the foot: the app's font heights are not whole points, and the least
+        // scroll left a value box 0.4 of a point under the view (BL-119).
+        let mut rect = widget.rect;
+        rect.max.y += 1.0;
+        ui.scroll_to_rect(rect, None);
+        return Some(rect);
     }
     None
 }
@@ -141,20 +253,33 @@ pub(crate) fn follow_focus(ui: &egui::Ui) -> Option<egui::Rect> {
 /// [`follow_focus`] last in its content, so it scrolls sideways to the widget; egui gives it
 /// both axes' targets, so the outer area's content asks again for the rect once it has ended,
 /// and the outer area scrolls up or down to the widget. A widget wider than the view shows from
-/// its start (egui's least scroll).
+/// its start (egui's least scroll) when the area was not scrolled sideways before; one scrolled
+/// sideways stays where it is until a stop takes the focus.
+///
+/// egui's scroll bar floats: it is drawn over the last rows of the area's view, thin until the
+/// pointer is near and then as wide as `bar_width`, so the pointer on a formula covered the lower
+/// half of its last row (BL-123). The area keeps a strip of that width under its content for it.
 pub(crate) fn sideways_scroll_area<R>(
     ui: &mut egui::Ui,
     id_salt: &str,
     add: impl FnOnce(&mut egui::Ui) -> R,
 ) -> R {
-    let (inner, followed) = egui::ScrollArea::horizontal()
-        .id_salt(id_salt)
-        .show(ui, |ui| {
-            let inner = add(ui);
-            (inner, follow_focus(ui))
+    let (inner, followed) = ui
+        .scope(|ui| {
+            ui.spacing_mut().scroll.floating_allocated_width = ui.spacing().scroll.bar_width;
+            scroll_area(ui, id_salt)
+                .scroll([true, false])
+                .show(ui, |ui| {
+                    let inner = add(ui);
+                    (inner, follow_focus(ui))
+                })
+                .inner
         })
         .inner;
-    if let Some(rect) = followed {
+    if let Some(mut rect) = followed {
+        // egui clips a sideways area's content by the outer view's foot less the strip, so the
+        // outer area scrolls the strip past the widget too.
+        rect.max.y += ui.spacing().scroll.bar_width;
         ui.scroll_to_rect(rect, None);
     }
     inner
