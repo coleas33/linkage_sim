@@ -886,12 +886,16 @@ mod tests {
         // of 5 over a labelled 2 put '15' in '6 8 10 12 14 15 16'); the vertical axes still
         // carry numbers, and 1920 x 1080 keeps at least the numbers it drew (10 to 16 on four
         // axes). The windows run from the smallest, 1024 points wide, to 1360 at 700 and 800
-        // points high, past the plot widths B-2 found uneven (340 to 680).
+        // points high, past the plot widths B-2 found uneven (340 to 680). The browser review
+        // of R3 (F-1): on the example design at 1024 x 700 Slip heating's last number, 1500,
+        // sat centred on its tick at the plot's right edge and was cut to '150'. Each of the
+        // other plot designs is drawn at 1024 x 700 and 1280 x 800 too, and on every design no
+        // horizontal number's text passes its plot's frame.
         use crate::gui::CentreView;
         use crate::gui::plots::PlotKind;
         use crate::gui::test_support::{cut_texts, flat_shapes};
         const GAP: f32 = 8.0;
-        let sizes: Vec<egui::Vec2> = [700.0, 800.0]
+        let every_size: Vec<egui::Vec2> = [700.0, 800.0]
             .into_iter()
             .flat_map(|height| {
                 (1024..=1360)
@@ -900,65 +904,86 @@ mod tests {
             })
             .chain([egui::vec2(1920.0, 1080.0)])
             .collect();
-        assert!(sizes.contains(&WINDOWS[0]) && sizes.contains(&WINDOWS[1]));
-        let ctx = egui::Context::default();
-        let mut app = MagcouplingApp::new(&ctx);
-        frame_on(&ctx, &mut app, sizes[0], Vec::new());
-        for kind in PlotKind::ALL {
-            show_view(&ctx, &mut app, sizes[0], CentreView::Plot(kind), 2);
-            for &size in &sizes {
-                let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
-                let what = format!("{size:?}, {kind:?}");
-                frame_on(&ctx, &mut app, size, Vec::new());
-                let output = frame_on(&ctx, &mut app, size, Vec::new());
-                let (left, right) = (
-                    side_rect(&ctx, "magcoupling_inputs").right(),
-                    side_rect(&ctx, "magcoupling_dashboard").left(),
-                );
-                let mut numbers: Vec<(String, egui::Rect)> = flat_shapes(&output)
-                    .into_iter()
-                    .filter_map(|shape| match shape {
-                        egui::Shape::Text(text) => {
-                            let rect = text.visual_bounding_rect();
-                            let in_centre = left < rect.center().x && rect.center().x < right;
-                            let number = text.galley.text().parse::<f64>().is_ok();
-                            (in_centre && number).then(|| (text.galley.text().to_owned(), rect))
-                        }
-                        _ => None,
-                    })
-                    .collect();
-                let bottom = numbers
-                    .iter()
-                    .map(|(_, rect)| rect.center().y)
-                    .fold(f32::MIN, f32::max);
-                let (mut row, rest): (Vec<_>, Vec<_>) = numbers
-                    .drain(..)
-                    .partition(|(_, rect)| (rect.center().y - bottom).abs() < 2.0);
-                row.sort_by(|a, b| a.1.left().total_cmp(&b.1.left()));
-                let texts: Vec<&str> = row.iter().map(|(t, _)| t.as_str()).collect();
-                assert!(row.len() >= 3, "{what}: the horizontal axis: {texts:?}");
-                assert!(
-                    rest.len() >= 2,
-                    "{what}: the vertical axis: {} numbers",
-                    rest.len()
-                );
-                for pair in row.windows(2) {
-                    let gap = pair[1].1.left() - pair[0].1.right();
-                    assert!(gap >= GAP, "{what}: {texts:?}: a gap of {gap}");
+        assert!(every_size.contains(&WINDOWS[0]) && every_size.contains(&WINDOWS[1]));
+        for design in PLOT_DESIGNS {
+            let sizes = if design == "starting" {
+                every_size.clone()
+            } else {
+                vec![WINDOWS[1], WINDOWS[0]]
+            };
+            let (ctx, mut app) = app_on_plot_design(design, sizes[0]);
+            for kind in PlotKind::ALL {
+                show_view(&ctx, &mut app, sizes[0], CentreView::Plot(kind), 2);
+                for &size in &sizes {
+                    let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+                    let what = format!("{size:?}, {design}, {kind:?}");
+                    frame_on(&ctx, &mut app, size, Vec::new());
+                    let output = frame_on(&ctx, &mut app, size, Vec::new());
+                    let (left, right) = (
+                        side_rect(&ctx, "magcoupling_inputs").right(),
+                        side_rect(&ctx, "magcoupling_dashboard").left(),
+                    );
+                    let mut numbers: Vec<(String, egui::Rect)> = flat_shapes(&output)
+                        .into_iter()
+                        .filter_map(|shape| match shape {
+                            egui::Shape::Text(text) => {
+                                let rect = text.visual_bounding_rect();
+                                let in_centre = left < rect.center().x && rect.center().x < right;
+                                let number = text.galley.text().parse::<f64>().is_ok();
+                                (in_centre && number).then(|| (text.galley.text().to_owned(), rect))
+                            }
+                            _ => None,
+                        })
+                        .collect();
+                    let bottom = numbers
+                        .iter()
+                        .map(|(_, rect)| rect.center().y)
+                        .fold(f32::MIN, f32::max);
+                    let (mut row, rest): (Vec<_>, Vec<_>) = numbers
+                        .drain(..)
+                        .partition(|(_, rect)| (rect.center().y - bottom).abs() < 2.0);
+                    row.sort_by(|a, b| a.1.left().total_cmp(&b.1.left()));
+                    let texts: Vec<&str> = row.iter().map(|(t, _)| t.as_str()).collect();
+                    assert!(row.len() >= 3, "{what}: the horizontal axis: {texts:?}");
+                    assert!(
+                        rest.len() >= 2,
+                        "{what}: the vertical axis: {} numbers",
+                        rest.len()
+                    );
+                    for pair in row.windows(2) {
+                        let gap = pair[1].1.left() - pair[0].1.right();
+                        assert!(gap >= GAP, "{what}: {texts:?}: a gap of {gap}");
+                    }
+                    let values: Vec<f64> = texts.iter().map(|t| t.parse().unwrap()).collect();
+                    let step = values[1] - values[0];
+                    assert!(
+                        values
+                            .windows(2)
+                            .all(|pair| ((pair[1] - pair[0]) - step).abs() <= 1e-9 * step.abs()),
+                        "{what}: uneven steps: {texts:?}"
+                    );
+                    // F-1: the shape holds the whole number; the clip cut it where it passed
+                    // the plot's frame.
+                    let frame = *egui_plot::PlotMemory::load(&ctx, kind.id())
+                        .expect("the plot ran this frame")
+                        .transform()
+                        .frame();
+                    for (text, rect) in &row {
+                        assert!(
+                            frame.left() <= rect.left() && rect.right() <= frame.right(),
+                            "{what}: {texts:?}: {text:?} at {rect:?} passes the frame {frame:?}"
+                        );
+                    }
+                    // cut_texts names each text as "\"1500\" by 9 points".
+                    let cut = cut_texts(&output, screen);
+                    assert!(
+                        !cut.iter().any(|t| t
+                            .split('"')
+                            .nth(1)
+                            .is_some_and(|text| text.parse::<f64>().is_ok())),
+                        "{what}: cut: {cut:?}"
+                    );
                 }
-                let values: Vec<f64> = texts.iter().map(|t| t.parse().unwrap()).collect();
-                let step = values[1] - values[0];
-                assert!(
-                    values
-                        .windows(2)
-                        .all(|pair| ((pair[1] - pair[0]) - step).abs() <= 1e-9 * step.abs()),
-                    "{what}: uneven steps: {texts:?}"
-                );
-                let cut = cut_texts(&output, screen);
-                assert!(
-                    cut.iter().all(|t| t.parse::<f64>().is_err()),
-                    "{what}: cut: {cut:?}"
-                );
             }
         }
     }
@@ -976,39 +1001,8 @@ mod tests {
         use crate::gui::test_support::flat_shapes;
         let mut covered = Vec::new();
         for size in [WINDOWS[1], WINDOWS[0]] {
-            // The starting design, the example design, and the example 5 degrees hotter: its
-            // high case reaches the limit, so Slip heating marks the time to it.
-            for design in ["starting", "example", "hot example", "smoke link"] {
-                let ctx = egui::Context::default();
-                let mut app = MagcouplingApp::new(&ctx);
-                if design != "starting" {
-                    app.panel.open_example_design();
-                }
-                if design == "smoke link" {
-                    // The gui-smoke share link's design: its Slip heating marks the time to the
-                    // limit under a top-right legend (BL-106, N-4).
-                    let script = include_str!("../../.claude/workflows/gui-smoke.js");
-                    let marker = "const MAGCOUPLING_SMOKE_PAYLOAD = '";
-                    let start = script.find(marker).expect("the smoke payload") + marker.len();
-                    let end = start + script[start..].find('\'').expect("its closing quote");
-                    app.panel.load_share_payload(&script[start..end]).unwrap();
-                    // Auto sizing solves after its debounce: let that pass, as the web page does.
-                    for t in 1..=4 {
-                        let input = egui::RawInput {
-                            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
-                            time: Some(f64::from(t)),
-                            ..Default::default()
-                        };
-                        let _ = ctx.run(input, |ctx| app.ui(ctx));
-                    }
-                }
-                if design == "hot example" {
-                    let mut hot = Design::default();
-                    hot.inputs.temperature.duty.hot_ambient_C += 5.0;
-                    let text = crate::gui::session::design_to_json(&hot);
-                    app.panel.load_design_file(&text).unwrap();
-                }
-                frame_on(&ctx, &mut app, size, Vec::new());
+            for design in PLOT_DESIGNS {
+                let (ctx, mut app) = app_on_plot_design(design, size);
                 for kind in PlotKind::ALL {
                     let what = format!("{size:?}, {design}, {kind:?}");
                     let output = show_view(&ctx, &mut app, size, CentreView::Plot(kind), 2);
@@ -1057,6 +1051,45 @@ mod tests {
             }
         }
         assert!(covered.is_empty(), "{covered:#?}");
+    }
+
+    /// The designs the plots' tests draw: the starting design; the example design; the example
+    /// 5 degrees hotter, whose high case reaches the limit, so Slip heating marks the time to
+    /// it; and the gui-smoke share link's, whose Slip heating marks the time to the limit under
+    /// a top-right legend (BL-106, N-4).
+    const PLOT_DESIGNS: [&str; 4] = ["starting", "example", "hot example", "smoke link"];
+
+    /// A new app on a screen of `size` showing `design`, one of [`PLOT_DESIGNS`], one frame in.
+    fn app_on_plot_design(design: &str, size: egui::Vec2) -> (egui::Context, MagcouplingApp) {
+        let ctx = egui::Context::default();
+        let mut app = MagcouplingApp::new(&ctx);
+        if design != "starting" {
+            app.panel.open_example_design();
+        }
+        if design == "smoke link" {
+            let script = include_str!("../../.claude/workflows/gui-smoke.js");
+            let marker = "const MAGCOUPLING_SMOKE_PAYLOAD = '";
+            let start = script.find(marker).expect("the smoke payload") + marker.len();
+            let end = start + script[start..].find('\'').expect("its closing quote");
+            app.panel.load_share_payload(&script[start..end]).unwrap();
+            // Auto sizing solves after its debounce: let that pass, as the web page does.
+            for t in 1..=4 {
+                let input = egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                    time: Some(f64::from(t)),
+                    ..Default::default()
+                };
+                let _ = ctx.run(input, |ctx| app.ui(ctx));
+            }
+        }
+        if design == "hot example" {
+            let mut hot = Design::default();
+            hot.inputs.temperature.duty.hot_ambient_C += 5.0;
+            let text = crate::gui::session::design_to_json(&hot);
+            app.panel.load_design_file(&text).unwrap();
+        }
+        frame_on(&ctx, &mut app, size, Vec::new());
+        (ctx, app)
     }
 
     #[test]

@@ -519,13 +519,32 @@ const AMBER: Color32 = Color32::from_rgb(230, 170, 70);
 const VIOLET: Color32 = Color32::from_rgb(180, 140, 230);
 
 /// A plot with its id ([`PlotKind::id`]), the panel's legend and axis labels, its tick numbers
-/// at full strength or not drawn ([`X_TICK_SPACING`], [`Y_TICK_SPACING`]), filling the height
-/// left and no more (`height` is egui_plot's smallest height too; it keeps at least 1 point).
+/// at full strength or not drawn ([`X_TICK_SPACING`], [`Y_TICK_SPACING`]), no horizontal number
+/// past the plot's frame, filling the height left and no more (`height` is egui_plot's smallest
+/// height too; it keeps at least 1 point).
 fn plot(ui: &egui::Ui, kind: PlotKind, x: &str, y: &str) -> Plot<'static> {
+    // egui_plot centres a horizontal number on its tick, so one near the frame's edge passed it
+    // and was cut (the browser review of R3, F-1: Slip heating's 1500 read '150'). Such a
+    // number is left out and its tick kept. The axis' points per unit come from the spacer,
+    // which egui_plot runs each frame before it formats that frame's numbers; until then the
+    // check passes every number.
+    let per_unit = std::rc::Rc::new(std::cell::Cell::new(f64::INFINITY));
+    let spacer_per_unit = per_unit.clone();
+    let (ctx, font) = (ui.ctx().clone(), egui::TextStyle::Body.resolve(ui.style()));
     let x_axis = AxisHints::new_x()
         .label(x.to_owned())
         .label_spacing(egui::Rangef::point(X_TICK_SPACING))
-        .formatter(x_number);
+        .formatter(move |mark, range| {
+            let text = x_number(mark, range);
+            // egui_plot lays its numbers out in this font, with no wrap.
+            let width = ctx
+                .fonts(|f| f.layout_no_wrap(text.clone(), font.clone(), Color32::PLACEHOLDER))
+                .size()
+                .x;
+            let half = f64::from(width) / 2.0 / per_unit.get();
+            let inside = *range.start() + half <= mark.value && mark.value + half <= *range.end();
+            if inside { text } else { String::new() }
+        });
     let y_axis = AxisHints::new_y()
         .label(y.to_owned())
         .label_spacing(egui::Rangef::point(Y_TICK_SPACING));
@@ -533,7 +552,10 @@ fn plot(ui: &egui::Ui, kind: PlotKind, x: &str, y: &str) -> Plot<'static> {
         .id(kind.id())
         .legend(Legend::default().position(kind.legend_corner()))
         .grid_spacing(egui::Rangef::new(GRID_SPACING_MIN as f32, 300.0))
-        .x_grid_spacer(egui_plot::uniform_grid_spacer(x_grid_steps))
+        .x_grid_spacer(egui_plot::uniform_grid_spacer(move |input| {
+            spacer_per_unit.set(GRID_SPACING_MIN / input.base_step_size);
+            x_grid_steps(input)
+        }))
         .custom_x_axes(vec![x_axis])
         .custom_y_axes(vec![y_axis])
         .height(ui.available_height().max(0.0))

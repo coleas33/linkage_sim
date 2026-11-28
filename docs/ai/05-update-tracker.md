@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - Magcoupler: R3 browser review fix wave (F-1, F-2; BL-125 to BL-127 filed)
+
+- gui/plots.rs: `plot` leaves out a horizontal number whose text would pass the plot's frame on either side and keeps its tick (the spacer hands the formatter the axis' points per unit each frame), so on the gui-smoke share link's design at 1024 x 700 Slip heating reads '0 500 1000', not '0 500 1000 150' (F-1, BL-105); app.rs: the BL-105 axis test also draws the example, hotter example and share-link designs at 1024 x 700 and 1280 x 800, asserts no horizontal number passes its plot's frame, and its cut check now reads the quoted text (it parsed the whole '"1500" by 9 points' and never failed); the plot designs are shared with the BL-106 legend test (`PLOT_DESIGNS`, `app_on_plot_design`). gui/explain.rs: the heading row's About link stands `scroll.bar_inner_margin` left of the strip the Explain area keeps for its bar, so the bar under the pointer covers no letter of it (F-2, BL-116); test the_explain_heading_s_link_ends_left_of_the_scroll_bar_under_the_pointer (panel.rs). Docs: the record docs/analyses/2026-11-28-magcoupler-r3-visual-review.md with its Fix wave section, README, backlog BL-105 and BL-116 notes, BL-125 (F-3), BL-126 (F-5) and BL-127 (F-6) filed.
+
 ## 2026-11-28 - Magcoupler: R3 review fixes (N-4, N-5, N-7, N-9)
 
 - app.rs: the BL-106 legend test gains the gui-smoke share link's design (a fourth case, read from gui-smoke.js), so Slip heating's time-to-limit dot under a top-right legend fails it; gui/input_ui.rs: `slider_decimals` shared by `slider` and `add_slider`; docs: the six tracker lines of BL-120, BL-121, BL-115, BL-116, BL-119 and BL-123 moved up into this branch's entries, README lines on BL-111, BL-115, BL-116 and BL-123 and two stale sentences reworded (BL-102, BL-101), docs/ai 02 (BL-100's paragraph names BL-119 and BL-123), backlog BL-115 notes the Tab order (Close, Start here, then the crumbs).

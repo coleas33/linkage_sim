@@ -13719,6 +13719,44 @@ mod tests {
     }
 
     #[test]
+    fn the_explain_heading_s_link_ends_left_of_the_scroll_bar_under_the_pointer() {
+        // The browser review of R3 (F-2, BL-116's residual): the About link sits right-aligned
+        // in the heading row, flush with the edge of the strip the area keeps for its bar, and
+        // the bar, widest under the pointer, covered its last letter. With the pointer on the
+        // bar, the link's text ends left of the bar's widest rect.
+        let mut harness = Harness::of(MagcouplingPanel::new(), SMALLEST);
+        harness.panel.selection = Selection::Note("torque_from_shear");
+        let output = harness.frame(Vec::new());
+        let column = side_rect(&harness.ctx, "magcoupling_dashboard");
+        let heading = text_rect(&output, crate::gui::explain::HEADING).expect("the heading");
+        // The panel's frame margin (8): the strip is the area's last bar_width points.
+        let bar_width = harness.ctx.style().spacing.scroll.bar_width;
+        let strip = column.right() - 8.0 - bar_width;
+        let on_bar = egui::pos2(strip + bar_width / 2.0, heading.bottom() + 100.0);
+        harness.frame(vec![egui::Event::PointerMoved(on_bar)]);
+        let mut output = harness.frame(Vec::new());
+        for _ in 0..6 {
+            output = harness.frame_after(0.5, Vec::new());
+        }
+        let widest = flat_shapes(&output)
+            .into_iter()
+            .filter_map(|shape| match shape {
+                egui::Shape::Rect(r) if r.rect.left() >= strip - 1.0 && r.rect.height() > 50.0 => {
+                    Some(r.rect)
+                }
+                _ => None,
+            })
+            .max_by(|a, b| a.width().total_cmp(&b.width()))
+            .expect("the bar");
+        assert!(widest.width() > 5.0, "the bar widened: {widest:?}");
+        let about = text_rect(&output, crate::gui::explain::ABOUT).expect("the About link");
+        assert!(
+            about.right() < widest.left(),
+            "the link {about:?} runs under the bar {widest:?}"
+        );
+    }
+
+    #[test]
     fn the_formula_s_scroll_bar_covers_none_of_its_glyphs_under_the_pointer() {
         // BL-123: egui's floating sideways bar is drawn over the last rows of the area's view,
         // widest under the pointer, and covered the lower half of the formula's last row. The

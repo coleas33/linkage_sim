@@ -220,6 +220,10 @@ pub(crate) fn explain_ui(
         ui.colored_label(look::quiet_text(ui.visuals()), HEADING);
         if selection != Selection::Nothing {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // The link sat flush against the strip the area keeps for its floating bar, and
+                // the bar, widest under the pointer, covered its last letter (the browser review
+                // of R3, F-2): egui's margin between contents and bar keeps it clear.
+                ui.add_space(ui.spacing().scroll.bar_inner_margin);
                 if ui.link(ABOUT).clicked() {
                     asked = Some(Asked::Select(Selection::Nothing));
                 }

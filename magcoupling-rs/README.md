@@ -751,6 +751,9 @@ can name an input Auto holds; its link then frames a locked row (known limitatio
   one finer than it (`DECADE_STEPS`), so the numbers are one step apart (a coarse 5 over a
   numbered 2 once read '6 8 10 12 14 15 16': the branch review, B-2), and each number takes the
   decimals its mark's step needs (`x_number`), so a zoom below a step of 0.01 repeats none (N-6).
+  A number whose text would pass the plot's frame on either side is left out and its tick kept
+  (egui_plot centres a number on its tick: Slip heating's 1500 was cut to '150' at the right
+  edge at 1024 x 700, the R3 browser review's F-1).
 - **Clamp** (`clamp_drawing.rs`; M42-7; not offered while the shaft-clamp section is paused, below): drawing.py's end and top views of the one-piece slotted
   clamp for the recommended screw (its texts, coordinates and limits; the cuts clipped to the
   boss; the screws needed, at most 50), both at one scale in the dark theme's pens (each view's
@@ -850,7 +853,7 @@ can name an input Auto holds; its link then frames a locked row (known limitatio
   orientation, the note list, every note, check, tile, input and result): each of its wrapping lines, and of the left
   column's, is drawn through `gui::wrapping_line`, which keeps one point of the line's width free, since a label in a
   wrapping line can stand a fraction of a point past it (0.06 of a point in two notes, 0.375 in one result's entry in the
-  app's font). The Explain panel's scroll area keeps a 10-point strip for egui's floating scroll bar, so the bar under the pointer covers no line of a note (BL-116). "Start here" walks `notes::START_HERE`, its 14 steps while the
+  app's font). The Explain panel's scroll area keeps a 10-point strip for egui's floating scroll bar, so the bar under the pointer covers no line of a note (BL-116), and the heading row's right-aligned About link stands egui's bar margin (`scroll.bar_inner_margin`) left of that strip, so it covers none of its letters either (the R3 browser review's F-2). "Start here" walks `notes::START_HERE`, its 14 steps while the
   clamp section is paused (the full order, `notes::START_HERE_ALL`, has 15, the shaft-joint note just before the
   clamp note, the clamp note last; `notes::start_here_for(clamps::PAUSED)`), from how the coupling makes torque to
   the shaft joints' keyed shrink fits,
