@@ -916,8 +916,25 @@ fn note_fallback_ui(ui: &mut egui::Ui, path: &str) -> Option<NoteLink> {
             let mut asked = None;
             ui.horizontal_wrapped(|ui| {
                 ui.weak(NEAREST_NOTE);
-                // One Tab stop however the title wraps (the re-review's RR-1, as KR-1).
-                let link = egui::Link::new(glyph_safe(note.title));
+                // One Tab stop however the title wraps (the re-review's RR-1, as KR-1). A title
+                // starts its own row when the room left holds less than its widest word, or
+                // egui breaks that word in the middle (BL-120).
+                let title = glyph_safe(note.title);
+                let font = egui::TextStyle::Body.resolve(ui.style());
+                let widest = title
+                    .split_whitespace()
+                    .map(|word| {
+                        ui.fonts(|f| {
+                            f.layout_no_wrap(word.to_owned(), font.clone(), egui::Color32::WHITE)
+                        })
+                        .size()
+                        .x
+                    })
+                    .fold(0.0, f32::max);
+                if ui.available_size_before_wrap().x < widest {
+                    ui.end_row();
+                }
+                let link = egui::Link::new(title);
                 if crate::gui::label_block(ui, link).clicked() {
                     asked = Some(NoteLink::Note(note.id));
                 }

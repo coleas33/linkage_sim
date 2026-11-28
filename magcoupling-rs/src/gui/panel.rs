@@ -12040,6 +12040,71 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "app")]
+    #[test]
+    fn a_closest_note_title_breaks_only_between_words_in_a_narrow_centre() {
+        // BL-120: with the right column dragged about 130 points wider at 1024 points in the
+        // app's theme and font, the room left after "Closest teaching note:" was less than the
+        // title's widest word, and egui broke a word in the middle (Demagnetizati / on). Every
+        // closest-note title breaks only between words.
+        use crate::gui::explorer::{NoteFallback, note_fallback};
+        use crate::gui::test_support::{primary_button, side_rect, text_shapes};
+        use crate::gui::typeset::glyph_safe;
+        let panel = MagcouplingPanel::with_baseline(crate::app::starting_design());
+        let mut harness = Harness::of(panel, egui::vec2(SMALLEST.x, 3000.0));
+        crate::app::theme::apply(&harness.ctx);
+        crate::app::fonts::install(&harness.ctx);
+        harness.panel.explorer.open_path("model.pullout_Nm");
+        harness.frame(Vec::new());
+        harness.frame(Vec::new());
+        let edge = side_rect(&harness.ctx, "magcoupling_dashboard");
+        let grab = egui::pos2(edge.left() + 1.0, 400.0);
+        let to = egui::pos2(grab.x - 130.0, grab.y);
+        harness.frame(vec![egui::Event::PointerMoved(grab)]);
+        harness.frame(vec![primary_button(grab, true)]);
+        harness.frame(vec![egui::Event::PointerMoved(to)]);
+        harness.frame(vec![egui::Event::PointerMoved(to)]);
+        harness.frame(vec![primary_button(to, false)]);
+        harness.frame(vec![egui::Event::PointerGone]);
+        harness.frame(Vec::new());
+        let width = side_rect(&harness.ctx, "magcoupling_dashboard").width();
+        assert!(
+            width > DASHBOARD_WIDTH + 100.0,
+            "the drag moved nothing: {width}"
+        );
+        let mut checked = 0;
+        let mut broken = Vec::new();
+        for eq in registry().equations() {
+            let NoteFallback::Note(note) = note_fallback(&eq.target) else {
+                continue;
+            };
+            let title = glyph_safe(note.title);
+            harness.panel.explorer.open_path(&eq.target);
+            harness.frame(Vec::new());
+            let output = harness.frame(Vec::new());
+            let Some((_, text)) = text_shapes(&output, &title).next() else {
+                continue;
+            };
+            checked += 1;
+            let rows: Vec<String> = text
+                .galley
+                .rows
+                .iter()
+                .map(|row| row.glyphs.iter().map(|g| g.chr).collect())
+                .collect();
+            for word in title.split_whitespace() {
+                if !rows.iter().any(|row| row.contains(word)) {
+                    broken.push(format!("{}: {word} in {rows:?}", eq.target));
+                }
+            }
+        }
+        assert!(
+            checked > 20,
+            "few titles drawn: the test proves little ({checked})"
+        );
+        assert!(broken.is_empty(), "words broken: {broken:?}");
+    }
+
     #[test]
     fn closing_the_equation_panel_clears_the_input_row_s_frame() {
         // Decision M43-12: a leaf term frames its row while its equation is shown; closing

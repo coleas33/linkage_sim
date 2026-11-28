@@ -3624,3 +3624,5 @@ feedback during the DXF press-mechanism workflow.
 See `docs/FEATURES.md` and `docs/history/` for the full project history including
 the Python→Rust port (411→644 tests), Phase 5 GUI, sample mechanisms, export
 formats, and Phase 6.8 UX overhaul.
+
+- 2026-11-28 BL-120 (magcoupling/r3-polish): the Equation panel's closest-note title starts its own row when the room left is less than its widest word, so it never breaks mid-word in a narrow centre (explorer.rs; test a_closest_note_title_breaks_only_between_words_in_a_narrow_centre).
