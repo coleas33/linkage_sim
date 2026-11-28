@@ -5,6 +5,8 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - Weight mass cap raised to 1e5 kg (BL-034)
+- WEIGHT_MASS_RANGE_KG is 0.001..=100000 (was 1000) for the weight editor and + Mass field; test typed_values_are_clamped_to_the_weight_mass_range now types 5000 and 1e6.
 ## 2026-11-28 - Delete with toolbar focus (BL-033)
 - handle_delete_shortcut gates on focused_widget_may_edit_text (TextEdit state plus response/touch guards) instead of wants_keyboard_input; five bl033_* tests in gui/mod.rs (reused from Codex ed88854).
 ## 2026-11-28 - Keep weights on driver reassign (BL-030)

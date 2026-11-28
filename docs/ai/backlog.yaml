@@ -714,8 +714,8 @@
   evidence: "Payload Track 2 final review 2026-09-29. property_panel/weight_editor.rs:27 WEIGHT_MASS_RANGE_KG = 0.001..=1000 clamps the editor and the + Mass toolbar field (gui/mod.rs:1283). Heavier payloads load from a file and idle frames leave them alone (tested), but cannot be typed. The spec is silent on an upper bound."
   acceptance: "decision recorded (raise the cap, e.g. to 1e5 kg, or keep it with a hover note); if raised, test that typing 5000 kg stores 5000 kg and the breakdown scales with it"
   priority: 3
-  status: open
-  notes: "User decision needed on the bound (robot payloads may exceed 1 t)."
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: decision recorded, cap raised from 1000 kg to 1e5 kg (WEIGHT_MASS_RANGE_KG 0.001..=100000); typing 5000 kg stores 5000 kg, 1e6 clamps to 1e5; the idle-frame test now uses a 150000 kg file weight. User decision needed on the bound (robot payloads may exceed 1 t)."
 
 - id: BL-035
   title: "Weight Breakdown legend swatch colour is arbitrary for multi-coloured weight lines"

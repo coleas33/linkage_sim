@@ -779,7 +779,7 @@ mod tests {
         let _ = central_panel_frame(&egui::Context::default(), Vec::new(), |ui| draw_property_panel(ui, state));
     }
 
-    /// Weight masses outside the mass field's 0.001..=1000 kg range (a heavy
+    /// Weight masses outside the mass field's 0.001..=100000 kg range (a heavy
     /// payload, or a zero mass the loader skipped) must survive idle frames.
     /// egui's DragValue clamps an out-of-range bound value and reports it as
     /// changed, which the panel would commit as a silent edit + undo entry.
@@ -794,7 +794,7 @@ mod tests {
         // Out-of-range masses only arrive from files; write them directly.
         {
             let pms = &mut state.blueprint.as_mut().unwrap().bodies.get_mut(&body).unwrap().point_masses;
-            pms[0].mass = 1500.0;
+            pms[0].mass = 150000.0;
             pms[1].mass = 0.0;
         }
         state.rebuild();
@@ -805,7 +805,7 @@ mod tests {
         one_idle_frame(&mut state);
         one_idle_frame(&mut state);
 
-        assert_eq!(state.find_point_mass(&body, &heavy).unwrap().mass, 1500.0);
+        assert_eq!(state.find_point_mass(&body, &heavy).unwrap().mass, 150000.0);
         assert_eq!(state.find_point_mass(&body, &skipped).unwrap().mass, 0.0);
         assert_eq!(state.undo_history.undo_count(), depth, "idle frames must not record edits");
     }

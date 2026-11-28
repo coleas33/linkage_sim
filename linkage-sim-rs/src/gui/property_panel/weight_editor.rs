@@ -24,7 +24,7 @@ use crate::io::{BodyJson, PointMassJson};
 use super::pending_edits::PendingPropertyEdit;
 
 /// Masses (kg) a weight mass field accepts when typed or dragged.
-pub(crate) const WEIGHT_MASS_RANGE_KG: RangeInclusive<f64> = 0.001..=1000.0;
+pub(crate) const WEIGHT_MASS_RANGE_KG: RangeInclusive<f64> = 0.001..=100000.0;
 
 /// Id salt of the selected-weight editor's fields.
 const SELECTED_SALT: &str = "selected_weight";
@@ -307,7 +307,7 @@ mod tests {
 
     #[test]
     fn typed_values_are_clamped_to_the_weight_mass_range() {
-        for (text, want) in [("0", 0.001), ("-3", 0.001), ("5000", 1000.0)] {
+        for (text, want) in [("0", 0.001), ("-3", 0.001), ("5000", 5000.0), ("1000000", 100000.0)] {
             let mut field = Field::new(2.0);
             field.frame(vec![key_press(egui::Key::Tab)]);
             field.frame(vec![typed(text)]);
