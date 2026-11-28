@@ -3637,3 +3637,4 @@ formats, and Phase 6.8 UX overhaul.
 
 - 2026-11-28 BL-116 (magcoupling/r3-polish): the Explain panel's scroll area keeps a 10-point strip for its floating scroll bar, so a note's lines are no longer covered by the bar under the pointer (panel.rs; test a_note_in_the_explain_panel_keeps_clear_of_its_scroll_bar).
 - 2026-11-28 BL-119 (magcoupling/r3-polish): follow_focus scrolls to the focused widget's rect grown one point at its foot, so a value box in the app's font is whole at the left column's foot (gui/mod.rs; test the_left_column_shows_every_focused_widget_whole_in_the_app_s_own_font).
+- 2026-11-28 BL-123 (magcoupling/r3-polish): sideways_scroll_area keeps a bar-wide strip under its content for egui's floating scroll bar, so the pointer on the formula or the screw-size table no longer covers the last row (gui/mod.rs; test the_formula_s_scroll_bar_covers_none_of_its_glyphs_under_the_pointer).

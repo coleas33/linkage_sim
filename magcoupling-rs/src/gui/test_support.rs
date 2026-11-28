@@ -915,7 +915,7 @@ pub(crate) fn flat_shapes(output: &egui::FullOutput) -> Vec<&egui::Shape> {
 
 /// [`flat_shapes`], each with the rect egui clips it to: that of the top-level shape it was
 /// painted in, which the shapes nested in it share.
-fn clipped_flat_shapes(output: &egui::FullOutput) -> Vec<(egui::Rect, &egui::Shape)> {
+pub(crate) fn clipped_flat_shapes(output: &egui::FullOutput) -> Vec<(egui::Rect, &egui::Shape)> {
     fn walk<'a>(
         clip: egui::Rect,
         shape: &'a egui::Shape,

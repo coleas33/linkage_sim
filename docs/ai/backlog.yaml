@@ -1165,8 +1165,8 @@
   evidence: "The text review of part 2b-iii-c (BL-112), 2026-11-28, in Chrome from the branch's release build (docs/analyses/2026-11-27-magcoupler-slice-b2p2biii-c-review.md), finding F-4: gui::sideways_scroll_area uses egui's floating scroll bar, drawn over the lower half of the formula's last row ('Estimate covers hot min' on the hot minimum check at 1024 x 700) while the pointer is on the formula; main draws the same. Also F-5 (nit): the comment on sideways_scroll_area and the plan say a formula wider than the view shows from its start when it takes the focus, which holds only when it was not scrolled sideways before (the formula has no focus mark and no keyboard action, BL-102)."
   acceptance: "A red test first: with the pointer on a formula wider than the panel, the scroll bar covers none of the formula's glyphs (room left under the formula, or a solid bar); the comment on sideways_scroll_area says what egui does; GATE PASS."
   priority: 5
-  status: open
-  notes: "Filed 2026-11-28 by the controller from the text review of BL-112 (F-4, F-5); taken into the R3 polish batch."
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch magcoupling/r3-polish: sideways_scroll_area (gui/mod.rs) reserves a bar-wide strip (floating_allocated_width = bar_width) under its content, so the floating bar, widest under the pointer, covers no glyph; its comment now says what egui does and that a formula already scrolled sideways stays put (F-5); test the_formula_s_scroll_bar_covers_none_of_its_glyphs_under_the_pointer. Filed 2026-11-28 by the controller from the text review of BL-112 (F-4, F-5); taken into the R3 polish batch."
 - id: BL-124
   title: "Magcoupler: on the Plots tab the Tab key stops on each plot's axes (egui_plot's drag-only widgets), which show no focus"
   dimension: gui

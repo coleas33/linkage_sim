@@ -253,20 +253,33 @@ pub(crate) fn follow_focus(ui: &egui::Ui) -> Option<egui::Rect> {
 /// [`follow_focus`] last in its content, so it scrolls sideways to the widget; egui gives it
 /// both axes' targets, so the outer area's content asks again for the rect once it has ended,
 /// and the outer area scrolls up or down to the widget. A widget wider than the view shows from
-/// its start (egui's least scroll).
+/// its start (egui's least scroll) when the area was not scrolled sideways before; one scrolled
+/// sideways stays where it is until a stop takes the focus.
+///
+/// egui's scroll bar floats: it is drawn over the last rows of the area's view, thin until the
+/// pointer is near and then as wide as `bar_width`, so the pointer on a formula covered the lower
+/// half of its last row (BL-123). The area keeps a strip of that width under its content for it.
 pub(crate) fn sideways_scroll_area<R>(
     ui: &mut egui::Ui,
     id_salt: &str,
     add: impl FnOnce(&mut egui::Ui) -> R,
 ) -> R {
-    let (inner, followed) = scroll_area(ui, id_salt)
-        .scroll([true, false])
-        .show(ui, |ui| {
-            let inner = add(ui);
-            (inner, follow_focus(ui))
+    let (inner, followed) = ui
+        .scope(|ui| {
+            ui.spacing_mut().scroll.floating_allocated_width = ui.spacing().scroll.bar_width;
+            scroll_area(ui, id_salt)
+                .scroll([true, false])
+                .show(ui, |ui| {
+                    let inner = add(ui);
+                    (inner, follow_focus(ui))
+                })
+                .inner
         })
         .inner;
-    if let Some(rect) = followed {
+    if let Some(mut rect) = followed {
+        // egui clips a sideways area's content by the outer view's foot less the strip, so the
+        // outer area scrolls the strip past the widget too.
+        rect.max.y += ui.spacing().scroll.bar_width;
         ui.scroll_to_rect(rect, None);
     }
     inner

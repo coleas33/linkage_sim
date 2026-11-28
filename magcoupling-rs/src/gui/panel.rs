@@ -1856,8 +1856,8 @@ mod tests {
     };
     use crate::gui::sizing::DEBOUNCE_S;
     use crate::gui::test_support::{
-        SCREEN, clamp_at_its_limit, drawing_rect, drawn_texts, flat_shapes, hot_day,
-        hub_overstressed, key_event, key_tap, last_characters, only_the_clamp_fails,
+        SCREEN, clamp_at_its_limit, clipped_flat_shapes, drawing_rect, drawn_texts, flat_shapes,
+        hot_day, hub_overstressed, key_event, key_tap, last_characters, only_the_clamp_fails,
         only_the_joint_fails, passing_design, primary_button, row_line, select_all, shift_tab,
         short_magnets, shown_whole, side_rect, sized_frame, sized_frame_at, smoke_inputs,
         text_center, text_clip_rect, text_color, text_rect, text_rects, text_shapes,
@@ -13594,5 +13594,51 @@ mod tests {
             }
         }
         assert!(checked > 5, "the note's texts were found: {checked}");
+    }
+
+    #[test]
+    fn the_formula_s_scroll_bar_covers_none_of_its_glyphs_under_the_pointer() {
+        // BL-123: egui's floating sideways bar is drawn over the last rows of the area's view,
+        // widest under the pointer, and covered the lower half of the formula's last row. The
+        // area keeps a strip under the formula for it: with the pointer on the bar, the bar's
+        // widest rect starts below the formula's lowest glyph.
+        let mut harness = Harness::of(MagcouplingPanel::new(), SMALLEST);
+        harness.panel.explorer.open_path("metal.hot_min_check");
+        let mut output = harness.frame(Vec::new());
+        let formula = text_shapes(&output, "\"Estimate covers hot min\"")
+            .next()
+            .expect("the formula's last row");
+        let (view, last_row) = (formula.0, formula.1.visual_bounding_rect());
+        // The bar's rects: wide and thin, in the formula's view, under its glyphs.
+        let bars = |output: &egui::FullOutput| -> Vec<egui::Rect> {
+            clipped_flat_shapes(output)
+                .into_iter()
+                .filter_map(|(_, shape)| match shape {
+                    egui::Shape::Rect(r)
+                        if r.rect.width() > 100.0
+                            && r.rect.height() <= 10.5
+                            && r.rect.bottom() > last_row.center().y
+                            && r.rect.top() > view.top() =>
+                    {
+                        Some(r.rect)
+                    }
+                    _ => None,
+                })
+                .collect()
+        };
+        let at = bars(&output).first().expect("the sideways bar").center();
+        harness.frame(vec![egui::Event::PointerMoved(at)]);
+        for _ in 0..6 {
+            output = harness.frame_after(0.5, Vec::new());
+        }
+        let widest = bars(&output)
+            .into_iter()
+            .max_by(|a, b| a.height().total_cmp(&b.height()))
+            .expect("the bar under the pointer");
+        assert!(widest.height() > 5.0, "the bar widened: {widest:?}");
+        assert!(
+            widest.top() >= last_row.bottom() - 0.5,
+            "the bar {widest:?} covers the formula's last row {last_row:?}"
+        );
     }
 }
