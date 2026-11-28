@@ -678,6 +678,27 @@
         assert!(!state.playing);
     }
 
+    /// RV-1 (BL-118): a kept sample reassign refreshes the forces and the Grashof
+    /// result the way rebuild() does, not only the pose.
+    #[test]
+    fn a_sample_reassign_refreshes_forces_and_grashof() {
+        for (sample, joint) in [(SampleMechanism::FourBar, "J4"), (SampleMechanism::Parallelogram, "J4")] {
+            let mut state = AppState::default();
+            state.load_sample(sample);
+            state.reassign_driver(joint);
+            assert_eq!(state.driver_joint_id.as_deref(), Some(joint), "{sample:?}: reassign kept");
+            // HashMap Debug order varies, so the reactions go through a sorted map.
+            let key = |s: &AppState| format!("{:?} {:?} {:?} {:?} {:?}", s.force_results.driver_torque, s.force_results.joint_reactions.iter().collect::<std::collections::BTreeMap<_, _>>(), s.force_results.condition_number, s.force_results.virtual_work_check, s.force_results.reaction_validation);
+            let (forces, grashof) = (key(&state), format!("{:?}", state.grashof_result));
+            let crank = format!("{:?}", state.crank_recommendation);
+            state.compute_forces(state.current_driver_time());
+            state.update_grashof();
+            assert_eq!(forces, key(&state), "{sample:?}: forces are stale");
+            assert_eq!(grashof, format!("{:?}", state.grashof_result), "{sample:?}: grashof is stale");
+            assert_eq!(crank, format!("{:?}", state.crank_recommendation), "{sample:?}: crank recommendation is stale");
+        }
+    }
+
     /// BL-030: a weighted sample's driver reassign keeps the weight (blueprint
     /// and live mechanism) and solves the same pose as the weightless reassign.
     fn assert_reassign_keeps_weight(sample: SampleMechanism, body: &str, joint: &str) {

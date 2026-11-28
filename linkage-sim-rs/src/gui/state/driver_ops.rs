@@ -96,6 +96,9 @@ impl AppState {
                     self.playing = false;
                     self.animation_direction = 1.0;
                     self.pending_driver_reassignment = None;
+                    // The same refresh rebuild() does (RV-1): forces and Mechanism Health follow the new driver.
+                    self.compute_forces(self.current_driver_time());
+                    self.update_grashof();
                     self.mark_sweep_dirty();
                     self.compute_validation();
                     self.recompute_driver_display_offset();
