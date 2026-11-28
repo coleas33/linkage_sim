@@ -21,6 +21,8 @@ pub struct MechanismSnapshot {
     pub driver_omega: f64,
     /// Driver initial angle (rad) at t=0.
     pub driver_theta_0: f64,
+    /// A linear driver's commanded stroke (m); 0 for other driver kinds.
+    pub driver_stroke: f64,
     /// Which joint is currently driven.
     pub driver_joint_id: Option<String>,
     /// Generalized coordinates at snapshot time, used as initial guess on restore.
@@ -114,6 +116,7 @@ mod tests {
             driver_angle: 0.0,
             driver_omega: 1.0,
             driver_theta_0: 0.0,
+            driver_stroke: 0.0,
             driver_joint_id: None,
             q: Vec::new(),
         }
@@ -250,6 +253,7 @@ mod tests {
             driver_angle: 1.5,
             driver_omega: std::f64::consts::PI,
             driver_theta_0: 0.5,
+            driver_stroke: 0.0,
             driver_joint_id: Some("J1".to_string()),
             q: vec![1.0, 2.0, 3.0],
         };

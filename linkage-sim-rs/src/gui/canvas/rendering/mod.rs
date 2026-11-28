@@ -601,9 +601,9 @@ pub fn render_overlays(
         for (screen_pos, joint_id) in joint_hit_targets {
             if let Some(&(fx, fy)) = state.force_results.joint_reactions.get(joint_id) {
                 if state.show_force_components {
-                    draw_force_arrow_components(painter, *screen_pos, fx as f32, fy as f32);
+                    draw_force_arrow_components(painter, *screen_pos, fx as f32, fy as f32, &state.view);
                 } else {
-                    draw_force_arrow(painter, *screen_pos, fx as f32, fy as f32);
+                    draw_force_arrow(painter, *screen_pos, fx as f32, fy as f32, &state.view);
                 }
             }
         }

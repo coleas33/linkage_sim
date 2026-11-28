@@ -23,7 +23,7 @@ use crate::io::{BodyJson, PointMassJson};
 
 use super::pending_edits::PendingPropertyEdit;
 
-/// Masses (kg) a weight mass field accepts when typed or dragged.
+/// Masses (kg) a weight mass field accepts when typed or dragged (owner question 33, option (a)).
 pub(crate) const WEIGHT_MASS_RANGE_KG: RangeInclusive<f64> = 0.001..=1000.0;
 
 /// Id salt of the selected-weight editor's fields.
@@ -63,7 +63,7 @@ pub(crate) fn weight_mass_drag_value(mass: &mut f64) -> egui::DragValue<'_> {
 /// without typing makes egui read the shown (rounded) text back, which must
 /// not become an edit, and Esc keeps the stored value. Idle frames never
 /// commit, whatever the value.
-fn committed_number(
+pub(super) fn committed_number(
     ui: &mut egui::Ui,
     key: &str,
     hover: &str,
@@ -72,7 +72,11 @@ fn committed_number(
 ) -> Option<f64> {
     let copy_id = ui.id().with(("committed_number", key));
     let mut edited = ui.data(|d| d.get_temp::<f64>(copy_id)).unwrap_or(value);
-    let response = ui.add(configure(field_drag_value(&mut edited))).on_hover_text(hover);
+    let mut response = ui.add(configure(field_drag_value(&mut edited)));
+    // egui draws an empty tooltip frame for "", so skip the call then.
+    if !hover.is_empty() {
+        response = response.on_hover_text(hover);
+    }
     if response.dragged() || response.has_focus() {
         ui.data_mut(|d| d.insert_temp(copy_id, edited));
         return None;
@@ -131,7 +135,7 @@ fn draw_weight_fields(
         ui.end_row();
 
         ui.label("Mass");
-        if let Some(mass) = committed_number(ui, "mass", "Weight mass in kg", pm.mass, mass_field) {
+        if let Some(mass) = committed_number(ui, "mass", "Weight mass in kg. Up to 1,000 kg.", pm.mass, mass_field) {
             let (body_id, weight_id) = ids();
             *pending = Some(PendingPropertyEdit::SetPointMassMass { body_id, weight_id, mass });
         }
@@ -307,7 +311,7 @@ mod tests {
 
     #[test]
     fn typed_values_are_clamped_to_the_weight_mass_range() {
-        for (text, want) in [("0", 0.001), ("-3", 0.001), ("5000", 1000.0)] {
+        for (text, want) in [("0", 0.001), ("-3", 0.001), ("5000", 1000.0), ("1000000", 1000.0), ("999", 999.0)] {
             let mut field = Field::new(2.0);
             field.frame(vec![key_press(egui::Key::Tab)]);
             field.frame(vec![typed(text)]);

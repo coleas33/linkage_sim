@@ -70,7 +70,8 @@ Return files_changed as repo-relative paths.`,
 Run "git status" and "git diff" yourself. Judge: (a) correctness of the change; (b) test quality — would the new test fail if the bug came back?; (c) scope — every changed hunk traces to this item; (d) run "cargo clippy" on the touched targets — reject if the diff introduces new warnings. Approve only if all four hold; otherwise list concrete, actionable findings.`,
       {
         phase: 'Fix', label: `review:${item.id}:r${round}`, schema: REVIEW_SCHEMA,
-        agentType: item.risk === 'physics' ? 'fbd-math-reviewer' : 'feature-dev:code-reviewer',
+        // feature-dev:code-reviewer has no shell (it cannot run git diff or clippy), so it rejected every fix; the default workflow agent can. fbd-math-reviewer has Bash.
+        ...(item.risk === 'physics' ? { agentType: 'fbd-math-reviewer' } : {}),
         ...(item.risk === 'physics' ? { model: 'fable' } : { model: 'sonnet' }), // fable: decider, physics reviews
       },
     )

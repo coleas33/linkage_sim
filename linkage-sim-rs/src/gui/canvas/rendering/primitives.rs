@@ -7,7 +7,7 @@ use eframe::egui::{self, Color32, FontId, Pos2, Rect, Stroke, Vec2};
 
 use crate::forces::elements::*;
 use crate::gui::canvas::colors::*;
-use crate::gui::state::AppState;
+use crate::gui::state::{AppState, ViewTransform};
 
 // ── Drawing primitives ───────────────────────────────────────────────────────
 
@@ -129,6 +129,7 @@ pub(super) fn draw_external_force_arrow(
     origin: Pos2,
     fx: f32,
     fy: f32,
+    view: &ViewTransform,
 ) {
     let mag = (fx * fx + fy * fy).sqrt();
     if mag < 1e-12 {
@@ -137,18 +138,16 @@ pub(super) fn draw_external_force_arrow(
 
     let px_len = (mag * FORCE_ARROW_SCALE).clamp(FORCE_ARROW_MIN_PX, FORCE_ARROW_MAX_PX);
 
-    // Unit direction in screen coords (flip Y).
-    let dx = fx / mag;
-    let dy = -fy / mag;
+    let direction = view.world_direction_to_screen(fx / mag, fy / mag);
 
     // Arrow points INTO the body: shaft starts away from origin, tip at origin.
-    let tail = Pos2::new(origin.x - dx * px_len, origin.y - dy * px_len);
+    let tail = origin - direction * px_len;
     let tip = origin;
 
     // Shaft and arrowhead (a full-size head even on a short arrow).
     let stroke = Stroke::new(FORCE_ARROW_WIDTH, EXT_FORCE_COLOR);
     painter.line_segment([tail, tip], stroke);
-    draw_arrowhead(painter, tip, Vec2::new(dx, dy), ARROW_HEAD_LEN_PX, stroke);
+    draw_arrowhead(painter, tip, direction, ARROW_HEAD_LEN_PX, stroke);
 
     // Magnitude label.
     painter.text(
@@ -385,9 +384,10 @@ pub(super) fn draw_arrow(painter: &egui::Painter, tail: Pos2, tip: Pos2, stroke:
 /// Draw a force arrow at a joint location.
 ///
 /// `fx`, `fy` are force components in Newtons (world frame). The arrow is
-/// scaled, clamped, and drawn with an arrowhead. Screen Y is flipped relative
-/// to world Y.
-pub(super) fn draw_force_arrow(painter: &egui::Painter, origin: Pos2, fx: f32, fy: f32) {
+/// scaled, clamped, and rotated into the mounted view before screen Y is flipped.
+pub(super) fn draw_force_arrow(
+    painter: &egui::Painter, origin: Pos2, fx: f32, fy: f32, view: &ViewTransform,
+) {
     let mag = (fx * fx + fy * fy).sqrt();
     if mag < 1e-12 {
         return; // negligible force
@@ -396,16 +396,13 @@ pub(super) fn draw_force_arrow(painter: &egui::Painter, origin: Pos2, fx: f32, f
     // Scale force magnitude to pixel length, then clamp.
     let px_len = (mag * FORCE_ARROW_SCALE).clamp(FORCE_ARROW_MIN_PX, FORCE_ARROW_MAX_PX);
 
-    // Unit direction in screen coords (flip Y for screen space).
-    let dx = fx / mag;
-    let dy = -fy / mag; // flip Y: world up is screen down
-
-    let tip = Pos2::new(origin.x + dx * px_len, origin.y + dy * px_len);
+    let direction = view.world_direction_to_screen(fx / mag, fy / mag);
+    let tip = origin + direction * px_len;
 
     // Shaft and arrowhead (a full-size head even on a short arrow).
     let stroke = Stroke::new(FORCE_ARROW_WIDTH, FORCE_ARROW_COLOR);
     painter.line_segment([origin, tip], stroke);
-    draw_arrowhead(painter, tip, Vec2::new(dx, dy), ARROW_HEAD_LEN_PX, stroke);
+    draw_arrowhead(painter, tip, direction, ARROW_HEAD_LEN_PX, stroke);
 
     // Magnitude label near the tip.
     painter.text(
@@ -419,9 +416,8 @@ pub(super) fn draw_force_arrow(painter: &egui::Painter, origin: Pos2, fx: f32, f
 
 /// Draw reaction force as separate Fx (solid) and Fy (dashed) component arrows.
 ///
-/// `fx`, `fy` are world-frame components in Newtons. The Fx arrow runs
-/// horizontally in screen space (sign-preserving: negative fx points left);
-/// the Fy arrow runs vertically (positive fy points up — screen Y is flipped).
+/// `fx`, `fy` are world-frame components in Newtons. Each arrow follows its
+/// world axis rotated into the mounted view, preserving the signed Fx/Fy labels.
 /// Both share `FORCE_ARROW_COLOR` and `FORCE_ARROW_SCALE` with the resultant
 /// renderer so the toggle is purely a style/decomposition switch.
 ///
@@ -434,17 +430,16 @@ pub(super) fn draw_force_arrow_components(
     origin: Pos2,
     fx: f32,
     fy: f32,
+    view: &ViewTransform,
 ) {
-    // Solid Fx along world-X (screen-x is +right, no flip).
-    draw_axis_component(painter, origin, fx, AxisDirection::X, "Fx");
-    // Dashed Fy along world-Y (screen-y is flipped: +world_y → -screen_y).
-    draw_axis_component(painter, origin, fy, AxisDirection::Y, "Fy");
+    draw_axis_component(painter, origin, fx, AxisDirection::X, "Fx", view);
+    draw_axis_component(painter, origin, fy, AxisDirection::Y, "Fy", view);
 }
 
 #[derive(Clone, Copy)]
 enum AxisDirection { X, Y }
 
-/// Render one axis-aligned component arrow. Solid for X, dashed shaft for Y.
+/// Render one mounted world-axis component. Solid for X, dashed shaft for Y.
 /// Arrowhead is always solid so the arrow direction reads cleanly.
 fn draw_axis_component(
     painter: &egui::Painter,
@@ -452,6 +447,7 @@ fn draw_axis_component(
     component: f32,
     axis: AxisDirection,
     label_prefix: &str,
+    view: &ViewTransform,
 ) {
     if component.abs() < 1e-12 {
         return;
@@ -459,13 +455,12 @@ fn draw_axis_component(
     let mag = component.abs();
     let px_len = (mag * FORCE_ARROW_SCALE).clamp(FORCE_ARROW_MIN_PX, FORCE_ARROW_MAX_PX);
 
-    // Unit direction in screen space, accounting for the sign of the component
-    // and the screen-Y flip on the Y axis.
-    let (dx, dy) = match axis {
+    let (wx, wy) = match axis {
         AxisDirection::X => (component.signum(), 0.0_f32),
-        AxisDirection::Y => (0.0_f32, -component.signum()),
+        AxisDirection::Y => (0.0_f32, component.signum()),
     };
-    let tip = Pos2::new(origin.x + dx * px_len, origin.y + dy * px_len);
+    let direction = view.world_direction_to_screen(wx, wy);
+    let tip = origin + direction * px_len;
 
     // Shaft: solid for X, dashed for Y.
     let stroke = Stroke::new(FORCE_ARROW_WIDTH, FORCE_ARROW_COLOR);
@@ -480,7 +475,7 @@ fn draw_axis_component(
 
     // Solid arrowhead in both modes — keeps the arrow legible regardless
     // of dash phase at the tip.
-    draw_arrowhead(painter, tip, Vec2::new(dx, dy), ARROW_HEAD_LEN_PX, stroke);
+    draw_arrowhead(painter, tip, direction, ARROW_HEAD_LEN_PX, stroke);
 
     // Signed component label near the tip — sign carries direction, so
     // the label is unambiguous even when the arrow is short.

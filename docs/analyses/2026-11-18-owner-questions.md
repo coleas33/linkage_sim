@@ -748,6 +748,7 @@ Source: LGE-16.
 A heavier payload loads from a file but cannot be typed in the editor or the toolbar's mass box. The written spec names no upper bound.
 
 - **If you do not answer:** the 1,000 kg limit stays.
+- Shipped 2026-11-28 pending your answer: (a), the 1,000 kg limit stays and the mass fields say so on hover.
 - (a) Keep 1,000 kg and say so on hover.
 - (b) Raise it to 100,000 kg.
 - (c) No upper limit.

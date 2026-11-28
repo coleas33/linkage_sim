@@ -150,6 +150,8 @@ two_pass_statics_for_actuators: |
      reflect the actuator as the prime mover (driver torque drops to ~0).
 
 invariants_to_protect:
+  - "Mounting rotates force vectors by the same view rotation as positions, followed by screen Y inversion. Reaction component labels remain signed world Fx/Fy with solid X and dashed Y arrows; a force zone uses its four transformed corners and actual edge lengths (BL-049)."
+  - "Sweep plot X bounds initialize once per active range and reset on double click or range change/revisit. Pointer pan and zoom persist during idle frames; Y navigation keeps egui_plot behavior. Empty ranges retain normal auto-fit."
   - All DXF-created bodies use local=world frame (attachment points in
     world coords, body pose 0,0,0) so they render correctly without needing
     joint constraints to fix position. If you change this, you must update
@@ -255,7 +257,7 @@ invariants_to_protect:
     field buffers typed text the same way and commits on lost focus
     without Esc. The + Mass toolbar field edits
     AppState::last_point_mass_kg directly (a setting, so no undo step) with the
-    same weight_mass_drag_value (0.001..=1000 kg).
+    same weight_mass_drag_value (0.001..=1000 kg; each mass field says "Up to 1,000 kg." on hover).
   - place_mass_click_snaps_and_selects — the + Mass tool's placement click
     snaps to the grid (canvas interaction.rs snapped_world, shared with the
     weight drag), adds one weight of last_point_mass_kg (one undo step),
@@ -300,9 +302,10 @@ invariants_to_protect:
     head to the arrow length).
   - "colesorkness_com_layout — the web output (linkage-sim-rs/web/, deployed to colesorkness.com by deploy-web.yml): the hub page at /tools/ (web/tools/index.html; / redirects there, and web/index.html forwards for a server without the redirect), the linkage app at /tools/linkage/ (web/tools/linkage/index.html, glue built by build_web.sh into web/tools/linkage/), the magnetic coupling calculator at /tools/magcoupler/ (web/tools/magcoupler/index.html, glue built by build_magcoupling_web.sh). The app pages import their glue and the favicon by absolute paths; vercel.json sets trailingSlash and redirects linkage.colesorkness.com (old share links keep ?m= by an explicit capture; ?tool=magcoupling without m goes to the calculator) and /magcoupling/ to the new addresses, permanently (308; / to /tools/ stays temporary, 307). Redirect sources use :path(.*), never :path* (Vercel compiles it strictly: no match for a path ending in /). Share links: SHARE_URL_BASE (gui/state/file_io.rs) and magcoupling-rs PUBLIC_BASE_URL. tests/web_layout.rs keeps the pages, vercel.json, .gitignore and the scripts in step."
   - delete_shortcut_ignores_focused_widgets — gui/mod.rs
-    handle_delete_shortcut returns early while ctx.wants_keyboard_input();
-    before this, Backspace in any text/number field deleted the selected
-    body, joint (and would have deleted a selected weight).
+    handle_delete_shortcut returns early only while focused_widget_may_edit_text
+    (a focused TextEdit); a Tab-focused ordinary button no longer swallows
+    Delete/Backspace (BL-033). Backspace in a text/number field still edits
+    text instead of deleting the selection.
   - >-
     gravity_breakdown_sources_sum_to_model_gravity — analysis::gravity_breakdown::weight_sources
     lists one link self-weight per non-ground body with positive finite base
@@ -393,9 +396,11 @@ known_limitations:
     between 236 and 237 deg.
   - Driver reassignment on a loaded sample (AppState::current_sample is
     Some) rebuilds the stock sample (state/driver_ops.rs reassign_driver)
-    and drops every blueprint edit, weights included. It is undoable, and a
-    model loaded from a file (current_sample None) keeps its weights. The
-    payload spec's hands-on checklist warns about it.
+    and drops every blueprint edit except weights. Each weight is carried
+    over by body id into the rebuilt blueprint and live body (BL-030), and
+    one on a body the stock sample lacks is dropped with a status-bar
+    message. The reassign is undoable, and a model loaded from a file
+    (current_sample None) keeps its edits.
   - "A magcoupling design file dropped on the linkage page is read as a mechanism (the status bar says the JSON import failed); the calculator's own page (colesorkness.com/tools/magcoupler) loads it with Load design."
   - "The magcoupler's shaft joint check (BL-064, shaft_joint.check) reads cold-high (metal.torque_cold_high_Nm) and, for the bonded inner hub's allowed fitting temperature, the inner ring's own single-ring onset (temperature.demag.inner_onset_single_ring_C), never the governing ring's: that temperature is the lowest of the input, the adhesive's design limit and that onset less CURE_MARGIN_MIN_C, NaN if any is NaN (shaft_joint::hub_fit_allowed). Its dashboard row greys, uncounted, with the end-effect rows (END_EFFECT_ROWS) while f_end <= 0, since it reads cold-high, and is a stored-3D row (STORED_3D_ROWS), since that onset follows the stored single-ring reverse field. Cold-high can reach each joint; it is not a bound on them (backlash, resonance and re-lock can exceed it on the gearbox side; with the operating temperature below the minimum, so can the operating pull-out, BL-067)."
   - "The magcoupler's gearbox check (BL-059, gearbox.cold_high_check) compares one torque with one rating: cold-high at the gearbox input against the gearbox input rating. Fatigue from repeated slips is not checked (the slip swing, BL-066), nor are the loads that can exceed cold-high at the shaft: backlash impacts, the ring-down at re-lock, torsional resonance crossings and the drive line's stored energy at a jam. With the operating temperature below the minimum, cold-high is not the strongest pull-out, and the check can pass while the operating pull-out at the gearbox input is above the rating (BL-067). The gearbox's own operating temperature range is not checked either: the old GAM catalog lists -10 or -20 °C as the gearbox's lowest operating temperature, warmer than the coupling's -40 °C default minimum magnet temperature. Which datasheet rating the 0.6 N·m default is (input or output; nominal, acceleration or emergency stop) is open (owner decision 2A, 04-memory)."
