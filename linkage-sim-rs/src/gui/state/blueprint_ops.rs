@@ -342,7 +342,14 @@ impl AppState {
         self.driver_joint_id = detect_driver_joint_id(&mech);
 
         // Solve at current position using last_good_q as initial guess.
-        let t = driver_angle_to_time(self.driver_angle, self.driver_theta_0(), self.driver_omega());
+        // The old mechanism is still installed, so take the value from the newly
+        // assigned driver kind (a linear driver's value is its stroke).
+        let driver_value = match self.driver_kind {
+            DriverKind::Linear { stroke, .. } => stroke,
+            DriverKind::Revolute { angle, .. } => angle,
+            DriverKind::None => self.driver_angle,
+        };
+        let t = driver_angle_to_time(driver_value, self.driver_theta_0(), self.driver_omega());
 
         // Try solving with last_good_q if it has the right dimension;
         // after a topology change, seed the surviving bodies by id.

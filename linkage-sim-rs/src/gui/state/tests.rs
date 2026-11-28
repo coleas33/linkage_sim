@@ -97,6 +97,203 @@
     }
 
     #[test]
+    fn bl051_rebuild_keeps_commanded_linear_stroke_and_endpoint_distance() {
+        // Literal GUI repro: one horizontal slider, an anchor at (-1, 0),
+        // and a prescribed length of 1 + t. At stroke 1.2 m, x must be 0.2 m.
+        let json = r#"{
+            "schema_version":"1.2.0",
+            "bodies":{
+                "ground":{"attachment_points":{"Guide":[0,0],"Base":[-1,0]},"mass":0,"cg_local":[0,0],"izz_cg":0},
+                "slider":{"attachment_points":{"O":[0,0],"B":[0.2,0]},"mass":1,"cg_local":[0.1,0],"izz_cg":0.01}
+            },
+            "joints":{"Guide":{"type":"prismatic","body_i":"ground","body_j":"slider","point_i":"Guide","point_j":"O","axis_local_i":[1,0]}},
+            "linear_drivers":[{"id":"LD1","body_a":"ground","point_a":[-1,0],"body_b":"slider","point_b":[0,0],"velocity":1,"length_0":1}],
+            "sweep_state":{"sweep_mode":"Stroke"},
+            "_sweep_range_enabled":true,"_sweep_angle_min":1000,"_sweep_angle_max":1400
+        }"#;
+        let mut state = AppState::default();
+        state.load_from_json_str(json).unwrap();
+        assert!(state.solver_status.converged, "literal fixture must load");
+        state.solve_at_stroke(1.2);
+        assert!(state.solver_status.converged, "1.2 m control must solve");
+        assert_eq!(state.driver_angle, 0.0, "the unrelated angle proxy stays at its load default");
+
+        // Endpoint distance comes directly from Cartesian world coordinates,
+        // independently of the GUI's stored stroke or its time conversion.
+        let check_pose = |state: &AppState| {
+            let mech = state.mechanism.as_ref().unwrap();
+            let (x, y, theta) = mech.state().get_pose("slider", &state.q);
+            let pa = mech.state().body_point_global("ground", &nalgebra::Vector2::new(-1.0, 0.0), &state.q);
+            let pb = mech.state().body_point_global("slider", &nalgebra::Vector2::zeros(), &state.q);
+            assert!((x - 0.2).abs() < 1e-10, "slider x must remain 0.2 m, got {x}");
+            assert!(y.abs() < 1e-10 && theta.abs() < 1e-10);
+            assert!(((pb - pa).norm() - 1.2).abs() < 1e-10, "actual driver endpoints must remain 1.2 m apart");
+            assert!((state.driver_stroke() - 1.2).abs() < 1e-12, "commanded stroke must remain 1.2 m");
+        };
+        check_pose(&state);
+        let before = state.q.clone();
+
+        // The GUI's + Add Mount Point invokes this same edit. The new point
+        // is unused by every constraint and force, so the pose must not move.
+        state.add_mount_point("slider", "M1", [0.1, 0.1]);
+        assert!(state.solver_status.converged, "rebuild must preserve the solved pose");
+        assert_eq!(state.blueprint.as_ref().unwrap().bodies["slider"].mount_points["M1"], [0.1, 0.1]);
+        assert_eq!(state.blueprint.as_ref().unwrap().linear_drivers[0].length_0, 1.0);
+        assert_eq!(state.blueprint.as_ref().unwrap().linear_drivers[0].velocity, 1.0);
+        check_pose(&state);
+        assert!((&state.q - &before).norm() < 1e-10);
+        assert!((&state.last_good_q - &before).norm() < 1e-10);
+
+        // The blueprint's updated rate/initial length determine the new time;
+        // keep the current stroke for either sign. A stopped/near-zero driver
+        // retains the existing t=0 policy, with its initial length matching it.
+        for (i, (velocity, length_0)) in [(2.0, 0.9), (-0.5, 1.3), (0.0, 1.2), (1e-18, 1.2)].into_iter().enumerate() {
+            let ld = &mut state.blueprint.as_mut().unwrap().linear_drivers[0];
+            ld.velocity = velocity;
+            ld.length_0 = length_0;
+            state.add_mount_point("slider", &format!("M_meta_{i}"), [0.15, 0.1]);
+            assert!(state.solver_status.converged, "updated velocity={velocity}, length_0={length_0} must solve");
+            assert_eq!(state.driver_omega(), velocity);
+            assert_eq!(state.driver_theta_0(), length_0);
+            check_pose(&state);
+        }
+    }
+
+    #[test]
+    fn bl051_rebuild_preserves_constant_revolute_pose() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.solve_at_angle(1.1);
+        assert!(state.solver_status.converged, "regular revolute control must solve");
+        assert!((state.mechanism.as_ref().unwrap().state().get_pose("crank", &state.q).2 - 1.1).abs() < 1e-9);
+        let before = state.q.clone();
+        let omega = state.driver_omega();
+        let theta_0 = state.driver_theta_0();
+
+        state.add_mount_point("crank", "M_bl051", [0.1, 0.1]);
+        assert!(state.solver_status.converged);
+        assert!((state.driver_angle - 1.1).abs() < 1e-12);
+        assert_eq!(state.driver_omega(), omega);
+        assert_eq!(state.driver_theta_0(), theta_0);
+        assert!((&state.q - &before).norm() < 1e-9, "constant revolute rebuild must keep its solved pose");
+    }
+
+    #[test]
+    fn bl051_rebuild_transitions_use_new_driver_kind() {
+        // One body initially pinned to ground, then put on a horizontal guide.
+        // This changes driver kind while the old mechanism is still installed.
+        let json = r#"{
+            "schema_version":"1.2.0",
+            "bodies":{
+                "ground":{"attachment_points":{"Origin":[0,0],"Base":[-1,0]},"mass":0,"cg_local":[0,0],"izz_cg":0},
+                "slider":{"attachment_points":{"O":[0,0],"B":[0.2,0]},"mass":1,"cg_local":[0.1,0],"izz_cg":0.01}
+            },
+            "joints":{"Pin":{"type":"revolute","body_i":"ground","body_j":"slider","point_i":"Origin","point_j":"O"}},
+            "drivers":{"D1":{"type":"constant_speed","body_i":"ground","body_j":"slider","omega":2,"theta_0":0.3}}
+        }"#;
+        let mut state = AppState::default();
+        state.load_from_json_str(json).unwrap();
+        state.solve_at_angle(0.6);
+        assert!(state.solver_status.converged, "revolute transition control must solve");
+        assert!((state.mechanism.as_ref().unwrap().state().get_pose("slider", &state.q).2 - 0.6).abs() < 1e-10);
+        {
+            let bp = state.blueprint.as_mut().unwrap();
+            bp.joints.clear();
+            bp.joints.insert("Guide".into(), JointJson::Prismatic {
+                body_i: "ground".into(), body_j: "slider".into(),
+                point_i: "Origin".into(), point_j: "O".into(),
+                axis_local_i: [1.0, 0.0], delta_theta_0: 0.0, label: None,
+            });
+            bp.drivers.clear();
+            bp.linear_drivers.push(crate::io::LinearDriverJson {
+                id: "LD1".into(), body_a: "ground".into(), point_a: [-1.0, 0.0],
+                body_b: "slider".into(), point_b: [0.0, 0.0], velocity: -2.0, length_0: 1.0, cosine_stroke: None,
+            });
+        }
+        state.rebuild();
+        assert!(state.solver_status.converged, "new linear kind must solve at its initial stroke");
+        assert!(matches!(state.driver_kind, DriverKind::Linear { .. }));
+        assert_eq!(state.driver_stroke(), 1.0, "revolute-to-linear starts at the new length_0");
+        {
+            let mech = state.mechanism.as_ref().unwrap();
+            assert_eq!(mech.n_drivers(), 0);
+            assert_eq!(mech.n_linear_drivers(), 1);
+            let (x, y, theta) = mech.state().get_pose("slider", &state.q);
+            assert!(x.abs() < 1e-10 && y.abs() < 1e-10 && theta.abs() < 1e-10, "linear pose must be (0,0,0), got ({x},{y},{theta})");
+            let pa = mech.state().body_point_global("ground", &nalgebra::Vector2::new(-1.0, 0.0), &state.q);
+            let pb = mech.state().body_point_global("slider", &nalgebra::Vector2::zeros(), &state.q);
+            assert!(((pb - pa).norm() - 1.0).abs() < 1e-10);
+        }
+        state.solve_at_stroke(1.2);
+        assert!(state.solver_status.converged);
+        assert!((state.mechanism.as_ref().unwrap().state().get_pose("slider", &state.q).0 - 0.2).abs() < 1e-10);
+        {
+            let bp = state.blueprint.as_mut().unwrap();
+            bp.joints.clear();
+            bp.joints.insert("Pin".into(), JointJson::Revolute {
+                body_i: "ground".into(), body_j: "slider".into(),
+                point_i: "Origin".into(), point_j: "O".into(), label: None,
+            });
+            bp.linear_drivers.clear();
+            bp.drivers.insert("D1".into(), crate::io::DriverJson::ConstantSpeed {
+                body_i: "ground".into(), body_j: "slider".into(), omega: -3.0, theta_0: -0.2,
+            });
+        }
+        state.driver_angle = 0.9;
+        state.rebuild();
+        assert!(state.solver_status.converged, "new revolute kind must use its angle, not the old stroke mode");
+        assert!(matches!(state.driver_kind, DriverKind::Revolute { .. }));
+        assert_eq!(state.driver_omega(), -3.0);
+        assert_eq!(state.driver_theta_0(), -0.2);
+        let mech = state.mechanism.as_ref().unwrap();
+        assert_eq!(mech.n_drivers(), 1);
+        assert_eq!(mech.n_linear_drivers(), 0);
+        let (x, y, theta) = mech.state().get_pose("slider", &state.q);
+        assert!(x.abs() < 1e-10 && y.abs() < 1e-10);
+        assert!((theta - 0.9).abs() < 1e-10, "new revolute angle must be 0.9 rad, got {theta}");
+    }
+
+    #[test]
+    fn bl051_rebuild_keeps_slider_crank_at_linear_stroke() {
+        // The Slider-Crank sample (crank 0.05 m, coupler 0.20 m, slider on the x rail)
+        // driven by a linear driver from ground (-1, 0) to the slider: driver
+        // length = slider x + 1, so stroke 1.2 m puts the slider at x = 0.2 m.
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::SliderCrank);
+        state.solve_at_angle(1.0);
+        assert!(state.solver_status.converged, "revolute control must solve");
+        {
+            let bp = state.blueprint.as_mut().unwrap();
+            bp.drivers.clear();
+            bp.linear_drivers.push(crate::io::LinearDriverJson {
+                id: "LD1".into(), body_a: "ground".into(), point_a: [-1.0, 0.0],
+                body_b: "slider".into(), point_b: [0.0, 0.0], velocity: 1.0, length_0: 1.15, cosine_stroke: None,
+            });
+        }
+        state.rebuild();
+        assert!(matches!(state.driver_kind, DriverKind::Linear { .. }));
+        state.solve_at_stroke(1.2);
+        assert!(state.solver_status.converged, "1.2 m stroke must solve");
+
+        let check_pose = |state: &AppState| {
+            let mech = state.mechanism.as_ref().unwrap();
+            let (x, y, _) = mech.state().get_pose("slider", &state.q);
+            let pa = mech.state().body_point_global("ground", &nalgebra::Vector2::new(-1.0, 0.0), &state.q);
+            let pb = mech.state().body_point_global("slider", &nalgebra::Vector2::zeros(), &state.q);
+            assert!((x - 0.2).abs() < 1e-10 && y.abs() < 1e-10, "slider must stay at (0.2, 0), got ({x}, {y})");
+            assert!(((pb - pa).norm() - 1.2).abs() < 1e-10, "driver length must stay 1.2 m, got {}", (pb - pa).norm());
+            assert!((state.driver_stroke() - 1.2).abs() < 1e-12, "commanded stroke must stay 1.2 m");
+        };
+        check_pose(&state);
+        let before = state.q.clone();
+
+        state.add_mount_point("coupler", "M_bl051", [0.1, 0.02]);
+        assert!(state.solver_status.converged, "rebuild after an edit must solve at the current stroke");
+        check_pose(&state);
+        assert!((&state.q - &before).norm() < 1e-9, "the crank and coupler must not move on rebuild");
+    }
+
+    #[test]
     fn convert_actuator_to_linear_driver_switches_mode() {
         // ParallelogramActuator has a LinearActuator force element
         // and a revolute driver. After conversion, the mechanism
