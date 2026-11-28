@@ -557,12 +557,18 @@ pub fn plot_ui(
         // its line is on the plot, inside the resting outline (BL-108).
         let field = visuals.extreme_bg_color;
         let widgets = &mut visuals.widgets;
+        // A host with no resting outline (Visuals::dark()) gets the noninteractive hairline as
+        // the ring, so a hidden entry's disc still shows (BL-110).
+        let hairline = widgets.noninteractive.bg_stroke;
         for state in [
             &mut widgets.inactive,
             &mut widgets.hovered,
             &mut widgets.active,
         ] {
             state.bg_fill = field;
+            if state.bg_stroke.width == 0.0 {
+                state.bg_stroke = hairline;
+            }
         }
         // egui_plot draws the vertical axis' label a quarter of a row left of the plot, and
         // the centre region clips at the plot's own left edge: the label's letters lost their
@@ -893,6 +899,40 @@ mod tests {
         assert!(!s.greyed);
         // Torque falls as the magnets warm (NdFeB's negative alpha).
         assert!(s.nominal.windows(2).all(|w| w[1][1] < w[0][1]));
+    }
+
+    #[test]
+    fn a_legend_disc_has_a_ring_in_a_plain_egui_context() {
+        // BL-110 (F-1): under Visuals::dark() the resting outline is Stroke::NONE; every
+        // legend disc (filled, with the field colour) still draws a visible ring.
+        let inputs = DesignInputs::default();
+        let results = compute_all(&inputs);
+        let ctx = egui::Context::default();
+        let field = ctx.style().visuals.extreme_bg_color;
+        let frame = || {
+            sized_frame(&ctx, egui::vec2(420.0, 500.0), Vec::new(), |ui| {
+                plot_ui(
+                    ui,
+                    PlotKind::GapSweep,
+                    &inputs,
+                    &results,
+                    &mut Readouts::default(),
+                );
+            })
+        };
+        frame();
+        let rings: Vec<egui::Stroke> = flat_shapes(&frame())
+            .into_iter()
+            .filter_map(|shape| match shape {
+                egui::Shape::Circle(c) if c.fill == field => Some(c.stroke),
+                _ => None,
+            })
+            .collect();
+        assert!(!rings.is_empty(), "no legend disc");
+        assert!(
+            rings.iter().all(|s| s.width > 0.0 && s.color.a() > 0),
+            "{rings:?}"
+        );
     }
 
     #[test]

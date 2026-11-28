@@ -930,7 +930,8 @@ can name an input Auto holds; its link then frames a locked row (known limitatio
   and pressed fills the field colour (`extreme_bg_color`, the legend's own background): each dot
   sits on a dark disc inside the grey ring (3.5:1 on the legend), from 5.7:1 (the sweeps' red
   "Does not fit" dot) to 15:1 (the text-colour dots), and a hidden line's entry is the empty
-  ring. Each plot puts its legend in a corner its data leave free (`PlotKind::legend_corner`:
+  ring. A host that sets no resting outline (egui's `Visuals::dark()`) gets the noninteractive
+  hairline as that ring and as a tile's resting edge (BL-110). Each plot puts its legend in a corner its data leave free (`PlotKind::legend_corner`:
   Pole sweep and Slip heating at the bottom right, the others at the top right), so no legend
   covers a marked point (BL-106). No control outside the plots changes. Frameless controls stay frameless (the top bar's
   words, the tabs, menu items and the names in a row of choices, whose words name them), and a

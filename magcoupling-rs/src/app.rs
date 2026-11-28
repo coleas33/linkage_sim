@@ -762,7 +762,7 @@ mod tests {
         // a series: blue, amber, violet, the text, muted and the three levels' colours.
         use crate::gui::CentreView;
         use crate::gui::plots::PlotKind;
-        use crate::gui::test_support::flat_shapes;
+        use crate::gui::test_support::{flat_shapes, primary_button};
         use theme::contrast;
         // A frame's legend entries in the centre region: each a filled and outlined disc (a
         // plot's own points are one or the other) and, while its line is shown, the colour of
@@ -841,6 +841,35 @@ mod tests {
                         .any(|(d, dot)| d.center == first.center && *dot == first_dot),
                     "{what}: shown again"
                 );
+                // BL-110 (F-2): under the pointer, then pressed, the entry keeps the field
+                // colour for its disc, its ring 3:1 or more on the legend and its dot 3:1 or
+                // more on the disc.
+                for (state, event) in [
+                    ("hovered", egui::Event::PointerMoved(first.center)),
+                    ("pressed", primary_button(first.center, true)),
+                ] {
+                    frame_on(&ctx, &mut app, LAPTOP, vec![event.clone()]);
+                    let output = frame_on(&ctx, &mut app, LAPTOP, Vec::new());
+                    let at: Vec<_> = entries(&ctx, &output)
+                        .into_iter()
+                        .filter(|(d, _)| d.center == first.center)
+                        .collect();
+                    assert_eq!(at.len(), 1, "{what}: the {state} entry's disc");
+                    let (disc, dot) = at[0];
+                    assert_eq!(disc.fill, first.fill, "{what}: the {state} disc's fill");
+                    let ring = contrast(disc.stroke.color, theme::BG);
+                    assert!(ring >= 3.0, "{what}: the {state} ring: {ring:.2}");
+                    let dot = dot.unwrap_or_else(|| panic!("{what}: the {state} entry's dot"));
+                    let ratio = contrast(dot, disc.fill);
+                    assert!(ratio >= 3.0, "{what}: the {state} dot: {ratio:.2}");
+                }
+                frame_on(
+                    &ctx,
+                    &mut app,
+                    LAPTOP,
+                    vec![primary_button(first.center, false)],
+                );
+                frame_on(&ctx, &mut app, LAPTOP, vec![egui::Event::PointerGone]);
             }
         }
         assert_eq!(colours.len(), 8, "the dots' colours: {colours:?}");

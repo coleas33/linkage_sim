@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - Magcoupler: a legend disc and a resting tile keep a visible edge under a host that sets no resting outline, and the legend test checks the disc hovered and pressed (BL-110)
+
+- gui/tiles.rs, gui/plots.rs (noninteractive hairline fallback); tests in tiles.rs, plots.rs, app.rs; README; backlog BL-110 fixed.
+
 ## 2026-11-28 - Magcoupler: a plot's legend sits in a corner its data leave free: Pole sweep and Slip heating at the bottom right (BL-106)
 
 - gui/plots.rs PlotKind::legend_corner (read by plot()); test in app.rs; README; backlog BL-106 fixed.
