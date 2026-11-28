@@ -38,6 +38,16 @@ impl ViewTransform {
         [sx, sy]
     }
 
+    /// Rotate a world direction into the mounted view and flip screen Y.
+    /// Pixel lengths are chosen by the arrow renderer, independently of zoom.
+    pub fn world_direction_to_screen(&self, wx: f32, wy: f32) -> eframe::egui::Vec2 {
+        let (sin_a, cos_a) = self.mounting_angle.sin_cos();
+        eframe::egui::Vec2::new(
+            (cos_a * wx as f64 - sin_a * wy as f64) as f32,
+            (-sin_a * wx as f64 - cos_a * wy as f64) as f32,
+        )
+    }
+
     /// Convert screen coordinates (pixels) back to world coordinates (meters).
     ///
     /// Reverses pan/zoom, then applies the inverse mounting-angle rotation.

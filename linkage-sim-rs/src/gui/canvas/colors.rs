@@ -102,6 +102,9 @@ pub const WEIGHT_ARROW_WIDTH: f32 = 2.0;
 /// Pick radius, in screen pixels, for choosing a link by clicking or dropping
 /// near its bar: Place Mass, Move to Link and dropping a dragged weight.
 pub const LINK_PICK_RADIUS: f32 = 60.0;
+/// Opaque dark plate behind small canvas labels drawn over bright overlaps
+/// (the zone-force label, BL-046).
+pub const LABEL_PLATE: Color32 = Color32::from_rgb(20, 22, 30);
 pub const ATTACHMENT_DOT_RADIUS: f32 = 3.5;
 pub const MOUNT_POINT_RADIUS: f32 = 4.0;
 pub const ZOOM_FACTOR: f32 = 1.05;

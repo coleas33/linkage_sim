@@ -794,7 +794,7 @@ mod tests {
         // Out-of-range masses only arrive from files; write them directly.
         {
             let pms = &mut state.blueprint.as_mut().unwrap().bodies.get_mut(&body).unwrap().point_masses;
-            pms[0].mass = 1500.0;
+            pms[0].mass = 150000.0;
             pms[1].mass = 0.0;
         }
         state.rebuild();
@@ -805,7 +805,7 @@ mod tests {
         one_idle_frame(&mut state);
         one_idle_frame(&mut state);
 
-        assert_eq!(state.find_point_mass(&body, &heavy).unwrap().mass, 1500.0);
+        assert_eq!(state.find_point_mass(&body, &heavy).unwrap().mass, 150000.0);
         assert_eq!(state.find_point_mass(&body, &skipped).unwrap().mass, 0.0);
         assert_eq!(state.undo_history.undo_count(), depth, "idle frames must not record edits");
     }

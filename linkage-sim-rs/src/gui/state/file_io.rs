@@ -488,7 +488,14 @@ impl AppState {
 
         // Restore mounting angle from the blueprint.
         if let Some(ref bp) = self.blueprint {
-            self.mounting_angle = bp.mounting_angle;
+            // The slider clamps to -180..=180 deg; wrap a file's angle into that range
+            // (270 deg becomes -90 deg, the same mounting) so an idle frame leaves it alone.
+            let a = bp.mounting_angle;
+            self.mounting_angle = if a.is_finite() && a.abs() > std::f64::consts::PI {
+                (a + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU) - std::f64::consts::PI
+            } else {
+                a
+            };
         }
 
         // Restore load cases from the blueprint, or create a default one

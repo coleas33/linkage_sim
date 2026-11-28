@@ -12,6 +12,21 @@ use crate::gui::state::AppState;
 /// element (`forces::elements::evaluation`): positive = extension.
 const ACTUATOR_FORCE_FIELD_TIP: &str = "Constant axial force applied by the actuator in Newtons. Positive = extension (pushes the attachment points apart), negative = retraction (pulls them together). Set to 0 to solve for the required actuator force from statics.";
 
+/// Retain numeric drafts across frames and publish only a completed edit.
+/// Uses the weight editor's release/focus-loss and Escape convention.
+fn committed_force_number(
+    ui: &mut egui::Ui,
+    key: &str,
+    value: &mut f64,
+    hover: &str,
+    configure: impl FnOnce(egui::DragValue<'_>) -> egui::DragValue<'_>,
+) -> bool {
+    let Some(committed) = super::weight_editor::committed_number(ui, key, hover, *value,
+        |field| configure(field).clamp_existing_to_range(false)) else { return false };
+    *value = committed;
+    true
+}
+
 /// Draw the force elements section of the property panel.
 ///
 /// Lists all non-gravity force elements with editable parameters in
@@ -56,8 +71,8 @@ pub(super) fn draw_force_elements_panel(
 
 /// Draw editable parameter fields for a single force element.
 ///
-/// When a `DragValue` changes, the current element is cloned with the
-/// modified parameter and set as an `UpdateForce` pending edit.
+/// Completed numeric edits and immediate choices clone the current element
+/// with the changed parameter and emit one `UpdateForce` pending edit.
 fn draw_force_element_details(
     ui: &mut egui::Ui,
     index: usize,
@@ -74,15 +89,10 @@ fn draw_force_element_details(
             let mut stiffness = s.stiffness;
             ui.horizontal(|ui| {
                 ui.label("k:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut stiffness)
-                            .speed(1.0)
+                if committed_force_number(ui, "stiffness", &mut stiffness, "Spring stiffness (N/m). Force = k \u{d7} (current_length \u{2212} free_length). Higher values produce a stiffer spring that resists extension/compression more strongly.",
+                    |field| field.speed(1.0)
                             .range(0.0..=f64::MAX)
-                            .suffix(" N/m"),
-                    )
-                    .on_hover_text("Spring stiffness (N/m). Force = k \u{d7} (current_length \u{2212} free_length). Higher values produce a stiffer spring that resists extension/compression more strongly.")
-                    .changed()
+                            .suffix(" N/m"))
                 {
                     let mut updated = s.clone();
                     updated.stiffness = stiffness;
@@ -96,15 +106,10 @@ fn draw_force_element_details(
             let mut free_len = s.free_length;
             ui.horizontal(|ui| {
                 ui.label("L\u{2080}:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut free_len)
-                            .speed(0.001)
+                if committed_force_number(ui, "free_len", &mut free_len, "Free (unstretched) length of the spring in meters. The spring produces zero force when the distance between its attachment points equals this value. Shorter = spring is pre-loaded in tension; longer = pre-loaded in compression.",
+                    |field| field.speed(0.001)
                             .range(0.0..=f64::MAX)
-                            .suffix(" m"),
-                    )
-                    .on_hover_text("Free (unstretched) length of the spring in meters. The spring produces zero force when the distance between its attachment points equals this value. Shorter = spring is pre-loaded in tension; longer = pre-loaded in compression.")
-                    .changed()
+                            .suffix(" m"))
                 {
                     let mut updated = s.clone();
                     updated.free_length = free_len;
@@ -146,15 +151,10 @@ fn draw_force_element_details(
             let mut damping = d.damping;
             ui.horizontal(|ui| {
                 ui.label("c:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut damping)
-                            .speed(0.1)
+                if committed_force_number(ui, "damping", &mut damping, "Viscous damping coefficient (N\u{b7}s/m). Force = c \u{d7} extension_rate. Opposes relative velocity between the two attachment points. Higher values dissipate energy faster.",
+                    |field| field.speed(0.1)
                             .range(0.0..=f64::MAX)
-                            .suffix(" N\u{00b7}s/m"),
-                    )
-                    .on_hover_text("Viscous damping coefficient (N\u{b7}s/m). Force = c \u{d7} extension_rate. Opposes relative velocity between the two attachment points. Higher values dissipate energy faster.")
-                    .changed()
+                            .suffix(" N\u{00b7}s/m"))
                 {
                     let mut updated = d.clone();
                     updated.damping = damping;
@@ -197,10 +197,8 @@ fn draw_force_element_details(
             let mut fy = f.force[1];
             ui.horizontal(|ui| {
                 ui.label("Fx:");
-                if ui
-                    .add(egui::DragValue::new(&mut fx).speed(0.1).suffix(" N"))
-                    .on_hover_text("Horizontal component of the applied force in Newtons (world X-axis). Positive = rightward.")
-                    .changed()
+                if committed_force_number(ui, "fx", &mut fx, "Horizontal component of the applied force in Newtons (world X-axis). Positive = rightward.",
+                    |field| field.speed(0.1).suffix(" N"))
                 {
                     let mut updated = f.clone();
                     updated.force[0] = fx;
@@ -212,10 +210,8 @@ fn draw_force_element_details(
             });
             ui.horizontal(|ui| {
                 ui.label("Fy:");
-                if ui
-                    .add(egui::DragValue::new(&mut fy).speed(0.1).suffix(" N"))
-                    .on_hover_text("Vertical component of the applied force in Newtons (world Y-axis). Positive = upward.")
-                    .changed()
+                if committed_force_number(ui, "fy", &mut fy, "Vertical component of the applied force in Newtons (world Y-axis). Positive = upward.",
+                    |field| field.speed(0.1).suffix(" N"))
                 {
                     let mut updated = f.clone();
                     updated.force[1] = fy;
@@ -251,14 +247,9 @@ fn draw_force_element_details(
             let mut torque = t.torque;
             ui.horizontal(|ui| {
                 ui.label("\u{03c4}:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut torque)
-                            .speed(0.1)
-                            .suffix(" N\u{00b7}m"),
-                    )
-                    .on_hover_text("Pure torque applied to this body in N\u{b7}m. Positive = counter-clockwise. This torque acts directly on the body's rotational DOF, not through an attachment point.")
-                    .changed()
+                if committed_force_number(ui, "torque", &mut torque, "Pure torque applied to this body in N\u{b7}m. Positive = counter-clockwise. This torque acts directly on the body's rotational DOF, not through an attachment point.",
+                    |field| field.speed(0.1)
+                            .suffix(" N\u{00b7}m"))
                 {
                     let mut updated = t.clone();
                     updated.torque = torque;
@@ -282,15 +273,10 @@ fn draw_force_element_details(
             let mut stiffness = s.stiffness;
             ui.horizontal(|ui| {
                 ui.label("k:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut stiffness)
-                            .speed(0.1)
+                if committed_force_number(ui, "stiffness", &mut stiffness, "Torsion spring stiffness (N\u{b7}m/rad). Torque = k \u{d7} (relative_angle \u{2212} free_angle). Acts on the relative angle between bodies I and J at their shared joint.",
+                    |field| field.speed(0.1)
                             .range(0.0..=f64::MAX)
-                            .suffix(" N\u{00b7}m/rad"),
-                    )
-                    .on_hover_text("Torsion spring stiffness (N\u{b7}m/rad). Torque = k \u{d7} (relative_angle \u{2212} free_angle). Acts on the relative angle between bodies I and J at their shared joint.")
-                    .changed()
+                            .suffix(" N\u{00b7}m/rad"))
                 {
                     let mut updated = s.clone();
                     updated.stiffness = stiffness;
@@ -304,14 +290,9 @@ fn draw_force_element_details(
             let mut free_angle = s.free_angle;
             ui.horizontal(|ui| {
                 ui.label("\u{03b8}\u{2080}:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut free_angle)
-                            .speed(0.01)
-                            .suffix(" rad"),
-                    )
-                    .on_hover_text("Free (unloaded) angle of the torsion spring in radians. The spring produces zero torque when the relative angle between bodies I and J equals this value.")
-                    .changed()
+                if committed_force_number(ui, "free_angle", &mut free_angle, "Free (unloaded) angle of the torsion spring in radians. The spring produces zero torque when the relative angle between bodies I and J equals this value.",
+                    |field| field.speed(0.01)
+                            .suffix(" rad"))
                 {
                     let mut updated = s.clone();
                     updated.free_angle = free_angle;
@@ -329,15 +310,10 @@ fn draw_force_element_details(
             let mut damping = d.damping;
             ui.horizontal(|ui| {
                 ui.label("c:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut damping)
-                            .speed(0.1)
+                if committed_force_number(ui, "damping", &mut damping, "Rotary viscous damping coefficient (N\u{b7}m\u{b7}s/rad). Torque = c \u{d7} relative_angular_velocity. Opposes relative rotation between bodies I and J at their shared joint.",
+                    |field| field.speed(0.1)
                             .range(0.0..=f64::MAX)
-                            .suffix(" N\u{00b7}m\u{00b7}s/rad"),
-                    )
-                    .on_hover_text("Rotary viscous damping coefficient (N\u{b7}m\u{b7}s/rad). Torque = c \u{d7} relative_angular_velocity. Opposes relative rotation between bodies I and J at their shared joint.")
-                    .changed()
+                            .suffix(" N\u{00b7}m\u{00b7}s/rad"))
                 {
                     let mut updated = d.clone();
                     updated.damping = damping;
@@ -355,15 +331,10 @@ fn draw_force_element_details(
             let mut initial_force = gs.initial_force;
             ui.horizontal(|ui| {
                 ui.label("F\u{2080}:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut initial_force)
-                            .speed(1.0)
+                if committed_force_number(ui, "initial_force", &mut initial_force, "Force at full extension (fully extended position) in Newtons. This is the minimum force the gas spring produces. Gas springs produce more force as they compress (shorter length = higher pressure = more force).",
+                    |field| field.speed(1.0)
                             .range(0.0..=f64::MAX)
-                            .suffix(" N"),
-                    )
-                    .on_hover_text("Force at full extension (fully extended position) in Newtons. This is the minimum force the gas spring produces. Gas springs produce more force as they compress (shorter length = higher pressure = more force).")
-                    .changed()
+                            .suffix(" N"))
                 {
                     let mut updated = gs.clone();
                     updated.initial_force = initial_force;
@@ -377,15 +348,10 @@ fn draw_force_element_details(
             let mut extended_length = gs.extended_length;
             ui.horizontal(|ui| {
                 ui.label("L_ext:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut extended_length)
-                            .speed(0.001)
+                if committed_force_number(ui, "extended_length", &mut extended_length, "Fully extended (maximum) length of the gas spring in meters, measured between the two attachment points. At this length, the spring produces the initial force F\u{2080}.",
+                    |field| field.speed(0.001)
                             .range(0.0..=f64::MAX)
-                            .suffix(" m"),
-                    )
-                    .on_hover_text("Fully extended (maximum) length of the gas spring in meters, measured between the two attachment points. At this length, the spring produces the initial force F\u{2080}.")
-                    .changed()
+                            .suffix(" m"))
                 {
                     let mut updated = gs.clone();
                     updated.extended_length = extended_length;
@@ -399,15 +365,10 @@ fn draw_force_element_details(
             let mut stroke = gs.stroke;
             ui.horizontal(|ui| {
                 ui.label("Stroke:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut stroke)
-                            .speed(0.001)
+                if committed_force_number(ui, "stroke", &mut stroke, "Available stroke (travel) of the gas spring in meters. The compressed length = extended_length \u{2212} stroke. The force increases as the spring compresses from extended to compressed position.",
+                    |field| field.speed(0.001)
                             .range(0.0..=f64::MAX)
-                            .suffix(" m"),
-                    )
-                    .on_hover_text("Available stroke (travel) of the gas spring in meters. The compressed length = extended_length \u{2212} stroke. The force increases as the spring compresses from extended to compressed position.")
-                    .changed()
+                            .suffix(" m"))
                 {
                     let mut updated = gs.clone();
                     updated.stroke = stroke;
@@ -421,15 +382,10 @@ fn draw_force_element_details(
             let mut damping = gs.damping;
             ui.horizontal(|ui| {
                 ui.label("c:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut damping)
-                            .speed(0.1)
+                if committed_force_number(ui, "damping", &mut damping, "Viscous damping coefficient of the gas spring (N\u{b7}s/m). Adds a velocity-dependent force that opposes extension/compression. Set to 0 for an ideal (frictionless) gas spring.",
+                    |field| field.speed(0.1)
                             .range(0.0..=f64::MAX)
-                            .suffix(" N\u{00b7}s/m"),
-                    )
-                    .on_hover_text("Viscous damping coefficient of the gas spring (N\u{b7}s/m). Adds a velocity-dependent force that opposes extension/compression. Set to 0 for an ideal (frictionless) gas spring.")
-                    .changed()
+                            .suffix(" N\u{00b7}s/m"))
                 {
                     let mut updated = gs.clone();
                     updated.damping = damping;
@@ -443,14 +399,9 @@ fn draw_force_element_details(
             let mut polytropic_exp = gs.polytropic_exp;
             ui.horizontal(|ui| {
                 ui.label("n:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut polytropic_exp)
-                            .speed(0.01)
-                            .range(0.0..=f64::MAX),
-                    )
-                    .on_hover_text("Polytropic exponent controlling the force-vs-compression curve. n=1.0 = isothermal (slow), n=1.4 = adiabatic (fast). Higher values make the force increase more steeply as the spring compresses. Typical gas springs use n \u{2248} 1.1\u{2013}1.3.")
-                    .changed()
+                if committed_force_number(ui, "polytropic_exp", &mut polytropic_exp, "Polytropic exponent controlling the force-vs-compression curve. n=1.0 = isothermal (slow), n=1.4 = adiabatic (fast). Higher values make the force increase more steeply as the spring compresses. Typical gas springs use n \u{2248} 1.1\u{2013}1.3.",
+                    |field| field.speed(0.01)
+                            .range(0.0..=f64::MAX))
                 {
                     let mut updated = gs.clone();
                     updated.polytropic_exp = polytropic_exp;
@@ -492,15 +443,10 @@ fn draw_force_element_details(
             let mut constant_drag = bf.constant_drag;
             ui.horizontal(|ui| {
                 ui.label("Drag:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut constant_drag)
-                            .speed(0.01)
+                if committed_force_number(ui, "constant_drag", &mut constant_drag, "Constant friction torque (N\u{b7}m) that always opposes rotation at the joint, regardless of speed or load. Models seal drag or preload friction.",
+                    |field| field.speed(0.01)
                             .range(0.0..=f64::MAX)
-                            .suffix(" N\u{00b7}m"),
-                    )
-                    .on_hover_text("Constant friction torque (N\u{b7}m) that always opposes rotation at the joint, regardless of speed or load. Models seal drag or preload friction.")
-                    .changed()
+                            .suffix(" N\u{00b7}m"))
                 {
                     let mut updated = bf.clone();
                     updated.constant_drag = constant_drag;
@@ -514,15 +460,10 @@ fn draw_force_element_details(
             let mut viscous_coeff = bf.viscous_coeff;
             ui.horizontal(|ui| {
                 ui.label("Viscous:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut viscous_coeff)
-                            .speed(0.001)
+                if committed_force_number(ui, "viscous_coeff", &mut viscous_coeff, "Speed-dependent friction coefficient (N\u{b7}m\u{b7}s/rad). Friction torque contribution = viscous_coeff \u{d7} angular_velocity. Models lubricated bearing drag.",
+                    |field| field.speed(0.001)
                             .range(0.0..=f64::MAX)
-                            .suffix(" N\u{00b7}m\u{00b7}s/rad"),
-                    )
-                    .on_hover_text("Speed-dependent friction coefficient (N\u{b7}m\u{b7}s/rad). Friction torque contribution = viscous_coeff \u{d7} angular_velocity. Models lubricated bearing drag.")
-                    .changed()
+                            .suffix(" N\u{00b7}m\u{00b7}s/rad"))
                 {
                     let mut updated = bf.clone();
                     updated.viscous_coeff = viscous_coeff;
@@ -536,14 +477,9 @@ fn draw_force_element_details(
             let mut coulomb_coeff = bf.coulomb_coeff;
             ui.horizontal(|ui| {
                 ui.label("\u{03bc}:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut coulomb_coeff)
-                            .speed(0.001)
-                            .range(0.0..=f64::MAX),
-                    )
-                    .on_hover_text("Coulomb friction coefficient (dimensionless). Friction torque = \u{b5} \u{d7} radial_load \u{d7} pin_radius. Models dry sliding contact friction at the joint pin.")
-                    .changed()
+                if committed_force_number(ui, "coulomb_coeff", &mut coulomb_coeff, "Coulomb friction coefficient (dimensionless). Friction torque = \u{b5} \u{d7} radial_load \u{d7} pin_radius. Models dry sliding contact friction at the joint pin.",
+                    |field| field.speed(0.001)
+                            .range(0.0..=f64::MAX))
                 {
                     let mut updated = bf.clone();
                     updated.coulomb_coeff = coulomb_coeff;
@@ -557,15 +493,10 @@ fn draw_force_element_details(
             let mut pin_radius = bf.pin_radius;
             ui.horizontal(|ui| {
                 ui.label("Pin r:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut pin_radius)
-                            .speed(0.001)
+                if committed_force_number(ui, "pin_radius", &mut pin_radius, "Joint pin radius in meters. Used with the Coulomb coefficient to compute friction torque: T_friction = \u{b5} \u{d7} F_radial \u{d7} pin_radius.",
+                    |field| field.speed(0.001)
                             .range(0.0..=f64::MAX)
-                            .suffix(" m"),
-                    )
-                    .on_hover_text("Joint pin radius in meters. Used with the Coulomb coefficient to compute friction torque: T_friction = \u{b5} \u{d7} F_radial \u{d7} pin_radius.")
-                    .changed()
+                            .suffix(" m"))
                 {
                     let mut updated = bf.clone();
                     updated.pin_radius = pin_radius;
@@ -579,15 +510,10 @@ fn draw_force_element_details(
             let mut radial_load = bf.radial_load;
             ui.horizontal(|ui| {
                 ui.label("Radial:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut radial_load)
-                            .speed(0.1)
+                if committed_force_number(ui, "radial_load", &mut radial_load, "Estimated radial load on the joint pin in Newtons. Used to compute Coulomb friction. For more accurate results, use the actual joint reaction force from the statics solution.",
+                    |field| field.speed(0.1)
                             .range(0.0..=f64::MAX)
-                            .suffix(" N"),
-                    )
-                    .on_hover_text("Estimated radial load on the joint pin in Newtons. Used to compute Coulomb friction. For more accurate results, use the actual joint reaction force from the statics solution.")
-                    .changed()
+                            .suffix(" N"))
                 {
                     let mut updated = bf.clone();
                     updated.radial_load = radial_load;
@@ -601,15 +527,10 @@ fn draw_force_element_details(
             let mut v_threshold = bf.v_threshold;
             ui.horizontal(|ui| {
                 ui.label("v_th:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut v_threshold)
-                            .speed(0.001)
+                if committed_force_number(ui, "v_threshold", &mut v_threshold, "Velocity threshold for the Coulomb friction smoothing function (rad/s). Below this speed, the friction torque transitions smoothly to zero to avoid numerical discontinuities. Typical values: 0.01\u{2013}0.1 rad/s.",
+                    |field| field.speed(0.001)
                             .range(0.0..=f64::MAX)
-                            .suffix(" rad/s"),
-                    )
-                    .on_hover_text("Velocity threshold for the Coulomb friction smoothing function (rad/s). Below this speed, the friction torque transitions smoothly to zero to avoid numerical discontinuities. Typical values: 0.01\u{2013}0.1 rad/s.")
-                    .changed()
+                            .suffix(" rad/s"))
                 {
                     let mut updated = bf.clone();
                     updated.v_threshold = v_threshold;
@@ -627,14 +548,9 @@ fn draw_force_element_details(
             let mut angle_min = jl.angle_min;
             ui.horizontal(|ui| {
                 ui.label("\u{03b8}_min:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut angle_min)
-                            .speed(0.01)
-                            .suffix(" rad"),
-                    )
-                    .on_hover_text("Minimum allowed relative angle between bodies I and J in radians. When the joint angle drops below this limit, a stiff restoring torque pushes it back.")
-                    .changed()
+                if committed_force_number(ui, "angle_min", &mut angle_min, "Minimum allowed relative angle between bodies I and J in radians. When the joint angle drops below this limit, a stiff restoring torque pushes it back.",
+                    |field| field.speed(0.01)
+                            .suffix(" rad"))
                 {
                     let mut updated = jl.clone();
                     updated.angle_min = angle_min;
@@ -648,14 +564,9 @@ fn draw_force_element_details(
             let mut angle_max = jl.angle_max;
             ui.horizontal(|ui| {
                 ui.label("\u{03b8}_max:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut angle_max)
-                            .speed(0.01)
-                            .suffix(" rad"),
-                    )
-                    .on_hover_text("Maximum allowed relative angle between bodies I and J in radians. When the joint angle exceeds this limit, a stiff restoring torque pushes it back.")
-                    .changed()
+                if committed_force_number(ui, "angle_max", &mut angle_max, "Maximum allowed relative angle between bodies I and J in radians. When the joint angle exceeds this limit, a stiff restoring torque pushes it back.",
+                    |field| field.speed(0.01)
+                            .suffix(" rad"))
                 {
                     let mut updated = jl.clone();
                     updated.angle_max = angle_max;
@@ -669,15 +580,10 @@ fn draw_force_element_details(
             let mut stiffness = jl.stiffness;
             ui.horizontal(|ui| {
                 ui.label("k:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut stiffness)
-                            .speed(1.0)
+                if committed_force_number(ui, "stiffness", &mut stiffness, "End-stop stiffness (N\u{b7}m/rad). Controls how stiffly the joint resists penetration past the angular limits. Higher values = harder stop.",
+                    |field| field.speed(1.0)
                             .range(0.0..=f64::MAX)
-                            .suffix(" N\u{00b7}m/rad"),
-                    )
-                    .on_hover_text("End-stop stiffness (N\u{b7}m/rad). Controls how stiffly the joint resists penetration past the angular limits. Higher values = harder stop.")
-                    .changed()
+                            .suffix(" N\u{00b7}m/rad"))
                 {
                     let mut updated = jl.clone();
                     updated.stiffness = stiffness;
@@ -691,15 +597,10 @@ fn draw_force_element_details(
             let mut damping = jl.damping;
             ui.horizontal(|ui| {
                 ui.label("c:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut damping)
-                            .speed(0.1)
+                if committed_force_number(ui, "damping", &mut damping, "End-stop damping (N\u{b7}m\u{b7}s/rad). Dissipates energy when the joint hits an angular limit, preventing oscillation. Set to a fraction of 2\u{d7}\u{221a}(k\u{d7}I) for critical damping.",
+                    |field| field.speed(0.1)
                             .range(0.0..=f64::MAX)
-                            .suffix(" N\u{00b7}m\u{00b7}s/rad"),
-                    )
-                    .on_hover_text("End-stop damping (N\u{b7}m\u{b7}s/rad). Dissipates energy when the joint hits an angular limit, preventing oscillation. Set to a fraction of 2\u{d7}\u{221a}(k\u{d7}I) for critical damping.")
-                    .changed()
+                            .suffix(" N\u{00b7}m\u{00b7}s/rad"))
                 {
                     let mut updated = jl.clone();
                     updated.damping = damping;
@@ -713,14 +614,9 @@ fn draw_force_element_details(
             let mut restitution = jl.restitution;
             ui.horizontal(|ui| {
                 ui.label("e:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut restitution)
-                            .speed(0.01)
-                            .range(0.0..=1.0),
-                    )
-                    .on_hover_text("Coefficient of restitution at the angular end-stops (0\u{2013}1). 0 = perfectly inelastic (no bounce), 1 = perfectly elastic. Controls how much kinetic energy is retained after hitting a joint limit.")
-                    .changed()
+                if committed_force_number(ui, "restitution", &mut restitution, "Coefficient of restitution at the angular end-stops (0\u{2013}1). 0 = perfectly inelastic (no bounce), 1 = perfectly elastic. Controls how much kinetic energy is retained after hitting a joint limit.",
+                    |field| field.speed(0.01)
+                            .range(0.0..=1.0))
                 {
                     let mut updated = jl.clone();
                     updated.restitution = restitution;
@@ -738,15 +634,10 @@ fn draw_force_element_details(
             let mut stall_torque = m.stall_torque;
             ui.horizontal(|ui| {
                 ui.label("\u{03c4}_s:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut stall_torque)
-                            .speed(0.1)
+                if committed_force_number(ui, "stall_torque", &mut stall_torque, "Stall torque (N\u{b7}m). Maximum torque the motor can produce at zero speed. The motor follows a linear torque-speed curve: torque = \u{3c4}_s \u{d7} (1 \u{2212} \u{3c9}/\u{3c9}\u{2080}).",
+                    |field| field.speed(0.1)
                             .range(0.0..=f64::MAX)
-                            .suffix(" N\u{00b7}m"),
-                    )
-                    .on_hover_text("Stall torque (N\u{b7}m). Maximum torque the motor can produce at zero speed. The motor follows a linear torque-speed curve: torque = \u{3c4}_s \u{d7} (1 \u{2212} \u{3c9}/\u{3c9}\u{2080}).")
-                    .changed()
+                            .suffix(" N\u{00b7}m"))
                 {
                     let mut updated = m.clone();
                     updated.stall_torque = stall_torque;
@@ -760,15 +651,10 @@ fn draw_force_element_details(
             let mut no_load_speed = m.no_load_speed;
             ui.horizontal(|ui| {
                 ui.label("\u{03c9}\u{2080}:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut no_load_speed)
-                            .speed(0.1)
+                if committed_force_number(ui, "no_load_speed", &mut no_load_speed, "No-load speed (rad/s). Maximum angular velocity of the motor when no external torque is applied. The motor produces zero torque at this speed.",
+                    |field| field.speed(0.1)
                             .range(0.0..=f64::MAX)
-                            .suffix(" rad/s"),
-                    )
-                    .on_hover_text("No-load speed (rad/s). Maximum angular velocity of the motor when no external torque is applied. The motor produces zero torque at this speed.")
-                    .changed()
+                            .suffix(" rad/s"))
                 {
                     let mut updated = m.clone();
                     updated.no_load_speed = no_load_speed;
@@ -782,13 +668,8 @@ fn draw_force_element_details(
             let mut direction = m.direction;
             ui.horizontal(|ui| {
                 ui.label("Dir:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut direction)
-                            .speed(0.1),
-                    )
-                    .on_hover_text("Motor direction multiplier. +1 = counter-clockwise, \u{2212}1 = clockwise. Scales the applied torque to set the intended rotation direction.")
-                    .changed()
+                if committed_force_number(ui, "direction", &mut direction, "Motor direction multiplier. +1 = counter-clockwise, \u{2212}1 = clockwise. Scales the applied torque to set the intended rotation direction.",
+                    |field| field.speed(0.1))
                 {
                     let mut updated = m.clone();
                     updated.direction = direction;
@@ -838,7 +719,8 @@ fn draw_force_element_details(
             let mut fx = fz.force[0];
             ui.horizontal(|ui| {
                 ui.label("Force X (N):");
-                if ui.add(egui::DragValue::new(&mut fx).speed(1.0).prefix("Fx: ")).on_hover_text("Horizontal force component (N) applied to geometry elements inside the zone. Positive = rightward.").changed() {
+                if committed_force_number(ui, "fx", &mut fx, "Horizontal force component (N) applied to geometry elements inside the zone. Positive = rightward.",
+                    |field| field.speed(1.0).prefix("Fx: ")) {
                     let mut updated = fz.clone();
                     updated.force[0] = fx;
                     *pending = Some(PendingPropertyEdit::UpdateForce {
@@ -851,7 +733,8 @@ fn draw_force_element_details(
             let mut fy = fz.force[1];
             ui.horizontal(|ui| {
                 ui.label("Force Y (N):");
-                if ui.add(egui::DragValue::new(&mut fy).speed(1.0).prefix("Fy: ")).on_hover_text("Vertical force component (N) applied to geometry elements inside the zone. Positive = upward.").changed() {
+                if committed_force_number(ui, "fy", &mut fy, "Vertical force component (N) applied to geometry elements inside the zone. Positive = upward.",
+                    |field| field.speed(1.0).prefix("Fy: ")) {
                     let mut updated = fz.clone();
                     updated.force[1] = fy;
                     *pending = Some(PendingPropertyEdit::UpdateForce {
@@ -871,21 +754,25 @@ fn draw_force_element_details(
             let mut zone_changed = false;
             ui.horizontal(|ui| {
                 ui.label("Min X:");
-                if ui.add(egui::DragValue::new(&mut min_x_mm).speed(1.0).suffix(" mm")).on_hover_text("Minimum X coordinate of the force zone in mm. The zone applies its force while the body's geometry overlaps this bounding box.").changed() {
+                if committed_force_number(ui, "min_x_mm", &mut min_x_mm, "Minimum X coordinate of the force zone in mm. The zone applies its force while the body's geometry overlaps this bounding box.",
+                    |field| field.speed(1.0).suffix(" mm")) {
                     zone_changed = true;
                 }
                 ui.label("Min Y:");
-                if ui.add(egui::DragValue::new(&mut min_y_mm).speed(1.0).suffix(" mm")).on_hover_text("Minimum Y coordinate of the force zone in mm.").changed() {
+                if committed_force_number(ui, "min_y_mm", &mut min_y_mm, "Minimum Y coordinate of the force zone in mm.",
+                    |field| field.speed(1.0).suffix(" mm")) {
                     zone_changed = true;
                 }
             });
             ui.horizontal(|ui| {
                 ui.label("Max X:");
-                if ui.add(egui::DragValue::new(&mut max_x_mm).speed(1.0).suffix(" mm")).on_hover_text("Maximum X coordinate of the force zone in mm.").changed() {
+                if committed_force_number(ui, "max_x_mm", &mut max_x_mm, "Maximum X coordinate of the force zone in mm.",
+                    |field| field.speed(1.0).suffix(" mm")) {
                     zone_changed = true;
                 }
                 ui.label("Max Y:");
-                if ui.add(egui::DragValue::new(&mut max_y_mm).speed(1.0).suffix(" mm")).on_hover_text("Maximum Y coordinate of the force zone in mm.").changed() {
+                if committed_force_number(ui, "max_y_mm", &mut max_y_mm, "Maximum Y coordinate of the force zone in mm.",
+                    |field| field.speed(1.0).suffix(" mm")) {
                     zone_changed = true;
                 }
             });
@@ -933,11 +820,13 @@ fn draw_force_element_details(
                 let mut ap_changed = false;
                 ui.horizontal(|ui| {
                     ui.label("Local X:");
-                    if ui.add(egui::DragValue::new(&mut lx_mm).speed(1.0).suffix(" mm")).on_hover_text("Application point X in body-local coordinates (mm).").changed() {
+                    if committed_force_number(ui, "lx_mm", &mut lx_mm, "Application point X in body-local coordinates (mm).",
+                    |field| field.speed(1.0).suffix(" mm")) {
                         ap_changed = true;
                     }
                     ui.label("Local Y:");
-                    if ui.add(egui::DragValue::new(&mut ly_mm).speed(1.0).suffix(" mm")).on_hover_text("Application point Y in body-local coordinates (mm).").changed() {
+                    if committed_force_number(ui, "ly_mm", &mut ly_mm, "Application point Y in body-local coordinates (mm).",
+                    |field| field.speed(1.0).suffix(" mm")) {
                         ap_changed = true;
                     }
                 });
@@ -958,14 +847,9 @@ fn draw_force_element_details(
             let mut force = la.force;
             ui.horizontal(|ui| {
                 ui.label("F:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut force)
-                            .speed(1.0)
-                            .suffix(" N"),
-                    )
-                    .on_hover_text(ACTUATOR_FORCE_FIELD_TIP)
-                    .changed()
+                if committed_force_number(ui, "force", &mut force, ACTUATOR_FORCE_FIELD_TIP,
+                    |field| field.speed(1.0)
+                            .suffix(" N"))
                 {
                     let mut updated = la.clone();
                     updated.force = force;
@@ -979,15 +863,10 @@ fn draw_force_element_details(
             let mut speed_limit = la.speed_limit;
             ui.horizontal(|ui| {
                 ui.label("v_max:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut speed_limit)
-                            .speed(0.01)
+                if committed_force_number(ui, "speed_limit", &mut speed_limit, "Maximum extension/retraction speed of the actuator in m/s. Set to 0 for unlimited speed.",
+                    |field| field.speed(0.01)
                             .range(0.0..=f64::MAX)
-                            .suffix(" m/s"),
-                    )
-                    .on_hover_text("Maximum extension/retraction speed of the actuator in m/s. Set to 0 for unlimited speed.")
-                    .changed()
+                            .suffix(" m/s"))
                 {
                     let mut updated = la.clone();
                     updated.speed_limit = speed_limit;
@@ -1017,15 +896,10 @@ fn draw_force_element_details(
                             "Min stroke:"
                         };
                         ui.label(min_hint);
-                        if ui
-                            .add(
-                                egui::DragValue::new(&mut stroke_min)
-                                    .speed(0.001)
+                        if committed_force_number(ui, "stroke_min", &mut stroke_min, "Minimum actuator length (fully retracted) in meters. Set to 0 to disable the lower stroke limit.",
+                    |field| field.speed(0.001)
                                     .range(0.0..=f64::MAX)
-                                    .suffix(" m"),
-                            )
-                            .on_hover_text("Minimum actuator length (fully retracted) in meters. Set to 0 to disable the lower stroke limit.")
-                            .changed()
+                                    .suffix(" m"))
                         {
                             let mut updated = la.clone();
                             updated.stroke_min = stroke_min;
@@ -1039,15 +913,10 @@ fn draw_force_element_details(
                     let mut stroke_max = la.stroke_max;
                     ui.horizontal(|ui| {
                         ui.label("Max stroke:");
-                        if ui
-                            .add(
-                                egui::DragValue::new(&mut stroke_max)
-                                    .speed(0.001)
+                        if committed_force_number(ui, "stroke_max", &mut stroke_max, "Maximum actuator length (fully extended) in meters. Set to 0 to disable the upper stroke limit.",
+                    |field| field.speed(0.001)
                                     .range(0.0..=f64::MAX)
-                                    .suffix(" m"),
-                            )
-                            .on_hover_text("Maximum actuator length (fully extended) in meters. Set to 0 to disable the upper stroke limit.")
-                            .changed()
+                                    .suffix(" m"))
                         {
                             let mut updated = la.clone();
                             updated.stroke_max = stroke_max;
@@ -1061,15 +930,10 @@ fn draw_force_element_details(
                     let mut stiffness = la.end_stop_stiffness;
                     ui.horizontal(|ui| {
                         ui.label("Stiffness (k):");
-                        if ui
-                            .add(
-                                egui::DragValue::new(&mut stiffness)
-                                    .speed(100.0)
+                        if committed_force_number(ui, "stiffness", &mut stiffness, "Stiffness of virtual end-stop springs at the stroke limits (N/m). Prevents the actuator from exceeding its stroke range.",
+                    |field| field.speed(100.0)
                                     .range(0.0..=f64::MAX)
-                                    .suffix(" N/m"),
-                            )
-                            .on_hover_text("Stiffness of virtual end-stop springs at the stroke limits (N/m). Prevents the actuator from exceeding its stroke range.")
-                            .changed()
+                                    .suffix(" N/m"))
                         {
                             let mut updated = la.clone();
                             updated.end_stop_stiffness = stiffness;
@@ -1083,15 +947,10 @@ fn draw_force_element_details(
                     let mut damping = la.end_stop_damping;
                     ui.horizontal(|ui| {
                         ui.label("Damping (c):");
-                        if ui
-                            .add(
-                                egui::DragValue::new(&mut damping)
-                                    .speed(1.0)
+                        if committed_force_number(ui, "damping", &mut damping, "Damping of virtual end-stop contact (N\u{b7}s/m). Prevents oscillation at stroke limits.",
+                    |field| field.speed(1.0)
                                     .range(0.0..=f64::MAX)
-                                    .suffix(" N\u{00b7}s/m"),
-                            )
-                            .on_hover_text("Damping of virtual end-stop contact (N\u{b7}s/m). Prevents oscillation at stroke limits.")
-                            .changed()
+                                    .suffix(" N\u{00b7}s/m"))
                         {
                             let mut updated = la.clone();
                             updated.end_stop_damping = damping;
@@ -1105,14 +964,9 @@ fn draw_force_element_details(
                     let mut restitution = la.end_stop_restitution;
                     ui.horizontal(|ui| {
                         ui.label("Restitution (e):");
-                        if ui
-                            .add(
-                                egui::DragValue::new(&mut restitution)
-                                    .speed(0.01)
-                                    .range(0.0..=1.0),
-                            )
-                            .on_hover_text("Coefficient of restitution at stroke end-stops (0\u{2013}1). 0 = perfectly inelastic (no bounce), 1 = perfectly elastic.")
-                            .changed()
+                        if committed_force_number(ui, "restitution", &mut restitution, "Coefficient of restitution at stroke end-stops (0\u{2013}1). 0 = perfectly inelastic (no bounce), 1 = perfectly elastic.",
+                    |field| field.speed(0.01)
+                                    .range(0.0..=1.0))
                         {
                             let mut updated = la.clone();
                             updated.end_stop_restitution = restitution;
@@ -1244,9 +1098,8 @@ fn draw_modulation_fields(
             let mut w = *omega;
             ui.horizontal(|ui| {
                 ui.label("\u{03c9}:");
-                if ui
-                    .add(egui::DragValue::new(&mut w).speed(0.1).suffix(" rad/s"))
-                    .changed()
+                if committed_force_number(ui, "w", &mut w, "",
+                    |field| field.speed(0.1).suffix(" rad/s"))
                 {
                     *pending = Some(PendingPropertyEdit::UpdateForce {
                         index,
@@ -1261,9 +1114,8 @@ fn draw_modulation_fields(
             let mut p = *phase;
             ui.horizontal(|ui| {
                 ui.label("Phase:");
-                if ui
-                    .add(egui::DragValue::new(&mut p).speed(0.01).suffix(" rad"))
-                    .changed()
+                if committed_force_number(ui, "p", &mut p, "",
+                    |field| field.speed(0.01).suffix(" rad"))
                 {
                     *pending = Some(PendingPropertyEdit::UpdateForce {
                         index,
@@ -1280,14 +1132,10 @@ fn draw_modulation_fields(
             let mut t = *t_on;
             ui.horizontal(|ui| {
                 ui.label("t_on:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut t)
-                            .speed(0.01)
+                if committed_force_number(ui, "t", &mut t, "",
+                    |field| field.speed(0.01)
                             .range(0.0..=f64::MAX)
-                            .suffix(" s"),
-                    )
-                    .changed()
+                            .suffix(" s"))
                 {
                     *pending = Some(PendingPropertyEdit::UpdateForce {
                         index,
@@ -1301,14 +1149,10 @@ fn draw_modulation_fields(
             let mut ts = *t_start;
             ui.horizontal(|ui| {
                 ui.label("t_start:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut ts)
-                            .speed(0.01)
+                if committed_force_number(ui, "ts", &mut ts, "",
+                    |field| field.speed(0.01)
                             .range(0.0..=f64::MAX)
-                            .suffix(" s"),
-                    )
-                    .changed()
+                            .suffix(" s"))
                 {
                     *pending = Some(PendingPropertyEdit::UpdateForce {
                         index,
@@ -1323,14 +1167,10 @@ fn draw_modulation_fields(
             let mut te = *t_end;
             ui.horizontal(|ui| {
                 ui.label("t_end:");
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut te)
-                            .speed(0.01)
+                if committed_force_number(ui, "te", &mut te, "",
+                    |field| field.speed(0.01)
                             .range(0.0..=f64::MAX)
-                            .suffix(" s"),
-                    )
-                    .changed()
+                            .suffix(" s"))
                 {
                     *pending = Some(PendingPropertyEdit::UpdateForce {
                         index,
@@ -1344,11 +1184,17 @@ fn draw_modulation_fields(
         }
 
         TimeModulation::Expression { expr } => {
-            let mut text = expr.clone();
             ui.horizontal(|ui| {
+                let draft_id = ui.id().with(("force_modulation_expression", index));
+                let mut text = ui.data(|data| data.get_temp::<String>(draft_id)).unwrap_or_else(|| expr.clone());
                 ui.label("f(t):");
                 let response = ui.text_edit_singleline(&mut text);
-                if response.lost_focus() && text != *expr {
+                if response.has_focus() {
+                    ui.data_mut(|data| data.insert_temp(draft_id, text));
+                    return;
+                }
+                ui.data_mut(|data| data.remove::<String>(draft_id));
+                if response.lost_focus() && text != *expr && !ui.input(|input| input.key_pressed(egui::Key::Escape)) {
                     *pending = Some(PendingPropertyEdit::UpdateForce {
                         index,
                         force: make_element(TimeModulation::Expression { expr: text }),
@@ -1475,9 +1321,8 @@ fn draw_point_fields(
     let mut y = point[1];
     ui.horizontal(|ui| {
         ui.label(format!("{} x:", label));
-        if ui
-            .add(egui::DragValue::new(&mut x).speed(0.001).suffix(" m"))
-            .changed()
+        if committed_force_number(ui, "x", &mut x, "",
+                    |field| field.speed(0.001).suffix(" m"))
         {
             *pending = Some(PendingPropertyEdit::UpdateForce {
                 index,
@@ -1487,9 +1332,8 @@ fn draw_point_fields(
     });
     ui.horizontal(|ui| {
         ui.label(format!("{} y:", label));
-        if ui
-            .add(egui::DragValue::new(&mut y).speed(0.001).suffix(" m"))
-            .changed()
+        if committed_force_number(ui, "y", &mut y, "",
+                    |field| field.speed(0.001).suffix(" m"))
         {
             *pending = Some(PendingPropertyEdit::UpdateForce {
                 index,
@@ -1502,6 +1346,165 @@ fn draw_point_fields(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::gui::samples::SampleMechanism;
+    use crate::gui::test_support::{central_panel_frame, drew_text, key_tap, primary_button, text_rect, typed};
+
+    fn bl045_editor_state() -> AppState {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.gravity_magnitude = 0.0;
+        state.blueprint.as_mut().unwrap().forces = vec![ForceElement::ExternalForce(ExternalForceElement {
+            body_id: "crank".into(), local_point: [0.0, 0.0], local_point_name: None,
+            force: [10.0, 0.0], modulation: TimeModulation::Constant,
+        })];
+        state.rebuild();
+        state.undo_history.clear();
+        state.dirty = false;
+        state
+    }
+
+    fn bl045_editor_frame(ctx: &egui::Context, state: &mut AppState, events: Vec<egui::Event>) -> (egui::FullOutput, bool) {
+        let bp = state.blueprint.as_ref().unwrap().clone();
+        let mut pending = None;
+        let output = central_panel_frame(ctx, events, |ui| {
+            draw_force_element_details(ui, 0, &bp.forces[0], &bp, &mut pending);
+        });
+        let committed = pending.is_some();
+        super::super::pending_edits::apply_pending(state, pending);
+        (output, committed)
+    }
+
+    fn bl045_fx(state: &AppState) -> f64 {
+        let ForceElement::ExternalForce(force) = &state.blueprint.as_ref().unwrap().forces[0] else {
+            panic!("external force fixture missing");
+        };
+        force.force[0]
+    }
+
+    fn bl045_fx_rect(ctx: &egui::Context, state: &mut AppState) -> egui::Rect {
+        bl045_editor_frame(ctx, state, Vec::new());
+        bl045_editor_frame(ctx, state, key_tap(egui::Key::Tab, egui::Modifiers::NONE));
+        let id = ctx.memory(|m| m.focused()).expect("Tab focuses Fx");
+        bl045_editor_frame(ctx, state, key_tap(egui::Key::Escape, egui::Modifiers::NONE));
+        ctx.read_response(id).expect("Fx is drawn").rect
+    }
+
+    #[test]
+    fn bl045_numeric_force_drag_commits_once_on_release() {
+        let ctx = egui::Context::default();
+        let mut state = bl045_editor_state();
+        let start = bl045_fx_rect(&ctx, &mut state).center();
+        let end = start + egui::vec2(40.0, 0.0);
+        bl045_editor_frame(&ctx, &mut state, vec![egui::Event::PointerMoved(start)]);
+        bl045_editor_frame(&ctx, &mut state, vec![primary_button(start, true)]);
+        for at in [start + egui::vec2(20.0, 0.0), end] {
+            assert!(!bl045_editor_frame(&ctx, &mut state, vec![egui::Event::PointerMoved(at)]).1,
+                "drag previews must not commit/rebuild every frame");
+            assert_eq!(bl045_fx(&state), 10.0);
+            assert_eq!(state.undo_history.undo_count(), 0);
+            assert!(!state.dirty);
+        }
+        assert!(bl045_editor_frame(&ctx, &mut state, vec![primary_button(end, false)]).1);
+        assert!(bl045_fx(&state) > 10.0, "the retained draft commits on release");
+        assert_eq!(state.undo_history.undo_count(), 1);
+        assert!(state.dirty);
+        assert!(!bl045_editor_frame(&ctx, &mut state, Vec::new()).1);
+        state.undo();
+        assert_eq!(bl045_fx(&state), 10.0);
+    }
+
+    #[test]
+    fn bl045_typed_force_commits_on_enter_and_escape_discards_the_draft() {
+        for finish in [egui::Key::Enter, egui::Key::Escape] {
+            let ctx = egui::Context::default();
+            let mut state = bl045_editor_state();
+            bl045_editor_frame(&ctx, &mut state, Vec::new());
+            bl045_editor_frame(&ctx, &mut state, key_tap(egui::Key::Tab, egui::Modifiers::NONE));
+            assert!(!bl045_editor_frame(&ctx, &mut state, vec![typed("25")]).1, "typing is a preview");
+            assert_eq!(bl045_fx(&state), 10.0);
+            assert_eq!(state.undo_history.undo_count(), 0);
+            let committed = bl045_editor_frame(&ctx, &mut state, key_tap(finish, egui::Modifiers::NONE)).1;
+            assert_eq!(committed, finish == egui::Key::Enter);
+            assert_eq!(bl045_fx(&state), if finish == egui::Key::Enter { 25.0 } else { 10.0 });
+            assert_eq!(state.undo_history.undo_count(), usize::from(committed));
+            assert_eq!(state.dirty, committed);
+            assert!(!bl045_editor_frame(&ctx, &mut state, Vec::new()).1);
+        }
+    }
+
+    #[test]
+    fn bl045_keyboard_nudges_are_retained_until_focus_leaves_then_commit_once() {
+        let ctx = egui::Context::default();
+        let mut state = bl045_editor_state();
+        bl045_editor_frame(&ctx, &mut state, Vec::new());
+        bl045_editor_frame(&ctx, &mut state, key_tap(egui::Key::Tab, egui::Modifiers::NONE));
+        for _ in 0..2 {
+            assert!(!bl045_editor_frame(&ctx, &mut state, key_tap(egui::Key::ArrowUp, egui::Modifiers::NONE)).1);
+            assert_eq!(bl045_fx(&state), 10.0);
+        }
+        assert!(bl045_editor_frame(&ctx, &mut state, key_tap(egui::Key::Tab, egui::Modifiers::NONE)).1);
+        assert!((bl045_fx(&state) - 10.2).abs() < 1e-10);
+        assert_eq!(state.undo_history.undo_count(), 1);
+        assert!(state.dirty);
+    }
+
+    #[test]
+    fn bl045_zone_mode_click_is_an_immediate_single_undoable_edit() {
+        let ctx = egui::Context::default();
+        let mut state = bl045_editor_state();
+        state.blueprint.as_mut().unwrap().forces[0] = ForceElement::ForceZone(ForceZoneElement {
+            body_id: "crank".into(), zone_min: [-1.0, -1.0], zone_max: [1.0, 1.0],
+            force: [10.0, 0.0], label: None, body_local_app_point: None, at_contact_point: false,
+        });
+        state.rebuild();
+        let output = bl045_editor_frame(&ctx, &mut state, Vec::new()).0;
+        let at = text_rect(&output, "Contact point").expect("mode choice is drawn").center();
+        bl045_editor_frame(&ctx, &mut state, vec![egui::Event::PointerMoved(at)]);
+        bl045_editor_frame(&ctx, &mut state, vec![primary_button(at, true)]);
+        assert!(bl045_editor_frame(&ctx, &mut state, vec![primary_button(at, false)]).1);
+        let ForceElement::ForceZone(zone) = &state.blueprint.as_ref().unwrap().forces[0] else { panic!("zone missing"); };
+        assert_eq!(zone.app_mode(), ZoneAppMode::Contact);
+        assert_eq!(state.undo_history.undo_count(), 1);
+        assert!(state.dirty);
+        state.undo();
+        let ForceElement::ForceZone(zone) = &state.blueprint.as_ref().unwrap().forces[0] else { panic!("zone missing"); };
+        assert_eq!(zone.app_mode(), ZoneAppMode::Centroid);
+    }
+
+    #[test]
+    fn bl045_modulation_expression_draft_survives_frames_and_enter_or_escape() {
+        for finish in [egui::Key::Enter, egui::Key::Escape] {
+            let ctx = egui::Context::default();
+            let mut state = bl045_editor_state();
+            let ForceElement::ExternalForce(force) = &mut state.blueprint.as_mut().unwrap().forces[0] else {
+                panic!("external force fixture missing");
+            };
+            force.modulation = TimeModulation::Expression { expr: "sin(t)".into() };
+            state.rebuild();
+            let output = bl045_editor_frame(&ctx, &mut state, Vec::new()).0;
+            let at = text_rect(&output, "sin(t)").expect("expression field is drawn").center();
+            bl045_editor_frame(&ctx, &mut state, vec![egui::Event::PointerMoved(at)]);
+            bl045_editor_frame(&ctx, &mut state, vec![primary_button(at, true)]);
+            bl045_editor_frame(&ctx, &mut state, vec![primary_button(at, false)]);
+            bl045_editor_frame(&ctx, &mut state, key_tap(egui::Key::A, egui::Modifiers::COMMAND));
+            assert!(!bl045_editor_frame(&ctx, &mut state, vec![typed("2*t")]).1);
+            let (output, committed) = bl045_editor_frame(&ctx, &mut state, Vec::new());
+            assert!(!committed, "a draft is not a document edit");
+            assert!(drew_text(&output, "2*t"), "the draft survives the next frame: {:?}", crate::gui::test_support::drawn_texts(&output));
+            assert_eq!(state.undo_history.undo_count(), 0);
+            assert!(!state.dirty);
+            let committed = bl045_editor_frame(&ctx, &mut state, key_tap(finish, egui::Modifiers::NONE)).1;
+            assert_eq!(committed, finish == egui::Key::Enter);
+            let ForceElement::ExternalForce(force) = &state.blueprint.as_ref().unwrap().forces[0] else {
+                panic!("external force fixture missing");
+            };
+            let TimeModulation::Expression { expr } = &force.modulation else { panic!("expression missing"); };
+            assert_eq!(expr, if committed { "2*t" } else { "sin(t)" });
+            assert_eq!(state.undo_history.undo_count(), usize::from(committed));
+            assert_eq!(state.dirty, committed);
+            assert!(!bl045_editor_frame(&ctx, &mut state, Vec::new()).1);
+        }
+    }
 
     /// The code's convention is positive = extension (the actuator pushes
     /// its attachment points apart); the field tip used to say the opposite.

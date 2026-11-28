@@ -414,8 +414,8 @@
   evidence: "WASM_DEPLOYMENT.md:36-40 omits --features raster (build_web.sh:20-24 and deploy-web.yml:38-50 include it); WASM_DEPLOYMENT.md:100 claims max-age=31536000 immutable but web/vercel.json sets max-age=0 must-revalidate"
   acceptance: "doc's build command and cache-control statements match build_web.sh and web/vercel.json verbatim"
   priority: 3
-  status: open
-  notes: ""
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: the build command (raster) and cache-control statements had already been corrected by later work; the remaining drift was the Known Limitations section, which denied file loading, PNG/SVG/GIF export, autosave and recent mechanisms the web build ships. Replaced it with a Browser Behavior section (reused from codex 426844d, checked against file_io.rs and menu_bar.rs). Doc-only; the guide's old claims were verified false before the edit."
 
 - id: BL-005
   title: .claude/agents/rust-test-fixer.md premise is stale (tests already fixed)
@@ -424,8 +424,8 @@
   evidence: "Agent description claims tests/ struct literals miss fields; commit b919485 (2026-05-26) added them; cargo test --all --no-run exits 0 (2026-08-08)"
   acceptance: "agent description rewritten to a general 'repair broken test-crate compiles' role or the agent is deleted; no claim that tests/ is currently broken"
   priority: 3
-  status: open
-  notes: ""
+  status: fixed
+  notes: "FIXED earlier (found 2026-11-28 by the R5 batch): .claude/agents/rust-test-fixer.md already describes a general repair-a-broken-test-compile role; Codex installed it on 2026-10-07 (commit b1011c9 on codex/physics-review-rework-2026-10-06); the file is untracked in this repo (.gitignore ignores .claude/* except workflows), so no change here."
 
 - id: BL-006
   title: nom v1.2.4 flagged future-incompatible (will be rejected by a future rustc)
@@ -434,8 +434,8 @@
   evidence: "cargo report during 2026-08-08 build: 'nom v1.2.4 ... will be rejected by a future version of Rust'"
   acceptance: "cargo tree -i nom documented in notes; dependency updated/replaced, or item deferred with the upstream blocker named"
   priority: 2
-  status: open
-  notes: ""
+  status: deferred
+  notes: "DEFERRED 2026-11-28 on branch linkage/r5-mechanical: resolved by the acceptance's deferral clause (no code change). cargo tree -i nom: nom v1.2.4 <- meval v0.2.0 <- linkage-sim-rs v0.1.0. Re-checked today: latest published meval is still 0.2.0 and requires nom 1.x, so a lock bump cannot remove nom 1.2.4; upstream blocker is meval (issue 30, nom7/nom8 PRs 27/34 unmerged). Warning stays; revisit when a maintained meval release or validated parser replacement exists. Codex's earlier deferral (5a14aa9, cecbc0e) reused."
 
 - id: BL-007
   title: CSV/HTML export behavior on NaN-padded (non-Grashof) sweep rows unverified
@@ -454,8 +454,8 @@
   evidence: "solver/inverse_kinematics/derivatives.rs:217:13 — rustc mixed_script_confusables warning during doctest build (2026-08-08)"
   acceptance: "identifier renamed (e.g. delta); warning gone; cargo test --all green"
   priority: 3
-  status: open
-  notes: ""
+  status: fixed
+  notes: "FIXED earlier (found 2026-11-28 by the R5 batch): derivatives.rs has no let δ left (the FD test uses eps); cargo check --tests gives no mixed_script_confusables warning."
 
 - id: BL-009
   title: Extend reaction-force physics validation to force-zone poses + cross-checks
@@ -504,8 +504,8 @@
   evidence: "src/gui/export/raster.rs:406-431 test export_chebyshev_lambda_pngs writes into docs/chebyshev_lambda/; observed 2026-08-08 (8 PNGs dirty after every gate run; were clean at session start)"
   acceptance: "cargo test --all leaves the working tree clean (test writes to target/ or is #[ignore]/opt-in); PNG regeneration documented as an explicit command"
   priority: 2
-  status: open
-  notes: "Interacts with fix-campaign per-item commits; commit step already guards against staging these PNGs."
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: export_chebyshev_lambda_pngs now writes to linkage-sim-rs/target/chebyshev_lambda/ instead of docs/chebyshev_lambda/, so cargo test leaves the tree clean; regeneration is a manual copy, documented in AGENTS.md; a test pins the output directory outside docs/. Interacts with fix-campaign per-item commits; commit step already guards against staging these PNGs."
 
 - id: BL-013
   title: Web (WASM) build renders light theme; theme.rs claims CAD dark visuals
@@ -514,8 +514,8 @@
   evidence: "gui-smoke live run 2026-08-08: screenshot shows light theme (archived at .superpowers/sdd/2026-08-08-agentic-test-improve-loop/smoke-test-linkage.png); docs/ai/03-structure.yaml describes theme.rs as 'CAD dark visuals'"
   acceptance: "web build renders the intended theme (or the intended default is documented and gui-smoke prompt/theme docs updated to match); verified by gui-smoke screenshot"
   priority: 3
-  status: open
-  notes: ""
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: apply_cad_theme now selects ThemePreference::Dark before the CAD visuals and spacing, so a light browser preference no longer renders the web build light; two regression tests in gui/theme.rs (light/dark/light system frames with both fallbacks, Nathan mode and restore); reused from Codex 261f6b4. Verified 2026-11-28 in Chrome (Playwright) with prefers-color-scheme light: the web build draws dark (the R5 smoke run; screenshot .playwright-mcp/r5-linkage-light-preference.png, not committed)."
 
 - id: BL-014
   title: Per-frame console warning spam in web build (egui viewport Title command)
@@ -524,8 +524,8 @@
   evidence: "gui-smoke live run 2026-08-08: ~194 identical warnings in ~5s — eframe app_runner.rs:256 'Unhandled egui viewport command: Title(...)' via linkage-web.js:1271, one per frame"
   acceptance: "zero repeated viewport-command warnings during a 5s gui-smoke run (set title once / gate the per-frame call on web)"
   priority: 3
-  status: open
-  notes: ""
+  status: fixed
+  notes: "Duplicate of BL-037 (fixed): the per-frame viewport-command warnings were removed there (found 2026-11-28 by the R5 batch)."
 
 - id: BL-015
   title: docs/ai/02-system.yaml is not YAML-parseable (scanner error line 14-15)
@@ -564,8 +564,8 @@
   evidence: "input_panel.rs:203-213 (Mounting Angle section, collapsed by default): Slider::step_by(0.5) bound to a local copy of state.mounting_angle, followed by a value-diff gate that calls mark_sweep_dirty() + rebuild(). Same egui snap-on-idle-frame behaviour proven for BL-020: with an off-grid mounting angle (e.g. 0.3 deg loaded from JSON) every frame the section is open snaps the angle to the grid and rebuilds the mechanism + recomputes the sweep."
   acceptance: "idle-frame regression test with the Mounting Angle section expanded (open the CollapsingHeader via egui memory in the test) asserts mounting_angle unchanged and no rebuild; write-back only on interaction (drop step_by or gate on drag/edit); cargo test --all green"
   priority: 3
-  status: open
-  notes: "Found while fixing BL-020; left out of that fix to keep it surgical and because the collapsed section needs extra test plumbing."
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: removed the Mounting Angle slider step_by(0.5) so an expanded idle control no longer snaps an off-grid angle or rebuilds; edits still rebuild; regression test bl021_expanded_mounting_slider_preserves_off_grid_state_on_idle_frames (reused from parked codex commit 0d78122). Found while fixing BL-020; left out of that fix to keep it surgical and because the collapsed section needs extra test plumbing."
 
 - id: BL-022
   title: "Compound actuator expansion: force anchored at cylinder base and stroke length from mixed body frames"
@@ -654,8 +654,8 @@
   evidence: "gui/state/driver_ops.rs:22-36 reassign_driver rebuilds the mechanism from the stock sample and resets the blueprint, silently discarding every point mass the user added (undoable). Found by the payload-plan critic 2026-09-29; the Track 2 hands-on checklist warns about it."
   acceptance: "test: add a weight to a sample, reassign the driver, assert the weight (id, mass, position) survives; or the reassign path warns before discarding user edits"
   priority: 2
-  status: open
-  notes: "Pre-existing; independent of Track 2."
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical, reworked after branch review F-1: the first fix (8d01d32) sent a weighted sample down the blueprint path, which starts the new driver at theta_0 = 0 in the builder's body frames and could not assemble (FourBar, a coupler weight, reassign to J4: converged=false). reassign_driver now always rebuilds a sample from the stock builder and carries each user weight over by body id (id, mass, position kept) into the rebuilt blueprint and the live body before the solve; a weight on a body the stock sample lacks is dropped with a status-bar message. Tests reassign_driver_on_a_sample_keeps_user_weights (FourBar J4 and WattII J2: converged, pose equal to the weightless reassign, weight in the blueprint and the live body mass) and reassign_driver_on_a_sample_drops_only_weights_on_bodies_it_lacks. Pre-existing; independent of Track 2."
 
 - id: BL-016
   title: "Investigate driving egui canvas UI for deeper GUI smoke (samples + plot tabs)"
@@ -674,8 +674,8 @@
   evidence: "Found 2026-09-12 while fixing BL-010. Headless probe (egui::Context::run, 4 frames): with Plot::default_x_bounds set, an X bounds change made in frame 1 is reset to the defaults on the next frame, while a Y change persists; with default_y_bounds both reset. Cause: egui_plot 0.33 lib.rs ~1066 `if (!default_auto_bounds.x && !any_dynamic_modifications) || mem.auto_bounds.x { bounds.set_x(&min_auto_bounds) }` runs every frame, and drag/zoom only mutate mem.transform. plot_panel/mod.rs with_default_x_bounds doc claims 'User pan/zoom still works within a single sweep recompute' — that is not the case for X."
   acceptance: "either a headless regression test that X pan/zoom persists across frames on a sweep plot (probe pattern above) after switching to a one-shot set_plot_bounds_x keyed on the data range, or the with_default_x_bounds doc corrected to state that X is pinned to the data range by design"
   priority: 3
-  status: open
-  notes: "Discovered during BL-010; not fixed there (out of scope). Same mechanism is why the actuator force plot cannot use default_y_bounds as a soft outlier view."
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: with_default_x_bounds now returns a SweepPlot whose show() sets X once via set_plot_bounds_x (first display, range change/revisit, double click) instead of default_x_bounds re-applying each frame; drag and zoom persist across idle frames; four bl019 tests (drag and zoom failed before). Discovered during BL-010; not fixed there (out of scope). Same mechanism is why the actuator force plot cannot use default_y_bounds as a soft outlier view."
 
 - id: BL-031
   title: "apply_point_masses re-logs the same skipped-weight warning on every rebuild and live mass sync"
@@ -704,8 +704,8 @@
   evidence: "Payload Track 2 final review 2026-09-29. gui/mod.rs:1292-1296 handle_delete_shortcut returns early on ctx.wants_keyboard_input(); in egui 0.32.3 that is true for any focused widget. Clicking the canvas surrenders focus, so the normal path works; only a Tab-focused button swallows Delete until Esc."
   acceptance: "test: headless egui frame with a weight selected and a Button holding focus; Delete removes the weight, while a focused TextEdit still keeps Delete for itself (gate on text-edit focus, not any focus)"
   priority: 3
-  status: open
-  notes: "Deferred Task 6 minor."
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: handle_delete_shortcut now gates on focused_widget_may_edit_text (TextEdit state plus touch/missing-response guards) rather than wants_keyboard_input, so a Tab-focused button no longer swallows Delete/Backspace; five bl033_* tests (reused from Codex ed88854). Deferred Task 6 minor."
 
 - id: BL-034
   title: "Weight mass fields cap typed values at 1000 kg"
@@ -714,8 +714,8 @@
   evidence: "Payload Track 2 final review 2026-09-29. property_panel/weight_editor.rs:27 WEIGHT_MASS_RANGE_KG = 0.001..=1000 clamps the editor and the + Mass toolbar field (gui/mod.rs:1283). Heavier payloads load from a file and idle frames leave them alone (tested), but cannot be typed. The spec is silent on an upper bound."
   acceptance: "decision recorded (raise the cap, e.g. to 1e5 kg, or keep it with a hover note); if raised, test that typing 5000 kg stores 5000 kg and the breakdown scales with it"
   priority: 3
-  status: open
-  notes: "User decision needed on the bound (robot payloads may exceed 1 t)."
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: question 33's default kept: the 1,000 kg cap stays and each mass field says so on hover (option (a), A-57). WEIGHT_MASS_RANGE_KG stays 0.001..=1000; typing 5000 kg stores 1000 kg; a 1000 kg weight's gravity power is 400 times a 2.5 kg one's; the idle-frame test keeps a 150000 kg file weight."
 
 - id: BL-035
   title: "Weight Breakdown legend swatch colour is arbitrary for multi-coloured weight lines"
@@ -824,8 +824,8 @@
   evidence: "update_force_element (blueprint_ops.rs) does not push an undo step, so a force zone's mode switch (Overlap centre / Locked point / Contact point), a dragged F marker and the other force-editor edits cannot be undone and do not set dirty (the web autosave skips them); noted in the round-geometry final review 2026-10-06"
   acceptance: "each force-element edit is one undo step and sets dirty; a test switches a zone's mode, undoes it, and checks dirty"
   priority: 3
-  status: open
-  notes: "Pre-existing for the old lock checkbox; the round-geometry branch adds the three-way choice."
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: update_force_element now records one undo step and sets dirty through mutate_and_rebuild (unchanged or invalid edits are no-ops), and the force editor commits numeric fields once on drag release or focus loss; reused from Codex 8e6ad7d. Pre-existing for the old lock checkbox; the round-geometry branch adds the three-way choice."
 
 - id: BL-046
   title: "The canvas's orange zone-force label is hard to read on the yellow overlap highlight"
@@ -834,8 +834,8 @@
   evidence: "force_render.rs draws \"F (locked)\" and \"F (contact)\" in Color32::from_rgb(255, 165, 80) over FORCE_ZONE_OVERLAP_FILL (255, 200, 0, alpha 50; colors.rs); on the live press (2026-10-06) the label at the wheel's bottom barely shows while the wheel is in the zone"
   acceptance: "the zone-force label reads clearly over the overlap highlight (a darker label colour or a backing plate); a headless test checks the label's colour against the highlight, or the label draws on a plate"
   priority: 4
-  status: open
-  notes: "Seen in the live check of Part A of the round-geometry plan; the animated HTML export draws its labels with a white halo instead."
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: the zone-force label (F, F (locked), F (contact)) now draws on a measured opaque dark plate above the overlap highlight, same font, anchor and colour; reused from Codex 33c0079 with its two painted-output tests. Seen in the live check of Part A of the round-geometry plan; the animated HTML export draws its labels with a white halo instead."
 
 - id: BL-047
   title: "The animated HTML export leaves out prismatic and cam joints"
@@ -864,8 +864,8 @@
   evidence: "The canvas turns positions by the mounting angle (ViewTransform::world_to_screen) but draws force directions straight from the world vector (primitives.rs draw_force_arrow: dx = fx / mag, dy = -fy / mag; force_render.rs zone arrows: dir_x = fx / fmag) and the zone box as the screen rectangle of two turned corners (force_render.rs), so with a mounting angle the reaction and zone-force arrows and the zone box are drawn turned back by the angle. Found in the 2026-10-06 re-review of Part B's final fixes; the animated HTML export turns every point and vector and draws zones as four corners."
   acceptance: "with a mounting angle the canvas turns force directions by it and draws a zone as its four turned corners; a headless test at 30 deg checks a reaction arrow's and a zone arrow's screen direction and the zone outline"
   priority: 3
-  status: open
-  notes: "Pre-existing; the page (gui/export/animation.rs) is the reference for the turned drawing."
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: the canvas turns reaction, component, external and zone-force directions by the mounting angle (world_direction_to_screen) and draws a zone as its four turned corners; five literal 30-degree headless tests (reused from the parked Codex branch). Pre-existing; the page (gui/export/animation.rs) is the reference for the turned drawing."
 
 - id: BL-050
   title: "Expression drivers: sweeps are time sweeps labelled as angles, and actuator force, power, reactions and gravity totals use the nominal rate"
@@ -884,8 +884,8 @@
   evidence: "blueprint_ops.rs:345-350 works out the solve time from driver_angle even for a linear driver. Probe (state level, 2026-10-06): a slider at stroke 1.2 (x = 0.2) jumps to x = -1.0 (driver length 0) after a plain rebuild() while the stroke still reads 1.2; after scale x2 it goes to x = -2.0. The slider re-solves only when its value changes (input_panel.rs:316-317), so the wrong pose probably stays on screen. Found in the 2026-10-06 review (docs/analyses/2026-10-06-open-physics-review-response.md)."
   acceptance: "rebuild() keeps a linear-driven mechanism at its current stroke; a test rebuilds a slider-crank at stroke 1.2 and checks the slider position and the driver length; confirmed first in the GUI (an edit on a linear-driven mechanism)"
   priority: 2
-  status: open
-  notes: "Reproduced at state level only; confirm in the GUI before fixing. Would affect every edit to a linear-driven mechanism."
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: rebuild() now takes the solve time from the newly assigned driver kind (a linear driver's stroke, a revolute driver's angle) instead of driver_angle, so an edit no longer moves a linear-driven mechanism to driver length 0 (Codex acb1531's fix, ported onto driver_angle_to_time). Tests in gui/state/tests.rs: Codex's three bl051 tests plus bl051_rebuild_keeps_slider_crank_at_linear_stroke (the Slider-Crank sample on a linear driver at stroke 1.2, then Add Mount Point; checks slider x = 0.2, driver length 1.2, commanded stroke 1.2 and an unmoved pose). With the fix reverted the three linear tests fail (slider x = -1.0, driver length 0; the slider-crank does not solve after the edit) and the revolute control passes. GUI confirmation is Codex's 2026-10-07 WASM run: Add Mount Point moved Pos 200 mm to -1000 mm at stroke 1200 mm before the fix and kept 200 mm after it (screenshots in docs/analyses/2026-10-07-gui-evidence/ on codex/physics-review-rework-2026-10-06); not re-run on this branch. Reproduced at state level only; confirm in the GUI before fixing. Would affect every edit to a linear-driven mechanism."
 
 - id: BL-052
   title: "Scale mechanism misses cam profiles, the linear-driver stroke and other lengths, and has no tests"
@@ -1068,15 +1068,24 @@
   priority: 2
   status: in_progress
   notes: "Built on branch magcoupling/overhaul-b2p2b-iii-c (Tasks 1 to 5 of the plan); docs swept (Task 6). Filed 2026-11-28 with its plan (the design's header: each plan files one item). Part 2b-iii's third and last part (decision D-86, register row A-47); slice B is built with it. It takes BL-086, BL-088, BL-089 and BL-101 whole (BL-101's four parts: the Equation panel, the screw-size table, the Results table and the check list). Not cut again (decision D-106). risk: mechanical (decision D-115): no new number, no physical claim and no new on-screen string. BL-083, BL-084, BL-087, BL-067, BL-095, BL-102, BL-103, BL-105, BL-106, BL-110 and BL-111 are not touched. Fix wave of the whole-branch review (2026-11-28): F-1 (blocking) taken: a term's name and tag that wrapped started at its grid row's middle (egui 0.32's Grid centres a cell's child by the height it first asks for, a wrapping line's one widget, in the row's height of the frame before) and hung half a row into the next row, under its stripe or its text, at 1024 and 1280 points wide on most equations, steady state; the cell is now a ui.vertical, which starts at the row's top. KR-1 taken: a wrapped name was a Tab stop per row (the review counted 724 extra stops over the registry at 1024 points wide), the SK-1 failure; the name is drawn through gui::label_block, now shared with input_ui::input_row, so after a wrapped name the tag starts a line of its own. F-2 and CTC-1 taken: test_support::covered_texts_in (a glyph under a filled rect painted after it, or under another text's glyph, by more than 2 points both ways) and one check, equation_panel_faults with equation_panel_in_centre, shared by the Start here walk and the every-equation test, which now reads the third frame after an equation opens (the term grid places its cells by the frame before's sizes, the last equation's in the first frame); the narrow-region test checks the same. Red first: the walk failed at 1024 x 700 on step 1 and the every-equation test on model.tau_Pa (a tag under the next row's stripe), and the new a_term_whose_name_wraps_is_one_tab_stop_in_the_app_s_own_font on 'Predicted candidate torque at operating temperature' and 'Production variation allowance' (two stops each); with the fix all pass, and each half of it taken out fails its own tests. CTC-2 taken: Readouts::select_over takes the sense, and readouts::sensor is private again. KR-4 taken: owner question 67 and register row A-44 say a focused line a wheel cuts even in part loses the focus and the next Tab starts at the top of the page. KR-2 (the formula a Tab stop with no focus mark, on main too) added to BL-102; KR-3 (a left-column value box 0.4 of a point cut in the app's font, on main too) filed as BL-119; CTC-3 (notes_view still imports crumb and term_label from explorer) declined: BL-088 is a pure move, and a module both share is a later refactor. Fix wave of the whole-branch re-review (2026-11-28): RR-1 taken: under an equation with no note of its own, the closest note's link beside its lead was laid out row by row when its title wrapped, each row a Tab stop and only the first showing the focus (the re-review counted 38 of 421 equations at 1024 points wide in the app's font, the same on main; KR-1's failure in the lesson line); the link is drawn through gui::label_block, which now takes any widget. Red first: the Tab stop test, renamed a_wrapped_term_name_or_closest_note_title_is_one_tab_stop_in_the_app_s_own_font, also opens temperature.summary.verdict and model.pullout_iron_Nm and flags a stop that starts on the row under the stop before it at that stop's left edge or further left (before, only at the same left edge); it failed on 'Demagnetization: permanent loss from heat and slipping' (its second row a stop of its own at [344.0,1839.8]-[477.7,1853.8]) and passes with the fix. RS-1 (the header row's buttons drawn over a long breadcrumb trail, on main too) filed as BL-115; RR-2 (web only: the pointer on the Explain column's scroll bar re-wraps an open note wider than the column, on main too, cause not found) filed as BL-116. BL-114 is not used here: branch linkage/r5-mechanical holds it; that branch's own BL-113 reached main first (aa1949a), so this branch's KR-3 item was renumbered BL-119 before its merge."
-- id: BL-119
-  title: "Magcoupler: in the app's font a value box of the left column that takes the keyboard's focus at the column's foot stays 0.4 of a point under the view"
+- id: BL-113
+  title: "A linear driver's stroke is lost on undo, and a mass edit or an assembly-branch flip solves at the wrong time: rebuild() takes its solve time from the driver kind, four other sites still use driver_angle"
   dimension: gui
   risk: mechanical
-  evidence: "The whole-branch review of part 2b-iii-c (BL-112; 2026-11-28, finding KR-3), in the app's theme and font: at 1024 x 700 and 1280 x 800 a slider's value box in Detailed inputs or Assumptions that takes the focus at the column's foot settles at y 670.0 to 692.4 (770.0 to 792.4) under a view that ends at 692.0 (792.0), and stays 0.4 of a point cut, on 39 presses over the two walks. gui::follow_focus scrolls by the least that shows the widget whole (scroll_to_rect(rect, None)), and the app font's heights are not whole points. BL-100's test the_left_column_follows_the_keyboard_s_focus_and_fights_no_wheel runs in egui's default font, where they are, so it misses this. main is the same: BL-112 does not change the left column's behaviour."
-  acceptance: "A red test first: BL-100's left-column walk also in the app's theme and font at 1024 x 700 and 1280 x 800, every focused widget whole in the column's view once the scroll has settled (for example follow_focus scrolls to the rect grown by a point at its foot); the other callers' tests still pass; README and docs/ai updated; GATE PASS."
-  priority: 5
-  status: open
-  notes: "Filed 2026-11-28 by the fix wave of BL-112's whole-branch review (KR-3), not taken there: on main too, a fraction of a point, and the review marked its fix optional."
+  evidence: "Branch review of linkage/r5-mechanical (F-5, F-6), pre-existing; BL-045 sends more edits through undo, so users hit it more. BL-051 fixed rebuild() only. gui/state/undo_ops.rs restore_snapshot solved at a time from driver_angle and reset a linear driver's stroke to length_0; blueprint_ops.rs recompute_dynamics (mass and gravity edits) and state/mod.rs flip_assembly_branch also took the time from driver_angle. Probe: Slider-Crank on a linear driver at stroke 1.2, two mount-point edits, then undo: the stroke reads 1.15 and converged=false while the pose stays at x = 0.2. rebuild's match on the driver kind repeated property_panel/equations.rs compute_t_mech."
+  acceptance: "Red test first: on a linear-driven mechanism (Slider-Crank at stroke 1.2), undo after an edit restores the stroke and converges; a mass or gravity edit and an assembly-branch flip keep the stroke; one AppState method gives the current driver time by driver kind and rebuild, restore_snapshot, recompute_dynamics, flip_assembly_branch and equations.rs use it; GATE PASS."
+  priority: 3
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: AppState::current_driver_time() is the one match on the driver kind; MechanismSnapshot stores driver_stroke and restore_snapshot reinstalls the driver kind before it solves. Tests bl113_* in gui/state/tests.rs (undo and redo, branch flip, the method itself with a gravity edit). Revolute behaviour unchanged. A mass or gravity edit's force results are empty for a linear driver (compute_forces needs a revolute driver), so recompute_dynamics's time is checked through the method, not through force_results."
+- id: BL-114
+  title: "A mounting angle from a file outside -180..180 degrees is clamped, rebuilt and changed on the first idle frame with the Mounting section open"
+  dimension: gui
+  risk: mechanical
+  evidence: "Branch review of linkage/r5-mechanical (F-11), the same kind of idle-frame bug as BL-021. gui/input_panel.rs's Mounting Angle slider clamps to -180..=180, and gui/state/file_io.rs (about line 491) copied a file's mounting_angle unnormalised, so 270 degrees was clamped to 180, rebuilt and silently changed on the first idle frame with the section open."
+  acceptance: "Red test first: a mechanism loaded with mounting_angle 270 keeps an equivalent mounting on idle frames with the Mounting section open (no rebuild, no change of the drawn pose); GATE PASS."
+  priority: 4
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: file_io.rs wraps a loaded angle outside -180..180 degrees into that range (270 becomes -90, the same mounting; in-range and non-finite values pass through untouched). Chosen over clamp_existing_to_range(false) because every reader of mounting_angle (rotation, gravity, export) uses it only through sin and cos, so the drawing is the same and the slider never holds an out-of-range value. Test bl114_file_mounting_angle_outside_slider_range_survives_idle_frames in gui/input_panel.rs failed (angle 4.71 became 3.14 on frame 0), then passed."
 - id: BL-115
   title: "Magcoupler: the Equation panel's Start here and Close buttons are drawn over the breadcrumb trail once the trail reaches them"
   dimension: gui
@@ -1095,6 +1104,33 @@
   priority: 5
   status: open
   notes: "Filed 2026-11-28 by the fix wave of BL-112's whole-branch re-review (RR-2), not taken there: web only, cause not found, on main too and in code the branch did not touch. The fix wave looked at the review's screenshots of the branch tip and of main (both show the cut lines) and did not rebuild the web app."
+- id: BL-117
+  title: "Reassigning a sample's driver to a joint whose stock builder sets theta_0 leaves the next edit unsolved (FourBar J4: any rebuild after the reassign fails)"
+  dimension: gui
+  risk: mechanical
+  evidence: "Re-review of the R5 fix wave on linkage/r5-mechanical (2026-11-28, finding R-1; pre-existing, also on main c569d03). gui/state/driver_ops.rs (about lines 56-60, the stock-sample path of reassign_driver) hard-codes driver_kind Revolute{angle 0, omega 2pi, theta_0 0}, but the stock builder can set another theta_0: for FourBar J4 the blueprint and the mechanism carry theta_0 = 7.804 rad. The reassign converges; the next rebuild() reads theta_0 7.804 from the blueprint and solves at t = (0 - 7.804)/2pi: converged=false, residual 0.052-0.058. Any geometry edit, and adding, moving or editing a weight (add_point_mass goes through mutate_and_rebuild), triggers it, with or without a weight. Also from the re-review: R-3, undo_ops.rs:81 restore_snapshot still calls compute_forces(self.driver_angle), passing the angle as the time (harmless for constant-speed and constant-velocity drivers, wrong for Expression or cosine-stroke drivers, whose velocity solve reads t); R-5, .claude/workflows/fix-campaign.js lines 74-75 test item.risk === 'physics' in two spreads in a row (merge them into one)."
+  acceptance: "Red test first: FourBar reassigned to J4, then add_mount_point or add_point_mass, still converges with the pose kept; the stock path takes omega and theta_0 from the built driver and sets driver_angle so that t stays 0; restore_snapshot passes the solve time to compute_forces; fix-campaign.js's reviewer choice is one spread; GATE PASS."
+  priority: 3
+  status: open
+  notes: "Filed 2026-11-28 by the controller from the R5 fix wave's re-review (R-1, R-3, R-5); not taken in R5 because it is pre-existing and R5's fixes do not make it worse."
+- id: BL-118
+  title: "The SixBarB1 and SixBarA1 sample builders are nondeterministic on a driver reassign to J7, and plain reassigns to many rocker joints do not converge"
+  dimension: gui
+  risk: mechanical
+  evidence: "Re-review of the R5 fix wave (2026-11-28, finding R-6; pre-existing). A reassign over all 30 samples and every grounded revolute joint (60 reassigns), with and without a weight: SixBarB1 J7 and SixBarA1 J7 converge 8 of 12 runs with 8 distinct poses, the same with and without a weight; build_sample_with_driver sometimes returns Err 'could not find converging initial guess'. Plain reassigns to rocker joints (J4 on CrankRocker, Hoeken and others) also fail to converge, with or without weights."
+  acceptance: "Red test first: each sample's build_sample_with_driver gives the same pose on repeated calls; a reassign to any grounded revolute joint either converges or is refused with a message (no silent unsolved state); GATE PASS."
+  priority: 4
+  status: open
+  notes: "Filed 2026-11-28 by the controller from the R5 fix wave's re-review (R-6)."
+- id: BL-119
+  title: "Magcoupler: in the app's font a value box of the left column that takes the keyboard's focus at the column's foot stays 0.4 of a point under the view"
+  dimension: gui
+  risk: mechanical
+  evidence: "The whole-branch review of part 2b-iii-c (BL-112; 2026-11-28, finding KR-3), in the app's theme and font: at 1024 x 700 and 1280 x 800 a slider's value box in Detailed inputs or Assumptions that takes the focus at the column's foot settles at y 670.0 to 692.4 (770.0 to 792.4) under a view that ends at 692.0 (792.0), and stays 0.4 of a point cut, on 39 presses over the two walks. gui::follow_focus scrolls by the least that shows the widget whole (scroll_to_rect(rect, None)), and the app font's heights are not whole points. BL-100's test the_left_column_follows_the_keyboard_s_focus_and_fights_no_wheel runs in egui's default font, where they are, so it misses this. main is the same: BL-112 does not change the left column's behaviour."
+  acceptance: "A red test first: BL-100's left-column walk also in the app's theme and font at 1024 x 700 and 1280 x 800, every focused widget whole in the column's view once the scroll has settled (for example follow_focus scrolls to the rect grown by a point at its foot); the other callers' tests still pass; README and docs/ai updated; GATE PASS."
+  priority: 5
+  status: open
+  notes: "Filed 2026-11-28 by the fix wave of BL-112's whole-branch review (KR-3), not taken there: on main too, a fraction of a point, and the review marked its fix optional."
 - id: BL-120
   title: "Magcoupler: in a narrow centre the Equation panel breaks the closest teaching note's title in the middle of a word (Demagnetizati / on)"
   dimension: gui

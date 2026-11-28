@@ -67,6 +67,17 @@ pub(crate) fn click_events(at: egui::Pos2) -> [Vec<egui::Event>; 3] {
     [vec![egui::Event::PointerMoved(at)], vec![primary_button(at, true)], vec![primary_button(at, false)]]
 }
 
+/// A primary-button drag from `from` to `to` as the input of `steps + 2` frames: the pointer
+/// moved there, the press, `steps` moves toward `to`, then the release at `to` (last frame).
+pub(crate) fn drag_events(from: egui::Pos2, to: egui::Pos2, steps: usize) -> Vec<Vec<egui::Event>> {
+    let mut frames = vec![vec![egui::Event::PointerMoved(from)], vec![primary_button(from, true)]];
+    for i in 1..=steps {
+        frames.push(vec![egui::Event::PointerMoved(from + (to - from) * (i as f32 / steps as f32))]);
+    }
+    frames.push(vec![primary_button(to, false)]);
+    frames
+}
+
 /// Text typed into the focused widget.
 pub(crate) fn typed(text: &str) -> egui::Event {
     egui::Event::Text(text.to_string())

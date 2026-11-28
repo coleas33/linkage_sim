@@ -488,43 +488,67 @@ fn reference_line_x_span(sweep: &SweepData, units: &DisplayUnits) -> (f64, f64) 
     compute_default_x_bounds(sweep, units).unwrap_or((0.0, units.angle(2.0 * std::f64::consts::PI)))
 }
 
-/// Wrap a `Plot` with a fixed default x-axis bound matching the sweep's
-/// data range, AND salt the plot id with the bounds key so egui_plot's
-/// cached state gets invalidated when the data range changes.
-///
-/// Why both pieces:
-/// - `default_x_bounds` disables auto-fit and pins the *reset* bounds —
-///   stops the cursor `VLine` from expanding the visible x-range during
-///   playback. But `default_x_bounds` does NOT override `egui::Memory`
-///   that's already cached for the plot id (pan/zoom state, previously-
-///   computed bounds from before the fix shipped, etc.) — egui keeps
-///   re-using the cached state until the id changes.
-/// - The id salt (rounded bounds tuple) makes the id change whenever the
-///   data range changes. egui sees the new id as a fresh plot, has no
-///   cached state for it, and uses our `default_x_bounds` directly.
-///
-/// User pan/zoom still works *within a single sweep recompute*; it
-/// only resets when the underlying data range changes.
-///
-/// `plot_id_stem` should match the string passed to `Plot::new(...)`
-/// (this helper effectively replaces that id with `(stem, bounds_key)`).
+/// Initialize a sweep plot's X view without resetting user navigation on idle
+/// frames. The rounded range key retains the existing plot-memory identity;
+/// a separate last-active key also detects a return to a previously seen range.
+/// Only X is initialized. The plot's Y options and user view remain untouched.
 fn with_default_x_bounds<'a>(
     plot: Plot<'a>,
     plot_id_stem: &str,
     sweep: &SweepData,
     units: &DisplayUnits,
-) -> Plot<'a> {
+) -> SweepPlot<'a> {
     let bounds = compute_default_x_bounds(sweep, units);
     let key: (i64, i64) = bounds
         .map(|(lo, hi)| {
             ((lo * 1000.0).round() as i64, (hi * 1000.0).round() as i64)
         })
         .unwrap_or((0, 0));
-    let plot = plot.id(egui::Id::new((plot_id_stem, key)));
-    if let Some((lo, hi)) = bounds {
-        plot.default_x_bounds(lo, hi)
-    } else {
-        plot
+    let plot_id = egui::Id::new((plot_id_stem, key));
+    let plot = plot.id(plot_id);
+    // Seed the first frame's transform for hover/click coordinates while
+    // leaving builder auto-X enabled. SetX below disables memory auto-X once;
+    // default_x_bounds would instead reset user pan/zoom on every idle frame.
+    let plot = if let Some((lo, hi)) = bounds { plot.include_x(lo).include_x(hi) } else { plot };
+    SweepPlot {
+        plot,
+        plot_id,
+        bounds,
+        key,
+        active_key_id: egui::Id::new(("sweep_plot_active_x_bounds", plot_id_stem)),
+    }
+}
+
+/// Preserve the caller's Plot builder and draw closure, adding only the shared
+/// one-shot X initialization for all ordinary sweep plots.
+struct SweepPlot<'a> {
+    plot: Plot<'a>,
+    plot_id: egui::Id,
+    bounds: Option<(f64, f64)>,
+    key: (i64, i64),
+    active_key_id: egui::Id,
+}
+
+impl<'a> SweepPlot<'a> {
+    fn show<'b, R>(
+        self,
+        ui: &mut egui::Ui,
+        build_fn: impl FnOnce(&mut egui_plot::PlotUi<'b>) -> R + 'a,
+    ) -> egui_plot::PlotResponse<R> {
+        let Self { plot, plot_id, bounds, key, active_key_id } = self;
+        let active_key = bounds.map(|_| key);
+        let initialize_x = ui.data(|data| data.get_temp::<Option<(i64, i64)>>(active_key_id))
+            != Some(active_key)
+            || egui_plot::PlotMemory::load(ui.ctx(), plot_id).is_none();
+        ui.data_mut(|data| data.insert_temp(active_key_id, active_key));
+        plot.show(ui, move |plot_ui| {
+            if let Some((lo, hi)) = bounds
+                && (initialize_x || plot_ui.response().double_clicked())
+            {
+                plot_ui.set_plot_bounds_x(lo..=hi);
+            }
+            build_fn(plot_ui)
+        })
     }
 }
 
@@ -746,6 +770,144 @@ mod tests {
     use crate::gui::state::{AngleUnit, DisplayUnits, LengthUnit};
     use crate::gui::sweep::{empty_trajectory_sweep_data, SweepMode};
     use crate::gui::test_support::central_panel_frame;
+
+    fn bl019_plot_sweep() -> SweepData {
+        let mut state = crate::gui::state::AppState::default();
+        state.load_sample(crate::gui::samples::SampleMechanism::FourBar);
+        state.compute_sweep();
+        let sweep = state.sweep_data.unwrap();
+        assert!(sweep.driver_torques.as_ref().unwrap().iter().any(|v| v.is_finite()));
+        sweep
+    }
+
+    fn bl019_memory(ctx: &egui::Context, sweep: &SweepData) -> egui_plot::PlotMemory {
+        let (lo, hi) = compute_default_x_bounds(sweep, &deg_units()).unwrap();
+        let key = ((lo * 1000.0).round() as i64, (hi * 1000.0).round() as i64);
+        let id = egui::Id::new(("driver_torque_plot", key));
+        egui_plot::PlotMemory::load(ctx, id).expect("the actual driver torque plot stored its view")
+    }
+
+    fn bl019_plot_frame(
+        ctx: &egui::Context,
+        sweep: &SweepData,
+        events: Vec<egui::Event>,
+    ) -> egui_plot::PlotMemory {
+        use crate::gui::test_support::{screen_input, NATIVE_SCREEN};
+        let _ = ctx.run(screen_input(events, NATIVE_SCREEN), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                // An out-of-range cursor must not expand the sweep's initial X view.
+                let _ = dynamics::draw_driver_torque(ui, sweep, 1000.0, &deg_units(), false);
+            });
+        });
+        bl019_memory(ctx, sweep)
+    }
+
+    fn bl019_assert_x(memory: &egui_plot::PlotMemory, expected: (f64, f64), context: &str) {
+        let actual = (memory.bounds().min()[0], memory.bounds().max()[0]);
+        assert!((actual.0 - expected.0).abs() < 1e-9 && (actual.1 - expected.1).abs() < 1e-9,
+            "{context}: expected X {expected:?}, got {actual:?}");
+    }
+
+    fn bl019_drag_preview(
+        ctx: &egui::Context,
+        sweep: &SweepData,
+    ) -> (egui_plot::PlotMemory, Vec<egui::Event>) {
+        use crate::gui::test_support::drag_events;
+        bl019_plot_frame(ctx, sweep, Vec::new());
+        let initial = bl019_plot_frame(ctx, sweep, Vec::new());
+        bl019_assert_x(&initial, compute_default_x_bounds(sweep, &deg_units()).unwrap(), "initial sweep range");
+        let from = initial.transform().frame().center();
+        let to = from + egui::vec2(40.0, 0.0);
+        let mut events = drag_events(from, to, 2);
+        let release = events.pop().unwrap();
+        let mut panned = initial.clone();
+        for input in events { panned = bl019_plot_frame(ctx, sweep, input); }
+        assert!((panned.bounds().min()[0] - initial.bounds().min()[0]).abs() > 1.0,
+            "real pointer dragging must first move X before testing its persistence");
+        (panned, release)
+    }
+
+    #[test]
+    fn bl019_real_sweep_plot_horizontal_drag_survives_release_and_idle_frames() {
+        let ctx = egui::Context::default();
+        let sweep = bl019_plot_sweep();
+        let (panned, release) = bl019_drag_preview(&ctx, &sweep);
+        let expected = (panned.bounds().min()[0], panned.bounds().max()[0]);
+        for (frame, events) in [release, Vec::new(), Vec::new(), Vec::new()].into_iter().enumerate() {
+            let memory = bl019_plot_frame(&ctx, &sweep, events);
+            bl019_assert_x(&memory, expected, &format!("after drag, frame {frame}"));
+        }
+    }
+
+    #[test]
+    fn bl019_real_sweep_plot_zoom_survives_idle_frames() {
+        let ctx = egui::Context::default();
+        let sweep = bl019_plot_sweep();
+        bl019_plot_frame(&ctx, &sweep, Vec::new());
+        let initial = bl019_plot_frame(&ctx, &sweep, Vec::new());
+        bl019_assert_x(&initial, compute_default_x_bounds(&sweep, &deg_units()).unwrap(), "initial sweep range");
+        let at = initial.transform().frame().center();
+        bl019_plot_frame(&ctx, &sweep, vec![egui::Event::PointerMoved(at)]);
+        let zoomed = bl019_plot_frame(&ctx, &sweep, vec![egui::Event::Zoom(1.5)]);
+        assert!(zoomed.bounds().width() < initial.bounds().width() * 0.9,
+            "the actual user zoom event must first narrow X");
+        assert!(zoomed.bounds().height() < initial.bounds().height() * 0.9,
+            "the control also demonstrates user zoom in Y");
+        let expected = (zoomed.bounds().min()[0], zoomed.bounds().max()[0]);
+        let expected_y = (zoomed.bounds().min()[1], zoomed.bounds().max()[1]);
+        for frame in 0..3 {
+            let memory = bl019_plot_frame(&ctx, &sweep, Vec::new());
+            bl019_assert_x(&memory, expected, &format!("after zoom, idle frame {frame}"));
+            assert!((memory.bounds().min()[1] - expected_y.0).abs() < 1e-9);
+            assert!((memory.bounds().max()[1] - expected_y.1).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn bl019_real_double_click_resets_x_to_sweep_range_without_cursor_refit() {
+        use crate::gui::test_support::click_events;
+        let ctx = egui::Context::default();
+        let sweep = bl019_plot_sweep();
+        bl019_plot_frame(&ctx, &sweep, Vec::new());
+        let initial = bl019_plot_frame(&ctx, &sweep, Vec::new());
+        let at = initial.transform().frame().center();
+        bl019_plot_frame(&ctx, &sweep, vec![egui::Event::PointerMoved(at)]);
+        let zoomed = bl019_plot_frame(&ctx, &sweep, vec![egui::Event::Zoom(1.5)]);
+        assert!(zoomed.bounds().width() < initial.bounds().width() * 0.9);
+        for events in click_events(at).into_iter().chain(click_events(at)) {
+            bl019_plot_frame(&ctx, &sweep, events);
+        }
+        let expected = compute_default_x_bounds(&sweep, &deg_units()).unwrap();
+        bl019_assert_x(&bl019_memory(&ctx, &sweep), expected, "actual double-click reset");
+        for frame in 0..3 {
+            let memory = bl019_plot_frame(&ctx, &sweep, Vec::new());
+            bl019_assert_x(&memory, expected, &format!("after reset, idle frame {frame}"));
+        }
+    }
+
+    #[test]
+    fn bl019_changed_range_and_revisited_full_range_initialize_x_without_losing_y_view() {
+        let ctx = egui::Context::default();
+        let full = bl019_plot_sweep();
+        let (panned, release) = bl019_drag_preview(&ctx, &full);
+        let old_y = (panned.bounds().min()[1], panned.bounds().max()[1]);
+        // The old salted full-range plot memory exists and has a genuine user
+        // pan. A first-use-only initializer would wrongly restore that pan on
+        // returning to the full range after showing this shorter range.
+        let mut short = full.clone();
+        let retained: Vec<(f64, f64)> = full.angles_deg.iter().copied()
+            .zip(full.driver_torques.as_ref().unwrap().iter().copied())
+            .filter(|(angle, _)| (100.0..=180.0).contains(angle)).collect();
+        assert!(retained.len() > 2);
+        short.angles_deg = retained.iter().map(|(angle, _)| *angle).collect();
+        short.driver_torques = Some(retained.iter().map(|(_, torque)| *torque).collect());
+        let short_memory = bl019_plot_frame(&ctx, &short, release);
+        bl019_assert_x(&short_memory, (100.0, 180.0), "new short range");
+        let revisited = bl019_plot_frame(&ctx, &full, Vec::new());
+        bl019_assert_x(&revisited, compute_default_x_bounds(&full, &deg_units()).unwrap(), "revisited full range");
+        assert!((revisited.bounds().min()[1] - old_y.0).abs() < 1e-9);
+        assert!((revisited.bounds().max()[1] - old_y.1).abs() < 1e-9);
+    }
 
     fn deg_units() -> DisplayUnits {
         DisplayUnits {

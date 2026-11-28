@@ -22,7 +22,7 @@ use crate::solver::statics::get_joint_reactions;
 
 use nalgebra::{DVector, Vector2};
 
-use super::{driver_angle_to_time, AppState, DriverKind, ForceResults, SolverStatus};
+use super::{AppState, DriverKind, ForceResults, SolverStatus};
 use crate::gui::sweep::{
     apply_motion_profile, compute_sweep_data_with_weights, compute_trajectory,
     detect_fourbar_links, empty_trajectory_sweep_data, SweepMode,
@@ -342,7 +342,9 @@ impl AppState {
         self.driver_joint_id = detect_driver_joint_id(&mech);
 
         // Solve at current position using last_good_q as initial guess.
-        let t = driver_angle_to_time(self.driver_angle, self.driver_theta_0(), self.driver_omega());
+        // The old mechanism is still installed, so take the time from the newly
+        // assigned driver kind (a linear driver's value is its stroke).
+        let t = self.current_driver_time();
 
         // Try solving with last_good_q if it has the right dimension;
         // after a topology change, seed the surviving bodies by id.
@@ -538,7 +540,7 @@ impl AppState {
     /// mechanism. Used after mass/inertia/gravity changes that don't alter
     /// the kinematic structure.
     pub(crate) fn recompute_dynamics(&mut self) {
-        let t = driver_angle_to_time(self.driver_angle, self.driver_theta_0(), self.driver_omega());
+        let t = self.current_driver_time();
         self.compute_forces(t);
         self.mark_sweep_dirty();
     }
@@ -1115,17 +1117,16 @@ impl AppState {
 
     /// Replace a force element in the blueprint at the given index.
     ///
-    /// Intended for continuous parameter tweaks (e.g. DragValue), so no undo
-    /// snapshot is pushed. Immediately recomputes sweep data to keep the
-    /// inverse dynamics torque plot in sync.
-    /// No-op if `index` is out of bounds.
+    /// Call once per committed edit (click, drag-stop or focus loss). Records
+    /// one undo step and marks the document changed, then rebuilds and updates
+    /// the sweep. Missing indices and unchanged elements are no-ops.
     pub fn update_force_element(&mut self, index: usize, force: ForceElement) {
-        let Some(bp) = &mut self.blueprint else { return };
-        if index >= bp.forces.len() {
-            return;
-        }
-        bp.forces[index] = force;
-        self.rebuild();
+        let Some(current) = self.blueprint.as_ref().and_then(|bp| bp.forces.get(index)) else { return };
+        if let (Ok(previous), Ok(next)) = (serde_json::to_value(current), serde_json::to_value(&force))
+            && previous == next { return; }
+        self.mutate_and_rebuild(|state| {
+            state.blueprint.as_mut().expect("validated force blueprint").forces[index] = force;
+        });
         self.compute_sweep();
     }
 

@@ -39,6 +39,7 @@ pub(crate) fn cad_dark_visuals() -> egui::Visuals {
 /// Apply the full CAD theme to the egui context (visuals + spacing).
 /// Called once at startup.
 pub(crate) fn apply_cad_theme(ctx: &egui::Context) {
+    ctx.set_theme(egui::ThemePreference::Dark);
     ctx.set_visuals(cad_dark_visuals());
 
     let mut style = (*ctx.style()).clone();
@@ -80,4 +81,57 @@ pub(crate) fn apply_nathan_mode(ctx: &egui::Context) {
 /// Restore the custom CAD-inspired dark visuals after leaving Nathan Mode.
 pub(crate) fn restore_normal_visuals(ctx: &egui::Context) {
     ctx.set_visuals(cad_dark_visuals());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bl013_cad_theme_retains_palette_and_spacing_across_light_dark_light_frames() {
+        // Startup can occur before the browser reports its preference. Also
+        // cover a light fallback: selecting Dark must precede styling it.
+        for fallback in [egui::Theme::Dark, egui::Theme::Light] {
+            let ctx = egui::Context::default();
+            ctx.options_mut(|options| options.fallback_theme = fallback);
+            apply_cad_theme(&ctx);
+            for system_theme in [egui::Theme::Light, egui::Theme::Dark, egui::Theme::Light] {
+                let input = egui::RawInput { system_theme: Some(system_theme), ..Default::default() };
+                let _ = ctx.run(input, |ctx| {
+                    assert_eq!(ctx.theme(), egui::Theme::Dark, "fallback {fallback:?}, system {system_theme:?}");
+                    let style = ctx.style();
+                    assert_eq!(style.visuals, cad_dark_visuals(), "the effective palette must remain the CAD palette");
+                    assert_eq!(style.spacing.item_spacing, egui::vec2(6.0, 4.0));
+                    assert_eq!(style.spacing.button_padding, egui::vec2(8.0, 4.0));
+                });
+            }
+        }
+    }
+
+    #[test]
+    fn bl013_nathan_and_restore_keep_dark_theme_and_cad_spacing() {
+        let ctx = egui::Context::default();
+        apply_cad_theme(&ctx);
+        let light = || egui::RawInput { system_theme: Some(egui::Theme::Light), ..Default::default() };
+        let _ = ctx.run(light(), apply_nathan_mode);
+        assert_eq!(ctx.theme(), egui::Theme::Dark);
+        let nathan = ctx.style();
+        assert!(nathan.visuals.dark_mode);
+        assert_ne!(nathan.visuals.selection.bg_fill, cad_dark_visuals().selection.bg_fill,
+            "the override must actually replace the coloured CAD selection");
+        for color in [nathan.visuals.selection.bg_fill, nathan.visuals.selection.stroke.color,
+            nathan.visuals.panel_fill, nathan.visuals.window_fill] {
+            assert_eq!(color.r(), color.g(), "Nathan colors are grayscale");
+            assert_eq!(color.g(), color.b(), "Nathan colors are grayscale");
+        }
+        assert_eq!(nathan.spacing.item_spacing, egui::vec2(6.0, 4.0));
+        assert_eq!(nathan.spacing.button_padding, egui::vec2(8.0, 4.0));
+
+        let _ = ctx.run(light(), restore_normal_visuals);
+        assert_eq!(ctx.theme(), egui::Theme::Dark);
+        let normal = ctx.style();
+        assert_eq!(normal.visuals, cad_dark_visuals(), "leaving Nathan Mode restores every CAD visual");
+        assert_eq!(normal.spacing.item_spacing, egui::vec2(6.0, 4.0));
+        assert_eq!(normal.spacing.button_padding, egui::vec2(8.0, 4.0));
+    }
 }

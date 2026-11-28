@@ -11,6 +11,55 @@ Reverse chronological (newest at top).
 - Docs: README, docs/ai 02, 03, 04, backlog BL-086, BL-088, BL-089, BL-101 and BL-112 in progress, register rows A-44 (its cost), A-55 and A-56, owner questions 67 (its text) and 76, the design's header.
 - Fix wave of the whole-branch review: a term's name and tag that wrapped started at the middle of their grid row and hung half a row into the next one, under its stripe or its text (F-1, blocking): egui's Grid centres a cell's child by the height it first asks for, and a wrapping line asks for one widget's, so the cell is now a `ui.vertical`, which starts at the row's top. A wrapped name was a Tab stop per row (KR-1): it is drawn through `gui::label_block`, the input rows' one-block label (SK-1) made a shared helper, so after a wrapped name its tag starts a line of its own. `test_support::covered_texts_in` finds a glyph under a rect painted after it or under another text, and `equation_panel_faults` with `equation_panel_in_centre` is the one check of the Start here walk and the every-equation test (F-2, CTC-1); red first, with `a_term_whose_name_wraps_is_one_tab_stop_in_the_app_s_own_font` (panel). `Readouts::select_over` takes the sense and `readouts::sensor` is private again (CTC-2). Owner question 67 and A-44 say a focused Results table line a wheel cuts loses the focus and the next Tab starts at the top (KR-4). The formula's Tab stop with no focus mark joins BL-102 (KR-2); BL-119 filed (KR-3); CTC-3 declined.
 - Fix wave of the whole-branch re-review: under an equation with no note of its own, the closest note's link beside its lead was a Tab stop per row when its title wrapped (RR-1, on main too): it is drawn through `gui::label_block`, which now takes any widget; red first, with the Tab stop test renamed `a_wrapped_term_name_or_closest_note_title_is_one_tab_stop_in_the_app_s_own_font` (panel), which now also opens two equations whose closest note's title wraps and flags a stop that starts under the one before it at its left edge or further left. The header row's buttons drawn over a long breadcrumb trail filed as BL-115 (RS-1), and a web-only re-wrap of an open note with the pointer on the Explain column's scroll bar as BL-116 (RR-2); both on main too.
+## 2026-11-28 - Mounting angle from a file wrapped into the slider's range (BL-114)
+- Branch review F-11: the Mounting Angle slider clamps to -180..=180 and file_io.rs did not normalise a file's mounting_angle, so 270 degrees was clamped, rebuilt and changed on the first idle frame with the section open. A loaded angle outside the range is now wrapped into it (270 becomes -90, the same mounting). Test bl114_* in gui/input_panel.rs.
+
+## 2026-11-28 - Linear driver time in one method (BL-113)
+- Branch review F-5, F-6: undo on a linear-driven mechanism reset the stroke to length_0 (probe: Slider-Crank at 1.2, two mount edits, undo gave 1.15 and converged=false), and recompute_dynamics and flip_assembly_branch took their time from driver_angle. AppState::current_driver_time() (state/mod.rs) is now the one match on the driver kind; rebuild, restore_snapshot, recompute_dynamics, flip_assembly_branch and property_panel/equations.rs use it (compute_t_mech deleted). MechanismSnapshot gains driver_stroke; restore_snapshot reinstalls the driver kind before it solves. Revolute behaviour is unchanged. Tests bl113_* in gui/state/tests.rs.
+
+## 2026-11-28 - R5 review fixes
+- Branch review of linkage/r5-mechanical, small findings: F-4 committed_number skips on_hover_text for "" (egui drew an empty tooltip box on the attachment-point and modulation fields); F-7 the BL-046 label plate colour is the named LABEL_PLATE in canvas/colors.rs (draw_pill_label differs in font, alpha and text colour, so it is not reused); F-8 the mounting rotation plus Y flip is ViewTransform::world_direction_to_screen beside world_to_screen, the old primitives.rs function deleted; F-9 the Chebyshev PNG test asserts the output dir starts with CARGO_MANIFEST_DIR/target, and AGENTS.md gives the regenerate and copy commands; F-10 BL-006's note starts DEFERRED and this branch's 2026-11-28 entries in this file are in reverse commit order.
+- Backlog closed after checking each claim: BL-005 (rust-test-fixer agent already general; untracked here), BL-008 (no let delta; no mixed_script_confusables warning), BL-014 (duplicate of fixed BL-037).
+- .claude/workflows/fix-campaign.js: the per-item reviewer no longer uses agentType feature-dev:code-reviewer (no shell, so it rejected every fix); the default agent reviews mechanical items, fbd-math-reviewer still physics ones. This change was already in the tree at 129f3c3; no doc described the old reviewer except the historical 2026-08-08 plan.
+
+## 2026-11-28 - Weight mass cap stays 1,000 kg, said on hover (BL-034, A-57)
+- Reworked 19f8546: WEIGHT_MASS_RANGE_KG back to 0.001..=1000 (question 33's default, option (a)); the weight editor's and + Mass field's hover say "Up to 1,000 kg."; tests: typing 5000 stores 1000, a 1000 kg weight's gravity power is 400 times a 2.5 kg one's; docs and A-57 updated.
+
+## 2026-11-28 - Keep weights on driver reassign (BL-030)
+- reassign_driver rebuilds a sample from the stock builder and carries each user weight over by body id into the new blueprint and live body (a weight on a body the stock sample lacks is dropped with a status message); replaces 8d01d32's blueprint path, which could not assemble (review F-1). Tests check convergence and the weightless pose (FourBar J4, WattII J2) plus the drop case; 02-system known limitation updated.
+
+## 2026-11-28 - WASM guide describes the browser features it ships (BL-004)
+- docs/guides/WASM_DEPLOYMENT.md: Known Limitations (no dialogs/export/autosave/recents) replaced by Browser Behavior; build and cache statements already matched build_web.sh and vercel.json.
+
+## 2026-11-28 — Defer nom 1.2.4 warning (BL-006)
+- cargo tree -i nom: nom 1.2.4 <- meval 0.2.0; meval 0.2.0 is still the latest and needs nom 1.x, so deferred with that upstream blocker named. No code or lockfile change.
+
+## 2026-11-28 - Tests stop rewriting docs/chebyshev_lambda (BL-012)
+- export_chebyshev_lambda_pngs writes to linkage-sim-rs/target/chebyshev_lambda/; a test pins the directory outside docs/; AGENTS.md says to copy by hand to refresh the committed images.
+
+## 2026-11-28 - Web build keeps the CAD dark theme (BL-013)
+- apply_cad_theme selects the Dark preference before styling, so a light browser preference no longer gives a light web build; two theme tests failed before, pass after (reused from Codex 261f6b4).
+
+## 2026-11-28 - Readable zone-force label (BL-046)
+- The zone-force label draws on a dark plate above the yellow overlap highlight; two painted-output tests; reused from Codex 33c0079.
+
+## 2026-11-28 - Mounted force drawings (BL-049)
+- Reaction, component, external and zone-force arrows turn with the mounting angle and a force zone draws its four turned corners; five 30-degree tests failed before, pass after (fix reused from the parked Codex branch).
+
+## 2026-11-28 — Undoable committed force edits (BL-045)
+- update_force_element records one undo step and sets dirty; force-editor numeric fields commit once on release or focus loss (from Codex 8e6ad7d); red test plus gate green.
+
+## 2026-11-28 - Delete with toolbar focus (BL-033)
+- handle_delete_shortcut gates on focused_widget_may_edit_text (TextEdit state plus response/touch guards) instead of wants_keyboard_input; five bl033_* tests in gui/mod.rs (reused from Codex ed88854).
+
+## 2026-11-28 — Preserve linear pose on rebuild (BL-051)
+- rebuild() takes its solve time from the newly assigned driver kind (linear stroke or revolute angle), so an edit no longer moves a linear-driven mechanism to driver length 0. Four bl051 tests (Codex acb1531's three plus a Slider-Crank sample on a linear driver at stroke 1.2) pass; the three linear ones fail with the fix reverted; GATE PASS.
+
+## 2026-11-28 - Preserve sweep plot X pan/zoom (BL-019)
+- with_default_x_bounds queues a one-shot X init (first display, range change/revisit, double click) instead of default_x_bounds every frame; reused from the Codex branch fix; four bl019 tests, drag and zoom failed before.
+
+## 2026-11-28 - Preserve idle mounting angle (BL-021)
+- Removed the Mounting Angle slider step_by(0.5) that snapped an off-grid angle and rebuilt every idle frame; regression test bl021_expanded_mounting_slider_preserves_off_grid_state_on_idle_frames.
 
 ## 2026-11-27 - Magcoupler UX overhaul, slice B, stage 2, part 2b-iii-b: the look (BL-107)
 - What changed: every control at rest shows its edge at 3:1 or more (the stage 1 review's E-4 and R-6): a value box, a framed button, a picker and a text box are outlined, and a checkbox's box and a slider's rail and handle filled, in `app::theme::CONTROL` (#656c76, a second colour outside the token table), where the hairline colour was 1.1:1 to 1.2:1; under the pointer and pressed a box keeps its fill and its outline brightens, and a slider's handle still shows its state by its ring's width alone; an open picker keeps the grey outline; every plot legend entry, egui_plot's mark of a toggle, shows its dot on a dark disc inside a grey ring, and the four tiles over the drawing are outlined in the grey (BL-108, BL-109). The title and the left column's heading "Size and torque" are Inter SemiBold (S-1): a second cut made by the committed script from the recorded Inter 4.1 file, which egui's Heading style draws in; every other text stays Regular. The page names its language, gives the browser the panel colour and a dark scheme, and shows "Loading the calculator" in the muted colour while the wasm file loads, which the app takes away at the end of its first frame, in the same paint (S-4). gui-smoke's look check reads the line gone and judges the heavier title and the controls' edges.
