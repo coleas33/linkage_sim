@@ -674,8 +674,8 @@
   evidence: "Found 2026-09-12 while fixing BL-010. Headless probe (egui::Context::run, 4 frames): with Plot::default_x_bounds set, an X bounds change made in frame 1 is reset to the defaults on the next frame, while a Y change persists; with default_y_bounds both reset. Cause: egui_plot 0.33 lib.rs ~1066 `if (!default_auto_bounds.x && !any_dynamic_modifications) || mem.auto_bounds.x { bounds.set_x(&min_auto_bounds) }` runs every frame, and drag/zoom only mutate mem.transform. plot_panel/mod.rs with_default_x_bounds doc claims 'User pan/zoom still works within a single sweep recompute' — that is not the case for X."
   acceptance: "either a headless regression test that X pan/zoom persists across frames on a sweep plot (probe pattern above) after switching to a one-shot set_plot_bounds_x keyed on the data range, or the with_default_x_bounds doc corrected to state that X is pinned to the data range by design"
   priority: 3
-  status: open
-  notes: "Discovered during BL-010; not fixed there (out of scope). Same mechanism is why the actuator force plot cannot use default_y_bounds as a soft outlier view."
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: with_default_x_bounds now returns a SweepPlot whose show() sets X once via set_plot_bounds_x (first display, range change/revisit, double click) instead of default_x_bounds re-applying each frame; drag and zoom persist across idle frames; four bl019 tests (drag and zoom failed before). Discovered during BL-010; not fixed there (out of scope). Same mechanism is why the actuator force plot cannot use default_y_bounds as a soft outlier view."
 
 - id: BL-031
   title: "apply_point_masses re-logs the same skipped-weight warning on every rebuild and live mass sync"

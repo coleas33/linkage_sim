@@ -149,6 +149,7 @@ two_pass_statics_for_actuators: |
      reflect the actuator as the prime mover (driver torque drops to ~0).
 
 invariants_to_protect:
+  - "Sweep plot X bounds initialize once per active range and reset on double click or range change/revisit. Pointer pan and zoom persist during idle frames; Y navigation keeps egui_plot behavior. Empty ranges retain normal auto-fit."
   - All DXF-created bodies use local=world frame (attachment points in
     world coords, body pose 0,0,0) so they render correctly without needing
     joint constraints to fix position. If you change this, you must update
