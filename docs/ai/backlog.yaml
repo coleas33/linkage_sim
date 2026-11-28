@@ -514,8 +514,8 @@
   evidence: "gui-smoke live run 2026-08-08: screenshot shows light theme (archived at .superpowers/sdd/2026-08-08-agentic-test-improve-loop/smoke-test-linkage.png); docs/ai/03-structure.yaml describes theme.rs as 'CAD dark visuals'"
   acceptance: "web build renders the intended theme (or the intended default is documented and gui-smoke prompt/theme docs updated to match); verified by gui-smoke screenshot"
   priority: 3
-  status: open
-  notes: ""
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: apply_cad_theme now selects ThemePreference::Dark before the CAD visuals and spacing, so a light browser preference no longer renders the web build light; two regression tests in gui/theme.rs (light/dark/light system frames with both fallbacks, Nathan mode and restore); reused from Codex 261f6b4."
 
 - id: BL-014
   title: Per-frame console warning spam in web build (egui viewport Title command)

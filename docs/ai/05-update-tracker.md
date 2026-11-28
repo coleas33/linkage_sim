@@ -5,6 +5,9 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - Web build keeps the CAD dark theme (BL-013)
+- apply_cad_theme selects the Dark preference before styling, so a light browser preference no longer gives a light web build; two theme tests failed before, pass after (reused from Codex 261f6b4).
+
 ## 2026-11-28 - Readable zone-force label (BL-046)
 - The zone-force label draws on a dark plate above the yellow overlap highlight; two painted-output tests; reused from Codex 33c0079.
 
