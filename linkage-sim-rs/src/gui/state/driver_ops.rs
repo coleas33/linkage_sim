@@ -10,19 +10,37 @@ use crate::io::{
 };
 use super::{AppState, LoadCaseManager};
 use super::blueprint_ops::{
-    joint_body_ids, generate_unique_id,
+    joint_body_ids, generate_unique_id, revolute_driver_params,
 };
 use crate::gui::sweep::compute_sweep_data;
+use crate::solver::kinematics::solve_position;
 
 impl AppState {
     /// Rebuild the mechanism with a different driver joint.
     ///
     /// Works for both sample mechanisms (via sample builder) and blueprint-based
-    /// mechanisms (via blueprint driver mutation + rebuild).
+    /// mechanisms (via blueprint driver mutation + rebuild). A reassign that does
+    /// not assemble is refused: the state is left as it was and the status line
+    /// says so. A kept reassign adds one undo entry (BL-118).
     pub fn reassign_driver(&mut self, joint_id: &str) {
+        let before = self.take_snapshot();
+        if self.try_reassign_driver(joint_id) {
+            if let Some(snapshot) = before {
+                self.undo_history.push(snapshot);
+                self.dirty = true;
+            }
+        } else {
+            self.status_message = Some(format!(
+                "Could not assemble with {joint_id} as the driver; the driver is unchanged."
+            ));
+            self.status_message_time = 5.0;
+        }
+    }
+
+    /// The reassign itself: true when it is kept; false leaves the state untouched.
+    fn try_reassign_driver(&mut self, joint_id: &str) -> bool {
         // Try sample-based reassignment first (preserves sample-specific builder logic).
         if let Some(sample) = self.current_sample {
-            self.push_undo();
             match crate::gui::samples::build_sample_with_driver(sample, Some(joint_id)) {
                 Ok((mut mech, q0)) => {
                     // The stock rebuild has none of the user's weights: carry each one
@@ -53,13 +71,18 @@ impl AppState {
                         ));
                         self.status_message_time = 5.0;
                     }
+                    // The stock builder may set its own omega/theta_0 (FourBar J4); keep
+                    // them so the next rebuild reads the same driver (BL-117).
+                    let (omega, theta_0) = blueprint
+                        .as_ref()
+                        .map_or((2.0 * PI, 0.0), revolute_driver_params);
                     self.driver_kind = super::DriverKind::Revolute {
-                        angle: 0.0,
-                        omega: 2.0 * PI,
-                        theta_0: 0.0,
+                        angle: theta_0,
+                        omega,
+                        theta_0,
                     };
                     self.solve_and_update(&mech, &q0, 0.0, 1e-10, 50, Some(q0.clone()));
-                    self.driver_angle = 0.0;
+                    self.driver_angle = theta_0; // t = (angle - theta_0) / omega stays 0
                     self.q_at_zero = self.q.clone();
                     self.blueprint = blueprint;
                     self.mechanism = Some(mech);
@@ -73,10 +96,13 @@ impl AppState {
                     self.playing = false;
                     self.animation_direction = 1.0;
                     self.pending_driver_reassignment = None;
+                    // The same refresh rebuild() does (RV-1): forces and Mechanism Health follow the new driver.
+                    self.compute_forces(self.current_driver_time());
+                    self.update_grashof();
                     self.mark_sweep_dirty();
                     self.compute_validation();
                     self.recompute_driver_display_offset();
-                    return;
+                    return true;
                 }
                 Err(msg) => {
                     log::warn!("Sample-based driver reassignment failed: {}", msg);
@@ -86,18 +112,17 @@ impl AppState {
         }
 
         // Blueprint-based reassignment: modify the driver in the blueprint and rebuild.
-        let Some(bp) = &self.blueprint else { return };
+        let Some(bp) = &self.blueprint else { return false };
 
         // Find the joint and its body pair.
         let Some(joint) = bp.joints.get(joint_id) else {
             log::warn!("Joint '{}' not found in blueprint", joint_id);
-            return;
+            return false;
         };
         let (body_i, body_j) = joint_body_ids(joint);
         let body_i = body_i.to_string();
         let body_j = body_j.to_string();
 
-        self.push_undo();
         // Capture the current driver rate to seed the new revolute
         // driver. If the current kind is None, fall back to a sensible
         // default (one rotation per second).
@@ -107,14 +132,14 @@ impl AppState {
         } else {
             2.0 * PI
         };
-        let bp = self.blueprint.as_mut().unwrap();
+        let mut new_bp = bp.clone();
 
         // Remove all existing drivers.
-        bp.drivers.clear();
+        new_bp.drivers.clear();
 
         // Add new constant-speed driver for the target joint's body pair.
-        let driver_id = generate_unique_id("D", &bp.drivers);
-        bp.drivers.insert(
+        let driver_id = generate_unique_id("D", &new_bp.drivers);
+        new_bp.drivers.insert(
             driver_id,
             DriverJson::ConstantSpeed {
                 body_i,
@@ -123,6 +148,20 @@ impl AppState {
                 theta_0: 0.0,
             },
         );
+
+        // Solve at t = 0 from rebuild()'s own first guess before any state
+        // changes, so a driver that does not assemble is refused (BL-118).
+        let assembles = load_mechanism_unbuilt_from_json(&new_bp)
+            .ok()
+            .and_then(|mut mech| mech.build().ok().map(|_| mech))
+            .is_some_and(|mech| {
+                solve_position(&mech, &self.rebuild_guess(&mech), 0.0, 1e-10, 50)
+                    .is_ok_and(|r| r.converged)
+            });
+        if !assembles {
+            return false;
+        }
+        self.blueprint = Some(new_bp);
 
         // Transition kind to revolute with the chosen scalars BEFORE
         // any subsequent writes go through the setters.
@@ -147,6 +186,7 @@ impl AppState {
         self.rebuild();
         self.q_at_zero = self.q.clone();
         // rebuild() already calls mark_sweep_dirty()
+        true
     }
 
     /// Switch the current driver to an expression-based driver.

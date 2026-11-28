@@ -28,6 +28,16 @@ use crate::gui::sweep::{
     detect_fourbar_links, empty_trajectory_sweep_data, SweepMode,
 };
 
+/// The (omega, theta_0) the angle slider uses for a blueprint's first driver.
+/// Expression drivers use f(t) directly, so omega/theta_0 mean nothing for
+/// them: they and a driverless blueprint get 1 rev/s and theta_0 = 0 (BL-140).
+pub(super) fn revolute_driver_params(bp: &MechanismJson) -> (f64, f64) {
+    match bp.drivers.values().next() {
+        Some(DriverJson::ConstantSpeed { omega, theta_0, .. }) => (*omega, *theta_0),
+        _ => (2.0 * std::f64::consts::PI, 0.0),
+    }
+}
+
 // ── Blueprint helper functions ────────────────────────────────────────────────
 
 /// Extract the body_i and body_j IDs from a JointJson.
@@ -316,20 +326,8 @@ impl AppState {
                 velocity: ld.velocity,
                 length_0: ld.length_0,
             };
-        } else if let Some(driver) = bp.drivers.values().next() {
-            let mut omega = 2.0 * std::f64::consts::PI;
-            let mut theta_0 = 0.0;
-            match driver {
-                DriverJson::ConstantSpeed { omega: w, theta_0: t0, .. } => {
-                    omega = *w;
-                    theta_0 = *t0;
-                }
-                DriverJson::Expression { .. } => {
-                    // Expression drivers use f(t) directly; omega/theta_0
-                    // aren't meaningful, so keep defaults for angle-slider
-                    // mapping (omega=2*pi means 1 rev/s, theta_0=0).
-                }
-            }
+        } else if !bp.drivers.is_empty() {
+            let (omega, theta_0) = revolute_driver_params(bp);
             self.driver_kind = DriverKind::Revolute {
                 angle: self.driver_angle,
                 omega,
@@ -346,13 +344,7 @@ impl AppState {
         // assigned driver kind (a linear driver's value is its stroke).
         let t = self.current_driver_time();
 
-        // Try solving with last_good_q if it has the right dimension;
-        // after a topology change, seed the surviving bodies by id.
-        let try_q = if self.last_good_q.len() == mech.state().n_coords() {
-            self.last_good_q.clone()
-        } else {
-            seed_q_by_body_id(self.mechanism.as_ref(), &self.last_good_q, &mech)
-        };
+        let try_q = self.rebuild_guess(&mech);
 
         if !self.solve_and_update(&mech, &try_q, t, 1e-10, 50, None) {
             // First attempt failed — a NaN residual means the solver errored
@@ -387,6 +379,16 @@ impl AppState {
         self.compute_validation();
         self.recompute_driver_display_offset();
         self.mark_sweep_dirty();
+    }
+
+    /// rebuild()'s first guess for `mech`: last_good_q if it has the right
+    /// dimension; after a topology change, the surviving bodies seeded by id.
+    pub(crate) fn rebuild_guess(&self, mech: &Mechanism) -> DVector<f64> {
+        if self.last_good_q.len() == mech.state().n_coords() {
+            self.last_good_q.clone()
+        } else {
+            seed_q_by_body_id(self.mechanism.as_ref(), &self.last_good_q, mech)
+        }
     }
 
     // ── Blueprint edit operations ────────────────────────────────────────

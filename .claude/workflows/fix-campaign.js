@@ -71,8 +71,7 @@ Run "git status" and "git diff" yourself. Judge: (a) correctness of the change; 
       {
         phase: 'Fix', label: `review:${item.id}:r${round}`, schema: REVIEW_SCHEMA,
         // feature-dev:code-reviewer has no shell (it cannot run git diff or clippy), so it rejected every fix; the default workflow agent can. fbd-math-reviewer has Bash.
-        ...(item.risk === 'physics' ? { agentType: 'fbd-math-reviewer' } : {}),
-        ...(item.risk === 'physics' ? { model: 'fable' } : { model: 'sonnet' }), // fable: decider, physics reviews
+        ...(item.risk === 'physics' ? { agentType: 'fbd-math-reviewer', model: 'fable' } : { model: 'sonnet' }), // fable: decider, physics reviews
       },
     )
     if (lastReview && lastReview.approved) { approved = true; break }

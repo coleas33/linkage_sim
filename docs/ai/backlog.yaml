@@ -1111,8 +1111,8 @@
   evidence: "Re-review of the R5 fix wave on linkage/r5-mechanical (2026-11-28, finding R-1; pre-existing, also on main c569d03). gui/state/driver_ops.rs (about lines 56-60, the stock-sample path of reassign_driver) hard-codes driver_kind Revolute{angle 0, omega 2pi, theta_0 0}, but the stock builder can set another theta_0: for FourBar J4 the blueprint and the mechanism carry theta_0 = 7.804 rad. The reassign converges; the next rebuild() reads theta_0 7.804 from the blueprint and solves at t = (0 - 7.804)/2pi: converged=false, residual 0.052-0.058. Any geometry edit, and adding, moving or editing a weight (add_point_mass goes through mutate_and_rebuild), triggers it, with or without a weight. Also from the re-review: R-3, undo_ops.rs:81 restore_snapshot still calls compute_forces(self.driver_angle), passing the angle as the time (harmless for constant-speed and constant-velocity drivers, wrong for Expression or cosine-stroke drivers, whose velocity solve reads t); R-5, .claude/workflows/fix-campaign.js lines 74-75 test item.risk === 'physics' in two spreads in a row (merge them into one)."
   acceptance: "Red test first: FourBar reassigned to J4, then add_mount_point or add_point_mass, still converges with the pose kept; the stock path takes omega and theta_0 from the built driver and sets driver_angle so that t stays 0; restore_snapshot passes the solve time to compute_forces; fix-campaign.js's reviewer choice is one spread; GATE PASS."
   priority: 3
-  status: open
-  notes: "Filed 2026-11-28 by the controller from the R5 fix wave's re-review (R-1, R-3, R-5); not taken in R5 because it is pre-existing and R5's fixes do not make it worse."
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5b: the stock-sample path of reassign_driver takes omega and theta_0 from the built blueprint driver and sets driver_angle = theta_0 (t stays 0), so the next rebuild solves; restore_snapshot passes the solve time to compute_forces; fix-campaign.js reviewer choice is one spread; red test reassign_driver_to_a_theta_0_joint_keeps_the_next_edit_solved. Filed 2026-11-28 by the controller from the R5 fix wave's re-review (R-1, R-3, R-5); not taken in R5 because it is pre-existing and R5's fixes do not make it worse."
 - id: BL-118
   title: "The SixBarB1 and SixBarA1 sample builders are nondeterministic on a driver reassign to J7, and plain reassigns to many rocker joints do not converge"
   dimension: gui
@@ -1120,8 +1120,8 @@
   evidence: "Re-review of the R5 fix wave (2026-11-28, finding R-6; pre-existing). A reassign over all 30 samples and every grounded revolute joint (60 reassigns), with and without a weight: SixBarB1 J7 and SixBarA1 J7 converge 8 of 12 runs with 8 distinct poses, the same with and without a weight; build_sample_with_driver sometimes returns Err 'could not find converging initial guess'. Plain reassigns to rocker joints (J4 on CrankRocker, Hoeken and others) also fail to converge, with or without weights."
   acceptance: "Red test first: each sample's build_sample_with_driver gives the same pose on repeated calls; a reassign to any grounded revolute joint either converges or is refused with a message (no silent unsolved state); GATE PASS."
   priority: 4
-  status: open
-  notes: "Filed 2026-11-28 by the controller from the R5 fix wave's re-review (R-6)."
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5b, in two passes. The first (92dbf7e) made build_sample_with_driver solve the start pose at t=0 and return Err for one that does not assemble; that alone did not close it (R5b re-review RR-1, RR-2): reassign_driver logged the Err and fell through to the blueprint reassign, which started the driver at theta_0 = 0 and could end converged=false with no message (17 sample/joint pairs), and both paths pushed an undo snapshot, so the second Undo did nothing. The second pass: the blueprint reassign solves the new driver at t = 0 from rebuild()'s own first guess (AppState::rebuild_guess) before it changes any state; a reassign neither path assembles is refused, the state stays as it was and the status line says 'Could not assemble with J4 as the driver; the driver is unchanged.'; the snapshot taken before the reassign is pushed once, only when the reassign is kept. The J7 cause: load_mechanism_unbuilt_from_json added joints in HashMap order, so the constraint rows came in a random order and the Newton solve of SixBarB1 J7's blueprint reassign (near a singular pose, 34 to 50 iterations) converged in some runs and not in others; the loader now adds joints in id order, SixBarB1 J7 is refused on every run and SixBarA1 J7 kept on every run. Tests (both red first): every_sample_reassign_converges_or_leaves_the_state_unchanged (17 pairs kept unsolved, 18 kept with two undo entries) and joints_load_in_id_order_whatever_the_map_order. The forces and Mechanism Health refresh after a kept sample reassign (RV-1). Filed 2026-11-28 by the controller from the R5 fix wave's re-review (R-6)."
 - id: BL-119
   title: "Magcoupler: in the app's font a value box of the left column that takes the keyboard's focus at the column's foot stays 0.4 of a point under the view"
   dimension: gui
@@ -1365,3 +1365,48 @@
   priority: 5
   status: open
   notes: "Filed 2026-11-28 by the controller from the R6 site review (N-1)."
+- id: BL-140
+  title: "GUI: load_sample hard-codes the driver (theta_0 = 0), so loading a sample whose builder starts at pi/2 fails its next edit; three copies of the driver mapping"
+  dimension: gui
+  risk: mechanical
+  evidence: "The R5b branch review (2026-11-28, F-1, F-2, F-5; pre-existing and live): load_sample (gui/state/mod.rs) set the driver to Revolute{0, 2pi, 0} and driver_angle = 0, but the DoubleRocker (samples/fourbar.rs), TripleRocker (fourbar.rs) and PeaucellierLipkin (special.rs) builders give the default J1 driver theta_0 = pi/2; the next rebuild read pi/2 from the blueprint and solved at t = (0 - pi/2)/2pi, so loading TripleRocker or DoubleRocker and add_mount_point(\"coupler\") gave converged=false (residuals 4.66 and 7.56) and the plots' x axis was shifted 90 degrees. The mapping from the blueprint's driver to (omega, theta_0) was written three times: rebuild (blueprint_ops.rs), the BL-117 reassign stock path (driver_ops.rs) and load_sample's hard-coded copy. F-2: the FourBar J4 builder carried theta_rocker 7.804 rad into the blueprint, the state and driver_angle (the plot cursor drew at 627 degrees)."
+  acceptance: "Red test first: every sample loads and one add_mount_point edit after loading converges with its pose kept; one helper maps a blueprint's driver to (omega, theta_0) for rebuild, the reassign stock path and load_sample; driver_angle stays in [0, 2pi); GATE PASS."
+  priority: 3
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5b. Filed by the controller from the R5b branch review. gui::state::blueprint_ops::revolute_driver_params(bp) is the one mapping (first driver; an Expression or no driver gives 2pi and 0); the reassign path used the first ConstantSpeed driver, which differs only for a blueprint that lists an Expression driver before a ConstantSpeed one, and rebuild's behaviour is kept. load_sample builds the blueprint first and sets driver_angle = theta_0 so t stays 0. The FourBar J4 builder takes theta_rocker.rem_euclid(TAU), 1.5208 rad. The actuator samples rebuild to a different state size after an edit (the test skips only their pose compare); filed as BL-141. R5b re-review RR-5, left open: the (2pi, 0) default is still written three times (the helper and the map_or calls in load_sample and the reassign stock path; taking Option<&MechanismJson> in revolute_driver_params would fold them but is more than a two-line change), and file_io.rs (about lines 368-378) holds a fourth (omega, theta_0) mapping, from the built mechanism's DriverMeta."
+- id: BL-141
+  title: "GUI: on the actuator samples one edit after loading grows q (9 to 15), and Undo then does not converge and keeps q at 15"
+  dimension: gui
+  risk: mechanical
+  evidence: "The R5b re-review (2026-11-28, RR-3; pre-existing, on main too): load ParallelogramActuator (and the other actuator samples): the stock builder gives q of 9; one add_mount_point rebuilds from the blueprint and q grows to 15 (converged); Undo then restores the load's snapshot through the same blueprint path and ends converged=false with q still 15. Residual about 7e-3 on main (1.6e-3 to 7.4e-3 run to run, from HashMap order); 4.68 on every run once BL-118 made the loader add joints in id order. A kept driver reassign on ParallelogramActuator (J4) followed by Undo gives the same unconverged 15-coordinate state. ChebyshevLambdaActuator also grows to 15 after an edit, but its Undo converges. The tests every_sample_survives_one_edit_after_loading and every_sample_reassign_converges_or_leaves_the_state_unchanged (gui/state/tests.rs) skip the actuator samples' pose compare for this."
+  acceptance: "Red test first: each actuator sample loads, takes one add_mount_point and one Undo, and comes back converged with the load's q (same size and pose); the stock builder and the blueprint rebuild agree on the state size (or the snapshot keeps the builder's layout); the two tests drop their actuator skips; GATE PASS."
+  priority: 4
+  status: open
+  notes: "Filed 2026-11-28 by the fix wave of the R5b re-review (RR-3), not taken there: pre-existing and outside BL-118's reassign."
+- id: BL-142
+  title: "GUI: the blueprint driver reassign seeds the new driver at theta_0 = 0, so on a mechanism loaded from a file or share link 20 of 62 rocker reassigns are refused"
+  dimension: gui
+  risk: mechanical
+  evidence: "The R5b re-review (2026-11-28, RV-2): the blueprint path seeds a new driver at theta_0 = 0 rather than the joint's current relative angle, so on a mechanism loaded from a file or a share link 20 of 62 rocker reassigns are refused although the current pose satisfies a driver there (FourBar, CrankRocker, Chebyshev, Hoeken, Roberts, QuickReturn, ToggleClamp, BellCrank, PeaucellierLipkin and Pantograph at J4; DoubleRocker J1; TripleRocker J1 and J4)."
+  acceptance: "Red test first on the file-loaded variants of those pairs: each reassign is kept; seed theta_0 from the joint's current relative angle so q is unchanged at t = 0; GATE PASS."
+  priority: 3
+  status: open
+  notes: "Filed 2026-11-28 by the fix wave of the R5b re-review (RV-2), not taken there: pre-existing and separate from RV-1."
+- id: BL-143
+  title: "Linkage (web): a mouse right-click on a joint shows only its hover tooltip in the automated browser, where a touch long-press opens the joint menu (Set as Driver, Delete Joint)"
+  dimension: gui
+  risk: mechanical
+  evidence: "The R5b browser check (2026-11-28) and the controller's check on the live site (main 2877a89) and the R5b build: Playwright's right-click (mouse down and up with button right, at J4 of the 4-Bar Crank-Rocker at 1280 x 800) delivered pointerdown, pointerup and contextmenu, and egui showed the J4 tooltip but never the joint menu; a CDP touch long-press of 1.2 s opened it. The R6 site review reported reaching Set as Driver by right-click on the live site. Not yet checked with a real mouse; if a real right-click fails too, right-click reassignment (the Driver section says 'right-click to change') is unreachable on the web."
+  acceptance: "Check with a real mouse in Chrome, Firefox and Edge; if the menu does not open, a red test on the web input path (a secondary click on a joint opens its context menu) and the fix; if it opens, close this with the finding that it is the automation's event sequence; GATE PASS."
+  priority: 3
+  status: open
+  notes: "Filed 2026-11-28 by the controller from the R5b browser check."
+- id: BL-144
+  title: "Linkage: after a driver set on the FourBar's rocker (J4) the driver slider and the J4 arc read 267.1 deg while the status bar and the rocker link label read 87.1 deg for the same angle"
+  dimension: gui
+  risk: mechanical
+  evidence: "The R5b browser check (2026-11-28): after Set as Driver on J4 the Crank Angle slider shows 267.13 deg (caption 'Driver: rocker relative to ground (0 = world +X)') and the J4 arc label 267.1 deg, while the status bar and the rocker label show 87.1 deg; the two conventions differ by 180 deg."
+  acceptance: "Red test first: after a driver reassign every angle readout of the driver (the slider, the joint arc, the status bar, the link label) gives the same angle in one stated convention; GATE PASS."
+  priority: 4
+  status: open
+  notes: "Filed 2026-11-28 by the controller from the R5b browser check."

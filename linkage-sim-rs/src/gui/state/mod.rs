@@ -1070,28 +1070,26 @@ impl AppState {
     pub fn load_sample(&mut self, sample: SampleMechanism) {
         let (mech, q0) = build_sample(sample);
 
-        // Extract driver parameters from the sample before storing mechanism.
-        // Samples currently all use revolute drivers (the
-        // ChebyshevLambdaActuator sample has a LinearDriver but
-        // load_sample is reset to revolute defaults; rebuild() will
-        // re-detect from the built mechanism's blueprint and update
-        // driver_kind appropriately).
-        self.driver_kind = DriverKind::Revolute {
-            angle: 0.0,
-            omega: 2.0 * PI,
-            theta_0: 0.0,
-        };
+        // Samples all start as revolute drivers (the ChebyshevLambdaActuator
+        // sample has a LinearDriver; rebuild() re-detects it from the blueprint).
+        // The blueprint's own driver gives omega and theta_0 (some samples
+        // start at theta_0 = pi/2), so the next rebuild reads the same driver
+        // and t stays 0 (BL-140).
+        let blueprint = mechanism_to_json(&mech).ok();
+        let (omega, theta_0) = blueprint
+            .as_ref()
+            .map_or((2.0 * PI, 0.0), blueprint_ops::revolute_driver_params);
+        self.driver_kind = DriverKind::Revolute { angle: theta_0, omega, theta_0 };
 
         self.solve_and_update(&mech, &q0, 0.0, 1e-10, 50, Some(q0.clone()));
 
-        self.driver_angle = self.driver_theta_0();
+        self.driver_angle = theta_0;
         self.q_at_zero = self.q.clone();
 
         // Samples always start at zero mounting angle.
         self.mounting_angle = 0.0;
 
-        // Create blueprint from the built mechanism.
-        self.blueprint = mechanism_to_json(&mech).ok();
+        self.blueprint = blueprint;
         self.mechanism = Some(mech);
         self.current_sample = Some(sample);
 
