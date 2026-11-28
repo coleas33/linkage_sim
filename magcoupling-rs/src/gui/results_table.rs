@@ -819,10 +819,13 @@ fn row_ui(
         }
     });
     let rect = row.response.rect;
-    let sensor = crate::gui::readouts::sensor(ui, rect, &entry.path, line_sense(ui, rect));
-    readouts.select(ui, sensor, &entry.path, |show_details| {
-        row_tooltip(entry, &value, show_details)
-    });
+    readouts.select_over(
+        ui,
+        rect,
+        &entry.path,
+        line_sense(ui, rect),
+        |show_details| row_tooltip(entry, &value, show_details),
+    );
 }
 
 #[cfg(test)]
