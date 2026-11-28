@@ -238,8 +238,12 @@ pub(crate) fn follow_focus(ui: &egui::Ui) -> Option<egui::Rect> {
         && widget.interact_rect == widget.rect.intersect(ui.clip_rect())
         && ui.min_rect().contains_rect(widget.rect)
     {
-        ui.scroll_to_rect(widget.rect, None);
-        return Some(widget.rect);
+        // A point past the foot: the app's font heights are not whole points, and the least
+        // scroll left a value box 0.4 of a point under the view (BL-119).
+        let mut rect = widget.rect;
+        rect.max.y += 1.0;
+        ui.scroll_to_rect(rect, None);
+        return Some(rect);
     }
     None
 }

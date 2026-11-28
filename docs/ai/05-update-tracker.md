@@ -3636,3 +3636,4 @@ formats, and Phase 6.8 UX overhaul.
 - 2026-11-28 BL-115 (magcoupling/r3-polish): the Equation panel header lays Close and Start here out first and wraps the heading and crumbs in the room left of them, so a long breadcrumb trail is never drawn under the buttons (explorer.rs; test a_long_breadcrumb_trail_stays_clear_of_start_here_and_close_in_the_app_s_own_font).
 
 - 2026-11-28 BL-116 (magcoupling/r3-polish): the Explain panel's scroll area keeps a 10-point strip for its floating scroll bar, so a note's lines are no longer covered by the bar under the pointer (panel.rs; test a_note_in_the_explain_panel_keeps_clear_of_its_scroll_bar).
+- 2026-11-28 BL-119 (magcoupling/r3-polish): follow_focus scrolls to the focused widget's rect grown one point at its foot, so a value box in the app's font is whole at the left column's foot (gui/mod.rs; test the_left_column_shows_every_focused_widget_whole_in_the_app_s_own_font).

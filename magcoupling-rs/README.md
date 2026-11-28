@@ -379,7 +379,7 @@ already shows, typed again, is no edit either: a loaded 1.4123 mm shown as 1.41 
 special case any more.
 The column follows the keyboard's focus (BL-100): when Tab, Shift+Tab or an Up or Down arrow key
 puts the focus on a row outside the column's view, the column scrolls by the least that shows
-the widget whole. It scrolls once, when the focus arrives: a wheel or a drag of the scroll bar
+the widget whole, and a point more at its foot (the app's font heights are not whole points, BL-119). It scrolls once, when the focus arrives: a wheel or a drag of the scroll bar
 afterwards is not fought, the focus arriving still selects nothing and edits nothing, and an idle
 page draws no frame. One rule, `gui::follow_focus`, called last in a scroll area's content, serves
 the column, the Explain panel, the check list, the Geometry tab's callout list, the Clamp tab and

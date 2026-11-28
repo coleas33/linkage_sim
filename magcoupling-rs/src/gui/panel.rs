@@ -8312,6 +8312,28 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "app")]
+    #[test]
+    fn the_left_column_shows_every_focused_widget_whole_in_the_app_s_own_font() {
+        // BL-119: BL-100's walk runs in egui's default font, whose heights are whole points.
+        // In the app's theme and font a value box taking the focus at the column's foot stayed
+        // 0.4 of a point under the view. Both folds, at the two laptop windows.
+        for screen in [SMALLEST, egui::vec2(1280.0, 800.0)] {
+            for fold in [DETAILED_INPUTS, ASSUMPTIONS_FOLD] {
+                let mut harness = Harness::on_screen(screen);
+                crate::app::theme::apply(&harness.ctx);
+                crate::app::fonts::install(&harness.ctx);
+                harness.panel.selection = Selection::Nothing;
+                harness.fold(fold);
+                let column = side_rect(&harness.ctx, "magcoupling_inputs");
+                for keys in [key_tap(egui::Key::Tab), shift_tab()] {
+                    let (stops, _) = follow(&mut harness, &keys, column);
+                    assert!(stops > 20, "{screen:?} {fold}: {stops} stops");
+                }
+            }
+        }
+    }
+
     #[test]
     fn the_explain_panel_follows_the_keyboard_s_focus() {
         // BL-100 for the Explain panel: in the smallest window a check's entry runs past the

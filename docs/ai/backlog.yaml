@@ -1129,8 +1129,8 @@
   evidence: "The whole-branch review of part 2b-iii-c (BL-112; 2026-11-28, finding KR-3), in the app's theme and font: at 1024 x 700 and 1280 x 800 a slider's value box in Detailed inputs or Assumptions that takes the focus at the column's foot settles at y 670.0 to 692.4 (770.0 to 792.4) under a view that ends at 692.0 (792.0), and stays 0.4 of a point cut, on 39 presses over the two walks. gui::follow_focus scrolls by the least that shows the widget whole (scroll_to_rect(rect, None)), and the app font's heights are not whole points. BL-100's test the_left_column_follows_the_keyboard_s_focus_and_fights_no_wheel runs in egui's default font, where they are, so it misses this. main is the same: BL-112 does not change the left column's behaviour."
   acceptance: "A red test first: BL-100's left-column walk also in the app's theme and font at 1024 x 700 and 1280 x 800, every focused widget whole in the column's view once the scroll has settled (for example follow_focus scrolls to the rect grown by a point at its foot); the other callers' tests still pass; README and docs/ai updated; GATE PASS."
   priority: 5
-  status: open
-  notes: "Filed 2026-11-28 by the fix wave of BL-112's whole-branch review (KR-3), not taken there: on main too, a fraction of a point, and the review marked its fix optional."
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch magcoupling/r3-polish: gui::follow_focus scrolls to the focused widget's rect grown by one point at its foot, so a value box in the app's font is whole in the left column's view (test the_left_column_shows_every_focused_widget_whole_in_the_app_s_own_font). Filed 2026-11-28 by the fix wave of BL-112's whole-branch review (KR-3), not taken there: on main too, a fraction of a point, and the review marked its fix optional."
 - id: BL-120
   title: "Magcoupler: in a narrow centre the Equation panel breaks the closest teaching note's title in the middle of a word (Demagnetizati / on)"
   dimension: gui
