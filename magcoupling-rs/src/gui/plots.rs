@@ -96,6 +96,37 @@ pub const X_TICK_SPACING: f32 = 60.0;
 /// The vertical axis's [`X_TICK_SPACING`] [points].
 pub const Y_TICK_SPACING: f32 = 20.0;
 
+/// egui_plot's smallest grid spacing [points] (its default, `Plot::grid_spacing`): the spacer
+/// reads the value per point from it.
+const GRID_SPACING_MIN: f64 = 8.0;
+
+/// The horizontal axis' three grid steps: the finest of 1, 2 and 5 times a power of ten whose
+/// ticks are further apart than [`X_TICK_SPACING`] (so its numbers are drawn), with the steps
+/// either side of it. egui_plot's own spacer steps in tens, and at 53 to 59 points between
+/// tens a plot's axis kept one or two numbers or none (BL-105).
+fn x_grid_steps(input: egui_plot::GridInput) -> [f64; 3] {
+    // shortcut: a zero or non-finite scale (an empty plot) gets egui_plot's tens, which draw
+    // nothing over an empty range.
+    let want = input.base_step_size / GRID_SPACING_MIN * f64::from(X_TICK_SPACING) * 1.001;
+    if !(want.is_finite() && want > 0.0) {
+        return [1.0, 10.0, 100.0];
+    }
+    let decade = want.log10().floor() as i32;
+    let nice: Vec<f64> = (decade - 1..=decade + 1)
+        .flat_map(|k| [1.0, 2.0, 5.0].map(|m| m * 10f64.powi(k)))
+        .collect();
+    let at = nice
+        .iter()
+        .position(|&s| s > want)
+        .unwrap_or(nice.len() - 2);
+    [nice[at - 1], nice[at], nice[at + 1]]
+}
+
+/// A horizontal axis' number: whole, or with up to two decimals (a step of 0.5 or 0.2).
+fn x_number(mark: egui_plot::GridMark, _range: &std::ops::RangeInclusive<f64>) -> String {
+    egui::emath::format_with_decimals_in_range(mark.value, 0..=2)
+}
+
 /// The centre region's tab of the five plots (UX overhaul spec 4.4, decision C-9): one tab, with
 /// a picker of the plots under it.
 pub const PLOTS: &str = "Plots";
@@ -469,13 +500,16 @@ const VIOLET: Color32 = Color32::from_rgb(180, 140, 230);
 fn plot(ui: &egui::Ui, kind: PlotKind, x: &str, y: &str) -> Plot<'static> {
     let x_axis = AxisHints::new_x()
         .label(x.to_owned())
-        .label_spacing(egui::Rangef::point(X_TICK_SPACING));
+        .label_spacing(egui::Rangef::point(X_TICK_SPACING))
+        .formatter(x_number);
     let y_axis = AxisHints::new_y()
         .label(y.to_owned())
         .label_spacing(egui::Rangef::point(Y_TICK_SPACING));
     Plot::new(kind.id())
         .id(kind.id())
         .legend(Legend::default().position(Corner::RightTop))
+        .grid_spacing(egui::Rangef::new(GRID_SPACING_MIN as f32, 300.0))
+        .x_grid_spacer(egui_plot::uniform_grid_spacer(x_grid_steps))
         .custom_x_axes(vec![x_axis])
         .custom_y_axes(vec![y_axis])
         .height(ui.available_height().max(0.0))

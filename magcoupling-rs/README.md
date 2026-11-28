@@ -735,8 +735,10 @@ can name an input Auto holds; its link then frames a locked row (known limitatio
   design's verdict: the slice B stage 1 review, C-3). Each axis draws a tick number at full strength or not at all
   (`X_TICK_SPACING`, `Y_TICK_SPACING`: egui_plot's own thresholds, 60 and 20 points apart; past
   them it faded a number in, to full strength at 80 and 30, as faint as 1.3:1 on the way: the
-  stage 1 review, E-7). At 1024 x 700 and 1280 x 800 that threshold leaves the horizontal axes
-  of four plots one or two numbers, or none, as on `main` (BL-105).
+  stage 1 review, E-7). The horizontal axis takes its own grid steps (`x_grid_steps`): the
+  finest of 1, 2 and 5 times a power of ten whose ticks are more than 60 points apart, so at
+  1024 x 700 and 1280 x 800 every plot's axis carries at least three numbers (BL-105; egui_plot's
+  tens-only steps left four plots one or two, or none).
 - **Clamp** (`clamp_drawing.rs`; M42-7; not offered while the shaft-clamp section is paused, below): drawing.py's end and top views of the one-piece slotted
   clamp for the recommended screw (its texts, coordinates and limits; the cuts clipped to the
   boss; the screws needed, at most 50), both at one scale in the dark theme's pens (each view's

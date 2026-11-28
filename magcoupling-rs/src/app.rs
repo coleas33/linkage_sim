@@ -847,6 +847,71 @@ mod tests {
     }
 
     #[test]
+    fn every_plot_s_horizontal_axis_carries_three_numbers_in_the_app_s_own_font() {
+        // BL-105 (the review of part 2b-iii-a, UX-2): at 1024 x 700 and 1280 x 800 four plots'
+        // horizontal axes carried one or two numbers, or none, because egui_plot's tens-only
+        // spacer skipped the finer step at 53 to 59 points apart. In the app's theme and font,
+        // on the starting design: each plot's horizontal axis (the row of numbers lowest in the
+        // centre region) carries three or more numbers, none cut and none within `GAP` points
+        // of the next; the vertical axes still carry numbers, and 1920 x 1080 keeps at least
+        // the numbers it drew (10 to 16 on four axes).
+        use crate::gui::CentreView;
+        use crate::gui::plots::PlotKind;
+        use crate::gui::test_support::{cut_texts, flat_shapes};
+        const GAP: f32 = 8.0;
+        for size in [WINDOWS[1], WINDOWS[0], egui::vec2(1920.0, 1080.0)] {
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+            let ctx = egui::Context::default();
+            let mut app = MagcouplingApp::new(&ctx);
+            frame_on(&ctx, &mut app, size, Vec::new());
+            for kind in PlotKind::ALL {
+                let what = format!("{size:?}, {kind:?}");
+                let output = show_view(&ctx, &mut app, size, CentreView::Plot(kind), 2);
+                let (left, right) = (
+                    side_rect(&ctx, "magcoupling_inputs").right(),
+                    side_rect(&ctx, "magcoupling_dashboard").left(),
+                );
+                let mut numbers: Vec<(String, egui::Rect)> = flat_shapes(&output)
+                    .into_iter()
+                    .filter_map(|shape| match shape {
+                        egui::Shape::Text(text) => {
+                            let rect = text.visual_bounding_rect();
+                            let in_centre = left < rect.center().x && rect.center().x < right;
+                            let number = text.galley.text().parse::<f64>().is_ok();
+                            (in_centre && number).then(|| (text.galley.text().to_owned(), rect))
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                let bottom = numbers
+                    .iter()
+                    .map(|(_, rect)| rect.center().y)
+                    .fold(f32::MIN, f32::max);
+                let (mut row, rest): (Vec<_>, Vec<_>) = numbers
+                    .drain(..)
+                    .partition(|(_, rect)| (rect.center().y - bottom).abs() < 2.0);
+                row.sort_by(|a, b| a.1.left().total_cmp(&b.1.left()));
+                let texts: Vec<&str> = row.iter().map(|(t, _)| t.as_str()).collect();
+                assert!(row.len() >= 3, "{what}: the horizontal axis: {texts:?}");
+                assert!(
+                    rest.len() >= 2,
+                    "{what}: the vertical axis: {} numbers",
+                    rest.len()
+                );
+                for pair in row.windows(2) {
+                    let gap = pair[1].1.left() - pair[0].1.right();
+                    assert!(gap >= GAP, "{what}: {texts:?}: a gap of {gap}");
+                }
+                let cut = cut_texts(&output, screen);
+                assert!(
+                    cut.iter().all(|t| t.parse::<f64>().is_err()),
+                    "{what}: cut: {cut:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn a_tile_shows_its_edge_on_the_panel_as_a_framed_control_does() {
         // BL-109 (the review of part 2b-iii-b, LOOK-2): the four tiles over the drawing are
         // click targets that the panel frames itself, and they kept the hairline (1.2:1 on the

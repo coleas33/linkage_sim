@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - Magcoupler: every plot's horizontal axis carries at least three numbers at 1024 x 700 and 1280 x 800 (BL-105)
+
+- gui/plots.rs x_grid_steps (1-2-5 grid steps, finest with ticks over 60 points apart), x_number; test in app.rs; README; backlog BL-105 fixed.
+
 ## 2026-11-28 - Magcoupler: the left column holds 320 points at pixel ratios 0.9 and 1.35 (BL-103)
 
 - gui/input_ui.rs add_slider (slider width capped to what its value box leaves; used by input rows and gui/size_controls.rs), gui/pickers.rs one point free in the part and grade pickers; test in app.rs; README; backlog BL-103 fixed.
