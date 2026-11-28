@@ -10,7 +10,7 @@ use crate::io::{
 };
 use super::{AppState, LoadCaseManager};
 use super::blueprint_ops::{
-    joint_body_ids, generate_unique_id,
+    joint_body_ids, generate_unique_id, revolute_driver_params,
 };
 use crate::gui::sweep::compute_sweep_data;
 
@@ -57,11 +57,7 @@ impl AppState {
                     // them so the next rebuild reads the same driver (BL-117).
                     let (omega, theta_0) = blueprint
                         .as_ref()
-                        .and_then(|bp| bp.drivers.values().find_map(|d| match d {
-                            DriverJson::ConstantSpeed { omega, theta_0, .. } => Some((*omega, *theta_0)),
-                            _ => None,
-                        }))
-                        .unwrap_or((2.0 * PI, 0.0));
+                        .map_or((2.0 * PI, 0.0), revolute_driver_params);
                     self.driver_kind = super::DriverKind::Revolute {
                         angle: theta_0,
                         omega,

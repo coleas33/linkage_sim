@@ -1185,3 +1185,12 @@
   priority: 3
   status: open
   notes: "Filed 2026-11-28 by the controller from the R4 branch review (R4-3); not taken in R4: older than the branch, outside BL-067's acceptance, and it needs a deviation from the workbook decided with a physics review."
+- id: BL-140
+  title: "GUI: load_sample hard-codes the driver (theta_0 = 0), so loading a sample whose builder starts at pi/2 fails its next edit; three copies of the driver mapping"
+  dimension: gui
+  risk: mechanical
+  evidence: "The R5b branch review (2026-11-28, F-1, F-2, F-5; pre-existing and live): load_sample (gui/state/mod.rs) set the driver to Revolute{0, 2pi, 0} and driver_angle = 0, but the DoubleRocker (samples/fourbar.rs), TripleRocker (fourbar.rs) and PeaucellierLipkin (special.rs) builders give the default J1 driver theta_0 = pi/2; the next rebuild read pi/2 from the blueprint and solved at t = (0 - pi/2)/2pi, so loading TripleRocker or DoubleRocker and add_mount_point(\"coupler\") gave converged=false (residuals 4.66 and 7.56) and the plots' x axis was shifted 90 degrees. The mapping from the blueprint's driver to (omega, theta_0) was written three times: rebuild (blueprint_ops.rs), the BL-117 reassign stock path (driver_ops.rs) and load_sample's hard-coded copy. F-2: the FourBar J4 builder carried theta_rocker 7.804 rad into the blueprint, the state and driver_angle (the plot cursor drew at 627 degrees)."
+  acceptance: "Red test first: every sample loads and one add_mount_point edit after loading converges with its pose kept; one helper maps a blueprint's driver to (omega, theta_0) for rebuild, the reassign stock path and load_sample; driver_angle stays in [0, 2pi); GATE PASS."
+  priority: 3
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5b. Filed by the controller from the R5b branch review. gui::state::blueprint_ops::revolute_driver_params(bp) is the one mapping (first driver; an Expression or no driver gives 2pi and 0); the reassign path used the first ConstantSpeed driver, which differs only for a blueprint that lists an Expression driver before a ConstantSpeed one, and rebuild's behaviour is kept. load_sample builds the blueprint first and sets driver_angle = theta_0 so t stays 0. The FourBar J4 builder takes theta_rocker.rem_euclid(TAU), 1.5208 rad. The actuator samples rebuild to a different state size after an edit (the test skips only their pose compare); not filed here."

@@ -474,13 +474,19 @@
     }
 
     /// BL-117: the stock builder's own omega and theta_0 (FourBar J4 sets
-    /// theta_0 = 7.804) must survive the reassign, so the next rebuild solves.
+    /// theta_0 = 1.5208) must survive the reassign, so the next rebuild solves.
     #[test]
     fn reassign_driver_to_a_theta_0_joint_keeps_the_next_edit_solved() {
         let mut state = AppState::default();
         state.load_sample(SampleMechanism::FourBar);
         state.reassign_driver("J4");
         assert!(state.solver_status.converged);
+        // BL-140 F-2: theta_0 wrapped into [0, 2pi), not 7.804 (plot cursor at 627 deg).
+        assert!(
+            (state.driver_angle - 1.5208).abs() < 1e-3,
+            "driver_angle {} is not 1.5208",
+            state.driver_angle
+        );
         let q_before = state.q.clone();
         assert_eq!(state.current_driver_time(), 0.0);
 
@@ -490,6 +496,48 @@
 
         state.add_point_mass("coupler", 0.5, [0.05, 0.0]);
         assert!(state.solver_status.converged);
+    }
+
+    /// BL-140: every sample loads with a driver the next rebuild reads back
+    /// unchanged, so one edit after loading converges and keeps the pose.
+    #[test]
+    fn every_sample_survives_one_edit_after_loading() {
+        for &sample in SampleMechanism::all() {
+            let mut state = AppState::default();
+            state.load_sample(sample);
+            let Some(body) = state
+                .blueprint
+                .as_ref()
+                .and_then(|bp| bp.bodies.keys().find(|k| k.as_str() != "ground").cloned())
+            else {
+                continue;
+            };
+            if !state.solver_status.converged {
+                continue; // a sample that does not solve at load is not this item's subject
+            }
+            let q_before = state.q.clone();
+            state.add_mount_point(&body, "M_bl140", [0.01, 0.02]);
+            assert!(
+                state.solver_status.converged,
+                "{sample:?}: one edit after load did not converge, residual {}",
+                state.solver_status.residual_norm
+            );
+            assert!(
+                (0.0..2.0 * std::f64::consts::PI).contains(&state.driver_angle),
+                "{sample:?}: driver_angle {} outside [0, 2pi)",
+                state.driver_angle
+            );
+            // The actuator samples rebuild to a different state size (pre-existing,
+            // filed apart from BL-140), so its pose has no vector to compare.
+            if state.q.len() != q_before.len() {
+                assert!(format!("{sample:?}").contains("Actuator"), "{sample:?}: the edit changed the state size");
+                continue;
+            }
+            assert!(
+                (&state.q - &q_before).norm() < 1e-6,
+                "{sample:?}: the edit moved the pose"
+            );
+        }
     }
 
     #[test]

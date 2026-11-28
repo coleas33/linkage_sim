@@ -68,9 +68,12 @@ pub(super) fn build_fourbar_with_driver(
         "J4" => {
             // Drive rocker. Compute a consistent crank angle from the
             // rocker's initial angle using the 4-bar loop closure.
+            // rem_euclid so the blueprint, state and driver_angle carry the
+            // angle in [0, 2pi) (F-2: the cursor drew at 627 degrees).
             let theta_rocker = fourbar_rocker_angle_for_crank(
                 o2, o4, l_crank, l_coupler, l_rocker, 0.0,
-            );
+            )
+            .rem_euclid(std::f64::consts::TAU);
             let theta_crank_for_j4 = 0.0_f64;
             (theta_crank_for_j4, theta_rocker)
         }
