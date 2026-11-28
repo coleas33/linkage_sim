@@ -18,7 +18,7 @@ Written 2026-11-18. Updated as answers and new questions arrive.
 | P-n, L-n | The plans for slice A and for slice B stage 1, in `docs/superpowers/plans/` |
 | Three-letter codes (LGS-11, LFA-16) | The whole-project audit, `docs/analyses/2026-11-10-whole-project-audit.md` |
 
-Contents: part A, six answers that change what is built next. Part B, eight things only you can try. Part C, 47 calls to make when convenient (questions 48, 49 and 50 were added there on 2026-11-22, questions 51, 53, 54, 55, 56, 57, 58 and 59 on 2026-11-23, questions 60 to 65 on 2026-11-25, questions 66 to 69 on 2026-11-26). Part D, five that matter only if the tools stop being generic.
+Contents: part A, six answers that change what is built next. Part B, eight things only you can try. Part C, 53 calls to make when convenient (questions 48, 49 and 50 were added there on 2026-11-22, questions 51, 53, 54, 55, 56, 57, 58 and 59 on 2026-11-23, questions 60 to 65 on 2026-11-25, questions 66 to 69 on 2026-11-26, questions 70, 71 and 72 on 2026-11-27). Part D, five that matter only if the tools stop being generic.
 
 Answered so far: 1, 2, 3, 4, 5 and 6 (2026-11-22). Each answer is written in bold under its question.
 
@@ -552,6 +552,39 @@ Added 2026-11-26 (the next free number). A lesson's diagram was drawn 300 points
 - (c) The right column starts 16 points wider, and the diagrams keep their size.
 
 Source: BL-098; A-46.
+
+### 70. Should the Plots tab pick its plot from a row of names or from a drop-down?
+
+Added 2026-11-27 (the next free number). The five plots now share one tab, "Plots" (the design's decision C-9). Under the tab a row shows the five plots' names, the one shown marked; a click on a name shows that plot. The design calls it a picker and does not say which kind. A drop-down would take one line and hide the names behind a click.
+
+- **If you do not answer:** the row of names.
+- (a) As the default.
+- (b) A drop-down list.
+
+Source: UX design decision C-9 and section 4.4; A-48; BL-104 plan, decision D-87.
+
+### 71. Should the last tab read "Results" instead of "Results table"?
+
+Added 2026-11-27 (the next free number). The tab row is now Size and torque, Geometry, Plots and Results table. The design's decision C-9 names the last tab "Results"; it has read "Results table" since it was made, and no word changed that did not have to.
+
+- **If you do not answer:** "Results table".
+- (a) As the default.
+- (b) "Results", as the design writes it.
+
+Source: UX design decision C-9 and section 4.4; A-49; BL-104 plan, decision D-89.
+
+### 72. In the plots, should the required torque and the limits be drawn in red?
+
+Added 2026-11-27 (the next free number). The design says red means a failing check and nothing else (decision C-5). The plots drew the required torque, the sweeps' required floor and slip heating's limit as red lines, and the pull-out point and the time to the limit as red dots, whether the design passed or not. They are now drawn in the bright text colour (the requirement lines and the pull-out point) and in violet (the limit and the time to it, the violet the torque plot already gave its limit line). Red is left to a sweep row whose design does not fit.
+
+One cost in the legends, which draw every entry as a dot in its colour, whatever its shape. In the two sweeps, "Required floor" (a dashed line) and "This design" (a ring) now have the same bright dot, where "Required floor" and "Does not fit" shared the red one before. In Slip heating, when the high case reaches the limit, "Governing limit" (a dashed line) and "Time to the limit (high case)" (a dot) share the violet dot, as they shared the red one before. On the plots themselves the shapes still look different. If the sweeps' pair should change, the smallest change is the sweeps' "This design" ring in blue, as the torque-temperature plot draws its own.
+
+- **If you do not answer:** as described.
+- (a) As the default.
+- (b) Red again for those lines and dots ("red is also a limit line"), and the design's C-5 narrowed to say so.
+- (c) Red only while the check a line stands for fails.
+
+Source: UX design decision C-5; the slice B stage 1 review, finding C-3; A-50; BL-104 plan, decision D-90.
 
 ### Linkage simulator
 

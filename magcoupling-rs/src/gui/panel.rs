@@ -6,7 +6,8 @@
 //! the check list over the Explain
 //! panel on the right ([`crate::gui::checks`], [`crate::gui::explain`]: UX overhaul spec 4.5) and
 //! the centre region between them ([`CentreView`]: one tab row, the results table last;
-//! decision M42-1), opening on Size and torque with the four tiles over the drawing (decision
+//! decision M42-1; the five plots under one tab, with a picker, decision C-9), opening on Size
+//! and torque with the four tiles over the drawing (decision
 //! G-5, which reverses M42-2). Every result is recomputed with every approved correction
 //! on ([`compute_all`]) each frame after the inputs are drawn, so the readouts show this
 //! frame's edits.
@@ -54,7 +55,7 @@ use crate::gui::inputs::{
     InputSection, KEY_DESIGN, filter_inputs, optional_seed,
 };
 use crate::gui::look;
-use crate::gui::plots::{PlotKind, plot_ui};
+use crate::gui::plots::{PLOTS, PlotKind, plot_ui};
 use crate::gui::readouts::{Readouts, registry};
 use crate::gui::results_table::{
     CSV_FILE_NAME, JSON_FILE_NAME, ResultsTable, TableAction, results_csv, results_json,
@@ -243,7 +244,8 @@ pub enum PanelRequest {
     OpenDesign,
 }
 
-/// The views of the centre region, one tab row (decision M42-1).
+/// The views of the centre region, one tab row (decision M42-1): a tab per view, but the five
+/// plots, which share the Plots tab and its picker (decision C-9).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CentreView {
     /// The four tiles over the drawing to scale (the view a new panel opens on: decision G-5,
@@ -251,7 +253,7 @@ pub enum CentreView {
     SizeAndTorque,
     /// The end view and the side view to scale, with the dimension callouts.
     Geometry,
-    /// One of the plots (egui_plot).
+    /// One of the plots (egui_plot), under the Plots tab with the picker of the five.
     Plot(PlotKind),
     /// The clamp drawing (drawing.py's end and top views) and the clamp table.
     Clamp,
@@ -260,7 +262,7 @@ pub enum CentreView {
 }
 
 impl CentreView {
-    /// Every view, in tab order.
+    /// Every view, in tab order (the plots in the picker's order, at the Plots tab's place).
     pub const ALL: [CentreView; 9] = [
         CentreView::SizeAndTorque,
         CentreView::Geometry,
@@ -273,15 +275,23 @@ impl CentreView {
         CentreView::Results,
     ];
 
-    /// The views the tab row offers, in tab order: every view but the clamp drawing while the
-    /// shaft-clamp section is paused (`clamps_paused`).
+    /// The views the tab row offers, in tab order (each plot through the Plots tab's picker):
+    /// every view but the clamp drawing while the shaft-clamp section is paused
+    /// (`clamps_paused`).
     pub fn tabs(clamps_paused: bool) -> impl Iterator<Item = CentreView> {
         Self::ALL
             .into_iter()
             .filter(move |&view| !(clamps_paused && view == CentreView::Clamp))
     }
 
-    /// The tab text.
+    /// The tab row, in order: [`CentreView::tabs`] with each run of views under one tab's text
+    /// kept once, so the five plots are one Plots tab at the first plot's place (decision C-9).
+    pub fn tab_row(clamps_paused: bool) -> impl Iterator<Item = CentreView> {
+        let mut last = None;
+        Self::tabs(clamps_paused).filter(move |view| last.replace(view.tab()) != Some(view.tab()))
+    }
+
+    /// The view's name: its tab's text, or a plot's name in the Plots tab's picker.
     pub const fn label(self) -> &'static str {
         match self {
             CentreView::SizeAndTorque => crate::gui::size_controls::HEADING,
@@ -289,6 +299,15 @@ impl CentreView {
             CentreView::Plot(kind) => kind.label(),
             CentreView::Clamp => "Clamp",
             CentreView::Results => "Results table",
+        }
+    }
+
+    /// The text of the tab that shows the view: [`PLOTS`] for each plot (decision C-9), the
+    /// view's own name for the others.
+    pub const fn tab(self) -> &'static str {
+        match self {
+            CentreView::Plot(_) => PLOTS,
+            view => view.label(),
         }
     }
 }
@@ -332,6 +351,9 @@ pub struct MagcouplingPanel {
     last_error: Option<String>,
     /// The view the centre region shows.
     centre: CentreView,
+    /// The plot the Plots tab shows when it is clicked: the plot shown last (decision C-9).
+    /// View state, in no design file, link or undo step.
+    plot: PlotKind,
     /// Whether the header's Show spreadsheet details is on (spec S2-5): a view choice, never in
     /// a design file, a share link or the undo history, and kept by reset all and every load.
     show_details: bool,
@@ -423,6 +445,7 @@ impl MagcouplingPanel {
             keyboard_shortcuts: true,
             last_error: None,
             centre: CentreView::SizeAndTorque,
+            plot: PlotKind::TorqueTemperature,
             show_details: false,
             input_order: InputOrder::default(),
             minimum_diameter_mm: None,
@@ -1008,9 +1031,19 @@ impl MagcouplingPanel {
         // the tab row and the banner live in the space above the panel, and the view in the
         // space left under them, each confined to it.
         confined(ui, "magcoupling_above_equation_panel", |ui| {
+            if let CentreView::Plot(kind) = self.centre {
+                self.plot = kind;
+            }
             ui.horizontal_wrapped(|ui| {
-                for view in CentreView::tabs(self.clamps_paused) {
-                    if look::tab_ui(ui, self.centre == view, view.label()).clicked() {
+                for view in CentreView::tab_row(self.clamps_paused) {
+                    // The Plots tab shows the plot shown last (decision C-9).
+                    let view = match view {
+                        CentreView::Plot(_) => CentreView::Plot(self.plot),
+                        view => view,
+                    };
+                    // self.plot is the plot shown, if one is: set above.
+                    let selected = self.centre == view;
+                    if look::tab_ui(ui, selected, view.tab()).clicked() {
                         self.centre = view;
                     }
                 }
@@ -1059,7 +1092,17 @@ impl MagcouplingPanel {
             CentreView::Geometry => {
                 geometry_ui(ui, shown, &self.results, self.clamps_paused, readouts);
             }
-            CentreView::Plot(kind) => plot_ui(ui, kind, shown, &self.results, readouts),
+            CentreView::Plot(mut kind) => {
+                // The Plots tab's picker (decision C-9): the five plots by name, in the order
+                // their tabs had. A click shows its plot in this frame.
+                ui.horizontal_wrapped(|ui| {
+                    for plot in PlotKind::ALL {
+                        ui.selectable_value(&mut kind, plot, plot.label());
+                    }
+                });
+                self.centre = CentreView::Plot(kind);
+                plot_ui(ui, kind, shown, &self.results, readouts);
+            }
             CentreView::Clamp => clamp_ui(ui, shown, &self.results, readouts),
             CentreView::Results => {
                 let action = self.results_table.ui(
@@ -1928,14 +1971,25 @@ mod tests {
             self.frame(Vec::new())
         }
 
-        /// A click on the tab of `view` in the centre region's tab row.
+        /// A click on the tab of `view` in the centre region's tab row, then, for a plot, on its
+        /// name in the Plots tab's picker under the row (decision C-9).
         fn tab(&mut self, view: CentreView) -> egui::FullOutput {
             let output = self.frame(Vec::new());
-            let tab = text_rects(&output, view.label())
+            let tab = text_rects(&output, view.tab())
                 .into_iter()
                 .find(|rect| rect.left() > INPUTS_WIDTH)
-                .unwrap_or_else(|| panic!("no tab {:?}", view.label()));
-            self.click(tab.center())
+                .unwrap_or_else(|| panic!("no tab {:?}", view.tab()));
+            let output = self.click(tab.center());
+            if !matches!(view, CentreView::Plot(_)) {
+                return output;
+            }
+            let output = self.frame(Vec::new());
+            let right = right_column_left(&output);
+            let name = text_rects(&output, view.label())
+                .into_iter()
+                .find(|rect| rect.left() > INPUTS_WIDTH && rect.right() < right)
+                .unwrap_or_else(|| panic!("no {:?} in the picker", view.label()));
+            self.click(name.center())
         }
 
         /// A click on the header of the Size column's fold headed `fold`, then the frames egui
@@ -3038,6 +3092,279 @@ mod tests {
     }
 
     #[test]
+    fn the_five_plots_share_one_tab_whose_picker_shows_each_plot() {
+        // UX overhaul spec 4.4 and decision C-9: the five plots sit under one tab, "Plots", with
+        // a picker of the five (their names, in the order their tabs had), and the tab row
+        // becomes Size and torque, Geometry, Plots and the results table (the Clamp tab before
+        // the table while the section shows). A click on a plot's name shows that plot, marked
+        // as picked, with the accent's line under the Plots tab; the tab, clicked again from
+        // another view, shows the plot picked last, and
+        // clicked while a plot shows, keeps it. Picking edits nothing, selects nothing and is
+        // no undo step. Nine tabs wrapped onto a second row at 1280 points; the tab row is one
+        // row at 1024x700. The tab's word is the one new text, and it is in plain words.
+        use crate::engine::explain::plain::mentions_gearbox_protection;
+        use crate::gui::guidance::plain_text_violations;
+        use crate::gui::plots::PLOTS;
+        assert_eq!(plain_text_violations(PLOTS), Vec::<&str>::new());
+        assert!(!mentions_gearbox_protection(PLOTS));
+        for (size, clamps_paused) in [(egui::vec2(1024.0, 700.0), false), (SCREEN, true)] {
+            let mut harness = Harness::of(MagcouplingPanel::new(), size);
+            harness.panel.clamps_paused = clamps_paused;
+            let output = harness.frame(Vec::new());
+            let right = right_column_left(&output);
+            // The texts drawn in the centre region in reading order: by row from the top (a
+            // text within 4 points of a row's first is on that row), each row from the left.
+            let centre = |output: &egui::FullOutput| -> Vec<(String, egui::Rect)> {
+                let mut texts: Vec<(String, egui::Rect)> = flat_shapes(output)
+                    .into_iter()
+                    .filter_map(|shape| match shape {
+                        egui::Shape::Text(text) => {
+                            let rect = text.visual_bounding_rect();
+                            (rect.left() > INPUTS_WIDTH && rect.right() < right)
+                                .then(|| (text.galley.text().to_owned(), rect))
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                texts.sort_by(|a, b| a.1.center().y.total_cmp(&b.1.center().y));
+                let mut rows: Vec<Vec<(String, egui::Rect)>> = Vec::new();
+                for text in texts {
+                    match rows.last_mut() {
+                        Some(row) if (text.1.center().y - row[0].1.center().y).abs() < 4.0 => {
+                            row.push(text)
+                        }
+                        _ => rows.push(vec![text]),
+                    }
+                }
+                rows.into_iter()
+                    .flat_map(|mut row| {
+                        row.sort_by(|a, b| a.1.left().total_cmp(&b.1.left()));
+                        row
+                    })
+                    .collect()
+            };
+            let what = format!("{size:?}, clamp section paused {clamps_paused}");
+            let opening = CentreView::SizeAndTorque.label();
+            let texts = centre(&output);
+            let (_, first) = texts
+                .iter()
+                .find(|(text, _)| text == opening)
+                .unwrap_or_else(|| panic!("{what}: the opening tab"));
+            let row: Vec<&str> = texts
+                .iter()
+                .filter(|(_, rect)| (rect.center().y - first.center().y).abs() < 4.0)
+                .map(|(text, _)| text.as_str())
+                .collect();
+            let mut want = vec![opening, CentreView::Geometry.label(), PLOTS];
+            if !clamps_paused {
+                want.push(CentreView::Clamp.label());
+            }
+            want.push(CentreView::Results.label());
+            assert_eq!(row, want, "{what}: the tab row, on one row");
+            let inputs = harness.panel.inputs().clone();
+            let undo = harness.panel.history.undo_len();
+            // A click on a text of the centre region under the tab row.
+            let click = |harness: &mut Harness, text: &str| {
+                let output = harness.frame(Vec::new());
+                let (_, at) = centre(&output)
+                    .into_iter()
+                    .find(|(drawn, rect)| drawn == text && rect.top() >= first.top() - 1.0)
+                    .unwrap_or_else(|| panic!("{what}: no {text:?} in the centre region"));
+                harness.click(at.center())
+            };
+            click(&mut harness, PLOTS);
+            assert_eq!(
+                harness.panel.centre,
+                CentreView::Plot(PlotKind::TorqueTemperature),
+                "{what}: the Plots tab opens on the first plot"
+            );
+            // The picker: the five names, once each, in their order, under the tab row.
+            let output = harness.frame(Vec::new());
+            let names: Vec<&str> = PlotKind::ALL.iter().map(|kind| kind.label()).collect();
+            let picker: Vec<String> = centre(&output)
+                .into_iter()
+                .filter(|(text, rect)| {
+                    names.contains(&text.as_str()) && rect.top() > first.bottom()
+                })
+                .map(|(text, _)| text)
+                .collect();
+            assert_eq!(picker, names, "{what}: the picker");
+            let selection = harness.ctx.style().visuals.selection.bg_fill;
+            for kind in PlotKind::ALL {
+                // The pick draws its plot in the frame of the click: a plot's memory is there
+                // from the first frame it draws, and only the first plot drew before its click.
+                let drawn = |harness: &Harness| {
+                    egui_plot::PlotMemory::load(&harness.ctx, kind.id()).is_some()
+                };
+                assert_eq!(
+                    drawn(&harness),
+                    kind == PlotKind::TorqueTemperature,
+                    "{what}: {kind:?} drawn before its click"
+                );
+                click(&mut harness, kind.label());
+                assert!(
+                    drawn(&harness),
+                    "{what}: {kind:?} drawn in its click's frame"
+                );
+                assert_eq!(harness.panel.centre, CentreView::Plot(kind), "{what}");
+                // The picked name sits on the selection's fill; no other name does.
+                let output = harness.frame(Vec::new());
+                let fills: Vec<egui::Rect> = flat_shapes(&output)
+                    .into_iter()
+                    .filter_map(|shape| match shape {
+                        egui::Shape::Rect(rect) if rect.fill == selection => Some(rect.rect),
+                        _ => None,
+                    })
+                    .collect();
+                for other in PlotKind::ALL {
+                    let (_, at) = centre(&output)
+                        .into_iter()
+                        .find(|(text, rect)| text == other.label() && rect.top() > first.bottom())
+                        .unwrap_or_else(|| panic!("{what}: {other:?} in the picker"));
+                    assert_eq!(
+                        fills.iter().any(|fill| fill.contains_rect(at)),
+                        other == kind,
+                        "{what}: {other:?} picked with {kind:?} shown"
+                    );
+                }
+                // The tab row marks the Plots tab, and no other, as the tab shown.
+                let (_, tab) = centre(&output)
+                    .into_iter()
+                    .find(|(text, rect)| text == PLOTS && rect.top() < first.bottom())
+                    .unwrap_or_else(|| panic!("{what}: the Plots tab"));
+                let lines = accent_lines(&output);
+                assert_eq!(lines.len(), 1, "{what}, {kind:?}: {lines:?}");
+                let (left, right, y) = lines[0];
+                assert!(
+                    left <= tab.left() && tab.right() <= right && tab.bottom() <= y,
+                    "{what}, {kind:?}: {lines:?} under {tab:?}"
+                );
+            }
+            // The tab clicked while a plot shows keeps it; back from another view, the tab
+            // shows the plot picked last.
+            click(&mut harness, PLOTS);
+            assert_eq!(
+                harness.panel.centre,
+                CentreView::Plot(PlotKind::TorqueAngle),
+                "{what}: the tab keeps the plot shown"
+            );
+            click(&mut harness, CentreView::Geometry.label());
+            assert_eq!(harness.panel.centre, CentreView::Geometry, "{what}");
+            click(&mut harness, PLOTS);
+            assert_eq!(
+                harness.panel.centre,
+                CentreView::Plot(PlotKind::TorqueAngle),
+                "{what}: the plot picked last"
+            );
+            assert_eq!(harness.panel.inputs(), &inputs, "{what}");
+            assert_eq!(harness.panel.selection, Selection::Nothing, "{what}");
+            assert_eq!(harness.panel.history.undo_len(), undo, "{what}");
+        }
+    }
+
+    #[test]
+    fn the_keyboard_reaches_the_plots_tab_and_picks_a_plot_by_space_or_enter() {
+        // The Plots tab and its picker by the keyboard (decisions C-9, D-87): Tab reaches the
+        // Plots tab, and the focus arriving on it or on a name changes no view (BL-093); Enter
+        // on the tab opens the plot shown last; Tab walks the picker's five names in their
+        // order, across both of its rows at 1024x700; Space or Enter on a focused name shows
+        // its plot (egui takes either key on a focused widget for a click) and the focus stays
+        // on the name. Nothing is edited, selected or recorded.
+        use crate::gui::plots::PLOTS;
+        for size in [egui::vec2(1024.0, 700.0), SCREEN] {
+            let mut harness = Harness::of(MagcouplingPanel::new(), size);
+            harness.panel.clamps_paused = true;
+            let output = harness.frame(Vec::new());
+            let tab = text_rects(&output, PLOTS)
+                .into_iter()
+                .find(|rect| rect.left() > INPUTS_WIDTH)
+                .unwrap_or_else(|| panic!("{size:?}: the Plots tab"));
+            let inputs = harness.panel.inputs().clone();
+            let undo = harness.panel.history.undo_len();
+            let focused = |harness: &Harness| {
+                let id = harness.ctx.memory(|m| m.focused())?;
+                harness.ctx.read_response(id).map(|response| response.rect)
+            };
+            // A key's tap, then a frame for the view to follow.
+            let tap = |harness: &mut Harness, key: egui::Key| {
+                harness.frame(key_tap(key));
+                harness.frame(Vec::new());
+            };
+            let mut presses = 0;
+            while !focused(&harness).is_some_and(|at| at.contains_rect(tab)) {
+                assert!(presses < 200, "{size:?}: Tab never reaches the Plots tab");
+                tap(&mut harness, egui::Key::Tab);
+                presses += 1;
+                assert_eq!(
+                    harness.panel.centre,
+                    CentreView::SizeAndTorque,
+                    "{size:?}: Tab {presses} changes no view"
+                );
+            }
+            tap(&mut harness, egui::Key::Enter);
+            assert_eq!(
+                harness.panel.centre,
+                CentreView::Plot(PlotKind::TorqueTemperature),
+                "{size:?}: Enter on the Plots tab"
+            );
+            let output = harness.frame(Vec::new());
+            let right = right_column_left(&output);
+            let names: Vec<(PlotKind, egui::Rect)> = PlotKind::ALL
+                .into_iter()
+                .map(|kind| {
+                    let at = text_rects(&output, kind.label())
+                        .into_iter()
+                        .find(|rect| rect.left() > INPUTS_WIDTH && rect.right() < right)
+                        .unwrap_or_else(|| panic!("{size:?}: {kind:?} in the picker"));
+                    (kind, at)
+                })
+                .collect();
+            let on_name = |harness: &Harness| {
+                let at = focused(harness)?;
+                names
+                    .iter()
+                    .find(|(_, name)| at.contains_rect(*name))
+                    .map(|(kind, _)| *kind)
+            };
+            presses = 0;
+            while on_name(&harness).is_none() {
+                assert!(presses < 10, "{size:?}: Tab never reaches the picker");
+                tap(&mut harness, egui::Key::Tab);
+                presses += 1;
+            }
+            // Through the five names: Space on Slip heating, Enter on Torque vs rotation.
+            let mut shown = PlotKind::TorqueTemperature;
+            for (i, kind) in PlotKind::ALL.into_iter().enumerate() {
+                if i > 0 {
+                    tap(&mut harness, egui::Key::Tab);
+                }
+                assert_eq!(on_name(&harness), Some(kind), "{size:?}: name {i} focused");
+                assert_eq!(
+                    harness.panel.centre,
+                    CentreView::Plot(shown),
+                    "{size:?}: the focus on {kind:?} picks nothing"
+                );
+                let key = match kind {
+                    PlotKind::SlipHeating => egui::Key::Space,
+                    PlotKind::TorqueAngle => egui::Key::Enter,
+                    _ => continue,
+                };
+                tap(&mut harness, key);
+                shown = kind;
+                assert_eq!(
+                    harness.panel.centre,
+                    CentreView::Plot(kind),
+                    "{size:?}: {key:?} on {kind:?}"
+                );
+                assert_eq!(on_name(&harness), Some(kind), "{size:?}: the focus stays");
+            }
+            assert_eq!(harness.panel.inputs(), &inputs, "{size:?}");
+            assert_eq!(harness.panel.selection, Selection::Nothing, "{size:?}");
+            assert_eq!(harness.panel.history.undo_len(), undo, "{size:?}");
+        }
+    }
+
+    #[test]
     fn each_plot_tab_draws_its_plot_from_this_frame_s_results() {
         use crate::gui::plots::{
             HIGH_CASE, POINT_RADIUS, PULL_OUT, PULL_OUT_POINT, PULL_OUT_SMALLEST_APOTHEM,
@@ -3051,7 +3378,7 @@ mod tests {
                 PlotKind::PoleSweep => PULL_OUT_SMALLEST_APOTHEM,
                 _ => PULL_OUT,
             };
-            let output = harness.click_text(kind.label());
+            let output = harness.tab(CentreView::Plot(kind));
             assert_eq!(harness.panel.centre, CentreView::Plot(kind));
             let output = [output, harness.frame(Vec::new())];
             assert!(
@@ -3063,7 +3390,7 @@ mod tests {
         }
         // The series come from this frame's results: in the edit's frame the design's marker
         // is painted at the new pull-out, where that frame's plot transform puts it.
-        harness.click_text(PlotKind::TorqueTemperature.label());
+        harness.tab(CentreView::Plot(PlotKind::TorqueTemperature));
         harness.focus(FACE_GAP);
         let before = harness.panel.results().model.pullout_Nm;
         let output = harness.frame(key_tap(egui::Key::ArrowRight));
@@ -5698,7 +6025,7 @@ mod tests {
             text_color(&output, geometry),
             Some(visuals.strong_text_color())
         );
-        let other = PlotKind::GapSweep.label();
+        let other = PLOTS;
         assert_eq!(text_color(&output, other), Some(visuals.text_color()));
         // A theme that sets a weak colour (the standalone app's): another tab's name takes it.
         let weak = egui::Color32::from_rgb(1, 2, 3);
@@ -5709,7 +6036,16 @@ mod tests {
         harness
             .ctx
             .style_mut(|style| style.visuals.weak_text_color = None);
-        // The row wraps at this width: a tab on its second line is underlined where it is.
+        // In a window narrower than the row (a host's: the panel can be drawn in an egui
+        // window the user sizes, as the_panel_works_inside_an_egui_window draws it), the row
+        // wraps: a tab on its second line is underlined where it is. Since the plots share one
+        // tab (decision C-9) the row is one row from the smallest window the app supports
+        // (1024 x 700) up.
+        let mut harness = Harness::of(MagcouplingPanel::new(), egui::vec2(860.0, 800.0));
+        let output = harness.frame(Vec::new());
+        let size_tab = *text_rects(&output, CentreView::SizeAndTorque.label())
+            .last()
+            .expect("the tab");
         let last = CentreView::Results.label();
         harness.click_text(last);
         let output = harness.frame(Vec::new());
@@ -6236,6 +6572,22 @@ mod tests {
             texts.push(crate::gui::results_table::row_tooltip(entry, &value, true));
         }
         texts
+    }
+
+    #[test]
+    fn the_tab_row_lists_the_plots_once_at_the_first_plot_s_place() {
+        // The tab row centre_ui draws and the smoke prompt's guard reads (decision C-9).
+        let plots = CentreView::Plot(PlotKind::ALL[0]);
+        let (opening, geometry) = (CentreView::SizeAndTorque, CentreView::Geometry);
+        let (clamp, results) = (CentreView::Clamp, CentreView::Results);
+        assert_eq!(
+            CentreView::tab_row(false).collect::<Vec<_>>(),
+            [opening, geometry, plots, clamp, results]
+        );
+        assert_eq!(
+            CentreView::tab_row(true).collect::<Vec<_>>(),
+            [opening, geometry, plots, results]
+        );
     }
 
     #[test]
@@ -7983,6 +8335,13 @@ mod tests {
             harness.tab(view);
             if equation {
                 harness.panel.explorer.open_path("model.pullout_Nm");
+                harness.frame(Vec::new());
+                // Dragged 40 points taller, as a person can: since the plots share one tab
+                // (decision C-9) the tab row is one row here, and the list had the room for
+                // every row at the panel's starting height.
+                let ctx = harness.ctx.clone();
+                let top = equation_panel_rect(&ctx).top();
+                drag_equation_panel(&ctx, &mut |events| harness.frame(events), top - 40.0);
             }
             harness.frame(Vec::new());
             harness.frame(Vec::new());
@@ -8148,7 +8507,8 @@ mod tests {
         // UX overhaul spec 8.2, test 9 (goal G-4), table by table, with the shaft-clamp
         // section shown and paused: every action of the old top bar is on the bar, in the
         // Design menu, behind an entry's Equation link or on the assumptions row; every centre
-        // view has its tab; every shown note is in the Learn list; every dashboard row is a
+        // view has its tab, each plot its name in the Plots tab's picker (decision C-9); every
+        // shown note is in the Learn list; every dashboard row is a
         // Headline row of the results table, and a tile or a number of its check's entry where
         // it had a check; every input is a row of the Detailed inputs, under the six Size
         // controls; every assumption is in the Assumptions fold. The inputs and the assumptions
@@ -8230,7 +8590,8 @@ mod tests {
                 }
             }
 
-            // 2. Every centre view has its tab; the paused section's has none.
+            // 2. Every centre view has its tab (a plot, its name in the Plots tab's picker); the
+            // paused section's has none.
             for view in CentreView::ALL {
                 if clamps_paused && view == CentreView::Clamp {
                     let output = harness.frame(Vec::new());

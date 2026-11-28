@@ -1,7 +1,8 @@
-//! The plot tabs (spec M4 "Layout": "torque vs temperature (hot/cold allowance band,
-//! requirement line); gap sweep; pole sweep; slip heating over time vs limit; torque vs rotation
-//! angle (pull-out point)"), drawn with egui_plot (the 0.33 line linkage-sim-rs uses, locked to
-//! its version: gate 11).
+//! The plots (spec M4 "Layout": "torque vs temperature (hot/cold allowance band, requirement
+//! line); gap sweep; pole sweep; slip heating over time vs limit; torque vs rotation angle
+//! (pull-out point)"), drawn with egui_plot (the 0.33 line linkage-sim-rs uses, locked to its
+//! version: gate 11). They share the centre region's one Plots tab ([`PLOTS`]), whose picker
+//! names the five (UX overhaul spec 4.4, decision C-9).
 //!
 //! Every series comes from the results computed this frame, plus three inputs of the design
 //! shown (the minimum temperature, the variation allowance and the required minimum torque,
@@ -31,6 +32,12 @@
 //! When f_end <= 0 (audit M9) every torque computed from the pull-out (the temperature and the
 //! rotation plots) is drawn grey, as the dashboard greys those rows (decision M42-6).
 //!
+//! Red means a failing check and nothing else (UX overhaul decision C-5): in a plot it marks a
+//! sweep row that does not fit, a row whose design fails the fit check. The required torque,
+//! the sweeps' required floor and the pull-out point are drawn in the strong text colour, the
+//! governing limit in violet in both plots that draw it, and the time to the limit in that
+//! violet, where the high case meets the limit (the stage 1 review, C-3).
+//!
 //! Points and reference lines that are not finite are left out; a plot with nothing left shows
 //! [`NOTHING_TO_PLOT`] (the torque-temperature plot [`EMPTY_TEMPERATURE_AXIS`] when its axis is
 //! empty although every value is a number), and a sweep that left rows out counts them in a note
@@ -42,7 +49,9 @@
 //! egui_plot's coordinate readout.
 
 use egui::Color32;
-use egui_plot::{Corner, HLine, Legend, Line, LineStyle, Plot, PlotPoints, PlotUi, Points, VLine};
+use egui_plot::{
+    AxisHints, Corner, HLine, Legend, Line, LineStyle, Plot, PlotPoints, PlotUi, Points, VLine,
+};
 
 use crate::engine::meta::{NumOrText, ResultSet, Value};
 use crate::engine::model::{end_effect_in_range, harmonic_count, ring_pair_factor};
@@ -79,7 +88,19 @@ pub const SWEEP_LINE_WIDTH: f32 = 1.5;
 /// own `AXIS_LABEL_GAP`).
 pub const Y_LABEL_OVERHANG: f32 = 0.25;
 
-/// The plots, one tab each.
+/// How far apart two ticks of the horizontal and of the vertical axis must be for their numbers
+/// to be drawn [points]: egui_plot's own threshold. Past it egui_plot fades a number in, to full
+/// strength at 80 and 30 points, and a number on the way is as faint as 1.3:1 against the plot
+/// (the stage 1 review, E-7); each axis here draws the same numbers at full strength.
+pub const X_TICK_SPACING: f32 = 60.0;
+/// The vertical axis's [`X_TICK_SPACING`] [points].
+pub const Y_TICK_SPACING: f32 = 20.0;
+
+/// The centre region's tab of the five plots (UX overhaul spec 4.4, decision C-9): one tab, with
+/// a picker of the plots under it.
+pub const PLOTS: &str = "Plots";
+
+/// The plots, each one choice of the Plots tab's picker.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlotKind {
     TorqueTemperature,
@@ -90,7 +111,7 @@ pub enum PlotKind {
 }
 
 impl PlotKind {
-    /// Every plot, in tab order.
+    /// Every plot, in the picker's order (the order of the tabs they had).
     pub const ALL: [PlotKind; 5] = [
         PlotKind::TorqueTemperature,
         PlotKind::GapSweep,
@@ -99,7 +120,7 @@ impl PlotKind {
         PlotKind::TorqueAngle,
     ];
 
-    /// The tab text.
+    /// The plot's name in the Plots tab's picker.
     pub const fn label(self) -> &'static str {
         match self {
             PlotKind::TorqueTemperature => "Torque vs temperature",
@@ -442,15 +463,21 @@ const BLUE: Color32 = Color32::from_rgb(100, 180, 255);
 const AMBER: Color32 = Color32::from_rgb(230, 170, 70);
 const VIOLET: Color32 = Color32::from_rgb(180, 140, 230);
 
-/// A plot with its id ([`PlotKind::id`]), the panel's legend and axis labels, filling the
-/// height left and no more (`height` is egui_plot's smallest height too; it keeps at least 1
-/// point).
+/// A plot with its id ([`PlotKind::id`]), the panel's legend and axis labels, its tick numbers
+/// at full strength or not drawn ([`X_TICK_SPACING`], [`Y_TICK_SPACING`]), filling the height
+/// left and no more (`height` is egui_plot's smallest height too; it keeps at least 1 point).
 fn plot(ui: &egui::Ui, kind: PlotKind, x: &str, y: &str) -> Plot<'static> {
+    let x_axis = AxisHints::new_x()
+        .label(x.to_owned())
+        .label_spacing(egui::Rangef::point(X_TICK_SPACING));
+    let y_axis = AxisHints::new_y()
+        .label(y.to_owned())
+        .label_spacing(egui::Rangef::point(Y_TICK_SPACING));
     Plot::new(kind.id())
         .id(kind.id())
         .legend(Legend::default().position(Corner::RightTop))
-        .x_axis_label(x.to_owned())
-        .y_axis_label(y.to_owned())
+        .custom_x_axes(vec![x_axis])
+        .custom_y_axes(vec![y_axis])
         .height(ui.available_height().max(0.0))
 }
 
@@ -602,7 +629,7 @@ fn torque_temperature_ui(ui: &mut egui::Ui, inputs: &DesignInputs, results: &Des
         );
         p.line(Line::new(LOW_BAND, s.low).color(band).width(1.0));
         p.line(Line::new(HIGH_BAND, s.high).color(band).width(1.0));
-        reference_hline(p, REQUIRED, s.required_Nm, Level::Bad.color(&visuals));
+        reference_hline(p, REQUIRED, s.required_Nm, visuals.strong_text_color());
         reference_vline(p, OPERATING, s.operating_C, visuals.weak_text_color());
         if let Some(limit) = s.limit_C {
             reference_vline(p, LIMIT, limit, VIOLET);
@@ -694,7 +721,7 @@ fn sweep_ui(
                 p.points(Points::new(name, points).radius(POINT_RADIUS).color(color));
             }
         }
-        reference_hline(p, REQUIRED_FLOOR, floor_Nm, Level::Bad.color(&visuals));
+        reference_hline(p, REQUIRED_FLOOR, floor_Nm, visuals.strong_text_color());
         let design = finite([design]);
         if !design.is_empty() {
             p.points(
@@ -713,7 +740,6 @@ fn slip_heating_ui(ui: &mut egui::Ui, results: &DesignResults) {
         ui.weak(NOTHING_TO_PLOT);
         return;
     }
-    let visuals = ui.visuals().clone();
     plot(
         ui,
         PlotKind::SlipHeating,
@@ -723,12 +749,12 @@ fn slip_heating_ui(ui: &mut egui::Ui, results: &DesignResults) {
     .show(ui, |p| {
         p.line(Line::new(ESTIMATE, s.estimate).color(BLUE).width(1.5));
         p.line(Line::new(HIGH_CASE, s.high).color(AMBER).width(2.0));
-        reference_hline(p, LIMIT, s.limit_C, Level::Bad.color(&visuals));
+        reference_hline(p, LIMIT, s.limit_C, VIOLET);
         if let Some(point) = s.time_to_limit {
             p.points(
                 Points::new(TIME_TO_LIMIT, finite([point]))
                     .radius(POINT_RADIUS + 1.0)
-                    .color(Level::Bad.color(&visuals)),
+                    .color(VIOLET),
             );
         }
     });
@@ -755,7 +781,7 @@ fn torque_angle_ui(ui: &mut egui::Ui, inputs: &DesignInputs, results: &DesignRes
             p.points(
                 Points::new(PULL_OUT_POINT, point)
                     .radius(POINT_RADIUS + 1.0)
-                    .color(tint(Level::Bad.color(&visuals), s.greyed, &visuals)),
+                    .color(tint(visuals.strong_text_color(), s.greyed, &visuals)),
             );
         }
     });
@@ -1629,6 +1655,157 @@ mod tests {
                 "{text}"
             );
             crate::gui::test_support::assert_glyphs(&ctx, text, "a plot legend or axis");
+        }
+    }
+
+    #[test]
+    fn every_tick_number_is_drawn_at_full_strength_or_not_at_all() {
+        // The stage 1 review (E-7): egui_plot fades a tick number in as the ticks spread apart,
+        // from nothing at 60 points apart (20 on the vertical axis) to full strength at 80
+        // (30), and a number on the way is as faint as 1.3:1 against the plot. At every
+        // spacing a window's size gives the ticks, each number is drawn in the axes' colour,
+        // the plot's quiet text colour, or not at all: a theme's weak colour (the app's, the
+        // muted token), and in egui's own visuals, which set none, the text colour.
+        let inputs = DesignInputs::default();
+        let results = compute_all(&inputs);
+        let (mut numbers, mut faded) = (0, Vec::new());
+        let theme = Color32::from_rgb(101, 102, 103);
+        let cases = PlotKind::ALL
+            .into_iter()
+            .flat_map(|kind| [(kind, None), (kind, Some(theme))]);
+        for (kind, weak) in cases {
+            for width in [300.0, 420.0, 560.0, 700.0, 900.0] {
+                for height in [220.0, 300.0, 400.0, 520.0, 700.0] {
+                    let ctx = egui::Context::default();
+                    ctx.style_mut(|style| style.visuals.weak_text_color = weak);
+                    let axes = weak.unwrap_or(ctx.style().visuals.text_color());
+                    let size = egui::vec2(width, height);
+                    let mut output = None;
+                    // A plot settles its bounds on the first frame.
+                    for _ in 0..2 {
+                        output = Some(sized_frame(&ctx, size, Vec::new(), |ui| {
+                            plot_ui(ui, kind, &inputs, &results, &mut Readouts::default());
+                        }));
+                    }
+                    for shape in flat_shapes(&output.expect("two frames")) {
+                        let egui::Shape::Text(text) = shape else {
+                            continue;
+                        };
+                        if text.galley.text().parse::<f64>().is_err() {
+                            continue;
+                        }
+                        numbers += 1;
+                        let mut colours = vec![text.fallback_color];
+                        colours.extend(text.galley.job.sections.iter().map(|s| s.format.color));
+                        if colours.iter().any(|&c| c != axes) {
+                            faded.push(format!(
+                                "{kind:?}, weak {weak:?}, at {size:?}: {:?} in {colours:?}",
+                                text.galley.text()
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(numbers > 500, "{numbers} tick numbers drawn");
+        assert!(faded.is_empty(), "{} faded: {faded:#?}", faded.len());
+    }
+
+    #[test]
+    fn red_marks_a_sweep_row_that_does_not_fit_and_nothing_else_in_any_plot() {
+        // UX overhaul decision C-5: red means a failing check and nothing else. The stage 1
+        // review (C-3) found the Required torque line, the sweeps' Required floor and Slip
+        // heating's Governing limit drawn in the failing red on a design that passes them; the
+        // pull-out point and the time to the limit were red too. On a passing design, on the
+        // example design (which fails four checks), on one whose high case reaches the limit,
+        // on a hot day and on one the end-effect model greys, every red mark of every plot is
+        // a sweep row that does not fit (a row whose design fails the fit check) or that row's
+        // legend entry. The requirement lines take the strong text colour, and Slip heating's
+        // limit the violet of the torque plot's.
+        use crate::gui::test_support::{hot_day, passing_design};
+        let visuals = egui::Context::default().style().visuals.clone();
+        let red = visuals.error_fg_color;
+        let mut reaches = DesignInputs::default();
+        reaches.temperature.duty.hot_ambient_C += 5.0;
+        let mut hot = passing_design();
+        hot_day(&mut hot);
+        assert!(slip_heating(&compute_all(&reaches)).time_to_limit.is_some());
+        // The colours of the dashes `output` paints.
+        let dashes = |output: &egui::FullOutput| -> Vec<Color32> {
+            flat_shapes(output)
+                .into_iter()
+                .filter_map(|shape| match shape {
+                    egui::Shape::LineSegment { stroke, .. } => Some(stroke.color),
+                    _ => None,
+                })
+                .collect()
+        };
+        for (name, inputs) in [
+            ("passing", passing_design()),
+            ("example", DesignInputs::default()),
+            ("reaches the limit", reaches),
+            ("hot day", hot),
+            ("greyed", short_magnets()),
+        ] {
+            for kind in PlotKind::ALL {
+                let output = draw(kind, &inputs);
+                let shapes = flat_shapes(&output);
+                // A legend entry's name, beside its icon on the icon's row (the legend in the
+                // plot's right corner sets each name left of its icon).
+                let entry = |at: egui::Pos2| {
+                    shapes.iter().find_map(|shape| match shape {
+                        egui::Shape::Text(text) => {
+                            let rect = text.visual_bounding_rect();
+                            let beside =
+                                (rect.left() - at.x).abs().min((at.x - rect.right()).abs());
+                            ((rect.center().y - at.y).abs() < 4.0 && beside < 16.0)
+                                .then(|| text.galley.text().to_owned())
+                        }
+                        _ => None,
+                    })
+                };
+                let mut wrong = Vec::new();
+                for shape in &shapes {
+                    match shape {
+                        egui::Shape::Circle(c) if c.fill == red || c.stroke.color == red => {
+                            let legend = entry(c.center);
+                            let row = c.radius == POINT_RADIUS && legend.is_none();
+                            if !(row || legend.as_deref() == Some(NO_FIT)) {
+                                wrong.push(format!("a circle of radius {} {legend:?}", c.radius));
+                            }
+                        }
+                        egui::Shape::LineSegment { stroke, .. } if stroke.color == red => {
+                            wrong.push("a line".to_owned())
+                        }
+                        egui::Shape::Path(path)
+                            if path.fill == red
+                                || path.stroke.color == egui::epaint::ColorMode::Solid(red) =>
+                        {
+                            wrong.push("a path".to_owned())
+                        }
+                        egui::Shape::Rect(rect) if rect.fill == red => {
+                            wrong.push("a rect".to_owned())
+                        }
+                        _ => {}
+                    }
+                }
+                wrong.sort();
+                wrong.dedup();
+                assert!(wrong.is_empty(), "{name}, {kind:?}: red {wrong:?}");
+                let drawn = dashes(&output);
+                match kind {
+                    PlotKind::TorqueTemperature | PlotKind::GapSweep | PlotKind::PoleSweep => {
+                        assert!(
+                            drawn.contains(&visuals.strong_text_color()),
+                            "{name}, {kind:?}: the requirement line in {drawn:?}"
+                        );
+                    }
+                    PlotKind::SlipHeating => {
+                        assert!(drawn.contains(&VIOLET), "{name}: the limit in {drawn:?}");
+                    }
+                    PlotKind::TorqueAngle => {}
+                }
+            }
         }
     }
 }
