@@ -5,6 +5,9 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - Magcoupler: a cap thread at or past the cap's outside diameter is an exploration line, not an amber skirt caution (BL-087)
+- Branch magcoupling/r4-physics: a cap skirt ((cap OD - cap thread) / 2, new `gui::geometry::cap_skirt_mm`) at or below zero draws an error-coloured "Exploration only: the cap thread breaks through the cap." line on the Size tab (panel.rs `view_ui`, beside the keyway's), and `wall_cautions` keeps the amber skirt caution for 0 < skirt < 0.5 mm only; red first at (42.0, 42.2) and (42.0, 42.0) (panel test `a_cap_thread_at_or_past_the_cap_s_outside_diameter_draws_an_exploration_line`), the new line in `size_tab_new_texts_have_glyphs_and_plain_words`; GUI only, no engine or oracle change; docs: README (prose and the src/gui module map), docs/ai 02, 03, 04, register row A-22 and its log, backlog BL-087 fixed.
+
 ## 2026-11-28 - Magcoupler: the Hot-low and Cold-high entries say what they are; Cold-high names its checks (BL-084)
 - Branch magcoupling/r4-physics: a HELP row each for `metal.torque_hot_low_Nm` and `metal.torque_cold_high_Nm` (magcoupling-rs/src/gui/plain_text.rs: what each is and which way the temperature and the allowance move it), so both tiles' entries, hovers and table rows show "What it is"; the Cold-high entry names the Shaft joints and Gearbox input torque checks under "Checks it touches" (`explain::ALSO_TOUCHES`, `touched_guides`; its row still badges none); red test explain.rs `the_band_torques_entries_say_what_they_are_and_cold_high_names_the_checks_it_feeds`; claim test plain_text.rs `every_direction_the_band_torques_helps_state_holds_one_slider_step_up` (pins each help's direction words and checks them one slider step up on the example and Y30 designs); the gui-smoke card step names the entry's "What it is"; GUI text only, no engine or oracle number changes.
 
