@@ -1050,12 +1050,25 @@ pub(crate) fn text_center(output: &egui::FullOutput, needle: &str) -> egui::Pos2
 /// label) is measured as it is drawn. Left out: a text whose middle is above or below what
 /// shows (a list scrolls, and a row half out of view is not a cut).
 pub(crate) fn cut_texts(output: &egui::FullOutput, screen: egui::Rect) -> Vec<String> {
+    cut_texts_in(output, screen, |_| true)
+}
+
+/// [`cut_texts`] of the texts whose clip rect `within` takes: those of one panel, or all but
+/// those of an area that scrolls sideways by design.
+pub(crate) fn cut_texts_in(
+    output: &egui::FullOutput,
+    screen: egui::Rect,
+    within: impl Fn(egui::Rect) -> bool,
+) -> Vec<String> {
     clipped_flat_shapes(output)
         .into_iter()
         .filter_map(|(clip, shape)| {
             let egui::Shape::Text(text) = shape else {
                 return None;
             };
+            if !within(clip) {
+                return None;
+            }
             let ink = text.visual_bounding_rect();
             let shown = clip.intersect(screen);
             if !shown.y_range().contains(ink.center().y) {

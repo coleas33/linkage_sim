@@ -246,6 +246,11 @@ pub const PANEL_SIZE: f32 = 22.0;
 /// The text size of a term's symbol in the term list [points].
 pub const TERM_SIZE: f32 = 15.0;
 
+/// The share of the term list's width a term's value takes at most: past it the value wraps, so
+/// the term's name and tag keep the rest. A number fits on one line; a text value ("never:
+/// steady state stays below the limit") wraps in the smallest window (BL-086).
+pub const TERM_VALUE_SHARE: f32 = 1.0 / 3.0;
+
 /// The Equation panel's starting height as a share of the centre region's height.
 pub const PANEL_SHARE: f32 = 0.45;
 
@@ -612,7 +617,10 @@ pub fn explorer_ui(
     if let Some(step) = explorer.start_here {
         ui.horizontal_wrapped(|ui| {
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-            ui.weak(start_here_text(step));
+            // The step line wraps inside the panel (BL-086: a long title ran past its edge and
+            // made it wider than the centre region); the buttons stay whole.
+            let line = egui::RichText::new(start_here_text(step)).weak();
+            ui.add(egui::Label::new(line).wrap());
             if ui
                 .add_enabled(step > 0, egui::Button::new(PREVIOUS))
                 .clicked()
@@ -745,67 +753,78 @@ fn equation_body(
     ui.add_space(6.0);
     ui.strong(TERMS);
     let hidden = unsummed(eq, terms);
-    // The list scrolls sideways when the region is narrower than its rows (the tag, its last
-    // column, would be cut off), as the equation above it does.
-    egui::ScrollArea::horizontal()
-        .id_salt("magcoupling_equation_terms_scroll")
+    // A term's name and its tag share the last column, which takes the panel's width left and
+    // wraps them in it (BL-086: as two columns they ran past the panel's edge, in a sideways
+    // scroll area of their own).
+    let value_width = TERM_VALUE_SHARE * ui.available_width();
+    egui::Grid::new("magcoupling_equation_terms")
+        .num_columns(4)
+        .striped(true)
         .show(ui, |ui| {
-            egui::Grid::new("magcoupling_equation_terms")
-                .striped(true)
-                .show(ui, |ui| {
-                    for row in registry().term_rows(eq, terms) {
-                        if hidden.contains(&row.path) {
-                            continue;
-                        }
-                        let color = colors
-                            .get(&row.path)
-                            .or_else(|| {
-                                // A family member takes its template's colour.
-                                colors_of_template(eq, &colors, &row.path)
-                            })
-                            .unwrap_or(ink);
-                        let key = if others_marked {
-                            color.gamma_multiply(SWATCH_DIM)
-                        } else {
-                            color
-                        };
-                        swatch(ui, key);
-                        let symbol = ui
-                            .fonts(|f| layout_symbol(f, registry(), &row.symbol, TERM_SIZE, color));
-                        laid_ui(ui, &symbol, ink, Sense::hover());
-                        let value = row.value.clone().unwrap_or(Value::None);
-                        ui.label(value_text(&row.path, &value, &row.unit));
-                        let term =
-                            ui.add(egui::Label::new(term_label(&row.path)).sense(Sense::click()));
-                        // Its internal name only with the spreadsheet details.
-                        let term = if show_details {
-                            term.on_hover_text(&row.path)
-                        } else {
-                            term
-                        };
-                        if term.clicked() {
-                            clicked = Some(row.path.clone());
-                        }
-                        let mut style = registry()
-                            .term_style(&row.path, terms.inputs)
-                            .expect("every term is an input or a result (registry build)");
-                        // The registry compares with the spreadsheet's values; on screen
-                        // "changed" is against the session's baseline.
-                        if matches!(style.kind, TermKind::Input { .. }) {
-                            style.changed_from_default =
-                                terms.inputs.get(&row.path) != baseline.get(&row.path);
-                        }
-                        let tag = term_tag(style);
-                        if style.affected_by_modified_assumption
-                            || matches!(style.kind, TermKind::Input { assumption: true })
-                        {
-                            ui.colored_label(ui.visuals().warn_fg_color, tag);
-                        } else {
-                            ui.weak(tag);
-                        }
-                        ui.end_row();
+            for row in registry().term_rows(eq, terms) {
+                if hidden.contains(&row.path) {
+                    continue;
+                }
+                let color = colors
+                    .get(&row.path)
+                    .or_else(|| {
+                        // A family member takes its template's colour.
+                        colors_of_template(eq, &colors, &row.path)
+                    })
+                    .unwrap_or(ink);
+                let key = if others_marked {
+                    color.gamma_multiply(SWATCH_DIM)
+                } else {
+                    color
+                };
+                swatch(ui, key);
+                let symbol =
+                    ui.fonts(|f| layout_symbol(f, registry(), &row.symbol, TERM_SIZE, color));
+                laid_ui(ui, &symbol, ink, Sense::hover());
+                let value = row.value.clone().unwrap_or(Value::None);
+                // A long text value wraps at its share of the width, so the name and the tag
+                // keep the rest. It is laid out here: a grid cell is only as wide as its column
+                // was in the frame before, so a wrapping label there would never widen.
+                let value = egui::WidgetText::from(value_text(&row.path, &value, &row.unit))
+                    .into_galley(
+                        ui,
+                        Some(egui::TextWrapMode::Wrap),
+                        value_width,
+                        egui::TextStyle::Body,
+                    );
+                ui.label(value);
+                ui.horizontal_wrapped(|ui| {
+                    let term =
+                        ui.add(egui::Label::new(term_label(&row.path)).sense(Sense::click()));
+                    // Its internal name only with the spreadsheet details.
+                    let term = if show_details {
+                        term.on_hover_text(&row.path)
+                    } else {
+                        term
+                    };
+                    if term.clicked() {
+                        clicked = Some(row.path.clone());
+                    }
+                    let mut style = registry()
+                        .term_style(&row.path, terms.inputs)
+                        .expect("every term is an input or a result (registry build)");
+                    // The registry compares with the spreadsheet's values; on screen "changed"
+                    // is against the session's baseline.
+                    if matches!(style.kind, TermKind::Input { .. }) {
+                        style.changed_from_default =
+                            terms.inputs.get(&row.path) != baseline.get(&row.path);
+                    }
+                    let tag = term_tag(style);
+                    if style.affected_by_modified_assumption
+                        || matches!(style.kind, TermKind::Input { assumption: true })
+                    {
+                        ui.colored_label(ui.visuals().warn_fg_color, tag);
+                    } else {
+                        ui.weak(tag);
                     }
                 });
+                ui.end_row();
+            }
         });
     (clicked, link)
 }

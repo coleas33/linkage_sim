@@ -11606,41 +11606,87 @@ mod tests {
     }
 
     #[test]
-    fn the_term_list_scrolls_sideways_in_a_narrow_centre_region() {
-        // At 1000 points the centre region is about 380 wide: σ's term list (swatch, symbol,
-        // value, label, tag) is wider, so its last column, the tag, starts cut off or out of
-        // view. The list scrolls sideways (as the equation above it does), so the tag can be
-        // read in full.
+    fn the_term_list_wraps_inside_a_narrow_centre_region() {
+        // At 1000 points the centre region is about 380 wide: a row of σ's term list (swatch,
+        // symbol, value, name, tag) is wider. The name and the tag share the row's last column
+        // and wrap in it (BL-086), so the tag is read in full where it is, with no sideways
+        // scroll: here it takes two rows.
         use crate::gui::explorer::ASSUMPTION_TAG;
         let mut harness = Harness::on_screen(egui::vec2(1000.0, 800.0));
         harness.panel.explorer.open_path("model.tau_Pa");
         harness.frame(Vec::new());
         let output = harness.frame(Vec::new());
-        assert!(
-            text_rect(&output, ASSUMPTION_TAG)
-                .is_none_or(|tag| tag.right() > text_clip_rect(&output, ASSUMPTION_TAG).right()),
-            "the tag fits without scrolling: the test would prove nothing"
-        );
-        // The pointer on the start of the set's value, in view at the left of the list.
-        let at = text_rect(&output, "5: 1, 3, 5 (default)")
-            .expect("the set's value in the term list")
-            .left_center()
-            + egui::vec2(4.0, 0.0);
-        harness.frame(vec![egui::Event::PointerMoved(at)]);
-        harness.frame(vec![egui::Event::MouseWheel {
-            unit: egui::MouseWheelUnit::Point,
-            delta: egui::vec2(-5000.0, 0.0),
-            modifiers: egui::Modifiers::NONE,
-        }]);
-        // egui spreads a wheel step over several frames.
-        let mut output = harness.frame(Vec::new());
-        for _ in 0..20 {
-            output = harness.frame(Vec::new());
-        }
+        let value = text_rect(&output, "5: 1, 3, 5 (default)").expect("the set's value");
         let tag = text_rect(&output, ASSUMPTION_TAG).expect("the tag is drawn");
+        assert!(
+            tag.height() > 1.5 * value.height(),
+            "the tag fits on one row: the test would prove nothing"
+        );
         let clip = text_clip_rect(&output, ASSUMPTION_TAG);
         assert!(clip.contains_rect(tag), "{tag:?} cut by {clip:?}");
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
+    }
+
+    #[cfg(feature = "app")]
+    #[test]
+    fn every_text_of_the_equation_panel_is_whole_on_every_equation_in_the_app_s_own_font() {
+        // BL-086, the plan review's UXT-1: a term's value has a column of its own, and a long
+        // text value ("never: steady state stays below the limit") laid out on one line left
+        // the name and tag about 20 points, where their words stood one to a row and ran past
+        // the panel's edge, the panel past the centre region. Every equation the registry
+        // holds, opened in the app's theme and font in a window as narrow as the smallest and
+        // tall enough for the panel to show it to its foot, on the starting design and on the
+        // example design with the spreadsheet details on: the panel stays inside the centre
+        // region, and no text of it is cut but the formula's (decision D-109). (Before the
+        // wrap the term list scrolled sideways and egui painted nothing past its view, which
+        // no test of drawn text sees: there the narrow region's test holds the tag.)
+        use crate::gui::explorer::{USED_BY, used_by_shown};
+        use crate::gui::test_support::cut_texts_in;
+        let size = egui::vec2(SMALLEST.x, 3000.0);
+        let panel = MagcouplingPanel::with_baseline(crate::app::starting_design());
+        let mut harness = Harness::of(panel, size);
+        crate::app::theme::apply(&harness.ctx);
+        crate::app::fonts::install(&harness.ctx);
+        harness.frame(Vec::new());
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+        let shown = [
+            ("the starting design", false),
+            ("the example design, details on", true),
+        ];
+        for (design, show_details) in shown {
+            if design.starts_with("the example") {
+                harness.panel.open_example_design();
+            }
+            harness.panel.show_details = show_details;
+            for eq in registry().equations() {
+                let at = format!("{}, {design}", eq.target);
+                harness.panel.explorer.open_path(&eq.target);
+                harness.frame(Vec::new());
+                let output = harness.frame(Vec::new());
+                let centre = centre_region(&harness.ctx);
+                let centre = centre.left()..=centre.right();
+                let panel = equation_panel_rect(&harness.ctx);
+                assert!(
+                    centre.contains(&panel.left()) && centre.contains(&panel.right()),
+                    "{at}: the panel {panel:?} runs out of the centre region {centre:?}"
+                );
+                let inside = |clip: egui::Rect| panel.expand(1.0).contains_rect(clip);
+                // Its last line, Used by, is drawn: every row above it is in view and checked.
+                let users = used_by_shown(&eq.target, harness.panel.clamps_paused);
+                assert!(
+                    users.is_empty() || text_shapes(&output, USED_BY).any(|(clip, _)| inside(clip)),
+                    "{at}: the panel's foot is out of view: the test would prove nothing"
+                );
+                // The formula's own area: where the panel draws its " = ".
+                let formula = text_shapes(&output, " = ")
+                    .map(|(clip, _)| clip)
+                    .find(|&clip| inside(clip));
+                let cut = cut_texts_in(&output, screen, |clip| {
+                    inside(clip) && Some(clip) != formula
+                });
+                assert!(cut.is_empty(), "{at}: cut: {cut:?}");
+            }
+        }
     }
 
     #[test]
