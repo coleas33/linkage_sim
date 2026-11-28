@@ -494,8 +494,36 @@
         assert!(state.solver_status.converged);
         assert!((&state.q - &q_before).norm() < 1e-6);
 
-        state.add_point_mass("coupler", 0.5, [0.05, 0.0]);
+        state
+            .add_point_mass("coupler", 0.5, [0.05, 0.0])
+            .expect("weight accepted");
         assert!(state.solver_status.converged);
+        assert!((&state.q - &q_before).norm() < 1e-6);
+    }
+
+    /// R5b review F-3: undo recomputes forces at the snapshot's solve time, not
+    /// at the driver angle, so an Expression driver whose velocity depends on t
+    /// off t = 0 gets the same force_results as a fresh compute_forces.
+    #[test]
+    fn undo_recomputes_forces_at_the_driver_time_for_an_expression_driver() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.set_expression_driver("t*t", "2*t", "2");
+        state.solve_at_angle(1.0);
+        assert!(state.solver_status.converged);
+        let t = state.current_driver_time();
+        assert!(t > 0.1, "t {t} is not off zero");
+        state.add_mount_point("coupler", "M_f3", [0.1, 0.02]);
+        state.undo();
+        assert!(state.solver_status.converged);
+        let after_undo = state.force_results.clone();
+        assert!(after_undo.driver_torque.is_some());
+        state.compute_forces(state.current_driver_time());
+        assert_eq!(after_undo.driver_torque, state.force_results.driver_torque);
+        assert_eq!(after_undo.joint_reactions, state.force_results.joint_reactions);
+        assert_eq!(after_undo.mechanical_advantage, state.force_results.mechanical_advantage);
+        assert_eq!(after_undo.force_contributions, state.force_results.force_contributions);
+        assert_eq!(after_undo.virtual_work_check, state.force_results.virtual_work_check);
     }
 
     /// BL-140: every sample loads with a driver the next rebuild reads back
