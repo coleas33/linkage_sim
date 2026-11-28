@@ -40,7 +40,6 @@ use crate::gui::clamp_drawing::clamp_ui;
 use crate::gui::dashboard::{Level, end_effect_banner_ui};
 use crate::gui::explain::{Asked, LEARN, Selection, explain_ui, result_selection};
 use crate::gui::explorer::{Explorer, FOCUS_WIDTH, explorer_ui, panel_heights};
-use crate::gui::follow_focus;
 use crate::gui::format::search_needle;
 use crate::gui::geometry::wall_cautions;
 use crate::gui::geometry_view::{drawing_ui, geometry_ui};
@@ -75,6 +74,7 @@ use crate::gui::tiles::tiles_ui;
 use crate::gui::torque_card::{KEYWAY_BREAKS_THROUGH, SIDE_DOES_NOT_FIT};
 use crate::gui::trace::{CLEAR_TRACE, Trace, TraceKind};
 use crate::gui::xlsx::{XLSX_FILE_NAME, XLSX_MIME, now_unix_s, spreadsheet_bytes};
+use crate::gui::{TabWalk, follow_focus, hide_resize_edge, scroll_area};
 use crate::{DesignInputs, DesignResults, compute_all};
 
 /// The heading of the panel.
@@ -402,6 +402,8 @@ pub struct MagcouplingPanel {
     /// Whether a text field had the keyboard as the last frame ended: Esc is then the field's,
     /// not the Explain panel's.
     typing: bool,
+    /// The Tab key's walk, which passes the stops that show no focus (BL-102). View state.
+    tab_walk: TabWalk,
     /// Whether the left column scrolls back to its top in the next frame: a fix on a control
     /// of the Size column (the Outside diameter) shows its slider, and the Key design group's
     /// button shows Auto's toggle, wherever the column was scrolled to. View state.
@@ -463,6 +465,7 @@ impl MagcouplingPanel {
             selection: Selection::default(),
             explain_drawn: Selection::default(),
             typing: false,
+            tab_walk: TabWalk::default(),
             column_to_top: false,
         }
     }
@@ -724,6 +727,13 @@ impl MagcouplingPanel {
             egui::TopBottomPanel::top("magcoupling_header").show_inside(ui, |ui| {
                 self.header_ui(ui);
             });
+            for edge in [
+                "magcoupling_inputs",
+                "magcoupling_dashboard",
+                EQUATION_PANEL_ID,
+            ] {
+                hide_resize_edge(ui.ctx(), edge);
+            }
             egui::SidePanel::left("magcoupling_inputs")
                 .resizable(true)
                 .default_width(INPUTS_WIDTH)
@@ -791,6 +801,9 @@ impl MagcouplingPanel {
         // filter goes off with an input's trace even while the table is not drawn.
         self.results_table.sync_trace_filter(self.trace.as_ref());
         self.explorer.end_frame(ui.ctx(), events);
+        // Last of the frame's drawing: every widget is registered, and the editing check below
+        // reads the focus this leaves.
+        self.tab_walk.pass_hidden_stops(ui.ctx());
         // One undo step per settled edit.
         let settled = !self.editing(ui);
         self.history.observe(&self.design(), settled);
@@ -808,8 +821,7 @@ impl MagcouplingPanel {
         fixes: &[Vec<(&'static str, Direction)>],
         readouts: &mut Readouts,
     ) {
-        egui::ScrollArea::vertical()
-            .id_salt("magcoupling_checks_scroll")
+        scroll_area(ui, "magcoupling_checks_scroll")
             .max_height(CHECKS_SHARE * ui.available_height())
             .show(ui, |ui| {
                 let clicked = checks_ui(
@@ -840,9 +852,8 @@ impl MagcouplingPanel {
             self.consequences
                 .get(shown, results, self.minimum_diameter_mm, self.clamps_paused)
         });
-        let mut explain_scroll = egui::ScrollArea::vertical()
-            .id_salt("magcoupling_explain_scroll")
-            .auto_shrink([false, false]);
+        let mut explain_scroll =
+            scroll_area(ui, "magcoupling_explain_scroll").auto_shrink([false, false]);
         if self.selection != self.explain_drawn {
             explain_scroll = explain_scroll.vertical_scroll_offset(0.0);
             self.explain_drawn = self.selection;
@@ -1344,9 +1355,8 @@ impl MagcouplingPanel {
             ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
                 // The column scrolls in a short window: its overflow would stretch the panel
                 // past the window's foot, and the centre region and its drawing with it.
-                let mut column = egui::ScrollArea::vertical()
-                    .id_salt("magcoupling_size_column")
-                    .auto_shrink([false, true]);
+                let mut column =
+                    scroll_area(ui, "magcoupling_size_column").auto_shrink([false, true]);
                 if std::mem::take(&mut self.column_to_top) {
                     column = column.vertical_scroll_offset(0.0);
                 }
@@ -8259,7 +8269,8 @@ mod tests {
                 let id = harness.ctx.memory(|m| m.focused()).expect("a focus");
                 harness.ctx.read_response(id).expect("its widget")
             };
-            // Past the scroll area's own drag surface, a Tab stop of egui's as tall as the view.
+            // Past any stop as tall as the view (the scroll area's drag surface, which Tab no
+            // longer stops on since BL-102).
             while !in_region(&focused(&harness), column) || focused(&harness).rect.height() > 100.0
             {
                 harness.frame(key_tap(egui::Key::Tab));
@@ -8403,9 +8414,10 @@ mod tests {
         // formula scrolls sideways in an area nested in it, which egui gives every scroll
         // target. In the smallest window, the panel open on the hot-low torque and on the hot
         // minimum check, at its starting height and dragged to its least height: after each
-        // Tab and Shift+Tab every stop of the panel is whole once the scroll has settled, the
-        // hot minimum check's formula, wider than the panel, from its start. Nothing is
-        // selected or edited.
+        // Tab and Shift+Tab every stop of the panel is whole once the scroll has settled
+        // (the formula, wider than the panel on the hot minimum check, is no stop since
+        // BL-102: the term list is the keyboard's way in). Nothing is selected or edited.
+        let mut out_of_view_in_all = 0;
         for (path, least) in [
             ("metal.torque_hot_low_Nm", false),
             ("metal.hot_min_check", false),
@@ -8427,21 +8439,18 @@ mod tests {
                 .iter()
                 .map(|keys| follow(&mut harness, keys, panel).1)
                 .sum();
-            assert!(
-                out_of_view > 0,
-                "{path}, least {least}: no stop was out of view"
-            );
+            out_of_view_in_all += out_of_view;
             assert_eq!(harness.panel.selection, selection, "{path}");
             assert_eq!(harness.panel.design(), Design::default(), "{path}");
         }
+        assert!(out_of_view_in_all > 0, "no stop was out of view");
     }
 
     #[test]
     fn the_screw_size_table_follows_the_keyboard_s_focus_up_down_and_sideways() {
         // BL-101 (2): the Clamp tab's screw-size table scrolls sideways in an area nested in
         // the tab's own. Opened in a tall window, then in one of the smallest width and a
-        // height that holds the whole table (its own drag surface, a Tab stop of egui's, is as
-        // tall as the table: BL-102): after each Tab and Shift+Tab every stop of the centre
+        // height that holds the whole table: after each Tab and Shift+Tab every stop of the centre
         // region is whole once the scroll has settled, the table's cells past its right edge
         // and under the view's foot among them.
         use crate::gui::clamp_drawing::SCREW_SIZES;
@@ -8537,6 +8546,89 @@ mod tests {
         assert!(out_of_view > 0, "no stop was out of view");
         assert_eq!(harness.panel.selection, selection);
         assert_eq!(harness.panel.design(), Design::default());
+    }
+
+    /// Whether the keyboard's focus on `r` shows nothing on the page (BL-102): a scroll area's
+    /// drag surface or a column's resize edge (a tall or thin drag and no click), a scroll bar
+    /// (a strip thinner than 12 points that senses both), or a stop wider than `panel` (the Equation
+    /// panel's formula).
+    fn shows_no_focus(r: &egui::Response, panel: egui::Rect) -> bool {
+        let thin = r.rect.width().min(r.rect.height()) < 12.0;
+        // A drag-only stop that is tall or thin is a surface or an edge: a drag value is one
+        // line high and wide.
+        let drag_only = !r.sense.senses_click() && (r.rect.height() > 40.0 || thin);
+        (r.sense.senses_drag() && (drag_only || thin)) || r.rect.width() > panel.width()
+    }
+
+    #[test]
+    fn tab_and_shift_tab_stop_on_nothing_that_shows_no_focus() {
+        // BL-102: egui registers each scroll area's drag surface, each shown scroll bar and
+        // each column's resize edge as a Tab stop, and the Equation panel's formula took one
+        // too; none draws a focus mark. At 1024 x 700 and 1280 x 800, on every tab, with the
+        // folds shut and the Detailed inputs open (and the Equation panel open on a formula
+        // wider than it), a Tab pass and a Shift+Tab pass round the page stop on none of them.
+        // A pass ends at the page's end, or where it comes round to a stop it has made.
+        for screen in [SMALLEST, egui::vec2(1280.0, 800.0)] {
+            for detailed in [false, true] {
+                for view in CentreView::tab_row(false) {
+                    let mut harness = Harness::of(MagcouplingPanel::new(), screen);
+                    harness.tab(view);
+                    harness.panel.explorer.open_path("metal.hot_min_check");
+                    if detailed {
+                        harness.fold(DETAILED_INPUTS);
+                    }
+                    harness.frame(Vec::new());
+                    harness.frame(Vec::new());
+                    let panel = equation_panel_rect(&harness.ctx);
+                    let at = format!(
+                        "{screen:?}, {}, Detailed inputs open {detailed}",
+                        view.label()
+                    );
+                    for keys in [key_tap(egui::Key::Tab), shift_tab()] {
+                        harness.ctx.memory_mut(|m| {
+                            if let Some(focused) = m.focused() {
+                                m.surrender_focus(focused);
+                            }
+                        });
+                        let mut stops = 0;
+                        let mut visited = std::collections::HashSet::new();
+                        for press in 0..300 {
+                            harness.frame(keys.clone());
+                            harness.frame(Vec::new());
+                            let Some(r) = harness
+                                .ctx
+                                .memory(|m| m.focused())
+                                .and_then(|id| harness.ctx.read_response(id))
+                            else {
+                                // No focus: the page's end, and the next press starts it over
+                                // (egui's first Shift+Tab from no focus may find none).
+                                if stops > 0 {
+                                    break;
+                                }
+                                continue;
+                            };
+                            // Round to where the pass began: the walk is complete.
+                            if !visited.insert(r.id) {
+                                break;
+                            }
+                            stops += 1;
+                            // A plot's axes are egui_plot's drag-only stops inside the centre
+                            // region (BL-124): not this item's.
+                            let axis = matches!(view, CentreView::Plot(_))
+                                && centre_region(&harness.ctx).contains_rect(r.rect);
+                            assert!(
+                                axis || !shows_no_focus(&r, panel),
+                                "{at}: press {press} stops on {:?} ({:?})",
+                                r.rect,
+                                r.sense
+                            );
+                        }
+                        assert!(stops > 20, "{at}: {stops} stops");
+                    }
+                }
+            }
+        }
+        assert_eq!(Harness::new().panel.design(), Design::default());
     }
 
     #[test]

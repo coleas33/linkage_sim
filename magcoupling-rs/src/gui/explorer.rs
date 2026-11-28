@@ -63,7 +63,7 @@ use crate::gui::readouts::{ReadoutEvents, registry};
 use crate::gui::typeset::{
     TermColors, glyph_safe, laid_ui, layout_equation, layout_symbol, term_at,
 };
-use crate::gui::{follow_focus, sideways_scroll_area};
+use crate::gui::{follow_focus, scroll_area, sideways_scroll_area};
 use crate::{DesignInputs, DesignResults};
 
 /// The panel's heading.
@@ -640,8 +640,7 @@ pub fn explorer_ui(
         });
     }
     ui.separator();
-    egui::ScrollArea::vertical()
-        .id_salt("magcoupling_equation_scroll")
+    scroll_area(ui, "magcoupling_equation_scroll")
         .auto_shrink([false, false])
         .show(ui, |ui| {
             // Every way the app opens the panel sets a trail first: with none there is nothing
@@ -719,7 +718,7 @@ fn equation_body(
     let ink = ui.visuals().text_color();
     let laid = ui.fonts(|f| layout_equation(f, registry(), eq, &colors, PANEL_SIZE, ink));
     sideways_scroll_area(ui, "magcoupling_equation_formula", |ui| {
-        let response = laid_ui(ui, &laid, ink, Sense::click());
+        let response = laid_ui(ui, &laid, ink, Sense::CLICK);
         if response.clicked()
             && let Some(at) = response.interact_pointer_pos()
         {

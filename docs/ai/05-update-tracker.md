@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - Magcoupler: the Tab key passes the stops that show no focus: scroll-area surfaces and bars, panel edges, the Equation panel's formula (BL-102)
+
+- gui/mod.rs scroll_area, hide_resize_edge, TabWalk (panel.rs calls it at the end of ui()); explorer.rs formula Sense::CLICK; test in gui/panel.rs; backlog BL-102 fixed, BL-124 filed (plot axes).
+
 ## 2026-11-28 - Magcoupler: the keyway-wall line is compared as printed, so no line reads 2.50 mm (BL-078)
 
 - gui/geometry.rs wall_cautions rounds the wall to 0.01 mm before the 2.5 test; test in gui/panel.rs; backlog BL-078 fixed.
