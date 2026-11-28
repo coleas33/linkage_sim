@@ -63,7 +63,7 @@ inputs! {
                 "The largest measured diametral interference of the cup. Its bore stress and fitting temperature are checked at it.")
                 .range(0.0, 40.0, 0.5),
             safety_factor: f64 = 2.0 => param_rust_only("-", "Shaft joint safety factor",
-                "Each fit alone, and the key alone, must hold this times cold-high, or the operating pull-out with allowance if larger. While the coupling slips, the torque can reverse many times.")
+                "Each fit and each key, alone, must hold this times the larger of cold-high and the operating pull-out with allowance. While the coupling slips, the torque can reverse many times.")
                 .range(1.0, 4.0, 0.1),
             friction: f64 = 0.14 => param_rust_only("-", "Shrink-fit friction coefficient",
                 "The default is for dry, degreased steel on steel. Holding torque scales with it; oil or a coating in the bore lowers it.")
@@ -154,7 +154,7 @@ results! {
             cup_fit_allowed_C: f64 => out_rust_only("°C", "Cup fitting temperature allowed",
                 "Your limit for the bare cup, which is fitted before its magnets are bonded."),
             check: String => out_rust_only("", "Shaft joints: keyed shrink fits",
-                "Each rotor's shrink fit must hold the required torque when loosest, stay elastic when tightest and be fitted within the allowed temperature; the key alone is a backup."),
+                "Each shrink fit must hold the torque each shaft joint must hold when loosest, stay elastic when tightest and be fitted within the allowed temperature; the key is a backup."),
         }
     }
 }

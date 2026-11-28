@@ -14,6 +14,7 @@ use magcoupling::compute_all;
 use magcoupling::engine::api::{DesignInputs, shaft_joint_links};
 use magcoupling::engine::assumptions::ASSUMPTIONS;
 use magcoupling::engine::compat::py_min;
+use magcoupling::engine::explain::notes;
 use magcoupling::engine::explain::probes::probe_designs;
 use magcoupling::engine::material_library::BACK_IRON_CHOICES;
 use magcoupling::engine::meta::{InputSet, SliderRange, Value, input_rows, result_rows};
@@ -366,6 +367,48 @@ fn the_safety_factor_help_says_a_slip_can_reverse_the_torque_not_that_each_does(
     assert!(!help.contains("each slip"), "{help}");
     assert!(
         help.contains("While the coupling slips, the torque can reverse many times."),
+        "{help}"
+    );
+}
+
+#[test]
+fn no_shaft_joint_text_calls_the_torque_a_fit_must_hold_the_required_torque() {
+    // G-3 text review of R4, MF-1: on this page Required torque is the hot-low requirement (the
+    // Size tab's first slider); the torque each fit must hold is the result "Torque each shaft
+    // joint must hold". So no label or help of the check's inputs and results, and no text of
+    // the shaft-joint note, says "required torque"; the check's help names that result by its
+    // label.
+    let defaults = DesignInputs::default();
+    let mut texts: Vec<&str> = Vec::new();
+    for row in input_rows(&defaults) {
+        if row.path.starts_with("shaft_joint.") {
+            texts.extend([row.meta.label, row.meta.help]);
+        }
+    }
+    for row in result_rows(&compute_all(&defaults)) {
+        if row.path.starts_with("shaft_joint.") {
+            texts.extend([row.meta.label, row.meta.help]);
+        }
+    }
+    // Not vacuous: fifteen inputs and twenty-four results.
+    assert_eq!(texts.len(), 2 * (15 + 24));
+    let note = notes::note("shaft_joint").expect("the shaft-joint note");
+    texts.push(note.title);
+    texts.extend(note.sentences.iter().copied());
+    texts.extend(note.change.iter().map(|change| change.text));
+    texts.extend(note.watch_out.iter().copied());
+    for text in &texts {
+        assert!(!text.to_lowercase().contains("required torque"), "{text}");
+    }
+    let label = result_rows(&compute_all(&defaults))
+        .into_iter()
+        .find(|row| row.path == "shaft_joint.required_Nm")
+        .map(|row| row.meta.label)
+        .expect("the joint torque");
+    assert_eq!(label, "Torque each shaft joint must hold");
+    let help = result_help("shaft_joint.check");
+    assert!(
+        help.contains("must hold the torque each shaft joint must hold when loosest"),
         "{help}"
     );
 }

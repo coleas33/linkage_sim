@@ -26,7 +26,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::f64::consts::FRAC_PI_2;
 
 use common::{differential_files, input_meta, load_cases, report};
-use magcoupling::engine::api::{DesignInputs, DesignResults, compute_all};
+use magcoupling::engine::api::{DesignInputs, DesignResults, checked_pullout, compute_all};
 use magcoupling::engine::assumptions::{self, ASSUMPTIONS};
 use magcoupling::engine::compat::parity_close;
 use magcoupling::engine::deviations::DeviationId;
@@ -3135,8 +3135,13 @@ fn the_torque_band_note_s_levers_move_hot_low_and_cold_high_as_it_says() {
             close(r.metal.torque_cold_high_Nm, cold),
             "{name}: cold-high stays"
         );
-        // Entry 4: a colder minimum raises cold-high, and with it the shaft-joint and gearbox
-        // loads; hot-low stays.
+        // Entry 4: a colder minimum raises cold-high and, where cold-high is the larger (as at
+        // every probe design), the shaft-joint and gearbox loads; hot-low stays.
+        assert_eq!(
+            checked_pullout(&design, &base),
+            cold,
+            "{name}: cold-high the larger"
+        );
         let r = compute_all(&stepped(&design, "metal.min_temp_C", Step::Lower));
         assert!(r.metal.torque_cold_high_Nm > cold, "{name}: minimum");
         assert!(

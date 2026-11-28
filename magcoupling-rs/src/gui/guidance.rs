@@ -2729,9 +2729,11 @@ fn apart_number(x: f64, unit_of: &str, bound: f64, above: bool) -> String {
 
 /// Whether the gearbox and shaft joint checks compare the operating pull-out with its allowance
 /// rather than cold-high (BL-067: it is the larger, as with the operating temperature below the
-/// minimum; [`checked_pullout`]).
+/// minimum; [`checked_pullout`]). Larger means beyond float noise ([`RATING_NOISE`]): at the
+/// minimum temperature the two are one torque by two float paths (G-3 text review of R4, SF-1),
+/// so the texts' name never follows the last bits.
 fn operating_pullout_compared(inputs: &DesignInputs, results: &DesignResults) -> bool {
-    checked_pullout(inputs, results) > results.metal.torque_cold_high_Nm
+    checked_pullout(inputs, results) > results.metal.torque_cold_high_Nm * (1.0 + RATING_NOISE)
 }
 
 /// What the guide calls the pull-out the gearbox and shaft joint checks compare (BL-067),
@@ -2856,7 +2858,8 @@ fn band_levers(inputs: &DesignInputs, results: &DesignResults) -> Option<String>
 /// NB-2). The band is a ratio of two engine torques, 1.0000000000000002 where it is exactly one
 /// (no variation allowance, the minimum at the operating temperature), and the requirement over
 /// ratio × efficiency can miss a rating it equals in decimals by an ulp (0.84 N·m × 5 × 0.95 is
-/// 3.99 N·m). A torque only this far above the rating is at it, and at the rating passes.
+/// 3.99 N·m). A torque only this far above the rating is at it, and at the rating passes. The
+/// texts' name of the compared pull-out takes the same noise ([`operating_pullout_compared`]).
 const RATING_NOISE: f64 = 1e-12;
 
 /// Problem sentence 2 of the gearbox check (owner decision 4A): where no magnet size, gap or
@@ -7878,6 +7881,65 @@ mod tests {
         assert!(
             problem(GEARBOX, &defaults)
                 .is_some_and(|p| p.starts_with("Cold-high at the gearbox input is 0.8049 N·m"))
+        );
+    }
+
+    #[test]
+    fn at_equal_temperatures_the_texts_name_cold_high_whatever_the_float_noise() {
+        // G-3 text review of R4, SF-1. With the operating temperature at the minimum the
+        // operating pull-out with its allowance is cold-high, formed by another float path, and
+        // on some designs it comes out above cold-high in the last bits. The texts name it only
+        // where it is larger beyond float noise ([`RATING_NOISE`]); the check's numbers are
+        // unchanged. The review's sweep: operating = minimum from -40 to 20 °C in 0.5 °C steps,
+        // variations 0 to 0.2 (605 designs).
+        let mut noisy = 0;
+        for k in 0..=120 {
+            let t = -40.0 + 0.5 * f64::from(k);
+            for variation in [0.0, 0.05, 0.1, 0.15, 0.2] {
+                let inputs = design(|i| {
+                    i.coupling.op_temp_C = t;
+                    i.metal.min_temp_C = t;
+                    i.metal.variation = variation;
+                });
+                let results = compute_all(&inputs);
+                if checked_pullout(&inputs, &results) > results.metal.torque_cold_high_Nm {
+                    noisy += 1;
+                }
+                assert!(
+                    !operating_pullout_compared(&inputs, &results),
+                    "{t} °C, variation {variation}"
+                );
+                assert_eq!(checked_pullout_name(&inputs, &results), "cold-high");
+            }
+        }
+        // Not vacuous: the noise shows on some of them.
+        assert!(noisy > 0);
+        // Operating = minimum = 0 °C, variation 0.15, the default 0.6 N·m rating: sentence 1
+        // names cold-high, as sentence 2 does, and the card's term quotes cold-high.
+        let equal = design(|i| {
+            i.coupling.op_temp_C = 0.0;
+            i.metal.min_temp_C = 0.0;
+            i.metal.variation = 0.15;
+        });
+        let results = compute_all(&equal);
+        let gearbox = problem(GEARBOX, &equal).expect("the gearbox check fails");
+        assert!(
+            gearbox.starts_with(
+                "Cold-high at the gearbox input is 0.7344 N·m, above its 0.6000 N·m input rating. "
+            ),
+            "{gearbox}"
+        );
+        assert!(gearbox_conflict(&equal, &results).is_some(), "{gearbox}");
+        assert!(check_terms(GEARBOX, &equal, &results)[0].quoted.is_some());
+        // The BL-067 corner still names the operating pull-out with its allowance.
+        let corner = design(|i| {
+            i.coupling.op_temp_C = -40.0;
+            i.metal.min_temp_C = 20.0;
+            i.metal.variation = 0.1;
+        });
+        assert_eq!(
+            checked_pullout_name(&corner, &compute_all(&corner)),
+            "the operating pull-out with its allowance"
         );
     }
 

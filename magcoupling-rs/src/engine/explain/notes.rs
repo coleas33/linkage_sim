@@ -585,7 +585,7 @@ pub const NOTES: &[Note] = &[
                 input: "metal.min_temp_C",
                 step: Step::Lower,
                 aim: Some(("metal.torque_cold_high_Nm", Sense::Up)),
-                text: "a colder minimum raises cold-high and with it the shaft-joint and gearbox loads; enter the coldest the magnets really get.",
+                text: "a colder minimum raises cold-high and, where cold-high is the larger, the shaft-joint and gearbox loads; enter the coldest the magnets really get.",
             },
         ],
         watch_out: &[

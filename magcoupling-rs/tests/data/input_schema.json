@@ -3266,7 +3266,7 @@
       "cell": null,
       "choices": [],
       "default": 2.0,
-      "help": "Each fit alone, and the key alone, must hold this times cold-high, or the operating pull-out with allowance if larger. While the coupling slips, the torque can reverse many times.",
+      "help": "Each fit and each key, alone, must hold this times the larger of cold-high and the operating pull-out with allowance. While the coupling slips, the torque can reverse many times.",
       "label": "Shaft joint safety factor",
       "path": "shaft_joint.safety_factor",
       "range": {

@@ -154,7 +154,7 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "coupling.gearbox_input_rating_Nm",
-        "The gearbox's input torque rating. The gearbox check compares the cold-high torque at the gearbox input with it, or the operating pull-out with allowance if larger.",
+        "The gearbox's input torque rating. The gearbox check compares with it the torque at the gearbox input: cold-high, or the operating pull-out with allowance if larger.",
     ),
     (
         "temperature.duty.hot_ambient_C",
@@ -747,7 +747,7 @@ const HELP: &[(&str, &str)] = &[
     // docs/analyses/2026-10-14-magcoupler-help-review.md, BL-059 section).
     (
         "model.gearbox_input_ripple_Nm",
-        "The pull-out at the gearbox output at operating temperature, without the production allowance, divided by ratio and efficiency. The gearbox check compares cold-high, or this plus allowance if larger.",
+        "The pull-out at the gearbox output at operating temperature, without the production allowance, divided by ratio and efficiency. The gearbox check compares input cold-high, or this plus allowance if larger.",
     ),
     // BL-084: the band torques, the Hot-low and Cold-high tiles' "What it is" (the torque-band
     // note's definitions; the checks that read cold-high compare the larger of it and the
@@ -758,7 +758,7 @@ const HELP: &[(&str, &str)] = &[
     ),
     (
         "metal.torque_cold_high_Nm",
-        "The pull-out at the minimum magnet temperature plus the production variation allowance. The shaft joint and gearbox checks read it; a colder minimum or a larger allowance raises it.",
+        "The pull-out at the minimum magnet temperature plus the production variation allowance. The shaft joint and gearbox checks read it, or the operating pull-out with allowance if larger.",
     ),
 ];
 
@@ -1997,23 +1997,24 @@ mod batch_b_tests {
     fn every_direction_the_band_torques_helps_state_holds_one_slider_step_up() {
         // BL-084: a hotter operating temperature or a larger allowance lowers hot-low; a colder
         // minimum (the minimum falling) or a larger allowance raises cold-high. The temperature
-        // claims hold for NdFeB and for ferrite: both lose Br as they warm.
+        // claims hold for NdFeB and for ferrite: both lose Br as they warm. Hot-low's help states
+        // its directions; cold-high's gave its words to the torque the checks compare instead
+        // (G-3 text review of R4, SF-3, under the 30-word cap), and the torque-band note's steps
+        // still state its directions.
         const HOT_LOW: &str = "metal.torque_hot_low_Nm";
         const COLD_HIGH: &str = "metal.torque_cold_high_Nm";
-        // The helps state these directions; the slider steps below check them.
-        for (result, words) in [
-            (
-                HOT_LOW,
-                "a hotter operating temperature or a larger allowance lowers it",
+        let help = help_for(HOT_LOW);
+        assert!(
+            help.contains("a hotter operating temperature or a larger allowance lowers it"),
+            "{help}"
+        );
+        assert!(
+            help_for(COLD_HIGH).contains(
+                "The shaft joint and gearbox checks read it, or the operating pull-out with allowance if larger."
             ),
-            (
-                COLD_HIGH,
-                "a colder minimum or a larger allowance raises it",
-            ),
-        ] {
-            let help = help_for(result);
-            assert!(help.contains(words), "{result}: {help}");
-        }
+            "{}",
+            help_for(COLD_HIGH)
+        );
         for design in ["example", "Y30 grades"] {
             assert_one_step_up("coupling.op_temp_C", design, HOT_LOW, Down);
             assert_one_step_up("metal.variation", design, HOT_LOW, Down);
@@ -2267,7 +2268,7 @@ mod batch_b_tests {
                 "operating temperature",
                 "without the production allowance",
                 "ratio and efficiency",
-                "cold-high, or this plus allowance if larger",
+                "input cold-high, or this plus allowance if larger",
                 "pull-out at the gearbox output",
             ],
         );

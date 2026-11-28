@@ -5,6 +5,9 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - R4 text review fix wave (BL-067, BL-084; BL-130)
+- Branch magcoupling/r4-physics, the G-3 text review's fix wave (`docs/analyses/2026-11-28-magcoupler-r4-text-review.md`, "Fix wave"): the shaft joints check's help names "the torque each shaft joint must hold", not "the required torque" (MF-1, guard `no_shaft_joint_text_calls_the_torque_a_fit_must_hold_the_required_torque`); the guide names the operating pull-out with its allowance only where it is larger than cold-high beyond float noise (SF-1, `operating_pullout_compared` with `RATING_NOISE`, red test `at_equal_temperatures_the_texts_name_cold_high_whatever_the_float_noise`; the check's numbers unchanged); the torque-band note's minimum step (MF-2), the Cold-high help (SF-3) and the ripple, rating and safety-factor helps (SF-5) reworded; SF-2, SF-4, SF-6 and N-1 to N-3 go to BL-130; GUI and help text only, no engine or oracle number changes; docs: README, backlog BL-067, BL-084, BL-130, input_schema.json.
+
 ## 2026-11-28 - R4 review follow-ups (BL-130, BL-131)
 - The gearbox check's Problem builds its opening name from `checked_pullout_name` (the branch review's R4-2, DRY). BL-130 filed for fable's physics re-review of the four R4 diffs on 2026-12-01 (R4-1, R4-4); BL-131 filed: the adhesive bond screen still loads the bond with cold-high only (R4-3, older than the branch).
 
