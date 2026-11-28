@@ -2255,6 +2255,32 @@ mod tests {
     }
 
     #[test]
+    fn a_space_claim_overshoot_s_entry_links_the_space_claim_check() {
+        // BL-095: the three overshoot results are no dashboard rows, yet each one's entry
+        // names the fit check it fails: "Checks it touches" and a link that selects it.
+        let inputs = DesignInputs::default();
+        let guide = guidance::guide(guidance::SPACE_CLAIM).expect("the space claim guide");
+        for path in [
+            "housing.diameter_overshoot_mm",
+            "housing.length_overshoot_mm",
+            "housing.bay_overshoot_mm",
+        ] {
+            let ctx = egui::Context::default();
+            let (output, _, _) = frames(&ctx, &inputs, Selection::Result(path), false, vec![]);
+            assert!(
+                drawn_texts(&output).iter().any(|t| t == CHECKS_IT_TOUCHES),
+                "{path}"
+            );
+            let (asked, _) = click(&inputs, Selection::Result(path), guide.label);
+            assert_eq!(
+                asked,
+                Some(Asked::Select(Selection::Check(guidance::SPACE_CLAIM))),
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
     fn a_result_that_is_a_check_s_own_selects_the_check_and_any_other_the_result() {
         // Spec 5.2: a click on a results-table row "selects that result or check". The row of
         // a check's own result (its verdict) selects the check, whose entry holds its Problem,

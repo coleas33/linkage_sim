@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - Magcoupler: a space-claim overshoot result's entry links the space-claim check (BL-095)
+
+- badging_check maps housing.{diameter,length,bay}_overshoot_mm to the space-claim check; test in gui/explain.rs; README and backlog BL-095 updated.
+
 ## 2026-11-28 - Magcoupler UX overhaul, slice B, stage 2, part 2b-iii-c: the Equation panel (BL-112)
 - What changed: walking Start here at 1024 x 700 no term name, tag or step line runs past the Equation panel's edge (BL-086): a term's name and what it is share the term grid's last column and wrap in the panel's width, a long text value wraps in its own column, and the walk bar's step line wraps; the panel no longer grows past the centre region, on any equation. The equation itself still scrolls sideways where it is wider than the panel (decision D-109, owner question 76). The note drawing is `gui/notes_view.rs`, moved whole out of `gui/explorer.rs` (BL-088). The panel's empty text is gone (BL-089). The keyboard's focus is followed in the Equation panel, its formula and the Clamp tab's screw-size table (`gui::sideways_scroll_area`), and in the check list; a Results table line is a Tab stop only while its view shows it whole (BL-101, owner question 67's default).
 - Tests: every text of the Equation panel but its formula whole on each Start here step at the three window sizes, the panel inside the centre region (app); the same on every equation the registry holds, in the app's font at 1024 points wide (panel); a panel open with no trail draws its header row only; σ's tag wraps inside a 1000-point window; the keyboard walks through the Equation panel (two equations, the panel at its starting and its least height), the open screw-size table, the Results tab (as it opens and wheeled) and the check list (panel).
