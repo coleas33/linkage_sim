@@ -1392,3 +1392,21 @@
   priority: 3
   status: open
   notes: "Filed 2026-11-28 by the fix wave of the R5b re-review (RV-2), not taken there: pre-existing and separate from RV-1."
+- id: BL-143
+  title: "Linkage (web): a mouse right-click on a joint shows only its hover tooltip in the automated browser, where a touch long-press opens the joint menu (Set as Driver, Delete Joint)"
+  dimension: gui
+  risk: mechanical
+  evidence: "The R5b browser check (2026-11-28) and the controller's check on the live site (main 2877a89) and the R5b build: Playwright's right-click (mouse down and up with button right, at J4 of the 4-Bar Crank-Rocker at 1280 x 800) delivered pointerdown, pointerup and contextmenu, and egui showed the J4 tooltip but never the joint menu; a CDP touch long-press of 1.2 s opened it. The R6 site review reported reaching Set as Driver by right-click on the live site. Not yet checked with a real mouse; if a real right-click fails too, right-click reassignment (the Driver section says 'right-click to change') is unreachable on the web."
+  acceptance: "Check with a real mouse in Chrome, Firefox and Edge; if the menu does not open, a red test on the web input path (a secondary click on a joint opens its context menu) and the fix; if it opens, close this with the finding that it is the automation's event sequence; GATE PASS."
+  priority: 3
+  status: open
+  notes: "Filed 2026-11-28 by the controller from the R5b browser check."
+- id: BL-144
+  title: "Linkage: after a driver set on the FourBar's rocker (J4) the driver slider and the J4 arc read 267.1 deg while the status bar and the rocker link label read 87.1 deg for the same angle"
+  dimension: gui
+  risk: mechanical
+  evidence: "The R5b browser check (2026-11-28): after Set as Driver on J4 the Crank Angle slider shows 267.13 deg (caption 'Driver: rocker relative to ground (0 = world +X)') and the J4 arc label 267.1 deg, while the status bar and the rocker label show 87.1 deg; the two conventions differ by 180 deg."
+  acceptance: "Red test first: after a driver reassign every angle readout of the driver (the slider, the joint arc, the status bar, the link label) gives the same angle in one stated convention; GATE PASS."
+  priority: 4
+  status: open
+  notes: "Filed 2026-11-28 by the controller from the R5b browser check."
