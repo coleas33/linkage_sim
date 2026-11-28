@@ -192,7 +192,7 @@ impl Readouts {
         path: &'static str,
         text: impl FnOnce(bool) -> String,
     ) {
-        self.select(ui, sensor(ui, rect, path), path, text);
+        self.select(ui, sensor(ui, rect, path, egui::Sense::click()), path, text);
     }
 
     /// The mark of the value at `path` and, while `response` is hovered, its tooltip:
@@ -235,7 +235,7 @@ impl Readouts {
         path: &str,
         text: impl FnOnce(bool) -> String,
     ) {
-        self.show(ui, sensor(ui, rect, path), path, text);
+        self.show(ui, sensor(ui, rect, path, egui::Sense::click()), path, text);
     }
 
     /// Asks for the teaching note `id` (a warning's link, a lesson link), which the panel shows
@@ -261,9 +261,10 @@ impl Readouts {
     }
 }
 
-/// The click sensor over `rect` of the readout at `path`, keyed by `path` in `ui`.
-fn sensor(ui: &egui::Ui, rect: Rect, path: &str) -> egui::Response {
-    ui.interact(rect, ui.id().with(("readout", path)), egui::Sense::click())
+/// The click sensor over `rect` of the readout at `path`, keyed by `path` in `ui`: `sense` is a
+/// click, with the keyboard's focus or (a results table line the view cuts) without it.
+pub(crate) fn sensor(ui: &egui::Ui, rect: Rect, path: &str, sense: egui::Sense) -> egui::Response {
+    ui.interact(rect, ui.id().with(("readout", path)), sense)
 }
 
 #[cfg(test)]

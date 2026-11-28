@@ -81,9 +81,13 @@ pub(crate) fn wrapping_line<R>(
 pub(crate) fn follow_focus(ui: &egui::Ui) -> Option<egui::Rect> {
     let focused = ui.memory(|m| m.focused());
     // Where the focus was when this area was last drawn. egui's own `gained_focus` misses a
-    // move made between two frames, as an Up or Down arrow key's is.
+    // move made between two frames, as an Up or Down arrow key's is. Kept under the content's
+    // unique id: egui gives a scroll area's content its parent's id, which sibling areas share
+    // (the check list and the Explain panel under it, BL-101); the unique id holds while the
+    // widgets before the area in its parent stay as they are.
     let seen = ui.data_mut(|d| {
-        let seen = d.get_temp_mut_or_default::<Option<egui::Id>>(ui.id().with("follow_focus"));
+        let key = ui.unique_id().with("follow_focus");
+        let seen = d.get_temp_mut_or_default::<Option<egui::Id>>(key);
         std::mem::replace(seen, focused)
     });
     // A widget drawn in this area is clipped by this area's view, and no other is: one in

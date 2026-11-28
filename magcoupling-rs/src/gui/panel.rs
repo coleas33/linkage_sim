@@ -824,6 +824,7 @@ impl MagcouplingPanel {
                 if let Some(check) = clicked {
                     self.selection = Selection::Check(check);
                 }
+                follow_focus(ui);
             });
         ui.separator();
         let auto = self.auto();
@@ -8441,6 +8442,79 @@ mod tests {
             .map(|keys| follow(&mut harness, keys, centre).1)
             .sum();
         assert!(out_of_view > 0, "no stop was out of view");
+        assert_eq!(harness.panel.design(), Design::default());
+    }
+
+    #[test]
+    fn the_results_table_s_tab_stops_are_the_lines_it_shows_whole() {
+        // BL-101 (3), owner question 67's default (register row A-44): the table draws only the
+        // lines in view and does not follow the focus, so Tab passes the lines on screen and
+        // leaves it; the line its foot cut, and the one drawn past the foot, took the focus
+        // unseen. In the smallest window and at 1280 x 800, as the table opens (a group heading
+        // drawn past the foot) and wheeled 300 points down (at 1280 x 800 a row then cut at the
+        // top), after each Tab and Shift+Tab every stop of the centre region is whole as it
+        // arrives, and the table does not scroll. Nothing is selected or edited.
+        for screen in [SMALLEST, egui::vec2(1280.0, 800.0)] {
+            for wheel in [0.0, 300.0] {
+                let at = format!("{screen:?}, wheeled {wheel}");
+                let mut harness = Harness::of(MagcouplingPanel::new(), screen);
+                harness.tab(CentreView::Results);
+                harness.frame(Vec::new());
+                let selection = harness.panel.selection;
+                let centre = centre_region(&harness.ctx);
+                // Every text of the centre region where it is drawn: while none moves, the
+                // table has not scrolled.
+                let texts = |harness: &mut Harness| -> Vec<(String, egui::Rect)> {
+                    let output = harness.frame(Vec::new());
+                    crate::gui::test_support::flat_shapes(&output)
+                        .into_iter()
+                        .filter_map(|shape| match shape {
+                            egui::Shape::Text(text) => {
+                                Some((text.galley.text().to_owned(), text.visual_bounding_rect()))
+                            }
+                            _ => None,
+                        })
+                        .filter(|(_, rect)| centre.contains(rect.center()))
+                        .collect()
+                };
+                if wheel > 0.0 {
+                    let opened = texts(&mut harness);
+                    harness.wheel_column(centre.center(), wheel, 30);
+                    harness.frame(vec![egui::Event::PointerGone]);
+                    harness.frame_after(1.0, Vec::new());
+                    assert!(
+                        texts(&mut harness) != opened,
+                        "{at}: the wheel moved nothing"
+                    );
+                }
+                let before = texts(&mut harness);
+                for keys in [shift_tab(), key_tap(egui::Key::Tab)] {
+                    let (stops, out_of_view) = follow(&mut harness, &keys, centre);
+                    assert!(stops > 10, "{at}: {stops} stops");
+                    assert_eq!(out_of_view, 0, "{at}: of {stops} stops");
+                }
+                assert!(texts(&mut harness) == before, "{at}: the table scrolled");
+                assert_eq!(harness.panel.selection, selection, "{at}");
+                assert_eq!(harness.panel.design(), Design::default(), "{at}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_check_list_follows_the_keyboard_s_focus_where_it_scrolls() {
+        // BL-101 (4): the check list scrolls past its share of the right column, and did not
+        // follow the focus. In a window short enough for it to scroll (a host's window: the
+        // page's smallest is taller), after each Tab and Shift+Tab every stop of the right
+        // column is whole once the scroll has settled. Nothing is selected or edited.
+        let mut harness = Harness::of(MagcouplingPanel::new(), egui::vec2(1024.0, 460.0));
+        let selection = harness.panel.selection;
+        let column = side_rect(&harness.ctx, "magcoupling_dashboard");
+        let out_of_view: usize = [key_tap(egui::Key::Tab), shift_tab()]
+            .iter()
+            .map(|keys| follow(&mut harness, keys, column).1)
+            .sum();
+        assert!(out_of_view > 0, "no stop was out of view");
+        assert_eq!(harness.panel.selection, selection);
         assert_eq!(harness.panel.design(), Design::default());
     }
 
