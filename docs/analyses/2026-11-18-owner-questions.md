@@ -618,8 +618,9 @@ Added 2026-11-27 (the next free number). The calculator is one file of about 6.9
 - (a) As the default.
 - (b) Other words (say which).
 - (c) No line, as before.
+- (d) If the file cannot load, the line says so and asks for a reload, in words you choose. Today it keeps saying "Loading the calculator" (the page was blank on the same failure before), and the browser's console shows the error.
 
-Source: the slice B stage 1 review, suggestion S-4; A-54; BL-107 plan, decisions D-101 to D-103.
+Source: the slice B stage 1 review, suggestion S-4; A-54; BL-107 plan, decisions D-101 to D-103; option (d) from the text review of part 2b-iii-b (finding F-1, docs/analyses/2026-11-27-magcoupler-slice-b2p2biii-b-review.md).
 
 ### Linkage simulator
 
