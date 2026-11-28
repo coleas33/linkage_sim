@@ -210,8 +210,8 @@
   evidence: "magcoupling-rs/src/gui/panel.rs, view_ui: the amber line 'Wall past keyway: {key_wall:.2} mm; existing guidance is about 2.5 mm.' is drawn while key_wall < 2.5, where key_wall is model.hub_wall_past_key_mm, a difference of floats. With the starting design's other values and a ring radius of 9.25 mm (a slider step) the wall computes as 2.4999999999999990 mm (compute_all at main 7c2dc8d, scratch probe of 2026-11-17), so the line shows and reads 'Wall past keyway: 2.50 mm; existing guidance is about 2.5 mm.'; at 9.26 mm (2.51 mm) it is gone. Found while planning BL-077, whose starting design sits at 2.25 mm."
   acceptance: "owner picks: compare the wall as the line prints it (rounded to 0.01 mm), or with a small tolerance; red test first at ring radius 9.25 mm (the line is not drawn at a wall that prints as 2.50 mm) and at 9.24 mm (it is, reading 2.49 mm); the line's words unchanged; GATE PASS"
   priority: 4
-  status: open
-  notes: "Filed by the BL-077 plan's docs sweep (the UX overhaul design's section 9.1: new findings are filed, never fixed in passing). It does not change BL-077's starting design, whose 2.25 mm is well under the guidance either way (register row A-17)."
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch magcoupling/r3-polish: wall_cautions (gui/geometry.rs) compares the keyway wall as the line prints it (rounded to 0.01 mm, the way the skirt caution already does), so a wall of 2.4999999999999990 mm draws no line and 2.49 mm still does; the line's words are unchanged; red test a_keyway_wall_that_prints_as_2_50_draws_no_caution_and_2_49_does. Filed by the BL-077 plan's docs sweep (the UX overhaul design's section 9.1: new findings are filed, never fixed in passing). It does not change BL-077's starting design, whose 2.25 mm is well under the guidance either way (register row A-17)."
 - id: BL-079
   title: "Magcoupler UX overhaul, slice B, stage 1 (the look): the calculator's own theme (charcoal and crimson, one token table) and font (Inter with tabular digits), the brand mark and the underlined active tab, on today's layout"
   dimension: gui

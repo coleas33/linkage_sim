@@ -7033,6 +7033,27 @@ mod tests {
     }
 
     #[test]
+    fn a_keyway_wall_that_prints_as_2_50_draws_no_caution_and_2_49_does() {
+        // BL-078: compared as the line prints it (0.01 mm), so no line reads "2.50 mm" against
+        // "about 2.5 mm". A hair under 2.5 (a ring radius of 9.25 mm computes 2.4999999999999990).
+        let mut inputs = DesignInputs::default();
+        let hub_wall =
+            compute_all(&inputs).model.hub_wall_past_key_mm + inputs.coupling.keyway_depth_mm;
+        let lines = |wall: f64, inputs: &mut DesignInputs| {
+            inputs.coupling.keyway_depth_mm = hub_wall - wall;
+            wall_cautions(inputs, &compute_all(inputs))
+                .into_iter()
+                .filter(|line| line.starts_with("Wall past keyway"))
+                .collect::<Vec<_>>()
+        };
+        assert!(lines(2.5 - 1e-12, &mut inputs).is_empty());
+        assert_eq!(
+            lines(2.49, &mut inputs),
+            vec!["Wall past keyway: 2.49 mm; existing guidance is about 2.5 mm.".to_owned()]
+        );
+    }
+
+    #[test]
     fn the_skirt_caution_is_drawn_amber_on_the_opening_tab_and_counts_no_check() {
         use crate::gui::guidance::{counted_guides, level};
         let mut harness = Harness::new();

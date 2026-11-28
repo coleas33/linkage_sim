@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - Magcoupler: the keyway-wall line is compared as printed, so no line reads 2.50 mm (BL-078)
+
+- gui/geometry.rs wall_cautions rounds the wall to 0.01 mm before the 2.5 test; test in gui/panel.rs; backlog BL-078 fixed.
+
 ## 2026-11-28 - Magcoupler: a space-claim overshoot result's entry links the space-claim check (BL-095)
 
 - badging_check maps housing.{diameter,length,bay}_overshoot_mm to the space-claim check; test in gui/explain.rs; README and backlog BL-095 updated.
