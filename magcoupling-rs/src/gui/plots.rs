@@ -186,6 +186,18 @@ impl PlotKind {
         }
     }
 
+    /// The corner of the plot its legend sits in: one the plot's data leave free, so the legend
+    /// covers no marked point (BL-106). Slip heating's curves rise from the bottom left to the
+    /// top right, and the pole sweep's last row is at the top right: both take a bottom corner.
+    const fn legend_corner(self) -> Corner {
+        match self {
+            PlotKind::PoleSweep | PlotKind::SlipHeating => Corner::RightBottom,
+            PlotKind::TorqueTemperature | PlotKind::GapSweep | PlotKind::TorqueAngle => {
+                Corner::RightTop
+            }
+        }
+    }
+
     /// The plot's id: egui_plot keeps its bounds and transform under it
     /// (`egui_plot::PlotMemory::load`).
     pub fn id(self) -> egui::Id {
@@ -507,7 +519,7 @@ fn plot(ui: &egui::Ui, kind: PlotKind, x: &str, y: &str) -> Plot<'static> {
         .label_spacing(egui::Rangef::point(Y_TICK_SPACING));
     Plot::new(kind.id())
         .id(kind.id())
-        .legend(Legend::default().position(Corner::RightTop))
+        .legend(Legend::default().position(kind.legend_corner()))
         .grid_spacing(egui::Rangef::new(GRID_SPACING_MIN as f32, 300.0))
         .x_grid_spacer(egui_plot::uniform_grid_spacer(x_grid_steps))
         .custom_x_axes(vec![x_axis])

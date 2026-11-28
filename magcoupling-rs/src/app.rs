@@ -912,6 +912,84 @@ mod tests {
     }
 
     #[test]
+    fn no_plot_s_legend_covers_a_marked_point() {
+        // BL-106 (the review of part 2b-iii-a, F-1): every plot put its legend at the top right,
+        // and on the example design at 1024 x 700 Slip heating's legend covered the time to the
+        // limit's dot. In the app's theme and font, on the starting design, the example
+        // design and a hotter one at 1024 x 700 and 1280 x 800, no circle a plot draws (a
+        // reference value's dot, This design, the time to the limit, a sweep row) has its
+        // centre inside the legend.
+        use crate::gui::CentreView;
+        use crate::gui::plots::PlotKind;
+        use crate::gui::test_support::flat_shapes;
+        let mut covered = Vec::new();
+        for size in [WINDOWS[1], WINDOWS[0]] {
+            // The starting design, the example design, and the example 5 degrees hotter: its
+            // high case reaches the limit, so Slip heating marks the time to it.
+            for design in ["starting", "example", "hot example"] {
+                let ctx = egui::Context::default();
+                let mut app = MagcouplingApp::new(&ctx);
+                if design != "starting" {
+                    app.panel.open_example_design();
+                }
+                if design == "hot example" {
+                    let mut hot = Design::default();
+                    hot.inputs.temperature.duty.hot_ambient_C += 5.0;
+                    let text = crate::gui::session::design_to_json(&hot);
+                    app.panel.load_design_file(&text).unwrap();
+                }
+                frame_on(&ctx, &mut app, size, Vec::new());
+                for kind in PlotKind::ALL {
+                    let what = format!("{size:?}, {design}, {kind:?}");
+                    let output = show_view(&ctx, &mut app, size, CentreView::Plot(kind), 2);
+                    let (left, right) = (
+                        side_rect(&ctx, "magcoupling_inputs").right(),
+                        side_rect(&ctx, "magcoupling_dashboard").left(),
+                    );
+                    let circles: Vec<egui::epaint::CircleShape> = flat_shapes(&output)
+                        .into_iter()
+                        .filter_map(|shape| match shape {
+                            egui::Shape::Circle(c) if left < c.center.x && c.center.x < right => {
+                                Some(*c)
+                            }
+                            _ => None,
+                        })
+                        .collect();
+                    // A legend entry: a filled and outlined disc.
+                    let discs: Vec<&egui::epaint::CircleShape> = circles
+                        .iter()
+                        .filter(|c| c.fill.a() > 0 && c.stroke.width > 0.0)
+                        .collect();
+                    assert!(!discs.is_empty(), "{what}: no legend entry");
+                    // The legend's frame: the smallest rect shape holding every entry's disc.
+                    let frame = flat_shapes(&output)
+                        .into_iter()
+                        .filter_map(|shape| match shape {
+                            egui::Shape::Rect(r)
+                                if discs.iter().all(|d| r.rect.contains(d.center)) =>
+                            {
+                                Some(r.rect)
+                            }
+                            _ => None,
+                        })
+                        .min_by(|a, b| a.area().total_cmp(&b.area()))
+                        .unwrap_or_else(|| panic!("{what}: no legend frame"));
+                    for c in &circles {
+                        let in_legend = discs.iter().any(|d| d.center == c.center);
+                        if !in_legend && frame.contains(c.center) {
+                            covered.push(format!(
+                                "{what}: a point at {:?} is under the legend {frame:?}",
+                                c.center
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(covered.is_empty(), "{covered:#?}");
+    }
+
+    #[test]
     fn a_tile_shows_its_edge_on_the_panel_as_a_framed_control_does() {
         // BL-109 (the review of part 2b-iii-b, LOOK-2): the four tiles over the drawing are
         // click targets that the panel frames itself, and they kept the hairline (1.2:1 on the

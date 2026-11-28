@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - Magcoupler: a plot's legend sits in a corner its data leave free: Pole sweep and Slip heating at the bottom right (BL-106)
+
+- gui/plots.rs PlotKind::legend_corner (read by plot()); test in app.rs; README; backlog BL-106 fixed.
+
 ## 2026-11-28 - Magcoupler: every plot's horizontal axis carries at least three numbers at 1024 x 700 and 1280 x 800 (BL-105)
 
 - gui/plots.rs x_grid_steps (1-2-5 grid steps, finest with ticks over 60 points apart), x_number; test in app.rs; README; backlog BL-105 fixed.
