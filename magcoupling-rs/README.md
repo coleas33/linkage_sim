@@ -292,7 +292,10 @@ torque card alike, a number whose fixed form would need more than six whole digi
 that still reads zero at two more decimals beside a percent that reads a digit, reads four
 significant digits as the readouts write values, a margin or a change with its sign and a
 shortfall's size without ("margin +2.405e300 N·m (+9.622e301 %)",
-"short 1.000e300 N·m (-100.0 %)", "margin +5.000e-7 N·m (+50.0 %)"). A torque card row's two
+"short 1.000e300 N·m (-100.0 %)", "margin +5.000e-7 N·m (+50.0 %)"). Since BL-083 a shortfall
+that still reads zero at two more decimals reads four significant digits whatever its percent,
+so a design a hair under its requirement never reads "short 0.00 N·m" ("short 1.000e-7 N·m
+(-0.0 %)"); a margin that small still reads "+0.00" (T-9's float noise). A torque card row's two
 N·m share one precision (T-14): where either still reads zero at two more decimals beside a
 percent that reads a digit, both read four significant digits (a change of exactly zero still
 "+0.00"), so the two keep their true ratio ("-5.033e-5" beside "+4.599e-5", never "-0.0001", at

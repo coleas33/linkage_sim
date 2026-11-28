@@ -246,8 +246,8 @@
   evidence: "BL-081 review PT-1 (2026-11-22): starting design with Required = hot-low + 1e-7 (or typed 1.44833); the tile quotes hot-low 1.447 by BL-068's rule, 'needs 1.448 N·m', then 'short 0.00 N·m (-0.0 %)' from torque_gap_text on the raw values (magcoupling-rs/src/gui/tiles.rs needs_lines, size_controls.rs torque_gap_text). The red shape and 'short' still mark the failure."
   acceptance: "On a failing tile the gap never reads zero: quote it as the difference of the two numbers on screen, or with one more significant digit; a red test first at Required = hot-low + 1e-7; physics and text review."
   priority: 4
-  status: open
-  notes: "Filed 2026-11-22 from the BL-081 review; old torque_gap_text behaviour, new only in sitting beside the adjusted pair."
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch magcoupling/r4-physics: torque_gap_text (magcoupling-rs/src/gui/size_controls.rs) reads a shortfall that would read zero at the cap (no digit at two decimals plus two) in four significant digits, the readouts' form (TorquePrecision::Significant), whatever its percent, so the Hot-low tile at Required = hot-low + 1e-7 reads 'short 1.000e-7 N·m (-0.0 %)', never 'short 0.00 N·m'; a margin that small still reads '+0.00' (T-9's float noise). The acceptance's second way (more digits) is taken over the first (the difference of the BL-068 pair on screen, 0.001 N·m here, an upper bound 10^4 times the true shortfall): the tile quotes the true gap. GUI formatting only: no engine or oracle number changes. Red test tiles.rs a_failing_hot_low_tile_never_reads_a_gap_of_zero (starting and example designs); the T-9 gap test's 2.49999 and -1e-9 cases take the new text, and the hair-gap sweep asserts a shortfall never reads zero. Filed 2026-11-22 from the BL-081 review; old torque_gap_text behaviour, new only in sitting beside the adjusted pair. Built and reviewed on Opus 5.5 while fable is out; fable re-reviews this diff on 2026-12-01."
 - id: BL-084
   title: "Magcoupler: the Explain entries of the Hot-low and Cold-high tiles have no 'What it is', and Cold-high names no check it touches"
   dimension: gui

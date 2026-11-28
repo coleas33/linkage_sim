@@ -5,6 +5,9 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - Magcoupler: a failing Hot-low tile never reads a gap of zero (BL-083)
+- Branch magcoupling/r4-physics: `torque_gap_text` (magcoupling-rs/src/gui/size_controls.rs) reads a shortfall that reads zero at the cap in four significant digits whatever its percent, so at Required = hot-low + 1e-7 the tile reads "short 1.000e-7 N·m (-0.0 %)", not "short 0.00 N·m (-0.0 %)"; a margin that small still reads "+0.00" (T-9). The true gap, not the difference of the BL-068 pair on screen. GUI text only; no engine or oracle number moves. Tests: tiles.rs `a_failing_hot_low_tile_never_reads_a_gap_of_zero` (red first), the T-9 gap cases and the hair-gap sweep in size_controls.rs. Docs: README, docs/ai 02, backlog BL-083.
+
 ## 2026-11-28 - Magcoupler: the gearbox and shaft-joint checks compare the larger pull-out (BL-067)
 - Branch magcoupling/r4-physics, option (b) under the owner's ruling of 2026-11-10 (register A-10): both checks compare the larger of cold-high and the operating pull-out with the production allowance (`gearbox::checked_pullout_Nm`, NaN where either is), so with the operating temperature below the minimum (op -40 °C, min 20 °C, variation 0.1) the gearbox check fails a 0.72 N·m rating at 0.7699 N·m and each shaft joint must hold 7.3142 N·m, not 6.3647; the defaults do not move. The guide's gearbox and slip Problems, the torque card's gearbox term, the check, rating, ripple, safety-factor and required-torque helps, the torque-band, slip and shaft-joint notes (with a new source line) and the required-torque record say so; input_schema.json re-blessed; README, docs/ai 02, 03 and 04, register row A-10 updated. Built and reviewed on Opus 5.5 while fable is out; fable re-reviews this diff on 2026-12-01.
 

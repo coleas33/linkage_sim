@@ -482,6 +482,21 @@ mod tests {
     }
 
     #[test]
+    fn a_failing_hot_low_tile_never_reads_a_gap_of_zero() {
+        // BL-083: at Required = hot-low + 1e-7 the tile read "short 0.00 N·m (-0.0 %)" beside
+        // hot-low quoted one last digit below the requirement (BL-068). A shortfall that reads
+        // zero at its decimals reads four significant digits, as the readouts write values.
+        for mut inputs in [crate::app::starting_design(), DesignInputs::default()] {
+            let hot_low = compute_all(&inputs).metal.torque_hot_low_Nm;
+            inputs.metal.required_min_Nm = hot_low + 1e-7;
+            let results = compute_all(&inputs);
+            let (_, gap, meets) = needs_lines(&inputs, &results);
+            assert!(!meets, "{gap}");
+            assert_eq!(gap, "short 1.000e-7 N·m (-0.0 %)");
+        }
+    }
+
+    #[test]
     fn a_torque_the_model_does_not_predict_reads_so_in_place_of_its_number() {
         // Spec 4.4: the no-prediction texts replace the number as on the Size tab's readouts,
         // and the Hot-low tile shows neither what it needs nor a gap. The mass is still a
