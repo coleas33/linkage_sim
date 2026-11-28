@@ -793,35 +793,44 @@ fn equation_body(
                         egui::TextStyle::Body,
                     );
                 ui.label(value);
-                ui.horizontal_wrapped(|ui| {
-                    let term =
-                        ui.add(egui::Label::new(term_label(&row.path)).sense(Sense::click()));
-                    // Its internal name only with the spreadsheet details.
-                    let term = if show_details {
-                        term.on_hover_text(&row.path)
-                    } else {
-                        term
-                    };
-                    if term.clicked() {
-                        clicked = Some(row.path.clone());
-                    }
-                    let mut style = registry()
-                        .term_style(&row.path, terms.inputs)
-                        .expect("every term is an input or a result (registry build)");
-                    // The registry compares with the spreadsheet's values; on screen "changed"
-                    // is against the session's baseline.
-                    if matches!(style.kind, TermKind::Input { .. }) {
-                        style.changed_from_default =
-                            terms.inputs.get(&row.path) != baseline.get(&row.path);
-                    }
-                    let tag = term_tag(style);
-                    if style.affected_by_modified_assumption
-                        || matches!(style.kind, TermKind::Input { assumption: true })
-                    {
-                        ui.colored_label(ui.visuals().warn_fg_color, tag);
-                    } else {
-                        ui.weak(tag);
-                    }
+                // In a vertical child, so the cell starts at the row's top: a grid centres a
+                // cell's child in the row by the height it first asks for, a wrapping line's one
+                // widget high, so a wrapped name and tag hung half a row into the next row, under
+                // its stripe and its text (the branch's review, F-1).
+                ui.vertical(|ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        // One Tab stop however the name wraps (the review's KR-1, SK-1).
+                        let term = crate::gui::label_block(
+                            ui,
+                            egui::Label::new(term_label(&row.path)).sense(Sense::click()),
+                        );
+                        // Its internal name only with the spreadsheet details.
+                        let term = if show_details {
+                            term.on_hover_text(&row.path)
+                        } else {
+                            term
+                        };
+                        if term.clicked() {
+                            clicked = Some(row.path.clone());
+                        }
+                        let mut style = registry()
+                            .term_style(&row.path, terms.inputs)
+                            .expect("every term is an input or a result (registry build)");
+                        // The registry compares with the spreadsheet's values; on screen "changed"
+                        // is against the session's baseline.
+                        if matches!(style.kind, TermKind::Input { .. }) {
+                            style.changed_from_default =
+                                terms.inputs.get(&row.path) != baseline.get(&row.path);
+                        }
+                        let tag = term_tag(style);
+                        if style.affected_by_modified_assumption
+                            || matches!(style.kind, TermKind::Input { assumption: true })
+                        {
+                            ui.colored_label(ui.visuals().warn_fg_color, tag);
+                        } else {
+                            ui.weak(tag);
+                        }
+                    });
                 });
                 ui.end_row();
             }

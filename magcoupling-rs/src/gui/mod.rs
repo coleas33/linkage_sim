@@ -71,6 +71,30 @@ pub(crate) fn wrapping_line<R>(
     ui.allocate_ui_with_layout(size, wrapping, add)
 }
 
+/// Adds `label` to a wrapping line as one block in the rest of the line: egui lays a label out
+/// in a wrapping line row by row, each row a Tab stop of its own, and only the first shows the
+/// focus (SK-1). The block is one text row high (as epaint rounds it), so the line centres it as
+/// it centred a label that fits. After a wrapped label, what follows starts a line of its own at
+/// a widget's height: a wrapping line's next row takes the height of the one before. An input
+/// row's label and a term's name in the Equation panel are drawn through this.
+pub(crate) fn label_block(ui: &mut egui::Ui, label: egui::Label) -> egui::Response {
+    let row = ui.text_style_height(&egui::TextStyle::Body);
+    let line = egui::vec2(
+        ui.available_size_before_wrap().x,
+        egui::emath::GuiRounding::round_to_pixels(row, ui.pixels_per_point()),
+    );
+    let response = ui
+        .allocate_ui_with_layout(line, egui::Layout::top_down(egui::Align::Min), |ui| {
+            ui.add(label)
+        })
+        .inner;
+    if response.rect.height() > 1.5 * line.y {
+        ui.end_row();
+        ui.set_row_height(ui.spacing().interact_size.y);
+    }
+    response
+}
+
 /// Scrolls the scroll area whose content `ui` is, by the smallest amount that shows it whole,
 /// to the widget the keyboard's focus has arrived on (BL-100: egui scrolls to no widget for
 /// taking the focus). Called last in the area's content. Only in the first frame the area is

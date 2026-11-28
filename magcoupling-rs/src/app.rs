@@ -1634,11 +1634,14 @@ mod tests {
         // and its tag (at 1280 x 800 too) and the walk bar's step line, which also pushed the
         // panel over the right column. Each step of the walk, at the three window sizes, in the
         // app's theme and font: the panel stays inside the centre region, and no text of it is
-        // cut but the formula's, which scrolls sideways in an area of its own (decision D-109:
-        // an equation does not wrap).
+        // cut or drawn over but the formula's, which scrolls sideways in an area of its own
+        // (decision D-109: an equation does not wrap). The branch's review (F-1): a wrapped term
+        // row hung half a row into the next, under its stripe (step 5, 1024 x 700).
         use crate::engine::explain::notes::START_HERE;
         use crate::gui::explorer::{NEXT, START_HERE_BUTTON};
-        use crate::gui::test_support::{cut_texts_in, primary_button, text_center, text_shapes};
+        use crate::gui::test_support::{
+            equation_panel_faults, equation_panel_in_centre, primary_button, text_center,
+        };
         for size in [WINDOWS[1], WINDOWS[0], egui::vec2(1920.0, 1080.0)] {
             let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
             let ctx = egui::Context::default();
@@ -1661,21 +1664,9 @@ mod tests {
                     output = click(&mut app, NEXT);
                 }
                 let at = format!("{size:?}, step {}", step + 1);
-                let panel = side_rect(&ctx, "magcoupling_equation_panel");
-                let centre = side_rect(&ctx, "magcoupling_inputs").right()
-                    ..=side_rect(&ctx, "magcoupling_dashboard").left();
-                assert!(
-                    centre.contains(&panel.left()) && centre.contains(&panel.right()),
-                    "{at}: the panel {panel:?} runs out of the centre region {centre:?}"
-                );
-                // The formula's own area: where the panel draws its " = ".
-                let inside = |clip: egui::Rect| panel.expand(1.0).contains_rect(clip);
-                let formula = text_shapes(&output, " = ")
-                    .map(|(clip, _)| clip)
-                    .find(|&clip| inside(clip))
-                    .unwrap_or_else(|| panic!("{at}: no formula"));
-                let cut = cut_texts_in(&output, screen, |clip| inside(clip) && clip != formula);
-                assert!(cut.is_empty(), "{at}: cut: {cut:#?}");
+                let panel = equation_panel_in_centre(&ctx, &at);
+                let faults = equation_panel_faults(&output, screen, panel);
+                assert!(faults.is_empty(), "{at}: {faults:#?}");
             }
         }
     }

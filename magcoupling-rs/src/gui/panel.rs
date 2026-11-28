@@ -11783,6 +11783,11 @@ mod tests {
         );
         let clip = text_clip_rect(&output, ASSUMPTION_TAG);
         assert!(clip.contains_rect(tag), "{tag:?} cut by {clip:?}");
+        // And clear of the next row (the branch's review, F-2).
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, harness.screen);
+        let panel = equation_panel_rect(&harness.ctx);
+        let faults = crate::gui::test_support::equation_panel_faults(&output, screen, panel);
+        assert!(faults.is_empty(), "{faults:#?}");
         assert_eq!(harness.panel.inputs(), &DesignInputs::default());
     }
 
@@ -11796,11 +11801,12 @@ mod tests {
         // holds, opened in the app's theme and font in a window as narrow as the smallest and
         // tall enough for the panel to show it to its foot, on the starting design and on the
         // example design with the spreadsheet details on: the panel stays inside the centre
-        // region, and no text of it is cut but the formula's (decision D-109). (Before the
+        // region, and no text of it is cut or drawn over but the formula's (decision D-109; the
+        // branch's review, F-1: a wrapped term row hung half a row into the next). (Before the
         // wrap the term list scrolled sideways and egui painted nothing past its view, which
         // no test of drawn text sees: there the narrow region's test holds the tag.)
         use crate::gui::explorer::{USED_BY, used_by_shown};
-        use crate::gui::test_support::cut_texts_in;
+        use crate::gui::test_support::{equation_panel_faults, equation_panel_in_centre};
         let size = egui::vec2(SMALLEST.x, 3000.0);
         let panel = MagcouplingPanel::with_baseline(crate::app::starting_design());
         let mut harness = Harness::of(panel, size);
@@ -11820,31 +11826,92 @@ mod tests {
             for eq in registry().equations() {
                 let at = format!("{}, {design}", eq.target);
                 harness.panel.explorer.open_path(&eq.target);
-                harness.frame(Vec::new());
+                // The term grid places its cells by the column widths and row heights of the
+                // frame before, the last equation's in the first frame: the rows settle in the
+                // third, which egui draws at once (the grid asks for it).
+                for _ in 0..2 {
+                    harness.frame(Vec::new());
+                }
                 let output = harness.frame(Vec::new());
-                let centre = centre_region(&harness.ctx);
-                let centre = centre.left()..=centre.right();
-                let panel = equation_panel_rect(&harness.ctx);
-                assert!(
-                    centre.contains(&panel.left()) && centre.contains(&panel.right()),
-                    "{at}: the panel {panel:?} runs out of the centre region {centre:?}"
-                );
-                let inside = |clip: egui::Rect| panel.expand(1.0).contains_rect(clip);
+                let panel = equation_panel_in_centre(&harness.ctx, &at);
                 // Its last line, Used by, is drawn: every row above it is in view and checked.
                 let users = used_by_shown(&eq.target, harness.panel.clamps_paused);
                 assert!(
-                    users.is_empty() || text_shapes(&output, USED_BY).any(|(clip, _)| inside(clip)),
+                    users.is_empty()
+                        || text_shapes(&output, USED_BY)
+                            .any(|(clip, _)| panel.expand(1.0).contains_rect(clip)),
                     "{at}: the panel's foot is out of view: the test would prove nothing"
                 );
-                // The formula's own area: where the panel draws its " = ".
-                let formula = text_shapes(&output, " = ")
-                    .map(|(clip, _)| clip)
-                    .find(|&clip| inside(clip));
-                let cut = cut_texts_in(&output, screen, |clip| {
-                    inside(clip) && Some(clip) != formula
-                });
-                assert!(cut.is_empty(), "{at}: cut: {cut:?}");
+                let faults = equation_panel_faults(&output, screen, panel);
+                assert!(faults.is_empty(), "{at}: {faults:?}");
             }
+        }
+    }
+
+    #[cfg(feature = "app")]
+    #[test]
+    fn a_term_whose_name_wraps_is_one_tab_stop_in_the_app_s_own_font() {
+        // The branch's review (KR-1): egui lays a label out in a wrapping line row by row, each
+        // row a Tab stop of its own, and only the first shows the focus (SK-1 of the input rows),
+        // so a term's name that wrapped in the term list took a press for each further row, a
+        // stop that showed nothing (BL-102: no Tab stop is added). At 1024 points wide in the
+        // app's theme and font, on a window tall enough that nothing scrolls, on two equations
+        // with long names: a Tab round never stops on a row that starts at the left of the stop
+        // before it, where that stop ends.
+        use crate::gui::explorer::term_label;
+        use crate::gui::test_support::text_shapes;
+        let size = egui::vec2(SMALLEST.x, 3000.0);
+        for path in ["metal.torque_hot_low_Nm", "model.iron_circuit_angle_rad"] {
+            let panel = MagcouplingPanel::with_baseline(crate::app::starting_design());
+            let mut harness = Harness::of(panel, size);
+            crate::app::theme::apply(&harness.ctx);
+            crate::app::fonts::install(&harness.ctx);
+            harness.panel.explorer.open_path(path);
+            harness.frame(Vec::new());
+            let output = harness.frame(Vec::new());
+            let panel = equation_panel_rect(&harness.ctx).expand(1.0);
+            let eq = registry().equation_for(path).expect("an equation");
+            let wrapped: Vec<&str> = eq
+                .terms
+                .iter()
+                .map(|term| term_label(term))
+                .filter(|&label| {
+                    text_shapes(&output, label)
+                        .any(|(clip, text)| panel.contains_rect(clip) && text.galley.rows.len() > 1)
+                })
+                .collect();
+            assert!(
+                !wrapped.is_empty(),
+                "{path}: no term's name wraps: the test would prove nothing"
+            );
+            let mut stops = Vec::new();
+            loop {
+                harness.frame(key_tap(egui::Key::Tab));
+                // Past the last stop the focus wraps to the first, or is let go.
+                let focused = harness.ctx.memory(|m| m.focused());
+                let Some(id) = focused.filter(|id| !stops.contains(id)) else {
+                    break;
+                };
+                stops.push(id);
+                assert!(stops.len() < 1_000, "the Tab round never ends");
+            }
+            let rects: Vec<egui::Rect> = stops
+                .iter()
+                .filter_map(|&id| harness.ctx.read_response(id))
+                .map(|r| r.rect)
+                .filter(|&r| panel.contains_rect(r))
+                .collect();
+            let split: Vec<&[egui::Rect]> = rects
+                .windows(2)
+                .filter(|pair| {
+                    (pair[1].top() - pair[0].bottom()).abs() < 0.5
+                        && (pair[1].left() - pair[0].left()).abs() < 0.5
+                })
+                .collect();
+            assert!(
+                split.is_empty(),
+                "{path}: wrapped {wrapped:?}, a row a stop of its own: {split:?}"
+            );
         }
     }
 
