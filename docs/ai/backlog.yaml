@@ -564,8 +564,8 @@
   evidence: "input_panel.rs:203-213 (Mounting Angle section, collapsed by default): Slider::step_by(0.5) bound to a local copy of state.mounting_angle, followed by a value-diff gate that calls mark_sweep_dirty() + rebuild(). Same egui snap-on-idle-frame behaviour proven for BL-020: with an off-grid mounting angle (e.g. 0.3 deg loaded from JSON) every frame the section is open snaps the angle to the grid and rebuilds the mechanism + recomputes the sweep."
   acceptance: "idle-frame regression test with the Mounting Angle section expanded (open the CollapsingHeader via egui memory in the test) asserts mounting_angle unchanged and no rebuild; write-back only on interaction (drop step_by or gate on drag/edit); cargo test --all green"
   priority: 3
-  status: open
-  notes: "Found while fixing BL-020; left out of that fix to keep it surgical and because the collapsed section needs extra test plumbing."
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: removed the Mounting Angle slider step_by(0.5) so an expanded idle control no longer snaps an off-grid angle or rebuilds; edits still rebuild; regression test bl021_expanded_mounting_slider_preserves_off_grid_state_on_idle_frames (reused from parked codex commit 0d78122). Found while fixing BL-020; left out of that fix to keep it surgical and because the collapsed section needs extra test plumbing."
 
 - id: BL-022
   title: "Compound actuator expansion: force anchored at cylinder base and stroke length from mixed body frames"

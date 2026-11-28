@@ -5,6 +5,9 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - Preserve idle mounting angle (BL-021)
+- Removed the Mounting Angle slider step_by(0.5) that snapped an off-grid angle and rebuilt every idle frame; regression test bl021_expanded_mounting_slider_preserves_off_grid_state_on_idle_frames.
+
 ## 2026-11-27 - Magcoupler UX overhaul, slice B, stage 2, part 2b-iii-a: the Plots tab (BL-104)
 - What changed: the five plots share one Plots tab (design C-9): the tab row is Size and torque, Geometry, Plots and Results table (the Clamp tab before the table while that section shows), one row from 1024 x 700 up where it wrapped at 1280 x 800. Under the Plots tab a picker names the five plots in the order their tabs had and marks the one shown; the tab opens on the plot shown last. Red in a plot marks only a sweep row that does not fit (decision C-5, the stage 1 review's C-3): the required torque and the sweeps' required floor are drawn in the strong text colour, the governing limit and the time to it in violet, the pull-out point in the strong text colour. Each axis draws a tick number at full strength or not at all (the stage 1 review's E-7). gui-smoke judges the tab row and the picker (`plots_picker`).
 - Tests: the tab row, the picker, its picks (each drawn in its click's frame) and the tab's memory, and the keyboard through the Plots tab and the picker (Tab changes no view, Enter on the tab, Space or Enter on a name) (panel); red only on a sweep row that does not fit in every plot on five designs, every tick number in the axes' colour at 25 window sizes in two visuals (plots); the app's text-cut and column-width tests reach each plot through the picker; the smoke prompt's words (app) and the verdict test's list (85 checks). Two tests take a new setting because the tab row is now one row: the Geometry list's focus test drags the Equation panel 40 points taller, and the underline test's wrapped row is drawn in an 860 x 800 window.

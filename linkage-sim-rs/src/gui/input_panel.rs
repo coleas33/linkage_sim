@@ -202,8 +202,7 @@ pub fn draw_input_panel(ui: &mut egui::Ui, state: &mut AppState) {
             let prev_deg = angle_deg;
             ui.add(
                 egui::Slider::new(&mut angle_deg, -180.0..=180.0)
-                    .suffix("\u{00B0}")
-                    .step_by(0.5),
+                    .suffix("\u{00B0}"),
             ).on_hover_text("Rotate the mechanism mounting orientation in degrees");
             if (angle_deg - prev_deg).abs() > 1e-6 {
                 state.mounting_angle = angle_deg.to_radians();
@@ -1148,6 +1147,70 @@ mod tests {
                     "angle={angle_deg} playing={playing}: idle frame moved driver angle by {drift_deg:.4} deg"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn bl021_expanded_mounting_slider_preserves_off_grid_state_on_idle_frames() {
+        use crate::gui::test_support::{drawn_texts, drew_text, screen_input, NATIVE_SCREEN};
+
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        state.solve_at_angle(45.0_f64.to_radians());
+        assert!(state.solver_status.converged);
+        state.mounting_angle = 0.3_f64.to_radians();
+        state.view.mounting_angle = state.mounting_angle;
+        state.rebuild();
+        state.compute_sweep();
+        assert!(state.solver_status.converged);
+        assert!(state.sweep_data.is_some());
+        assert!(!state.sweep_dirty);
+
+        // A rebuild always pauses playback. Keeping this sentinel true proves
+        // that painting the expanded control did not invoke that pipeline.
+        state.playing = true;
+        state.dirty = false;
+        let before_angle = state.mounting_angle;
+        let before_view_angle = state.view.mounting_angle;
+        let before_blueprint = serde_json::to_value(state.blueprint.as_ref().unwrap()).unwrap();
+        let before_q = state.q.clone();
+        let before_last_good = state.last_good_q.clone();
+        let before_zero = state.q_at_zero.clone();
+        let before_sweep = serde_json::to_value(state.sweep_data.as_ref().unwrap()).unwrap();
+        let before_undo = state.undo_history.undo_count();
+        let before_redo = state.undo_history.redo_count();
+        let ctx = egui::Context::default();
+
+        for frame in 0..4 {
+            let output = ctx.run(screen_input(Vec::new(), NATIVE_SCREEN), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    // CollapsingHeader::show introduces a vertical child UI
+                    // and hashes id_salt to an Id before making it persistent.
+                    let id = ui.id().with(egui::Id::new("child"))
+                        .with(egui::Id::new("mounting_angle_section"));
+                    let mut expanded = egui::collapsing_header::CollapsingState::load_with_default_open(
+                        ctx, id, false,
+                    );
+                    expanded.set_open(true);
+                    expanded.store(ctx);
+                    draw_input_panel(ui, &mut state);
+                });
+            });
+            assert!(drew_text(&output, "Mounting Angle"));
+            assert!(drew_text(&output, "0.3\u{00B0}") || drew_text(&output, "0.5\u{00B0}"),
+                "the expanded mounting body's numeric slider must be painted: {:?}", drawn_texts(&output));
+            assert_eq!(state.mounting_angle, before_angle, "idle frame {frame} snapped the off-grid angle");
+            assert_eq!(state.view.mounting_angle, before_view_angle);
+            assert_eq!(serde_json::to_value(state.blueprint.as_ref().unwrap()).unwrap(), before_blueprint);
+            assert_eq!(state.q, before_q);
+            assert_eq!(state.last_good_q, before_last_good);
+            assert_eq!(state.q_at_zero, before_zero);
+            assert!(!state.sweep_dirty, "idle frame {frame} invalidated the sweep");
+            assert_eq!(serde_json::to_value(state.sweep_data.as_ref().unwrap()).unwrap(), before_sweep);
+            assert_eq!(state.undo_history.undo_count(), before_undo);
+            assert_eq!(state.undo_history.redo_count(), before_redo);
+            assert!(!state.dirty);
+            assert!(state.playing, "idle frame {frame} rebuilt and paused playback");
         }
     }
 }
