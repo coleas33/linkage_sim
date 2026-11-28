@@ -515,7 +515,7 @@
   acceptance: "web build renders the intended theme (or the intended default is documented and gui-smoke prompt/theme docs updated to match); verified by gui-smoke screenshot"
   priority: 3
   status: fixed
-  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: apply_cad_theme now selects ThemePreference::Dark before the CAD visuals and spacing, so a light browser preference no longer renders the web build light; two regression tests in gui/theme.rs (light/dark/light system frames with both fallbacks, Nathan mode and restore); reused from Codex 261f6b4."
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: apply_cad_theme now selects ThemePreference::Dark before the CAD visuals and spacing, so a light browser preference no longer renders the web build light; two regression tests in gui/theme.rs (light/dark/light system frames with both fallbacks, Nathan mode and restore); reused from Codex 261f6b4. Verified 2026-11-28 in Chrome (Playwright) with prefers-color-scheme light: the web build draws dark (the R5 smoke run; screenshot .playwright-mcp/r5-linkage-light-preference.png, not committed)."
 
 - id: BL-014
   title: Per-frame console warning spam in web build (egui viewport Title command)
@@ -1077,3 +1077,21 @@
   priority: 4
   status: fixed
   notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: file_io.rs wraps a loaded angle outside -180..180 degrees into that range (270 becomes -90, the same mounting; in-range and non-finite values pass through untouched). Chosen over clamp_existing_to_range(false) because every reader of mounting_angle (rotation, gravity, export) uses it only through sin and cos, so the drawing is the same and the slider never holds an out-of-range value. Test bl114_file_mounting_angle_outside_slider_range_survives_idle_frames in gui/input_panel.rs failed (angle 4.71 became 3.14 on frame 0), then passed."
+- id: BL-117
+  title: "Reassigning a sample's driver to a joint whose stock builder sets theta_0 leaves the next edit unsolved (FourBar J4: any rebuild after the reassign fails)"
+  dimension: gui
+  risk: mechanical
+  evidence: "Re-review of the R5 fix wave on linkage/r5-mechanical (2026-11-28, finding R-1; pre-existing, also on main c569d03). gui/state/driver_ops.rs (about lines 56-60, the stock-sample path of reassign_driver) hard-codes driver_kind Revolute{angle 0, omega 2pi, theta_0 0}, but the stock builder can set another theta_0: for FourBar J4 the blueprint and the mechanism carry theta_0 = 7.804 rad. The reassign converges; the next rebuild() reads theta_0 7.804 from the blueprint and solves at t = (0 - 7.804)/2pi: converged=false, residual 0.052-0.058. Any geometry edit, and adding, moving or editing a weight (add_point_mass goes through mutate_and_rebuild), triggers it, with or without a weight. Also from the re-review: R-3, undo_ops.rs:81 restore_snapshot still calls compute_forces(self.driver_angle), passing the angle as the time (harmless for constant-speed and constant-velocity drivers, wrong for Expression or cosine-stroke drivers, whose velocity solve reads t); R-5, .claude/workflows/fix-campaign.js lines 74-75 test item.risk === 'physics' in two spreads in a row (merge them into one)."
+  acceptance: "Red test first: FourBar reassigned to J4, then add_mount_point or add_point_mass, still converges with the pose kept; the stock path takes omega and theta_0 from the built driver and sets driver_angle so that t stays 0; restore_snapshot passes the solve time to compute_forces; fix-campaign.js's reviewer choice is one spread; GATE PASS."
+  priority: 3
+  status: open
+  notes: "Filed 2026-11-28 by the controller from the R5 fix wave's re-review (R-1, R-3, R-5); not taken in R5 because it is pre-existing and R5's fixes do not make it worse."
+- id: BL-118
+  title: "The SixBarB1 and SixBarA1 sample builders are nondeterministic on a driver reassign to J7, and plain reassigns to many rocker joints do not converge"
+  dimension: gui
+  risk: mechanical
+  evidence: "Re-review of the R5 fix wave (2026-11-28, finding R-6; pre-existing). A reassign over all 30 samples and every grounded revolute joint (60 reassigns), with and without a weight: SixBarB1 J7 and SixBarA1 J7 converge 8 of 12 runs with 8 distinct poses, the same with and without a weight; build_sample_with_driver sometimes returns Err 'could not find converging initial guess'. Plain reassigns to rocker joints (J4 on CrankRocker, Hoeken and others) also fail to converge, with or without weights."
+  acceptance: "Red test first: each sample's build_sample_with_driver gives the same pose on repeated calls; a reassign to any grounded revolute joint either converges or is refused with a message (no silent unsolved state); GATE PASS."
+  priority: 4
+  status: open
+  notes: "Filed 2026-11-28 by the controller from the R5 fix wave's re-review (R-6)."
