@@ -5,6 +5,8 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - Delete with toolbar focus (BL-033)
+- handle_delete_shortcut gates on focused_widget_may_edit_text (TextEdit state plus response/touch guards) instead of wants_keyboard_input; five bl033_* tests in gui/mod.rs (reused from Codex ed88854).
 ## 2026-11-28 - Keep weights on driver reassign (BL-030)
 - reassign_driver skips the stock sample rebuild when the blueprint holds any point mass and takes the blueprint path; test reassign_driver_on_a_sample_keeps_user_weights; 02-system known limitation narrowed.
 ## 2026-11-28 - Preserve idle mounting angle (BL-021)

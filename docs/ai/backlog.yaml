@@ -704,8 +704,8 @@
   evidence: "Payload Track 2 final review 2026-09-29. gui/mod.rs:1292-1296 handle_delete_shortcut returns early on ctx.wants_keyboard_input(); in egui 0.32.3 that is true for any focused widget. Clicking the canvas surrenders focus, so the normal path works; only a Tab-focused button swallows Delete until Esc."
   acceptance: "test: headless egui frame with a weight selected and a Button holding focus; Delete removes the weight, while a focused TextEdit still keeps Delete for itself (gate on text-edit focus, not any focus)"
   priority: 3
-  status: open
-  notes: "Deferred Task 6 minor."
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: handle_delete_shortcut now gates on focused_widget_may_edit_text (TextEdit state plus touch/missing-response guards) rather than wants_keyboard_input, so a Tab-focused button no longer swallows Delete/Backspace; five bl033_* tests (reused from Codex ed88854). Deferred Task 6 minor."
 
 - id: BL-034
   title: "Weight mass fields cap typed values at 1000 kg"

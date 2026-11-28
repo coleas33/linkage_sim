@@ -1305,12 +1305,26 @@ fn draw_place_mass_field(ui: &mut egui::Ui, state: &mut AppState) {
         .on_hover_text("Mass of the next weight you place. Starts at the last mass used.");
 }
 
+/// Protect a focused editor without treating every Tab-focused button as text input.
+/// TextEdit state alone is historical: an ordinary button can reuse an old editor's ID.
+/// A missing response or touch device keeps the conservative text guard; the latter
+/// also covers a touch TextEdit's click-only response before its first Tab focus.
+fn focused_widget_may_edit_text(ctx: &egui::Context) -> bool {
+    let Some(id) = ctx.memory(|memory| memory.focused()) else {
+        return false;
+    };
+    if egui::TextEdit::load_state(ctx, id).is_none() {
+        return false;
+    }
+    ctx.input(|input| input.has_touch_screen())
+        || ctx.read_response(id).is_none_or(|response| response.sense.senses_drag())
+}
+
 /// Delete / Backspace removes the selection: every multi-selected item, else
 /// the single selected body, joint or weight (each removal is one undo step).
-/// Ignored while a widget has keyboard focus, so Backspace while typing in a
-/// text or number field edits the text instead of deleting the selection.
+/// Text and numeric editors retain the key; an ordinary focused button does not.
 fn handle_delete_shortcut(ctx: &egui::Context, state: &mut AppState) {
-    if ctx.wants_keyboard_input()
+    if focused_widget_may_edit_text(ctx)
         || !ctx.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace))
     {
         return;
@@ -1647,6 +1661,205 @@ mod tests {
             keys_frame(&ctx, &mut state, egui::Modifiers::NONE, Vec::new());
         }
         (ctx, state)
+    }
+
+    // ── BL-033: Delete follows text editing, rather than every Tab focus ──
+
+    /// Keep the app's ordering: shortcut first, then the toolbar widgets.
+    /// Focus is acquired through real Tab events, never request_focus.
+    fn bl033_toolbar_frame(
+        ctx: &egui::Context,
+        state: &mut AppState,
+        modifiers: egui::Modifiers,
+        events: Vec<egui::Event>,
+        mut draw: impl FnMut(&mut egui::Ui, &mut AppState) -> egui::Id,
+    ) -> (egui::FullOutput, egui::Id) {
+        let mut id = egui::Id::NULL;
+        let output = ctx.run(egui::RawInput { modifiers, ..screen_input(events, NATIVE_SCREEN) }, |ctx| {
+            handle_delete_shortcut(ctx, state);
+            egui::TopBottomPanel::top("bl033_toolbar").show(ctx, |ui| {
+                id = ui.horizontal(|ui| draw(ui, state)).inner;
+            });
+        });
+        (output, id)
+    }
+
+    fn bl033_selected_weight() -> AppState {
+        let mut state = fourbar_with_weights();
+        state.selected = Some(weight("W1"));
+        state.compute_sweep();
+        assert!(!state.sweep_dirty, "the selected-weight fixture starts with a clean cache");
+        state
+    }
+
+    fn bl033_assert_tab_focus(ctx: &egui::Context, id: egui::Id) {
+        assert_eq!(ctx.memory(|memory| memory.focused()), Some(id), "real Tab focused the widget");
+        assert!(ctx.wants_keyboard_input(), "the old any-widget focus gate would suppress Delete");
+    }
+
+    fn bl033_assert_weight_survives(state: &AppState, depth: usize) {
+        assert!(state.find_point_mass("coupler", "W1").is_some());
+        assert!(state.find_point_mass("coupler", "W2").is_some());
+        assert_eq!(state.selected, Some(weight("W1")));
+        assert_eq!(state.undo_history.undo_count(), depth, "typing adds no model edit");
+        assert!(!state.sweep_dirty, "typing in a toolbar setting leaves physics cached");
+    }
+
+    fn bl033_assert_deleted_and_undoable(state: &mut AppState, depth: usize) {
+        assert!(state.find_point_mass("coupler", "W1").is_none(), "the selected weight was removed");
+        assert!(state.find_point_mass("coupler", "W2").is_some(), "the other weight remains");
+        assert_eq!(state.selected, None);
+        assert_eq!(state.undo_history.undo_count(), depth + 1, "one real removal is one undo step");
+        assert!(state.sweep_dirty, "removal invalidates the cached sweep");
+        state.undo();
+        assert!(state.find_point_mass("coupler", "W1").is_some(), "undo restores W1");
+        assert!(state.find_point_mass("coupler", "W2").is_some(), "undo keeps W2");
+        assert_eq!(state.undo_history.undo_count(), depth);
+    }
+
+    #[test]
+    fn bl033_tab_focused_toolbar_button_keeps_delete_and_backspace_for_the_selection() {
+        for key in [egui::Key::Delete, egui::Key::Backspace] {
+            let ctx = egui::Context::default();
+            let mut state = bl033_selected_weight();
+            let depth = state.undo_history.undo_count();
+            let draw_button = |ui: &mut egui::Ui, _state: &mut AppState| ui.button("Toolbar tool").id;
+            bl033_toolbar_frame(&ctx, &mut state, egui::Modifiers::NONE, Vec::new(), draw_button);
+            let (_, id) = bl033_toolbar_frame(&ctx, &mut state, egui::Modifiers::NONE,
+                key_tap(egui::Key::Tab, egui::Modifiers::NONE), draw_button);
+            bl033_assert_tab_focus(&ctx, id);
+            bl033_toolbar_frame(&ctx, &mut state, egui::Modifiers::NONE,
+                key_tap(key, egui::Modifiers::NONE), draw_button);
+            bl033_assert_deleted_and_undoable(&mut state, depth);
+        }
+    }
+
+    #[test]
+    fn bl033_tab_focused_text_edit_edits_text_with_delete_and_backspace() {
+        for key in [egui::Key::Delete, egui::Key::Backspace] {
+            let ctx = egui::Context::default();
+            let mut state = bl033_selected_weight();
+            let depth = state.undo_history.undo_count();
+            let mut text = String::from("123");
+            let text_id = egui::Id::new("bl033_text");
+            bl033_toolbar_frame(&ctx, &mut state, egui::Modifiers::NONE, Vec::new(),
+                |ui, _| ui.add(egui::TextEdit::singleline(&mut text).id(text_id)).id);
+            let (_, id) = bl033_toolbar_frame(&ctx, &mut state, egui::Modifiers::NONE,
+                key_tap(egui::Key::Tab, egui::Modifiers::NONE),
+                |ui, _| ui.add(egui::TextEdit::singleline(&mut text).id(text_id)).id);
+            bl033_assert_tab_focus(&ctx, id);
+            bl033_toolbar_frame(&ctx, &mut state, egui::Modifiers::COMMAND,
+                key_tap(egui::Key::A, egui::Modifiers::COMMAND),
+                |ui, _| ui.add(egui::TextEdit::singleline(&mut text).id(text_id)).id);
+            bl033_toolbar_frame(&ctx, &mut state, egui::Modifiers::NONE,
+                key_tap(key, egui::Modifiers::NONE),
+                |ui, _| ui.add(egui::TextEdit::singleline(&mut text).id(text_id)).id);
+            assert_eq!(text, "", "{key:?} belongs to the text field");
+            bl033_assert_weight_survives(&state, depth);
+        }
+    }
+
+    #[test]
+    fn bl033_tab_focused_mass_field_keeps_delete_and_backspace_while_typing() {
+        for key in [egui::Key::Delete, egui::Key::Backspace] {
+            let ctx = egui::Context::default();
+            let mut state = bl033_selected_weight();
+            state.active_tool = EditorTool::PlaceMass;
+            state.last_point_mass_kg = 123.0;
+            let depth = state.undo_history.undo_count();
+            let draw_mass = |ui: &mut egui::Ui, state: &mut AppState| {
+                let id = ui.next_auto_id();
+                draw_place_mass_field(ui, state);
+                id
+            };
+            bl033_toolbar_frame(&ctx, &mut state, egui::Modifiers::NONE, Vec::new(), draw_mass);
+            let (_, id) = bl033_toolbar_frame(&ctx, &mut state, egui::Modifiers::NONE,
+                key_tap(egui::Key::Tab, egui::Modifiers::NONE), draw_mass);
+            bl033_assert_tab_focus(&ctx, id);
+            // First key after Tab: the numeric editor's selected text is removed.
+            bl033_toolbar_frame(&ctx, &mut state, egui::Modifiers::NONE,
+                key_tap(key, egui::Modifiers::NONE), draw_mass);
+            assert_eq!(ctx.data(|data| data.get_temp::<String>(id)).as_deref(), Some(""),
+                "{key:?} edits the actual DragValue text buffer");
+            bl033_assert_weight_survives(&state, depth);
+            bl033_toolbar_frame(&ctx, &mut state, egui::Modifiers::NONE, vec![typed("45")], draw_mass);
+            bl033_toolbar_frame(&ctx, &mut state, egui::Modifiers::NONE,
+                key_tap(egui::Key::Enter, egui::Modifiers::NONE), draw_mass);
+            assert_eq!(state.last_point_mass_kg, 45.0, "numeric typing still commits normally");
+            bl033_assert_weight_survives(&state, depth);
+        }
+    }
+
+    #[test]
+    fn bl033_reused_text_edit_id_does_not_block_an_ordinary_tab_focused_button() {
+        for key in [egui::Key::Delete, egui::Key::Backspace] {
+            let ctx = egui::Context::default();
+            let mut state = bl033_selected_weight();
+            let depth = state.undo_history.undo_count();
+            let draw_button = |ui: &mut egui::Ui, _state: &mut AppState| ui.button("Toolbar tool").id;
+            let (_, id) = bl033_toolbar_frame(&ctx, &mut state, egui::Modifiers::NONE, Vec::new(), draw_button);
+            let mut text = String::from("old editor");
+            bl033_toolbar_frame(&ctx, &mut state, egui::Modifiers::NONE,
+                key_tap(egui::Key::Tab, egui::Modifiers::NONE),
+                |ui, _| ui.add(egui::TextEdit::singleline(&mut text).id(id)).id);
+            bl033_assert_tab_focus(&ctx, id);
+            assert!(egui::TextEdit::load_state(&ctx, id).is_some());
+            bl033_toolbar_frame(&ctx, &mut state, egui::Modifiers::NONE,
+                key_tap(egui::Key::Escape, egui::Modifiers::NONE),
+                |ui, _| ui.add(egui::TextEdit::singleline(&mut text).id(id)).id);
+            // Paint the replacement before its actual Tab focus, as with a UI section change.
+            let (_, replacement_id) = bl033_toolbar_frame(&ctx, &mut state, egui::Modifiers::NONE,
+                Vec::new(), draw_button);
+            assert_eq!(replacement_id, id);
+            let (_, focused_id) = bl033_toolbar_frame(&ctx, &mut state, egui::Modifiers::NONE,
+                key_tap(egui::Key::Tab, egui::Modifiers::NONE), draw_button);
+            bl033_assert_tab_focus(&ctx, focused_id);
+            assert!(egui::TextEdit::load_state(&ctx, id).is_some(), "text state is historical, not a widget type");
+            assert!(!ctx.read_response(id).expect("the actual button response").sense.senses_drag());
+            bl033_toolbar_frame(&ctx, &mut state, egui::Modifiers::NONE,
+                key_tap(key, egui::Modifiers::NONE), draw_button);
+            bl033_assert_deleted_and_undoable(&mut state, depth);
+        }
+    }
+
+    #[test]
+    fn bl033_first_tab_focused_touch_text_edit_retains_delete_conservatively() {
+        for key in [egui::Key::Delete, egui::Key::Backspace] {
+            let ctx = egui::Context::default();
+            let mut state = bl033_selected_weight();
+            let depth = state.undo_history.undo_count();
+            let mut text = String::from("123");
+            let id = egui::Id::new("bl033_touch_text");
+            let touch = |phase| egui::Event::Touch {
+                device_id: egui::TouchDeviceId(1), id: egui::TouchId(1), phase,
+                pos: egui::pos2(1000.0, 740.0), force: None,
+            };
+            bl033_toolbar_frame(&ctx, &mut state, egui::Modifiers::NONE,
+                vec![touch(egui::TouchPhase::Start)],
+                |ui, _| ui.add(egui::TextEdit::singleline(&mut text).id(id)).id);
+            let mut events = vec![touch(egui::TouchPhase::End)];
+            events.extend(key_tap(egui::Key::Tab, egui::Modifiers::NONE));
+            bl033_toolbar_frame(&ctx, &mut state, egui::Modifiers::NONE, events,
+                |ui, _| ui.add(egui::TextEdit::singleline(&mut text).id(id)).id);
+            bl033_assert_tab_focus(&ctx, id);
+            assert!(ctx.input(|input| input.has_touch_screen()));
+            assert!(!ctx.read_response(id).expect("the first touch focus response").sense.senses_drag(),
+                "the pinned TextEdit used click-only sense before receiving Tab focus");
+            // Backspace immediately after Tab must edit the text despite the click-only previous response.
+            bl033_toolbar_frame(&ctx, &mut state, egui::Modifiers::NONE,
+                key_tap(egui::Key::Backspace, egui::Modifiers::NONE),
+                |ui, _| ui.add(egui::TextEdit::singleline(&mut text).id(id)).id);
+            assert_eq!(text, "12");
+            bl033_assert_weight_survives(&state, depth);
+            bl033_toolbar_frame(&ctx, &mut state, egui::Modifiers::COMMAND,
+                key_tap(egui::Key::A, egui::Modifiers::COMMAND),
+                |ui, _| ui.add(egui::TextEdit::singleline(&mut text).id(id)).id);
+            bl033_toolbar_frame(&ctx, &mut state, egui::Modifiers::NONE,
+                key_tap(key, egui::Modifiers::NONE),
+                |ui, _| ui.add(egui::TextEdit::singleline(&mut text).id(id)).id);
+            assert_eq!(text, "");
+            bl033_assert_weight_survives(&state, depth);
+        }
     }
 
     #[test]
