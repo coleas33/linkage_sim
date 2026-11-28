@@ -1221,3 +1221,147 @@
   priority: 5
   status: open
   notes: "Filed 2026-11-28 by the fix wave of the R3 browser review (F-6), not taken there: outside the batch's items."
+- id: BL-150
+  title: "Linkage (web): Ctrl+Z does nothing, though the Edit menu offers 'Undo Ctrl+Z' and Edit > Undo works"
+  dimension: gui
+  risk: mechanical
+  evidence: "The R6 site review of the live site (2026-11-28, finding L-2, docs/analyses/2026-11-28-site-review-r6.md): Ctrl+Z does nothing, although the Edit menu shows 'Undo Ctrl+Z' and Edit > Undo and the Undo History buttons both work. A listener on the page showed the keydown arriving at the canvas with ctrlKey=true, and the state did not change. In a clean state and in the FAIL state of L-1 alike, only the menu recovers. Ctrl+Z works in the calculator. Where: Linkage simulator: keyboard undo. Repro: Load the 4-Bar Crank-Rocker sample, drag O2 down so it reads Y -2 mm, click the empty canvas and press Ctrl+Z: O2 stays at Y -2 mm. Edit > Undo returns it to Y 0 mm."
+  acceptance: "A red test first: a Ctrl+Z key event (with the modifiers the web build delivers) undoes the last edit, as Edit > Undo does, on native and in the web build's input path; Ctrl+Shift+Z or Ctrl+Y redoes if the menu offers it; GATE PASS."
+  priority: 3
+  status: open
+  notes: "Filed 2026-11-28 by the controller from the R6 site review (L-2)."
+- id: BL-151
+  title: "Linkage: Mechanism Health reads 'Toggle points: None' beside 'Transmission Min: 0 deg (POOR)' on the Triple-Rocker (and FourBar driven at the rocker)"
+  dimension: gui
+  risk: physics
+  evidence: "The R6 site review of the live site (2026-11-28, finding L-3, docs/analyses/2026-11-28-site-review-r6.md): 'Toggle points: None' shows in green next to 'Transmission Min: 0 deg (POOR)' in red. A triple rocker cannot turn fully and must pass toggle positions, and the crank trail is drawn as two arcs, so 'None' is wrong. The same contradiction appears on the FourBar once the rocker is the driver. Where: Linkage simulator: Properties > Mechanism Health. Repro: Samples > Triple-Rocker (4-2-5-2): Mechanism Health reads 'Grashof: Non-Grashof', 'Toggle points: None', 'Transmission Min: 0 deg (POOR)'. See r6-site-review/linkage-1920x1080-triple-rocker.png."
+  acceptance: "A red test first: on the Triple-Rocker sample (and FourBar with J4 as the driver) the health readout's toggle points agree with the sweep (a non-Grashof rocker passes toggle positions; a transmission minimum of 0 deg is a toggle); the readout and its colours never contradict each other; GATE PASS."
+  priority: 3
+  status: open
+  notes: "Filed 2026-11-28 by the controller from the R6 site review (L-3)."
+- id: BL-152
+  title: "Linkage (web): symbols draw as empty missing-glyph boxes in the status bar, Mechanism Health, Link Editor, Ground Pivots and Joint Reactions"
+  dimension: gui
+  risk: mechanical
+  evidence: "The R6 site review of the live site (2026-11-28, finding L-4, docs/analyses/2026-11-28-site-review-r6.md): Symbols draw as empty boxes (a missing-glyph box) at every size: status bar '4-Bar Crank-Rocker (box) (box) (box) theta 0.0 deg tau 0.103 N.m (box) 3B 4J DOF=0', 'Transmission (box): Min 44 deg', 'Ground Link: O2 (box) O4', 'Pos: (10.000, 0.000) mm (box) -48.5 deg', 'B(box)C' and 'B(box)C angle' beside the link-length sliders, and '(box) Reactions verified'. To an engineer the page looks broken, and the length slider labels cannot be read. Where: Linkage simulator: status bar, Mechanism Health, Link Editor, Ground Pivots, Joint Reactions. Repro: Load any sample and look at the bottom status bar and the Link Editor rows beside the 40 mm and 0 deg sliders."
+  acceptance: "A red test first: every string the linkage app draws uses only glyphs its fonts carry (a test walks the app's strings, or the glyphs used, against the font's coverage); the status bar, the link editor's B-C labels, the ground pivot line and the reactions line read whole in the web build; GATE PASS; verified in the browser."
+  priority: 2
+  status: open
+  notes: "Filed 2026-11-28 by the controller from the R6 site review (L-4)."
+- id: BL-153
+  title: "Linkage: the bottom plot panel opens as a thin strip with its legend cut, Coupler Trace's axes are about +/-2000 mm for a 40 mm mechanism, the tab labels wrap a letter per line at 1024 x 700, and a dragged-up divider leaves an empty band above the plot"
+  dimension: gui
+  risk: mechanical
+  evidence: "The R6 site review of the live site (2026-11-28, finding L-6, docs/analyses/2026-11-28-site-review-r6.md): The plot panel opens as a thin strip, about 60 px at 1920 x 1080. Its legend is cut off ('crank.A' clipped), and Coupler Trace opens with axes of about +/-2000 mm for a 40 mm mechanism, so the trace is a dot. The tab row wraps 'Actuat or Power' at 1280 x 800, and at 1024 x 700 'Actuator Force' wraps one letter per line. When the divider is dragged up, the plot stays pinned to the bottom with a 200 px empty band above it. Where: Linkage simulator: bottom plot panel. Repro: Load the 4-Bar Crank-Rocker sample at 1280 x 800 and 1024 x 700, then drag the plot divider up. See r6-site-review/linkage-1280x800-plotpanel-resized.png and linkage-1024x700-fourbar.png."
+  acceptance: "Red tests first: the plot panel opens tall enough to show its plot and legend; Coupler Trace fits the trace; the tab row does not wrap a label inside a word at 1024 x 700 and 1280 x 800; the plot fills the panel when the divider moves; GATE PASS."
+  priority: 4
+  status: open
+  notes: "Filed 2026-11-28 by the controller from the R6 site review (L-6)."
+- id: BL-154
+  title: "Linkage: a mounting angle (e.g. 100 deg) rotates the mechanism out of view; the view does not refit"
+  dimension: gui
+  risk: mechanical
+  evidence: "The R6 site review of the live site (2026-11-28, finding L-7, docs/analyses/2026-11-28-site-review-r6.md): Setting the mounting angle to 100 deg rotates the grid and the mechanism, but the view does not refit: the coupler and rocker leave the visible canvas and only the crank circle stays in view. Typing 0 brings it back. Where: Linkage simulator: Mounting Angle. Repro: 4-Bar Crank-Rocker, open Mounting Angle and drag the slider to 100 deg. See r6-site-review/linkage-1920x1080-mounting-angle-changed.png."
+  acceptance: "A red test first: after a mounting angle change the mechanism's drawn extent stays inside the canvas (the view refits or recentres); GATE PASS."
+  priority: 4
+  status: open
+  notes: "Filed 2026-11-28 by the controller from the R6 site review (L-7)."
+- id: BL-155
+  title: "Linkage: after leaving a failed reassign the Driver Torque plot's x axis runs about 180 to 540 deg with two curve fragments, hard to read"
+  dimension: gui
+  risk: mechanical
+  evidence: "The R6 site review of the live site (2026-11-28, finding L-5, docs/analyses/2026-11-28-site-review-r6.md): After Edit > Undo out of the L-1 FAIL state, the Driver Torque plot x axis runs from about 180 to 540 deg ('Driver Angle (deg)'). It shows only two curve fragments, near 185 deg and past 505 deg, so the rocker's real range is hard to read. Where: Linkage simulator: Driver-change and FAIL states, the Driver Torque plot. Repro: Follow L-1, then Edit > Undo once, and open the Driver Torque plot tab."
+  acceptance: "A red test first: the driver plot's x axis covers the driver's reachable range in [0, 360) (or its stroke) after a reassign; GATE PASS."
+  priority: 5
+  status: open
+  notes: "Filed 2026-11-28 by the controller from the R6 site review (L-5)."
+- id: BL-156
+  title: "Linkage: '-0.00 kg' for an empty mechanism, negative zero in reactions ('(-0, -15)'), solver jargon 'res=0.0e0', and overlapping dimension labels on the 6-Bar Watt I sample"
+  dimension: gui
+  risk: mechanical
+  evidence: "The R6 site review of the live site (2026-11-28, finding N-2, docs/analyses/2026-11-28-site-review-r6.md): An empty mechanism shows '-0.00 kg'. Reactions show negative zero ('J1: 15 N (-0, -15)'). 'Constraints: OK (res=0.0e0)' is solver jargon. Dimension labels overlap on the 6-Bar Watt I sample ('2500.0 mm 56.1 deg' over 'rocker4 2500.0 mm 97.2 deg'). Where: Linkage simulator: number formatting and labels. Repro: New Empty Mechanism; FourBar with O2 at Y -2 mm; Samples > 6-Bar B1 (Watt I)."
+  acceptance: "Red tests first: no negative zero in any readout; the constraint line reads in plain words; GATE PASS."
+  priority: 5
+  status: open
+  notes: "Filed 2026-11-28 by the controller from the R6 site review (N-2)."
+- id: BL-157
+  title: "Magcoupler: the orange 'Design check:' line (e.g. cap thread 41.00 mm below the steel cup body OD 41.54 mm) is outside the nine checks, the headline count ignores it, and it does not say what to change"
+  dimension: gui
+  risk: mechanical
+  evidence: "The R6 site review of the live site (2026-11-28, finding C-1, docs/analyses/2026-11-28-site-review-r6.md): 'Design check: Cap thread nominal diameter 41.00 mm is below Steel cup body OD 41.54 mm' reports a real geometric conflict (the thread is smaller than the body it must go over). It is not one of the nine checks, the headline count ('fails 4 of 9', 'fails 3 of 9') ignores it, and nothing says whether it is a failure or what to change. It appeared on the gui-smoke share link, after dragging the face gap to 4 mm, and on the 2 mm design file. 'Steel cup body OD' is also capitalised mid-sentence. Where: Calculator: orange 'Design check:' line under the drawing and under the Geometry list. Repro: Open the share link from .claude/workflows/gui-smoke.js (MAGCOUPLING_SMOKE_PAYLOAD) at 1280 x 800 and read the line below the drawing. See r6-site-review/magcoupler-1280x800-failing-design.png."
+  acceptance: "Decide (an owner question with the conservative answer recorded) whether such a line counts in the checks; meanwhile the line says plainly what is wrong and what to change, in the page's words (no mid-sentence capitals); a red test on its text; GATE PASS."
+  priority: 3
+  status: open
+  notes: "Filed 2026-11-28 by the controller from the R6 site review (C-1)."
+- id: BL-158
+  title: "Magcoupler: the Results table's status texts are cut with an ellipsis at 1024 and 1280 widths ('Estimate covers ...', 'Too thin: raise M...')"
+  dimension: gui
+  risk: mechanical
+  evidence: "The R6 site review of the live site (2026-11-28, finding C-2, docs/analyses/2026-11-28-site-review-r6.md): Status texts are cut with an ellipsis at 1024 and 1280 widths: 'Estimate covers ...', 'Too thin: raise M...', 'OK on temperatu...', 'Both shaft joints ...', 'Above the gearb...', 'Exceeds the spa...'. The reason for a failing check has to be read elsewhere. Where: Calculator: Results table, status column. Repro: Open the failing share link and the Results table tab, then look at the Headline group."
+  acceptance: "A red test first: a status cut by the column shows its whole text on hover (or wraps), at 1024 x 700 and 1280 x 800; GATE PASS."
+  priority: 4
+  status: open
+  notes: "Filed 2026-11-28 by the controller from the R6 site review (C-2)."
+- id: BL-159
+  title: "Magcoupler: the Plots tab's summary line above each plot is drawn in a font of about 8 px, far smaller than the rest of the page"
+  dimension: gui
+  risk: mechanical
+  evidence: "The R6 site review of the live site (2026-11-28, finding C-3, docs/analyses/2026-11-28-site-review-r6.md): The summary line ('Pull-out torque (nominal): 2.941 N.m  Hot-low torque: 2.500 N.m  Cold-high torque ...  Governing temperature limit: 93.06 deg C', 'Thermal time constant: 291.9 s ...') uses a font of about 8 px, much smaller than the rest of the UI. It is hard to read at every size. Where: Calculator: Plots tab, summary line above each plot. Repro: Open Plots and select any plot."
+  acceptance: "A red test first: the summary line is drawn in the body size (or the small size the page uses elsewhere, at least the plot labels' size); GATE PASS."
+  priority: 3
+  status: open
+  notes: "Filed 2026-11-28 by the controller from the R6 site review (C-3)."
+- id: BL-160
+  title: "Magcoupler: a plot's hover readout ('x = 96.1 / y = 1.854') has no units and at 1024 x 700 spills past the plot over the Explain panel; the Torque vs temperature legend covers about a third of the plot at 1024 x 700 (C-4)"
+  dimension: gui
+  risk: mechanical
+  evidence: "The R6 site review of the live site (2026-11-28, finding C-5, docs/analyses/2026-11-28-site-review-r6.md): The hover readout 'x = 96.1 / y = 1.854' has no units, and at 1024 x 700 it spills past the plot edge over the Explain panel text. Where: Calculator: plot hover readout. Repro: At 1024 x 700, Plots > Torque vs temperature, hover near the right edge of the plot. See r6-site-review/magcoupler-1024x700-plots-tab-panel-closed.png."
+  acceptance: "Red tests first: the hover readout names each axis's unit (as its axis label does) and stays inside the plot; at 1024 x 700 the legend covers no more of the plot than it must (smaller rows, or the corner its data leave free); GATE PASS."
+  priority: 3
+  status: open
+  notes: "Filed 2026-11-28 by the controller from the R6 site review (C-5)."
+- id: BL-161
+  title: "Magcoupler: the Gap sweep's axis says 'Corner gap [mm]' where the only control is 'Magnet face gap'; the legend's 'Nominal: test needed' is unclear; the Pole sweep's 'This design' marker sits off its curve (the caption explains why)"
+  dimension: gui
+  risk: mechanical
+  evidence: "The R6 site review of the live site (2026-11-28, finding C-6, docs/analyses/2026-11-28-site-review-r6.md): The Gap sweep x axis is 'Corner gap [mm]', while the only gap control is 'Magnet face gap'. The legend category 'Nominal: test needed' is unclear. On the Pole sweep the 'This design' marker (about 2.94 N.m at 10 magnets) sits off the sweep curve (about 2.86 N.m at 10). The caption ('each row at the smallest ring radius ...') explains this, but it will still trip a reader. Where: Calculator: Gap sweep and Pole sweep plots. Repro: On the failing share link, Plots > Gap sweep, then Pole sweep."
+  acceptance: "Each string reads in the page's own words, true to what is plotted (a G-3 text review); GATE PASS."
+  priority: 4
+  status: open
+  notes: "Filed 2026-11-28 by the controller from the R6 site review (C-6)."
+- id: BL-162
+  title: "Magcoupler: an input's 'What a change does' list in the Explain panel is one dense run-on paragraph with ASCII arrows"
+  dimension: gui
+  risk: mechanical
+  evidence: "The R6 site review of the live site (2026-11-28, finding C-7, docs/analyses/2026-11-28-site-review-r6.md): The list is one dense run-on paragraph with ASCII arrows, for example 'Magnet face gap: -0.1 mm -> +0.02 N.m (+2.6 %), Outside diameter -0.2 mm, Space claim: Rotating diameter -0.22 mm; +0.1 mm -> -0.02 N.m (-2.5 %), ...'. It is hard to scan. Where: Calculator: Explain panel for a size input, 'What a change does'. Repro: Drag the Magnet face gap slider and read the Explain panel."
+  acceptance: "A red test first: each step of the list is its own line, in the page's words and glyphs; GATE PASS; a G-3 text review."
+  priority: 4
+  status: open
+  notes: "Filed 2026-11-28 by the controller from the R6 site review (C-7)."
+- id: BL-163
+  title: "Magcoupler: 'Minimum OD' looks like an input slider but moves when another input changes (the face gap from 1.80 to 2.90 mm moved it from 42.8 to 44.0 mm)"
+  dimension: gui
+  risk: mechanical
+  evidence: "The R6 site review of the live site (2026-11-28, finding C-8, docs/analyses/2026-11-28-site-review-r6.md): 'Minimum OD' looks like an input slider but moves when another input changes: dragging the face gap from 1.80 to 2.90 mm moved both Minimum OD and Outside diameter from 42.8 to 44.0 mm. It is not clear whether it is an input, a result, or what sets it. Where: Calculator: left column 'Minimum OD'. Repro: Clean address, drag Magnet face gap right and watch Minimum OD."
+  acceptance: "Decide (owner question, conservative answer recorded) how a control that follows other inputs shows that; meanwhile its hover and Explain entry say what sets it; GATE PASS."
+  priority: 4
+  status: open
+  notes: "Filed 2026-11-28 by the controller from the R6 site review (C-8)."
+- id: BL-164
+  title: "Magcoupler: a slider that takes the keyboard's focus shows only a slightly larger knob, where the top bar's buttons show a clear outline"
+  dimension: gui
+  risk: mechanical
+  evidence: "The R6 site review of the live site (2026-11-28, finding C-9, docs/analyses/2026-11-28-site-review-r6.md): When Tab reaches a slider, the only sign is a slightly larger knob. Top-bar buttons get a clear outline. Keyboard users can lose their place in the left column. Where: Calculator: slider keyboard focus. Repro: Click the Size and torque tab, then press Tab 6 to 12 times."
+  acceptance: "A red test first: a focused slider shows a mark at 3:1 or more against the panel, as a focused button does; GATE PASS."
+  priority: 4
+  status: open
+  notes: "Filed 2026-11-28 by the controller from the R6 site review (C-9)."
+- id: BL-165
+  title: "Magcoupler: wording and precision nits: 'Fixed 3D fields: starting or example design' is cryptic; clearances show 7 significant figures ('-0.003174 mm'); Auto shows 'margin +0.00 N.m (+0.0 %)'; the T_hold,hub equation has an 'undefined' branch; the Load design overlay is a plain white dialog on the dark page"
+  dimension: gui
+  risk: mechanical
+  evidence: "The R6 site review of the live site (2026-11-28, finding N-1, docs/analyses/2026-11-28-site-review-r6.md): 'Fixed 3D fields: starting or example design' under the checks is cryptic to a new user. Clearances show 7 significant figures ('-0.003174 mm'). Auto shows 'margin +0.00 N.m (+0.0 %)'. The T_hold,hub equation has an 'undefined' branch. The Load design overlay is a plain white browser dialog on the dark app. Where: Calculator wording and precision. Repro: Look at the first view, the failing design's Geometry tab and Start here step 14."
+  acceptance: "Each in the page's own words and precision (a G-3 text review); GATE PASS."
+  priority: 5
+  status: open
+  notes: "Filed 2026-11-28 by the controller from the R6 site review (N-1)."
