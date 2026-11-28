@@ -5,6 +5,9 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - Keep weights on driver reassign (BL-030)
+- reassign_driver rebuilds a sample from the stock builder and carries each user weight over by body id into the new blueprint and live body (a weight on a body the stock sample lacks is dropped with a status message); replaces 8d01d32's blueprint path, which could not assemble (review F-1). Tests check convergence and the weightless pose (FourBar J4, WattII J2) plus the drop case; 02-system known limitation updated.
+
 ## 2026-11-28 - WASM guide describes the browser features it ships (BL-004)
 - docs/guides/WASM_DEPLOYMENT.md: Known Limitations (no dialogs/export/autosave/recents) replaced by Browser Behavior; build and cache statements already matched build_web.sh and vercel.json.
 
@@ -30,8 +33,6 @@ Reverse chronological (newest at top).
 - WEIGHT_MASS_RANGE_KG is 0.001..=100000 (was 1000) for the weight editor and + Mass field; test typed_values_are_clamped_to_the_weight_mass_range now types 5000 and 1e6.
 ## 2026-11-28 - Delete with toolbar focus (BL-033)
 - handle_delete_shortcut gates on focused_widget_may_edit_text (TextEdit state plus response/touch guards) instead of wants_keyboard_input; five bl033_* tests in gui/mod.rs (reused from Codex ed88854).
-## 2026-11-28 - Keep weights on driver reassign (BL-030)
-- reassign_driver skips the stock sample rebuild when the blueprint holds any point mass and takes the blueprint path; test reassign_driver_on_a_sample_keeps_user_weights; 02-system known limitation narrowed.
 ## 2026-11-28 - Preserve idle mounting angle (BL-021)
 - Removed the Mounting Angle slider step_by(0.5) that snapped an off-grid angle and rebuilt every idle frame; regression test bl021_expanded_mounting_slider_preserves_off_grid_state_on_idle_frames.
 ## 2026-11-28 - Preserve sweep plot X pan/zoom (BL-019)

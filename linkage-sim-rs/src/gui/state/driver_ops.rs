@@ -21,14 +21,38 @@ impl AppState {
     /// mechanisms (via blueprint driver mutation + rebuild).
     pub fn reassign_driver(&mut self, joint_id: &str) {
         // Try sample-based reassignment first (preserves sample-specific builder logic).
-        // The stock rebuild would discard user weights, so a sample carrying any
-        // takes the blueprint path below (BL-030).
-        let has_user_weights = self.blueprint.as_ref()
-            .is_some_and(|bp| bp.bodies.values().any(|b| !b.point_masses.is_empty()));
-        if let Some(sample) = self.current_sample.filter(|_| !has_user_weights) {
+        if let Some(sample) = self.current_sample {
             self.push_undo();
             match crate::gui::samples::build_sample_with_driver(sample, Some(joint_id)) {
-                Ok((mech, q0)) => {
+                Ok((mut mech, q0)) => {
+                    // The stock rebuild has none of the user's weights: carry each one
+                    // over by body id into the new blueprint and the live body (BL-030).
+                    // The blueprint is dumped before the weights go on, so its base
+                    // mass/CG/Izz stay weightless and each weight counts once (BL-023).
+                    let mut blueprint = mechanism_to_json(&mech).ok();
+                    let mut dropped = 0;
+                    if let (Some(new_bp), Some(old_bp)) = (blueprint.as_mut(), self.blueprint.as_ref()) {
+                        for (body_id, old_body) in &old_bp.bodies {
+                            if old_body.point_masses.is_empty() {
+                                continue;
+                            }
+                            match (new_bp.bodies.get_mut(body_id), mech.body_mut(body_id)) {
+                                (Some(new_body), Some(live)) => {
+                                    new_body.point_masses = old_body.point_masses.clone();
+                                    crate::io::from_json::apply_point_masses(live, &new_body.point_masses);
+                                }
+                                _ => dropped += old_body.point_masses.len(),
+                            }
+                        }
+                    }
+                    if dropped > 0 {
+                        log::warn!("Driver reassignment dropped {} weight(s) on bodies the stock sample lacks", dropped);
+                        self.status_message = Some(format!(
+                            "Driver reassigned: {} weight(s) on bodies the stock sample lacks were dropped",
+                            dropped
+                        ));
+                        self.status_message_time = 5.0;
+                    }
                     self.driver_kind = super::DriverKind::Revolute {
                         angle: 0.0,
                         omega: 2.0 * PI,
@@ -37,7 +61,7 @@ impl AppState {
                     self.solve_and_update(&mech, &q0, 0.0, 1e-10, 50, Some(q0.clone()));
                     self.driver_angle = 0.0;
                     self.q_at_zero = self.q.clone();
-                    self.blueprint = mechanism_to_json(&mech).ok();
+                    self.blueprint = blueprint;
                     self.mechanism = Some(mech);
                     self.driver_joint_id = Some(joint_id.to_string());
                     self.selected = None;

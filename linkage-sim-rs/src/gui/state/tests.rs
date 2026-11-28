@@ -417,19 +417,56 @@
         assert!(!state.playing);
     }
 
+    /// BL-030: a weighted sample's driver reassign keeps the weight (blueprint
+    /// and live mechanism) and solves the same pose as the weightless reassign.
+    fn assert_reassign_keeps_weight(sample: SampleMechanism, body: &str, joint: &str) {
+        let mut plain = AppState::default();
+        plain.load_sample(sample);
+        plain.reassign_driver(joint);
+        assert!(plain.solver_status.converged, "{sample:?}: weightless reassign to {joint} must converge");
+
+        let mut state = AppState::default();
+        state.load_sample(sample);
+        let id = state.add_point_mass(body, 2.5, [0.01, 0.02]).unwrap();
+        state.reassign_driver(joint);
+
+        assert_eq!(state.driver_joint_id.as_deref(), Some(joint));
+        assert!(
+            state.solver_status.converged,
+            "{sample:?}: reassign to {joint} with a weight did not converge, residual {}",
+            state.solver_status.residual_norm
+        );
+        assert!((&state.q - &plain.q).norm() < 1e-9, "{sample:?}: pose differs from the weightless reassign");
+        let pm = state.find_point_mass(body, &id).expect("weight discarded by reassign");
+        assert_eq!((pm.mass, pm.local_pos), (2.5, [0.01, 0.02]));
+        let live_mass = |s: &AppState| s.mechanism.as_ref().unwrap().bodies()[body].mass;
+        assert!((live_mass(&state) - live_mass(&plain) - 2.5).abs() < 1e-12, "{sample:?}: live body lacks the weight");
+    }
+
     #[test]
     fn reassign_driver_on_a_sample_keeps_user_weights() {
+        assert_reassign_keeps_weight(SampleMechanism::FourBar, "coupler", "J4");
+        assert_reassign_keeps_weight(SampleMechanism::WattII, "t2", "J2");
+    }
+
+    #[test]
+    fn reassign_driver_on_a_sample_drops_only_weights_on_bodies_it_lacks() {
         let mut state = AppState::default();
         state.load_sample(SampleMechanism::FourBar);
-        let body = state.blueprint.as_ref().unwrap().bodies.keys()
-            .find(|k| k.as_str() != "ground").unwrap().clone();
-        let id = state.add_point_mass(&body, 2.5, [0.01, 0.02]).unwrap();
+        let kept = state.add_point_mass("coupler", 2.5, [0.01, 0.02]).unwrap();
+        // A user-added body the stock rebuild does not have, holding a weight.
+        state.add_body_with_points_raw("extra", &[("A".to_string(), [0.0, 0.0]), ("B".to_string(), [0.1, 0.0])]);
+        state.blueprint.as_mut().unwrap().bodies.get_mut("extra").unwrap().point_masses.push(
+            crate::io::PointMassJson { id: "W99".into(), label: None, mass: 1.0, local_pos: [0.0, 0.0] },
+        );
 
         state.reassign_driver("J4");
 
-        assert_eq!(state.driver_joint_id, Some("J4".to_string()));
-        let pm = state.find_point_mass(&body, &id).expect("weight discarded by reassign");
-        assert_eq!((pm.mass, pm.local_pos), (2.5, [0.01, 0.02]));
+        assert!(state.solver_status.converged);
+        assert!(state.find_point_mass("coupler", &kept).is_some(), "weight on a stock body must be kept");
+        assert!(state.find_point_mass("extra", "W99").is_none());
+        let msg = state.status_message.clone().expect("a dropped weight must be reported");
+        assert!(msg.contains("1 weight"), "{msg}");
     }
 
     // ── Undo / Redo integration tests ──────────────────────────────────
