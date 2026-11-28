@@ -72,7 +72,11 @@ pub(super) fn committed_number(
 ) -> Option<f64> {
     let copy_id = ui.id().with(("committed_number", key));
     let mut edited = ui.data(|d| d.get_temp::<f64>(copy_id)).unwrap_or(value);
-    let response = ui.add(configure(field_drag_value(&mut edited))).on_hover_text(hover);
+    let mut response = ui.add(configure(field_drag_value(&mut edited)));
+    // egui draws an empty tooltip frame for "", so skip the call then.
+    if !hover.is_empty() {
+        response = response.on_hover_text(hover);
+    }
     if response.dragged() || response.has_focus() {
         ui.data_mut(|d| d.insert_temp(copy_id, edited));
         return None;

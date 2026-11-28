@@ -456,8 +456,8 @@ mod tests {
     fn chebyshev_lambda_pngs_do_not_go_into_the_tracked_docs_tree() {
         let dir = chebyshev_lambda_out_dir();
         assert!(
-            !dir.components().any(|c| c.as_os_str() == "docs"),
-            "test output must not land in docs/: {}",
+            dir.starts_with(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target")),
+            "test output must land under target/, not the tracked docs/: {}",
             dir.display()
         );
     }

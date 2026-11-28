@@ -424,8 +424,8 @@
   evidence: "Agent description claims tests/ struct literals miss fields; commit b919485 (2026-05-26) added them; cargo test --all --no-run exits 0 (2026-08-08)"
   acceptance: "agent description rewritten to a general 'repair broken test-crate compiles' role or the agent is deleted; no claim that tests/ is currently broken"
   priority: 3
-  status: open
-  notes: ""
+  status: fixed
+  notes: "FIXED earlier (found 2026-11-28 by the R5 batch): .claude/agents/rust-test-fixer.md already describes a general repair-a-broken-test-compile role; Codex installed it on 2026-10-07 (commit b1011c9 on codex/physics-review-rework-2026-10-06); the file is untracked in this repo (.gitignore ignores .claude/* except workflows), so no change here."
 
 - id: BL-006
   title: nom v1.2.4 flagged future-incompatible (will be rejected by a future rustc)
@@ -435,7 +435,7 @@
   acceptance: "cargo tree -i nom documented in notes; dependency updated/replaced, or item deferred with the upstream blocker named"
   priority: 2
   status: deferred
-  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: resolved by the acceptance's deferral clause (no code change). cargo tree -i nom: nom v1.2.4 <- meval v0.2.0 <- linkage-sim-rs v0.1.0. Re-checked today: latest published meval is still 0.2.0 and requires nom 1.x, so a lock bump cannot remove nom 1.2.4; upstream blocker is meval (issue 30, nom7/nom8 PRs 27/34 unmerged). Warning stays; revisit when a maintained meval release or validated parser replacement exists. Codex's earlier deferral (5a14aa9, cecbc0e) reused. "
+  notes: "DEFERRED 2026-11-28 on branch linkage/r5-mechanical: resolved by the acceptance's deferral clause (no code change). cargo tree -i nom: nom v1.2.4 <- meval v0.2.0 <- linkage-sim-rs v0.1.0. Re-checked today: latest published meval is still 0.2.0 and requires nom 1.x, so a lock bump cannot remove nom 1.2.4; upstream blocker is meval (issue 30, nom7/nom8 PRs 27/34 unmerged). Warning stays; revisit when a maintained meval release or validated parser replacement exists. Codex's earlier deferral (5a14aa9, cecbc0e) reused."
 
 - id: BL-007
   title: CSV/HTML export behavior on NaN-padded (non-Grashof) sweep rows unverified
@@ -454,8 +454,8 @@
   evidence: "solver/inverse_kinematics/derivatives.rs:217:13 — rustc mixed_script_confusables warning during doctest build (2026-08-08)"
   acceptance: "identifier renamed (e.g. delta); warning gone; cargo test --all green"
   priority: 3
-  status: open
-  notes: ""
+  status: fixed
+  notes: "FIXED earlier (found 2026-11-28 by the R5 batch): derivatives.rs has no let δ left (the FD test uses eps); cargo check --tests gives no mixed_script_confusables warning."
 
 - id: BL-009
   title: Extend reaction-force physics validation to force-zone poses + cross-checks
@@ -524,8 +524,8 @@
   evidence: "gui-smoke live run 2026-08-08: ~194 identical warnings in ~5s — eframe app_runner.rs:256 'Unhandled egui viewport command: Title(...)' via linkage-web.js:1271, one per frame"
   acceptance: "zero repeated viewport-command warnings during a 5s gui-smoke run (set title once / gate the per-frame call on web)"
   priority: 3
-  status: open
-  notes: ""
+  status: fixed
+  notes: "Duplicate of BL-037 (fixed): the per-frame viewport-command warnings were removed there (found 2026-11-28 by the R5 batch)."
 
 - id: BL-015
   title: docs/ai/02-system.yaml is not YAML-parseable (scanner error line 14-15)

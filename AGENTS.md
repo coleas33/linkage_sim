@@ -23,5 +23,5 @@ If `AGENTS.md` or the response document is an untracked file in your worktree, i
 - `docs/ai/backlog.yaml` is the work queue. A `risk: physics` item needs the fbd-math-reviewer pass and the user's explicit review of its diff before merge, so it is not `fixed` until then.
 - A test must fail before a fix and pass after it, and docs change with the code.
 - Run the gate with `MAGCOUPLING_PYTHON=<python with the oracle's deps> bash linkage-sim-rs/scripts/gate.sh`. It must end `GATE PASS`.
-- `docs/chebyshev_lambda/*.png` are no longer rewritten by tests (BL-012): `export_chebyshev_lambda_pngs` writes to `linkage-sim-rs/target/chebyshev_lambda/`; to refresh the committed images, copy them from there by hand.
+- `docs/chebyshev_lambda/*.png` are no longer rewritten by tests (BL-012): `export_chebyshev_lambda_pngs` writes to `linkage-sim-rs/target/chebyshev_lambda/`; to refresh the committed images, run `cargo test --features raster export_chebyshev_lambda_pngs` (from `linkage-sim-rs`), then `cp linkage-sim-rs/target/chebyshev_lambda/*.png docs/chebyshev_lambda/` (from the repo root).
 - Nothing is pushed without the user's go: pushing `main` deploys the website.

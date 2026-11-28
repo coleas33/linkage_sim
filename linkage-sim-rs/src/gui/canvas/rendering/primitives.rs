@@ -11,16 +11,6 @@ use crate::gui::state::{AppState, ViewTransform};
 
 // ── Drawing primitives ───────────────────────────────────────────────────────
 
-/// Rotate a world direction into the mounted view and flip screen Y.
-/// Pixel lengths are chosen by the arrow renderer, independently of zoom.
-pub(super) fn world_direction_to_screen(view: &ViewTransform, wx: f32, wy: f32) -> Vec2 {
-    let (sin_a, cos_a) = view.mounting_angle.sin_cos();
-    Vec2::new(
-        (cos_a * wx as f64 - sin_a * wy as f64) as f32,
-        (-sin_a * wx as f64 - cos_a * wy as f64) as f32,
-    )
-}
-
 /// Draw a zigzag spring symbol between two screen-space points.
 ///
 /// The spring is rendered as: short straight lead-in, N zigzag segments, short
@@ -148,7 +138,7 @@ pub(super) fn draw_external_force_arrow(
 
     let px_len = (mag * FORCE_ARROW_SCALE).clamp(FORCE_ARROW_MIN_PX, FORCE_ARROW_MAX_PX);
 
-    let direction = world_direction_to_screen(view, fx / mag, fy / mag);
+    let direction = view.world_direction_to_screen(fx / mag, fy / mag);
 
     // Arrow points INTO the body: shaft starts away from origin, tip at origin.
     let tail = origin - direction * px_len;
@@ -406,7 +396,7 @@ pub(super) fn draw_force_arrow(
     // Scale force magnitude to pixel length, then clamp.
     let px_len = (mag * FORCE_ARROW_SCALE).clamp(FORCE_ARROW_MIN_PX, FORCE_ARROW_MAX_PX);
 
-    let direction = world_direction_to_screen(view, fx / mag, fy / mag);
+    let direction = view.world_direction_to_screen(fx / mag, fy / mag);
     let tip = origin + direction * px_len;
 
     // Shaft and arrowhead (a full-size head even on a short arrow).
@@ -469,7 +459,7 @@ fn draw_axis_component(
         AxisDirection::X => (component.signum(), 0.0_f32),
         AxisDirection::Y => (0.0_f32, component.signum()),
     };
-    let direction = world_direction_to_screen(view, wx, wy);
+    let direction = view.world_direction_to_screen(wx, wy);
     let tip = origin + direction * px_len;
 
     // Shaft: solid for X, dashed for Y.

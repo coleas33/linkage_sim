@@ -405,7 +405,7 @@ fn draw_force_zone(
     let fy = fz.force[1] as f32;
     let fmag = (fx * fx + fy * fy).sqrt();
     if fmag > 1e-9 {
-        let direction = world_direction_to_screen(view, fx / fmag, fy / fmag);
+        let direction = view.world_direction_to_screen(fx / fmag, fy / fmag);
         let zone_x = tr - tl;
         let zone_y = bl - tl;
         let zone_w = zone_x.length();
@@ -494,7 +494,7 @@ fn draw_force_zone(
                 let galley = painter.layout_no_wrap(label.to_string(), FontId::monospace(10.0), color);
                 let text_pos = Pos2::new(center.x + half + 3.0, center.y - galley.size().y * 0.5);
                 let label_rect = egui::Rect::from_min_size(text_pos, galley.size()).expand2(egui::vec2(3.0, 2.0));
-                painter.rect_filled(label_rect, 3.0, Color32::from_rgb(20, 22, 30));
+                painter.rect_filled(label_rect, 3.0, LABEL_PLATE);
                 painter.galley(text_pos, galley, color);
             }
         }

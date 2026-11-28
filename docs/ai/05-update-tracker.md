@@ -5,6 +5,11 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - R5 review fixes
+- Branch review of linkage/r5-mechanical, small findings: F-4 committed_number skips on_hover_text for "" (egui drew an empty tooltip box on the attachment-point and modulation fields); F-7 the BL-046 label plate colour is the named LABEL_PLATE in canvas/colors.rs (draw_pill_label differs in font, alpha and text colour, so it is not reused); F-8 the mounting rotation plus Y flip is ViewTransform::world_direction_to_screen beside world_to_screen, the old primitives.rs function deleted; F-9 the Chebyshev PNG test asserts the output dir starts with CARGO_MANIFEST_DIR/target, and AGENTS.md gives the regenerate and copy commands; F-10 BL-006's note starts DEFERRED and this branch's 2026-11-28 entries in this file are in reverse commit order.
+- Backlog closed after checking each claim: BL-005 (rust-test-fixer agent already general; untracked here), BL-008 (no let delta; no mixed_script_confusables warning), BL-014 (duplicate of fixed BL-037).
+- .claude/workflows/fix-campaign.js: the per-item reviewer no longer uses agentType feature-dev:code-reviewer (no shell, so it rejected every fix); the default agent reviews mechanical items, fbd-math-reviewer still physics ones. This change was already in the tree at 129f3c3; no doc described the old reviewer except the historical 2026-08-08 plan.
+
 ## 2026-11-28 - Weight mass cap stays 1,000 kg, said on hover (BL-034, A-57)
 - Reworked 19f8546: WEIGHT_MASS_RANGE_KG back to 0.001..=1000 (question 33's default, option (a)); the weight editor's and + Mass field's hover say "Up to 1,000 kg."; tests: typing 5000 stores 1000, a 1000 kg weight's gravity power is 400 times a 2.5 kg one's; docs and A-57 updated.
 
@@ -34,12 +39,15 @@ Reverse chronological (newest at top).
 
 ## 2026-11-28 - Delete with toolbar focus (BL-033)
 - handle_delete_shortcut gates on focused_widget_may_edit_text (TextEdit state plus response/touch guards) instead of wants_keyboard_input; five bl033_* tests in gui/mod.rs (reused from Codex ed88854).
-## 2026-11-28 - Preserve idle mounting angle (BL-021)
-- Removed the Mounting Angle slider step_by(0.5) that snapped an off-grid angle and rebuilt every idle frame; regression test bl021_expanded_mounting_slider_preserves_off_grid_state_on_idle_frames.
-## 2026-11-28 - Preserve sweep plot X pan/zoom (BL-019)
-- with_default_x_bounds queues a one-shot X init (first display, range change/revisit, double click) instead of default_x_bounds every frame; reused from the Codex branch fix; four bl019 tests, drag and zoom failed before.
+
 ## 2026-11-28 — Preserve linear pose on rebuild (BL-051)
 - rebuild() takes its solve time from the newly assigned driver kind (linear stroke or revolute angle), so an edit no longer moves a linear-driven mechanism to driver length 0. Four bl051 tests (Codex acb1531's three plus a Slider-Crank sample on a linear driver at stroke 1.2) pass; the three linear ones fail with the fix reverted; GATE PASS.
+
+## 2026-11-28 - Preserve sweep plot X pan/zoom (BL-019)
+- with_default_x_bounds queues a one-shot X init (first display, range change/revisit, double click) instead of default_x_bounds every frame; reused from the Codex branch fix; four bl019 tests, drag and zoom failed before.
+
+## 2026-11-28 - Preserve idle mounting angle (BL-021)
+- Removed the Mounting Angle slider step_by(0.5) that snapped an off-grid angle and rebuilt every idle frame; regression test bl021_expanded_mounting_slider_preserves_off_grid_state_on_idle_frames.
 
 ## 2026-11-27 - Magcoupler UX overhaul, slice B, stage 2, part 2b-iii-b: the look (BL-107)
 - What changed: every control at rest shows its edge at 3:1 or more (the stage 1 review's E-4 and R-6): a value box, a framed button, a picker and a text box are outlined, and a checkbox's box and a slider's rail and handle filled, in `app::theme::CONTROL` (#656c76, a second colour outside the token table), where the hairline colour was 1.1:1 to 1.2:1; under the pointer and pressed a box keeps its fill and its outline brightens, and a slider's handle still shows its state by its ring's width alone; an open picker keeps the grey outline; every plot legend entry, egui_plot's mark of a toggle, shows its dot on a dark disc inside a grey ring, and the four tiles over the drawing are outlined in the grey (BL-108, BL-109). The title and the left column's heading "Size and torque" are Inter SemiBold (S-1): a second cut made by the committed script from the recorded Inter 4.1 file, which egui's Heading style draws in; every other text stays Regular. The page names its language, gives the browser the panel colour and a dark scheme, and shows "Loading the calculator" in the muted colour while the wasm file loads, which the app takes away at the end of its first frame, in the same paint (S-4). gui-smoke's look check reads the line gone and judges the heavier title and the controls' edges.
