@@ -22,6 +22,14 @@ pub const TITLE: &str = "Magnetic Coupling Calculator";
 /// must use the same.
 pub const CANVAS_ID: &str = "magcoupling_canvas";
 
+/// Id of the page's loading line in `linkage-sim-rs/web/tools/magcoupler/index.html`, which
+/// the app removes when it draws its first frame.
+pub const LOADING_ID: &str = "magcoupling_loading";
+
+/// The page's loading line, in the muted colour on the page's charcoal while the wasm file
+/// loads (the stage 1 review, S-4): the one text of the page outside the canvas.
+pub const LOADING_LINE: &str = "Loading the calculator";
+
 /// The log line of a share link opened at start-up (the web smoke test looks for it).
 pub const SHARE_LINK_LOADED: &str = "magcoupling: loaded the design from the share link";
 
@@ -216,6 +224,22 @@ impl MagcouplingApp {
 impl eframe::App for MagcouplingApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.ui(ctx);
+        #[cfg(target_arch = "wasm32")]
+        remove_loading_line();
+    }
+}
+
+/// Removes the page's loading line ([`LOADING_ID`]) at the end of a frame: eframe paints the
+/// frame in the same task, so the browser shows the app's first frame and the line's removal in
+/// one paint. (Removed by the page's script when the module had loaded, the line left a blank
+/// frame or two before the app's first.) After the first frame there is no line to find.
+#[cfg(target_arch = "wasm32")]
+fn remove_loading_line() {
+    if let Some(line) = web_sys::window()
+        .and_then(|window| window.document())
+        .and_then(|document| document.get_element_by_id(LOADING_ID))
+    {
+        line.remove();
     }
 }
 
@@ -2825,6 +2849,67 @@ mod tests {
         let hub = include_str!("../../linkage-sim-rs/web/tools/index.html");
         assert!(hub.contains("Magnetic Coupling Calculator"));
         assert!(!hub.to_lowercase().contains("clamp"));
+    }
+
+    #[test]
+    fn the_page_wears_the_app_s_colours_and_a_loading_line_until_the_app_draws() {
+        // The stage 1 review (S-4): while the wasm file loads, the page was charcoal with
+        // nothing to say it was working, and the browser's own bars kept their colour. The page
+        // names its language, gives the browser the panel colour and a dark scheme from its
+        // head (before any style, so nothing flashes white), and shows one line in the muted
+        // colour across the middle of the page, after the canvas. The app removes the line at
+        // the end of its first frame (`remove_loading_line`, on wasm32 only), so the browser
+        // shows the app and the line's removal in one paint; the page's script only starts the
+        // app (a browser run checks both).
+        let page = include_str!("../../linkage-sim-rs/web/tools/magcoupler/index.html");
+        let hex = |c: egui::Color32| format!("#{:02x}{:02x}{:02x}", c.r(), c.g(), c.b());
+        assert!(
+            page.contains("<html lang=\"en\">"),
+            "index.html names its language"
+        );
+        let head = &page[..page.find("</head>").expect("a head")];
+        for (what, meta) in [
+            (
+                "the browser's colour",
+                format!(
+                    "<meta name=\"theme-color\" content=\"{}\">",
+                    hex(theme::PANEL)
+                ),
+            ),
+            (
+                "the dark scheme",
+                "<meta name=\"color-scheme\" content=\"dark\">".to_owned(),
+            ),
+        ] {
+            assert!(
+                head.contains(&meta),
+                "index.html's head gives {what}: {meta}"
+            );
+        }
+        // The line, after the canvas, and its style: the muted colour, centred on the page.
+        let line = format!("<p id=\"{LOADING_ID}\">{LOADING_LINE}</p>");
+        let canvas = format!("<canvas id=\"{CANVAS_ID}\"></canvas>");
+        let at = page.find(&line).expect("index.html has the loading line");
+        assert!(page.find(&canvas).is_some_and(|canvas| canvas < at));
+        let rule = format!("#{LOADING_ID} {{");
+        let rule = &head[head.find(&rule).expect("the line's style")..];
+        let rule = &rule[..rule.find('}').expect("its end")];
+        for property in [
+            format!("color: {};", hex(theme::MUTED)),
+            "position: fixed;".to_owned(),
+            "text-align: center;".to_owned(),
+        ] {
+            assert!(rule.contains(&property), "the line's style has {property}");
+        }
+        // The script starts the app and touches the line nowhere: the app removes it.
+        let script = &page[page.find("<script").expect("a script")..];
+        assert!(script.contains("init();") && !script.contains(LOADING_ID));
+        // A new text on screen: plain words, no gearbox claim, every glyph in the page's font.
+        use crate::engine::explain::plain::mentions_gearbox_protection;
+        use crate::gui::guidance::plain_text_violations;
+        assert_eq!(plain_text_violations(LOADING_LINE), Vec::<&str>::new());
+        assert!(!mentions_gearbox_protection(LOADING_LINE));
+        assert!(LOADING_LINE.is_ascii());
     }
 
     #[test]
