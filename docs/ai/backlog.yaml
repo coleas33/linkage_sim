@@ -5,555 +5,6 @@
 # user review of that item's diff before merge.
 # status: open | in_progress | fixed | deferred | rejected | escalated
 
-- id: BL-001
-  title: linear_driver.rs module doc formula compiled as failing doctest
-  dimension: tests
-  risk: mechanical
-  evidence: "src/core/linear_driver.rs:7 — indented block after blank doc line; cargo test --doc: 1 failed (2026-08-08)"
-  acceptance: "cargo test --doc reports 0 failed"
-  priority: 1
-  status: fixed
-  notes: "Fixed in Phase 0 (agent/phase0-baseline)."
-
-- id: BL-002
-  title: cargo clippy --all-targets fails on 3 deny-level approx_constant errors
-  dimension: quality
-  risk: mechanical
-  evidence: "src/gui/undo.rs:251,264 (3.14 for PI); tests/property_tests.rs:327 (6.28 for TAU); clippy exit != 0 (2026-08-08)"
-  acceptance: "cargo clippy --all-targets exits 0"
-  priority: 1
-  status: fixed
-  notes: "Fixed in Phase 0 (agent/phase0-baseline)."
-
-- id: BL-003
-  title: "Clippy warning debt: ~289 lib warnings (167 collapsible_if; 234 auto-fixable)"
-  dimension: quality
-  risk: mechanical
-  evidence: "cargo clippy --all-targets 2026-08-08: lib 289 warnings, lib-test 305 (278 dupes); top lints collapsible_if 167, too_many_arguments 17, empty_line_after_doc_comments 13"
-  acceptance: "cargo clippy --all-targets produces 0 warnings on lib and lib-test targets; cargo test --all stays green"
-  priority: 3
-  status: fixed
-  notes: "Fixed 2026-11-16 (INF-02): zero warnings, gate 2 now runs -D warnings. Mostly cargo clippy --fix + review; too_many_arguments items may be deferred individually with reasons."
-
-- id: BL-004
-  title: docs/guides/WASM_DEPLOYMENT.md drifted from actual build/deploy config
-  dimension: quality
-  risk: mechanical
-  evidence: "WASM_DEPLOYMENT.md:36-40 omits --features raster (build_web.sh:20-24 and deploy-web.yml:38-50 include it); WASM_DEPLOYMENT.md:100 claims max-age=31536000 immutable but web/vercel.json sets max-age=0 must-revalidate"
-  acceptance: "doc's build command and cache-control statements match build_web.sh and web/vercel.json verbatim"
-  priority: 3
-  status: fixed
-  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: the build command (raster) and cache-control statements had already been corrected by later work; the remaining drift was the Known Limitations section, which denied file loading, PNG/SVG/GIF export, autosave and recent mechanisms the web build ships. Replaced it with a Browser Behavior section (reused from codex 426844d, checked against file_io.rs and menu_bar.rs). Doc-only; the guide's old claims were verified false before the edit."
-
-- id: BL-005
-  title: .claude/agents/rust-test-fixer.md premise is stale (tests already fixed)
-  dimension: quality
-  risk: mechanical
-  evidence: "Agent description claims tests/ struct literals miss fields; commit b919485 (2026-05-26) added them; cargo test --all --no-run exits 0 (2026-08-08)"
-  acceptance: "agent description rewritten to a general 'repair broken test-crate compiles' role or the agent is deleted; no claim that tests/ is currently broken"
-  priority: 3
-  status: fixed
-  notes: "FIXED earlier (found 2026-11-28 by the R5 batch): .claude/agents/rust-test-fixer.md already describes a general repair-a-broken-test-compile role; Codex installed it on 2026-10-07 (commit b1011c9 on codex/physics-review-rework-2026-10-06); the file is untracked in this repo (.gitignore ignores .claude/* except workflows), so no change here."
-
-- id: BL-006
-  title: nom v1.2.4 flagged future-incompatible (will be rejected by a future rustc)
-  dimension: quality
-  risk: mechanical
-  evidence: "cargo report during 2026-08-08 build: 'nom v1.2.4 ... will be rejected by a future version of Rust'"
-  acceptance: "cargo tree -i nom documented in notes; dependency updated/replaced, or item deferred with the upstream blocker named"
-  priority: 2
-  status: deferred
-  notes: "DEFERRED 2026-11-28 on branch linkage/r5-mechanical: resolved by the acceptance's deferral clause (no code change). cargo tree -i nom: nom v1.2.4 <- meval v0.2.0 <- linkage-sim-rs v0.1.0. Re-checked today: latest published meval is still 0.2.0 and requires nom 1.x, so a lock bump cannot remove nom 1.2.4; upstream blocker is meval (issue 30, nom7/nom8 PRs 27/34 unmerged). Warning stays; revisit when a maintained meval release or validated parser replacement exists. Codex's earlier deferral (5a14aa9, cecbc0e) reused."
-
-- id: BL-007
-  title: CSV/HTML export behavior on NaN-padded (non-Grashof) sweep rows unverified
-  dimension: tests
-  risk: mechanical
-  evidence: "docs/ai/02-system.yaml risks: 'CSV/HTML export needs verification' for NaN rows; no test in tests/ or src/gui/export/ covers a non-Grashof sweep export"
-  acceptance: "test exports a non-Grashof sweep to CSV and HTML; CSV parses row-count-consistently with a documented NaN policy (skip or empty cell); HTML contains no literal 'NaN' artifacts"
-  priority: 2
-  status: open
-  notes: ""
-
-- id: BL-008
-  title: mixed_script_confusables warning for `let δ = 1e-6` in IK derivatives
-  dimension: quality
-  risk: mechanical
-  evidence: "solver/inverse_kinematics/derivatives.rs:217:13 — rustc mixed_script_confusables warning during doctest build (2026-08-08)"
-  acceptance: "identifier renamed (e.g. delta); warning gone; cargo test --all green"
-  priority: 3
-  status: fixed
-  notes: "FIXED earlier (found 2026-11-28 by the R5 batch): derivatives.rs has no let δ left (the FD test uses eps); cargo check --tests gives no mixed_script_confusables warning."
-
-- id: BL-009
-  title: Extend reaction-force physics validation to force-zone poses + cross-checks
-  dimension: physics
-  risk: physics
-  evidence: "docs/ai/01-meta.yaml active_focus; docs/ai/04-memory.yaml open question (validation reference choice, spec 2026-05-18 recommends FBD-first); existing FBD regression covers theta_2=60deg only (solver/reactions.rs tests)"
-  acceptance: "FBD regression tests at additional poses including force-zone-active ones (use fbd-derive skill); energy-balance and virtual-work-vs-statics cross-check tests; each new check mutation-tested (break solver quantity, confirm test fails, restore)"
-  priority: 1
-  status: open
-  notes: "Coordinate with fbd-math-reviewer conventions from tests::fbd_validates_pass2_reactions_at_60deg."
-
-- id: BL-010
-  title: GUI actuator force label disagrees with actuator force plot at same pose
-  dimension: gui
-  risk: mechanical
-  evidence: "CONFIRMED by audit 2026-08-08 (repro: cargo test --test braindump_repro bl010 -- --nocapture). Both widgets read sweep.actuator_forces; divergence is display-only, 3 mechanisms: (1) stored-force mode label prints la.force verbatim (+2225 N, samples/fourbar.rs:671) at force_render.rs:266 while plot Statics shows computed -2222.8 N — sign+quantity mismatch, likely what the user saw; (2) plot-only Tukey outlier filter (plot_panel/mod.rs:648-661) silently drops 7 finite samples the label shows (fence only ~185 N wide on flat curves); (3) label nearest-index lookup (force_render.rs:247-257) breaks on seam-crossing range sweeps via rem_euclid(360) and compares degrees vs METRES for stroke-mode sweeps (never branches on sweep_mode.is_stroke())."
-  acceptance: "regression test: canvas-label path returns exactly sweep.actuator_forces[i] at the current driver parameter for (a) full 0..360 sweep, (b) seam-crossing 200..365 range sweep at 365 deg, (c) stroke-mode sweep; plot stops dropping finite samples or label applies the identical filter; promote tests/braindump_repro.rs bl010 tests with assertions inverted"
-  priority: 1
-  status: fixed
-  notes: "Fixed 2026-09-12. Label value now comes from AppState::actuator_label_force (gui/state/mod.rs; ActuatorLabelForce::{Computed,Stored}) which always reads sweep.actuator_forces at SweepData::index_at_driver (gui/sweep/mod.rs: circular nearest-angle in angle mode so seam-crossing range sweeps and wrapped driver angles resolve to the same sample; linear nearest-stroke in metres in stroke mode; NaN samples skipped) — the stored-force gate is gone, so stored-force mode shows the computed statics value too. Plot side: filter_actuator_outliers (Tukey fence drop) removed — both Statics and With-Inertia series are built by plot_panel::finite_series so every finite sample is drawn; near-singular spikes now stretch the auto Y range (Y zoom persists in egui_plot 0.33, so the flat part stays inspectable). default_y_bounds was tried and rejected: in egui_plot 0.33 default_*_bounds re-apply every frame and lock the axis (see BL-019). Tests: tests/actuator_force_label.rs (full sweep, stored-force mode, 200..365 seam sweep incl. 365-deg and wrapped 5-deg scrub, stroke-mode sweep — every index asserted bitwise), sweep::tests::index_at_driver_*, plot_panel::tests::outlier_fence_* (finite_series keeps spikes the old fence dropped; skips only non-finite). Documented (not exposed): label reads Statics only, never actuator_forces_id; with several LinearActuators every label reads the first element's series (pre-existing, unchanged)."
-
-- id: BL-011
-  title: Non-360-degree mechanisms flip to mirrored assembly branch / break near range limits
-  dimension: physics
-  risk: physics
-  evidence: "CONFIRMED by audit 2026-08-08, 3/3 skeptics (repro: cargo test --test braindump_repro bl011_sweep_branch_flip_after_unreachable_gap -- --nocapture). Non-Grashof triple-rocker (0.05/0.05/0.05/0.09 m, reachable |theta| <= 86.18 deg): sweep converges 0..86 deg elbow sign -1, fails 87..273, RE-ENTERS at 274 deg on mirrored branch (sign +1) — pose at 360 deg is the mirror of 0 deg. Cause: sweep keeps stale last-good q as Newton guess across the unreachable gap (gui/sweep/mod.rs:667-669) and solve_position is plain NR+SVD with no step limiting or branch-continuity check (solver/kinematics.rs:35-80). Interactive paths share the mechanics (state/mod.rs:1103-1129 solve_at_angle, input_panel.rs:102-105 slider, plot_panel/mod.rs:331-338 plot-click). Shipped 'Flip Branch' workaround button (input_panel.rs:117-126) corroborates."
-  acceptance: "promote tests/braindump_repro.rs::bl011_sweep_branch_flip_after_unreachable_gap with inverted assertion: 0..360 sweep of the 0.05/0.05/0.05/0.09 rocker yields elbow sign at 360 deg == sign at 0 deg (no reentry flip); post-gap re-entry preserves branch or is a clean NaN stop; prefer an in-crate #[cfg(test)] test driving compute_sweep_data itself (pattern at sweep/mod.rs:1222+)"
-  priority: 1
-  status: fixed
-  notes: "Fixed for the full 0..360 constant-speed sweep only: gui/sweep/mod.rs solve_sweep_positions — forward pass stops at the first unreachable sample, post-gap samples are reached by a backward pass from 360 deg seeded with the 0-deg solution rotated 2*pi (exact for constant-speed drivers). Tests: sweep::tests::{solve_sweep_positions_full_revolution_preserves_branch (elbow sign at every converged sample), solve_sweep_positions_forward_only_flips_branch_after_gap (pre-fix control), sweep_reentry_after_unreachable_gap_preserves_branch (exact coverage 0..=86/274..=360), sweep_two_arc_fourbar_keeps_both_arcs_when_first_sample_fails}. Verified refinement: proximity to range limit does NOT flip (400-step ping-pong at 0.7-deg steps: zero flips). Remaining paths tracked as BL-018."
-
-- id: BL-012
-  title: cargo test rewrites docs/chebyshev_lambda/*.png on every run
-  dimension: tests
-  risk: mechanical
-  evidence: "src/gui/export/raster.rs:406-431 test export_chebyshev_lambda_pngs writes into docs/chebyshev_lambda/; observed 2026-08-08 (8 PNGs dirty after every gate run; were clean at session start)"
-  acceptance: "cargo test --all leaves the working tree clean (test writes to target/ or is #[ignore]/opt-in); PNG regeneration documented as an explicit command"
-  priority: 2
-  status: fixed
-  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: export_chebyshev_lambda_pngs now writes to linkage-sim-rs/target/chebyshev_lambda/ instead of docs/chebyshev_lambda/, so cargo test leaves the tree clean; regeneration is a manual copy, documented in AGENTS.md; a test pins the output directory outside docs/. Interacts with fix-campaign per-item commits; commit step already guards against staging these PNGs."
-
-- id: BL-013
-  title: Web (WASM) build renders light theme; theme.rs claims CAD dark visuals
-  dimension: gui
-  risk: mechanical
-  evidence: "gui-smoke live run 2026-08-08: screenshot shows light theme (archived at .superpowers/sdd/2026-08-08-agentic-test-improve-loop/smoke-test-linkage.png); docs/ai/03-structure.yaml describes theme.rs as 'CAD dark visuals'"
-  acceptance: "web build renders the intended theme (or the intended default is documented and gui-smoke prompt/theme docs updated to match); verified by gui-smoke screenshot"
-  priority: 3
-  status: fixed
-  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: apply_cad_theme now selects ThemePreference::Dark before the CAD visuals and spacing, so a light browser preference no longer renders the web build light; two regression tests in gui/theme.rs (light/dark/light system frames with both fallbacks, Nathan mode and restore); reused from Codex 261f6b4. Verified 2026-11-28 in Chrome (Playwright) with prefers-color-scheme light: the web build draws dark (the R5 smoke run; screenshot .playwright-mcp/r5-linkage-light-preference.png, not committed)."
-
-- id: BL-014
-  title: Per-frame console warning spam in web build (egui viewport Title command)
-  dimension: gui
-  risk: mechanical
-  evidence: "gui-smoke live run 2026-08-08: ~194 identical warnings in ~5s — eframe app_runner.rs:256 'Unhandled egui viewport command: Title(...)' via linkage-web.js:1271, one per frame"
-  acceptance: "zero repeated viewport-command warnings during a 5s gui-smoke run (set title once / gate the per-frame call on web)"
-  priority: 3
-  status: fixed
-  notes: "Duplicate of BL-037 (fixed): the per-frame viewport-command warnings were removed there (found 2026-11-28 by the R5 batch)."
-
-- id: BL-015
-  title: docs/ai/02-system.yaml is not YAML-parseable (scanner error line 14-15)
-  dimension: quality
-  risk: mechanical
-  evidence: "PyYAML ScannerError at line 14 col 5 / line 15 col 3 (unquoted 'constraint-first mathematics: Phi(q,t)=0...' sequence item); verified identical at d7ee35c and e222aab (pre-existing)"
-  acceptance: "python -c 'import yaml; yaml.safe_load(open(\"docs/ai/02-system.yaml\"))' succeeds with content semantically unchanged"
-  priority: 3
-  status: fixed
-  notes: "Fixed 2026-11-10 on branch audit/2026-11-10-whole-project (whole-project audit, finding DOC-09: seven unquoted scalars, not one, at lines 13, 62, 142, 152, 218, 291 and 413). Each was quoted in place. The parsed value of each equals its original words, the file's words are unchanged apart from the added quote marks, and all four docs/ai YAML files load with yaml.safe_load."
-
-- id: BL-016
-  title: "Investigate driving egui canvas UI for deeper GUI smoke (samples + plot tabs)"
-  dimension: gui
-  risk: mechanical
-  evidence: "Plan 2026-08-08 deviation 2: v1 smoke is load/canvas/console only; egui renders to a single canvas so per-widget assertions need coordinate clicking or an AccessKit bridge (no DOM). Spec success-criterion 4 (30 samples render, 14 tabs switch) unmet until this lands."
-  acceptance: "documented decision + working prototype: either coordinate-map click script, AccessKit-based hooks, or URL-parameter sample loading, demonstrated by gui-smoke exercising at least sample-load + one tab switch"
-  priority: 3
-  status: open
-  notes: ""
-
-- id: BL-017
-  title: Sizing-mode sweep of ChebyshevLambdaActuator panics debug builds (reactions.rs debug_assert)
-  dimension: physics
-  risk: physics
-  evidence: "CONFIRMED by audit 2026-08-08, 3/3 skeptics (repro: cargo test --test braindump_repro bl010_side_sizing_mode_sweep_panics_debug_assert -- --nocapture, #[should_panic] passes). Tutorial workflow (tutorial.rs:204 'Set Actuator Force to Zero') + compute_sweep on ChebyshevLambdaActuator: panic at src/solver/reactions.rs:666 — pass-2 driver collapse fails (driver_lambda=-195.4 N*m instead of ~0), likely near a dl_dt~0 pose (power-balance guard at reactions.rs:397 only rejects |dl_dt| <= 1e-6). Debug builds abort on a documented user workflow; release builds silently carry the failed validation."
-  acceptance: "same repro test with #[should_panic] REMOVED passes: per-pose validation failure surfaces as status/NaN (existing ReactionValidation enum) instead of debug_assert abort; AND root cause of the non-collapsing driver at that pose understood/documented; cargo test --all green in debug profile"
-  priority: 2
-  status: open
-  notes: "2026-09-28: ROOT CAUSE FIXED by BL-022 (7a1b5ff); tests/braindump_repro.rs now completes the Chebyshev sizing sweep in debug with finite forces. Remaining: sub-issue (1) replace the data-dependent debug_assert at solver/reactions.rs:666 with a soft per-pose status so a future failure reports instead of aborting. Audit side-discovery while reproducing BL-010. Two sub-issues: (1) replace data-dependent debug_assert with soft status; (2) physics: why does power-balance actuator force fail to collapse the driver there — interacts with two_pass_statics invariant (02-system.yaml) and BL-009. Repro in tests/braindump_repro.rs (untracked)."
-
-- id: BL-018
-  title: Branch flip across unreachable gap still reachable via range-limited sweeps and interactive solve paths
-  dimension: physics
-  risk: physics
-  evidence: "BL-011 fix scope (gui/sweep/mod.rs solve_sweep_positions) is gated on a full 0..360 sweep with a constant-speed driver whose first sample assembles. Still stale-seeded across a gap: range-limited sweeps (e.g. 200..365), full sweeps whose first sample fails, expression drivers, and the interactive paths state/mod.rs solve_at_angle, input_panel.rs slider drag across the gap, plot_panel/mod.rs plot-click on the far side (same 0.05/0.05/0.05/0.09 rocker repro)."
-  acceptance: "either a branch-continuity rejection in solve_position callers (reject a converged solution whose elbow/assembly sign differs from the seed's across a failed interval) or fresh-assembly re-seeding on the starting branch for those paths; regression tests for a 200..365 range sweep and for solve_at_angle across the gap on the BL-011 fixture"
-  priority: 2
-  status: open
-  notes: "Split out of BL-011 during review (2026-09-12). The 'Flip Branch' workaround button (input_panel.rs:117-126) remains the user-facing escape hatch until then."
-
-- id: BL-019
-  title: with_default_x_bounds locks X pan/zoom on every sweep plot (egui_plot default_x_bounds re-applies each frame)
-  dimension: gui
-  risk: mechanical
-  evidence: "Found 2026-09-12 while fixing BL-010. Headless probe (egui::Context::run, 4 frames): with Plot::default_x_bounds set, an X bounds change made in frame 1 is reset to the defaults on the next frame, while a Y change persists; with default_y_bounds both reset. Cause: egui_plot 0.33 lib.rs ~1066 `if (!default_auto_bounds.x && !any_dynamic_modifications) || mem.auto_bounds.x { bounds.set_x(&min_auto_bounds) }` runs every frame, and drag/zoom only mutate mem.transform. plot_panel/mod.rs with_default_x_bounds doc claims 'User pan/zoom still works within a single sweep recompute' — that is not the case for X."
-  acceptance: "either a headless regression test that X pan/zoom persists across frames on a sweep plot (probe pattern above) after switching to a one-shot set_plot_bounds_x keyed on the data range, or the with_default_x_bounds doc corrected to state that X is pinned to the data range by design"
-  priority: 3
-  status: fixed
-  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: with_default_x_bounds now returns a SweepPlot whose show() sets X once via set_plot_bounds_x (first display, range change/revisit, double click) instead of default_x_bounds re-applying each frame; drag and zoom persist across idle frames; four bl019 tests (drag and zoom failed before). Discovered during BL-010; not fixed there (out of scope). Same mechanism is why the actuator force plot cannot use default_y_bounds as a soft outlier view."
-
-- id: BL-020
-  title: Animation frozen below ~15 deg/s — crank-angle slider step_by(0.5) snaps the pose back every frame
-  dimension: gui
-  risk: mechanical
-  evidence: "User report 2026-09-13 (native + WASM, all mechanisms, crank-angle readout static). CONFIRMED: src/gui/input_panel.rs:87-105 binds display_angle_deg to egui::Slider::step_by(0.5) and calls solve_at_angle whenever the post-widget value differs from the pre-widget value by >1e-6 — without user interaction. Headless probe (egui 0.32.3, one frame, RawInput::default): a step_by(0.5) slider rewrote 10.05 -> 10.0 and reported changed()=true; the same slider without step_by left 10.05 unchanged. So each frame the animation's advance (speed*dt) is rounded to the 0.5-deg grid and re-solved: any step < 0.25 deg/frame (< 15 deg/s at 60 fps) is undone. Matches the earlier 'anything less than 15 deg/s doesn't move' report that 5856ccb attributed to omega=0. Side effect even when paused: the pose is silently quantized to 0.5 deg whenever the input panel is visible (e.g. after a plot-click scrub to 274.3 deg)."
-  acceptance: "regression test drives the input panel through egui::Context::run for one frame with no input at driver_angle=10.05 deg and asserts driver_angle is unchanged (and no solve_at_angle side effect) both while playing and while paused; slider write-back happens only on user interaction (drag / typed edit); cargo test --all green; manual: 3 deg/s playback visibly advances natively and in WASM"
-  priority: 1
-  status: fixed
-  notes: "Fixed 2026-09-13 on agent/batch-1: removed step_by(0.5) from the crank-angle slider (input_panel.rs); egui only writes a non-stepped slider back on real interaction, so the value-diff gate now fires only for drags/typed edits. Regression test gui::input_panel::tests::idle_frame_does_not_move_driver_angle_bl020 (headless egui frame, no input, playing and paused, two off-grid angles). Same-class mounting-angle slider tracked as BL-021. Not a batch-1 regression (predates Phase 0; deployed site has it). Original fix note: drop step_by(0.5) (egui only writes back on interaction without it) or gate the write-back on response.dragged()/drag_stopped()/typed-edit rather than a value diff; note response.changed() is TRUE for the snap so it cannot be the gate. Prior regression test step_animation_advances_at_slow_speed only covers the state layer, which was never the problem."
-
-- id: BL-021
-  title: Mounting Angle slider step_by(0.5) re-triggers rebuild + sweep every frame for off-grid angles
-  dimension: gui
-  risk: mechanical
-  evidence: "input_panel.rs:203-213 (Mounting Angle section, collapsed by default): Slider::step_by(0.5) bound to a local copy of state.mounting_angle, followed by a value-diff gate that calls mark_sweep_dirty() + rebuild(). Same egui snap-on-idle-frame behaviour proven for BL-020: with an off-grid mounting angle (e.g. 0.3 deg loaded from JSON) every frame the section is open snaps the angle to the grid and rebuilds the mechanism + recomputes the sweep."
-  acceptance: "idle-frame regression test with the Mounting Angle section expanded (open the CollapsingHeader via egui memory in the test) asserts mounting_angle unchanged and no rebuild; write-back only on interaction (drop step_by or gate on drag/edit); cargo test --all green"
-  priority: 3
-  status: fixed
-  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: removed the Mounting Angle slider step_by(0.5) so an expanded idle control no longer snaps an off-grid angle or rebuilds; edits still rebuild; regression test bl021_expanded_mounting_slider_preserves_off_grid_state_on_idle_frames (reused from parked codex commit 0d78122). Found while fixing BL-020; left out of that fix to keep it surgical and because the collapsed section needs extra test plumbing."
-
-- id: BL-022
-  title: "Compound actuator expansion: force anchored at cylinder base and stroke length from mixed body frames"
-  dimension: physics
-  risk: physics
-  evidence: 'Scouting probe 2026-09-28. Any rebuild (incl. add_point_mass) expands a mount-point actuator into cylinder+rod. (a) forces/compound.rs:306 remap_force_to_compound sets point_a=[0,0] (cylinder base) instead of the slide point (half_len,0) at compound.rs:124-126; doc comment at :265 is wrong. actuator_lengths == |L_pin - L0/2| at 360/360 parallelogram samples; plotted F flips sign at 83/361 angles (200 deg: -40/-501 N vs physical +40/+501 N); stored force physically reverses (240 deg: -186.5 vs +86.5). (b) compound.rs:175-176 initial_length/half_len from get_force_point_pos body-local points of two different bodies (io/from_json.rs:25-33, 272-273): Chebyshev lengths span [0.0003,0.1455] m vs stroke limits [0.1245,0.3275] m, phantom end-stop penalty up to ~1245 N at force=0 (evaluation.rs:407-416), sizing F differs by up to 1402 N with sign disagreement at 254/361. Topology switch cause: load_sample keeps the direct mechanism (gui/state/mod.rs:1001) but its blueprint keeps mount names (mod.rs:1024).'
-  acceptance: 'regression tests: after a no-op rebuild of ParallelogramActuator and ChebyshevLambdaActuator, actuator_lengths equal the pin-to-pin distance and sizing/stored actuator_forces match the freshly loaded mechanism at every angle (rel 1e-6); Chebyshev end-stop penalty inactive inside stroke limits; tests/braindump_repro.rs BL-017 repro no longer panics in debug'
-  priority: 1
-  status: fixed
-  notes: "Fixed 2026-09-28 on agent/batch-2 (7a1b5ff): remapped force now acts cylinder base -> rod tip (pin to pin), so actuator length is the pin distance regardless of half_len; the mixed-frame initial length only proportions the massless compound bodies (documented at compound.rs expand_compound_force). Tests: tests/compound_actuator_rebuild.rs (rebuild == fresh for stored + sizing on Parallelogram and Chebyshev; end-stop inactive inside limits), compound.rs remap_every_variant_acts_between_base_and_tip. Resolves BL-017 root cause. Prerequisite for the payload-weights feature (Track 2 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md). Likely root cause of BL-017."
-
-- id: BL-023
-  title: "Save/autosave/share URL double-counts every point mass"
-  dimension: physics
-  risk: mechanical
-  evidence: 'gui/state/file_io.rs:143 serializes composite (point-mass-inclusive) body mass via mechanism_to_json, then :150 re-attaches blueprint point_masses; load (file_io.rs:329 -> io/from_json.rs:122-126) applies them again. Verified 2026-09-28: rocker 1 kg + 50 kg point mass = 51 kg, becomes 101 kg after generate_share_url -> decode -> load. Existing test gui/state/tests.rs:1933-1962 checks only point-mass count.'
-  acceptance: round-trip test (save/load and share URL) asserts built body mass, cg and izz unchanged to 1e-12 with point masses present; blueprint base mass unchanged
-  priority: 1
-  status: fixed
-  notes: "Fixed 2026-09-28 on agent/batch-2 (dc87298): serialization no longer re-applies point masses on top of composite mass; round-trip tests in gui/state/tests.rs. Track 1 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md."
-
-- id: BL-024
-  title: "set_body_mass / set_body_izz overwrite composite mass in the live mechanism, dropping point masses"
-  dimension: physics
-  risk: mechanical
-  evidence: gui/state/blueprint_ops.rs:449-486 patch the live Mechanism body with the BASE mass/izz, discarding point-mass contributions until the next rebuild; property panel (property_panel/mod.rs:232) and parametric BodyMass sweep (parametric_panel.rs:423) operate on base mass.
-  acceptance: 'test: body with a point mass, call set_body_mass, assert built composite mass = new base + point masses and gravity Q reflects it without an explicit rebuild; parametric BodyMass sweep documented or fixed to vary base mass while keeping point masses'
-  priority: 2
-  status: fixed
-  notes: "Fixed 2026-09-29 on agent/batch-3 (5d023f6): set_body_mass/set_body_izz re-derive the live composite mass, CG and Izz from blueprint base + point masses (Body::add_point_mass, the loader's math); parametric BodyMass sweep varies base mass and keeps point masses. Tests in gui/state/tests.rs (*_bl024). Track 1 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md."
-
-- id: BL-025
-  title: "Point-mass edits and Reposition are not undoable; Move to Link records two undo steps"
-  dimension: gui
-  risk: mechanical
-  evidence: blueprint_ops.rs:956-970 update_point_mass never calls push_undo (doc says caller should; neither caller does), violating docs/ai/02-system.yaml invariant; remove_point_mass pushes undo even for an invalid index (:941-949); Move to Link = remove + add = two undo entries and two rebuilds (interaction.rs:408-445).
-  acceptance: 'tests: numeric mass/position edit and Reposition each create exactly one undo entry that restores prior state; Move to Link creates exactly one; invalid-index remove creates none'
-  priority: 2
-  status: fixed
-  notes: "Fixed 2026-09-28 on agent/batch-2 (21ee323): point-mass edits, Reposition and Move to Link are single undo steps; invalid-index remove records none; tests in gui/state/tests.rs. Track 1 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md."
-
-- id: BL-026
-  title: "Stored-force mode plots F_required - F_stored while the label says computed"
-  dimension: gui
-  risk: physics
-  evidence: gui/sweep/mod.rs:647-649 computes F from the pass-1 driver torque; solver/reactions.rs:579 skips pass 2 when |force|>=1e-12, so actuator_forces = F_required - F_stored (verified to 1.5e-11 on ParallelogramActuator); canvas label says '(computed)' (gui/state/mod.rs:846-864, force_render.rs:239-242). Sweep also duplicates the power-balance formula from reactions.rs:372-403 instead of using ReactionSolveResult::actuator_force.
-  acceptance: 'test: stored-force mechanism sweep reports the required actuator force (matches sizing-mode value at every angle) or the plot/label clearly show the residual with correct wording; single power-balance implementation shared by solver and sweep'
-  priority: 2
-  status: fixed
-  notes: "Fixed 2026-09-29 on agent/batch-3 (c412485): sweep and trajectory report the REQUIRED actuator force in stored-force mode (stored drive force added back to the pass-1 residual; matches sizing mode at every angle, incl. speed limit and trajectory); power balance lives once in solver::reactions (required_actuator_force, actuator_length_rate). Removes the payload-draft workaround. Track 1 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md. Payload breakdown shares are defined against the required force."
-
-- id: BL-027
-  title: "Inverse dynamics omits the velocity-quadratic term (With Inertia curve wrong for off-pivot masses)"
-  dimension: physics
-  risk: physics
-  evidence: 'solver/inverse_dynamics.rs:67-70 uses only M(q)*q_ddot while M depends on configuration via CG offsets (solver/assembly.rs:133-145); no velocity-quadratic term exists in solver/core/forces. Verified 2026-09-28: parallelogram rocker mass at (0,0.8): tau_ID - tau_statics = -3158.273 N*m at every angle, correct value 0 (constant KE), error = 2*m*s_y*omega^2 exactly. Doc sign at inverse_dynamics.rs:1 opposite to line 70. Forward dynamics (forward_dynamics.rs:100) likely same flaw (unverified).'
-  acceptance: 'test: constant-KE case gives tau_ID == tau_statics (rel 1e-9); general case tau_ID - tau_statics == dKE/dtheta per unit rate (energy check) on two samples; forward dynamics checked or split into its own item'
-  priority: 2
-  status: fixed
-  notes: "Fixed 2026-09-29 on agent/batch-3 (263ef79): velocity-quadratic force Q_v (assembly::assemble_quadratic_velocity_forces) added to inverse AND forward dynamics. Tests: hand-computed Q_v, constant-KE parallelogram tau_ID == tau_statics, KE-rate energy check, centripetal pivot reaction, forward-dynamics free-spin energy conservation. Golden fixtures (Python reference also lacks Q_v) shifted by the exact Q_v multiplier correction rather than loosened. The legacy Python solver under src/linkage_sim has the same omission. Track 1 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md; independent of Track 2."
-
-- id: BL-028
-  title: "Python reference solvers omit Q_v; golden inverse-dynamics fixtures pass only via a Rust-side shift"
-  dimension: physics
-  risk: physics
-  evidence: "Found in BL-027 review 2026-09-29. src/linkage_sim/solvers/inverse_dynamics.py:83 rhs = -(Q - M_q_ddot) and forward_dynamics.py:154 b[:n] = Q have no velocity-quadratic force Q_v = [m theta_dot^2 A(theta) s_cg; 0]. data/benchmarks/golden/{fourbar,slidercrank}_inverse_dynamics.json therefore hold pre-BL-027 multipliers; tests/golden_fixtures.rs keeps them passing with quadratic_velocity_lambda_shift, which uses the same Rust assemble_quadratic_velocity_forces as the solver (circular for joint reactions)."
-  acceptance: "Python inverse and forward dynamics add Q_v (same formula as linkage-sim-rs/src/solver/assembly.rs assemble_quadratic_velocity_forces) with Python tests mirroring the Rust constant-KE and centripetal-pivot checks; golden *_inverse_dynamics.json regenerated (and *_dynamics.json if they change); quadratic_velocity_lambda_shift and its call sites deleted from tests/golden_fixtures.rs; the 'does not include Q_v yet (BL-028)' comment in solver/inverse_dynamics.rs removed; cargo test --all and the Python suite green"
-  priority: 2
-  status: open
-  notes: "Follow-up of BL-027. REVIEWED 2026-10-06 (Codex report + independent check, docs/analyses/2026-10-06-open-physics-review-response.md): confirmed; Q_v = [m thetadot^2 A s; 0], sign Phi_q^T lambda = M qddot - Q - Q_v. The golden multiplier check is fully blind to Q_v (the shift cancels exactly); fourbar_dynamics.json energy swings 42.3 of 73.5 J and its initial velocity violates the constraints; test_forward_dynamics.py:306-308 and test_golden_fixtures.py:523-527 hide the bug behind loose tolerances. Rust is unaffected. Follow the order in the response doc."
-
-- id: BL-029
-  title: "Trapezoidal motion-profile torque uses (tau_ID - tau_statics)/omega^2 as the inertia on alpha"
-  dimension: physics
-  risk: physics
-  evidence: "Found in BL-027 review 2026-09-29. gui/sweep/motion_profile.rs:196-200 sets i_eff = (tau_ID - tau_statics)/omega^2 from the constant-speed sweep and adds i_eff * alpha_p. For a one-DOF linkage tau_inertia = I(theta)*theta_ddot + 1/2*dI/dtheta*theta_dot^2; the sweep has theta_ddot = 0, so that ratio is 1/2*dI/dtheta, not I(theta). The (omega_p/omega)^2 scaling term is right; the alpha_p term is wrong (also wrong before BL-027)."
-  acceptance: "test: on a crank-rocker with off-axis CGs (configuration-dependent I(theta)), the profile torque at samples with alpha_p != 0 equals solve_inverse_dynamics driven with that (omega_p, alpha_p) at the same angle (rel 1e-6); cargo test --all green"
-  priority: 2
-  status: open
-  notes: "Independent of the BL-027 fix; noted during its review. REVIEWED 2026-10-06 (docs/analyses/2026-10-06-open-physics-review-response.md): confirmed and worse: the torque can have the wrong sign (I prime < 0), every single-link crank gets zero acceleration torque, and the overlay feeds the health panel and tutorial sizing. Also broken in the same feature: the 0-360 angle mapping (ignores the sweep range and theta0), negative omega, stroke mode, a failed statics solve stored as 0 not NaN, and every velocity-dependent force in the (omega_p/omega)^2 rescaling."
-
-- id: BL-030
-  title: "Driver > reassign on a sample rebuilds from the stock sample and discards user weights"
-  dimension: gui
-  risk: mechanical
-  evidence: "gui/state/driver_ops.rs:22-36 reassign_driver rebuilds the mechanism from the stock sample and resets the blueprint, silently discarding every point mass the user added (undoable). Found by the payload-plan critic 2026-09-29; the Track 2 hands-on checklist warns about it."
-  acceptance: "test: add a weight to a sample, reassign the driver, assert the weight (id, mass, position) survives; or the reassign path warns before discarding user edits"
-  priority: 2
-  status: fixed
-  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical, reworked after branch review F-1: the first fix (8d01d32) sent a weighted sample down the blueprint path, which starts the new driver at theta_0 = 0 in the builder's body frames and could not assemble (FourBar, a coupler weight, reassign to J4: converged=false). reassign_driver now always rebuilds a sample from the stock builder and carries each user weight over by body id (id, mass, position kept) into the rebuilt blueprint and the live body before the solve; a weight on a body the stock sample lacks is dropped with a status-bar message. Tests reassign_driver_on_a_sample_keeps_user_weights (FourBar J4 and WattII J2: converged, pose equal to the weightless reassign, weight in the blueprint and the live body mass) and reassign_driver_on_a_sample_drops_only_weights_on_bodies_it_lacks. Pre-existing; independent of Track 2."
-
-- id: BL-031
-  title: "apply_point_masses re-logs the same skipped-weight warning on every rebuild and live mass sync"
-  dimension: quality
-  risk: mechanical
-  evidence: "Payload Track 2 final review 2026-09-29. io/from_json.rs:100-110 apply_point_masses calls log::warn! for each rejected point mass (on ground, mass <= 0, non-finite) on every call; it runs on every rebuild and on every sync_live_mass_props (gui/state/blueprint_ops.rs:551), so each drag or edit repeats the warning (console.warn on WASM)."
-  acceptance: "test: a mechanism with one invalid weight; N rebuilds plus a live mass sync emit the skip warning once (at load), or apply_point_masses stays silent and only the loader's point_mass_warnings reports it; cargo test --all green"
-  priority: 3
-  status: open
-  notes: "Deferred Task 1 minor; not user-visible outside the browser console."
-
-- id: BL-032
-  title: "Load warning names a skipped blank-id weight 'W<n>' (an id the file never had) instead of '#k'"
-  dimension: gui
-  risk: mechanical
-  evidence: "Payload Track 2 final review 2026-09-29. gui/state/file_io.rs:290-292 load_from_json_str calls assign_point_mass_ids before point_mass_warnings, so a blank-id weight the loader rejects is reported under its freshly assigned id rather than by file position."
-  acceptance: "test: load JSON with a blank-id weight whose mass is 0; the warning text names it '#k' (its index in the file), not 'W<n>'"
-  priority: 3
-  status: open
-  notes: "Cosmetic; deferred Task 1 minor."
-
-- id: BL-033
-  title: "Delete/Backspace does nothing to a selected weight while a toolbar button has Tab focus"
-  dimension: gui
-  risk: mechanical
-  evidence: "Payload Track 2 final review 2026-09-29. gui/mod.rs:1292-1296 handle_delete_shortcut returns early on ctx.wants_keyboard_input(); in egui 0.32.3 that is true for any focused widget. Clicking the canvas surrenders focus, so the normal path works; only a Tab-focused button swallows Delete until Esc."
-  acceptance: "test: headless egui frame with a weight selected and a Button holding focus; Delete removes the weight, while a focused TextEdit still keeps Delete for itself (gate on text-edit focus, not any focus)"
-  priority: 3
-  status: fixed
-  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: handle_delete_shortcut now gates on focused_widget_may_edit_text (TextEdit state plus touch/missing-response guards) rather than wants_keyboard_input, so a Tab-focused button no longer swallows Delete/Backspace; five bl033_* tests (reused from Codex ed88854). Deferred Task 6 minor."
-
-- id: BL-034
-  title: "Weight mass fields cap typed values at 1000 kg"
-  dimension: gui
-  risk: mechanical
-  evidence: "Payload Track 2 final review 2026-09-29. property_panel/weight_editor.rs:27 WEIGHT_MASS_RANGE_KG = 0.001..=1000 clamps the editor and the + Mass toolbar field (gui/mod.rs:1283). Heavier payloads load from a file and idle frames leave them alone (tested), but cannot be typed. The spec is silent on an upper bound."
-  acceptance: "decision recorded (raise the cap, e.g. to 1e5 kg, or keep it with a hover note); if raised, test that typing 5000 kg stores 5000 kg and the breakdown scales with it"
-  priority: 3
-  status: fixed
-  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: question 33's default kept: the 1,000 kg cap stays and each mass field says so on hover (option (a), A-57). WEIGHT_MASS_RANGE_KG stays 0.001..=1000; typing 5000 kg stores 1000 kg; a 1000 kg weight's gravity power is 400 times a 2.5 kg one's; the idle-frame test keeps a 150000 kg file weight."
-
-- id: BL-035
-  title: "Weight Breakdown legend swatch colour is arbitrary for multi-coloured weight lines"
-  dimension: gui
-  risk: mechanical
-  evidence: "Payload Track 2 final review 2026-09-29. plot_panel/weights.rs:278-283 draws each weight as several egui_plot lines (green helping, red hurting, grey gap runs) sharing one legend name, so the legend swatch takes whichever run egui_plot picks. The plotted runs carry the right colours (tested)."
-  acceptance: "the legend shows one neutral swatch per weight (e.g. a zero-length line in the weight's identity colour carrying the name, with the coloured runs unnamed), pinned by a test on the generated line specs"
-  priority: 3
-  status: open
-  notes: "Cosmetic."
-
-- id: BL-036
-  title: "Gravity breakdown uses the nominal constant omega for Expression drivers"
-  dimension: physics
-  risk: physics
-  evidence: "Payload Track 2 final review 2026-09-29. The DriverTorque share basis (gui/sweep/weights.rs:107-119 and the breakdown block in gui/sweep/mod.rs) takes rate = nominal omega and total power = T*omega, inheriting the sweep's constant-rate assumption. With an Expression driver (file-only) the true rate varies, so the shares do not leave a zero remainder."
-  acceptance: "test: an Expression-driven crank with a weight; per-sample shares use the driver's actual rate and share sum + other == total (rel 1e-9); or Expression drivers are documented as outside the breakdown's constant-speed model with the plot showing a note"
-  priority: 3
-  status: open
-  notes: "Pre-existing sweep limitation, outside the spec's constant-speed model. REVIEWED 2026-10-06 (docs/analyses/2026-10-06-open-physics-review-response.md): confirmed; the acceptance identity is vacuous (reuse assert_gravity_only_sum_invariants). Expression drivers are reachable from the GUI (Custom Expression), not file-only. The wider problem (time sweeps labelled as angles, actuator force/power/reactions at the nominal rate, a debug-build panic) is BL-050."
-
-- id: BL-037
-  title: "Linkage web app sends ViewportCommand::Title every frame, flooding the browser console with warnings"
-  dimension: gui
-  risk: mechanical
-  evidence: "Live smoke 2026-10-01 (linkage.colesorkness.com): zero errors but thousands of identical warnings, one per frame: '[eframe::web::app_runner] eframe-0.32.3/src/web/app_runner.rs:256: Unhandled egui viewport command: Title(\"Linkage Simulator\") - not implemented in web backend'. The web backend ignores the command; sending it each frame only spams the console and buries real warnings."
-  acceptance: "the title command is sent only when the title changes (or not at all on wasm32); a headless test counts the viewport commands over several idle frames (0 or 1); gui-smoke shows no Title warning"
-  priority: 3
-  status: fixed
-  notes: "Seen in every gui-smoke run; benign. The magcoupling page does not have it. Fixed 2026-10-02 on magcoupling/m5 (plan docs/superpowers/plans/2026-10-02-magcoupling-m5-embed.md, decision M5-7): gui/mod.rs send_title sends the title only when it differs from the last one sent, and never on wasm32; gui::tests::the_window_title_is_sent_only_when_it_changes counts the commands; gui-smoke's linkage step reports title_warning."
-
-- id: BL-038
-  title: "Two copies of the design file picker: linkage gui::calculator_window::DesignPicker repeats magcoupling-rs app::files::DesignPicker"
-  dimension: quality
-  risk: mechanical
-  evidence: "M5 plan review 2026-10-02 (docs/superpowers/plans/2026-10-02-magcoupling-m5-embed.md, decision M5-6): linkage-sim-rs/src/gui/calculator_window.rs DesignPicker (native rfd dialog, wasm32 AsyncFileDialog into an inbox) and save_filter follow magcoupling-rs/src/app/files.rs (its DesignPicker and extension filter) almost line for line, because M5 leaves magcoupling-rs unchanged."
-  acceptance: "one DesignPicker, behind a magcoupling-rs feature that both hosts enable (e.g. files = [gui, dep:rfd, dep:wasm-bindgen-futures]); the standalone app's and the linkage window's picker tests pass; gate 10 still shows workbook-parity absent from every shipped build"
-  priority: 3
-  status: fixed
-  notes: "Decision M5-6 option (b), deferred: it changes magcoupling-rs's Cargo.toml and its gui-is-egui-only contract. FIXED 2026-10-06 by removal: the calculator is a site of its own (colesorkness.com/tools/magcoupler) and the linkage app no longer embeds it (gui/calculator_window.rs deleted; plan docs/superpowers/plans/2026-10-06-colesorkness-url-move-and-standalone-calculator.md)."
-
-- id: BL-039
-  title: "The calculator window covers the linkage app's 'Recover Unsaved Work?' prompt when both show at once"
-  dimension: gui
-  risk: mechanical
-  evidence: "M5 plan review 2026-10-02: linkage-sim-rs/src/gui/mod.rs draws the native and the wasm32 recovery prompts (egui::Window, Middle order, anchored at the centre) inline in update, after the calculator window, which raises itself on its second frame (gui/calculator_window.rs, raise). With ?tool=magcoupling and an autosave on the web, or Tools > Magnetic coupling opened natively while the prompt shows, the window hides the prompt."
-  acceptance: "with the calculator window open and a recovery pending, the prompt is in front: a headless test draws the window and the prompt (moved out of update into a function) and Context::layer_id_at at the prompt's centre is the prompt's layer"
-  priority: 3
-  status: fixed
-  notes: "Documented in M5 (decision M5-4, the calculator_window module docs, 02-system limitations): the user can move or collapse the window. Fix sketches: both prompts on Order::Foreground (a press on them then leaves the keyboard where it is, decision M5-5), or open_magcoupling deferred while a recovery is pending. FIXED 2026-10-06 by removal: the calculator is a site of its own (colesorkness.com/tools/magcoupler) and the linkage app no longer embeds it (gui/calculator_window.rs deleted; plan docs/superpowers/plans/2026-10-06-colesorkness-url-move-and-standalone-calculator.md)."
-
-- id: BL-040
-  title: "The calculator window's keyboard does not follow Tab focus between it and the linkage app"
-  dimension: gui
-  risk: mechanical
-  evidence: "M5 plan review 2026-10-02: CalculatorWindow::follow_presses (linkage-sim-rs/src/gui/calculator_window.rs) moves the keyboard by presses only, while egui's Tab traversal (Focus::begin_pass reads Tab before any widget draws) can move the focus between the parts. Into a calculator field: the keys stay with the linkage app, so its canvas keys the field does not consume still run (Left and Right arrows nudge the selected link). Into a linkage field: the window keeps removing the key events, so Backspace, Enter and the arrows do nothing there."
-  acceptance: "decided with the user first (decision M5-5 alternative d: the keyboard also follows egui's focus); then headless tests for both directions: a focus moved into the window gives it the keyboard, a focus moved to a linkage widget takes it, a focus on a Foreground layer leaves it"
-  priority: 3
-  status: fixed
-  notes: "Sketch: each frame compare ctx.memory(|m| m.focused()) with the last frame's, also while the window is closed; on a change to Some(id), apply the press rule to ctx.read_response(id)'s layer_id. Documented in M5 (decision M5-5, the calculator_window module docs, 02-system limitations). FIXED 2026-10-06 by removal: the calculator is a site of its own (colesorkness.com/tools/magcoupler) and the linkage app no longer embeds it (gui/calculator_window.rs deleted; plan docs/superpowers/plans/2026-10-06-colesorkness-url-move-and-standalone-calculator.md)."
-
-- id: BL-041
-  title: "A shared link (?m=) plots the wrong crank range when the driven link is drawn at an angle"
-  dimension: gui
-  risk: mechanical
-  evidence: "User report 2026-10-05 (press 4-bar link): the share link stores the crank limits in display degrees (22-80), and the sweep converts them to body-frame angles with driver_display_offset. AppState::load_from_json_str called compute_sweep before recompute_driver_display_offset, so a fresh load converted them with the previous offset (0 on a fresh page): the press link swept display 66-124 deg, blank past the 85.5 deg dead point, until an edit recomputed the sweep."
-  acceptance: "a link written from a mechanism whose crank is drawn at 30 deg, with a 45..135 range, loads into a fresh AppState and sweeps exactly the sender's driver angles (file_io::tests::share_url_sweeps_the_senders_crank_range_for_a_rotated_crank)"
-  priority: 2
-  status: fixed
-  notes: "Fixed 2026-10-05 on fix/share-link-sweep-offset: load_from_json_str recomputes the offset before compute_sweep. load_sample has the same order but turns the range off before its sweep, so its sweep never reads the offset; left as is."
-
-- id: BL-042
-  title: "A weight on a link inside a force zone is invisible: the zone's overlap highlight paints over it"
-  dimension: gui
-  risk: mechanical
-  evidence: "User report 2026-10-05 (press 4-bar with a 150 lb weight on the press tool): the weight was in the model (71.04 kg total) but not on the canvas. render_mechanism drew the weights; render_overlays then drew the force elements, whose overlap highlight (FORCE_ZONE_OVERLAP_FILL, premultiplied 255,200,0,50, additive) covers the tool block and turns the gold marker and its arrow the same yellow."
-  acceptance: "a headless frame of the ParallelogramPress with a zone over the whole canvas and a weight on the coupler paints the weight marker after the overlap highlight (canvas::tests::weight_readout::a_weight_inside_a_force_zone_draws_over_the_zone_highlight)"
-  priority: 2
-  status: fixed
-  notes: "Fixed 2026-10-05 on fix/weights-over-force-zones: draw_weights moved from render_mechanism to render_overlays, after draw_force_elements. The highlight stays additive (changing it would restyle every zone)."
-
-- id: BL-043
-  title: "Scale mechanism scales a force zone's box but not its locked application point"
-  dimension: physics
-  risk: mechanical
-  evidence: "blueprint_ops.rs scale_mechanism (2026-10-06 map of the force-zone code): it multiplies zone_min/zone_max and the body geometry by the factor but leaves ForceZoneElement.body_local_app_point unscaled, so after a scale the locked force acts at the old distance from the body origin."
-  acceptance: "scaling a mechanism by k scales body_local_app_point by k; a test scales a zone with a locked point and checks the point and the statics (driver torque scales by k for a force-only load)"
-  priority: 3
-  status: open
-  notes: "Found while planning the round-geometry work (plan 2026-10-06, Part A); not changed there. REVIEWED 2026-10-06 (docs/analyses/2026-10-06-open-physics-review-response.md): confirmed at runtime (+10 N m stays +10 after x2). Scale the point whenever it is Some, in every mode: contact mode keeps a stored locked point (element_types.rs:365-377). Recommend priority 2 (silent wrong torque); the other missed lengths and the missing tests are BL-052."
-
-- id: BL-044
-  title: "The canvas Draw Geometry tool is a stub"
-  dimension: gui
-  risk: mechanical
-  evidence: "interaction.rs handle_draw_body_geometry is '#[allow(dead_code)] // Stubbed: full implementation pending'; EditorTool::DrawBodyGeometry does nothing. Until 2026-10-06 the property panel's Draw Geometry and Redraw buttons entered this mode, so they did nothing; Part A of the round-geometry plan replaced them with Add rectangle / Add circle (decision R-2). The stub, DrawBodyGeometryState and PendingPropertyEdit::EnterDrawGeometryMode remain."
-  acceptance: "either the tool draws a rectangle or a circle by dragging (with a headless test), or the stub, its state and the edit variant are removed"
-  priority: 4
-  status: open
-  notes: "Decision R-2 option (b) if the user wants dragging."
-
-- id: BL-045
-  title: "Force-element edits skip undo and the changed flag"
-  dimension: gui
-  risk: mechanical
-  evidence: "update_force_element (blueprint_ops.rs) does not push an undo step, so a force zone's mode switch (Overlap centre / Locked point / Contact point), a dragged F marker and the other force-editor edits cannot be undone and do not set dirty (the web autosave skips them); noted in the round-geometry final review 2026-10-06"
-  acceptance: "each force-element edit is one undo step and sets dirty; a test switches a zone's mode, undoes it, and checks dirty"
-  priority: 3
-  status: fixed
-  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: update_force_element now records one undo step and sets dirty through mutate_and_rebuild (unchanged or invalid edits are no-ops), and the force editor commits numeric fields once on drag release or focus loss; reused from Codex 8e6ad7d. Pre-existing for the old lock checkbox; the round-geometry branch adds the three-way choice."
-
-- id: BL-046
-  title: "The canvas's orange zone-force label is hard to read on the yellow overlap highlight"
-  dimension: gui
-  risk: mechanical
-  evidence: "force_render.rs draws \"F (locked)\" and \"F (contact)\" in Color32::from_rgb(255, 165, 80) over FORCE_ZONE_OVERLAP_FILL (255, 200, 0, alpha 50; colors.rs); on the live press (2026-10-06) the label at the wheel's bottom barely shows while the wheel is in the zone"
-  acceptance: "the zone-force label reads clearly over the overlap highlight (a darker label colour or a backing plate); a headless test checks the label's colour against the highlight, or the label draws on a plate"
-  priority: 4
-  status: fixed
-  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: the zone-force label (F, F (locked), F (contact)) now draws on a measured opaque dark plate above the overlap highlight, same font, anchor and colour; reused from Codex 33c0079 with its two painted-output tests. Seen in the live check of Part A of the round-geometry plan; the animated HTML export draws its labels with a white halo instead."
-
-- id: BL-047
-  title: "The animated HTML export leaves out prismatic and cam joints"
-  dimension: gui
-  risk: mechanical
-  evidence: "gui/export/animation.rs joint_point keeps revolute and fixed joints only (2026-10-06 final review of Part B): a slider-crank's slide joint has no marker on the page, and its reaction is not in the readouts, while the canvas draws a square marker and an arrow (rendering/mod.rs) and the Joint Reactions plot lists it"
-  acceptance: "the page marks prismatic and cam joints as the canvas does (a test exports the slider-crank and finds the slide joint's marker); their reactions are shown, or the page says they are left out"
-  priority: 4
-  status: open
-  notes: "A prismatic joint's multiplier is not an [Fx, Fy] force, so its reaction needs its own drawing (the canvas's treatment is pre-existing)."
-
-- id: BL-048
-  title: "The File menu's text exports repeat the generate / download / error block"
-  dimension: quality
-  risk: mechanical
-  evidence: "menu_bar.rs: the schematic, DXF, HTML report and animation items each repeat match generate { Ok -> download_text + apply_download_outcome, Err -> error_log + show_error_panel } (2026-10-06 final review of Part B)"
-  acceptance: "one helper (generate result, file name, MIME type, filter, failure prefix) used by every text export item; behaviour unchanged (same file names, messages and error panel)"
-  priority: 5
-  status: open
-  notes: "Left alone in Part B to keep the existing items untouched."
-
-- id: BL-049
-  title: "Under a mounting angle the canvas draws force arrows and the zone box unturned"
-  dimension: gui
-  risk: mechanical
-  evidence: "The canvas turns positions by the mounting angle (ViewTransform::world_to_screen) but draws force directions straight from the world vector (primitives.rs draw_force_arrow: dx = fx / mag, dy = -fy / mag; force_render.rs zone arrows: dir_x = fx / fmag) and the zone box as the screen rectangle of two turned corners (force_render.rs), so with a mounting angle the reaction and zone-force arrows and the zone box are drawn turned back by the angle. Found in the 2026-10-06 re-review of Part B's final fixes; the animated HTML export turns every point and vector and draws zones as four corners."
-  acceptance: "with a mounting angle the canvas turns force directions by it and draws a zone as its four turned corners; a headless test at 30 deg checks a reaction arrow's and a zone arrow's screen direction and the zone outline"
-  priority: 3
-  status: fixed
-  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: the canvas turns reaction, component, external and zone-force directions by the mounting angle (world_direction_to_screen) and draws a zone as its four turned corners; five literal 30-degree headless tests (reused from the parked Codex branch). Pre-existing; the page (gui/export/animation.rs) is the reference for the turned drawing."
-
-- id: BL-050
-  title: "Expression drivers: sweeps are time sweeps labelled as angles, and actuator force, power, reactions and gravity totals use the nominal rate"
-  dimension: physics
-  risk: physics
-  evidence: "sweep_time (gui/sweep/mod.rs ~279) assumes theta0 + omega t; for an expression driver AppState fills omega = 2 pi, theta0 = 0 placeholders (blueprint_ops.rs:319-333, file_io.rs:362), so an 'angle' sweep runs t in [0, 1] s labelled 0-360 deg (f = 2 pi t^2: label 90 deg is 22.5 deg). Nominal omega also feeds the reaction solve (sweep/mod.rs:621), actuator force (:703, :712-718; off by omega/f': x4.0 at t = 0.125), actuator power (:725, :729), actuator-basis totals (weights.rs:116), canvas reactions (blueprint_ops.rs:634-635) and the animation export (export/animation.rs:448). ParallelogramActuator with stored force 0 and f = 2 pi t^2 trips the debug_assert at reactions.rs:691 (debug builds panic). Reachable from the GUI (Custom Expression, input_panel.rs:603-768). Found in the 2026-10-06 review of Codex's open-physics report (docs/analyses/2026-10-06-open-physics-review-response.md)."
-  acceptance: "for a non-constant driver either (a) the breakdown and actuator outputs are hidden with a visible note, or (b) every rate uses the actual f'(t) (driver row of assemble_phi_t, or thetadot_j - thetadot_i), actuator reactions go through solve_reactions_with_actuator_using_q_dot, and expression sweeps are plotted against time; tests with f = 2 pi t^2 check the labels or time axis, actuator force against tau / (dL/dtheta), and a gravity-only remainder of ~0"
-  priority: 2
-  status: open
-  notes: "Recommended: (a) now, (b) later. Where f' = 0 use a unit-rate velocity solve (q_theta) so forces need no division by the rate. Overlaps BL-036 (the breakdown part) and BL-017 (the debug_assert)."
-
-- id: BL-051
-  title: "rebuild() moves a linear-driven mechanism to driver length 0"
-  dimension: physics
-  risk: mechanical
-  evidence: "blueprint_ops.rs:345-350 works out the solve time from driver_angle even for a linear driver. Probe (state level, 2026-10-06): a slider at stroke 1.2 (x = 0.2) jumps to x = -1.0 (driver length 0) after a plain rebuild() while the stroke still reads 1.2; after scale x2 it goes to x = -2.0. The slider re-solves only when its value changes (input_panel.rs:316-317), so the wrong pose probably stays on screen. Found in the 2026-10-06 review (docs/analyses/2026-10-06-open-physics-review-response.md)."
-  acceptance: "rebuild() keeps a linear-driven mechanism at its current stroke; a test rebuilds a slider-crank at stroke 1.2 and checks the slider position and the driver length; confirmed first in the GUI (an edit on a linear-driven mechanism)"
-  priority: 2
-  status: fixed
-  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: rebuild() now takes the solve time from the newly assigned driver kind (a linear driver's stroke, a revolute driver's angle) instead of driver_angle, so an edit no longer moves a linear-driven mechanism to driver length 0 (Codex acb1531's fix, ported onto driver_angle_to_time). Tests in gui/state/tests.rs: Codex's three bl051 tests plus bl051_rebuild_keeps_slider_crank_at_linear_stroke (the Slider-Crank sample on a linear driver at stroke 1.2, then Add Mount Point; checks slider x = 0.2, driver length 1.2, commanded stroke 1.2 and an unmoved pose). With the fix reverted the three linear tests fail (slider x = -1.0, driver length 0; the slider-crank does not solve after the edit) and the revolute control passes. GUI confirmation is Codex's 2026-10-07 WASM run: Add Mount Point moved Pos 200 mm to -1000 mm at stroke 1200 mm before the fix and kept 200 mm after it (screenshots in docs/analyses/2026-10-07-gui-evidence/ on codex/physics-review-rework-2026-10-06); not re-run on this branch. Reproduced at state level only; confirm in the GUI before fixing. Would affect every edit to a linear-driven mechanism."
-
-- id: BL-052
-  title: "Scale mechanism misses cam profiles, the linear-driver stroke and other lengths, and has no tests"
-  dimension: physics
-  risk: mechanical
-  evidence: "scale_mechanism (blueprint_ops.rs ~1443) leaves: cam profile s(theta) in metres (cam.rs:147-150, schema.rs:351-358; inconsistent geometry), the linear-driver stroke slider value (blueprint_ops.rs:310-311 keeps it while length_0 scales), the sweep range in mm for linear drivers (blueprint_ops.rs:1410-1411), trajectory target points and values (control_target.rs:17-37, types.rs:335-343), BearingFriction.pin_radius (element_types.rs:206; the comment at blueprint_ops.rs:1510-1512 wrongly says bearing friction has no length data). It pushes an undo step before checking a blueprint exists (blueprint_ops.rs:1447-1448). No test covers it; its only caller is pending_edits.rs:290. Found in the 2026-10-06 review (docs/analyses/2026-10-06-open-physics-review-response.md)."
-  acceptance: "each listed length scales with the mechanism (or is documented as kept); tests through AppState::scale_mechanism with literal expected values for each; no undo step without a blueprint"
-  priority: 3
-  status: open
-  notes: "BL-043 (the locked force point) is the same function. Scaling-law decisions for the user: izz_cg (x k^2 for geometric similarity with mass kept; point-mass inertia already scales x k^2), velocities and speed limits, pin radius. Optional guard: destructure ForceZoneElement fully and list every force variant so a new length field fails to compile."
-- id: BL-053
-  title: "Magcoupler needs direct overall size controls with live torque and coordinated housing"
-  dimension: gui
-  risk: mechanical
-  evidence: "User report 2026-10-11: 10 to 8 magnets and a lower torque requirement do not select a smaller radius or resize the fixed cap. Requested manual diameter, overall length and gap controls while retaining all calculator data. GUI regression size_and_torque_has_direct_dimension_and_gap_controls failed before implementation (missing tab)."
-  acceptance: "Size and torque tab has outside diameter, overall length, gap and magnets-per-ring controls; housing follows dimension edits with signed allowances and fixed thicknesses retained; torque equals compute_all on the shown design; out-of-range torque is unavailable; idle frames do not edit, changes undo/redo, detailed inputs/files/share links remain available; independent geometry review and full GATE PASS"
-  priority: 2
-  status: fixed
-  notes: "Pure adapter to existing geometry and torque equations; no new model, deviation, schema or default inputs. Independent geometry and final integrated review PASS; full gate GATE PASS with the Python oracle's 1159 tests run and differential data current. User explicitly authorized pushing the completed feature to update the website."
-
-- id: BL-054
-  title: "Make the manual magcoupler minimum OD adjustable"
-  dimension: gui
-  risk: mechanical
-  evidence: "User request 2026-10-12 after the 8-magnet OD stopped around 40.4 mm: Let the minimum be a slider too. Before implementation manual_size_has_an_adjustable_minimum_od failed (missing control) and the adapter rejected 8 magnets at 38 mm because of the inherited 9 mm radius range."
-  acceptance: "Minimum OD changes the diameter slider limit without changing the design, torque or undo history; an 8-magnet design can resize to 38 mm after lowering the limit; bore, boss, cap/thread and upper radius bounds remain; smaller designs survive idle frames, undo/redo, load/share and reset; magnet-fit and keyway failures remain visible; independent review and full GATE PASS"
-  priority: 2
-  status: fixed
-  notes: "Exploration range preference only; existing model, input metadata, inverse sizing and file/share schema remain unchanged. Independent geometry and integrated review PASS; full gate GATE PASS, including 529 app unit tests, 21 size-adapter tests, native/WASM clippy, all 1159 Python oracle tests and current differential data. User's prior authorization to publish this magcoupler UX work applies."
-
-- id: BL-055
-  title: "Magcoupler gives no cause, remedy or consequence on screen: two unlinked torque targets, an invisible size model, red checks without guidance"
-  dimension: gui
-  risk: physics
-  evidence: "Read-only audit 2026-10-13 (14 agents; 143 of 144 findings survived adversarial verification; themes T1, T2, T3 and part of T5) after the owner went from 10 to 8 magnets, lowered the torque target and the coupling did not shrink. At the default ring, 10 -> 8 magnets takes pull-out from 2.69 to 1.97 N m (-27 %), grows the cup OD from 41.3 to 42.4 mm and leaves the outside diameter at 42.8 mm (the cap sets it); the Torque -> Magnets target was separate GUI state (gui/sizing.rs:85-105), so a lower target showed a green 'Solved' beside a red 'Below hot minimum'; the default design opens with three Fails whose one remedy cites 'Metal design C122' (engine/materials.rs:244); 15 of 17 dashboard rows read 'No teaching note'. Owner decisions G-1 to G-8 (docs/superpowers/specs/2026-10-13-magcoupler-guidance-design.md)."
-  acceptance: "One torque number: the sizing target is metal.required_min_Nm (the Required slider edits it, one undo restores it, files and links round-trip, a file whose target differs uses the requirement with a notice); the panel opens on Size and torque with a dismissible welcome strip; the Size tab shows Required, Hot-low with its live gap and Pull-out torque (nominal, at T), and under the controls what moves what (neighbour magnet counts from compute_all, the smallest fitting diameter, the cap, cup and boss that set the outside diameter, the magnets plus housing lengths); the solver is an Auto toggle on the Size tab (matching slider locked, re-solve after the debounce, ring size searching the Minimum OD range, opening the tab no longer forces forward mode); the dashboard has a design status line, a Magnets fit row, Problem, Why and Fix under red and amber rows and a Why: link on every row; no guidance text matches the banned patterns and every number comes from results; idle frames edit no input; engine verdict strings unchanged (tests/python_schema.rs); fresh-context physics review of every new physics sentence (G-3), whole-branch review and full GATE PASS"
-  priority: 2
-  status: fixed
-  notes: "GUI-side layer plus engine helpers (engine::size_controls breakdowns, smallest_fitting_diameter, ring_radius_range and with_ring_radius; sizing::solve_in); torque model, deviations, input metadata, DESIGN_VERSION and the file schema unchanged. Reverses A2-9 and M41-9 (the target only) and M42-2. Spec deviations accepted by the controller: D-1 (a neighbour magnet count that fails only the keyway clause of is_valid still shows its torque, since the keyway does not depend on the magnet count and the Size tab and dashboard already flag it; a neighbour reads in words only when its blocks do not fit, its end effect is out of range or its torque is not finite); D-2 (the target-mismatch notice carries units: This file's sizing target (X N·m) differed from its requirement (Y N·m); the requirement is used); D-3 (a requirement of zero or less is left out of a saved file, which keeps round trips exact; load accepts a file without it). RING_SIZE_STAYS reads: The ring radius stays the same when you change the magnet count; the cup OD below can still change. It is the first line under Magnets per ring with Auto off; with Auto on the ring size or the magnet length the line is AUTO_RESIZES_RING or AUTO_RESETS_LENGTH (physics review 3, N4). The target-mismatch notice shows only for a Torque -> Magnets file or link: forward-mode files written before G-2 carry the default target 2.5, which that mode never used (final review). Known limitations: a fix can name an input Auto holds, and its link then frames a locked row; the consequence lines recompute on every drag frame (about 30 compute_all calls), accepted and recorded in 02-system; the Required slider's value box is registered with the edit check, so typing in it holds the solve (no debounce gap). Out of scope, later slices: note rewrites and three new notes, 87 empty help strings, on-screen jargon (four names for one radius), the torque sensitivity card, guided lessons, plot captions, drawing titles, guides for results-table checks off the dashboard. Release (G-8): merge to main and push after the physics review, the whole-branch review and GATE PASS."
-
 - id: BL-056
   title: "Magcoupler teaching notes are dense, never say what to change and miss core topics; inputs lack help; on-screen jargon (four names for one radius, workbook cells, E-badges)"
   dimension: gui
@@ -779,15 +230,6 @@
   priority: 2
   status: fixed
   notes: "FIXED 2026-11-22: physics and regression reviews passed, GATE PASS (--full) at 54a3f0a, gui-smoke passed with frame_check true; merged f4c643e. Built 2026-11-22 on branch magcoupling/starting-design-own-fields in three commits (keyway; fields; docs). The run was resumed on the session model after a usage limit stopped the fable builder in part 2 (owner 'go!', 2026-11-22). Nine checks, same verdict with either keyway depth and either field set: hot-low 1.448 against 1.35 N·m, clearance +0.063 mm, cup wall +0.074 mm, gearbox 0.510 against 0.60 N·m, space claim, end effect 0.879, magnets fit and shaft joints identical; temperature passes with the magnet limit 93.06 -> 94.94 C (hot-day margin 28.06 -> 29.94 C, slip heat 2.49 -> 2.25 W); the inner hub's fitting temperature keeps 93.27 C against the 100 C input (field cap 133.4 -> 131.3 C, not binding). The dashboard line reads 'Fixed 3D fields: starting or example design' (kept short: 'from the starting or example design' widened the dashboard column and broke the panel's layout test). The 3D routine's own pull-out torque for the starting design (1.34 against the engine's 1.83 N·m) is filed as owner question 48. Not merged: in_progress until the reviews, the smoke run and the gate pass and the controller releases it."
-- id: BL-081
-  title: "Magcoupler UX overhaul, slice B, stage 2, part 1 (the instrument's columns): four tiles over the drawing, the check list over the Explain panel with its orientation, the Required torque at the head of the Size column, the fixed-3D line on the first view"
-  dimension: gui
-  risk: physics
-  evidence: "Design docs/superpowers/specs/2026-11-09-magcoupler-ux-overhaul-design.md (approved by the owner on 2026-11-16), sections 4.4, 4.5 and 5, tests 8 to 15 of section 8.2 where they fall in this part; owner decisions O-2 (option B, the instrument) and O-3 (one Explain panel, its first state an orientation); the design's calls C-2 to C-6, C-10, C-11 and C-25. On the stage 1 branch (magcoupling/overhaul-b1-the-look at 272d086): the right column is the dashboard's 19 rows with a red check's Problem, Why and Fix drawn open; the centre's Size tab carries a welcome strip, the Required slider and two torque readouts, and the torque card over the drawing; at 1280 x 800 the first view shows 608 words, and the line 'Fixed 3D fields from the example design' (register row A-18) sits under the shaft joints row, below the dashboard's first screen; in a 1024 x 700 window the Size tab's left column runs past the window's foot and takes the centre region and its drawing with it (headless render, 2026-11-22). The plan's prototype, drawn by the stage 1 spike's headless renderer at 1280 x 800, shows 443 words, the four tiles, the nine check rows and the fixed-3D line on the first view."
-  acceptance: "Plan docs/superpowers/plans/2026-11-22-magcoupler-overhaul-b2-the-instrument.md: gui::checks (one row per counted check in CHECK_GUIDES order, a shape and a word as well as a colour for each state, the material warnings and the fixed-3D line at its foot), gui::tiles (pull-out, hot-low with 'needs' and its gap, cold-high, rotating mass; the number leads; hot-low and the requirement quoted by BL-068's rule; two rows of two where four would be narrower than 130 points) and gui::explain (one Selection; the orientation on the first frame; a check's entry holds exactly its guide's Problem, Why, fixes and notes and the rows its verdict badges; the Hot-low tile's entry holds the torque card and names the check of its row; Esc and 'About this tool' return the orientation; a hover selects nothing; the Equation link opens the Equation panel and leaves the selection), each with its red test first; the dashboard's list, the welcome strip and the centre's readouts and card leave the screen and every text and control they held has the home the plan's nothing-lost table names; the Size column scrolls in a short window; the opening tab keeps the callout list under the drawing until part 2 makes the dimension tags selections; an app test in the app's own theme and font at 1024 x 700, 1280 x 800 and 1920 x 1080 holds the columns apart, the tiles whole, the drawing at its least height, the orientation, the fixed-3D line and the Detailed inputs fold on the first view; another holds the first view to at most 450 words; the gui-smoke prompt and its verdict test read the new layout; no engine file changes; README and docs/ai updated; a physics review of the orientation and the tile's 'needs' line; GATE PASS with --full; the gui-smoke run from the branch's own script with frame_check: true; an independent whole-branch review on fable; then merge and push."
-  priority: 2
-  status: fixed
-  notes: "FIXED 2026-11-22: four review lenses (physics and text, correctness, tests, UX and code; run on the session model, Opus 5.5, because fable was at its usage limit) found nothing blocking; one fix wave (CR-1 red-first, TQ-1 to TQ-4, UXQ-1 to UXQ-5); GATE PASS (--full) at e2a825a; gui-smoke passed with frame_check true; merged 2c8bc41. Review nits PT-1 and PT-2 are filed as BL-083 and BL-084. Built on branch magcoupling/overhaul-b2-the-instrument (Tasks 1 to 6 of the plan); the full gate, the smoke run, the physics review and the whole-branch review are its Task 7. Filed with its plan on 2026-11-22 (the design's header: each plan files one item). The design names no parts inside stage 2; the plan cuts it in two (its decision D-1) because the whole of sections 4 and 5 is too large for one plan a reviewer can hold, and this part ships a visibly new first view on its own with nothing that is visible today lost. PART 2, with its own plan and item: the top bar and its Design menu (Reset to the starting design, Save, Load, Open the example design, Show spreadsheet details), Share, Export and Learn with its note list; the Size column's folds (Detailed inputs, Assumptions) and its hint, Set by, floor and Why lines moving into the Explain panel when an input is selected (inputs as a Selection, the entries of the size controls with their torque-card rows); dimension tags, results-table rows and callout rows as selections, the callout list then leaving the opening tab for the Geometry tab; the Equation panel's Explain checkbox leaving with it (decision C-11) and each step of the Start here walk selecting its note; the 'Spreadsheet cell' foot link of an entry; the Plots tab with its picker (decision C-9) and the plots' red reference lines (stage 1 review C-3); the word budget of 250 (goal G-1, test 8); the slip-heating readout's stray unit (design 9.2); the controls' outlines (stage 1 review E-4), a SemiBold face (S-1), the top bar's buttons without a box (S-3) and the page shell (S-4). risk: physics because the Explain panel's orientation (design 5.4) is a physical claim in new words and the Hot-low tile restates the requirement in a new line ('needs 1.350 N·m'); every other number and claim on screen is today's text moved. So every task of the plan runs on fable (CLAUDE.md section 5's precedence). The cap's skirt-wall caution (owner answer 4a, 2026-11-22) is BL-082 on its own branch; the check list leaves it room among the lines at its foot."
 - id: BL-082
   title: "Magcoupler: an amber caution when the cap's skirt wall is under 0.5 mm"
   dimension: gui
@@ -815,42 +257,6 @@
   priority: 4
   status: fixed
   notes: "FIXED 2026-11-28 on branch magcoupling/r4-physics: plain_text.rs HELP gains a row for each band torque (hot-low: 'The pull-out at the operating magnet temperature less the production variation allowance. It must reach the required torque; a hotter operating temperature or a larger allowance lowers it.'; cold-high: 'The pull-out at the minimum magnet temperature plus the production variation allowance. The shaft joint and gearbox checks read it; a colder minimum or a larger allowance raises it.'), the torque-band note's definitions with no torque ordered (BL-067: the checks compare the larger of cold-high and the operating pull-out with the allowance), so both tiles' entries show 'What it is' and their hovers and table rows the help; the Cold-high entry's 'Checks it touches' names the Shaft joints and Gearbox input torque checks, each a link that selects it (explain.rs ALSO_TOUCHES and touched_guides, after the check that badges a row; the dashboard row still badges no check, so the gearbox entry's numbers are unchanged). The shaft joints check is named beside the acceptance's gearbox check because it reads the same checked pull-out; the paused shaft clamp, which reads cold-high too, is not named while its section is paused (a result's entry names no clamp). Red test explain.rs the_band_torques_entries_say_what_they_are_and_cold_high_names_the_checks_it_feeds; claim test plain_text.rs every_direction_the_band_torques_helps_state_holds_one_slider_step_up (pins each help's direction words and checks each stated direction one slider step up, on the example and Y30 ferrite designs); the tile-entry and any-result tests read touched_guides; the gui-smoke card step names the Hot-low entry's 'What it is'. GUI text only: no engine or oracle number changes. Filed 2026-11-22 from the BL-081 review; new on-screen text, so slice F or stage 2 part 2. Built and reviewed on Opus 5.5 while fable is out; fable re-reviews this diff on 2026-12-01. The G-3 text review of its strings and fable's physics re-review of the diff are tracked as BL-130. The text review's fix wave (SF-3) made the cold-high help 'The pull-out at the minimum magnet temperature plus the production variation allowance. The shaft joint and gearbox checks read it, or the operating pull-out with allowance if larger.': its direction clause gave way under the 30-word help cap, so the claim test pins hot-low's direction words only (cold-high's directions are still stepped, and the torque-band note's steps state them)."
-- id: BL-085
-  title: "Magcoupler UX overhaul, slice B, stage 2, part 2a (the top bar and the notes): Undo, Redo, Design, Share, Export and Learn on the bar, the Design menu, the teaching notes in the Explain panel, the Equation panel's Explain checkbox and bar button gone, each Start here step selecting its note"
-  dimension: gui
-  risk: mechanical
-  evidence: "Design docs/superpowers/specs/2026-11-09-magcoupler-ux-overhaul-design.md (approved by the owner on 2026-11-16), sections 4.2, 5.1, 5.2 and 5.5, test 9 (the top bar's actions, every note in the Learn list) and test 10 (each step of the walk selects its note) of section 8.2, section 9.2 (the slip-heating readout's stray unit); the design's calls C-11, C-12 and C-25; stage 1's review suggestion S-3; BL-081's list of part 2. On main at 290c99b: the top bar (gui/panel.rs header_ui) is Undo, Redo, Reset all, Open the example design, Save design, Load design, Copy share link, Export spreadsheet, the Equation panel toggle and the Show spreadsheet details checkbox, each a boxed button; a note link (a Why link, a warning's link, an Explain entry's lesson link) opens the note on its own in the Equation panel, whose Explain checkbox shows the note under the open equation; the Start here walk turns that checkbox on; the slip-heating plot's readout reads 'never: steady state stays below the limit s' at the example design (format::with_unit puts the result's unit after a text). The plan's prototype draws 427 words on the first view at 1280 x 800 (443 on main)."
-  acceptance: "Plan docs/superpowers/plans/2026-11-22-magcoupler-overhaul-b2-part2a-top-bar-and-notes.md: format::value_with_unit (a text value takes no unit, in the five readouts that pair a value with its unit); the top bar is Undo, Redo, Design, Share, Export and Learn, each a word with no box at rest; the Design menu holds the reset ('Reset to the starting design' where the baseline is not the spreadsheet's design, 'Reset all' where it is), Open the example design (where the baseline is not the spreadsheet's), Save design, Load design and Show spreadsheet details; the bar has no Equation panel button; explain::Selection gains Note and NoteList: Learn lists every reviewed note shown by title and a title selects it; a note's entry is the links to its equations and the note; every note link on the page selects its note; under an open equation one lesson line names its note (or the next best read) and the Equation panel's Explain checkbox and its note view go; each Start here step selects its note; gui-smoke opens the Design menu and judges the lesson link in the Explain panel; the first view at most 430 words; each with its red test first; no engine file changes; README and docs/ai updated; GATE PASS with --full; the gui-smoke run from the branch's own script with frame_check: true; an independent whole-branch review on fable; then merge and push."
-  priority: 2
-  status: fixed
-  notes: "FIXED 2026-11-23: three review lenses passed, one fix wave, GATE PASS (--full) at 2c20038, gui-smoke passed with frame_check true; merged to main. Built on branch magcoupling/overhaul-b2-part2a (Tasks 1 to 4 of the plan); the full gate, the smoke run and the whole-branch review are its Task 6. Filed 2026-11-22 with its plan (the design's header: each plan files one item). BL-081's part 2 is cut in two (the plan's decision D-20, register row A-23): this part, 2a, is the top bar and the notes; part 2b, with its own plan and item, is the Size column (its folds, its hint, Set by, floor and Why lines and the LINKED_HOUSING footnote moving into the Explain panel with inputs as selections, the torque card's row of each size control, an entry's 'Spreadsheet cell' foot link), dimension tags, results-table rows and callout rows as selections with the callout list leaving the opening tab, the Plots tab with its picker (C-9) and the plots' red reference lines (stage 1 review C-3), the word budget of 250 (goal G-1, test 8), the controls' outlines (E-4), a SemiBold face (S-1) and the page shell (S-4). BL-083 and BL-084 are not folded in (decision D-30): the design gives neither text. risk: mechanical (decision D-31): the new strings are the bar's and the menu's words ('Design', 'Share', 'Export', 'Learn'; 'Reset to the starting design' is the design's own), the notes are reviewed text moved from the Equation panel to the Explain panel, and the stray unit's removal states nothing new. So the build tasks transcribe the plan's exact blocks on sonnet and the reviews and the release run on fable (CLAUDE.md section 5). Open question 50 (the status line's place) takes its conservative answer: it stays under the bar (decision D-22, register row A-24)."
-- id: BL-086
-  title: "Magcoupler: the Equation panel's term rows and tags, and the walk bar's step line, are cut at the panel's edge during the Start here walk at 1024 x 700 (some term rows at 1280 x 800)"
-  dimension: gui
-  risk: mechanical
-  evidence: "BL-085 plan review UXP-2 (2026-11-22), a probe in the app's own font on the plan's Tasks 1 to 4 replayed onto 290c99b, walking every Start here step with test_support::cut_texts: at 1280 x 800, step 8, 'click to open its equation' cut by 58 points and 'assumption: click to find its row' by 100, with like cuts at steps 11 and 12; at 1024 x 700, 'Total magnetic shear stress at pull-out' cut by 46 points at step 1, 'Heat capacity of the rotating coupling' by 44 and 'Thermal conductance to the housing and shafts' by 103 at step 11; the walk bar's 'Start here N of 14: title' line is cut at 1024 on main already and 16 points more on the branch. The term grid (gui/explorer.rs equation_body, the terms' horizontal ScrollArea) and the walk bar are main's code; on main the note drawn under the equation (the Explain checkbox) kept the term rows below the fold, and BL-085 (decision C-11) moves the note to the Explain panel, which brings them into view. Recorded as the plan's decision D-33."
-  acceptance: "The term rows and their tags, and the walk bar's step line, wrap or shorten inside the Equation panel's width; the app test every_start_here_step_s_lesson_line_is_drawn_whole_in_the_app_s_own_font (BL-085) widened to every text of the Equation panel at 1024 x 700, 1280 x 800 and 1920 x 1080, red first; no text change without a text review."
-  priority: 3
-  status: fixed
-  notes: "FIXED 2026-11-28 with BL-112 (merged). Built on branch magcoupling/overhaul-b2p2b-iii-c with BL-112 (plan docs/superpowers/plans/2026-11-27-magcoupler-overhaul-b2-part2b-iii-c-equation-panel.md, Task 3): a term's name and tag wrap in the term grid's last column, a term's value wraps past a third of the list's width, and the walk bar's step line wraps (decisions D-110, D-111); the formula alone still scrolls sideways (D-109, owner question 76); the app test widened to every text of the panel but the formula, renamed every_text_of_the_equation_panel_is_whole_on_each_start_here_step_in_the_app_s_own_font, and every_text_of_the_equation_panel_is_whole_on_every_equation_in_the_app_s_own_font opens every equation in a window 1024 points wide (the plan review's UXT-1: a long text value laid out on one line squeezed the name and tag column to about 20 points). Filed 2026-11-22 from the BL-085 plan review (UXP-2); not built with BL-085, whose own new line (the lesson line) is drawn whole and tested (UXP-1). The branch's whole-branch review (2026-11-28, F-1 and KR-1): a wrapped term cell hung half a row into the next row, under its stripe or its text, and a wrapped name was a Tab stop per row; fixed in its fix wave (the cell in a ui.vertical, the name through gui::label_block; BL-112's notes)."
-- id: BL-087
-  title: "Magcoupler: a cap thread at or past the cap's outside diameter reads as an amber skirt caution with a wall at or below zero"
-  dimension: gui
-  risk: physics
-  evidence: "BL-082 review P1 (2026-11-22): with_cap(42.0, 42.2) draws 'Cap wall past its thread (skirt): -0.1000 mm; guide minimum is 0.5 mm.', an equal pair '0 mm' (magcoupling-rs/src/gui/geometry.rs wall_cautions). The two inputs have separate 20-80 mm ranges. The keyway's break-through is an error-coloured 'Exploration only' line instead (panel.rs view_ui). Before BL-082 nothing flagged the case at all."
-  acceptance: "When the skirt is at or below zero, an error-coloured 'Exploration only' line (the thread breaks through the cap) the way the keyway's is, and the amber line only for 0 < skirt < 0.5 mm; a red test first at (42.0, 42.2) and (42.0, 42.0); text and physics review."
-  priority: 4
-  status: fixed
-  notes: "FIXED 2026-11-28 on branch magcoupling/r4-physics: a cap skirt ((cap OD - cap thread) / 2, gui::geometry::cap_skirt_mm) at or below zero draws an error-coloured 'Exploration only: the cap thread breaks through the cap.' line on the Size tab, as the keyway's break-through does, and no amber caution; the amber skirt caution only for 0 < skirt < 0.5 mm (gui::geometry::wall_cautions). Red first at (42.0, 42.2) and (42.0, 42.0) (panel test a_cap_thread_at_or_past_the_cap_s_outside_diameter_draws_an_exploration_line; the BL-082 test that held one amber line at (42.0, 42.2) now holds none, and a 0.01 mm skirt keeps it); the new line is checked for glyphs and plain words in size_tab_new_texts_have_glyphs_and_plain_words. GUI only: no engine or oracle number changes (the skirt is not an engine quantity). Text and physics review: a nominal skirt of zero already leaves a tapped root past the outside, so at or below zero is a break-through; the line is new on-screen text. Filed 2026-11-22 from the BL-082 review as a follow-up nit: new on-screen words and a second colour for the cap, so not taken in BL-082's fix wave. Docs: the README's prose and its src/gui module map, docs/ai 02 to 04, register row A-22 and its log. Built and reviewed on Opus 5.5 while fable is out; fable re-reviews this diff on 2026-12-01. The G-3 text review of its strings and fable's physics re-review of the diff are tracked as BL-130."
-- id: BL-088
-  title: "Magcoupler: the teaching-note drawing (note_ui, explains_ui, change_ui, NoteView, NoteLink, held_reason) still lives in the Equation panel's module"
-  dimension: quality
-  risk: mechanical
-  evidence: "BL-085 whole-branch review MOD-1 (2026-11-23): after decision C-11 the Explain panel draws the notes and the Equation panel shows only a one-line lesson link, yet the note drawing stays in magcoupling-rs/src/gui/explorer.rs (over 2,800 lines) and gui/explain.rs imports it from there."
-  acceptance: "The note drawing moves to its own gui/notes_view.rs (or into explain.rs), explorer.rs keeps lesson_ui and note_fallback_ui; a pure move, no text or behaviour change; gate green."
-  priority: 4
-  status: fixed
-  notes: "FIXED 2026-11-28 with BL-112 (merged). Built on branch magcoupling/overhaul-b2p2b-iii-c with BL-112 (plan docs/superpowers/plans/2026-11-27-magcoupler-overhaul-b2-part2b-iii-c-equation-panel.md, Task 1): the note drawing, its strings and its tests moved whole to gui/notes_view.rs; the sign-off sheet stays in explorer.rs (decision D-107). Filed 2026-11-23 from the BL-085 fix wave for part 2b; nothing is broken, the module docs say where the code lives."
 - id: BL-089
   title: "Magcoupler: the Equation panel's empty text (EMPTY_TEXT) can no longer be seen in the app"
   dimension: gui
@@ -860,6 +266,51 @@
   priority: 4
   status: fixed
   notes: "FIXED 2026-11-28 with BL-112 (merged). Built on branch magcoupling/overhaul-b2p2b-iii-c with BL-112 (plan docs/superpowers/plans/2026-11-27-magcoupler-overhaul-b2-part2b-iii-c-equation-panel.md, Task 2): EMPTY_TEXT, its test's lines and its row in the strings sheet go; a panel open with no trail draws its header row only, and no way to open it empty comes back (decision D-108, register row A-56). Filed 2026-11-23 from the BL-085 fix wave; the doc comment on EMPTY_TEXT now says it is only a fallback."
+- id: BL-088
+  title: "Magcoupler: the teaching-note drawing (note_ui, explains_ui, change_ui, NoteView, NoteLink, held_reason) still lives in the Equation panel's module"
+  dimension: quality
+  risk: mechanical
+  evidence: "BL-085 whole-branch review MOD-1 (2026-11-23): after decision C-11 the Explain panel draws the notes and the Equation panel shows only a one-line lesson link, yet the note drawing stays in magcoupling-rs/src/gui/explorer.rs (over 2,800 lines) and gui/explain.rs imports it from there."
+  acceptance: "The note drawing moves to its own gui/notes_view.rs (or into explain.rs), explorer.rs keeps lesson_ui and note_fallback_ui; a pure move, no text or behaviour change; gate green."
+  priority: 4
+  status: fixed
+  notes: "FIXED 2026-11-28 with BL-112 (merged). Built on branch magcoupling/overhaul-b2p2b-iii-c with BL-112 (plan docs/superpowers/plans/2026-11-27-magcoupler-overhaul-b2-part2b-iii-c-equation-panel.md, Task 1): the note drawing, its strings and its tests moved whole to gui/notes_view.rs; the sign-off sheet stays in explorer.rs (decision D-107). Filed 2026-11-23 from the BL-085 fix wave for part 2b; nothing is broken, the module docs say where the code lives."
+- id: BL-087
+  title: "Magcoupler: a cap thread at or past the cap's outside diameter reads as an amber skirt caution with a wall at or below zero"
+  dimension: gui
+  risk: physics
+  evidence: "BL-082 review P1 (2026-11-22): with_cap(42.0, 42.2) draws 'Cap wall past its thread (skirt): -0.1000 mm; guide minimum is 0.5 mm.', an equal pair '0 mm' (magcoupling-rs/src/gui/geometry.rs wall_cautions). The two inputs have separate 20-80 mm ranges. The keyway's break-through is an error-coloured 'Exploration only' line instead (panel.rs view_ui). Before BL-082 nothing flagged the case at all."
+  acceptance: "When the skirt is at or below zero, an error-coloured 'Exploration only' line (the thread breaks through the cap) the way the keyway's is, and the amber line only for 0 < skirt < 0.5 mm; a red test first at (42.0, 42.2) and (42.0, 42.0); text and physics review."
+  priority: 4
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch magcoupling/r4-physics: a cap skirt ((cap OD - cap thread) / 2, gui::geometry::cap_skirt_mm) at or below zero draws an error-coloured 'Exploration only: the cap thread breaks through the cap.' line on the Size tab, as the keyway's break-through does, and no amber caution; the amber skirt caution only for 0 < skirt < 0.5 mm (gui::geometry::wall_cautions). Red first at (42.0, 42.2) and (42.0, 42.0) (panel test a_cap_thread_at_or_past_the_cap_s_outside_diameter_draws_an_exploration_line; the BL-082 test that held one amber line at (42.0, 42.2) now holds none, and a 0.01 mm skirt keeps it); the new line is checked for glyphs and plain words in size_tab_new_texts_have_glyphs_and_plain_words. GUI only: no engine or oracle number changes (the skirt is not an engine quantity). Text and physics review: a nominal skirt of zero already leaves a tapped root past the outside, so at or below zero is a break-through; the line is new on-screen text. Filed 2026-11-22 from the BL-082 review as a follow-up nit: new on-screen words and a second colour for the cap, so not taken in BL-082's fix wave. Docs: the README's prose and its src/gui module map, docs/ai 02 to 04, register row A-22 and its log. Built and reviewed on Opus 5.5 while fable is out; fable re-reviews this diff on 2026-12-01. The G-3 text review of its strings and fable's physics re-review of the diff are tracked as BL-130."
+- id: BL-086
+  title: "Magcoupler: the Equation panel's term rows and tags, and the walk bar's step line, are cut at the panel's edge during the Start here walk at 1024 x 700 (some term rows at 1280 x 800)"
+  dimension: gui
+  risk: mechanical
+  evidence: "BL-085 plan review UXP-2 (2026-11-22), a probe in the app's own font on the plan's Tasks 1 to 4 replayed onto 290c99b, walking every Start here step with test_support::cut_texts: at 1280 x 800, step 8, 'click to open its equation' cut by 58 points and 'assumption: click to find its row' by 100, with like cuts at steps 11 and 12; at 1024 x 700, 'Total magnetic shear stress at pull-out' cut by 46 points at step 1, 'Heat capacity of the rotating coupling' by 44 and 'Thermal conductance to the housing and shafts' by 103 at step 11; the walk bar's 'Start here N of 14: title' line is cut at 1024 on main already and 16 points more on the branch. The term grid (gui/explorer.rs equation_body, the terms' horizontal ScrollArea) and the walk bar are main's code; on main the note drawn under the equation (the Explain checkbox) kept the term rows below the fold, and BL-085 (decision C-11) moves the note to the Explain panel, which brings them into view. Recorded as the plan's decision D-33."
+  acceptance: "The term rows and their tags, and the walk bar's step line, wrap or shorten inside the Equation panel's width; the app test every_start_here_step_s_lesson_line_is_drawn_whole_in_the_app_s_own_font (BL-085) widened to every text of the Equation panel at 1024 x 700, 1280 x 800 and 1920 x 1080, red first; no text change without a text review."
+  priority: 3
+  status: fixed
+  notes: "FIXED 2026-11-28 with BL-112 (merged). Built on branch magcoupling/overhaul-b2p2b-iii-c with BL-112 (plan docs/superpowers/plans/2026-11-27-magcoupler-overhaul-b2-part2b-iii-c-equation-panel.md, Task 3): a term's name and tag wrap in the term grid's last column, a term's value wraps past a third of the list's width, and the walk bar's step line wraps (decisions D-110, D-111); the formula alone still scrolls sideways (D-109, owner question 76); the app test widened to every text of the panel but the formula, renamed every_text_of_the_equation_panel_is_whole_on_each_start_here_step_in_the_app_s_own_font, and every_text_of_the_equation_panel_is_whole_on_every_equation_in_the_app_s_own_font opens every equation in a window 1024 points wide (the plan review's UXT-1: a long text value laid out on one line squeezed the name and tag column to about 20 points). Filed 2026-11-22 from the BL-085 plan review (UXP-2); not built with BL-085, whose own new line (the lesson line) is drawn whole and tested (UXP-1). The branch's whole-branch review (2026-11-28, F-1 and KR-1): a wrapped term cell hung half a row into the next row, under its stripe or its text, and a wrapped name was a Tab stop per row; fixed in its fix wave (the cell in a ui.vertical, the name through gui::label_block; BL-112's notes)."
+- id: BL-081
+  title: "Magcoupler UX overhaul, slice B, stage 2, part 1 (the instrument's columns): four tiles over the drawing, the check list over the Explain panel with its orientation, the Required torque at the head of the Size column, the fixed-3D line on the first view"
+  dimension: gui
+  risk: physics
+  evidence: "Design docs/superpowers/specs/2026-11-09-magcoupler-ux-overhaul-design.md (approved by the owner on 2026-11-16), sections 4.4, 4.5 and 5, tests 8 to 15 of section 8.2 where they fall in this part; owner decisions O-2 (option B, the instrument) and O-3 (one Explain panel, its first state an orientation); the design's calls C-2 to C-6, C-10, C-11 and C-25. On the stage 1 branch (magcoupling/overhaul-b1-the-look at 272d086): the right column is the dashboard's 19 rows with a red check's Problem, Why and Fix drawn open; the centre's Size tab carries a welcome strip, the Required slider and two torque readouts, and the torque card over the drawing; at 1280 x 800 the first view shows 608 words, and the line 'Fixed 3D fields from the example design' (register row A-18) sits under the shaft joints row, below the dashboard's first screen; in a 1024 x 700 window the Size tab's left column runs past the window's foot and takes the centre region and its drawing with it (headless render, 2026-11-22). The plan's prototype, drawn by the stage 1 spike's headless renderer at 1280 x 800, shows 443 words, the four tiles, the nine check rows and the fixed-3D line on the first view."
+  acceptance: "Plan docs/superpowers/plans/2026-11-22-magcoupler-overhaul-b2-the-instrument.md: gui::checks (one row per counted check in CHECK_GUIDES order, a shape and a word as well as a colour for each state, the material warnings and the fixed-3D line at its foot), gui::tiles (pull-out, hot-low with 'needs' and its gap, cold-high, rotating mass; the number leads; hot-low and the requirement quoted by BL-068's rule; two rows of two where four would be narrower than 130 points) and gui::explain (one Selection; the orientation on the first frame; a check's entry holds exactly its guide's Problem, Why, fixes and notes and the rows its verdict badges; the Hot-low tile's entry holds the torque card and names the check of its row; Esc and 'About this tool' return the orientation; a hover selects nothing; the Equation link opens the Equation panel and leaves the selection), each with its red test first; the dashboard's list, the welcome strip and the centre's readouts and card leave the screen and every text and control they held has the home the plan's nothing-lost table names; the Size column scrolls in a short window; the opening tab keeps the callout list under the drawing until part 2 makes the dimension tags selections; an app test in the app's own theme and font at 1024 x 700, 1280 x 800 and 1920 x 1080 holds the columns apart, the tiles whole, the drawing at its least height, the orientation, the fixed-3D line and the Detailed inputs fold on the first view; another holds the first view to at most 450 words; the gui-smoke prompt and its verdict test read the new layout; no engine file changes; README and docs/ai updated; a physics review of the orientation and the tile's 'needs' line; GATE PASS with --full; the gui-smoke run from the branch's own script with frame_check: true; an independent whole-branch review on fable; then merge and push."
+  priority: 2
+  status: fixed
+  notes: "FIXED 2026-11-22: four review lenses (physics and text, correctness, tests, UX and code; run on the session model, Opus 5.5, because fable was at its usage limit) found nothing blocking; one fix wave (CR-1 red-first, TQ-1 to TQ-4, UXQ-1 to UXQ-5); GATE PASS (--full) at e2a825a; gui-smoke passed with frame_check true; merged 2c8bc41. Review nits PT-1 and PT-2 are filed as BL-083 and BL-084. Built on branch magcoupling/overhaul-b2-the-instrument (Tasks 1 to 6 of the plan); the full gate, the smoke run, the physics review and the whole-branch review are its Task 7. Filed with its plan on 2026-11-22 (the design's header: each plan files one item). The design names no parts inside stage 2; the plan cuts it in two (its decision D-1) because the whole of sections 4 and 5 is too large for one plan a reviewer can hold, and this part ships a visibly new first view on its own with nothing that is visible today lost. PART 2, with its own plan and item: the top bar and its Design menu (Reset to the starting design, Save, Load, Open the example design, Show spreadsheet details), Share, Export and Learn with its note list; the Size column's folds (Detailed inputs, Assumptions) and its hint, Set by, floor and Why lines moving into the Explain panel when an input is selected (inputs as a Selection, the entries of the size controls with their torque-card rows); dimension tags, results-table rows and callout rows as selections, the callout list then leaving the opening tab for the Geometry tab; the Equation panel's Explain checkbox leaving with it (decision C-11) and each step of the Start here walk selecting its note; the 'Spreadsheet cell' foot link of an entry; the Plots tab with its picker (decision C-9) and the plots' red reference lines (stage 1 review C-3); the word budget of 250 (goal G-1, test 8); the slip-heating readout's stray unit (design 9.2); the controls' outlines (stage 1 review E-4), a SemiBold face (S-1), the top bar's buttons without a box (S-3) and the page shell (S-4). risk: physics because the Explain panel's orientation (design 5.4) is a physical claim in new words and the Hot-low tile restates the requirement in a new line ('needs 1.350 N·m'); every other number and claim on screen is today's text moved. So every task of the plan runs on fable (CLAUDE.md section 5's precedence). The cap's skirt-wall caution (owner answer 4a, 2026-11-22) is BL-082 on its own branch; the check list leaves it room among the lines at its foot."
+- id: BL-085
+  title: "Magcoupler UX overhaul, slice B, stage 2, part 2a (the top bar and the notes): Undo, Redo, Design, Share, Export and Learn on the bar, the Design menu, the teaching notes in the Explain panel, the Equation panel's Explain checkbox and bar button gone, each Start here step selecting its note"
+  dimension: gui
+  risk: mechanical
+  evidence: "Design docs/superpowers/specs/2026-11-09-magcoupler-ux-overhaul-design.md (approved by the owner on 2026-11-16), sections 4.2, 5.1, 5.2 and 5.5, test 9 (the top bar's actions, every note in the Learn list) and test 10 (each step of the walk selects its note) of section 8.2, section 9.2 (the slip-heating readout's stray unit); the design's calls C-11, C-12 and C-25; stage 1's review suggestion S-3; BL-081's list of part 2. On main at 290c99b: the top bar (gui/panel.rs header_ui) is Undo, Redo, Reset all, Open the example design, Save design, Load design, Copy share link, Export spreadsheet, the Equation panel toggle and the Show spreadsheet details checkbox, each a boxed button; a note link (a Why link, a warning's link, an Explain entry's lesson link) opens the note on its own in the Equation panel, whose Explain checkbox shows the note under the open equation; the Start here walk turns that checkbox on; the slip-heating plot's readout reads 'never: steady state stays below the limit s' at the example design (format::with_unit puts the result's unit after a text). The plan's prototype draws 427 words on the first view at 1280 x 800 (443 on main)."
+  acceptance: "Plan docs/superpowers/plans/2026-11-22-magcoupler-overhaul-b2-part2a-top-bar-and-notes.md: format::value_with_unit (a text value takes no unit, in the five readouts that pair a value with its unit); the top bar is Undo, Redo, Design, Share, Export and Learn, each a word with no box at rest; the Design menu holds the reset ('Reset to the starting design' where the baseline is not the spreadsheet's design, 'Reset all' where it is), Open the example design (where the baseline is not the spreadsheet's), Save design, Load design and Show spreadsheet details; the bar has no Equation panel button; explain::Selection gains Note and NoteList: Learn lists every reviewed note shown by title and a title selects it; a note's entry is the links to its equations and the note; every note link on the page selects its note; under an open equation one lesson line names its note (or the next best read) and the Equation panel's Explain checkbox and its note view go; each Start here step selects its note; gui-smoke opens the Design menu and judges the lesson link in the Explain panel; the first view at most 430 words; each with its red test first; no engine file changes; README and docs/ai updated; GATE PASS with --full; the gui-smoke run from the branch's own script with frame_check: true; an independent whole-branch review on fable; then merge and push."
+  priority: 2
+  status: fixed
+  notes: "FIXED 2026-11-23: three review lenses passed, one fix wave, GATE PASS (--full) at 2c20038, gui-smoke passed with frame_check true; merged to main. Built on branch magcoupling/overhaul-b2-part2a (Tasks 1 to 4 of the plan); the full gate, the smoke run and the whole-branch review are its Task 6. Filed 2026-11-22 with its plan (the design's header: each plan files one item). BL-081's part 2 is cut in two (the plan's decision D-20, register row A-23): this part, 2a, is the top bar and the notes; part 2b, with its own plan and item, is the Size column (its folds, its hint, Set by, floor and Why lines and the LINKED_HOUSING footnote moving into the Explain panel with inputs as selections, the torque card's row of each size control, an entry's 'Spreadsheet cell' foot link), dimension tags, results-table rows and callout rows as selections with the callout list leaving the opening tab, the Plots tab with its picker (C-9) and the plots' red reference lines (stage 1 review C-3), the word budget of 250 (goal G-1, test 8), the controls' outlines (E-4), a SemiBold face (S-1) and the page shell (S-4). BL-083 and BL-084 are not folded in (decision D-30): the design gives neither text. risk: mechanical (decision D-31): the new strings are the bar's and the menu's words ('Design', 'Share', 'Export', 'Learn'; 'Reset to the starting design' is the design's own), the notes are reviewed text moved from the Equation panel to the Explain panel, and the stray unit's removal states nothing new. So the build tasks transcribe the plan's exact blocks on sonnet and the reviews and the release run on fable (CLAUDE.md section 5). Open question 50 (the status line's place) takes its conservative answer: it stays under the bar (decision D-22, register row A-24)."
 - id: BL-090
   title: "Magcoupler UX overhaul, slice B, stage 2, part 2b-i (the Size column): the lines under its controls move into the Explain panel, each of its six rows a selection with its entry, the Assumptions fold under Detailed inputs"
   dimension: gui
@@ -896,6 +347,555 @@
   priority: 2
   status: fixed
   notes: "FIXED 2026-11-23: the focus arriving is no longer a touch; Enter or Space on the focused control is (size_controls::touched); red test a_keyboard_user_traces_a_middle_input_with_tab_or_shift_tab_to_its_entry_s_link; spec 5.2 updated (controller ruling). Filed 2026-11-23 from the BL-092 review (UXC-1); not taken in BL-092's fix wave because select-on-focus is spec 5.2's touch, shared with part 2b-i's Size column and pinned by tests there, so the fix reverses a design decision across both columns and wants the controller's ruling rather than a review-wave change."
+- id: BL-055
+  title: "Magcoupler gives no cause, remedy or consequence on screen: two unlinked torque targets, an invisible size model, red checks without guidance"
+  dimension: gui
+  risk: physics
+  evidence: "Read-only audit 2026-10-13 (14 agents; 143 of 144 findings survived adversarial verification; themes T1, T2, T3 and part of T5) after the owner went from 10 to 8 magnets, lowered the torque target and the coupling did not shrink. At the default ring, 10 -> 8 magnets takes pull-out from 2.69 to 1.97 N m (-27 %), grows the cup OD from 41.3 to 42.4 mm and leaves the outside diameter at 42.8 mm (the cap sets it); the Torque -> Magnets target was separate GUI state (gui/sizing.rs:85-105), so a lower target showed a green 'Solved' beside a red 'Below hot minimum'; the default design opens with three Fails whose one remedy cites 'Metal design C122' (engine/materials.rs:244); 15 of 17 dashboard rows read 'No teaching note'. Owner decisions G-1 to G-8 (docs/superpowers/specs/2026-10-13-magcoupler-guidance-design.md)."
+  acceptance: "One torque number: the sizing target is metal.required_min_Nm (the Required slider edits it, one undo restores it, files and links round-trip, a file whose target differs uses the requirement with a notice); the panel opens on Size and torque with a dismissible welcome strip; the Size tab shows Required, Hot-low with its live gap and Pull-out torque (nominal, at T), and under the controls what moves what (neighbour magnet counts from compute_all, the smallest fitting diameter, the cap, cup and boss that set the outside diameter, the magnets plus housing lengths); the solver is an Auto toggle on the Size tab (matching slider locked, re-solve after the debounce, ring size searching the Minimum OD range, opening the tab no longer forces forward mode); the dashboard has a design status line, a Magnets fit row, Problem, Why and Fix under red and amber rows and a Why: link on every row; no guidance text matches the banned patterns and every number comes from results; idle frames edit no input; engine verdict strings unchanged (tests/python_schema.rs); fresh-context physics review of every new physics sentence (G-3), whole-branch review and full GATE PASS"
+  priority: 2
+  status: fixed
+  notes: "GUI-side layer plus engine helpers (engine::size_controls breakdowns, smallest_fitting_diameter, ring_radius_range and with_ring_radius; sizing::solve_in); torque model, deviations, input metadata, DESIGN_VERSION and the file schema unchanged. Reverses A2-9 and M41-9 (the target only) and M42-2. Spec deviations accepted by the controller: D-1 (a neighbour magnet count that fails only the keyway clause of is_valid still shows its torque, since the keyway does not depend on the magnet count and the Size tab and dashboard already flag it; a neighbour reads in words only when its blocks do not fit, its end effect is out of range or its torque is not finite); D-2 (the target-mismatch notice carries units: This file's sizing target (X N·m) differed from its requirement (Y N·m); the requirement is used); D-3 (a requirement of zero or less is left out of a saved file, which keeps round trips exact; load accepts a file without it). RING_SIZE_STAYS reads: The ring radius stays the same when you change the magnet count; the cup OD below can still change. It is the first line under Magnets per ring with Auto off; with Auto on the ring size or the magnet length the line is AUTO_RESIZES_RING or AUTO_RESETS_LENGTH (physics review 3, N4). The target-mismatch notice shows only for a Torque -> Magnets file or link: forward-mode files written before G-2 carry the default target 2.5, which that mode never used (final review). Known limitations: a fix can name an input Auto holds, and its link then frames a locked row; the consequence lines recompute on every drag frame (about 30 compute_all calls), accepted and recorded in 02-system; the Required slider's value box is registered with the edit check, so typing in it holds the solve (no debounce gap). Out of scope, later slices: note rewrites and three new notes, 87 empty help strings, on-screen jargon (four names for one radius), the torque sensitivity card, guided lessons, plot captions, drawing titles, guides for results-table checks off the dashboard. Release (G-8): merge to main and push after the physics review, the whole-branch review and GATE PASS."
+
+- id: BL-054
+  title: "Make the manual magcoupler minimum OD adjustable"
+  dimension: gui
+  risk: mechanical
+  evidence: "User request 2026-10-12 after the 8-magnet OD stopped around 40.4 mm: Let the minimum be a slider too. Before implementation manual_size_has_an_adjustable_minimum_od failed (missing control) and the adapter rejected 8 magnets at 38 mm because of the inherited 9 mm radius range."
+  acceptance: "Minimum OD changes the diameter slider limit without changing the design, torque or undo history; an 8-magnet design can resize to 38 mm after lowering the limit; bore, boss, cap/thread and upper radius bounds remain; smaller designs survive idle frames, undo/redo, load/share and reset; magnet-fit and keyway failures remain visible; independent review and full GATE PASS"
+  priority: 2
+  status: fixed
+  notes: "Exploration range preference only; existing model, input metadata, inverse sizing and file/share schema remain unchanged. Independent geometry and integrated review PASS; full gate GATE PASS, including 529 app unit tests, 21 size-adapter tests, native/WASM clippy, all 1159 Python oracle tests and current differential data. User's prior authorization to publish this magcoupler UX work applies."
+
+- id: BL-053
+  title: "Magcoupler needs direct overall size controls with live torque and coordinated housing"
+  dimension: gui
+  risk: mechanical
+  evidence: "User report 2026-10-11: 10 to 8 magnets and a lower torque requirement do not select a smaller radius or resize the fixed cap. Requested manual diameter, overall length and gap controls while retaining all calculator data. GUI regression size_and_torque_has_direct_dimension_and_gap_controls failed before implementation (missing tab)."
+  acceptance: "Size and torque tab has outside diameter, overall length, gap and magnets-per-ring controls; housing follows dimension edits with signed allowances and fixed thicknesses retained; torque equals compute_all on the shown design; out-of-range torque is unavailable; idle frames do not edit, changes undo/redo, detailed inputs/files/share links remain available; independent geometry review and full GATE PASS"
+  priority: 2
+  status: fixed
+  notes: "Pure adapter to existing geometry and torque equations; no new model, deviation, schema or default inputs. Independent geometry and final integrated review PASS; full gate GATE PASS with the Python oracle's 1159 tests run and differential data current. User explicitly authorized pushing the completed feature to update the website."
+
+- id: BL-001
+  title: linear_driver.rs module doc formula compiled as failing doctest
+  dimension: tests
+  risk: mechanical
+  evidence: "src/core/linear_driver.rs:7 — indented block after blank doc line; cargo test --doc: 1 failed (2026-08-08)"
+  acceptance: "cargo test --doc reports 0 failed"
+  priority: 1
+  status: fixed
+  notes: "Fixed in Phase 0 (agent/phase0-baseline)."
+
+- id: BL-002
+  title: cargo clippy --all-targets fails on 3 deny-level approx_constant errors
+  dimension: quality
+  risk: mechanical
+  evidence: "src/gui/undo.rs:251,264 (3.14 for PI); tests/property_tests.rs:327 (6.28 for TAU); clippy exit != 0 (2026-08-08)"
+  acceptance: "cargo clippy --all-targets exits 0"
+  priority: 1
+  status: fixed
+  notes: "Fixed in Phase 0 (agent/phase0-baseline)."
+
+- id: BL-003
+  title: "Clippy warning debt: ~289 lib warnings (167 collapsible_if; 234 auto-fixable)"
+  dimension: quality
+  risk: mechanical
+  evidence: "cargo clippy --all-targets 2026-08-08: lib 289 warnings, lib-test 305 (278 dupes); top lints collapsible_if 167, too_many_arguments 17, empty_line_after_doc_comments 13"
+  acceptance: "cargo clippy --all-targets produces 0 warnings on lib and lib-test targets; cargo test --all stays green"
+  priority: 3
+  status: fixed
+  notes: "Fixed 2026-11-16 (INF-02): zero warnings, gate 2 now runs -D warnings. Mostly cargo clippy --fix + review; too_many_arguments items may be deferred individually with reasons."
+
+- id: BL-004
+  title: docs/guides/WASM_DEPLOYMENT.md drifted from actual build/deploy config
+  dimension: quality
+  risk: mechanical
+  evidence: "WASM_DEPLOYMENT.md:36-40 omits --features raster (build_web.sh:20-24 and deploy-web.yml:38-50 include it); WASM_DEPLOYMENT.md:100 claims max-age=31536000 immutable but web/vercel.json sets max-age=0 must-revalidate"
+  acceptance: "doc's build command and cache-control statements match build_web.sh and web/vercel.json verbatim"
+  priority: 3
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: the build command (raster) and cache-control statements had already been corrected by later work; the remaining drift was the Known Limitations section, which denied file loading, PNG/SVG/GIF export, autosave and recent mechanisms the web build ships. Replaced it with a Browser Behavior section (reused from codex 426844d, checked against file_io.rs and menu_bar.rs). Doc-only; the guide's old claims were verified false before the edit."
+
+- id: BL-005
+  title: .claude/agents/rust-test-fixer.md premise is stale (tests already fixed)
+  dimension: quality
+  risk: mechanical
+  evidence: "Agent description claims tests/ struct literals miss fields; commit b919485 (2026-05-26) added them; cargo test --all --no-run exits 0 (2026-08-08)"
+  acceptance: "agent description rewritten to a general 'repair broken test-crate compiles' role or the agent is deleted; no claim that tests/ is currently broken"
+  priority: 3
+  status: fixed
+  notes: "FIXED earlier (found 2026-11-28 by the R5 batch): .claude/agents/rust-test-fixer.md already describes a general repair-a-broken-test-compile role; Codex installed it on 2026-10-07 (commit b1011c9 on codex/physics-review-rework-2026-10-06); the file is untracked in this repo (.gitignore ignores .claude/* except workflows), so no change here."
+
+- id: BL-006
+  title: nom v1.2.4 flagged future-incompatible (will be rejected by a future rustc)
+  dimension: quality
+  risk: mechanical
+  evidence: "cargo report during 2026-08-08 build: 'nom v1.2.4 ... will be rejected by a future version of Rust'"
+  acceptance: "cargo tree -i nom documented in notes; dependency updated/replaced, or item deferred with the upstream blocker named"
+  priority: 2
+  status: deferred
+  notes: "DEFERRED 2026-11-28 on branch linkage/r5-mechanical: resolved by the acceptance's deferral clause (no code change). cargo tree -i nom: nom v1.2.4 <- meval v0.2.0 <- linkage-sim-rs v0.1.0. Re-checked today: latest published meval is still 0.2.0 and requires nom 1.x, so a lock bump cannot remove nom 1.2.4; upstream blocker is meval (issue 30, nom7/nom8 PRs 27/34 unmerged). Warning stays; revisit when a maintained meval release or validated parser replacement exists. Codex's earlier deferral (5a14aa9, cecbc0e) reused."
+
+- id: BL-007
+  title: CSV/HTML export behavior on NaN-padded (non-Grashof) sweep rows unverified
+  dimension: tests
+  risk: mechanical
+  evidence: "docs/ai/02-system.yaml risks: 'CSV/HTML export needs verification' for NaN rows; no test in tests/ or src/gui/export/ covers a non-Grashof sweep export"
+  acceptance: "test exports a non-Grashof sweep to CSV and HTML; CSV parses row-count-consistently with a documented NaN policy (skip or empty cell); HTML contains no literal 'NaN' artifacts"
+  priority: 2
+  status: open
+  notes: ""
+
+- id: BL-008
+  title: mixed_script_confusables warning for `let δ = 1e-6` in IK derivatives
+  dimension: quality
+  risk: mechanical
+  evidence: "solver/inverse_kinematics/derivatives.rs:217:13 — rustc mixed_script_confusables warning during doctest build (2026-08-08)"
+  acceptance: "identifier renamed (e.g. delta); warning gone; cargo test --all green"
+  priority: 3
+  status: fixed
+  notes: "FIXED earlier (found 2026-11-28 by the R5 batch): derivatives.rs has no let δ left (the FD test uses eps); cargo check --tests gives no mixed_script_confusables warning."
+
+- id: BL-009
+  title: Extend reaction-force physics validation to force-zone poses + cross-checks
+  dimension: physics
+  risk: physics
+  evidence: "docs/ai/01-meta.yaml active_focus; docs/ai/04-memory.yaml open question (validation reference choice, spec 2026-05-18 recommends FBD-first); existing FBD regression covers theta_2=60deg only (solver/reactions.rs tests)"
+  acceptance: "FBD regression tests at additional poses including force-zone-active ones (use fbd-derive skill); energy-balance and virtual-work-vs-statics cross-check tests; each new check mutation-tested (break solver quantity, confirm test fails, restore)"
+  priority: 1
+  status: open
+  notes: "Coordinate with fbd-math-reviewer conventions from tests::fbd_validates_pass2_reactions_at_60deg."
+
+- id: BL-010
+  title: GUI actuator force label disagrees with actuator force plot at same pose
+  dimension: gui
+  risk: mechanical
+  evidence: "CONFIRMED by audit 2026-08-08 (repro: cargo test --test braindump_repro bl010 -- --nocapture). Both widgets read sweep.actuator_forces; divergence is display-only, 3 mechanisms: (1) stored-force mode label prints la.force verbatim (+2225 N, samples/fourbar.rs:671) at force_render.rs:266 while plot Statics shows computed -2222.8 N — sign+quantity mismatch, likely what the user saw; (2) plot-only Tukey outlier filter (plot_panel/mod.rs:648-661) silently drops 7 finite samples the label shows (fence only ~185 N wide on flat curves); (3) label nearest-index lookup (force_render.rs:247-257) breaks on seam-crossing range sweeps via rem_euclid(360) and compares degrees vs METRES for stroke-mode sweeps (never branches on sweep_mode.is_stroke())."
+  acceptance: "regression test: canvas-label path returns exactly sweep.actuator_forces[i] at the current driver parameter for (a) full 0..360 sweep, (b) seam-crossing 200..365 range sweep at 365 deg, (c) stroke-mode sweep; plot stops dropping finite samples or label applies the identical filter; promote tests/braindump_repro.rs bl010 tests with assertions inverted"
+  priority: 1
+  status: fixed
+  notes: "Fixed 2026-09-12. Label value now comes from AppState::actuator_label_force (gui/state/mod.rs; ActuatorLabelForce::{Computed,Stored}) which always reads sweep.actuator_forces at SweepData::index_at_driver (gui/sweep/mod.rs: circular nearest-angle in angle mode so seam-crossing range sweeps and wrapped driver angles resolve to the same sample; linear nearest-stroke in metres in stroke mode; NaN samples skipped) — the stored-force gate is gone, so stored-force mode shows the computed statics value too. Plot side: filter_actuator_outliers (Tukey fence drop) removed — both Statics and With-Inertia series are built by plot_panel::finite_series so every finite sample is drawn; near-singular spikes now stretch the auto Y range (Y zoom persists in egui_plot 0.33, so the flat part stays inspectable). default_y_bounds was tried and rejected: in egui_plot 0.33 default_*_bounds re-apply every frame and lock the axis (see BL-019). Tests: tests/actuator_force_label.rs (full sweep, stored-force mode, 200..365 seam sweep incl. 365-deg and wrapped 5-deg scrub, stroke-mode sweep — every index asserted bitwise), sweep::tests::index_at_driver_*, plot_panel::tests::outlier_fence_* (finite_series keeps spikes the old fence dropped; skips only non-finite). Documented (not exposed): label reads Statics only, never actuator_forces_id; with several LinearActuators every label reads the first element's series (pre-existing, unchanged)."
+
+- id: BL-011
+  title: Non-360-degree mechanisms flip to mirrored assembly branch / break near range limits
+  dimension: physics
+  risk: physics
+  evidence: "CONFIRMED by audit 2026-08-08, 3/3 skeptics (repro: cargo test --test braindump_repro bl011_sweep_branch_flip_after_unreachable_gap -- --nocapture). Non-Grashof triple-rocker (0.05/0.05/0.05/0.09 m, reachable |theta| <= 86.18 deg): sweep converges 0..86 deg elbow sign -1, fails 87..273, RE-ENTERS at 274 deg on mirrored branch (sign +1) — pose at 360 deg is the mirror of 0 deg. Cause: sweep keeps stale last-good q as Newton guess across the unreachable gap (gui/sweep/mod.rs:667-669) and solve_position is plain NR+SVD with no step limiting or branch-continuity check (solver/kinematics.rs:35-80). Interactive paths share the mechanics (state/mod.rs:1103-1129 solve_at_angle, input_panel.rs:102-105 slider, plot_panel/mod.rs:331-338 plot-click). Shipped 'Flip Branch' workaround button (input_panel.rs:117-126) corroborates."
+  acceptance: "promote tests/braindump_repro.rs::bl011_sweep_branch_flip_after_unreachable_gap with inverted assertion: 0..360 sweep of the 0.05/0.05/0.05/0.09 rocker yields elbow sign at 360 deg == sign at 0 deg (no reentry flip); post-gap re-entry preserves branch or is a clean NaN stop; prefer an in-crate #[cfg(test)] test driving compute_sweep_data itself (pattern at sweep/mod.rs:1222+)"
+  priority: 1
+  status: fixed
+  notes: "Fixed for the full 0..360 constant-speed sweep only: gui/sweep/mod.rs solve_sweep_positions — forward pass stops at the first unreachable sample, post-gap samples are reached by a backward pass from 360 deg seeded with the 0-deg solution rotated 2*pi (exact for constant-speed drivers). Tests: sweep::tests::{solve_sweep_positions_full_revolution_preserves_branch (elbow sign at every converged sample), solve_sweep_positions_forward_only_flips_branch_after_gap (pre-fix control), sweep_reentry_after_unreachable_gap_preserves_branch (exact coverage 0..=86/274..=360), sweep_two_arc_fourbar_keeps_both_arcs_when_first_sample_fails}. Verified refinement: proximity to range limit does NOT flip (400-step ping-pong at 0.7-deg steps: zero flips). Remaining paths tracked as BL-018."
+
+- id: BL-018
+  title: Branch flip across unreachable gap still reachable via range-limited sweeps and interactive solve paths
+  dimension: physics
+  risk: physics
+  evidence: "BL-011 fix scope (gui/sweep/mod.rs solve_sweep_positions) is gated on a full 0..360 sweep with a constant-speed driver whose first sample assembles. Still stale-seeded across a gap: range-limited sweeps (e.g. 200..365), full sweeps whose first sample fails, expression drivers, and the interactive paths state/mod.rs solve_at_angle, input_panel.rs slider drag across the gap, plot_panel/mod.rs plot-click on the far side (same 0.05/0.05/0.05/0.09 rocker repro)."
+  acceptance: "either a branch-continuity rejection in solve_position callers (reject a converged solution whose elbow/assembly sign differs from the seed's across a failed interval) or fresh-assembly re-seeding on the starting branch for those paths; regression tests for a 200..365 range sweep and for solve_at_angle across the gap on the BL-011 fixture"
+  priority: 2
+  status: open
+  notes: "Split out of BL-011 during review (2026-09-12). The 'Flip Branch' workaround button (input_panel.rs:117-126) remains the user-facing escape hatch until then."
+
+- id: BL-012
+  title: cargo test rewrites docs/chebyshev_lambda/*.png on every run
+  dimension: tests
+  risk: mechanical
+  evidence: "src/gui/export/raster.rs:406-431 test export_chebyshev_lambda_pngs writes into docs/chebyshev_lambda/; observed 2026-08-08 (8 PNGs dirty after every gate run; were clean at session start)"
+  acceptance: "cargo test --all leaves the working tree clean (test writes to target/ or is #[ignore]/opt-in); PNG regeneration documented as an explicit command"
+  priority: 2
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: export_chebyshev_lambda_pngs now writes to linkage-sim-rs/target/chebyshev_lambda/ instead of docs/chebyshev_lambda/, so cargo test leaves the tree clean; regeneration is a manual copy, documented in AGENTS.md; a test pins the output directory outside docs/. Interacts with fix-campaign per-item commits; commit step already guards against staging these PNGs."
+
+- id: BL-013
+  title: Web (WASM) build renders light theme; theme.rs claims CAD dark visuals
+  dimension: gui
+  risk: mechanical
+  evidence: "gui-smoke live run 2026-08-08: screenshot shows light theme (archived at .superpowers/sdd/2026-08-08-agentic-test-improve-loop/smoke-test-linkage.png); docs/ai/03-structure.yaml describes theme.rs as 'CAD dark visuals'"
+  acceptance: "web build renders the intended theme (or the intended default is documented and gui-smoke prompt/theme docs updated to match); verified by gui-smoke screenshot"
+  priority: 3
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: apply_cad_theme now selects ThemePreference::Dark before the CAD visuals and spacing, so a light browser preference no longer renders the web build light; two regression tests in gui/theme.rs (light/dark/light system frames with both fallbacks, Nathan mode and restore); reused from Codex 261f6b4. Verified 2026-11-28 in Chrome (Playwright) with prefers-color-scheme light: the web build draws dark (the R5 smoke run; screenshot .playwright-mcp/r5-linkage-light-preference.png, not committed)."
+
+- id: BL-014
+  title: Per-frame console warning spam in web build (egui viewport Title command)
+  dimension: gui
+  risk: mechanical
+  evidence: "gui-smoke live run 2026-08-08: ~194 identical warnings in ~5s — eframe app_runner.rs:256 'Unhandled egui viewport command: Title(...)' via linkage-web.js:1271, one per frame"
+  acceptance: "zero repeated viewport-command warnings during a 5s gui-smoke run (set title once / gate the per-frame call on web)"
+  priority: 3
+  status: fixed
+  notes: "Duplicate of BL-037 (fixed): the per-frame viewport-command warnings were removed there (found 2026-11-28 by the R5 batch)."
+
+- id: BL-015
+  title: docs/ai/02-system.yaml is not YAML-parseable (scanner error line 14-15)
+  dimension: quality
+  risk: mechanical
+  evidence: "PyYAML ScannerError at line 14 col 5 / line 15 col 3 (unquoted 'constraint-first mathematics: Phi(q,t)=0...' sequence item); verified identical at d7ee35c and e222aab (pre-existing)"
+  acceptance: "python -c 'import yaml; yaml.safe_load(open(\"docs/ai/02-system.yaml\"))' succeeds with content semantically unchanged"
+  priority: 3
+  status: fixed
+  notes: "Fixed 2026-11-10 on branch audit/2026-11-10-whole-project (whole-project audit, finding DOC-09: seven unquoted scalars, not one, at lines 13, 62, 142, 152, 218, 291 and 413). Each was quoted in place. The parsed value of each equals its original words, the file's words are unchanged apart from the added quote marks, and all four docs/ai YAML files load with yaml.safe_load."
+
+- id: BL-017
+  title: Sizing-mode sweep of ChebyshevLambdaActuator panics debug builds (reactions.rs debug_assert)
+  dimension: physics
+  risk: physics
+  evidence: "CONFIRMED by audit 2026-08-08, 3/3 skeptics (repro: cargo test --test braindump_repro bl010_side_sizing_mode_sweep_panics_debug_assert -- --nocapture, #[should_panic] passes). Tutorial workflow (tutorial.rs:204 'Set Actuator Force to Zero') + compute_sweep on ChebyshevLambdaActuator: panic at src/solver/reactions.rs:666 — pass-2 driver collapse fails (driver_lambda=-195.4 N*m instead of ~0), likely near a dl_dt~0 pose (power-balance guard at reactions.rs:397 only rejects |dl_dt| <= 1e-6). Debug builds abort on a documented user workflow; release builds silently carry the failed validation."
+  acceptance: "same repro test with #[should_panic] REMOVED passes: per-pose validation failure surfaces as status/NaN (existing ReactionValidation enum) instead of debug_assert abort; AND root cause of the non-collapsing driver at that pose understood/documented; cargo test --all green in debug profile"
+  priority: 2
+  status: open
+  notes: "2026-09-28: ROOT CAUSE FIXED by BL-022 (7a1b5ff); tests/braindump_repro.rs now completes the Chebyshev sizing sweep in debug with finite forces. Remaining: sub-issue (1) replace the data-dependent debug_assert at solver/reactions.rs:666 with a soft per-pose status so a future failure reports instead of aborting. Audit side-discovery while reproducing BL-010. Two sub-issues: (1) replace data-dependent debug_assert with soft status; (2) physics: why does power-balance actuator force fail to collapse the driver there — interacts with two_pass_statics invariant (02-system.yaml) and BL-009. Repro in tests/braindump_repro.rs (untracked)."
+
+- id: BL-020
+  title: Animation frozen below ~15 deg/s — crank-angle slider step_by(0.5) snaps the pose back every frame
+  dimension: gui
+  risk: mechanical
+  evidence: "User report 2026-09-13 (native + WASM, all mechanisms, crank-angle readout static). CONFIRMED: src/gui/input_panel.rs:87-105 binds display_angle_deg to egui::Slider::step_by(0.5) and calls solve_at_angle whenever the post-widget value differs from the pre-widget value by >1e-6 — without user interaction. Headless probe (egui 0.32.3, one frame, RawInput::default): a step_by(0.5) slider rewrote 10.05 -> 10.0 and reported changed()=true; the same slider without step_by left 10.05 unchanged. So each frame the animation's advance (speed*dt) is rounded to the 0.5-deg grid and re-solved: any step < 0.25 deg/frame (< 15 deg/s at 60 fps) is undone. Matches the earlier 'anything less than 15 deg/s doesn't move' report that 5856ccb attributed to omega=0. Side effect even when paused: the pose is silently quantized to 0.5 deg whenever the input panel is visible (e.g. after a plot-click scrub to 274.3 deg)."
+  acceptance: "regression test drives the input panel through egui::Context::run for one frame with no input at driver_angle=10.05 deg and asserts driver_angle is unchanged (and no solve_at_angle side effect) both while playing and while paused; slider write-back happens only on user interaction (drag / typed edit); cargo test --all green; manual: 3 deg/s playback visibly advances natively and in WASM"
+  priority: 1
+  status: fixed
+  notes: "Fixed 2026-09-13 on agent/batch-1: removed step_by(0.5) from the crank-angle slider (input_panel.rs); egui only writes a non-stepped slider back on real interaction, so the value-diff gate now fires only for drags/typed edits. Regression test gui::input_panel::tests::idle_frame_does_not_move_driver_angle_bl020 (headless egui frame, no input, playing and paused, two off-grid angles). Same-class mounting-angle slider tracked as BL-021. Not a batch-1 regression (predates Phase 0; deployed site has it). Original fix note: drop step_by(0.5) (egui only writes back on interaction without it) or gate the write-back on response.dragged()/drag_stopped()/typed-edit rather than a value diff; note response.changed() is TRUE for the snap so it cannot be the gate. Prior regression test step_animation_advances_at_slow_speed only covers the state layer, which was never the problem."
+
+- id: BL-021
+  title: Mounting Angle slider step_by(0.5) re-triggers rebuild + sweep every frame for off-grid angles
+  dimension: gui
+  risk: mechanical
+  evidence: "input_panel.rs:203-213 (Mounting Angle section, collapsed by default): Slider::step_by(0.5) bound to a local copy of state.mounting_angle, followed by a value-diff gate that calls mark_sweep_dirty() + rebuild(). Same egui snap-on-idle-frame behaviour proven for BL-020: with an off-grid mounting angle (e.g. 0.3 deg loaded from JSON) every frame the section is open snaps the angle to the grid and rebuilds the mechanism + recomputes the sweep."
+  acceptance: "idle-frame regression test with the Mounting Angle section expanded (open the CollapsingHeader via egui memory in the test) asserts mounting_angle unchanged and no rebuild; write-back only on interaction (drop step_by or gate on drag/edit); cargo test --all green"
+  priority: 3
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: removed the Mounting Angle slider step_by(0.5) so an expanded idle control no longer snaps an off-grid angle or rebuilds; edits still rebuild; regression test bl021_expanded_mounting_slider_preserves_off_grid_state_on_idle_frames (reused from parked codex commit 0d78122). Found while fixing BL-020; left out of that fix to keep it surgical and because the collapsed section needs extra test plumbing."
+
+- id: BL-022
+  title: "Compound actuator expansion: force anchored at cylinder base and stroke length from mixed body frames"
+  dimension: physics
+  risk: physics
+  evidence: 'Scouting probe 2026-09-28. Any rebuild (incl. add_point_mass) expands a mount-point actuator into cylinder+rod. (a) forces/compound.rs:306 remap_force_to_compound sets point_a=[0,0] (cylinder base) instead of the slide point (half_len,0) at compound.rs:124-126; doc comment at :265 is wrong. actuator_lengths == |L_pin - L0/2| at 360/360 parallelogram samples; plotted F flips sign at 83/361 angles (200 deg: -40/-501 N vs physical +40/+501 N); stored force physically reverses (240 deg: -186.5 vs +86.5). (b) compound.rs:175-176 initial_length/half_len from get_force_point_pos body-local points of two different bodies (io/from_json.rs:25-33, 272-273): Chebyshev lengths span [0.0003,0.1455] m vs stroke limits [0.1245,0.3275] m, phantom end-stop penalty up to ~1245 N at force=0 (evaluation.rs:407-416), sizing F differs by up to 1402 N with sign disagreement at 254/361. Topology switch cause: load_sample keeps the direct mechanism (gui/state/mod.rs:1001) but its blueprint keeps mount names (mod.rs:1024).'
+  acceptance: 'regression tests: after a no-op rebuild of ParallelogramActuator and ChebyshevLambdaActuator, actuator_lengths equal the pin-to-pin distance and sizing/stored actuator_forces match the freshly loaded mechanism at every angle (rel 1e-6); Chebyshev end-stop penalty inactive inside stroke limits; tests/braindump_repro.rs BL-017 repro no longer panics in debug'
+  priority: 1
+  status: fixed
+  notes: "Fixed 2026-09-28 on agent/batch-2 (7a1b5ff): remapped force now acts cylinder base -> rod tip (pin to pin), so actuator length is the pin distance regardless of half_len; the mixed-frame initial length only proportions the massless compound bodies (documented at compound.rs expand_compound_force). Tests: tests/compound_actuator_rebuild.rs (rebuild == fresh for stored + sizing on Parallelogram and Chebyshev; end-stop inactive inside limits), compound.rs remap_every_variant_acts_between_base_and_tip. Resolves BL-017 root cause. Prerequisite for the payload-weights feature (Track 2 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md). Likely root cause of BL-017."
+
+- id: BL-023
+  title: "Save/autosave/share URL double-counts every point mass"
+  dimension: physics
+  risk: mechanical
+  evidence: 'gui/state/file_io.rs:143 serializes composite (point-mass-inclusive) body mass via mechanism_to_json, then :150 re-attaches blueprint point_masses; load (file_io.rs:329 -> io/from_json.rs:122-126) applies them again. Verified 2026-09-28: rocker 1 kg + 50 kg point mass = 51 kg, becomes 101 kg after generate_share_url -> decode -> load. Existing test gui/state/tests.rs:1933-1962 checks only point-mass count.'
+  acceptance: round-trip test (save/load and share URL) asserts built body mass, cg and izz unchanged to 1e-12 with point masses present; blueprint base mass unchanged
+  priority: 1
+  status: fixed
+  notes: "Fixed 2026-09-28 on agent/batch-2 (dc87298): serialization no longer re-applies point masses on top of composite mass; round-trip tests in gui/state/tests.rs. Track 1 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md."
+
+- id: BL-024
+  title: "set_body_mass / set_body_izz overwrite composite mass in the live mechanism, dropping point masses"
+  dimension: physics
+  risk: mechanical
+  evidence: gui/state/blueprint_ops.rs:449-486 patch the live Mechanism body with the BASE mass/izz, discarding point-mass contributions until the next rebuild; property panel (property_panel/mod.rs:232) and parametric BodyMass sweep (parametric_panel.rs:423) operate on base mass.
+  acceptance: 'test: body with a point mass, call set_body_mass, assert built composite mass = new base + point masses and gravity Q reflects it without an explicit rebuild; parametric BodyMass sweep documented or fixed to vary base mass while keeping point masses'
+  priority: 2
+  status: fixed
+  notes: "Fixed 2026-09-29 on agent/batch-3 (5d023f6): set_body_mass/set_body_izz re-derive the live composite mass, CG and Izz from blueprint base + point masses (Body::add_point_mass, the loader's math); parametric BodyMass sweep varies base mass and keeps point masses. Tests in gui/state/tests.rs (*_bl024). Track 1 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md."
+
+- id: BL-025
+  title: "Point-mass edits and Reposition are not undoable; Move to Link records two undo steps"
+  dimension: gui
+  risk: mechanical
+  evidence: blueprint_ops.rs:956-970 update_point_mass never calls push_undo (doc says caller should; neither caller does), violating docs/ai/02-system.yaml invariant; remove_point_mass pushes undo even for an invalid index (:941-949); Move to Link = remove + add = two undo entries and two rebuilds (interaction.rs:408-445).
+  acceptance: 'tests: numeric mass/position edit and Reposition each create exactly one undo entry that restores prior state; Move to Link creates exactly one; invalid-index remove creates none'
+  priority: 2
+  status: fixed
+  notes: "Fixed 2026-09-28 on agent/batch-2 (21ee323): point-mass edits, Reposition and Move to Link are single undo steps; invalid-index remove records none; tests in gui/state/tests.rs. Track 1 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md."
+
+- id: BL-026
+  title: "Stored-force mode plots F_required - F_stored while the label says computed"
+  dimension: gui
+  risk: physics
+  evidence: gui/sweep/mod.rs:647-649 computes F from the pass-1 driver torque; solver/reactions.rs:579 skips pass 2 when |force|>=1e-12, so actuator_forces = F_required - F_stored (verified to 1.5e-11 on ParallelogramActuator); canvas label says '(computed)' (gui/state/mod.rs:846-864, force_render.rs:239-242). Sweep also duplicates the power-balance formula from reactions.rs:372-403 instead of using ReactionSolveResult::actuator_force.
+  acceptance: 'test: stored-force mechanism sweep reports the required actuator force (matches sizing-mode value at every angle) or the plot/label clearly show the residual with correct wording; single power-balance implementation shared by solver and sweep'
+  priority: 2
+  status: fixed
+  notes: "Fixed 2026-09-29 on agent/batch-3 (c412485): sweep and trajectory report the REQUIRED actuator force in stored-force mode (stored drive force added back to the pass-1 residual; matches sizing mode at every angle, incl. speed limit and trajectory); power balance lives once in solver::reactions (required_actuator_force, actuator_length_rate). Removes the payload-draft workaround. Track 1 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md. Payload breakdown shares are defined against the required force."
+
+- id: BL-027
+  title: "Inverse dynamics omits the velocity-quadratic term (With Inertia curve wrong for off-pivot masses)"
+  dimension: physics
+  risk: physics
+  evidence: 'solver/inverse_dynamics.rs:67-70 uses only M(q)*q_ddot while M depends on configuration via CG offsets (solver/assembly.rs:133-145); no velocity-quadratic term exists in solver/core/forces. Verified 2026-09-28: parallelogram rocker mass at (0,0.8): tau_ID - tau_statics = -3158.273 N*m at every angle, correct value 0 (constant KE), error = 2*m*s_y*omega^2 exactly. Doc sign at inverse_dynamics.rs:1 opposite to line 70. Forward dynamics (forward_dynamics.rs:100) likely same flaw (unverified).'
+  acceptance: 'test: constant-KE case gives tau_ID == tau_statics (rel 1e-9); general case tau_ID - tau_statics == dKE/dtheta per unit rate (energy check) on two samples; forward dynamics checked or split into its own item'
+  priority: 2
+  status: fixed
+  notes: "Fixed 2026-09-29 on agent/batch-3 (263ef79): velocity-quadratic force Q_v (assembly::assemble_quadratic_velocity_forces) added to inverse AND forward dynamics. Tests: hand-computed Q_v, constant-KE parallelogram tau_ID == tau_statics, KE-rate energy check, centripetal pivot reaction, forward-dynamics free-spin energy conservation. Golden fixtures (Python reference also lacks Q_v) shifted by the exact Q_v multiplier correction rather than loosened. The legacy Python solver under src/linkage_sim has the same omission. Track 1 of docs/superpowers/specs/2026-09-28-payload-weights-gravity-assist-design.md; independent of Track 2."
+
+- id: BL-028
+  title: "Python reference solvers omit Q_v; golden inverse-dynamics fixtures pass only via a Rust-side shift"
+  dimension: physics
+  risk: physics
+  evidence: "Found in BL-027 review 2026-09-29. src/linkage_sim/solvers/inverse_dynamics.py:83 rhs = -(Q - M_q_ddot) and forward_dynamics.py:154 b[:n] = Q have no velocity-quadratic force Q_v = [m theta_dot^2 A(theta) s_cg; 0]. data/benchmarks/golden/{fourbar,slidercrank}_inverse_dynamics.json therefore hold pre-BL-027 multipliers; tests/golden_fixtures.rs keeps them passing with quadratic_velocity_lambda_shift, which uses the same Rust assemble_quadratic_velocity_forces as the solver (circular for joint reactions)."
+  acceptance: "Python inverse and forward dynamics add Q_v (same formula as linkage-sim-rs/src/solver/assembly.rs assemble_quadratic_velocity_forces) with Python tests mirroring the Rust constant-KE and centripetal-pivot checks; golden *_inverse_dynamics.json regenerated (and *_dynamics.json if they change); quadratic_velocity_lambda_shift and its call sites deleted from tests/golden_fixtures.rs; the 'does not include Q_v yet (BL-028)' comment in solver/inverse_dynamics.rs removed; cargo test --all and the Python suite green"
+  priority: 2
+  status: open
+  notes: "Follow-up of BL-027. REVIEWED 2026-10-06 (Codex report + independent check, docs/analyses/2026-10-06-open-physics-review-response.md): confirmed; Q_v = [m thetadot^2 A s; 0], sign Phi_q^T lambda = M qddot - Q - Q_v. The golden multiplier check is fully blind to Q_v (the shift cancels exactly); fourbar_dynamics.json energy swings 42.3 of 73.5 J and its initial velocity violates the constraints; test_forward_dynamics.py:306-308 and test_golden_fixtures.py:523-527 hide the bug behind loose tolerances. Rust is unaffected. Follow the order in the response doc."
+
+- id: BL-029
+  title: "Trapezoidal motion-profile torque uses (tau_ID - tau_statics)/omega^2 as the inertia on alpha"
+  dimension: physics
+  risk: physics
+  evidence: "Found in BL-027 review 2026-09-29. gui/sweep/motion_profile.rs:196-200 sets i_eff = (tau_ID - tau_statics)/omega^2 from the constant-speed sweep and adds i_eff * alpha_p. For a one-DOF linkage tau_inertia = I(theta)*theta_ddot + 1/2*dI/dtheta*theta_dot^2; the sweep has theta_ddot = 0, so that ratio is 1/2*dI/dtheta, not I(theta). The (omega_p/omega)^2 scaling term is right; the alpha_p term is wrong (also wrong before BL-027)."
+  acceptance: "test: on a crank-rocker with off-axis CGs (configuration-dependent I(theta)), the profile torque at samples with alpha_p != 0 equals solve_inverse_dynamics driven with that (omega_p, alpha_p) at the same angle (rel 1e-6); cargo test --all green"
+  priority: 2
+  status: open
+  notes: "Independent of the BL-027 fix; noted during its review. REVIEWED 2026-10-06 (docs/analyses/2026-10-06-open-physics-review-response.md): confirmed and worse: the torque can have the wrong sign (I prime < 0), every single-link crank gets zero acceleration torque, and the overlay feeds the health panel and tutorial sizing. Also broken in the same feature: the 0-360 angle mapping (ignores the sweep range and theta0), negative omega, stroke mode, a failed statics solve stored as 0 not NaN, and every velocity-dependent force in the (omega_p/omega)^2 rescaling."
+
+- id: BL-030
+  title: "Driver > reassign on a sample rebuilds from the stock sample and discards user weights"
+  dimension: gui
+  risk: mechanical
+  evidence: "gui/state/driver_ops.rs:22-36 reassign_driver rebuilds the mechanism from the stock sample and resets the blueprint, silently discarding every point mass the user added (undoable). Found by the payload-plan critic 2026-09-29; the Track 2 hands-on checklist warns about it."
+  acceptance: "test: add a weight to a sample, reassign the driver, assert the weight (id, mass, position) survives; or the reassign path warns before discarding user edits"
+  priority: 2
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical, reworked after branch review F-1: the first fix (8d01d32) sent a weighted sample down the blueprint path, which starts the new driver at theta_0 = 0 in the builder's body frames and could not assemble (FourBar, a coupler weight, reassign to J4: converged=false). reassign_driver now always rebuilds a sample from the stock builder and carries each user weight over by body id (id, mass, position kept) into the rebuilt blueprint and the live body before the solve; a weight on a body the stock sample lacks is dropped with a status-bar message. Tests reassign_driver_on_a_sample_keeps_user_weights (FourBar J4 and WattII J2: converged, pose equal to the weightless reassign, weight in the blueprint and the live body mass) and reassign_driver_on_a_sample_drops_only_weights_on_bodies_it_lacks. Pre-existing; independent of Track 2."
+
+- id: BL-016
+  title: "Investigate driving egui canvas UI for deeper GUI smoke (samples + plot tabs)"
+  dimension: gui
+  risk: mechanical
+  evidence: "Plan 2026-08-08 deviation 2: v1 smoke is load/canvas/console only; egui renders to a single canvas so per-widget assertions need coordinate clicking or an AccessKit bridge (no DOM). Spec success-criterion 4 (30 samples render, 14 tabs switch) unmet until this lands."
+  acceptance: "documented decision + working prototype: either coordinate-map click script, AccessKit-based hooks, or URL-parameter sample loading, demonstrated by gui-smoke exercising at least sample-load + one tab switch"
+  priority: 3
+  status: open
+  notes: ""
+
+- id: BL-019
+  title: with_default_x_bounds locks X pan/zoom on every sweep plot (egui_plot default_x_bounds re-applies each frame)
+  dimension: gui
+  risk: mechanical
+  evidence: "Found 2026-09-12 while fixing BL-010. Headless probe (egui::Context::run, 4 frames): with Plot::default_x_bounds set, an X bounds change made in frame 1 is reset to the defaults on the next frame, while a Y change persists; with default_y_bounds both reset. Cause: egui_plot 0.33 lib.rs ~1066 `if (!default_auto_bounds.x && !any_dynamic_modifications) || mem.auto_bounds.x { bounds.set_x(&min_auto_bounds) }` runs every frame, and drag/zoom only mutate mem.transform. plot_panel/mod.rs with_default_x_bounds doc claims 'User pan/zoom still works within a single sweep recompute' — that is not the case for X."
+  acceptance: "either a headless regression test that X pan/zoom persists across frames on a sweep plot (probe pattern above) after switching to a one-shot set_plot_bounds_x keyed on the data range, or the with_default_x_bounds doc corrected to state that X is pinned to the data range by design"
+  priority: 3
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: with_default_x_bounds now returns a SweepPlot whose show() sets X once via set_plot_bounds_x (first display, range change/revisit, double click) instead of default_x_bounds re-applying each frame; drag and zoom persist across idle frames; four bl019 tests (drag and zoom failed before). Discovered during BL-010; not fixed there (out of scope). Same mechanism is why the actuator force plot cannot use default_y_bounds as a soft outlier view."
+
+- id: BL-031
+  title: "apply_point_masses re-logs the same skipped-weight warning on every rebuild and live mass sync"
+  dimension: quality
+  risk: mechanical
+  evidence: "Payload Track 2 final review 2026-09-29. io/from_json.rs:100-110 apply_point_masses calls log::warn! for each rejected point mass (on ground, mass <= 0, non-finite) on every call; it runs on every rebuild and on every sync_live_mass_props (gui/state/blueprint_ops.rs:551), so each drag or edit repeats the warning (console.warn on WASM)."
+  acceptance: "test: a mechanism with one invalid weight; N rebuilds plus a live mass sync emit the skip warning once (at load), or apply_point_masses stays silent and only the loader's point_mass_warnings reports it; cargo test --all green"
+  priority: 3
+  status: open
+  notes: "Deferred Task 1 minor; not user-visible outside the browser console."
+
+- id: BL-032
+  title: "Load warning names a skipped blank-id weight 'W<n>' (an id the file never had) instead of '#k'"
+  dimension: gui
+  risk: mechanical
+  evidence: "Payload Track 2 final review 2026-09-29. gui/state/file_io.rs:290-292 load_from_json_str calls assign_point_mass_ids before point_mass_warnings, so a blank-id weight the loader rejects is reported under its freshly assigned id rather than by file position."
+  acceptance: "test: load JSON with a blank-id weight whose mass is 0; the warning text names it '#k' (its index in the file), not 'W<n>'"
+  priority: 3
+  status: open
+  notes: "Cosmetic; deferred Task 1 minor."
+
+- id: BL-033
+  title: "Delete/Backspace does nothing to a selected weight while a toolbar button has Tab focus"
+  dimension: gui
+  risk: mechanical
+  evidence: "Payload Track 2 final review 2026-09-29. gui/mod.rs:1292-1296 handle_delete_shortcut returns early on ctx.wants_keyboard_input(); in egui 0.32.3 that is true for any focused widget. Clicking the canvas surrenders focus, so the normal path works; only a Tab-focused button swallows Delete until Esc."
+  acceptance: "test: headless egui frame with a weight selected and a Button holding focus; Delete removes the weight, while a focused TextEdit still keeps Delete for itself (gate on text-edit focus, not any focus)"
+  priority: 3
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: handle_delete_shortcut now gates on focused_widget_may_edit_text (TextEdit state plus touch/missing-response guards) rather than wants_keyboard_input, so a Tab-focused button no longer swallows Delete/Backspace; five bl033_* tests (reused from Codex ed88854). Deferred Task 6 minor."
+
+- id: BL-034
+  title: "Weight mass fields cap typed values at 1000 kg"
+  dimension: gui
+  risk: mechanical
+  evidence: "Payload Track 2 final review 2026-09-29. property_panel/weight_editor.rs:27 WEIGHT_MASS_RANGE_KG = 0.001..=1000 clamps the editor and the + Mass toolbar field (gui/mod.rs:1283). Heavier payloads load from a file and idle frames leave them alone (tested), but cannot be typed. The spec is silent on an upper bound."
+  acceptance: "decision recorded (raise the cap, e.g. to 1e5 kg, or keep it with a hover note); if raised, test that typing 5000 kg stores 5000 kg and the breakdown scales with it"
+  priority: 3
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: question 33's default kept: the 1,000 kg cap stays and each mass field says so on hover (option (a), A-57). WEIGHT_MASS_RANGE_KG stays 0.001..=1000; typing 5000 kg stores 1000 kg; a 1000 kg weight's gravity power is 400 times a 2.5 kg one's; the idle-frame test keeps a 150000 kg file weight."
+
+- id: BL-035
+  title: "Weight Breakdown legend swatch colour is arbitrary for multi-coloured weight lines"
+  dimension: gui
+  risk: mechanical
+  evidence: "Payload Track 2 final review 2026-09-29. plot_panel/weights.rs:278-283 draws each weight as several egui_plot lines (green helping, red hurting, grey gap runs) sharing one legend name, so the legend swatch takes whichever run egui_plot picks. The plotted runs carry the right colours (tested)."
+  acceptance: "the legend shows one neutral swatch per weight (e.g. a zero-length line in the weight's identity colour carrying the name, with the coloured runs unnamed), pinned by a test on the generated line specs"
+  priority: 3
+  status: open
+  notes: "Cosmetic."
+
+- id: BL-036
+  title: "Gravity breakdown uses the nominal constant omega for Expression drivers"
+  dimension: physics
+  risk: physics
+  evidence: "Payload Track 2 final review 2026-09-29. The DriverTorque share basis (gui/sweep/weights.rs:107-119 and the breakdown block in gui/sweep/mod.rs) takes rate = nominal omega and total power = T*omega, inheriting the sweep's constant-rate assumption. With an Expression driver (file-only) the true rate varies, so the shares do not leave a zero remainder."
+  acceptance: "test: an Expression-driven crank with a weight; per-sample shares use the driver's actual rate and share sum + other == total (rel 1e-9); or Expression drivers are documented as outside the breakdown's constant-speed model with the plot showing a note"
+  priority: 3
+  status: open
+  notes: "Pre-existing sweep limitation, outside the spec's constant-speed model. REVIEWED 2026-10-06 (docs/analyses/2026-10-06-open-physics-review-response.md): confirmed; the acceptance identity is vacuous (reuse assert_gravity_only_sum_invariants). Expression drivers are reachable from the GUI (Custom Expression), not file-only. The wider problem (time sweeps labelled as angles, actuator force/power/reactions at the nominal rate, a debug-build panic) is BL-050."
+
+- id: BL-037
+  title: "Linkage web app sends ViewportCommand::Title every frame, flooding the browser console with warnings"
+  dimension: gui
+  risk: mechanical
+  evidence: "Live smoke 2026-10-01 (linkage.colesorkness.com): zero errors but thousands of identical warnings, one per frame: '[eframe::web::app_runner] eframe-0.32.3/src/web/app_runner.rs:256: Unhandled egui viewport command: Title(\"Linkage Simulator\") - not implemented in web backend'. The web backend ignores the command; sending it each frame only spams the console and buries real warnings."
+  acceptance: "the title command is sent only when the title changes (or not at all on wasm32); a headless test counts the viewport commands over several idle frames (0 or 1); gui-smoke shows no Title warning"
+  priority: 3
+  status: fixed
+  notes: "Seen in every gui-smoke run; benign. The magcoupling page does not have it. Fixed 2026-10-02 on magcoupling/m5 (plan docs/superpowers/plans/2026-10-02-magcoupling-m5-embed.md, decision M5-7): gui/mod.rs send_title sends the title only when it differs from the last one sent, and never on wasm32; gui::tests::the_window_title_is_sent_only_when_it_changes counts the commands; gui-smoke's linkage step reports title_warning."
+
+- id: BL-038
+  title: "Two copies of the design file picker: linkage gui::calculator_window::DesignPicker repeats magcoupling-rs app::files::DesignPicker"
+  dimension: quality
+  risk: mechanical
+  evidence: "M5 plan review 2026-10-02 (docs/superpowers/plans/2026-10-02-magcoupling-m5-embed.md, decision M5-6): linkage-sim-rs/src/gui/calculator_window.rs DesignPicker (native rfd dialog, wasm32 AsyncFileDialog into an inbox) and save_filter follow magcoupling-rs/src/app/files.rs (its DesignPicker and extension filter) almost line for line, because M5 leaves magcoupling-rs unchanged."
+  acceptance: "one DesignPicker, behind a magcoupling-rs feature that both hosts enable (e.g. files = [gui, dep:rfd, dep:wasm-bindgen-futures]); the standalone app's and the linkage window's picker tests pass; gate 10 still shows workbook-parity absent from every shipped build"
+  priority: 3
+  status: fixed
+  notes: "Decision M5-6 option (b), deferred: it changes magcoupling-rs's Cargo.toml and its gui-is-egui-only contract. FIXED 2026-10-06 by removal: the calculator is a site of its own (colesorkness.com/tools/magcoupler) and the linkage app no longer embeds it (gui/calculator_window.rs deleted; plan docs/superpowers/plans/2026-10-06-colesorkness-url-move-and-standalone-calculator.md)."
+
+- id: BL-039
+  title: "The calculator window covers the linkage app's 'Recover Unsaved Work?' prompt when both show at once"
+  dimension: gui
+  risk: mechanical
+  evidence: "M5 plan review 2026-10-02: linkage-sim-rs/src/gui/mod.rs draws the native and the wasm32 recovery prompts (egui::Window, Middle order, anchored at the centre) inline in update, after the calculator window, which raises itself on its second frame (gui/calculator_window.rs, raise). With ?tool=magcoupling and an autosave on the web, or Tools > Magnetic coupling opened natively while the prompt shows, the window hides the prompt."
+  acceptance: "with the calculator window open and a recovery pending, the prompt is in front: a headless test draws the window and the prompt (moved out of update into a function) and Context::layer_id_at at the prompt's centre is the prompt's layer"
+  priority: 3
+  status: fixed
+  notes: "Documented in M5 (decision M5-4, the calculator_window module docs, 02-system limitations): the user can move or collapse the window. Fix sketches: both prompts on Order::Foreground (a press on them then leaves the keyboard where it is, decision M5-5), or open_magcoupling deferred while a recovery is pending. FIXED 2026-10-06 by removal: the calculator is a site of its own (colesorkness.com/tools/magcoupler) and the linkage app no longer embeds it (gui/calculator_window.rs deleted; plan docs/superpowers/plans/2026-10-06-colesorkness-url-move-and-standalone-calculator.md)."
+
+- id: BL-040
+  title: "The calculator window's keyboard does not follow Tab focus between it and the linkage app"
+  dimension: gui
+  risk: mechanical
+  evidence: "M5 plan review 2026-10-02: CalculatorWindow::follow_presses (linkage-sim-rs/src/gui/calculator_window.rs) moves the keyboard by presses only, while egui's Tab traversal (Focus::begin_pass reads Tab before any widget draws) can move the focus between the parts. Into a calculator field: the keys stay with the linkage app, so its canvas keys the field does not consume still run (Left and Right arrows nudge the selected link). Into a linkage field: the window keeps removing the key events, so Backspace, Enter and the arrows do nothing there."
+  acceptance: "decided with the user first (decision M5-5 alternative d: the keyboard also follows egui's focus); then headless tests for both directions: a focus moved into the window gives it the keyboard, a focus moved to a linkage widget takes it, a focus on a Foreground layer leaves it"
+  priority: 3
+  status: fixed
+  notes: "Sketch: each frame compare ctx.memory(|m| m.focused()) with the last frame's, also while the window is closed; on a change to Some(id), apply the press rule to ctx.read_response(id)'s layer_id. Documented in M5 (decision M5-5, the calculator_window module docs, 02-system limitations). FIXED 2026-10-06 by removal: the calculator is a site of its own (colesorkness.com/tools/magcoupler) and the linkage app no longer embeds it (gui/calculator_window.rs deleted; plan docs/superpowers/plans/2026-10-06-colesorkness-url-move-and-standalone-calculator.md)."
+
+- id: BL-041
+  title: "A shared link (?m=) plots the wrong crank range when the driven link is drawn at an angle"
+  dimension: gui
+  risk: mechanical
+  evidence: "User report 2026-10-05 (press 4-bar link): the share link stores the crank limits in display degrees (22-80), and the sweep converts them to body-frame angles with driver_display_offset. AppState::load_from_json_str called compute_sweep before recompute_driver_display_offset, so a fresh load converted them with the previous offset (0 on a fresh page): the press link swept display 66-124 deg, blank past the 85.5 deg dead point, until an edit recomputed the sweep."
+  acceptance: "a link written from a mechanism whose crank is drawn at 30 deg, with a 45..135 range, loads into a fresh AppState and sweeps exactly the sender's driver angles (file_io::tests::share_url_sweeps_the_senders_crank_range_for_a_rotated_crank)"
+  priority: 2
+  status: fixed
+  notes: "Fixed 2026-10-05 on fix/share-link-sweep-offset: load_from_json_str recomputes the offset before compute_sweep. load_sample has the same order but turns the range off before its sweep, so its sweep never reads the offset; left as is."
+
+- id: BL-042
+  title: "A weight on a link inside a force zone is invisible: the zone's overlap highlight paints over it"
+  dimension: gui
+  risk: mechanical
+  evidence: "User report 2026-10-05 (press 4-bar with a 150 lb weight on the press tool): the weight was in the model (71.04 kg total) but not on the canvas. render_mechanism drew the weights; render_overlays then drew the force elements, whose overlap highlight (FORCE_ZONE_OVERLAP_FILL, premultiplied 255,200,0,50, additive) covers the tool block and turns the gold marker and its arrow the same yellow."
+  acceptance: "a headless frame of the ParallelogramPress with a zone over the whole canvas and a weight on the coupler paints the weight marker after the overlap highlight (canvas::tests::weight_readout::a_weight_inside_a_force_zone_draws_over_the_zone_highlight)"
+  priority: 2
+  status: fixed
+  notes: "Fixed 2026-10-05 on fix/weights-over-force-zones: draw_weights moved from render_mechanism to render_overlays, after draw_force_elements. The highlight stays additive (changing it would restyle every zone)."
+
+- id: BL-043
+  title: "Scale mechanism scales a force zone's box but not its locked application point"
+  dimension: physics
+  risk: mechanical
+  evidence: "blueprint_ops.rs scale_mechanism (2026-10-06 map of the force-zone code): it multiplies zone_min/zone_max and the body geometry by the factor but leaves ForceZoneElement.body_local_app_point unscaled, so after a scale the locked force acts at the old distance from the body origin."
+  acceptance: "scaling a mechanism by k scales body_local_app_point by k; a test scales a zone with a locked point and checks the point and the statics (driver torque scales by k for a force-only load)"
+  priority: 3
+  status: open
+  notes: "Found while planning the round-geometry work (plan 2026-10-06, Part A); not changed there. REVIEWED 2026-10-06 (docs/analyses/2026-10-06-open-physics-review-response.md): confirmed at runtime (+10 N m stays +10 after x2). Scale the point whenever it is Some, in every mode: contact mode keeps a stored locked point (element_types.rs:365-377). Recommend priority 2 (silent wrong torque); the other missed lengths and the missing tests are BL-052."
+
+- id: BL-044
+  title: "The canvas Draw Geometry tool is a stub"
+  dimension: gui
+  risk: mechanical
+  evidence: "interaction.rs handle_draw_body_geometry is '#[allow(dead_code)] // Stubbed: full implementation pending'; EditorTool::DrawBodyGeometry does nothing. Until 2026-10-06 the property panel's Draw Geometry and Redraw buttons entered this mode, so they did nothing; Part A of the round-geometry plan replaced them with Add rectangle / Add circle (decision R-2). The stub, DrawBodyGeometryState and PendingPropertyEdit::EnterDrawGeometryMode remain."
+  acceptance: "either the tool draws a rectangle or a circle by dragging (with a headless test), or the stub, its state and the edit variant are removed"
+  priority: 4
+  status: open
+  notes: "Decision R-2 option (b) if the user wants dragging."
+
+- id: BL-045
+  title: "Force-element edits skip undo and the changed flag"
+  dimension: gui
+  risk: mechanical
+  evidence: "update_force_element (blueprint_ops.rs) does not push an undo step, so a force zone's mode switch (Overlap centre / Locked point / Contact point), a dragged F marker and the other force-editor edits cannot be undone and do not set dirty (the web autosave skips them); noted in the round-geometry final review 2026-10-06"
+  acceptance: "each force-element edit is one undo step and sets dirty; a test switches a zone's mode, undoes it, and checks dirty"
+  priority: 3
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: update_force_element now records one undo step and sets dirty through mutate_and_rebuild (unchanged or invalid edits are no-ops), and the force editor commits numeric fields once on drag release or focus loss; reused from Codex 8e6ad7d. Pre-existing for the old lock checkbox; the round-geometry branch adds the three-way choice."
+
+- id: BL-046
+  title: "The canvas's orange zone-force label is hard to read on the yellow overlap highlight"
+  dimension: gui
+  risk: mechanical
+  evidence: "force_render.rs draws \"F (locked)\" and \"F (contact)\" in Color32::from_rgb(255, 165, 80) over FORCE_ZONE_OVERLAP_FILL (255, 200, 0, alpha 50; colors.rs); on the live press (2026-10-06) the label at the wheel's bottom barely shows while the wheel is in the zone"
+  acceptance: "the zone-force label reads clearly over the overlap highlight (a darker label colour or a backing plate); a headless test checks the label's colour against the highlight, or the label draws on a plate"
+  priority: 4
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: the zone-force label (F, F (locked), F (contact)) now draws on a measured opaque dark plate above the overlap highlight, same font, anchor and colour; reused from Codex 33c0079 with its two painted-output tests. Seen in the live check of Part A of the round-geometry plan; the animated HTML export draws its labels with a white halo instead."
+
+- id: BL-047
+  title: "The animated HTML export leaves out prismatic and cam joints"
+  dimension: gui
+  risk: mechanical
+  evidence: "gui/export/animation.rs joint_point keeps revolute and fixed joints only (2026-10-06 final review of Part B): a slider-crank's slide joint has no marker on the page, and its reaction is not in the readouts, while the canvas draws a square marker and an arrow (rendering/mod.rs) and the Joint Reactions plot lists it"
+  acceptance: "the page marks prismatic and cam joints as the canvas does (a test exports the slider-crank and finds the slide joint's marker); their reactions are shown, or the page says they are left out"
+  priority: 4
+  status: open
+  notes: "A prismatic joint's multiplier is not an [Fx, Fy] force, so its reaction needs its own drawing (the canvas's treatment is pre-existing)."
+
+- id: BL-048
+  title: "The File menu's text exports repeat the generate / download / error block"
+  dimension: quality
+  risk: mechanical
+  evidence: "menu_bar.rs: the schematic, DXF, HTML report and animation items each repeat match generate { Ok -> download_text + apply_download_outcome, Err -> error_log + show_error_panel } (2026-10-06 final review of Part B)"
+  acceptance: "one helper (generate result, file name, MIME type, filter, failure prefix) used by every text export item; behaviour unchanged (same file names, messages and error panel)"
+  priority: 5
+  status: open
+  notes: "Left alone in Part B to keep the existing items untouched."
+
+- id: BL-049
+  title: "Under a mounting angle the canvas draws force arrows and the zone box unturned"
+  dimension: gui
+  risk: mechanical
+  evidence: "The canvas turns positions by the mounting angle (ViewTransform::world_to_screen) but draws force directions straight from the world vector (primitives.rs draw_force_arrow: dx = fx / mag, dy = -fy / mag; force_render.rs zone arrows: dir_x = fx / fmag) and the zone box as the screen rectangle of two turned corners (force_render.rs), so with a mounting angle the reaction and zone-force arrows and the zone box are drawn turned back by the angle. Found in the 2026-10-06 re-review of Part B's final fixes; the animated HTML export turns every point and vector and draws zones as four corners."
+  acceptance: "with a mounting angle the canvas turns force directions by it and draws a zone as its four turned corners; a headless test at 30 deg checks a reaction arrow's and a zone arrow's screen direction and the zone outline"
+  priority: 3
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: the canvas turns reaction, component, external and zone-force directions by the mounting angle (world_direction_to_screen) and draws a zone as its four turned corners; five literal 30-degree headless tests (reused from the parked Codex branch). Pre-existing; the page (gui/export/animation.rs) is the reference for the turned drawing."
+
+- id: BL-050
+  title: "Expression drivers: sweeps are time sweeps labelled as angles, and actuator force, power, reactions and gravity totals use the nominal rate"
+  dimension: physics
+  risk: physics
+  evidence: "sweep_time (gui/sweep/mod.rs ~279) assumes theta0 + omega t; for an expression driver AppState fills omega = 2 pi, theta0 = 0 placeholders (blueprint_ops.rs:319-333, file_io.rs:362), so an 'angle' sweep runs t in [0, 1] s labelled 0-360 deg (f = 2 pi t^2: label 90 deg is 22.5 deg). Nominal omega also feeds the reaction solve (sweep/mod.rs:621), actuator force (:703, :712-718; off by omega/f': x4.0 at t = 0.125), actuator power (:725, :729), actuator-basis totals (weights.rs:116), canvas reactions (blueprint_ops.rs:634-635) and the animation export (export/animation.rs:448). ParallelogramActuator with stored force 0 and f = 2 pi t^2 trips the debug_assert at reactions.rs:691 (debug builds panic). Reachable from the GUI (Custom Expression, input_panel.rs:603-768). Found in the 2026-10-06 review of Codex's open-physics report (docs/analyses/2026-10-06-open-physics-review-response.md)."
+  acceptance: "for a non-constant driver either (a) the breakdown and actuator outputs are hidden with a visible note, or (b) every rate uses the actual f'(t) (driver row of assemble_phi_t, or thetadot_j - thetadot_i), actuator reactions go through solve_reactions_with_actuator_using_q_dot, and expression sweeps are plotted against time; tests with f = 2 pi t^2 check the labels or time axis, actuator force against tau / (dL/dtheta), and a gravity-only remainder of ~0"
+  priority: 2
+  status: open
+  notes: "Recommended: (a) now, (b) later. Where f' = 0 use a unit-rate velocity solve (q_theta) so forces need no division by the rate. Overlaps BL-036 (the breakdown part) and BL-017 (the debug_assert)."
+
+- id: BL-051
+  title: "rebuild() moves a linear-driven mechanism to driver length 0"
+  dimension: physics
+  risk: mechanical
+  evidence: "blueprint_ops.rs:345-350 works out the solve time from driver_angle even for a linear driver. Probe (state level, 2026-10-06): a slider at stroke 1.2 (x = 0.2) jumps to x = -1.0 (driver length 0) after a plain rebuild() while the stroke still reads 1.2; after scale x2 it goes to x = -2.0. The slider re-solves only when its value changes (input_panel.rs:316-317), so the wrong pose probably stays on screen. Found in the 2026-10-06 review (docs/analyses/2026-10-06-open-physics-review-response.md)."
+  acceptance: "rebuild() keeps a linear-driven mechanism at its current stroke; a test rebuilds a slider-crank at stroke 1.2 and checks the slider position and the driver length; confirmed first in the GUI (an edit on a linear-driven mechanism)"
+  priority: 2
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch linkage/r5-mechanical: rebuild() now takes the solve time from the newly assigned driver kind (a linear driver's stroke, a revolute driver's angle) instead of driver_angle, so an edit no longer moves a linear-driven mechanism to driver length 0 (Codex acb1531's fix, ported onto driver_angle_to_time). Tests in gui/state/tests.rs: Codex's three bl051 tests plus bl051_rebuild_keeps_slider_crank_at_linear_stroke (the Slider-Crank sample on a linear driver at stroke 1.2, then Add Mount Point; checks slider x = 0.2, driver length 1.2, commanded stroke 1.2 and an unmoved pose). With the fix reverted the three linear tests fail (slider x = -1.0, driver length 0; the slider-crank does not solve after the edit) and the revolute control passes. GUI confirmation is Codex's 2026-10-07 WASM run: Add Mount Point moved Pos 200 mm to -1000 mm at stroke 1200 mm before the fix and kept 200 mm after it (screenshots in docs/analyses/2026-10-07-gui-evidence/ on codex/physics-review-rework-2026-10-06); not re-run on this branch. Reproduced at state level only; confirm in the GUI before fixing. Would affect every edit to a linear-driven mechanism."
+
+- id: BL-052
+  title: "Scale mechanism misses cam profiles, the linear-driver stroke and other lengths, and has no tests"
+  dimension: physics
+  risk: mechanical
+  evidence: "scale_mechanism (blueprint_ops.rs ~1443) leaves: cam profile s(theta) in metres (cam.rs:147-150, schema.rs:351-358; inconsistent geometry), the linear-driver stroke slider value (blueprint_ops.rs:310-311 keeps it while length_0 scales), the sweep range in mm for linear drivers (blueprint_ops.rs:1410-1411), trajectory target points and values (control_target.rs:17-37, types.rs:335-343), BearingFriction.pin_radius (element_types.rs:206; the comment at blueprint_ops.rs:1510-1512 wrongly says bearing friction has no length data). It pushes an undo step before checking a blueprint exists (blueprint_ops.rs:1447-1448). No test covers it; its only caller is pending_edits.rs:290. Found in the 2026-10-06 review (docs/analyses/2026-10-06-open-physics-review-response.md)."
+  acceptance: "each listed length scales with the mechanism (or is documented as kept); tests through AppState::scale_mechanism with literal expected values for each; no undo step without a blueprint"
+  priority: 3
+  status: open
+  notes: "BL-043 (the locked force point) is the same function. Scaling-law decisions for the user: izz_cg (x k^2 for geometric similarity with mass kept; point-mass inertia already scales x k^2), velocities and speed limits, pin radius. Optional guard: destructure ForceZoneElement fully and list every force variant so a new length field fails to compile."
 - id: BL-094
   title: "Magcoupler UX overhaul, slice B, stage 2, part 2b-ii-b (the drawing's selections and the word budget): a click on a dimension tag, a callout row or a results-table row selects its result and the Explain panel shows its entry, the callout list and its notes move to the Geometry tab, the first view holds at most 250 words, gui-smoke reads a dimension tag's entry"
   dimension: gui
@@ -1094,7 +1094,7 @@
   acceptance: "A red test first: a trail of several crumbs (for example one term followed, then another, at 1024 x 700 and 1280 x 800 in the app's theme and font) in the Start here walk or the every-equation test, so equation_panel_faults covers the header row, failing on a crumb under the buttons; the fix keeps the buttons' width free before the crumbs are laid out (the right-to-left buttons drawn first, or the crumbs wrapped at the available width less the buttons'); every crumb still clickable (back_to); no Tab stop added (BL-102); README and docs/ai updated; GATE PASS."
   priority: 5
   status: fixed
-  notes: "FIXED 2026-11-28 on branch magcoupling/r3-polish: explorer_ui lays Close and Start here out first in a right-to-left row and wraps the heading and crumbs in the room left of them, so the crumbs never reach the buttons; every crumb still clickable (back_to); test a_long_breadcrumb_trail_stays_clear_of_start_here_and_close_in_the_app_s_own_font (2 to 4 crumbs at 1024 x 700 and 1280 x 800). Filed 2026-11-28 by the fix wave of BL-112's whole-branch re-review (RS-1), not taken there: on main too, no click lost, and the review marked it not for that branch. The fix wave checked the header row's code: unchanged by BL-112."
+  notes: "FIXED 2026-11-28 on branch magcoupling/r3-polish: explorer_ui lays Close and Start here out first in a right-to-left row and wraps the heading and crumbs in the room left of them, so the crumbs never reach the buttons; every crumb still clickable (back_to); test a_long_breadcrumb_trail_stays_clear_of_start_here_and_close_in_the_app_s_own_font (2 to 4 crumbs at 1024 x 700 and 1280 x 800). Filed 2026-11-28 by the fix wave of BL-112's whole-branch re-review (RS-1), not taken there: on main too, no click lost, and the review marked it not for that branch. The fix wave checked the header row's code: unchanged by BL-112. Close and Start here are registered before the crumbs, so Tab reaches Close, then Start here, then the crumbs (the reverse of reading order); no stop added; recorded as a known order (R3 review, N-9)."
 - id: BL-116
   title: "Magcoupler (web build only): with a teaching note open in the Explain panel, the pointer on the right column's scroll bar re-wraps the note wider than the column and its lines are cut at the window's edge"
   dimension: gui
@@ -1167,15 +1167,6 @@
   priority: 5
   status: fixed
   notes: "FIXED 2026-11-28 on branch magcoupling/r3-polish: sideways_scroll_area (gui/mod.rs) reserves a bar-wide strip (floating_allocated_width = bar_width) under its content, so the floating bar, widest under the pointer, covers no glyph; its comment now says what egui does and that a formula already scrolled sideways stays put (F-5); test the_formula_s_scroll_bar_covers_none_of_its_glyphs_under_the_pointer. Filed 2026-11-28 by the controller from the text review of BL-112 (F-4, F-5); taken into the R3 polish batch."
-- id: BL-124
-  title: "Magcoupler: on the Plots tab the Tab key stops on each plot's axes (egui_plot's drag-only widgets), which show no focus"
-  dimension: gui
-  risk: mechanical
-  evidence: "Found by BL-102's walk test (2026-11-28): at 1024 x 700 on the Plots tab a Tab pass stops on a widget 32 x 208 points at the plot's left edge (Sense drag, focusable): egui_plot registers each axis for dragging. BL-102 passes the stops egui's scroll areas and panels register and left these, whose ids egui_plot makes."
-  acceptance: "A red test first: BL-102's walk test with its allowance for the plots' axes removed (tab_and_shift_tab_stop_on_nothing_that_shows_no_focus: the `axis` exemption) passes on the Plots tab; the plots still pan and zoom by the pointer; README and docs/ai updated; GATE PASS."
-  priority: 5
-  status: open
-  notes: "Filed 2026-11-28 by the BL-102 fix, not taken there: the ids are egui_plot's, and the cure (its axis widgets' ids, or a plot's interaction switched off for the keyboard) needs a look at egui_plot 0.33. The plot itself (click_and_drag) may be a stop too."
 - id: BL-130
   title: "Magcoupler: fable's physics re-review of the R4 diffs (BL-067, BL-083, BL-084, BL-087), with the texts that still name cold-high alone"
   dimension: physics
@@ -1194,3 +1185,12 @@
   priority: 3
   status: open
   notes: "Filed 2026-11-28 by the controller from the R4 branch review (R4-3); not taken in R4: older than the branch, outside BL-067's acceptance, and it needs a deviation from the workbook decided with a physics review."
+- id: BL-124
+  title: "Magcoupler: on the Plots tab the Tab key stops on each plot's axes (egui_plot's drag-only widgets), which show no focus"
+  dimension: gui
+  risk: mechanical
+  evidence: "Found by BL-102's walk test (2026-11-28): at 1024 x 700 on the Plots tab a Tab pass stops on a widget 32 x 208 points at the plot's left edge (Sense drag, focusable): egui_plot registers each axis for dragging. BL-102 passes the stops egui's scroll areas and panels register and left these, whose ids egui_plot makes."
+  acceptance: "A red test first: BL-102's walk test with its allowance for the plots' axes removed (tab_and_shift_tab_stop_on_nothing_that_shows_no_focus: the `axis` exemption) passes on the Plots tab; the plots still pan and zoom by the pointer; README and docs/ai updated; GATE PASS."
+  priority: 5
+  status: open
+  notes: "Filed 2026-11-28 by the BL-102 fix, not taken there: the ids are egui_plot's, and the cure (its axis widgets' ids, or a plot's interaction switched off for the keyboard) needs a look at egui_plot 0.33. The plot itself (click_and_drag) may be a stop too."

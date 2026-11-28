@@ -978,11 +978,29 @@ mod tests {
         for size in [WINDOWS[1], WINDOWS[0]] {
             // The starting design, the example design, and the example 5 degrees hotter: its
             // high case reaches the limit, so Slip heating marks the time to it.
-            for design in ["starting", "example", "hot example"] {
+            for design in ["starting", "example", "hot example", "smoke link"] {
                 let ctx = egui::Context::default();
                 let mut app = MagcouplingApp::new(&ctx);
                 if design != "starting" {
                     app.panel.open_example_design();
+                }
+                if design == "smoke link" {
+                    // The gui-smoke share link's design: its Slip heating marks the time to the
+                    // limit under a top-right legend (BL-106, N-4).
+                    let script = include_str!("../../.claude/workflows/gui-smoke.js");
+                    let marker = "const MAGCOUPLING_SMOKE_PAYLOAD = '";
+                    let start = script.find(marker).expect("the smoke payload") + marker.len();
+                    let end = start + script[start..].find('\'').expect("its closing quote");
+                    app.panel.load_share_payload(&script[start..end]).unwrap();
+                    // Auto sizing solves after its debounce: let that pass, as the web page does.
+                    for t in 1..=4 {
+                        let input = egui::RawInput {
+                            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                            time: Some(f64::from(t)),
+                            ..Default::default()
+                        };
+                        let _ = ctx.run(input, |ctx| app.ui(ctx));
+                    }
                 }
                 if design == "hot example" {
                     let mut hot = Design::default();

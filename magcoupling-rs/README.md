@@ -222,7 +222,7 @@ the first view is the instrument of the owner's option B: the Size column on the
 **Required torque**; in the centre four tiles over the drawing, each a readout whose number leads
 and whose label is muted under it (**Pull-out torque (nominal, at T)**, **Hot-low torque** with
 "needs" and the requirement and its gap under its label, **Cold-high torque** and the rotating
-mass; `gui::tiles`, two rows of two where four would be narrower than 130 points), then the
+mass; `gui::tiles`, two rows of two where four would be narrower than 130 points; the four share one height from the first painted frame, BL-111), then the
 drawing with its numbered dimension tags (since BL-094 the callout list and its plain notes are
 the Geometry tab's, `geometry_view::drawing_ui`: a note with a level, a part not drawn or a design
 check's caution, stays under the drawing while it is true); on the right the check list over the Explain panel
@@ -394,7 +394,7 @@ the Equation panel. The Equation panel's area, like the Explain panel's, opens a
 and the Clamp tab's screw-size table, is `gui::sideways_scroll_area` (BL-101): egui hands both
 axes' scroll targets to the innermost area alone, so the inner area scrolls sideways to the widget
 and the outer one is asked again for its rect once the inner area has ended; a formula wider than
-the panel shows from its start. The Results table draws only the lines in view, and a line takes
+the panel scrolls sideways, with a bar-wide strip kept under it for egui's floating scroll bar, so the pointer on it covers no row (BL-123). The Results table draws only the lines in view, and a line takes
 the focus only while the view shows it whole: Tab passes the lines on screen and leaves the table,
 never stopping on a line half seen, and the table does not scroll for it (owner question 67's
 default, register row A-44; a focused line a wheel then cuts loses the focus). Tab and Shift+Tab
@@ -403,9 +403,7 @@ each resizable panel's edge, which egui registers as widgets (`gui::scroll_area`
 `gui::hide_resize_edge`, `gui::TabWalk`: a press that lands on one moves the focus on to the next
 or previous widget that shows it; the widgets stay, so a touch drag scrolls, the bars drag and
 the columns resize), and the Equation panel's formula, which takes clicks only. egui_plot's axes
-are still stops (BL-124). egui also gives the
-keyboard's focus to parts that show none, each scroll area's drag surface and scroll bar and each
-column's resize edge: BL-102. The design's nothing-lost table (8.2, test 9)
+are still stops (BL-124). The design's nothing-lost table (8.2, test 9)
 is one test, `nothing_is_lost_each_action_view_note_dashboard_row_input_and_assumption_has_its_home`:
 the old top bar's actions, every centre view, every shown note in Learn, every dashboard row's
 home, and every input and assumption from every tab.
@@ -782,7 +780,7 @@ can name an input Auto holds; its link then frames a locked row (known limitatio
   and its Close button closes it, decision C-11; M43-1, M43-2; it opens at 45 % of the region's height, at least
   `MIN_PANEL_HEIGHT` 120 points, and its drag stops `VIEW_STRIP` 160 points below the region's
   top so the tab row and a small view always keep their strip, except in a region too short for
-  both, where the panel keeps its 120 points: `explorer::panel_heights`): the equation large, its label, value and (with Show spreadsheet details) workbook cell and the
+  both, where the panel keeps its 120 points: `explorer::panel_heights`; its header lays Close and Start here out first and wraps the heading and crumbs in the room left of them, so a long trail never reaches the buttons, BL-115): the equation large, its label, value and (with Show spreadsheet details) workbook cell and the
   corrections it embodies (`corrections_upstream`, titles on hover; the dashboard and table markers stay M4-1's,
   M43-14), the term list (colour, symbol, value in the unit the formula reads, a selector's code
   with its choice's label after a colon, `5: 1, 3, 5 (default)`, label, and what the term is; the
@@ -852,7 +850,7 @@ can name an input Auto holds; its link then frames a locked row (known limitatio
   orientation, the note list, every note, check, tile, input and result): each of its wrapping lines, and of the left
   column's, is drawn through `gui::wrapping_line`, which keeps one point of the line's width free, since a label in a
   wrapping line can stand a fraction of a point past it (0.06 of a point in two notes, 0.375 in one result's entry in the
-  app's font). "Start here" walks `notes::START_HERE`, its 14 steps while the
+  app's font). The Explain panel's scroll area keeps a 10-point strip for egui's floating scroll bar, so the bar under the pointer covers no line of a note (BL-116). "Start here" walks `notes::START_HERE`, its 14 steps while the
   clamp section is paused (the full order, `notes::START_HERE_ALL`, has 15, the shaft-joint note just before the
   clamp note, the clamp note last; `notes::start_here_for(clamps::PAUSED)`), from how the coupling makes torque to
   the shaft joints' keyed shrink fits,

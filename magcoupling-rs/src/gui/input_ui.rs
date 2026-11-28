@@ -58,16 +58,21 @@ pub struct RowOutput {
     pub label_clicked: bool,
 }
 
+/// The decimals a slider's value box shows: none for a count, else the step's.
+fn slider_decimals(meta: &InputMeta, range: SliderRange) -> usize {
+    match meta.ty {
+        FieldType::I64 => 0,
+        _ => step_decimals(range.step),
+    }
+}
+
 /// A slider over `value` set up from the input's metadata: its range (logarithmic when
 /// flagged), its step (also the arrow-key nudge), values rounded to the step's decimals
 /// (decision M41-1), edits clamped to the range while a value already outside it is kept until
 /// edited (decision M41-2), typed values applied on Enter or when the box loses focus, the
 /// unit as a suffix. The box's own text is no typed value ([`typed_number`], BL-097).
 pub fn slider<'a>(value: &'a mut f64, meta: &InputMeta, range: SliderRange) -> egui::Slider<'a> {
-    let decimals = match meta.ty {
-        FieldType::I64 => 0,
-        _ => step_decimals(range.step),
-    };
+    let decimals = slider_decimals(meta, range);
     // The box's text as egui's own formatter writes it this frame, kept for the parser: egui
     // formats before it parses, in the same frame.
     let shown = std::rc::Rc::new(std::cell::RefCell::new(String::new()));
@@ -106,10 +111,7 @@ pub fn add_slider(
     meta: &InputMeta,
     range: SliderRange,
 ) -> egui::Response {
-    let decimals = match meta.ty {
-        FieldType::I64 => 0,
-        _ => step_decimals(range.step),
-    };
+    let decimals = slider_decimals(meta, range);
     let text = with_unit(
         egui::emath::format_with_decimals_in_range(*value, decimals..=decimals),
         meta.unit,

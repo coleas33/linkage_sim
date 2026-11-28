@@ -5,13 +5,29 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - Magcoupler: R3 review fixes (N-4, N-5, N-7, N-9)
+
+- app.rs: the BL-106 legend test gains the gui-smoke share link's design (a fourth case, read from gui-smoke.js), so Slip heating's time-to-limit dot under a top-right legend fails it; gui/input_ui.rs: `slider_decimals` shared by `slider` and `add_slider`; docs: the six tracker lines of BL-120, BL-121, BL-115, BL-116, BL-119 and BL-123 moved up into this branch's entries, README lines on BL-111, BL-115, BL-116 and BL-123 and two stale sentences reworded (BL-102, BL-101), docs/ai 02 (BL-100's paragraph names BL-119 and BL-123), backlog BL-115 notes the Tab order (Close, Start here, then the crumbs).
+
 ## 2026-11-28 - Magcoupler: an equation opened in the Equation panel opens at its top, and the same one keeps its offset (BL-122)
 
 - gui/explorer.rs (explorer_ui: last drawn path in egui temp data, vertical_scroll_offset(0.0) when it changes); test in panel.rs; README, docs/ai 02 to 04; backlog BL-122 fixed.
 
+- 2026-11-28 BL-123 (magcoupling/r3-polish): sideways_scroll_area keeps a bar-wide strip under its content for egui's floating scroll bar, so the pointer on the formula or the screw-size table no longer covers the last row (gui/mod.rs; test the_formula_s_scroll_bar_covers_none_of_its_glyphs_under_the_pointer).
+
+- 2026-11-28 BL-119 (magcoupling/r3-polish): follow_focus scrolls to the focused widget's rect grown one point at its foot, so a value box in the app's font is whole at the left column's foot (gui/mod.rs; test the_left_column_shows_every_focused_widget_whole_in_the_app_s_own_font).
+
+- 2026-11-28 BL-116 (magcoupling/r3-polish): the Explain panel's scroll area keeps a 10-point strip for its floating scroll bar, so a note's lines are no longer covered by the bar under the pointer (panel.rs; test a_note_in_the_explain_panel_keeps_clear_of_its_scroll_bar).
+
+- 2026-11-28 BL-115 (magcoupling/r3-polish): the Equation panel header lays Close and Start here out first and wraps the heading and crumbs in the room left of them, so a long breadcrumb trail is never drawn under the buttons (explorer.rs; test a_long_breadcrumb_trail_stays_clear_of_start_here_and_close_in_the_app_s_own_font).
+
 ## 2026-11-28 - Magcoupler: the four tiles share one height in the first painted frame (BL-111)
 
 - gui/tiles.rs (request_discard in place of request_repaint when a row's height changes); test in tiles.rs; backlog BL-111 fixed.
+
+- 2026-11-28 BL-121 (magcoupling/r3-polish): the Start here bar draws Previous, Next and Stop as one block on the row after the step line, so they always share a row (explorer.rs; test the_start_here_buttons_share_one_row_on_every_step_in_the_app_s_own_font).
+
+- 2026-11-28 BL-120 (magcoupling/r3-polish): the Equation panel's closest-note title starts its own row when the room left is less than its widest word, so it never breaks mid-word in a narrow centre (explorer.rs; test a_closest_note_title_breaks_only_between_words_in_a_narrow_centre).
 
 ## 2026-11-28 - Magcoupler: a legend disc and a resting tile keep a visible edge under a host that sets no resting outline, and the legend test checks the disc hovered and pressed (BL-110)
 
@@ -3651,13 +3667,3 @@ feedback during the DXF press-mechanism workflow.
 See `docs/FEATURES.md` and `docs/history/` for the full project history including
 the Python→Rust port (411→644 tests), Phase 5 GUI, sample mechanisms, export
 formats, and Phase 6.8 UX overhaul.
-
-- 2026-11-28 BL-120 (magcoupling/r3-polish): the Equation panel's closest-note title starts its own row when the room left is less than its widest word, so it never breaks mid-word in a narrow centre (explorer.rs; test a_closest_note_title_breaks_only_between_words_in_a_narrow_centre).
-
-- 2026-11-28 BL-121 (magcoupling/r3-polish): the Start here bar draws Previous, Next and Stop as one block on the row after the step line, so they always share a row (explorer.rs; test the_start_here_buttons_share_one_row_on_every_step_in_the_app_s_own_font).
-
-- 2026-11-28 BL-115 (magcoupling/r3-polish): the Equation panel header lays Close and Start here out first and wraps the heading and crumbs in the room left of them, so a long breadcrumb trail is never drawn under the buttons (explorer.rs; test a_long_breadcrumb_trail_stays_clear_of_start_here_and_close_in_the_app_s_own_font).
-
-- 2026-11-28 BL-116 (magcoupling/r3-polish): the Explain panel's scroll area keeps a 10-point strip for its floating scroll bar, so a note's lines are no longer covered by the bar under the pointer (panel.rs; test a_note_in_the_explain_panel_keeps_clear_of_its_scroll_bar).
-- 2026-11-28 BL-119 (magcoupling/r3-polish): follow_focus scrolls to the focused widget's rect grown one point at its foot, so a value box in the app's font is whole at the left column's foot (gui/mod.rs; test the_left_column_shows_every_focused_widget_whole_in_the_app_s_own_font).
-- 2026-11-28 BL-123 (magcoupling/r3-polish): sideways_scroll_area keeps a bar-wide strip under its content for egui's floating scroll bar, so the pointer on the formula or the screw-size table no longer covers the last row (gui/mod.rs; test the_formula_s_scroll_bar_covers_none_of_its_glyphs_under_the_pointer).
