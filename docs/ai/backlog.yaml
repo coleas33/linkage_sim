@@ -1057,8 +1057,8 @@
   evidence: "The text review of part 2b-iii-b (BL-107; 2026-11-27, finding F-2, docs/analyses/2026-11-27-magcoupler-slice-b2p2biii-b-review.md), from a screencast of the load in Chromium: in the first frame after the loading line gives way the first tile ends at y 152; from the second frame every tile ends at y 204. tiles.rs's tiles_ui reads each row's height from the last frame's temp memory (0 on the first frame) and asks for a repaint. main's live build draws the same first frame, so BL-107 did not cause it."
   acceptance: "A red test first (the app's theme and font, the first frame of a fresh app at 1280 x 800): the four tiles share one height in the first painted frame (for example egui's request_discard in place of request_repaint when a row's height changes); no tile moves after the first frame; README and docs/ai updated; GATE PASS."
   priority: 5
-  status: open
-  notes: "Filed 2026-11-27 by the controller from the text review of part 2b-iii-b (F-2), not taken there: on main too, one frame long."
+  status: fixed
+  notes: "FIXED 2026-11-28 on branch magcoupling/r3-polish: tiles_ui calls request_discard in place of request_repaint when a row's height changes, so egui redraws the pass and the first painted frame has one height; test the_four_tiles_share_one_height_in_the_first_painted_frame. Filed 2026-11-27 by the controller from the text review of part 2b-iii-b (F-2), not taken there: on main too, one frame long."
 - id: BL-112
   title: "Magcoupler UX overhaul, slice B, stage 2, part 2b-iii-c (the Equation panel): every text of the panel but its formula whole at the three window sizes; the note drawing in its own module; the empty text gone; the keyboard's focus followed in the nested sideways areas, the Results table and the check list"
   dimension: gui

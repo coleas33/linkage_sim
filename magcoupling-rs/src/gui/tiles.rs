@@ -171,7 +171,8 @@ pub(crate) fn tiles_ui(
         });
         if tallest != height {
             ui.data_mut(|data| data.insert_temp(id, tallest));
-            ui.ctx().request_repaint();
+            // Discard this pass so the first painted frame already has even heights (BL-111).
+            ui.ctx().request_discard("tile row height changed");
         }
     }
     clicked
@@ -310,6 +311,25 @@ mod tests {
                 _ => None,
             })
             .collect()
+    }
+
+    #[test]
+    fn the_four_tiles_share_one_height_in_the_first_painted_frame() {
+        // BL-111: a row's height came from the last frame, so the first frame drew uneven tiles.
+        let ctx = egui::Context::default();
+        let inputs = DesignInputs::default();
+        let results = compute_all(&inputs);
+        let output = sized_frame(&ctx, egui::vec2(700.0, 600.0), Vec::new(), |ui| {
+            tiles_ui(ui, &inputs, &results, None, &mut Readouts::default());
+        });
+        let tiles = tile_rects(&ctx, &output);
+        assert_eq!(tiles.len(), 4);
+        assert!(
+            tiles
+                .iter()
+                .all(|t| (t.height() - tiles[0].height()).abs() < 0.5),
+            "{tiles:?}"
+        );
     }
 
     #[test]

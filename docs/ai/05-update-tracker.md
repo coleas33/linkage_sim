@@ -5,6 +5,10 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - Magcoupler: the four tiles share one height in the first painted frame (BL-111)
+
+- gui/tiles.rs (request_discard in place of request_repaint when a row's height changes); test in tiles.rs; backlog BL-111 fixed.
+
 ## 2026-11-28 - Magcoupler: a legend disc and a resting tile keep a visible edge under a host that sets no resting outline, and the legend test checks the disc hovered and pressed (BL-110)
 
 - gui/tiles.rs, gui/plots.rs (noninteractive hairline fallback); tests in tiles.rs, plots.rs, app.rs; README; backlog BL-110 fixed.
