@@ -505,6 +505,19 @@ pub fn plot_ui(
         let (quiet, weak) = (look::quiet_text(visuals), visuals.weak_text_color());
         visuals.widgets.noninteractive.fg_stroke.color = quiet;
         visuals.weak_text_color = Some(weak);
+        // egui_plot draws a legend entry, a toggle, as a disc in the interact state's fill and
+        // outline with its line's dot on it while the line is shown: the dot alone shows the
+        // state. The disc takes the legend's own background, so each dot is as clear on it as
+        // its line is on the plot, inside the resting outline (BL-108).
+        let field = visuals.extreme_bg_color;
+        let widgets = &mut visuals.widgets;
+        for state in [
+            &mut widgets.inactive,
+            &mut widgets.hovered,
+            &mut widgets.active,
+        ] {
+            state.bg_fill = field;
+        }
         // egui_plot draws the vertical axis' label a quarter of a row left of the plot, and
         // the centre region clips at the plot's own left edge: the label's letters lost their
         // tops (the T of "Torque" its bar). The plot may paint that far into the region's

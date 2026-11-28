@@ -189,17 +189,19 @@ fn tile_ui(
     results: &DesignResults,
 ) -> (f32, egui::Response) {
     let id = ui.id().with(("magcoupling_tile", tile.path()));
-    // A tile the keyboard reached is outlined as a selected one is.
+    // A tile the keyboard reached is outlined as a selected one is. At rest a tile, a click
+    // target, shows the resting outline of a framed control (BL-109); one width in both
+    // states, whatever the host's resting width, so selecting a tile moves no row.
     let focused = ui.memory(|memory| memory.has_focus(id));
     let visuals = ui.visuals();
-    let stroke = if selected || focused {
-        egui::Stroke::new(1.0, visuals.strong_text_color())
+    let outline = if selected || focused {
+        visuals.strong_text_color()
     } else {
-        visuals.widgets.noninteractive.bg_stroke
+        visuals.widgets.inactive.bg_stroke.color
     };
     let frame = egui::Frame::new()
         .fill(visuals.faint_bg_color)
-        .stroke(stroke)
+        .stroke(egui::Stroke::new(1.0, outline))
         .corner_radius(4.0)
         .inner_margin(8.0);
     let inner = frame.show(ui, |ui| {

@@ -45,12 +45,12 @@ pub const LINK: Color32 = Color32::from_rgb(90, 170, 255);
 pub const SELECTION: Color32 = Color32::from_rgb(0x46, 0x6a, 0x90);
 
 /// The edge of a control at rest (the stage 1 review, E-4 and R-6): the outline of a value
-/// box, a framed button, a picker (open too) and a text box, and the fill of a checkbox's box,
-/// a radio button, a slider's rail and handle and the disc behind a plot legend's dot (egui_plot
-/// draws it in the resting fill and outline). The other colour outside the spec's table (6.1),
-/// whose border colour is 1.2:1 on the panel: a grey of the tokens' hue, 3:1 or more on the
-/// panel, a menu and a field, under [`MUTED`], with the tick of a ticked box ([`TEXT`]) at
-/// 4.3:1 on it (the theme's tests pin each).
+/// box, a framed button, a picker (open too), a text box and a tile over the drawing, the ring
+/// of a plot legend's entry (its disc the plots fill with the field colour: BL-108), and the
+/// fill of a checkbox's box, a radio button and a slider's rail and handle. The other colour
+/// outside the spec's table (6.1), whose border colour is 1.2:1 on the panel: a grey of the
+/// tokens' hue, 3:1 or more on the panel, a menu and a field, under [`MUTED`], with the tick of
+/// a ticked box ([`TEXT`]) at 4.3:1 on it (the theme's tests pin each).
 pub const CONTROL: Color32 = Color32::from_rgb(0x65, 0x6c, 0x76);
 
 /// The corner radius of buttons, fields, menus and tooltips [points].

@@ -749,54 +749,167 @@ mod tests {
     }
 
     #[test]
-    fn a_plot_legend_s_entries_show_their_dots_on_a_grey_disc() {
+    fn a_plot_legend_s_dots_show_at_three_to_one_on_their_discs_shown_or_hidden() {
         // egui_plot draws each legend entry, a toggle that hides or shows its line, as a disc
-        // in the resting fill and outline with the line's dot on it. That disc is the edge of
-        // the toggle: 3:1 or more against the legend's background (the field colour), on every
-        // entry of Torque vs temperature's legend, the longest.
+        // in the interact state's fill and outline with the line's dot on it while the line is
+        // shown, so the dot alone shows the state. BL-108 (the review of part 2b-iii-b,
+        // LOOK-1): on a disc in the controls' grey the dots were 1.6:1 to 2.6:1. In the app's
+        // theme and font, on all five plots of the starting design and of the example design
+        // (its sweeps have rows that do not fit): every dot is 3:1 or more against the disc it
+        // is drawn on and every disc's ring 3:1 or more against the legend's background (the
+        // field colour); an entry clicked hidden keeps its disc, fill and ring with no dot, and
+        // a second click shows it again. The two designs draw all eight colours the plots give
+        // a series: blue, amber, violet, the text, muted and the three levels' colours.
         use crate::gui::CentreView;
         use crate::gui::plots::PlotKind;
         use crate::gui::test_support::flat_shapes;
         use theme::contrast;
+        // A frame's legend entries in the centre region: each a filled and outlined disc (a
+        // plot's own points are one or the other) and, while its line is shown, the colour of
+        // the smaller dot at its centre.
+        let entries = |ctx: &egui::Context, output: &egui::FullOutput| {
+            let (left, right) = (
+                side_rect(ctx, "magcoupling_inputs").right(),
+                side_rect(ctx, "magcoupling_dashboard").left(),
+            );
+            let circles: Vec<egui::epaint::CircleShape> = flat_shapes(output)
+                .into_iter()
+                .filter_map(|shape| match shape {
+                    egui::Shape::Circle(c) if left < c.center.x && c.center.x < right => Some(*c),
+                    _ => None,
+                })
+                .collect();
+            circles
+                .iter()
+                .filter(|disc| disc.fill.a() > 0 && disc.stroke.width > 0.0)
+                .map(|disc| {
+                    let dot = circles
+                        .iter()
+                        .find(|dot| dot.center == disc.center && dot.radius < disc.radius);
+                    (*disc, dot.map(|dot| dot.fill))
+                })
+                .collect::<Vec<_>>()
+        };
+        let mut colours = std::collections::HashSet::new();
+        for example in [false, true] {
+            let ctx = egui::Context::default();
+            let mut app = MagcouplingApp::new(&ctx);
+            if example {
+                app.panel.open_example_design();
+            }
+            frame_on(&ctx, &mut app, LAPTOP, Vec::new());
+            for kind in PlotKind::ALL {
+                let what = format!("example design {example}, {kind:?}");
+                let output = show_view(&ctx, &mut app, LAPTOP, CentreView::Plot(kind), 2);
+                let shown = entries(&ctx, &output);
+                assert!(!shown.is_empty(), "{what}: no legend entry");
+                for (disc, dot) in &shown {
+                    let ring = contrast(disc.stroke.color, theme::BG);
+                    assert!(
+                        ring >= 3.0,
+                        "{what}: a disc's ring on the legend: {ring:.2}"
+                    );
+                    let dot = dot.unwrap_or_else(|| panic!("{what}: an entry with no dot"));
+                    let ratio = contrast(dot, disc.fill);
+                    assert!(
+                        ratio >= 3.0,
+                        "{what}: the dot {} on its disc {}: {ratio:.2}",
+                        theme::hex(dot),
+                        theme::hex(disc.fill)
+                    );
+                    colours.insert(dot);
+                }
+                // A click on the first entry hides its line: its disc stays, with no dot.
+                let (first, first_dot) = shown[0];
+                let hidden = entries(&ctx, &click_at(&ctx, &mut app, LAPTOP, first.center, 2));
+                let hidden: Vec<_> = hidden
+                    .iter()
+                    .filter(|(d, _)| d.center == first.center)
+                    .collect();
+                assert_eq!(hidden.len(), 1, "{what}: the hidden entry's disc");
+                assert_eq!(hidden[0].1, None, "{what}: the hidden entry's dot");
+                assert_eq!(
+                    (hidden[0].0.fill, hidden[0].0.stroke),
+                    (first.fill, first.stroke),
+                    "{what}: the hidden entry's disc"
+                );
+                // A second click shows it again.
+                let again = entries(&ctx, &click_at(&ctx, &mut app, LAPTOP, first.center, 2));
+                assert!(
+                    again
+                        .iter()
+                        .any(|(d, dot)| d.center == first.center && *dot == first_dot),
+                    "{what}: shown again"
+                );
+            }
+        }
+        assert_eq!(colours.len(), 8, "the dots' colours: {colours:?}");
+    }
+
+    #[test]
+    fn a_tile_shows_its_edge_on_the_panel_as_a_framed_control_does() {
+        // BL-109 (the review of part 2b-iii-b, LOOK-2): the four tiles over the drawing are
+        // click targets that the panel frames itself, and they kept the hairline (1.2:1 on the
+        // panel) where every control egui frames shows its edge at 3:1. In the app's theme, on
+        // the first view at 1280 x 800, each tile's resting outline is the resting outline of
+        // a framed control, 3:1 or more against the panel; a click on the Hot-low tile outlines
+        // it in the strong text colour, another colour, at the same width, and no tile moves.
+        use crate::gui::test_support::{flat_shapes, text_rects};
+        use crate::gui::tiles::Tile;
+        use theme::contrast;
+        let inputs = starting_design();
+        let results = compute_all(&inputs);
+        // Each tile's frame: the rect in the tiles' fill around its number in the centre
+        // region (the Hot-low tile's torque card repeats its number in the Explain panel).
+        let frames = |ctx: &egui::Context, output: &egui::FullOutput| {
+            let right = side_rect(ctx, "magcoupling_dashboard").left();
+            Tile::ALL
+                .iter()
+                .map(|tile| {
+                    let number: Vec<egui::Rect> =
+                        text_rects(output, &tile.number(&inputs, &results).unwrap())
+                            .into_iter()
+                            .filter(|at| at.right() < right)
+                            .collect();
+                    assert_eq!(number.len(), 1, "{tile:?}'s number: {number:?}");
+                    let frame: Vec<&egui::epaint::RectShape> = flat_shapes(output)
+                        .into_iter()
+                        .filter_map(|shape| match shape {
+                            egui::Shape::Rect(r)
+                                if r.fill == theme::PANEL2 && r.rect.contains_rect(number[0]) =>
+                            {
+                                Some(r)
+                            }
+                            _ => None,
+                        })
+                        .collect();
+                    assert_eq!(frame.len(), 1, "{tile:?}'s frame: {frame:?}");
+                    frame[0].clone()
+                })
+                .collect::<Vec<egui::epaint::RectShape>>()
+        };
         let ctx = egui::Context::default();
         let mut app = MagcouplingApp::new(&ctx);
         frame_on(&ctx, &mut app, LAPTOP, Vec::new());
-        let view = CentreView::Plot(PlotKind::TorqueTemperature);
-        let output = show_view(&ctx, &mut app, LAPTOP, view, 2);
-        let (left, right) = (
-            side_rect(&ctx, "magcoupling_inputs").right(),
-            side_rect(&ctx, "magcoupling_dashboard").left(),
-        );
-        let circles: Vec<&egui::epaint::CircleShape> = flat_shapes(&output)
-            .into_iter()
-            .filter_map(|shape| match shape {
-                egui::Shape::Circle(circle)
-                    if left < circle.center.x && circle.center.x < right =>
-                {
-                    Some(circle)
-                }
-                _ => None,
-            })
-            .collect();
-        // An entry: a filled and outlined disc (a plot's own points are one or the other), and
-        // on it, at its centre, its line's smaller dot.
-        let discs: Vec<&egui::epaint::CircleShape> = circles
-            .iter()
-            .copied()
-            .filter(|disc| {
-                disc.fill.a() > 0
-                    && disc.stroke.width > 0.0
-                    && circles
-                        .iter()
-                        .any(|dot| dot.center == disc.center && dot.radius < disc.radius)
-            })
-            .collect();
-        assert_eq!(discs.len(), 7, "the legend's entries: {discs:?}");
-        let rest = theme::visuals().widgets.inactive;
-        for disc in discs {
-            let ratio = contrast(disc.fill, theme::BG);
-            assert!(ratio >= 3.0, "a legend entry's disc: {ratio:.2}");
-            assert_eq!((disc.fill, disc.stroke), (rest.bg_fill, rest.bg_stroke));
+        let rest = theme::visuals().widgets.inactive.bg_stroke;
+        let resting = frames(&ctx, &frame_on(&ctx, &mut app, LAPTOP, Vec::new()));
+        for (tile, frame) in Tile::ALL.iter().zip(&resting) {
+            let ratio = contrast(frame.stroke.color, theme::PANEL);
+            assert!(
+                ratio >= 3.0,
+                "{tile:?}'s resting outline on the panel: {ratio:.2}"
+            );
+            assert_eq!(frame.stroke, rest, "{tile:?}");
+        }
+        let hot_low = Tile::ALL.iter().position(|&t| t == Tile::HotLow).unwrap();
+        let output = click_at(&ctx, &mut app, LAPTOP, resting[hot_low].rect.center(), 2);
+        let selected = frames(&ctx, &output);
+        let mark = egui::Stroke::new(rest.width, theme::TEXT);
+        assert_ne!(mark.color, rest.color);
+        for ((tile, before), after) in Tile::ALL.iter().zip(&resting).zip(&selected) {
+            let stroke = if *tile == Tile::HotLow { mark } else { rest };
+            assert_eq!(after.stroke, stroke, "{tile:?}");
+            assert_eq!(after.rect, before.rect, "{tile:?} moved");
         }
     }
 
