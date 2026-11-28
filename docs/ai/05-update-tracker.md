@@ -5,6 +5,8 @@ Reverse chronological (newest at top).
 
 ---
 
+## 2026-11-28 - Keep weights on driver reassign (BL-030)
+- reassign_driver skips the stock sample rebuild when the blueprint holds any point mass and takes the blueprint path; test reassign_driver_on_a_sample_keeps_user_weights; 02-system known limitation narrowed.
 ## 2026-11-28 - Preserve idle mounting angle (BL-021)
 - Removed the Mounting Angle slider step_by(0.5) that snapped an off-grid angle and rebuilt every idle frame; regression test bl021_expanded_mounting_slider_preserves_off_grid_state_on_idle_frames.
 ## 2026-11-28 - Preserve sweep plot X pan/zoom (BL-019)

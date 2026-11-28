@@ -417,6 +417,21 @@
         assert!(!state.playing);
     }
 
+    #[test]
+    fn reassign_driver_on_a_sample_keeps_user_weights() {
+        let mut state = AppState::default();
+        state.load_sample(SampleMechanism::FourBar);
+        let body = state.blueprint.as_ref().unwrap().bodies.keys()
+            .find(|k| k.as_str() != "ground").unwrap().clone();
+        let id = state.add_point_mass(&body, 2.5, [0.01, 0.02]).unwrap();
+
+        state.reassign_driver("J4");
+
+        assert_eq!(state.driver_joint_id, Some("J4".to_string()));
+        let pm = state.find_point_mass(&body, &id).expect("weight discarded by reassign");
+        assert_eq!((pm.mass, pm.local_pos), (2.5, [0.01, 0.02]));
+    }
+
     // ── Undo / Redo integration tests ──────────────────────────────────
 
     #[test]

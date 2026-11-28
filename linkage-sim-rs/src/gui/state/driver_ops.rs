@@ -21,7 +21,11 @@ impl AppState {
     /// mechanisms (via blueprint driver mutation + rebuild).
     pub fn reassign_driver(&mut self, joint_id: &str) {
         // Try sample-based reassignment first (preserves sample-specific builder logic).
-        if let Some(sample) = self.current_sample {
+        // The stock rebuild would discard user weights, so a sample carrying any
+        // takes the blueprint path below (BL-030).
+        let has_user_weights = self.blueprint.as_ref()
+            .is_some_and(|bp| bp.bodies.values().any(|b| !b.point_masses.is_empty()));
+        if let Some(sample) = self.current_sample.filter(|_| !has_user_weights) {
             self.push_undo();
             match crate::gui::samples::build_sample_with_driver(sample, Some(joint_id)) {
                 Ok((mech, q0)) => {
