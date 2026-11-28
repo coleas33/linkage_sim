@@ -11963,6 +11963,37 @@ mod tests {
 
     #[cfg(feature = "app")]
     #[test]
+    fn a_long_breadcrumb_trail_stays_clear_of_start_here_and_close_in_the_app_s_own_font() {
+        // BL-115: the header row laid the crumbs out first and Start here and Close in what was
+        // left of the row, so a trail that reached them was drawn under them. A trail of several
+        // steps (each a term of the one before) at 1024 x 700 and 1280 x 800: no text of the
+        // panel is drawn over.
+        use crate::gui::test_support::equation_panel_faults;
+        for size in [SMALLEST, egui::vec2(1280.0, 800.0)] {
+            let panel = MagcouplingPanel::with_baseline(crate::app::starting_design());
+            let mut harness = Harness::of(panel, size);
+            crate::app::theme::apply(&harness.ctx);
+            crate::app::fonts::install(&harness.ctx);
+            harness.panel.explorer.open_path("metal.torque_hot_low_Nm");
+            for (n, path) in ["metal.torque_op_Nm", "model.torque_2d_Nm", "model.tau_Pa"]
+                .into_iter()
+                .enumerate()
+            {
+                harness.panel.explorer.drill(path);
+                for _ in 0..2 {
+                    harness.frame(Vec::new());
+                }
+                let output = harness.frame(Vec::new());
+                let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, size);
+                let panel = equation_panel_rect(&harness.ctx);
+                let faults = equation_panel_faults(&output, screen, panel);
+                assert!(faults.is_empty(), "{size:?}, {} crumbs: {faults:#?}", n + 2);
+            }
+        }
+    }
+
+    #[cfg(feature = "app")]
+    #[test]
     fn a_wrapped_term_name_or_closest_note_title_is_one_tab_stop_in_the_app_s_own_font() {
         // The branch's review (KR-1): egui lays a label out in a wrapping line row by row, each
         // row a Tab stop of its own, and only the first shows the focus (SK-1 of the input rows),

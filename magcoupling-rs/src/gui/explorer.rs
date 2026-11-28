@@ -574,45 +574,49 @@ pub fn explorer_ui(
 ) -> Option<&'static str> {
     let terms = Design { inputs, results };
     let mut asked = None;
-    ui.horizontal_wrapped(|ui| {
-        // Whole crumbs move to the next row (a wrapped text would start mid-row).
-        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-        ui.strong(EQUATION_PANEL);
-        ui.separator();
-        let mut back = None;
-        let last = explorer.trail.len().saturating_sub(1);
-        let first = explorer.trail.len().saturating_sub(SHOWN_CRUMBS);
-        if first > 0 {
-            ui.weak(ELIDED)
-                .on_hover_text(format!("{first} earlier steps"));
+    // The buttons are laid out first, at the right, so the crumbs wrap in the room left of them
+    // and are never drawn under them (BL-115).
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
+        if ui.button(CLOSE).clicked() {
+            explorer.close();
         }
-        for (i, path) in explorer.trail.iter().enumerate().skip(first) {
-            if i > 0 {
-                ui.weak(">");
-            }
-            if ui
-                .selectable_label(i == last, crumb(path))
-                .on_hover_text(term_label(path))
-                .clicked()
-                && i != last
-            {
-                back = Some(i);
-            }
+        if ui
+            .button(START_HERE_BUTTON)
+            .on_hover_text(start_here_hover(clamps_paused))
+            .clicked()
+        {
+            asked = explorer.start(0);
         }
-        if let Some(i) = back {
-            explorer.back_to(i);
-        }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button(CLOSE).clicked() {
-                explorer.close();
-            }
-            if ui
-                .button(START_HERE_BUTTON)
-                .on_hover_text(start_here_hover(clamps_paused))
-                .clicked()
-            {
-                asked = explorer.start(0);
-            }
+        ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
+            ui.horizontal_wrapped(|ui| {
+                // Whole crumbs move to the next row (a wrapped text would start mid-row).
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                ui.strong(EQUATION_PANEL);
+                ui.separator();
+                let mut back = None;
+                let last = explorer.trail.len().saturating_sub(1);
+                let first = explorer.trail.len().saturating_sub(SHOWN_CRUMBS);
+                if first > 0 {
+                    ui.weak(ELIDED)
+                        .on_hover_text(format!("{first} earlier steps"));
+                }
+                for (i, path) in explorer.trail.iter().enumerate().skip(first) {
+                    if i > 0 {
+                        ui.weak(">");
+                    }
+                    if ui
+                        .selectable_label(i == last, crumb(path))
+                        .on_hover_text(term_label(path))
+                        .clicked()
+                        && i != last
+                    {
+                        back = Some(i);
+                    }
+                }
+                if let Some(i) = back {
+                    explorer.back_to(i);
+                }
+            });
         });
     });
     if let Some(step) = explorer.start_here {
@@ -1750,7 +1754,7 @@ mod tests {
         });
         assert_eq!(
             drawn_texts(&output),
-            [EQUATION_PANEL, CLOSE, START_HERE_BUTTON]
+            [CLOSE, START_HERE_BUTTON, EQUATION_PANEL]
         );
     }
 

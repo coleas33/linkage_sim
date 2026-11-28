@@ -3632,3 +3632,5 @@ formats, and Phase 6.8 UX overhaul.
 - 2026-11-28 BL-120 (magcoupling/r3-polish): the Equation panel's closest-note title starts its own row when the room left is less than its widest word, so it never breaks mid-word in a narrow centre (explorer.rs; test a_closest_note_title_breaks_only_between_words_in_a_narrow_centre).
 
 - 2026-11-28 BL-121 (magcoupling/r3-polish): the Start here bar draws Previous, Next and Stop as one block on the row after the step line, so they always share a row (explorer.rs; test the_start_here_buttons_share_one_row_on_every_step_in_the_app_s_own_font).
+
+- 2026-11-28 BL-115 (magcoupling/r3-polish): the Equation panel header lays Close and Start here out first and wraps the heading and crumbs in the room left of them, so a long breadcrumb trail is never drawn under the buttons (explorer.rs; test a_long_breadcrumb_trail_stays_clear_of_start_here_and_close_in_the_app_s_own_font).
